@@ -1,7 +1,7 @@
 ---
 title: "Roadmap Phase 0 · Foundations"
 description: "Stand up the AriadShift monorepo, 3-OS CI, IR v0, engine protocol draft, a 60-document fixture suite and one working Markdown → IR → DOCX route through Pandoc out of process."
-status: pending
+status: in-progress
 priority: P1
 effort: 64h
 branch: main
@@ -48,7 +48,7 @@ Mode: `--deep`, HOLD SCOPE. Research reports:
 
 | # | Phase | Effort | Depends on | Status |
 |---|---|---|---|---|
-| 1 | [Record decisions in ARCHITECTURE and AGENTS](./phase-01-decisions-record.md) | 4h | none | Pending |
+| 1 | [Record decisions in ARCHITECTURE and AGENTS](./phase-01-decisions-record.md) | 4h | none | Done |
 | 2 | [Workspace, toolchain, CI and public repo](./phase-02-workspace-toolchain-ci.md) | 9h | 1 | Pending |
 | 3 | [Fixture suite (60 documents + manifest)](./phase-03-fixture-suite.md) | 12h | 2 | Pending |
 | 4 | [ariad-core: IR v0, Markdown reader, Pandoc AST](./phase-04-core-ir-markdown.md) | 14h | 2, 3 | Pending |

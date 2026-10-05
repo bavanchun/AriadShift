@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Record decisions in ARCHITECTURE and AGENTS"
-status: pending
+status: completed
 priority: P1
 effort: "4h"
 dependencies: []
@@ -100,9 +100,10 @@ Non-functional: English only, no new root markdown, no section renumbering, and 
      - No `result`, or `result ok:true` with a non-zero exit, is a crash.
      - Any line after `result` is a protocol violation.
    - Add the Pandoc engine contract:
-     - command line: `pandoc [+RTS -M{max_memory_mb}M -RTS] --sandbox --log=<work_dir>/pandoc-log.json -f json -t docx`
+     - command line: `pandoc [+RTS -M{max_memory_mb}M -RTS] --sandbox --log=<workspace>/log/pandoc-log.json -f json -t docx -o <output.dir>/document.docx`
+     - job workspace layout `in/`, `out/`, `tmp/`, `log/`; the request's `work_dir` is `tmp/`
      - AST on stdin; stdout discarded; stderr drained and bounded
-     - `TMPDIR`/`TMP`/`TEMP` point to `<work_dir>`
+     - `TMPDIR`/`TMP`/`TEMP` point to `<work_dir>` (`tmp/`)
      - assets embedded as `data:` URIs; log entries map to `warning` events
      - `--sandbox` is a Pandoc guard, not OS isolation
    - After Pandoc, the host rewrites `docProps/core.xml` created/modified to the conversion time, honoring `SOURCE_DATE_EPOCH` (user decision).
@@ -160,19 +161,19 @@ Non-functional: English only, no new root markdown, no section renumbering, and 
 
 ## Todo
 
-- [ ] Binary rename across §3, §4, §5, §6.3, §7, §7.1, §17, §20
-- [ ] §2 versions, Pandoc pin, new crates, generator stack
-- [ ] OCR changes + §18 OCR row replaced (not appended)
-- [ ] §6.1 responsibilities; §6.2 exact IR v0 contract
-- [ ] §7 request fields, outcome rule, Pandoc contract, timestamp rewrite, loopback question
-- [ ] §11.2 new limits + unlimited semantics + Ctrl-C
-- [ ] Principle 3 exception row
-- [ ] §4 CLI contract (exit codes, env vars, output streams)
-- [ ] §5/§16 tree, recipes, public CI; generator row
-- [ ] §9.5 tenancy/entitlements/metering + row
-- [ ] Domain, `$id` base, bundle id
-- [ ] §14 golden strategy; §20 updates
-- [ ] AGENTS.md lines
+- [x] Binary rename across §3, §4, §5, §6.3, §7, §7.1, §17, §20
+- [x] §2 versions, Pandoc pin, new crates, generator stack
+- [x] OCR changes + §18 OCR row replaced (not appended)
+- [x] §6.1 responsibilities; §6.2 exact IR v0 contract
+- [x] §7 request fields, outcome rule, Pandoc contract, timestamp rewrite, loopback question
+- [x] §11.2 new limits + unlimited semantics + Ctrl-C
+- [x] Principle 3 exception row
+- [x] §4 CLI contract (exit codes, env vars, output streams)
+- [x] §5/§16 tree, recipes, public CI; generator row
+- [x] §9.5 tenancy/entitlements/metering + row
+- [x] Domain, `$id` base, bundle id
+- [x] §14 golden strategy; §20 updates
+- [x] AGENTS.md lines
 
 ## Verification
 
