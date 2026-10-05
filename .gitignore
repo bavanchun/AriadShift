@@ -1,2 +1,8 @@
 node_modules/
+target/
+.tools/
+.venv/
+*.pending-snap
+*.snap.new
+**/.claude/
 .DS_Store
