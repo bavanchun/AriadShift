@@ -429,3 +429,75 @@ tags = ["mixed-script", "tables", "math", "task-list"]
 phase = "0"
 routes = ["md->docx"]
 companions = []
+
+[[fixture]]
+id = "vi-garden-notice"
+path = "fixtures/html/vi-garden-notice.html"
+format = "html"
+media_type = "text/html"
+languages = ["vi"]
+title = "Lịch chăm vườn đọc"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/html.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "b840b5ab8c790f352e8d1ce2b26acc814a17af430baa99d59292540c842a5b44"
+tags = []
+phase = "1a"
+routes = ["html->md"]
+companions = []
+
+[[fixture]]
+id = "vi-route-table"
+path = "fixtures/html/vi-route-table.html"
+format = "html"
+media_type = "text/html"
+languages = ["vi"]
+title = "Các điểm dừng ven sông"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/html.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "09518053fe190e8b00a6f086d1e73e6e1a41c684791eb557a13d0336044c621c"
+tags = []
+phase = "1a"
+routes = ["html->md"]
+companions = []
+
+[[fixture]]
+id = "en-repair-cafe"
+path = "fixtures/html/en-repair-cafe.html"
+format = "html"
+media_type = "text/html"
+languages = ["en"]
+title = "The Repair Café"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/html.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "ca0bd525f52fda0c14d83f2fee77897df622cc7e07dabf4baa71e53a1d0839f5"
+tags = []
+phase = "1a"
+routes = ["html->md"]
+companions = []
+
+[[fixture]]
+id = "en-map-archive"
+path = "fixtures/html/en-map-archive.html"
+format = "html"
+media_type = "text/html"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/html.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "f3cd32f9f9b57a3d0d4faf78d77bf9f6f16ebb64ee707cf869e5aef33457b596"
+tags = []
+phase = "1a"
+routes = ["html->md"]
+companions = []
