@@ -1,0 +1,48 @@
+# AGENTS.md
+
+Rules for AI agents working in this repository. Design authority is [ARCHITECTURE.md](ARCHITECTURE.md); read the section you are touching before changing structure, stack or boundaries.
+
+## Current state
+
+The product code has not been scaffolded yet. The only buildable part is `brand/`. Do not report tests or CI as passing: no test suite or `justfile` exists yet.
+
+## Architecture changes
+
+- Do not add a crate, app, service or dependency that contradicts ARCHITECTURE.md. If a change is warranted, update ARCHITECTURE.md, including its "Decision Log" table, in the same change.
+- Conversion logic belongs in `ariad-core` or `ariad-host` only. Surfaces (CLI, desktop, web, server) never carry their own conversion code.
+- Third-party engines run out of process through the engine protocol. Never link them into the host.
+
+## Versions
+
+- Use the latest LTS where a channel exists, otherwise the latest stable release. Never use alpha, beta or RC builds.
+- Verify a version against its registry (npm, crates.io, PyPI, GitHub Releases, endoflife.date) before pinning it. Do not pin from memory.
+- Pin exact versions through lockfiles and commit the lockfile with the manifest.
+- Package managers: `pnpm` for JS, `uv` for Python, `cargo` for Rust. Do not use npm, yarn or pip.
+- Root tasks go into `just` recipes. Do not add Turborepo or Nx.
+
+## Licensing
+
+- Distributed artifacts must not contain AGPL or non-OSI code. This rules out PyMuPDF, `pdf2docx` and MinerU.
+- GPL tools such as Pandoc are invoked as separate processes, never linked.
+- `fixtures/` takes only freely distributable documents, each with its source and license recorded. Never commit a user's or private document.
+
+## Brand assets
+
+- `brand/svg/`, `brand/png/`, `brand/icon-composer/` and `brand/preview.png` are generated. The build deletes and rewrites them, so never hand-edit them.
+- Change `brand/src/*.mjs` or `brand/build.mjs`, then run `pnpm --dir brand install` (first time only) and `pnpm --dir brand build`.
+- After a build, open `brand/preview.png` and check the 16px and 32px tiles before committing.
+- Commit the sources and the regenerated outputs together.
+- Keep SVGO's `prefixIds` plugin. Without it, IDs collide when several logos are inlined into one page.
+- Design rules and the palette live in [docs/brand/design-direction.md](docs/brand/design-direction.md). Update that file when the design changes.
+
+## Docs and language
+
+- Write every repository file in English. Reply to the user in Vietnamese.
+- Markdown goes under `docs/` or `plans/`. Root markdown is limited to `README.md`, `ARCHITECTURE.md`, `AGENTS.md` and `CLAUDE.md` (which only imports `AGENTS.md`; put rules in `AGENTS.md`).
+
+## Git
+
+- Commit or push only when the user asks.
+- Stage explicit paths. Never run `git add -A` or `git add .` at the repository root.
+- Use conventional commits (`feat(brand): …`, `docs: …`) with no AI or tool references.
+- Never commit `node_modules/`, `.env*`, credentials or private keys.
