@@ -61,8 +61,11 @@ function iconComposerLayers() {
 }
 
 // Wordmark: outlined glyph paths so no font install is needed wherever the logo is used.
+const fontBuffer = fs.readFileSync(
+  path.join(ROOT, 'node_modules/@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-700-normal.woff'),
+);
 const FONT = opentype.parse(
-  fs.readFileSync(path.join(ROOT, 'node_modules/@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-700-normal.woff')).buffer,
+  fontBuffer.buffer.slice(fontBuffer.byteOffset, fontBuffer.byteOffset + fontBuffer.byteLength),
 );
 const TRACKING = -0.02; // em
 
