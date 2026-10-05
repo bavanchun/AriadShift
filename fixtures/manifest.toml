@@ -685,3 +685,41 @@ tags = []
 phase = "1a"
 routes = ["docx->md"]
 companions = []
+
+[[fixture]]
+id = "pd-vi-truyen-kieu-html"
+path = "fixtures/html/pd-vi-truyen-kieu.html"
+format = "html"
+media_type = "text/html"
+languages = ["vi"]
+title = "Truyện Kiều: Tài sắc hai chị em"
+origin = "external"
+source_url = "https://vi.wikisource.org/wiki/T%E1%BA%ADp_tin:Quoc_van_trich_diem_1930.pdf"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Excerpt transcribed directly from p. 77 of the 1930 fourth edition of Quốc văn trích diễm (Hanoi: Nhà in Lê Văn Tân), sourced from the National Library of Vietnam scan. The edition predates 1931; Nguyễn Du (1765–1820) and compiler Dương Quảng Hàm (1898–1946) died before 1976. No modern transcription or edition was used."
+attribution = "Nguyễn Du; edition compiled by Dương Quảng Hàm; scan from the National Library of Vietnam"
+sha256 = "8dee9faacf511d4f9d897aa7c1e769bb85f30f659ccfe0647556c89f1daa6a77"
+tags = []
+phase = "1a"
+routes = ["html->md"]
+companions = []
+
+[[fixture]]
+id = "pd-en-federal-notice"
+path = "fixtures/html/pd-en-federal-notice.html"
+format = "html"
+media_type = "text/html"
+languages = ["en"]
+title = "Notice of Public Meeting of the North Carolina Advisory Committee"
+origin = "external"
+source_url = "https://public-inspection.federalregister.gov/2025-07117.pdf"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Metadata and agenda items transcribed; the summary is paraphrased from U.S. Commission on Civil Rights Federal Register document 2025-07117, scheduled for publication April 25, 2025. This is a U.S. Government work under 17 U.S.C. §105; no third-party material is included."
+attribution = "U.S. Commission on Civil Rights"
+sha256 = "e09950dec58c36a5db2eaa062568cd66ac7966e8042931b5082eef28a462b5d2"
+tags = []
+phase = "1a"
+routes = ["html->md"]
+companions = []
