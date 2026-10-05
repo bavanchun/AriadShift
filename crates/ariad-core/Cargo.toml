@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 base64.workspace = true
+comrak.workspace = true
 schemars.workspace = true
 saphyr-parser.workspace = true
 serde = { workspace = true, features = ["derive"] }
