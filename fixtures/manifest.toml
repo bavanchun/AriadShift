@@ -37,6 +37,126 @@ routes = ["pdf->md"]
 companions = []
 
 [[fixture]]
+id = "pd-vi-qd-1922-2026"
+path = "fixtures/pdf/pd-vi-qd-1922-2026.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Quyết định 1922/QĐ-TTg (2026)"
+origin = "external"
+source_url = "https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/10/1922_qd-ttg_04102026_1-signed.signed.pdf"
+retrieved = "2026-10-06"
+license = "LicenseRef-VN-IPL-Art15"
+license_basis = "Official Vietnamese government legal instrument downloaded from the Government portal. Article 15(2) of the Vietnamese IP Law excludes legal and administrative documents from copyright protection."
+attribution = "Prime Minister of Vietnam"
+sha256 = "5cb778dd3605fed34e605686249bff838307f91bba1ec0cbdcae0f05141e20ae"
+pages = 2
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "pd-vi-decree-39-2022"
+path = "fixtures/pdf/pd-vi-decree-39-2022.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Nghị định 39/2022/NĐ-CP"
+origin = "external"
+source_url = "https://datafiles.chinhphu.vn/cpp/files/vbpq/2022/06/39-nd.signed.pdf"
+retrieved = "2026-10-06"
+license = "LicenseRef-VN-IPL-Art15"
+license_basis = "Official Vietnamese government legal instrument downloaded from the Government portal. Article 15(2) of the Vietnamese IP Law excludes legal and administrative documents from copyright protection."
+attribution = "Government of Vietnam"
+sha256 = "be5f75a3992ee43cdff14313fdab4fe0e6a3a28d891838ca0eda992153937475"
+pages = 31
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "pd-vi-ip-law-155-2025"
+path = "fixtures/pdf/pd-vi-ip-law-155-2025.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Luật Sở hữu trí tuệ (consolidated through 2025)"
+origin = "external"
+source_url = "https://datafiles.chinhphu.vn/cpp/files/vbpq/2025/9/155-vbhn-vpqh.pdf"
+retrieved = "2026-10-06"
+license = "LicenseRef-VN-IPL-Art15"
+license_basis = "Official consolidated Vietnamese legal document downloaded from the Government portal. Article 15(2) of the Vietnamese IP Law excludes legal and administrative documents from copyright protection."
+attribution = "National Assembly of Vietnam"
+sha256 = "313f5aec815cc110e90bc8a461f8ea05e3bed818a24b8278f48065b1483a0dbb"
+pages = 134
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "arxiv-tableformer-2203-01017-v1"
+path = "fixtures/pdf/arxiv-tableformer-2203-01017-v1.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "TableFormer: Table Structure Understanding with Transformers"
+origin = "external"
+source_url = "https://arxiv.org/pdf/2203.01017v1"
+retrieved = "2026-10-06"
+license = "CC-BY-4.0"
+license_basis = "Version 1 PDF of arXiv:2203.01017. The arXiv abstract page links this work to the Creative Commons Attribution 4.0 license."
+attribution = "Ahmed Nassar, Nikolaos Livathinos, Maksym Lysak, and Peter Staar"
+sha256 = "1dbb825aca202abaea9661d9e78ac5286e371d42256cbd4015049969132b3cec"
+pages = 10
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "arxiv-multilingual-open-text-2201-05609-v2"
+path = "fixtures/pdf/arxiv-multilingual-open-text-2201-05609-v2.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "Multilingual Open Text Release 1: Public Domain News in 44 Languages"
+origin = "external"
+source_url = "https://arxiv.org/pdf/2201.05609v2"
+retrieved = "2026-10-06"
+license = "CC-BY-4.0"
+license_basis = "Version 2 PDF of arXiv:2201.05609. The arXiv abstract page links this work to the Creative Commons Attribution 4.0 license; the paper also identifies that license for the corpus."
+attribution = "Chester Palen-Michel, June Kim, and Constantine Lignos"
+sha256 = "a59e942f08d12d1aa97fa673af7662384273cd38046e61c84302fa61654ed97d"
+pages = 10
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "pd-en-gao-08-35-highlights"
+path = "fixtures/pdf/pd-en-gao-08-35-highlights.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "GAO-08-35 Homeland Security report highlights"
+origin = "external"
+source_url = "https://www.govinfo.gov/content/pkg/GAOREPORTS-GAO-08-35/pdf/GAOREPORTS-GAO-08-35.pdf"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "One-page excerpt from page 2 (Highlights) of the October 2007 GAO-08-35 report. The retained page was visually inspected and contains no third-party figures; the report's only embedded raster image is on excluded page 48. GAO reports are publicly redistributable through GovInfo, and U.S. Government works are not subject to copyright under 17 U.S.C. §105."
+attribution = "U.S. Government Accountability Office"
+sha256 = "199b7c01067102f441545373cf9821ae36839e1a66602d71cba7246f43a94991"
+pages = 1
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
 id = "vi-long-headings"
 path = "fixtures/md/vi-long-headings.md"
 format = "md"
