@@ -33,6 +33,7 @@ schemars = "1.2.2"
 serde = "1.0.229"
 serde_json = { version = "1.0.151", features = ["unbounded_depth"] }
 serde_stacker = "0.1.14"
+saphyr-parser = "0.1.0"
 sha2 = "0.11.0"
 sqlx = "0.9"
 tauri-specta = "1.0"

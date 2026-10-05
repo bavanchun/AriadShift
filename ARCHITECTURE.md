@@ -100,7 +100,7 @@ Native Markdown parsing now, and native HTML parsing later, in `ariad-core` run 
 | serde_stacker | **0.1.14** | Deep IR JSON reads in the native host |
 | serde_json | **1.0.151** (`unbounded_depth` in the host) | IR and protocol JSON |
 | tempfile | **3.27.0** | Isolated conversion workspaces |
-| YAML front-matter parser | Selected and verified in phase 4 | Maintained, pure Rust, permissive, wasm-compatible, and able to reject anchors and aliases |
+| saphyr-parser | **0.1.0** (MIT OR Apache-2.0) | Pure-Rust YAML 1.2 event parser; its `Alias` events let the reader reject aliases before interpreting front matter; wasm compatibility is checked in phase 4 |
 | Dev-only test crates | insta **1.49.0** (`json`, `glob`), jsonschema **0.58.5**, assert_cmd **2.2.2**, quick-xml **0.42.0**, toml **1.1.6+spec-1.1.0**, hex **0.4.3** | Test and fixture validation only; never distributed |
 
 ### 2.4 Engines and Infrastructure
@@ -286,7 +286,7 @@ Every enum variant is a struct variant serialized with an internally tagged `typ
 
 `AssetRef` is `Asset { id }` (lowercase hexadecimal SHA-256) or `Url { href }`. `AssetStore` is a `BTreeMap` from ids to `{ media_type, bytes }`; JSON encodes `bytes` as base64. `RawFormat` is closed to `html` and `tex`, so IR content cannot carry OOXML.
 
-Prose text, alt text, link text, and metadata strings are normalized to NFC. `Code`, `Math`, `Raw`, and URLs are never rewritten. YAML front matter between `---` lines fills `Metadata` using a maintained, pure-Rust, permissive parser selected and verified in phase 4. Known keys are `title`, `author`/`authors`, `lang`, `date`, `subject`, and `keywords`; values must be scalars or lists of scalars, and `author` accepts either a string or a list. Unknown keys warn, invalid YAML warns and is ignored, and anchors and aliases are rejected. The Pandoc mapper maps `title` to `title`, `authors` to `author`, `language` to `lang`, and `date`, `subject`, and `keywords` to their matching Pandoc metadata keys. `ariad-core` remains I/O-free; the host resolves source assets before invoking writers.
+Prose text, alt text, link text, and metadata strings are normalized to NFC. `Code`, `Math`, `Raw`, and URLs are never rewritten. YAML front matter between `---` lines fills `Metadata` using `saphyr-parser` 0.1.0, a maintained, pure-Rust, permissively licensed YAML 1.2 event parser. Its explicit alias events let the reader reject aliases before interpreting front matter. Known keys are `title`, `author`/`authors`, `lang`, `date`, `subject`, and `keywords`; values must be scalars or lists of scalars, and `author` accepts either a string or a list. Unknown keys warn, invalid YAML warns and is ignored, and anchors and aliases are rejected. The Pandoc mapper maps `title` to `title`, `authors` to `author`, `language` to `lang`, and `date`, `subject`, and `keywords` to their matching Pandoc metadata keys. `ariad-core` remains I/O-free; the host resolves source assets before invoking writers.
 
 The comrak reader accepts CommonMark and GFM tables, strikethrough, autolinks, task lists, footnotes, dollar math, raw HTML, emoji shortcodes, and YAML front matter. It strips a UTF-8 BOM, normalizes CRLF and CR to LF, and iteratively enforces configured input, nesting, and block limits. Unsupported nodes map to the closest IR block with a warning.
 
