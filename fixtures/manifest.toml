@@ -577,3 +577,111 @@ tags = []
 phase = "1a"
 routes = ["html->md"]
 companions = []
+
+[[fixture]]
+id = "vi-styled-report"
+path = "fixtures/docx/vi-styled-report.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/docx.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and assembled by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "5e510ac550db8771d6bcef7b1a4fb928c5b7a85a2feb737bbd6115936181055d"
+tags = []
+phase = "1a"
+routes = ["docx->md"]
+companions = []
+
+[[fixture]]
+id = "en-numbered-checklist"
+path = "fixtures/docx/en-numbered-checklist.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["en"]
+title = "Repair café opening checklist"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/docx.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and assembled by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "d0f4b4aa0a55dc79c8f6582e10801747c514a8c264e8efd590b2abf0d6855117"
+tags = []
+phase = "1a"
+routes = ["docx->md"]
+companions = []
+
+[[fixture]]
+id = "vi-route-data"
+path = "fixtures/docx/vi-route-table.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["vi"]
+title = "Bảng hành trình ven sông"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/docx.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and assembled by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "f7b75e85725a05f6d30671e5b4d8ed1de12b36520b5e8e0bf80dfe11c3575199"
+tags = []
+phase = "1a"
+routes = ["docx->md"]
+companions = []
+
+[[fixture]]
+id = "en-footnotes"
+path = "fixtures/docx/en-footnotes.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["en"]
+title = "Map archive note with a footnote"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/docx.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and assembled by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "1d9fbf5adb9ec6a618444f7a0eaf5f9a09029979b8880cd3103a92860a05fbbd"
+tags = []
+phase = "1a"
+routes = ["docx->md"]
+companions = []
+
+[[fixture]]
+id = "synthetic-merged-table"
+path = "fixtures/docx/edge-case-merged-table.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["vi", "en"]
+title = "Synthetic merged-table edge case"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/docx.py"
+license = "MIT"
+license_basis = "Synthetic maintainer-authored document created for structural edge-case coverage."
+attribution = "AriadShift contributors"
+sha256 = "0f78c3ed02416eb6a1732d7d6957004225c96a445cf2994d2f7d7ec5ce3aed41"
+tags = []
+phase = "1a"
+routes = ["docx->md"]
+companions = []
+
+[[fixture]]
+id = "synthetic-two-column"
+path = "fixtures/docx/edge-case-two-column.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["en"]
+title = "Synthetic two-column reading-order edge case"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/docx.py"
+license = "MIT"
+license_basis = "Synthetic maintainer-authored document created for structural edge-case coverage."
+attribution = "AriadShift contributors"
+sha256 = "f2e6e40e713e9f5d5d8c67197e00e44e6e7b2ace7b61437bcc2f791712f7d749"
+tags = []
+phase = "1a"
+routes = ["docx->md"]
+companions = []
