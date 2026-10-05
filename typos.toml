@@ -6,3 +6,10 @@ locale = "en"
 Ba = "Ba"
 Nam = "Nam"
 OER = "OER"
+
+[files]
+extend-exclude = [
+    "fixtures/md/vi-*.md",
+    "fixtures/md/mixed-*.md",
+    "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
+]

@@ -2,6 +2,8 @@ node_modules/
 target/
 .tools/
 .venv/
+__pycache__/
+*.py[cod]
 *.pending-snap
 *.snap.new
 **/.claude/
