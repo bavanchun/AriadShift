@@ -1,0 +1,14 @@
+[project]
+name = "ariad-fixture-gen"
+version = "0.0.0"
+description = "Deterministic document fixtures for AriadShift"
+requires-python = ">=3.14"
+dependencies = [
+    "pillow==12.3.0",
+    "python-docx==1.2.0",
+    "typst==0.15.0",
+]
+
+[build-system]
+requires = ["uv_build==0.12.23"]
+build-backend = "uv_build"
