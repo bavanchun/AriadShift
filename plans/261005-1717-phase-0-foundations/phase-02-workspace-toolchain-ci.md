@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Workspace, toolchain, CI and public repo"
-status: pending
+status: in-progress
 priority: P1
 effort: "9h"
 dependencies: [1]
@@ -178,18 +178,18 @@ ariadshift/
 
 ## Todo
 
-- [ ] Local toolchain installed
-- [ ] Versions re-verified; ARCHITECTURE §2 updated if any changed
-- [ ] Cargo workspace + three crates + `ashift --version` smoke test
-- [ ] `install-pandoc.sh` (flat layout, verify on every run, re-derived checksums)
-- [ ] justfile with native `ASHIFT_PANDOC` and `ci`
-- [ ] pnpm workspace; brand build byte-identical
-- [ ] uv workspace root locked
-- [ ] .gitattributes (binary fonts), .gitignore (`**/.claude/`)
-- [ ] LICENSE, NOTICE, README.md, docs/SECURITY.md
-- [ ] CI workflow (SHA-pinned actions, pinned tools, no persisted credentials, Pandoc sanity step)
-- [ ] AGENTS.md current state
-- [ ] User go-ahead → publish review → pinned gitleaks (history + tree) → public → first 3-OS run green
+- [x] Local toolchain installed
+- [x] Versions re-verified; ARCHITECTURE §2 updated if any changed
+- [x] Cargo workspace + three crates + `ashift --version` smoke test
+- [x] `install-pandoc.sh` (flat layout, verify on every run, re-derived checksums)
+- [x] justfile with native `ASHIFT_PANDOC` and `ci`
+- [x] pnpm workspace; brand build byte-identical
+- [x] uv workspace root locked
+- [x] .gitattributes (binary fonts), .gitignore (`**/.claude/`)
+- [x] LICENSE, NOTICE, README.md, docs/SECURITY.md
+- [x] CI workflow (SHA-pinned actions, pinned tools, no persisted credentials, Pandoc sanity step)
+- [x] AGENTS.md current state
+- [ ] User go-ahead → publish review → pinned gitleaks (history + tree) → public → first 3-OS run green (macOS + Windows green in run 37368437116; Ubuntu not yet run: GitHub runner-assignment incident 2026-10-05)
 
 ## Test scenario matrix
 
