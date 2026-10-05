@@ -1,7 +1,7 @@
 # AriadShift — System Architecture
 
-> **Status:** Proposal v1 · **Updated:** 2026-10-05
-> All version numbers in this document were verified directly against npm, crates.io, PyPI, GitHub Releases, and endoflife.date on 2026-10-05.
+> **Status:** Proposal v1 · **Updated:** 2026-10-06
+> Version selections are based on registry and release checks recorded on 2026-10-06; lockfiles pin exact resolved versions.
 
 AriadShift is an open-source, local-first document transformation platform. A single core engine powers five surfaces: **CLI, Desktop, Web, REST API/SDK, and MCP server**.
 
@@ -29,6 +29,8 @@ The name is derived from Ariadne's thread: AriadShift's planner navigates the fo
 | 8 | License clean | Apache-2.0 project; no AGPL in distribution; CI blocks invalid licenses |
 | 9 | No lock-in | Open standards at every boundary: S3 API, OpenAPI 3.1, JWT/JWKS, OpenTelemetry, MCP |
 
+Native Markdown parsing now, and native HTML parsing later, in `ariad-core` run in-process as explicit exceptions to Principle 3. These readers are pure Rust with `#![forbid(unsafe_code)]`, typed errors, and finite nesting and block limits; core readers are fuzzed starting in roadmap 1a. Every other parser runs out of process.
+
 ---
 
 ## 2. Versioning Policy
@@ -47,6 +49,7 @@ The name is derived from Ariadne's thread: AriadShift's planner navigates the fo
 | Python | **3.14.x** | Stable, supported until 2030-10 | Python has no LTS; 3.15 is unreleased |
 | PostgreSQL | **18.x** (18.6) | Major supported until 2030-11 | 19 is in beta |
 | Ubuntu (Docker image, CI) | **26.04 LTS** "Resolute Raccoon" | LTS | Single base image for all containers |
+| GitHub Actions runners | `ubuntu-26.04`, `macos-26`, `windows-2025` | GA | Pin labels explicitly; `ubuntu-latest` remains 24.04 until November 2026 |
 | LibreOffice | **26.8.x** | Longest-supported line currently available (until 2027-06) | LibreOffice has no LTS; 26.2 expires 2026-11-30 |
 
 ### 2.2 Web and Desktop
@@ -86,16 +89,30 @@ The name is derived from Ariadne's thread: AriadShift's planner navigates the fo
 | jsonwebtoken | 11 | JWT verification from Better Auth |
 | tauri-specta | 1.0 | TS type generation for Tauri commands |
 | cargo-dist | 0.32 | Packaging and distribution for CLI |
+| comrak | **0.55.0** (`default-features = false`, `shortcodes`) | CommonMark/GFM Markdown reader in `ariad-core`; BSD-2-Clause |
+| process-wrap | **10.0.1** (`tokio1`, `process-group`, `job-object`) | Cross-platform engine process-tree control |
+| tokio-util | **0.7.19** | Bounded NDJSON line framing |
+| unicode-normalization | **0.1.25** | NFC normalization of prose text |
+| sha2 | **0.11.0** | SHA-256 asset identifiers and golden hashes |
+| base64 | **0.23.1** | JSON asset bytes and embedded image data URLs |
+| cap-std | **4.0.3** | Capability-based asset file access |
+| zip | **8.6.0** | Runtime DOCX metadata rewrite; also used by goldens |
+| serde_stacker | **0.1.14** | Deep IR JSON reads in the native host |
+| serde_json | **1.0.151** (`unbounded_depth` in the host) | IR and protocol JSON |
+| tempfile | **3.27.0** | Isolated conversion workspaces |
+| YAML front-matter parser | Selected and verified in phase 4 | Maintained, pure Rust, permissive, wasm-compatible, and able to reject anchors and aliases |
+| Dev-only test crates | insta **1.49.0** (`json`, `glob`), jsonschema **0.58.5**, assert_cmd **2.2.2**, quick-xml **0.42.0**, toml **1.1.6+spec-1.1.0**, hex **0.4.3** | Test and fixture validation only; never distributed |
 
 ### 2.4 Engines and Infrastructure
 
 | Component | Version | License | Role |
 |---|---|---|---|
 | Docling | 2.133 | MIT (weights: Apache-2.0 / CDLA-Permissive-2.0 / MIT) | Structural document parsing for PDF, images, DOCX/PPTX/XLSX (Heron layout, TableFormer) |
-| Granite-Docling | 258M | Apache-2.0 | Optional VLM for complex documents |
-| RapidOCR + ONNX Runtime | 3.9 + 1.30 | Apache-2.0 / MIT | OCR (PP-OCR models on ONNX, no PaddlePaddle dependency) |
-| Tesseract | 5.x | Apache-2.0 | Fallback multilingual OCR |
-| Pandoc | **3.12** (official `pandoc.wasm` available) | GPL-2.0+ | Hub for reading/writing DOCX, ODT, EPUB, HTML, LaTeX, RST |
+| Granite-Docling | 258M | Apache-2.0 | English complex layouts; ja/ar/zh are experimental; not used for Vietnamese |
+| RapidOCR + ONNX Runtime | 3.9.2 + 1.30.0 | Apache-2.0 / MIT | PP-OCRv6 OCR for English, Chinese, Japanese, and most Latin languages; never route Vietnamese here |
+| Tesseract + `tessdata_best` | 5.5.3 + `vie`/`eng`/`osd` | Apache-2.0 | Default OCR for Vietnamese and mixed Vietnamese-English |
+| PaddleOCR-VL | 1.6 (0.96B; via llama.cpp) | Apache-2.0 / MIT | Optional high-accuracy OCR path |
+| Pandoc | **3.12** (official `pandoc.wasm` available) | GPL-2.0+ | Install the official release binary with SHA-256 verification via `scripts/install-pandoc.sh`; the Arch package is 3.11. Hub for DOCX, ODT, EPUB, HTML, LaTeX, and RST |
 | FFmpeg | 9.0, LGPL build | LGPL-2.1+ | Audio/video (later phase) |
 | libvips | 8.x | LGPL-2.1+ | Large images, batch processing |
 | pgmq | 1.13 | PostgreSQL License | In-Postgres job queue |
@@ -103,6 +120,7 @@ The name is derived from Ariadne's thread: AriadShift's planner navigates the fo
 | SeaweedFS | 4.x | Apache-2.0 | Self-hosted S3 (MinIO archived 04/2026) |
 | Cloudflare R2 | — | Managed service | Object storage for hosted tier |
 | uv / ruff | 0.12 / 0.16 | MIT | Python environment management and linting |
+| Fixture generator | Exact versions in `uv.lock` | Permissive | python-docx, Pillow, and typst-py are development-only and never distributed |
 
 ---
 
@@ -111,8 +129,8 @@ The name is derived from Ariadne's thread: AriadShift's planner navigates the fo
 ```mermaid
 flowchart TB
   subgraph surfaces["Product Surfaces"]
-    CLI["CLI: ariad"]
-    MCP["MCP server: ariad mcp"]
+    CLI["CLI: ashift"]
+    MCP["MCP server: ashift mcp"]
     DESK["Desktop: Tauri 2 + React 19"]
     WEB["Web: Next.js 16"]
     API["REST API /v1"]
@@ -127,7 +145,7 @@ flowchart TB
   HOST["ariad-host: engine runner, sandbox, engine packs"]
   WASM["ariad-wasm + pandoc.wasm + PDFium WASM + Typst"]
   SERVER["ariad-server: api / worker"]
-  ENG["Engines: PDFium · Pandoc · Docling + RapidOCR · LibreOffice · Typst"]
+  ENG["Engines: PDFium · Pandoc · Docling + Tesseract / RapidOCR · LibreOffice · Typst"]
   PG[("PostgreSQL 18 + pgmq")]
   S3[("S3 API: SeaweedFS / R2")]
 
@@ -151,8 +169,8 @@ flowchart TB
 
 | Surface | Target Users | Runtime Location | Available Engines |
 |---|---|---|---|
-| **CLI** `ariad` | Developers, scripts, CI | Local machine | All installed engines |
-| **MCP** `ariad mcp` (stdio) | AI agents: Claude, Cursor, IDEs | Local machine | Same as CLI |
+| **CLI** `ashift` | Developers, scripts, CI | Local machine | All installed engines |
+| **MCP** `ashift mcp` (stdio) | AI agents: Claude, Cursor, IDEs | Local machine | Same as CLI |
 | **Desktop** | Privacy-focused users, large files, batch | Local machine | All, installed via engine packs |
 | **Web, Local Mode** | General users | Browser (WASM) | core, Pandoc WASM, PDFium WASM, Typst |
 | **Web, Cloud Mode** | Complex files, scans, legacy Office | Server workers | All |
@@ -161,15 +179,29 @@ flowchart TB
 Representative CLI commands:
 
 ```bash
-ariad convert paper.pdf --to docx --profile editable
-ariad convert ./inbox --to md --recursive --out ./converted
-ariad inspect scan.pdf            # PDF type, page count, tables, OCR requirement
-ariad plan paper.pdf --to docx    # explain the selected route and rationale
-ariad engines                     # installed engines, versions, licenses
-ariad engines install docling     # download engine pack
-ariad doctor                      # check environment
-ariad mcp                         # run MCP server over stdio
+ashift convert notes.md --to docx
+ashift inspect scan.pdf          # PDF type, page count, tables, OCR requirement
+ashift plan paper.pdf --to docx  # explain the selected route and rationale
+ashift engines                  # installed engines, versions, licenses
+ashift engines install docling  # download engine pack
+ashift doctor                   # check environment
+ashift mcp                      # run MCP server over stdio
 ```
+
+The Phase 0 conversion command is `ashift convert <INPUT> --to <FORMAT> [-o <OUTPUT>] [--overwrite]`. It supports `md`/`markdown` → `docx`; the default output is `<input stem>.docx` beside the input.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | ok |
+| 1 | conversion failed |
+| 2 | usage |
+| 3 | unsupported route (prints the supported route) |
+| 4 | limit exceeded |
+| 5 | tool missing or wrong version (prints a hint) |
+| 6 | destination exists |
+| 130 | interrupted |
+
+Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains only the output path. Ctrl-C cancels the run, kills the engine process tree, deletes the workspace, returns 130, and leaves the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX timestamps for reproducible goldens. Future commands reuse the same exit-code table.
 
 ---
 
@@ -182,12 +214,14 @@ ariadshift/
 ├── rust-toolchain.toml        # Rust 1.99
 ├── pnpm-workspace.yaml        # pnpm workspace + shared version catalog
 ├── pyproject.toml             # uv workspace
-├── justfile                   # root commands: just dev | test | lint | bench | ci
+├── justfile                   # root entry point: fmt, lint, test, wasm, deny, js, py, pandoc, ci
 ├── .node-version              # 24
+├── scripts/                   # pinned tool installers
+├── .tools/                    # gitignored local tools
 ├── crates/
 │   ├── ariad-core/            # IR, format registry, planner, limits (I/O-free, WASM-compilable)
 │   ├── ariad-host/            # engine runner, sandbox, engine packs, native adapters (feature flags)
-│   ├── ariad-cli/             # `ariad` binary (includes `ariad mcp`)
+│   ├── ariad-cli/             # `ashift` binary (includes `ashift mcp`)
 │   ├── ariad-wasm/            # wasm-bindgen bindings for ariad-core
 │   └── ariad-server/          # `ariad-server api | worker` binary
 ├── engines/
@@ -201,7 +235,10 @@ ariadshift/
 │   ├── sdk/                   # TypeScript SDK generated from OpenAPI
 │   └── config/                # tsconfig, Biome presets
 ├── schemas/                   # JSON Schema: IR, engine protocol, capabilities (generated with schemars)
-├── fixtures/                  # test document suite (distributable documents only) + golden outputs
+├── fixtures/
+│   ├── manifest.toml          # source, license and digest for each committed document
+│   ├── gen/                   # dev-only Python fixture generator; uv workspace member
+│   └── golden/                # generated IR and DOCX snapshots
 ├── bench/                     # benchmark harness → capabilities.json
 ├── infra/
 │   ├── compose/               # docker-compose.yml for self-hosting
@@ -209,6 +246,8 @@ ariadshift/
 ├── brand/                     # code-generated logo and icons
 └── docs/
 ```
+
+The `justfile` initially provides `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, and `ci`. `dev` and `bench` arrive with `apps/` and `bench/`.
 
 Only 5 crates exist initially. Further crate splits occur only when distinct boundaries emerge, such as an adapter requiring an independent release cycle.
 
@@ -220,8 +259,8 @@ Only 5 crates exist initially. Further crate splits occur only when distinct bou
 
 | Crate | Responsibility | WASM | Key Dependencies |
 |---|---|---|---|
-| `ariad-core` | IR types, format registry, planner, limit enforcement, native Markdown and HTML readers/writers | ✓ | serde, schemars |
-| `ariad-host` | Engine process execution, sandboxing, temp workspaces, engine pack management, PDFium/Pandoc/LibreOffice/Docling/Typst adapters | ✗ | tokio, pdfium-render, typst |
+| `ariad-core` | IR types, format registry, planner, limit enforcement, pure-data engine-protocol message types shared with host, browser, and server, native Markdown and HTML readers/writers | ✓ | serde, schemars |
+| `ariad-host` | Asset resolution, engine process execution, workspaces, engine pack management, PDFium/Pandoc/LibreOffice/Docling/Typst adapters, and DOCX metadata rewrite | ✗ | tokio, pdfium-render, typst |
 | `ariad-cli` | Command-line interface, MCP server | ✗ | clap, rmcp |
 | `ariad-wasm` | Browser JS API: plan, convert lightweight routes | ✓ | wasm-bindgen |
 | `ariad-server` | `api`: Axum + OpenAPI; `worker`: consumes jobs from pgmq and calls ariad-host | ✗ | axum, sqlx, object_store |
@@ -230,34 +269,30 @@ Only 5 crates exist initially. Further crate splits occur only when distinct bou
 
 The IR serves as the "lingua franca" across readers and writers. Designed in three layers, the layout layer is entirely optional:
 
-```rust
-pub struct Document {
-    pub meta: Metadata,                 // title, authors, language, source format
-    pub body: Vec<Block>,               // semantic tree
-    pub assets: AssetStore,             // images, fonts, attachments (content-hash identified)
-    pub layout: Option<LayoutIndex>,    // page, bbox, column per block id (when source has layout)
-    pub provenance: Vec<Provenance>,    // which engine produced which part, with confidence score
-}
+The versioned schema is `ariad-ir/0` at `schemas/ir.v0.json` during 0.x; breaking changes are allowed. It freezes as `ariad-ir/1` together with `ariad-engine/1` in roadmap 1b.
 
-pub enum Block {
-    Heading { level: u8, content: Vec<Inline> },
-    Paragraph(Vec<Inline>),
-    List { ordered: bool, items: Vec<Vec<Block>> },
-    Table(Table),                       // merged cells, headers, captions
-    Figure { asset: AssetId, caption: Vec<Inline> },
-    Code { lang: Option<String>, text: String },
-    Math { tex: String, display: bool },
-    Quote(Vec<Block>),
-    Footnote { id: String, body: Vec<Block> },
-    PageBreak,
-}
-```
+Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants.
 
-IR rules:
+`Document` has `{ version, meta, body, assets, layout, provenance }`. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
 
-- **Versioned** (`ariad-ir/1`). JSON Schema is automatically generated into `schemas/`, and any breaking change increments the major version.
-- **Tested bidirectional mappings** to `DoclingDocument` (Docling ingestion) and **Pandoc AST JSON** (bridge to Pandoc). This allows the IR to avoid reinventing representations already perfected by these ecosystems.
-- **Layout is optional.** The "editable" profile discards layout; the "faithful" profile leverages layout to preserve positioning.
+`Block` variants and fields are:
+
+- `Heading { level, content }`, `Paragraph { content }`, `Code { lang, text }`, `Math { tex, display }`, `Quote { blocks }`, and `PageBreak {}`.
+- `List { ordered, start, tight, items }`, where each `ListItem` is `{ checked, blocks }`.
+- `Table { caption, columns, head, body }`, with `ColumnSpec { align }` and cells `{ rowspan, colspan, blocks }`.
+- `Figure { asset, caption }`, `Footnote { id, blocks }`, and `Raw { format, text }`.
+
+`Inline` variants are `Text { text }`, `Emph { content }`, `Strong { content }`, `Strikeout { content }`, `Superscript { content }`, `Subscript { content }`, `Code { text }`, `Link { url, title, content }`, `Image { target, alt, title }`, `SoftBreak {}`, `LineBreak {}`, `Math { tex, display }`, `FootnoteRef { id }`, and `Raw { format, text }`.
+
+`AssetRef` is `Asset { id }` (lowercase hexadecimal SHA-256) or `Url { href }`. `AssetStore` is a `BTreeMap` from ids to `{ media_type, bytes }`; JSON encodes `bytes` as base64. `RawFormat` is closed to `html` and `tex`, so IR content cannot carry OOXML.
+
+Prose text, alt text, link text, and metadata strings are normalized to NFC. `Code`, `Math`, `Raw`, and URLs are never rewritten. YAML front matter between `---` lines fills `Metadata` using a maintained, pure-Rust, permissive parser selected and verified in phase 4. Known keys are `title`, `author`/`authors`, `lang`, `date`, `subject`, and `keywords`; values must be scalars or lists of scalars, and `author` accepts either a string or a list. Unknown keys warn, invalid YAML warns and is ignored, and anchors and aliases are rejected. The Pandoc mapper maps `title` to `title`, `authors` to `author`, `language` to `lang`, and `date`, `subject`, and `keywords` to their matching Pandoc metadata keys. `ariad-core` remains I/O-free; the host resolves source assets before invoking writers.
+
+The comrak reader accepts CommonMark and GFM tables, strikethrough, autolinks, task lists, footnotes, dollar math, raw HTML, emoji shortcodes, and YAML front matter. It strips a UTF-8 BOM, normalizes CRLF and CR to LF, and iteratively enforces configured input, nesting, and block limits. Unsupported nodes map to the closest IR block with a warning.
+
+The Pandoc mapper allows link schemes `http`, `https`, `mailto`, and in-document `#` anchors; other links become plain text with a warning. Asset-backed images are embedded as data URLs. An image that remains a URL becomes its alt text with a warning. The mapper may emit its own `openxml` page-break constant, but `RawFormat` never admits `openxml` from IR content.
+
+Layout is optional. The `editable` profile discards it, while the `faithful` profile can use it to preserve positioning. Pandoc AST JSON is the bridge to the writer; Docling mappings arrive with the Docling engine in roadmap 1b.
 
 ### 6.3 Conversion Graph and Planner
 
@@ -275,7 +310,7 @@ IR rules:
 The planner runs Dijkstra's shortest-path algorithm over weighted costs. Decisions are always **explainable**:
 
 ```text
-$ ariad plan paper.pdf --to docx
+$ ashift plan paper.pdf --to docx
 input   paper.pdf · pdf (digital) · 37 pages · 7 tables · 4 formulas
 route   pdf ─docling→ ariad-ir ─pandoc→ docx
 score   fidelity 0.86 · editability 0.95 · estimated 9s · runs locally ✓
@@ -287,7 +322,7 @@ alt     pdf ─pdfium(text)→ ariad-ir ─pandoc→ docx · 6x faster but loses
 | Format | Read | Write | In Browser |
 |---|---|---|---|
 | PDF (digital) | Docling (structure), PDFium (text, images, metadata) | Typst (from IR) | PDFium WASM: inspect, text, images, page render |
-| PDF (scan) | Docling + RapidOCR | — | ✗ (requires cloud or desktop) |
+| PDF (scan) | Docling + Tesseract for `vi`; RapidOCR otherwise; optional PaddleOCR-VL | — | ✗ (requires cloud or desktop) |
 | DOCX | Docling, Pandoc | Pandoc | Pandoc WASM |
 | PPTX, XLSX | Docling | LibreOffice (→ PDF) | ✗ |
 | DOC, XLS, PPT, RTF, ODT, ODS, ODP | LibreOffice → OOXML/ODF → reader | LibreOffice | ✗ |
@@ -303,16 +338,16 @@ Writing DOCX proceeds via **IR → Pandoc AST → Pandoc**. A single adapter out
 
 ## 7. Engine Protocol
 
-Every heavy engine or untrusted data parser runs as an **isolated process** speaking a common protocol: **JSON Lines over stdin/stdout** (`ariad-engine/1`). CLI, Desktop, and Workers invoke engines identically; cloud workers simply layer on job queuing and stricter sandboxing.
+Every heavy engine and untrusted parser except the native readers explicitly exempted in §1 runs as an **isolated process** speaking a common protocol: **JSON Lines over stdin/stdout** (`ariad-engine/1`). CLI, Desktop, and Workers invoke engines identically; cloud workers simply layer on job queuing and stricter sandboxing.
 
 Request: a single JSON line sent to stdin.
 
 ```json
 {"protocol":"ariad-engine/1","job":"job_01JABC","op":"convert",
- "input":{"path":"/work/in/report.pdf","format":"pdf"},
- "output":{"dir":"/work/out","format":"ariad-ir+json"},
- "options":{"ocr":"auto","languages":["vi","en"]},
- "limits":{"max_pages":5000,"timeout_s":600,"max_memory_mb":4096}}
+ "input":{"path":"/work/in/document.ir.json","format":"ariad-ir+json"},
+ "output":{"dir":"/work/out","format":"docx"},
+ "work_dir":"/work/tmp","options":{},
+ "limits":{"max_pages":null,"timeout_s":null,"max_memory_mb":null,"max_nesting_depth":64}}
 ```
 
 Events: multiple JSON lines read from stdout.
@@ -320,17 +355,30 @@ Events: multiple JSON lines read from stdout.
 ```json
 {"type":"progress","stage":"layout","done":12,"total":37}
 {"type":"warning","code":"font_missing","message":"Font 'Cambria Math' substituted with 'STIX Two Math'"}
-{"type":"artifact","path":"/work/out/document.ir.json","format":"ariad-ir+json"}
+{"type":"artifact","path":"/work/out/document.docx","format":"docx"}
 {"type":"result","ok":true,"metrics":{"pages":37,"elapsed_ms":8421}}
 ```
+
+`Request` contains `protocol`, `job`, `op`, `input { path, format }`, `output { dir, format }`, `work_dir`, `options` (a JSON map), and `limits` (`ariad-core::Limits`). `PROTOCOL` is `ariad-engine/1`; Phase 0 supports `op = "convert"`. The `Event` enum is tagged by `type` and has `progress`, `warning`, `artifact`, and `result { ok, metrics?, error? }` variants. Artifact paths stay inside `output.dir`. Error codes are closed to `invalid_request`, `unsupported_route`, `limit_exceeded`, `engine_failure`, `tool_missing`, `tool_version`, and `io`.
 
 Protocol rules:
 
 - Engines **read and write only within the designated workspace** and **open no network connections**.
-- Errors must always return `{"type":"result","ok":false,"error":{"code":"...","message":"..."}}`. A non-zero exit code without a result message is treated as a crash.
-- The schema is located at `schemas/engine-protocol.v1.json`. All engines must pass a shared conformance test suite.
+- Errors return `{"type":"result","ok":false,"error":{"code":"...","message":"..."}}`.
+- `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation; `result` occurs exactly once and last.
+- The schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "draft"`. All engines must pass a shared conformance test suite.
 - `ariad-engine/1` is a draft until the Docling engine passes conformance (roadmap phase 1b); breaking changes are allowed only before that point.
-- PDFium also runs out-of-process: `ariad-host` re-executes its own binary via `ariad __engine pdfium`.
+- PDFium also runs out-of-process: `ariad-host` re-executes its own binary via `ashift __engine pdfium`.
+
+The Pandoc engine is reached through `ashift __engine pandoc`. The job workspace contains `in/`, `out/`, `tmp/`, and `log/`; the request's `work_dir` is `tmp/`. The engine reads the IR, maps it to Pandoc AST JSON, and runs:
+
+```text
+pandoc [+RTS -M{max_memory_mb}M -RTS] --sandbox --log=<workspace>/log/pandoc-log.json -f json -t docx -o <output.dir>/document.docx
+```
+
+The supported Pandoc range is `>= 3.12, < 4`; DOCX goldens assert the shared `PANDOC_GOLDEN_VERSION` constant, set to `3.12`. The `+RTS -M…` arguments are omitted when `max_memory_mb` is unlimited. The AST is written to stdin, stdout is discarded, and stderr is drained with a 64 KiB bound. `TMPDIR`, `TMP`, and `TEMP` point to `work_dir` (`tmp/`). Assets are embedded as `data:` URIs; Pandoc's structured log entries become `warning` events. Pandoc `--sandbox` is a reader/writer guard, not OS isolation.
+
+After Pandoc exits, the host rewrites `docProps/core.xml` `created` and `modified` timestamps to the conversion time, honoring `SOURCE_DATE_EPOCH` for reproducible goldens. Whether an engine may use loopback to contact its own `llama-server` child for `ocr-vlm` remains open; all other engine network access stays disabled.
 
 ### 7.1 Engine Packs
 
@@ -338,10 +386,11 @@ The base installation must remain lightweight. Heavy engines are downloaded on d
 
 | Pack | Contents | Default |
 |---|---|---|
-| `core` | ariad, PDFium, Pandoc, Typst | Included in base install |
-| `docling` | Python 3.14 (python-build-standalone) + uv + Docling + RapidOCR + models | Download on demand |
+| `core` | ashift, PDFium, Pandoc, Typst | Included in base install |
+| `docling` | Python 3.14 (python-build-standalone) + uv + Docling + Tesseract 5.5.3 with `tessdata_best` `vie`/`eng`/`osd` + RapidOCR 3.9.2 and PP-OCRv6 models | Download on demand |
 | `office` | Uses existing system LibreOffice 26.8; guides official installation if absent | Auto-detected |
-| `ocr-extra` | Tesseract + language packs | Download on demand |
+| `ocr-extra` | Additional Tesseract language packs beyond `vie`/`eng`/`osd` | Download on demand |
+| `ocr-vlm` | llama.cpp + PaddleOCR-VL-1.6 GGUF | Opt-in download |
 | `media` | FFmpeg (LGPL), libvips | Later phase |
 
 Each pack includes a manifest specifying version, SHA-256, and a **minisign signature**. `ariad-host` verifies signatures before extracting packages into the application data directory.
@@ -443,6 +492,13 @@ OpenAPI 3.1 generated via utoipa → `packages/sdk` generates the TypeScript SDK
 - **Hosted tier:** Cloudflare R2 (zero egress fees).
 - Storage keys follow `t/{tenant}/{job}/{in|out}/{sha256}`, encrypted at rest (server-side encryption), and governed by automatic expiration lifecycle rules.
 
+### 9.5 Tenancy, Entitlements, and Metering
+
+- Every account owns a workspace (tenant) from day one. A personal account starts with a one-member workspace; object storage keys already include `t/{tenant}`.
+- Resolve limits and quotas from a `plan_entitlements` record keyed by plan, starting with `free`. Handlers never hard-code entitlements; `ariad-core::Limits` is the shape the record fills.
+- `usage_events` is an append-only, idempotent ledger with a unique event key. It records pages, bytes, and engine-seconds per tenant.
+- Introduce a `BillingProvider` adapter only when paid plans launch. The provider remains an open question.
+
 ---
 
 ## 10. Authentication
@@ -476,21 +532,23 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 ### 11.2 Default Limits (Configurable)
 
 | Limit | Cloud | Local |
-|---|---|---|
-| Input size | 2 GB | No hard limit |
-| Page count | 5,000 | 50,000 |
-| Decompressed bytes | 4 GB | 32 GB |
-| Archive depth / entry count | 3 / 10,000 | 5 / 100,000 |
-| Pixels per image | 200 MP | 1 GP |
-| Execution timeout | 10 minutes | Unlimited (cancellable) |
-| RAM / CPU | 4 GB / 4 cores | Host-constrained |
-| Engine network access | Disabled | Disabled |
+|---|---:|---:|
+| `max_input_bytes` | 2 GB | Unlimited |
+| `max_pages` | 5,000 | Unlimited |
+| `timeout_s` | 600 | Unlimited |
+| `max_memory_mb` | 4,096 | Unlimited |
+| `max_asset_bytes` | 50 MB | Unlimited |
+| `max_nesting_depth` | 64 | 64 |
+| `max_blocks` | 1,000,000 | 10,000,000 |
+| `max_front_matter_bytes` | 64 KiB | 64 KiB |
+
+An unlimited value is represented by an absent field or `null` (`None` in Rust); it adds no timeout and no Pandoc `+RTS -M` flag. Local runs remain cancellable: Ctrl-C kills the engine process tree and removes its workspace. The nesting limit stays below comrak's internal list-depth cap of 100.
 
 ### 11.3 Isolation Layers
 
 - **Linux (CLI, worker):** rlimits + **Landlock**, restricting filesystem access and blocking TCP connections (Linux ≥ 6.7) + seccomp.
 - **Cloud:** Worker containers execute under gVisor; read-only root filesystem; workspaces mounted on tmpfs.
-- **macOS / Windows (desktop):** Isolated processes + timeouts + memory caps. Seatbelt (macOS) and Job Objects (Windows) will be introduced in later hardening phases.
+- **macOS / Windows (desktop):** Isolated processes with optional timeout and memory limits. Seatbelt (macOS) and Job Objects (Windows) will be introduced in later hardening phases.
 
 ---
 
@@ -529,7 +587,9 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 - `bench/` generates `capabilities.json`, which is committed to the repository.
 - The planner reads this file; the website's "Quality" page displays metrics directly from it.
 - Every PR modifying an engine re-runs the benchmark suite and **reports score differentials**.
-- Fixtures use only freely distributable documents (public domain, CC-BY, custom generated), with explicit attribution and licensing per document.
+- `cargo test --doc` runs alongside cargo-nextest because nextest does not run doctests.
+- DOCX goldens snapshot each fixture's sorted ZIP entry list and pretty-printed XML parts with insta; they hash template-derived XML parts and media. A shared `PANDOC_GOLDEN_VERSION` is asserted, and `SOURCE_DATE_EPOCH=1700000000` fixes timestamps.
+- Fixtures use only distributable public-domain, CC-BY, or generated documents; exclude CC-BY-SA, GPL test suites, and research-only or non-commercial datasets. `fixtures/manifest.toml` records each file's source and license.
 
 ---
 
@@ -542,20 +602,24 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 | Pandoc | GPL-2.0-or-later | Isolated process (aggregation) | Include license + link to source code |
 | Docling + weights | MIT + Apache-2.0 / CDLA-Permissive-2.0 / MIT | Isolated process | Include notices |
 | RapidOCR / ONNX Runtime | Apache-2.0 / MIT | Bundled in docling pack | Include notices |
+| Tesseract + `tessdata_best` | Apache-2.0 | Isolated process; `vie`/`eng`/`osd` bundled in docling pack | Include notices |
+| llama.cpp | MIT | Isolated process in the opt-in `ocr-vlm` pack | Include notice |
+| PaddleOCR-VL weights | Apache-2.0 | Downloaded in the opt-in `ocr-vlm` pack | Include notice |
 | LibreOffice | MPL-2.0 | Isolated process, not bundled by default | — |
 | Typst | Apache-2.0 | Crate | Include notice |
 | FFmpeg / libvips | LGPL-2.1+ | LGPL build, dynamic linking or process | Include license, permit library replacement |
 | Plus Jakarta Sans | OFL-1.1 | Outlines in logo | — |
 
-- **Excluded:** AGPL-licensed libraries in distributed artifacts, such as PyMuPDF and its dependents like `pdf2docx`. Non-OSI custom licenses (e.g., MinerU's license) are likewise excluded.
+- **Excluded:** AGPL-licensed libraries in distributed artifacts, such as PyMuPDF and its dependents like `pdf2docx`; CC-BY-SA and GPL test-suite fixtures; research-only or non-commercial datasets; and model weights with OpenRAIL-M, custom, non-OSI, or missing licenses.
 - **Automated CI gating:** `cargo-deny` (licenses + security advisories), plus npm and Python license checkers. Every release generates `THIRD_PARTY_LICENSES` and an SBOM.
 
 ---
 
 ## 16. Tooling, CI/CD, and Distribution
 
-- **Task runner:** `just` serves as the sole entry point (`just dev`, `just test`, `just lint`, `just bench`, `just ci`), wrapping pnpm, cargo, and uv underneath.
-- **CI (GitHub Actions):** Matrix builds across Linux / macOS / Windows; Rust caching; runs linting, tests, conformance suites, and license audits; benchmarks run on labeled PRs and nightly schedules.
+- **Repository:** Use the personal account `bavanchun` for the public repository `bavanchun/AriadShift`; no GitHub organization.
+- **Task runner:** `just` is the sole root entry point. Phase 0 recipes are `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, and `ci`, wrapping pnpm, cargo, and uv. `dev` and `bench` arrive with `apps/` and `bench/`.
+- **CI (GitHub Actions):** Run the Linux / macOS / Windows matrix on every push and pull request using `ubuntu-26.04`, `macos-26`, and `windows-2025`. Pin every action to a full commit SHA. CI runs formatting, linting, tests, conformance suites, and license audits; benchmarks run on labeled PRs and nightly schedules.
 - **Dependency updates:** Renovate, grouped by ecosystem, strictly adhering to the LTS policies defined in Section 2.
 - **Release channels:**
 
@@ -576,7 +640,7 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 |---|---|---|
 | **0 · Foundations** | Monorepo, 3-OS CI matrix, IR v0 + schema, engine protocol v1 draft, ≥ 50 document fixtures suite, branding, one end-to-end route (MD → IR → DOCX through the engine protocol) | `just ci` green on Linux, macOS, Windows; the MD → DOCX route passes its golden test |
 | **1a · v0.1 CLI + MCP, core routes** | `convert / inspect / plan / engines / doctor / mcp`; planner over `bench/` scores; routes: MD↔DOCX/HTML/EPUB via IR + Pandoc; cargo-fuzz targets for `ariad-core` readers and limit validation | `capabilities.json` consumed by planner; fuzz targets run in CI; distributed via Homebrew |
-| **1b · v0.2 CLI, heavy routes** | Engine pack mechanism (manifest, SHA-256, minisign verification, `ariad engines install`); `docling` pack; routes: PDF→MD/HTML/JSON/DOCX (incl. OCR for scans), Office→PDF, IR→PDF | Engine protocol v1 frozen after the Docling engine passes conformance; public benchmark report covering PDF routes; signed `docling` pack installs and verifies on 3 platforms; scanned PDF→DOCX succeeds locally |
+| **1b · v0.2 CLI, heavy routes** | Engine pack mechanism (manifest, SHA-256, minisign verification, `ashift engines install`); `docling` pack; routes: PDF→MD/HTML/JSON/DOCX (incl. OCR for scans), Office→PDF, IR→PDF | Engine protocol v1 frozen after the Docling engine passes conformance; public benchmark report covering PDF routes; signed `docling` pack installs and verifies on 3 platforms; scanned PDF→DOCX succeeds locally |
 | **2 · v0.3 Desktop** | Tauri app, engine pack management UI, batch processing, folder watching, deep linking, auto-updates | Signed installers for 3 platforms; base install excludes docling pack |
 | **3 · v0.4 Web Local** | Next.js site, `/app` running WASM (core, Pandoc, PDFium, Typst) + OPFS, format-pair SEO pages, "Open in Desktop" button | In-browser DOCX↔MD↔HTML↔EPUB conversions; Lighthouse score ≥ 90 |
 | **4 · v0.5 Cloud** | `ariad-server` api + worker, pgmq, R2/SeaweedFS, Better Auth, Uppy, SSE, TTL, sandboxing, per-user/IP quotas and rate limits, self-host compose, TS SDK | `docker compose up` executes end-to-end; scanned PDF→DOCX job succeeds in sandbox; quotas enforced before the public cloud opens |
@@ -584,7 +648,7 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 
 This sequence progresses from lowest to highest operational expense. The CLI validates core correctness. The Desktop app establishes differentiation. Web Local incurs zero server costs. Cloud introduces security overhead, hosting expenses, and abuse mitigation, and is therefore tackled last.
 
-Phase 0 ends with one working route rather than an empty scaffold, so the IR and protocol are shaped by a real conversion. The protocol stays a draft until Docling, the first heavy out-of-process engine, has run through it; changing it before then costs nothing. Phase 1 is split so that a usable release ships before the hardest work: 1a proves the IR, planner and engine protocol on lightweight routes, while 1b adds the heavy Python engine, OCR and PDF fidelity. Engine packs land in 1b because the CLI's `engines install` needs them; the desktop only adds a UI on top. Fuzzing starts with 1a because the core readers parse untrusted input from the first release. Quotas ship with the cloud phase because a public cloud without them invites abuse from day one; their limits depend on Open Question 1.
+Phase 0 ends with one working route rather than an empty scaffold, so the IR and protocol are shaped by a real conversion. The protocol stays a draft until Docling, the first heavy out-of-process engine, has run through it; changing it before then costs nothing. Phase 1 is split so that a usable release ships before the hardest work: 1a proves the IR, planner and engine protocol on lightweight routes, while 1b adds the heavy Python engine, OCR and PDF fidelity. Engine packs land in 1b because the CLI's `engines install` needs them; the desktop only adds a UI on top. Fuzzing starts with 1a because the core readers parse untrusted input from the first release. Quotas ship with the cloud phase because a public cloud without them invites abuse from day one; `plan_entitlements` supplies each tenant's limits.
 
 ---
 
@@ -599,7 +663,17 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | UI primitives | shadcn + Base UI | Radix, MUI, Ant | Base UI is the new shadcn default; fully customizable |
 | Writing DOCX/ODT/EPUB | IR → Pandoc AST → Pandoc | Custom `docx-rs`, `pdf2docx` | Single adapter targets multiple formats; avoids AGPL dependency chains |
 | PDF export | Typst | LaTeX, headless Chromium | Fast, embeddable (crate + WASM), Apache-2.0 |
-| OCR | RapidOCR (ONNX) | Full PaddleOCR, EasyOCR | Identical PP-OCR models without heavyweight PaddlePaddle/PyTorch runtimes |
+| OCR | Tesseract for Vietnamese, RapidOCR for other languages, PaddleOCR-VL opt-in | RapidOCR-only, EasyOCR, Surya/Chandra weights | PP-OCRv5/v6 dictionaries lack 88–90 Vietnamese letters in U+1EA0–U+1EF9; Tesseract covers `vi` and mixed `vi`/`en` |
+| Binary name | `ashift` | `as` | GNU binutils already uses `as`; Rust crate names retain `ariad-*` |
+| Markdown reader | comrak 0.55.0 with default features off and shortcodes on | pulldown-cmark; markdown-rs | Active CommonMark/GFM implementation, pure Rust build, and an AST for the core reader |
+| Local limit defaults | Unlimited input, pages, asset bytes, time, and memory; finite nesting, block, and front-matter limits | Generous fixed local input/time/memory caps | Explicit unlimited semantics preserve local use while structural limits remain finite |
+| Tenancy and metering | Per-account workspace, plan-keyed entitlements, append-only usage events; billing adapter later | Per-handler quota constants; billing before paid tiers | Supports a free launch and lets paid plans arrive without changing the limits contract |
+| In-process native readers | Markdown now and HTML later in `ariad-core`, with pure Rust, typed errors, finite depth/block limits, and fuzzing from 1a | Running every native reader out of process | Enables lightweight native routes under a documented, bounded exception to Principle 3 |
+| Python fixture generator | Dev-only uv workspace member at `fixtures/gen/`; dependencies never ship | Shipping fixture-generation dependencies | Reproducible fixture creation without runtime dependencies |
+| IR version policy | `ariad-ir/0` with `schemas/ir.v0.json` through 0.x; freeze `/1` with the protocol in 1b | Starting Phase 0 at `/1` | Allows breaking changes while the foundation is still a draft |
+| DOCX timestamp rewrite | Host rewrites `created` and `modified` after Pandoc, honoring `SOURCE_DATE_EPOCH` | Keeping Pandoc's sandbox epoch-zero timestamps | User-facing documents get conversion-time metadata and golden outputs remain reproducible |
+| Repository publication | Public `bavanchun/AriadShift`; pinned 3-OS CI on pushes and pull requests | Private repository or floating action refs | Matches the accepted public-repository decision and keeps CI actions immutable |
+| Product identifiers | `ariadshift.ariadnev.com`, its `/schemas/` ID base, bundle `com.ariadnev.ariadshift`, and `ariadshift://` | Unrelated domains or bundle identifiers | Keeps web, schema, desktop, and deep-link identities aligned |
 | Desktop | Tauri 2.12 | Electron, Tauri 3 alpha | Lightweight, directly embeds Rust core; avoids unvetted alphas |
 | Desktop Python runtime | python-build-standalone + uv | PyInstaller | Reproducible, minimizes antivirus false positives |
 | Web framework | Next.js 16 LTS | Vite SPA, Astro | Requires SSG/SSR for SEO pages; unifies dashboard and auth in one application |
@@ -614,12 +688,17 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 
 Logos, application icons, and wordmarks are code-generated under `brand/`. Run `pnpm --dir brand build` to regenerate. Design guidelines are documented in `docs/brand/design-direction.md`.
 
+Canonical product identifiers are `https://ariadshift.ariadnev.com` for the site, `https://ariadshift.ariadnev.com/schemas/` as the JSON Schema `$id` base, and `com.ariadnev.ariadshift` as the desktop bundle id. The deep-link scheme remains `ariadshift://`.
+
 ---
 
 ## 20. Open Questions
 
-1. **Cloud business model:** Will there be a free tier, what are its limits, and will paid tiers exist? This determines quota enforcement and whether a billing system is needed.
-2. **CLI command name:** `ariad` (proposed). Avoided `ash` to prevent collision with the `ash` shell.
-3. **Priority OCR languages:** Vietnamese + English? Impacts RapidOCR model selection and packaged Tesseract language packs.
-4. **Domain name and GitHub organization** for the public repository.
+1. ~~**Cloud business model**~~ — resolved: free tier first; paid tiers and billing later. Entitlements and metering are specified in §9.5.
+2. ~~**CLI command name**~~ — resolved: `ashift`; `as` conflicts with GNU binutils `as`.
+3. ~~**Priority OCR languages**~~ — resolved: Vietnamese and English; see §2.4 and §7.1.
+4. ~~**Domain name and GitHub organization**~~ — resolved: `ariadshift.ariadnev.com`; no GitHub organization.
 5. ~~**Public documentation language**~~ — resolved: this document is maintained in English.
+6. **Billing provider:** Which provider should a future `BillingProvider` adapter integrate with when paid tiers launch?
+7. **OCR-VLM loopback:** May an engine connect to its own `llama-server` child over loopback, or must it use an in-process binding?
+8. **OCR-VLM Python runtime:** Should the optional VLM use Transformers on Python 3.14 or a separate Python 3.13 environment?
