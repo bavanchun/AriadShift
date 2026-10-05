@@ -1094,3 +1094,23 @@ tags = []
 phase = "1b"
 routes = ["png->md"]
 companions = []
+
+[[fixture]]
+id = "vn-congbao-42-2020-page-31"
+path = "fixtures/scan/vn-congbao-42-2020-p31.png"
+format = "png"
+media_type = "image/png"
+languages = ["vi"]
+title = "Công báo số 109 + 110, Circular 42/2020/TT-BTTTT, page 31"
+origin = "external"
+source_url = "https://congbao.chinhphu.vn/van-ban/thong-tu-so-42-2020-tt-btttt-32977/34273.htm"
+retrieved = "2026-10-06"
+license = "LicenseRef-VN-IPL-Art15"
+license_basis = "Circular 42/2020/TT-BTTTT, issued 2020-12-31, is an official Vietnamese legal document covered by Article 15(2) of the Vietnamese Intellectual Property Law. The source item is published by the Government Gazette portal; its official PDF is https://congbao.cdnchinhphu.vn/CongBaoCP/VanBan/2020/12/32977/34273-1-2021109-11042-2020-tt-btttt.pdf. This is PDF page 2 (printed Gazette page 31), rasterized from a digital-born PDF, not an original paper scan, using Poppler pdftoppm 26.08.0 at 200 dpi."
+attribution = "Ministry of Information and Communications; Government of Vietnam"
+sha256 = "ff21ef768ecee5bd5ed008dfba40f5f71f29fc7ccf7d24ab1067eee847c34117"
+pages = 1
+tags = ["digital-pdf", "numbered-articles"]
+phase = "1b"
+routes = ["png->md"]
+companions = []
