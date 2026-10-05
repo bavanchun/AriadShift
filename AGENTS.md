@@ -11,6 +11,7 @@ The product code has not been scaffolded yet. The only buildable part is `brand/
 - Do not add a crate, app, service or dependency that contradicts ARCHITECTURE.md. If a change is warranted, update ARCHITECTURE.md, including its "Decision Log" table, in the same change.
 - Conversion logic belongs in `ariad-core` or `ariad-host` only. Surfaces (CLI, desktop, web, server) never carry their own conversion code.
 - Third-party engines run out of process through the engine protocol. Never link them into the host.
+- The user-facing CLI binary is `ashift`; Rust crate names retain the `ariad-*` prefix.
 
 ## Versions
 
@@ -24,7 +25,9 @@ The product code has not been scaffolded yet. The only buildable part is `brand/
 
 - Distributed artifacts must not contain AGPL or non-OSI code. This rules out PyMuPDF, `pdf2docx` and MinerU.
 - GPL tools such as Pandoc are invoked as separate processes, never linked.
-- `fixtures/` takes only freely distributable documents, each with its source and license recorded. Never commit a user's or private document.
+- Fixtures exclude CC-BY-SA documents, GPL test suites, and research-only or non-commercial datasets. Record each fixture's source and license in `fixtures/manifest.toml`.
+- Model weights follow the same licensing rules as code; exclude OpenRAIL-M, custom or missing licenses.
+- Never commit a user's or private document.
 
 ## Brand assets
 
@@ -42,7 +45,9 @@ The product code has not been scaffolded yet. The only buildable part is `brand/
 
 ## Git
 
-- Commit or push only when the user asks.
+- Follow [docs/git-workflow.md](docs/git-workflow.md) for the full Git workflow.
+- Commit only when the user asks; an authorized plan run counts as that request for commits within the plan's scope.
+- Pushes and GitHub settings require the user's explicit go-ahead.
 - Stage explicit paths. Never run `git add -A` or `git add .` at the repository root.
 - Use conventional commits (`feat(brand): …`, `docs: …`) with no AI or tool references.
 - Never commit `node_modules/`, `.env*`, credentials or private keys.
