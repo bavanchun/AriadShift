@@ -1,4 +1,42 @@
 [[fixture]]
+id = "vi-garden-route-pdf"
+path = "fixtures/pdf/vi-garden-route.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/pdf.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and distributed with the project."
+attribution = "AriadShift contributors"
+sha256 = "2c1a8d2c1621be7fd4cde17414ab6aac07647d713727b242b08ba3e82f4e00e4"
+pages = 1
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "en-map-room-pdf"
+path = "fixtures/pdf/en-map-room.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/pdf.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and distributed with the project."
+attribution = "AriadShift contributors"
+sha256 = "3f9ebdc5c24b5d09ab708ca9632fbb75489449d359665adf7e723d3ca3ba834f"
+pages = 1
+tags = []
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
 id = "vi-long-headings"
 path = "fixtures/md/vi-long-headings.md"
 format = "md"
