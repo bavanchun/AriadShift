@@ -1,0 +1,16 @@
+* text=auto eol=lf
+fixtures/** -text
+fixtures/gen/**/*.py text eol=lf
+fixtures/gen/**/*.md text eol=lf
+fixtures/gen/**/*.toml text eol=lf
+fixtures/manifest.toml text eol=lf
+*.snap text eol=lf
+*.docx binary
+*.png binary
+*.jpg binary
+*.pdf binary
+*.zip binary
+*.djvu binary
+*.ttf binary
+*.otf binary
+*.woff2 binary
