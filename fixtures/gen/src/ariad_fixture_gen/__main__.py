@@ -5,19 +5,26 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ariad_fixture_gen import docx, html, markdown, pdf
+from ariad_fixture_gen import docx, html, image, markdown, pdf, scan
 from ariad_fixture_gen.manifest import update_generated_hashes
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--only", choices=("md", "html", "docx", "pdf"), default="md")
+    generators = {
+        "md": markdown.generate,
+        "html": html.generate,
+        "docx": docx.generate,
+        "pdf": pdf.generate,
+        "scan": scan.generate,
+        "image": image.generate,
+    }
+    parser.add_argument("--only", choices=(*generators, "all"), default="all")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[4]
-    outputs = {"md": markdown.generate, "html": html.generate, "docx": docx.generate, "pdf": pdf.generate}[
-        args.only
-    ](root)
+    selected = generators if args.only == "all" else {args.only: generators[args.only]}
+    outputs = {path: content for generator in selected.values() for path, content in generator(root).items()}
     for relative_path, content in sorted(outputs.items()):
         output_path = root / relative_path
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -25,7 +32,8 @@ def main() -> None:
             output_path.write_bytes(content)
 
     update_generated_hashes(root, set(outputs))
-    print(f"Generated {len(outputs)} files for {args.only} fixtures and updated their manifest hashes.")
+    families = ", ".join(selected)
+    print(f"Generated {len(outputs)} files for {families} fixtures and updated their manifest hashes.")
 
 
 if __name__ == "__main__":

@@ -791,7 +791,7 @@ routes = ["docx->md"]
 companions = []
 
 [[fixture]]
-id = "en-footnotes"
+id = "en-footnotes-docx"
 path = "fixtures/docx/en-footnotes.docx"
 format = "docx"
 media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -998,4 +998,99 @@ pages = 1
 tags = ["scan", "multi-column"]
 phase = "1b"
 routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "generated-vi-garden-300dpi"
+path = "fixtures/scan/vi-garden-300dpi.png"
+format = "png"
+media_type = "image/png"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/scan.py"
+license = "Apache-2.0"
+license_basis = "Original Vietnamese text authored for AriadShift, rendered by Typst at 300 dpi, and deterministically degraded with Pillow. The exact rendered text is a companion."
+attribution = "AriadShift contributors"
+sha256 = "1aac4670f56191e2e4565f611ecb915b6ce51c884ab41bb2913a830ce1474350"
+pages = 1
+tags = ["scan", "skew"]
+phase = "1b"
+routes = ["png->md"]
+companions = [{ path = "fixtures/scan/truth/vi-garden-300dpi.txt", sha256 = "25ef501a392f2950782ae8d0d29f6552b083f2b5461700ef9f7bf15713fe17a7" }]
+
+[[fixture]]
+id = "generated-vi-river-200dpi"
+path = "fixtures/scan/vi-river-200dpi.png"
+format = "png"
+media_type = "image/png"
+languages = ["vi"]
+title = "Đường ven sông"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/scan.py"
+license = "Apache-2.0"
+license_basis = "Original Vietnamese text authored for AriadShift, rendered by Typst at 200 dpi, and deterministically degraded with Pillow. The exact rendered text is a companion."
+attribution = "AriadShift contributors"
+sha256 = "8ed2e636aee0f55b3d1b210d1c9967c4b9a7ef6792241ce222ce5ee0139c4552"
+pages = 1
+tags = ["scan", "low-dpi", "skew"]
+phase = "1b"
+routes = ["png->md"]
+companions = [{ path = "fixtures/scan/truth/vi-river-200dpi.txt", sha256 = "3aee74d6d3650da6a9dfdfe54ae06f6e04e93cd4890681f3aeea89719fe7e55d" }]
+
+[[fixture]]
+id = "generated-en-map-room-150dpi"
+path = "fixtures/scan/en-map-room-150dpi.png"
+format = "png"
+media_type = "image/png"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/scan.py"
+license = "Apache-2.0"
+license_basis = "Original English text authored for AriadShift, rendered by Typst at 150 dpi, and deterministically degraded with Pillow. The exact rendered text is a companion."
+attribution = "AriadShift contributors"
+sha256 = "72659e10a57708a36284d1fca4f41d4cb9e69362b875b7c7be788ad4fb27fa0e"
+pages = 1
+tags = ["scan", "low-dpi", "skew"]
+phase = "1b"
+routes = ["png->md"]
+companions = [{ path = "fixtures/scan/truth/en-map-room-150dpi.txt", sha256 = "badbb175d86c54e88ada4d5ce26e15d09146ec7397a7dccf0640d513bb078cd5" }]
+
+[[fixture]]
+id = "generated-vi-garden-page-image"
+path = "fixtures/image/vi-garden-page.png"
+format = "png"
+media_type = "image/png"
+languages = ["vi"]
+title = "Vietnamese garden page"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/image.py"
+license = "Apache-2.0"
+license_basis = "Original Vietnamese text authored for AriadShift and rendered as a PNG page by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "c2e896e6177101de75e33ec008cd2f785ce8f4a69002e43f5d93dbd76bfa040e"
+pages = 1
+tags = []
+phase = "1b"
+routes = ["png->md"]
+companions = []
+
+[[fixture]]
+id = "generated-en-repair-receipt-image"
+path = "fixtures/image/en-repair-receipt.png"
+format = "png"
+media_type = "image/png"
+languages = ["en"]
+title = "Neighborhood repair café receipt form"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/image.py"
+license = "Apache-2.0"
+license_basis = "Original fictional English receipt form composed for AriadShift and rendered by the fixture generator; it contains no personal data."
+attribution = "AriadShift contributors"
+sha256 = "45de9ee24f48b08f2cda1faf57bbe163411dd7db5a0a499e34a3275fddb696b3"
+pages = 1
+tags = []
+phase = "1b"
+routes = ["png->md"]
 companions = []
