@@ -1,0 +1,8 @@
+[default]
+locale = "en"
+
+[default.extend-words]
+# Correct names and acronyms in the public planning and research files.
+Ba = "Ba"
+Nam = "Nam"
+OER = "OER"
