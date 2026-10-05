@@ -368,7 +368,7 @@ File ─stream→ OPFS ─→ Web Worker ─→ ariad-wasm / pandoc.wasm / PDFiu
 - Plugins used: `deep-link`, `updater`, `single-instance`, `dialog`.
 - Desktop-specific features: batch conversion, **folder watching** (`notify` crate), background queues, offline mode, and engine pack installations.
 - **Web → Desktop bridge:** The web app triggers `ariadshift://open?route=pdf-docx&profile=editable`. Because browsers cannot pass arbitrary file handles to native apps, the desktop app opens a file picker with the preselected route. A localhost server is intentionally avoided, as Chrome 142+ prompts for Local Network Access permissions, degrading user experience.
-- macOS 26 icon: Liquid Glass icon authored in Icon Composer (`.icon`), compiled via `actool`, with `.icns` as fallback. Other platforms use `tauri icon` with `brand/png/ariadshift-app-icon-1024.png`.
+- macOS 26 icon: Liquid Glass icon authored in Icon Composer (`.icon`) from the layers in `brand/icon-composer/`, compiled via `actool`, with `.icns` as fallback. Other platforms use `tauri icon` with `brand/png/ariadshift-app-icon-1024.png`.
 - Operating system integration in later phases: macOS Finder Quick Actions, Windows 11 Explorer context menus (requiring `IExplorerCommand` and sparse packaging), and Linux Nautilus/Dolphin integration.
 
 ### 8.3 Cloud
