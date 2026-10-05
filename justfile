@@ -27,6 +27,9 @@ js:
 py:
     uv lock --check
 
+fixtures:
+    uv run --package ariad-fixture-gen python -m ariad_fixture_gen
+
 ci: lint wasm test deny js py
 
 pandoc:

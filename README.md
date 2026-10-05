@@ -44,6 +44,12 @@ Run the repository quality gate with:
 just ci
 ```
 
+Regenerate the deterministic fixture corpus and refresh its hashes with:
+
+```sh
+just fixtures
+```
+
 `just pandoc` downloads Pandoc 3.12 and verifies its archive checksum. Run it
 before working on tasks that use Pandoc.
 
