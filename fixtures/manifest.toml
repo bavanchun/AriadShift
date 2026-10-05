@@ -919,3 +919,83 @@ tags = []
 phase = "1a"
 routes = ["docx->md"]
 companions = []
+
+[[fixture]]
+id = "pd-vi-tuc-ngu-page-55"
+path = "fixtures/scan/vi-tuc-ngu-p55.jpg"
+format = "jpeg"
+media_type = "image/jpeg"
+languages = ["vi"]
+title = "Tục ngữ, cổ ngữ, gia ngôn, page 55"
+origin = "external"
+source_url = "https://commons.wikimedia.org/wiki/File:T%E1%BB%A5c_ng%E1%BB%AF,_c%E1%BB%95_ng%E1%BB%AF,_gia_ng%C3%B4n.djvu"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Wikimedia Commons marks this 1897 work public domain. Author Huỳnh Tịnh Của (1834–1907) died before 1976, and the edition predates 1931. This page image is rendered from the National Library of Vietnam source scan."
+attribution = "Huỳnh Tịnh Của; National Library of Vietnam scan via Wikimedia Commons"
+sha256 = "19ae47575115bfef887a4e36e80f213cdbabe58d1d5b11b90c2db25f54f76569"
+pages = 1
+tags = ["scan"]
+phase = "1b"
+routes = ["jpeg->md"]
+companions = []
+
+[[fixture]]
+id = "pd-vi-u-tinh-luc-page-12"
+path = "fixtures/scan/vi-u-tinh-luc-p12.jpg"
+format = "jpeg"
+media_type = "image/jpeg"
+languages = ["vi"]
+title = "U Tình Lục, page 12"
+origin = "external"
+source_url = "https://commons.wikimedia.org/wiki/File:UTinhLuc.djvu"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Wikimedia Commons marks this work public domain. This 1913 edition, 'U Tình Lục, nouvelle édition', was published by Imprimerie F.-H. Schneider; author Hồ Biểu Chánh (1885–1958) died before 1976, and the edition predates 1931. Page 12 is rendered from the Internet Archive source scan."
+attribution = "Hồ Biểu Chánh; Imprimerie F.-H. Schneider edition; source scan via Internet Archive and Wikimedia Commons"
+sha256 = "3dd5267a0c1a5460fc76895b881deba8bfa13f9f810fd32404ed083975a6a928"
+pages = 1
+tags = ["scan"]
+phase = "1b"
+routes = ["jpeg->md"]
+companions = []
+
+[[fixture]]
+id = "pd-en-alice-page-3"
+path = "fixtures/scan/en-alice-p3.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "Alice's Adventures in Wonderland, page 3"
+origin = "external"
+source_url = "https://archive.org/details/alicesadventures00carr_10"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Internet Archive catalogs this edition as published in 1905 by the Macmillan Company. Lewis Carroll (1832–1898) died before 1976, and the edition predates 1931. This is the scanned printed page 3 of chapter I from the Internet Archive item."
+attribution = "Lewis Carroll; scan digitized by Internet Archive"
+sha256 = "a94c88386277168d3ae1fc24cff44130b84ac916bd4cfd2cd29b4807b762f406"
+pages = 1
+tags = ["scan"]
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
+id = "pd-en-harpers-weekly-1904-page-10"
+path = "fixtures/scan/en-harpers-weekly-p10.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "Harper's Weekly, December 10, 1904, page 10"
+origin = "external"
+source_url = "https://archive.org/details/sim_harpers-weekly_1904-12-10_48_2503"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "The Internet Archive catalogs this Harper's Weekly issue as out of copyright and dated 1904-12-10. The retained page prints the title '$30,000 Bequest' and byline Mark Twain (1835–1910), with an illustration by Peter Newell (1862–1924); both creators died before 1976 and the issue predates 1931. The planned Library of Congress scan was replaced because loc.gov and chroniclingamerica.loc.gov blocked automated downloads from this host."
+attribution = "Mark Twain; illustration by Peter Newell; Harper's Weekly scan via Internet Archive"
+sha256 = "a1dff59524c637804efdeb59db78f9cf3ce090343018e8325d0ea5e6c5e45273"
+pages = 1
+tags = ["scan", "multi-column"]
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
