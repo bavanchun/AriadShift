@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, macos-26, windows-2025]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: just@1.58.0,cargo-nextest@0.9.146,cargo-deny@0.20.2,typos@1.50.3
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.2
+        with:
+          version: 12.9.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      - name: Install Python
+        run: uv python install 3.14
+
+      - name: Cache Pandoc archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/
+          key: pandoc-${{ runner.os }}-${{ hashFiles('scripts/install-pandoc.sh') }}
+
+      - name: Install Pandoc
+        run: just pandoc
+
+      - name: Set native Pandoc path
+        run: |
+          pandoc_path="${GITHUB_WORKSPACE}/.tools/pandoc/bin/pandoc"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            pandoc_path="$(cygpath -m "${pandoc_path}.exe")"
+          fi
+          printf 'ASHIFT_PANDOC=%s\n' "$pandoc_path" >> "$GITHUB_ENV"
+
+      - name: Verify Pandoc installation
+        run: '"$ASHIFT_PANDOC" --version'
+
+      - name: Run repository checks
+        run: just ci
