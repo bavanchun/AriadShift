@@ -4,7 +4,7 @@ Rules for AI agents working in this repository. Design authority is [ARCHITECTUR
 
 ## Current state
 
-The product code has not been scaffolded yet. The only buildable part is `brand/`. Do not report tests or CI as passing: no test suite or `justfile` exists yet.
+Document conversion is not implemented yet; the CLI currently supports only `ashift --version`. Run `just ci` as the local quality gate. Run `just pandoc` before working on tasks that need Pandoc.
 
 ## Architecture changes
 
