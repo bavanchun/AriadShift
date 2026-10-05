@@ -17,6 +17,82 @@ routes = ["md->docx"]
 companions = []
 
 [[fixture]]
+id = "pd-vi-truyen-kieu"
+path = "fixtures/md/pd-vi-truyen-kieu.md"
+format = "md"
+media_type = "text/markdown"
+languages = ["vi"]
+title = "Truyện Kiều: Tài sắc hai chị em Thúy-Kiều"
+origin = "external"
+source_url = "https://vi.wikisource.org/wiki/T%E1%BA%ADp_tin:Quoc_van_trich_diem_1930.pdf"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Excerpt transcribed directly from p. 77 of the 1930 fourth edition of Quốc văn trích diễm (Hanoi: Nhà in Lê Văn Tân), sourced from the National Library of Vietnam scan. The edition predates 1931; Nguyễn Du (1765–1820) and compiler Dương Quảng Hàm (1898–1946) died before 1976. No modern transcription or edition was used."
+attribution = "Nguyễn Du; edition compiled by Dương Quảng Hàm; scan from the National Library of Vietnam"
+sha256 = "2a1cb0de04182a451f2146a02a8516ac24d1ed24339563f407cc226c2f696640"
+tags = []
+phase = "0"
+routes = ["md->docx"]
+companions = []
+
+[[fixture]]
+id = "pd-vi-prose"
+path = "fixtures/md/pd-vi-prose.md"
+format = "md"
+media_type = "text/markdown"
+languages = ["vi"]
+title = "Vũ trung tùy bút: Học thuật lúc Lê mạt"
+origin = "external"
+source_url = "https://vi.wikisource.org/wiki/T%E1%BA%ADp_tin:Quoc_van_trich_diem_1930.pdf"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Excerpt by Phạm Đình Hổ (1768–1839) from Vũ trung tùy bút, transcribed directly from p. 169 of the 1930 fourth edition of Quốc văn trích diễm (Hanoi: Nhà in Lê Văn Tân), compiled by Dương Quảng Hàm (1898–1946). The edition predates 1931; both authors died before 1976. No modern transcription or edition was used."
+attribution = "Phạm Đình Hổ; edition compiled by Dương Quảng Hàm; scan from the National Library of Vietnam"
+sha256 = "dcbc2995e560414b72c0184885ce083e8615a2510a27108fd5cc55fd35790cb1"
+tags = []
+phase = "0"
+routes = ["md->docx"]
+companions = []
+
+[[fixture]]
+id = "pd-en-alice"
+path = "fixtures/md/pd-en-alice.md"
+format = "md"
+media_type = "text/markdown"
+languages = ["en"]
+title = "Alice's Adventures in Wonderland"
+origin = "external"
+source_url = "https://www.gutenberg.org/ebooks/11"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Excerpt from Alice's Adventures in Wonderland by Lewis Carroll (1832–1898), first published in 1865. The source identifies the work as public domain in the USA. Project Gutenberg header, footer, license text and trademark wording were removed from fixture content."
+attribution = "Lewis Carroll"
+sha256 = "2efba7b93571d006441cc99362c6433f84871a8ff827fda325d52eeb8d56501a"
+tags = []
+phase = "0"
+routes = ["md->docx"]
+companions = []
+
+[[fixture]]
+id = "pd-en-tom-sawyer"
+path = "fixtures/md/pd-en-tom-sawyer.md"
+format = "md"
+media_type = "text/markdown"
+languages = ["en"]
+title = "The Adventures of Tom Sawyer"
+origin = "external"
+source_url = "https://www.gutenberg.org/ebooks/74"
+retrieved = "2026-10-06"
+license = "CC-PDM-1.0"
+license_basis = "Excerpt from The Adventures of Tom Sawyer by Mark Twain (1835–1910), first published in 1876. The source identifies the work as public domain in the USA. Project Gutenberg header, footer, license text and trademark wording were removed from fixture content."
+attribution = "Mark Twain"
+sha256 = "4e297f11b09c4c4a241df324164a0ed46bd3e19c8d09de3b3e4e6f9883946163"
+tags = []
+phase = "0"
+routes = ["md->docx"]
+companions = []
+
+[[fixture]]
 id = "en-deep-list"
 path = "fixtures/md/en-deep-list.md"
 format = "md"
