@@ -723,3 +723,41 @@ tags = []
 phase = "1a"
 routes = ["html->md"]
 companions = []
+
+[[fixture]]
+id = "vn-tt-28-2012-conformity"
+path = "fixtures/docx/vn-tt-28-2012-conformity.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["vi"]
+title = "Circular 28/2012/TT-BKHCN: conformity assessment"
+origin = "external"
+source_url = "https://datafiles.chinhphu.vn/cpp/files/vbpq/2013/03/tt-28.docx"
+retrieved = "2026-10-06"
+license = "LicenseRef-VN-IPL-Art15"
+license_basis = "Final Circular 28/2012/TT-BKHCN issued by the Ministry of Science and Technology on 28 December 2012. The Government's legal-document portal provides this original DOCX. Normative legal documents are excluded from copyright protection by Article 15(2) of the Vietnamese Intellectual Property Law."
+attribution = "Ministry of Science and Technology"
+sha256 = "2426629b9498ec67b66564f0bf824307eb88b92a98c5f8193d35cf1d065bdf5d"
+tags = []
+phase = "1a"
+routes = ["docx->md"]
+companions = []
+
+[[fixture]]
+id = "vn-tt-49-2012-teacher-quality"
+path = "fixtures/docx/vn-tt-49-2012-teacher-quality.docx"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["vi"]
+title = "Circular 49/2012/TT-BGDĐT: teacher training quality"
+origin = "external"
+source_url = "https://datafiles.chinhphu.vn/cpp/files/vbpq/2013/03/tt-49.docx"
+retrieved = "2026-10-06"
+license = "LicenseRef-VN-IPL-Art15"
+license_basis = "Final Circular 49/2012/TT-BGDĐT issued by the Ministry of Education and Training on 12 December 2012. The Government's legal-document portal provides this original DOCX. Normative legal documents are excluded from copyright protection by Article 15(2) of the Vietnamese Intellectual Property Law."
+attribution = "Ministry of Education and Training"
+sha256 = "29b933cff6abb9dea8316973612986b94fc858430409db3696e3416fbbf457ca"
+tags = []
+phase = "1a"
+routes = ["docx->md"]
+companions = []
