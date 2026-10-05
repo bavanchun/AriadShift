@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Fixture suite (60 documents + manifest)"
-status: pending
+status: completed
 priority: P1
 effort: "12h"
 dependencies: [2]
@@ -144,17 +144,17 @@ The checker is written in Rust and shared with phase 6's golden test: `crates/ar
 
 ## Todo
 
-- [ ] Generator package + lock (versions and licenses verified)
-- [ ] Vietnamese font coverage confirmed (or OFL fonts vendored as binary)
-- [ ] Original vi/en source texts
-- [ ] 24 generated Markdown incl. NFD/CRLF twins, front matter, emoji, image, 64-level nesting
-- [ ] 4 PD Markdown with edition-level license basis
-- [ ] 6 HTML, 8 DOCX, 8 PDF, 8 scans (+ truth), 2 images
-- [ ] Every external item's rights checked and recorded (GAO pages checked)
-- [ ] `fixtures/manifest.toml` complete (60 entries, companions listed)
-- [ ] Rust checker + support module + dev-deps
-- [ ] Generator byte-identical on a second run
-- [ ] CI green on 3 OSes
+- [x] Generator package + lock (versions and licenses verified)
+- [x] Vietnamese font coverage confirmed (or OFL fonts vendored as binary)
+- [x] Original vi/en source texts
+- [x] 24 generated Markdown incl. NFD/CRLF twins, front matter, emoji, image, 64-level nesting
+- [x] 4 PD Markdown with edition-level license basis
+- [x] 6 HTML, 8 DOCX, 8 PDF, 8 scans (+ truth), 2 images
+- [x] Every external item's rights checked and recorded (GAO pages checked)
+- [x] `fixtures/manifest.toml` complete (60 entries, companions listed)
+- [x] Rust checker + support module + dev-deps
+- [x] Generator byte-identical on a second run
+- [x] CI green on 3 OSes
 
 ## Test scenario matrix
 
