@@ -47,6 +47,12 @@ pub fn from_ir(document: &Document) -> MapOutput {
             ));
         }
     }
+    if !document.furniture.is_empty() {
+        mapper.warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            "document furniture is not supported by pandoc writer and was dropped",
+        ));
+    }
 
     MapOutput {
         pandoc: Pandoc {
@@ -138,8 +144,14 @@ impl Mapper<'_> {
                 columns,
                 head,
                 body,
-                footnotes: _,
+                footnotes,
             } => {
+                if !footnotes.is_empty() {
+                    self.warnings.push(Warning::new(
+                        WarningCode::UnsupportedNode,
+                        "table footnotes are not supported by pandoc writer and were dropped",
+                    ));
+                }
                 let caption = caption
                     .as_deref()
                     .map(|caption| (None, vec![Block::Plain(self.map_inlines(caption))]))
@@ -219,20 +231,25 @@ impl Mapper<'_> {
     }
 
     fn map_table_row(&mut self, row: &[crate::ir::TableCell]) -> ast::Row {
-        (
-            empty_attr(),
-            row.iter()
-                .map(|cell| {
-                    (
-                        empty_attr(),
-                        Alignment::AlignDefault,
-                        u64::from(cell.rowspan),
-                        u64::from(cell.colspan),
-                        self.map_blocks(&cell.blocks),
-                    )
-                })
-                .collect(),
-        )
+        let cells = row
+            .iter()
+            .map(|cell| {
+                if cell.header.is_some() {
+                    self.warnings.push(Warning::new(
+                        WarningCode::UnsupportedNode,
+                        "table cell header attribute is not supported by pandoc writer and was dropped",
+                    ));
+                }
+                (
+                    empty_attr(),
+                    Alignment::AlignDefault,
+                    u64::from(cell.rowspan),
+                    u64::from(cell.colspan),
+                    self.map_blocks(&cell.blocks),
+                )
+            })
+            .collect();
+        (empty_attr(), cells)
     }
 
     fn map_inlines(&mut self, inlines: &[IrInline]) -> Vec<Inline> {
@@ -924,5 +941,71 @@ mod tests {
             serde_json::to_string(&output.pandoc).unwrap(),
             r#"{"pandoc-api-version":[1,23],"meta":{},"blocks":[{"t":"Para","c":[{"t":"Str","c":"Hello"},{"t":"Space"},{"t":"Str","c":"world"},{"t":"Link","c":[["",[],[]],[{"t":"Str","c":"site"}],["https://example.test",""]]}]}]}"#
         );
+    }
+
+    #[test]
+    fn emits_unsupported_node_warnings_for_furniture_table_footnotes_and_cell_header() {
+        use crate::ir::{Alignment, ColumnSpec, TableCell};
+
+        // 1. Furniture
+        let doc_with_furniture = Document {
+            furniture: vec![IrBlock::Paragraph {
+                content: vec![IrInline::Text {
+                    text: "Header text".to_owned(),
+                }],
+            }],
+            ..Document::default()
+        };
+        let out_furniture = from_ir(&doc_with_furniture);
+        assert!(out_furniture.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode && w.message.contains("document furniture")
+        }));
+
+        // 2. Table footnotes
+        let doc_with_table_footnotes = Document {
+            body: vec![IrBlock::Table {
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: Vec::new(),
+                body: Vec::new(),
+                footnotes: vec![IrInline::Text {
+                    text: "Table note".to_owned(),
+                }],
+            }],
+            ..Document::default()
+        };
+        let out_table_footnotes = from_ir(&doc_with_table_footnotes);
+        assert!(out_table_footnotes.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode && w.message.contains("table footnotes")
+        }));
+
+        // 3. Cell header
+        let doc_with_cell_header = Document {
+            body: vec![IrBlock::Table {
+                caption: None,
+                columns: vec![ColumnSpec {
+                    align: Alignment::Default,
+                }],
+                head: Vec::new(),
+                body: vec![vec![TableCell {
+                    rowspan: 1,
+                    colspan: 1,
+                    header: Some(true),
+                    blocks: vec![IrBlock::Paragraph {
+                        content: vec![IrInline::Text {
+                            text: "Row header".to_owned(),
+                        }],
+                    }],
+                }]],
+                footnotes: Vec::new(),
+            }],
+            ..Document::default()
+        };
+        let out_cell_header = from_ir(&doc_with_cell_header);
+        assert!(out_cell_header.warnings.iter().any(|w| {
+            w.code == WarningCode::UnsupportedNode && w.message.contains("table cell header")
+        }));
     }
 }

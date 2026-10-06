@@ -217,16 +217,10 @@ fn runner_clears_environment_and_preserves_allowlist() {
     );
     #[cfg(windows)]
     {
-        if std::env::var_os("USERPROFILE").is_some() {
+        if std::env::var_os("SYSTEMROOT").is_some() {
             assert!(
-                metrics.contains_key("USERPROFILE"),
-                "runner must pass USERPROFILE on Windows"
-            );
-        }
-        if std::env::var_os("APPDATA").is_some() {
-            assert!(
-                metrics.contains_key("APPDATA"),
-                "runner must pass APPDATA on Windows"
+                metrics.contains_key("SYSTEMROOT"),
+                "runner must pass SYSTEMROOT on Windows"
             );
         }
     }

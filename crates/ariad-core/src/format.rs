@@ -14,6 +14,8 @@ pub enum Format {
     Epub,
     #[serde(rename = "pdf")]
     Pdf,
+    #[serde(rename = "png")]
+    Png,
     #[serde(rename = "ariad-ir+json")]
     AriadIrJson,
     #[serde(rename = "pandoc+json")]
@@ -30,6 +32,7 @@ impl Format {
             Self::Docx => "docx",
             Self::Epub => "epub",
             Self::Pdf => "pdf",
+            Self::Png => "png",
             Self::AriadIrJson => "ariad-ir+json",
             Self::PandocJson => "pandoc+json",
         }
@@ -44,6 +47,7 @@ impl Format {
             Self::Docx => &["docx"],
             Self::Epub => &["epub"],
             Self::Pdf => &["pdf"],
+            Self::Png => &["png"],
             Self::AriadIrJson | Self::PandocJson => &["json"],
         }
     }
@@ -57,6 +61,7 @@ impl Format {
             Self::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             Self::Epub => "application/epub+zip",
             Self::Pdf => "application/pdf",
+            Self::Png => "image/png",
             Self::AriadIrJson | Self::PandocJson => "application/json",
         }
     }
@@ -81,6 +86,8 @@ impl Format {
             Some(Self::Epub)
         } else if extension.eq_ignore_ascii_case("pdf") {
             Some(Self::Pdf)
+        } else if extension.eq_ignore_ascii_case("png") {
+            Some(Self::Png)
         } else if extension.eq_ignore_ascii_case("json") {
             Some(Self::AriadIrJson)
         } else {
@@ -103,6 +110,8 @@ mod tests {
         assert_eq!(Format::from_extension(".epub"), Some(Format::Epub));
         assert_eq!(Format::from_extension("PDF"), Some(Format::Pdf));
         assert_eq!(Format::from_extension(".pdf"), Some(Format::Pdf));
+        assert_eq!(Format::from_extension("PNG"), Some(Format::Png));
+        assert_eq!(Format::from_extension(".png"), Some(Format::Png));
         assert_eq!(Format::from_extension("JSON"), Some(Format::AriadIrJson));
         assert_eq!(Format::from_extension("unknown"), None);
     }
@@ -115,6 +124,7 @@ mod tests {
             Format::Docx,
             Format::Epub,
             Format::Pdf,
+            Format::Png,
             Format::AriadIrJson,
             Format::PandocJson,
         ];

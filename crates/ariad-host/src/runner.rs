@@ -300,12 +300,6 @@ where
             if let Some(system_root) = std::env::var_os("SYSTEMROOT") {
                 command.env("SYSTEMROOT", system_root);
             }
-            if let Some(user_profile) = std::env::var_os("USERPROFILE") {
-                command.env("USERPROFILE", user_profile);
-            }
-            if let Some(app_data) = std::env::var_os("APPDATA") {
-                command.env("APPDATA", app_data);
-            }
         }
     });
     #[cfg(unix)]

@@ -23,7 +23,6 @@ pub enum Request {
         work_dir: String,
         #[serde(default)]
         options: BTreeMap<String, Value>,
-        #[serde(default)]
         limits: Limits,
     },
     Describe {
@@ -287,5 +286,18 @@ mod tests {
     #[test]
     fn error_codes_are_closed() {
         assert!(serde_json::from_str::<ErrorCode>("\"unknown\"").is_err());
+    }
+
+    #[test]
+    fn convert_request_requires_limits() {
+        let json = json!({
+            "op": "convert",
+            "protocol": PROTOCOL,
+            "job": "job-1",
+            "input": {"path": "/in", "format": "ariad-ir+json"},
+            "output": {"dir": "/out", "format": "docx"},
+            "work_dir": "/tmp",
+        });
+        assert!(serde_json::from_value::<Request>(json).is_err());
     }
 }

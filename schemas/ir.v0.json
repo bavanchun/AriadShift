@@ -470,6 +470,7 @@
         "docx",
         "epub",
         "pdf",
+        "png",
         "ariad-ir+json",
         "pandoc+json"
       ]
