@@ -271,15 +271,19 @@ The IR serves as the "lingua franca" across readers and writers. Designed in thr
 
 The versioned schema is `ariad-ir/0` at `schemas/ir.v0.json` during 0.x; breaking changes are allowed. It freezes as `ariad-ir/1` together with `ariad-engine/1` in roadmap 1b.
 
-Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants.
+Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants. Format variants serialize with a single wire identity matching `Format::id()` (for example `ariad-ir+json` and `pandoc+json`).
 
-`Document` has `{ version, meta, body, assets, layout, provenance }`. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
+New IR fields follow the rule: **omit when empty** (`#[serde(default, skip_serializing_if = ...)]`). Existing fields keep their current `null` serialization. Every snapshot remains byte-identical.
+
+`Document` has `{ version, meta, body, assets, layout, provenance, furniture }`. `furniture: Vec<Block>` carries running page headers and footers outside `body` and is omitted when empty. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
+
+`LayoutIndex` specifies page geometry plus per-block bounding boxes with a top-left origin: `{ pages, blocks }`, where each page has `{ page_no, width, height }` and blocks are keyed by a stable block path (such as `"body/0"`) to `{ page_no, bbox: { left, top, right, bottom } }`. It is omitted when empty.
 
 `Block` variants and fields are:
 
 - `Heading { level, content }`, `Paragraph { content }`, `Code { lang, text }`, `Math { tex, display }`, `Quote { blocks }`, and `PageBreak {}`.
 - `List { ordered, start, tight, items }`, where each `ListItem` is `{ checked, blocks }`.
-- `Table { caption, columns, head, body }`, with `ColumnSpec { align }` and cells `{ rowspan, colspan, blocks }`.
+- `Table { caption, columns, head, body, footnotes }`, with `ColumnSpec { align }`, cells `{ rowspan, colspan, header, blocks }`, and `footnotes: Vec<Inline>` (omitted when empty). `TableCell.header: Option<bool>` models row headers / stub columns and is omitted when None.
 - `Figure { asset, caption }`, `Footnote { id, blocks }`, and `Raw { format, text }`.
 
 `Inline` variants are `Text { text }`, `Emph { content }`, `Strong { content }`, `Strikeout { content }`, `Superscript { content }`, `Subscript { content }`, `Code { text }`, `Link { url, title, content }`, `Image { target, alt, title }`, `SoftBreak {}`, `LineBreak {}`, `Math { tex, display }`, `FootnoteRef { id }`, and `Raw { format, text }`.
@@ -290,7 +294,7 @@ Prose text, alt text, link text, and metadata strings are normalized to NFC. `Co
 
 The comrak reader accepts CommonMark and GFM tables, strikethrough, autolinks, task lists, footnotes, dollar math, raw HTML, emoji shortcodes, and YAML front matter. It strips a UTF-8 BOM, normalizes CRLF and CR to LF, and iteratively enforces configured input, nesting, and block limits. Unsupported nodes map to the closest IR block with a warning.
 
-The Pandoc mapper allows link schemes `http`, `https`, `mailto`, and in-document `#` anchors; other links become plain text with a warning. Asset-backed images are embedded as data URLs. An image that remains a URL becomes its alt text with a warning. The mapper may emit its own `openxml` page-break constant, but `RawFormat` never admits `openxml` from IR content.
+The shared link policy in `ariad_core::links` enforces an allow-list for link schemes (`http`, `https`, `mailto`, and in-document `#` anchors); other links become plain text with a warning. Asset-backed images are embedded as data URLs. An image that remains a URL becomes its alt text with a warning. The mapper may emit its own `openxml` page-break constant, but `RawFormat` never admits `openxml` from IR content.
 
 Layout is optional. The `editable` profile discards it, while the `faithful` profile can use it to preserve positioning. Pandoc AST JSON is the bridge to the writer; Docling mappings arrive with the Docling engine in roadmap 1b.
 
@@ -340,8 +344,9 @@ Writing DOCX proceeds via **IR → Pandoc AST → Pandoc**. A single adapter out
 
 Every heavy engine and untrusted parser except the native readers explicitly exempted in §1 runs as an **isolated process** speaking a common protocol: **JSON Lines over stdin/stdout** (`ariad-engine/1`). CLI, Desktop, and Workers invoke engines identically; cloud workers simply layer on job queuing and stricter sandboxing.
 
-Request: a single JSON line sent to stdin.
+Requests are op-tagged single JSON lines sent to stdin:
 
+1. **`op = "convert"`**: runs document conversion.
 ```json
 {"protocol":"ariad-engine/1","job":"job_01JABC","op":"convert",
  "input":{"path":"/work/in/document.ir.json","format":"ariad-ir+json"},
@@ -350,27 +355,50 @@ Request: a single JSON line sent to stdin.
  "limits":{"max_pages":null,"timeout_s":null,"max_memory_mb":null,"max_nesting_depth":64}}
 ```
 
+2. **`op = "describe"`**: queries engine capability, version, and tool health with no workspace:
+```json
+{"protocol":"ariad-engine/1","job":"job_01JXYZ","op":"describe"}
+```
+
 Events: multiple JSON lines read from stdout.
 
 ```json
-{"type":"progress","stage":"layout","done":12,"total":37}
+{"type":"capabilities","engine":"pandoc","version":"0.1.0","tool":{"name":"pandoc","version":"3.12","status":"found"},"license":"GPL-2.0-or-later","routes":[{"input":"ariad-ir+json","output":"docx"}],"enforces_memory_limit":true}
+{"type":"progress","stage":"convert","done":12,"total":37}
 {"type":"warning","code":"font_missing","message":"Font 'Cambria Math' substituted with 'STIX Two Math'"}
 {"type":"artifact","path":"/work/out/document.docx","format":"docx"}
 {"type":"result","ok":true,"metrics":{"pages":37,"elapsed_ms":8421}}
 ```
 
-`Request` contains `protocol`, `job`, `op`, `input { path, format }`, `output { dir, format }`, `work_dir`, `options` (a JSON map), and `limits` (`ariad-core::Limits`). `PROTOCOL` is `ariad-engine/1`; Phase 0 supports `op = "convert"`. The `Event` enum is tagged by `type` and has `progress`, `warning`, `artifact`, and `result { ok, metrics?, error? }` variants. Artifact paths stay inside `output.dir`. Error codes are closed to `invalid_request`, `unsupported_route`, `limit_exceeded`, `engine_failure`, `tool_missing`, `tool_version`, and `io`.
+`Request` is an op-tagged enum:
+- `Request::Convert { protocol, job, input { path, format }, output { dir, format }, work_dir, options, limits }`.
+- `Request::Describe { protocol, job }`.
+
+The `Event` enum is tagged by `type`:
+- `capabilities { engine, version, tool { name, version, status }, license, routes, enforces_memory_limit, models? }`: reports engine metadata and health without running conversions. `tool.status` is strictly `found`, `missing`, or `wrong_version`; it never exposes file paths to protect privacy. `routes` lists supported `(input, output)` format pairs using registry format IDs.
+- `progress { stage, done?, total? }`: progress unit is pages (`done: u64`, `total: u64`), and canonical stage name is `"convert"`.
+- `warning { code, message }`: non-fatal conversion notices.
+- `artifact { path, format }`: produced outputs; paths stay inside `output.dir`.
+- `result { ok, metrics?, error? }`: occurs exactly once and last.
+
+Error codes are closed to `invalid_request`, `unsupported_route`, `limit_exceeded`, `engine_failure`, `tool_missing`, `tool_version`, and `io`.
 
 Protocol rules:
 
 - Engines **read and write only within the designated workspace** and **open no network connections**.
-- Errors return `{"type":"result","ok":false,"error":{"code":"...","message":"..."}}`.
-- `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation; `result` occurs exactly once and last.
+- **Stdout discipline:** stdout carries NDJSON protocol lines only; all diagnostic logging belongs on stderr. The host runner treats any non-JSON line on stdout as a protocol violation. Adapters redirect native library stdout (fd 1) to stderr (fd 2) and emit protocol events only over a duplicated protocol descriptor.
+- **Engine configuration contract:** engine settings travel in request `options` (e.g. `artifacts_path`, `tessdata_path`). The runner clears the environment (`env_clear()`) and inherits only allow-listed variables: `PATH`, `TMPDIR`/`TMP`/`TEMP` (pointing to `work_dir` on convert), `ASHIFT_PANDOC`, and on Windows `SYSTEMROOT`, `USERPROFILE`, and `APPDATA`. Adapters set engine-specific flags (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `TESSDATA_PREFIX`) from request `options`.
+- **Memory rule (no host limiter in 1a):** `max_memory_mb` is enforced by the engine (e.g. Pandoc `+RTS -M` or Python adapter `resource.setrlimit(RLIMIT_DATA)`). An engine that cannot enforce it reports `enforces_memory_limit: false` in `describe`. The host refuses any request setting `max_memory_mb` for that engine with `limit_exceeded` rather than silently ignoring it. Host-side generic limiting is deferred to 1b because Linux `RLIMIT_AS` causes aborts in GHC/PyTorch runtimes and safe in-process `pre_exec` rlimits conflict with `#![forbid(unsafe_code)]`.
+- `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation.
+- Receiving `capabilities` during a convert request is a protocol violation.
 - The schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "draft"`. All engines must pass a shared conformance test suite.
 - `ariad-engine/1` is a draft until the Docling engine passes conformance (roadmap phase 1b); breaking changes are allowed only before that point.
-- PDFium also runs out-of-process: `ariad-host` re-executes its own binary via `ashift __engine pdfium`.
 
-The Pandoc engine is reached through `ashift __engine pandoc`. The job workspace contains `in/`, `out/`, `tmp/`, and `log/`; the request's `work_dir` is `tmp/`. The engine reads the IR, maps it to Pandoc AST JSON, and runs:
+Decided extensions (implemented in 1b):
+- **Structured warning events:** `Event::Warning { code, message }` in protocol to surface non-fatal font/layout substitutions cleanly without scraping stderr.
+- **Stateful session mode:** `Request::Session { session_id, ... }` gated by `describe` to preserve warm Python/PyTorch processes for desktop and daemon modes (1.56x measured throughput speedup).
+
+The Pandoc engine is reached through `ashift __engine pandoc`. For `describe`, it reports tool status, version, and the `("ariad-ir+json", "docx")` route. For `convert`, the job workspace contains `in/`, `out/`, `tmp/`, and `log/`; the request's `work_dir` is `tmp/`. The engine reads the IR, maps it to Pandoc AST JSON, and runs:
 
 ```text
 pandoc [+RTS -M{max_memory_mb}M -RTS] --sandbox --log=<workspace>/log/pandoc-log.json -f json -t docx -o <output.dir>/document.docx
@@ -541,8 +569,17 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 | `max_nesting_depth` | 64 | 64 |
 | `max_blocks` | 1,000,000 | 10,000,000 |
 | `max_front_matter_bytes` | 64 KiB | 64 KiB |
+| `max_archive_entries` | 10,000 | 20,000 |
+| `max_decompressed_bytes` | 2 GiB | 4 GiB |
+| `max_ir_json_bytes` | 3 GiB | 6 GiB |
 
-An unlimited value is represented by an absent field or `null` (`None` in Rust); it adds no timeout and no Pandoc `+RTS -M` flag. Local runs remain cancellable: Ctrl-C (and Ctrl-Break on Windows) kills the engine process tree and removes its workspace. The nesting limit stays below comrak's internal list-depth cap of 100.
+An unlimited value is represented by an absent field or `null` (`None` in Rust); it adds no timeout and no Pandoc `+RTS -M` flag. Local runs remain cancellable: Ctrl-C (and Ctrl-Break on Windows) kills the engine process tree and removes its workspace. The nesting limit stays below comrak's internal list-depth cap of 100. Unlike workload limits, archive and IR JSON limits are finite locally on purpose to guard against bombs.
+
+IR JSON reading (`ariad_host::ir_io::read`) is bounded to prevent resource exhaustion and stack overflows:
+1. **Byte cap:** `Read::take(max_ir_json_bytes + 1)` enforces the byte limit; reaching the cap is a typed `limit_exceeded` error, not a truncation.
+2. **Depth pre-scan:** an I/O-free, token-level pre-scan (`ariad_core::json_depth::prescan_json_depth`) counts JSON `[` and `{` depth outside string literals in a single pass without recursion. The budget is derived from `max_nesting_depth` via `json_depth_budget_for_nesting(depth) = (depth * 8) + 64`. Rejecting excessive depth before deserializing ensures dropping invalid deep trees never overflows the call stack.
+3. **Deep deserialization:** `serde_stacker` deserializes on a grown stack.
+4. **Block count check:** `Document::block_count` asserts total blocks (body and furniture) stay within `max_blocks`. Every failure maps to a typed `limit_exceeded` error.
 
 ### 11.3 Isolation Layers
 
@@ -696,6 +733,8 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Sanitizer fuzzing | A nightly scheduled CI job on a date-pinned Rust nightly, running cargo-fuzz with AddressSanitizer on the in-process parsers; never used for builds or releases | No sanitizer runs | Parse-path dependencies contain `unsafe`; this is the only exception to the no-pre-release-toolchain policy, and AGENTS.md "Versions" names it. |
 | crates.io | Publish `ariad-core`, `ariad-host` and `ariad-cli` from a CI job in the `release` environment, in dependency order, with a scoped token | Not publishing (binstall `--git` only) | Gives `cargo binstall ariad-cli` and `cargo install ariad-cli`; the crate names keep the `ariad-*` prefix. |
 | winget identifier | `VChun.AriadShift`, moniker `ashift` | `bavanchun.AriadShift`, `AriadShift.AriadShift` | Matches the copyright holder in LICENSE and NOTICE. |
+| Engine memory limits | Engine-enforced in 0.x; host limiter in 1b | Generic host-side limiter via `RLIMIT_AS` or `pre_exec` in 1a | `RLIMIT_AS` causes hard PyTorch/GHC static TLS crashes below 6 GiB; `pre_exec` violates `#![forbid(unsafe_code)]` in `ariad-host`. The host checks `enforces_memory_limit` and refuses with `limit_exceeded`. |
+| Format wire id | Equals the registry id (`Format::id()`, e.g. `ariad-ir+json`) | snake_case variant identifiers (e.g. `ariad_ir_json`) | Unifies format identity across CLI, IR, engine protocol, and capabilities schema with zero drift. |
 
 ---
 
