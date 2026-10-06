@@ -7,6 +7,7 @@ pub mod convert;
 pub mod docx_meta;
 pub mod engines;
 pub mod ir_io;
+pub mod media;
 pub mod pandoc_bin;
 pub mod runner;
 pub mod workspace;

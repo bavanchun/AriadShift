@@ -419,6 +419,14 @@ The supported Pandoc range is `>= 3.12, < 4`; DOCX goldens assert the shared `PA
 
 After Pandoc exits, the host rewrites `docProps/core.xml` `created` and `modified` timestamps to the conversion time, honoring `SOURCE_DATE_EPOCH` for reproducible goldens. Whether an engine may use loopback to contact its own `llama-server` child for `ocr-vlm` remains open; all other engine network access stays disabled.
 
+For reader conversions (`docx` or `epub` to `ariad-ir+json`), the engine runs:
+
+```text
+pandoc +RTS -M{cap}M -RTS --sandbox --log=<workspace>/log/pandoc-log.json -f <docx|epub> -t json --extract-media=<work_dir>/media <input_path>
+```
+
+For archive inputs (DOCX, EPUB), the engine always bounds Pandoc memory usage with `+RTS -M<cap>M -RTS`. If `limits.max_memory_mb` is set, `<cap>` is `max_memory_mb`. Otherwise, `<cap>` defaults to `(limits.max_decompressed_bytes / (1024 * 1024)).max(512)` in megabytes (e.g. 4096 MB under local limits and 2048 MB under cloud limits), ensuring that archive reader conversions are memory-bounded even when `max_memory_mb` is omitted. Stdout is captured with a byte cap of `max_ir_json_bytes` and pre-scanned for JSON depth before deserializing the Pandoc AST. The AST is mapped to IR v0, media files in `<work_dir>/media` referenced by the document are verified within the directory without following symlinks and hashed into `AssetStore`, and the output document is written to `<output.dir>/document.ir.json`.
+
 ### 7.1 Engine Packs
 
 The base installation must remain lightweight. Heavy engines are downloaded on demand:
@@ -560,7 +568,7 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 
 | Threat | Example | Mitigation |
 |---|---|---|
-| Decompression bomb | 10 KB OOXML/ZIP expands to 100 GB | Stream-level byte counting; limits on total decompressed bytes, entry count, recursion depth |
+| Decompression bomb | 10 KB OOXML/ZIP expands to 100 GB | Copy before inspect (TOCTOU guard); central directory preflight; stream-level byte counting with `take(limit+1)`; entry count and decompressed byte caps; Pandoc archive reader runs bounded by `+RTS -M<cap>` derived from `max_decompressed_bytes` |
 | Structural bomb | 2,000,000-page PDF, 100k × 100k image | Pre-inspection via PDFium before processing; limits on pages, pixels, and object counts |
 | Embedded code | LibreOffice macros, JavaScript in PDF | LibreOffice: maximum macro security, per-process user profiles (`-env:UserInstallation`); non-V8/non-XFA PDFium builds |
 | SSRF / local file inclusion | Remote images in HTML, XXE in OOXML, `\input` in LaTeX | Pandoc `--sandbox`; zero engine network access; Landlock restricts filesystem access to workspace |
