@@ -34,6 +34,43 @@ impl Default for Document {
     }
 }
 
+impl Document {
+    /// Recursively counts all blocks in the document.
+    #[must_use]
+    pub fn block_count(&self) -> usize {
+        count_blocks(&self.body)
+    }
+}
+
+/// Iteratively counts all blocks in a slice, including nested blocks.
+#[must_use]
+pub fn count_blocks(blocks: &[Block]) -> usize {
+    let mut count = 0;
+    let mut stack: Vec<&Block> = blocks.iter().collect();
+    while let Some(block) = stack.pop() {
+        count += 1;
+        match block {
+            Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+                stack.extend(blocks);
+            }
+            Block::List { items, .. } => {
+                for item in items {
+                    stack.extend(&item.blocks);
+                }
+            }
+            Block::Table { head, body, .. } => {
+                for row in head.iter().chain(body.iter()) {
+                    for cell in row {
+                        stack.extend(&cell.blocks);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    count
+}
+
 fn default_ir_version() -> String {
     IR_VERSION.to_owned()
 }

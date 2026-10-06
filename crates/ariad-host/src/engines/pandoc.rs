@@ -55,6 +55,10 @@ impl EngineFailure {
             "Pandoc could not convert the document.",
         )
     }
+
+    const fn limit_exceeded() -> Self {
+        Self::new(ErrorCode::LimitExceeded, "A resource limit was exceeded.")
+    }
 }
 
 #[derive(Deserialize)]
@@ -114,7 +118,13 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
     let workspace = validate_request(&request)?;
     let input = File::open(&request.input.path).map_err(|_| EngineFailure::io())?;
     let document =
-        ir_io::read(BufReader::new(input)).map_err(|_| EngineFailure::invalid_request())?;
+        ir_io::read(BufReader::new(input), &request.limits).map_err(|err| match err {
+            ir_io::ReadError::ByteLimitExceeded { .. }
+            | ir_io::ReadError::DepthExceeded(_)
+            | ir_io::ReadError::BlockLimitExceeded { .. } => EngineFailure::limit_exceeded(),
+            ir_io::ReadError::Io(_) => EngineFailure::io(),
+            ir_io::ReadError::Json(_) => EngineFailure::invalid_request(),
+        })?;
     let mapped = from_ir(&document);
 
     for warning in mapped.warnings {
