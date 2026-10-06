@@ -1441,3 +1441,55 @@ fn foster_parenting_repeated_table_div_parses_in_bounded_time() {
         "foster parenting parse took too long: {elapsed:?}"
     );
 }
+
+#[test]
+fn orphan_li_dd_nesting_depth_enforced() {
+    let html_65 = "<li><dd>".repeat(65);
+    let res_65 = read(html_65.as_bytes(), &Limits::default());
+    assert_eq!(res_65, Err(ReadError::NestingTooDeep { limit: 64 }));
+
+    let html_64 = "<li><dd>".repeat(64);
+    let res_64 = read(html_64.as_bytes(), &Limits::default());
+    assert!(res_64.is_ok(), "64 levels of orphan li/dd should succeed");
+}
+
+#[test]
+fn orphan_li_dt_nesting_depth_enforced() {
+    let html_65 = "<li><dt>".repeat(65);
+    let res_65 = read(html_65.as_bytes(), &Limits::default());
+    assert_eq!(res_65, Err(ReadError::NestingTooDeep { limit: 64 }));
+
+    let html_64 = "<li><dt>".repeat(64);
+    let res_64 = read(html_64.as_bytes(), &Limits::default());
+    assert!(res_64.is_ok(), "64 levels of orphan li/dt should succeed");
+}
+
+#[test]
+fn orphan_li_section_nesting_depth_enforced() {
+    let html_65 = "<li><section>".repeat(65);
+    let res_65 = read(html_65.as_bytes(), &Limits::default());
+    assert_eq!(res_65, Err(ReadError::NestingTooDeep { limit: 64 }));
+
+    let html_64 = "<li><section>".repeat(64);
+    let res_64 = read(html_64.as_bytes(), &Limits::default());
+    assert!(
+        res_64.is_ok(),
+        "64 levels of orphan li/section should succeed"
+    );
+}
+
+#[test]
+fn image_title_nfc_normalized() {
+    let html = "<img title=\"e\u{301}\" alt=\"e\u{301}\" src=\"a.png\">";
+    let output = read(html.as_bytes(), &Limits::default()).expect("html should parse");
+    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[0] {
+        if let ariad_core::ir::Inline::Image { title, alt, .. } = &content[0] {
+            assert_eq!(title.as_deref(), Some("é"));
+            assert_eq!(alt.as_str(), "é");
+        } else {
+            panic!("expected image inline");
+        }
+    } else {
+        panic!("expected paragraph block");
+    }
+}
