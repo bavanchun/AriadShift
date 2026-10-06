@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod assets;
+pub mod docx_meta;
 pub mod ir_io;
 pub mod pandoc_bin;
 pub mod runner;
