@@ -8,6 +8,7 @@ pub mod json_depth;
 pub mod limits;
 pub mod links;
 pub mod pandoc;
+pub mod planner;
 pub mod protocol;
 pub mod reader;
 pub mod warning;
