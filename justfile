@@ -8,14 +8,14 @@ fmt:
 
 lint:
     cargo fmt --all --check
-    cargo clippy --workspace --all-targets
+    cargo clippy --workspace --all-targets --features ariad-host/test-probe
     typos
 
 wasm:
     cargo check -p ariad-core --target wasm32-unknown-unknown
 
 test:
-    cargo nextest run --workspace
+    cargo nextest run --workspace --features ariad-host/test-probe
     cargo test --workspace --doc
 
 deny:
