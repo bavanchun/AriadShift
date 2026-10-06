@@ -45,7 +45,7 @@ fn package_snapshot(package: &Package) -> String {
     snapshot.push_str("\nTemplate and media SHA-256:\n");
     for (name, bytes) in package {
         if is_hashed_part(name) {
-            snapshot.push_str(&hex::encode(Sha256::digest(bytes)));
+            snapshot.push_str(&hash_hashed_part(name, bytes));
             snapshot.push_str("  ");
             snapshot.push_str(name);
             snapshot.push('\n');
@@ -64,10 +64,24 @@ fn is_text_xml_part(name: &str) -> bool {
 }
 
 fn is_hashed_part(name: &str) -> bool {
+    is_template_xml_part(name) || name.starts_with("word/media/")
+}
+
+fn is_template_xml_part(name: &str) -> bool {
     matches!(
         name,
         "word/styles.xml" | "word/theme/theme1.xml" | "word/fontTable.xml" | "word/settings.xml"
-    ) || name.starts_with("word/media/")
+    )
+}
+
+fn hash_hashed_part(name: &str, bytes: &[u8]) -> String {
+    if is_template_xml_part(name) {
+        // Windows Pandoc packages these template XML parts with CRLF line endings.
+        let xml = std::str::from_utf8(bytes).expect("template XML is UTF-8");
+        hex::encode(Sha256::digest(xml.replace("\r\n", "\n").as_bytes()))
+    } else {
+        hex::encode(Sha256::digest(bytes))
+    }
 }
 
 fn pretty_xml(bytes: &[u8]) -> String {
@@ -95,6 +109,32 @@ fn xml_text<'a>(package: &'a Package, name: &str) -> &'a str {
             .unwrap_or_else(|| panic!("missing DOCX part {name}")),
     )
     .expect("DOCX XML is UTF-8")
+}
+
+#[test]
+fn template_xml_hash_ignores_crlf_line_endings() {
+    let template_parts = [
+        "word/styles.xml",
+        "word/theme/theme1.xml",
+        "word/fontTable.xml",
+        "word/settings.xml",
+    ];
+    let lf = "<?xml version=\"1.0\"?>\n<w:template/>\n";
+    let crlf = lf.replace('\n', "\r\n");
+
+    for name in template_parts {
+        assert_eq!(
+            hash_hashed_part(name, lf.as_bytes()),
+            hash_hashed_part(name, crlf.as_bytes()),
+            "template hash should ignore CRLF line endings for {name}"
+        );
+    }
+
+    assert_ne!(
+        hash_hashed_part("word/media/image1.png", lf.as_bytes()),
+        hash_hashed_part("word/media/image1.png", crlf.as_bytes()),
+        "media hashes must continue to use raw bytes"
+    );
 }
 
 fn assert_external_relationships_are_safe(package: &Package, fixture_id: &str) {
