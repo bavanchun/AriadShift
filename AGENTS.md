@@ -15,7 +15,7 @@ The CLI converts Markdown (`.md`/`.markdown`) to DOCX with `ashift convert`. Run
 
 ## Versions
 
-- Use the latest LTS where a channel exists, otherwise the latest stable release. Never use alpha, beta or RC builds.
+- Use the latest LTS where a channel exists, otherwise the latest stable release. Never use alpha, beta or RC builds. A date-pinned Rust nightly toolchain is the sole exception, used only by the scheduled sanitizer fuzz job.
 - Verify a version against its registry (npm, crates.io, PyPI, GitHub Releases, endoflife.date) before pinning it. Do not pin from memory.
 - Pin exact versions through lockfiles and commit the lockfile with the manifest.
 - Package managers: `pnpm` for JS, `uv` for Python, `cargo` for Rust. Do not use npm, yarn or pip.
