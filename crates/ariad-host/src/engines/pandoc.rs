@@ -13,7 +13,10 @@ use std::{
 use ariad_core::{
     limits::Limits,
     pandoc::from_ir,
-    protocol::{EngineError, ErrorCode, Event, Input, Output, PROTOCOL, Request},
+    protocol::{
+        EngineError, ErrorCode, Event, Input, Output, PROTOCOL, Request, RouteCapability,
+        ToolAvailability, ToolStatus,
+    },
 };
 use serde::Deserialize;
 
@@ -203,7 +206,48 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
             .map_err(|_| EngineFailure::io())?;
             Ok(())
         }
-        Request::Describe { .. } => Err(EngineFailure::unsupported_route()),
+        Request::Describe { protocol, job: _ } => {
+            if protocol != PROTOCOL {
+                return Err(EngineFailure::invalid_request());
+            }
+            let (status, version) = match pandoc_bin::locate() {
+                Ok(binary) => (ToolAvailability::Found, Some(binary.version)),
+                Err(pandoc_bin::PandocBinaryError::UnsupportedVersion) => {
+                    (ToolAvailability::WrongVersion, None)
+                }
+                Err(pandoc_bin::PandocBinaryError::Missing) => (ToolAvailability::Missing, None),
+            };
+            emit(
+                output,
+                Event::Capabilities {
+                    engine: "pandoc".to_owned(),
+                    version: env!("CARGO_PKG_VERSION").to_owned(),
+                    tool: ToolStatus {
+                        name: "pandoc".to_owned(),
+                        version,
+                        status,
+                    },
+                    license: "GPL-2.0-or-later".to_owned(),
+                    routes: vec![RouteCapability {
+                        input: "ariad-ir+json".to_owned(),
+                        output: "docx".to_owned(),
+                    }],
+                    enforces_memory_limit: true,
+                    models: None,
+                },
+            )
+            .map_err(|_| EngineFailure::io())?;
+            emit(
+                output,
+                Event::Result {
+                    ok: true,
+                    metrics: None,
+                    error: None,
+                },
+            )
+            .map_err(|_| EngineFailure::io())?;
+            Ok(())
+        }
     }
 }
 

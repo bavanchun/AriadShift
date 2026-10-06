@@ -46,6 +46,54 @@
         {
           "type": "object",
           "properties": {
+            "enforces_memory_limit": {
+              "type": "boolean"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "license": {
+              "type": "string"
+            },
+            "models": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RouteCapability"
+              }
+            },
+            "tool": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "type": {
+              "type": "string",
+              "const": "capabilities"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "engine",
+            "version",
+            "tool",
+            "license",
+            "routes",
+            "enforces_memory_limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
             "done": {
               "type": [
                 "integer",
@@ -333,6 +381,53 @@
             "job"
           ]
         }
+      ]
+    },
+    "RouteCapability": {
+      "description": "A supported conversion route reported by an engine.",
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ]
+    },
+    "ToolAvailability": {
+      "description": "Availability of the underlying external tool executed by an engine.",
+      "type": "string",
+      "enum": [
+        "found",
+        "missing",
+        "wrong_version"
+      ]
+    },
+    "ToolStatus": {
+      "description": "Discovery status of an engine's underlying external executable or runtime.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ToolAvailability"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "status"
       ]
     }
   }

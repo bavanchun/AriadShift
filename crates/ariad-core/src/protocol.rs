@@ -80,6 +80,31 @@ pub struct EngineError {
     pub message: String,
 }
 
+/// Availability of the underlying external tool executed by an engine.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolAvailability {
+    Found,
+    Missing,
+    WrongVersion,
+}
+
+/// Discovery status of an engine's underlying external executable or runtime.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolStatus {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub status: ToolAvailability,
+}
+
+/// A supported conversion route reported by an engine.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RouteCapability {
+    pub input: String,
+    pub output: String,
+}
+
 /// Either direction of one JSONL protocol message.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -92,6 +117,16 @@ pub enum Message {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    Capabilities {
+        engine: String,
+        version: String,
+        tool: ToolStatus,
+        license: String,
+        routes: Vec<RouteCapability>,
+        enforces_memory_limit: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        models: Option<Vec<String>>,
+    },
     Progress {
         stage: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -191,6 +226,27 @@ mod tests {
             assert_eq!(encoded, example);
             assert!(matches!(message, Message::Event(_)));
         }
+
+        let cap_example = json!({
+            "type": "capabilities",
+            "engine": "pandoc",
+            "version": "0.1.0",
+            "tool": {
+                "name": "pandoc",
+                "version": "3.12",
+                "status": "found"
+            },
+            "license": "GPL-2.0-or-later",
+            "routes": [{"input":"ariad-ir+json","output":"docx"}],
+            "enforces_memory_limit": true
+        });
+        let cap_event: Event =
+            serde_json::from_value(cap_example.clone()).expect("capabilities deserializes");
+        let cap_message: Message =
+            serde_json::from_value(cap_example.clone()).expect("message deserializes");
+        let cap_encoded = serde_json::to_value(cap_event).expect("capabilities serializes");
+        assert_eq!(cap_encoded, cap_example);
+        assert!(matches!(cap_message, Message::Event(_)));
 
         let error_event = Event::Result {
             ok: false,

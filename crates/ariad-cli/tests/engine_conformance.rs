@@ -158,3 +158,48 @@ fn engine_rejects_invalid_wrong_protocol_and_missing_input_requests() {
     assert_eq!(events.last().unwrap()["ok"], false);
     assert_eq!(events.last().unwrap()["error"]["code"], "io");
 }
+
+#[test]
+fn engine_answers_describe_request_without_workspace() {
+    let describe_request = Request::Describe {
+        protocol: PROTOCOL.to_owned(),
+        job: "describe-test".to_owned(),
+    };
+    let events = validate_stdout(&run_engine(&describe_request));
+    assert_eq!(events.len(), 2);
+
+    let capabilities = &events[0];
+    assert_eq!(capabilities["type"], "capabilities");
+    assert_eq!(capabilities["engine"], "pandoc");
+    assert!(capabilities["version"].is_string());
+    assert_eq!(capabilities["tool"]["name"], "pandoc");
+    assert_eq!(capabilities["tool"]["status"], "found");
+    assert!(capabilities["tool"]["version"].is_string());
+    // Crucial security invariant: never expose executable file paths.
+    assert!(capabilities["tool"].get("path").is_none());
+    let serialized_tool = serde_json::to_string(&capabilities["tool"]).unwrap();
+    assert!(!serialized_tool.contains('/'));
+    assert!(!serialized_tool.contains('\\'));
+
+    assert_eq!(capabilities["license"], "GPL-2.0-or-later");
+    assert_eq!(capabilities["enforces_memory_limit"], true);
+    let routes = capabilities["routes"].as_array().expect("routes array");
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0]["input"], "ariad-ir+json");
+    assert_eq!(routes[0]["output"], "docx");
+
+    let result = &events[1];
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["ok"], true);
+}
+
+#[test]
+fn engine_rejects_describe_with_wrong_protocol() {
+    let describe_request = Request::Describe {
+        protocol: "ariad-engine/999".to_owned(),
+        job: "describe-bad-proto".to_owned(),
+    };
+    let events = validate_stdout(&run_engine(&describe_request));
+    assert_eq!(events.last().unwrap()["ok"], false);
+    assert_eq!(events.last().unwrap()["error"]["code"], "invalid_request");
+}
