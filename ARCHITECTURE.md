@@ -637,13 +637,22 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 | Structural metrics | `bench/` | Text CER/WER, heading tree distance, TEDS for tables, reading order |
 | Visual regression | Typst/LibreOffice → PDF → PDFium raster → SSIM | "faithful" profile routes |
 | Conformance | `schemas/engine-protocol.v1.json` | Protocol compliance across all engines |
-| Fuzzing | cargo-fuzz 0.13.2 | Core readers, limit validation (stable Rust with `-s none`, Linux CI only) |
+| Fuzzing | cargo-fuzz 0.13.2 | Core readers, Pandoc AST mapper, IR JSON, limit validation (stable Rust with `-s none` in CI, date-pinned nightly ASan) |
 | E2E | Playwright (web), WebDriver (Tauri) | Primary user journeys |
 
 - Bench lives in `bench/` as a uv workspace member: jiwer 4.0.0 (CER/WER), rapidfuzz, apted 1.0.3, and our own TEDS. It generates `capabilities.json`, which is committed to the repository.
 - The planner reads this file; the website's "Quality" page displays metrics directly from it.
 - Every PR modifying an engine re-runs the benchmark suite and **reports score differentials**.
-- Fuzzing runs via cargo-fuzz 0.13.2 on stable with `-s none`, Linux CI only; the `fuzz/` crate is excluded from the Cargo workspace and never distributed.
+- Fuzzing runs via cargo-fuzz 0.13.2 on stable with `-s none`, Linux CI only; the `fuzz/` crate is excluded from the Cargo workspace and never distributed. Six targets cover in-process readers, mappers and limits (archive preflight ZIP inspection and `docx_meta` XML parsing are not yet fuzzed; reserved as follow-up):
+  - `markdown_reader`: Untrusted markdown input; asserts valid UTF-8 lossy conversion, block count and nesting depth limits, and JSON serialization roundtrip without panics.
+  - `front_matter`: YAML front-matter parser; asserts rejection of anchors and aliases via independent event check, fallback to default metadata on error, and NFC normalization of text fields.
+  - `html_reader`: HTML parser; asserts that DOM depth never exceeds configured cap via typed error, text is NFC-normalized (excluding footnote identifier tokens), and block count and nesting depth limits are strictly respected without panics.
+  - `pandoc_ast_to_ir`: Pandoc AST to IR mapper exercising the engine's bounded `read_json` production path; asserts non-1.23 API versions and deep ASTs are rejected with typed errors, and valid ASTs map within limits without panics.
+  - `ir_json`: Bounded IR JSON reader; asserts byte, depth (verified against `prescan_json_depth`), and block limits are strictly enforced as typed errors without stack overflow, exercising both small limits and local limits (depth 64) for safe deep build and drop.
+  - `limits_validate`: Arbitrary Limits builder; asserts `Limits::validate` never panics and returns `Ok` if and only if all boundary constraints are satisfied.
+- Fuzzing cadence:
+  - PR and push CI gate (`ci.yml`): Runs on `ubuntu-26.04` with stable Rust (`-s none`) for 60 seconds per target on changes affecting code, with a 10s per-input timeout. Uses committed seeds in `fuzz/seeds/`, restores/saves cargo-fuzz, `fuzz/target`, and corpus caches on push to keep warm CI runtime well under 10 minutes (real CI duration is recorded after the first run on `dev`), and uploads crash artifacts on failure or cancellation.
+  - Nightly sanitizers (`fuzz-nightly.yml`): Runs daily on `ubuntu-26.04` using a date-pinned nightly toolchain (`nightly-2026-10-05`) with AddressSanitizer for 10 minutes each on targets with unsafe-adjacent dependencies (`markdown_reader`, `html_reader`, `pandoc_ast_to_ir`, `ir_json`), testing `dev` prior to promotion.
 - `cargo test --doc` runs alongside cargo-nextest because nextest does not run doctests.
 - DOCX goldens snapshot each fixture's sorted ZIP entry list and pretty-printed XML parts with insta; they hash template-derived XML parts and media. A shared `PANDOC_GOLDEN_VERSION` is asserted, and `SOURCE_DATE_EPOCH=1700000000` fixes timestamps.
 - Fixtures use only distributable public-domain, CC-BY, or generated documents; exclude CC-BY-SA, GPL test suites, and research-only or non-commercial datasets. `fixtures/manifest.toml` records each file's source and license.

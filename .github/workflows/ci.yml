@@ -198,9 +198,99 @@ jobs:
       - name: Run tests
         run: just test
 
+  fuzz:
+    name: Fuzz
+    needs: scope
+    if: needs.scope.outputs.heavy == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+
+      - name: Restore cargo-fuzz binary
+        id: restore-cargo-fuzz
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-0.13.2-${{ runner.os }}
+
+      - name: Install cargo-fuzz
+        run: |
+          if ! command -v cargo-fuzz >/dev/null 2>&1; then
+            cargo install cargo-fuzz --version 0.13.2 --locked
+          fi
+
+      - name: Save cargo-fuzz binary
+        if: github.event_name == 'push' && steps.restore-cargo-fuzz.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-0.13.2-${{ runner.os }}
+
+      - name: Restore fuzz target cache
+        id: restore-fuzz-target
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: fuzz-target-${{ runner.os }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            fuzz-target-${{ runner.os }}-
+
+      - name: Restore fuzz corpus
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/
+          key: fuzz-corpus-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            fuzz-corpus-${{ runner.os }}-
+
+      - name: Run fuzz targets
+        run: |
+          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir ir_json limits_validate"
+          for t in $targets; do
+            echo "=== Running fuzz target: $t ==="
+            mkdir -p "fuzz/corpus/$t"
+            cargo fuzz run -s none "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=60 -timeout=10 -rss_limit_mb=2048
+          done
+
+      - name: Save fuzz target cache
+        if: github.event_name == 'push' && steps.restore-fuzz-target.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/target
+          key: fuzz-target-${{ runner.os }}-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Save fuzz corpus
+        if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/
+          key: fuzz-corpus-${{ runner.os }}-${{ github.sha }}
+
+      - name: Upload crash artifacts on failure
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
+          retention-days: 14
+
   ci-passed:
     name: CI passed
-    needs: [scope, static, lint-windows, verify]
+    needs: [scope, static, lint-windows, verify, fuzz]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -213,12 +303,13 @@ jobs:
           STATIC: ${{ needs.static.result }}
           WINDOWS: ${{ needs.lint-windows.result }}
           VERIFY: ${{ needs.verify.result }}
+          FUZZ: ${{ needs.fuzz.result }}
         run: |
-          printf 'scope=%s static=%s lint-windows=%s verify=%s heavy=%s\n' \
-            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$HEAVY"
+          printf 'scope=%s static=%s lint-windows=%s verify=%s fuzz=%s heavy=%s\n' \
+            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$FUZZ" "$HEAVY"
           [ "$SCOPE" = success ] && [ "$STATIC" = success ] || exit 1
           if [ "$HEAVY" = true ]; then
-            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] || exit 1
+            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$FUZZ" = success ] || exit 1
           else
-            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] || exit 1
+            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
           fi

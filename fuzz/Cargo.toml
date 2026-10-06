@@ -1,0 +1,68 @@
+[package]
+name = "ariad-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1.4.2", features = ["derive"] }
+ariad-core = { path = "../crates/ariad-core" }
+ariad-host = { path = "../crates/ariad-host" }
+libfuzzer-sys = "0.4.13"
+saphyr-parser = "0.1.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.151", features = ["unbounded_depth"] }
+unicode-normalization = "0.1.25"
+
+[lib]
+name = "ariad_fuzz"
+path = "src/lib.rs"
+
+# Use independent workspace for fuzzers
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "markdown_reader"
+path = "fuzz_targets/markdown_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "front_matter"
+path = "fuzz_targets/front_matter.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "html_reader"
+path = "fuzz_targets/html_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pandoc_ast_to_ir"
+path = "fuzz_targets/pandoc_ast_to_ir.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ir_json"
+path = "fuzz_targets/ir_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "limits_validate"
+path = "fuzz_targets/limits_validate.rs"
+test = false
+doc = false
+bench = false
