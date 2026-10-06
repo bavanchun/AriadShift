@@ -1,0 +1,37 @@
+# E3 Memory Limits Ladder Empirical Results
+Generated at: 2026-10-06T11:49:24Z
+Environment: Linux x86_64, Python 3.14, Docling 2.134.0, PyTorch 2.14.1+cpu
+
+## Results Table
+| Limit Type | Limit (MiB) | Fixture | Exit Code | Peak RSS (MiB) | Wall Time (s) | Cleanliness | Detail / Diagnostic |
+|---|---|---|---|---|---|---|---|
+| RLIMIT_AS | 1024 | gao | -11 | 77.7 | 0.66 | abort_sig | Killed by signal 11 (e.g. SIGABRT/SIGSEGV). Stderr:  |
+| RLIMIT_AS | 2048 | gao | -11 | 78.1 | 0.71 | abort_sig | Killed by signal 11 (e.g. SIGABRT/SIGSEGV). Stderr:  |
+| RLIMIT_AS | 3072 | gao | 1 | 413.5 | 2.47 | abort_sig | Exit code 1. Stderr: OpenBLAS error: Memory allocation still failed after 10 retries, giving up.  |
+| RLIMIT_AS | 4096 | gao | 127 | 667.4 | 4.77 | abort_sig | Exit code 127. Stderr:  Loading weights:   0%|          | 0/770 [00:00<?, ?it/s] Loading weights: 100%|██████████| 770/770 [00:00<00:00, 13894.64it/s] cannot alloc |
+| RLIMIT_AS | 6144 | gao | 0 | 1139.7 | 6.89 | clean_ok | Success (1 pages, 5899ms) |
+| RLIMIT_AS | 8192 | gao | 0 | 1142.4 | 7.27 | clean_ok | Success (1 pages, 6286ms) |
+| RLIMIT_DATA | 1024 | gao | -11 | 77.5 | 0.68 | abort_sig | Killed by signal 11 (e.g. SIGABRT/SIGSEGV). Stderr:  |
+| RLIMIT_DATA | 2048 | gao | 0 | 118.7 | 0.51 | clean_err | Protocol error event: Failed to import docling:  |
+| RLIMIT_DATA | 3072 | gao | 0 | 563.5 | 5.58 | clean_err | Protocol error event: Conversion error: Resource temporarily unavailable |
+| RLIMIT_DATA | 4096 | gao | 0 | 1138.1 | 7.23 | clean_ok | Success (1 pages, 6114ms) |
+| RLIMIT_DATA | 6144 | gao | 0 | 1140.5 | 7.14 | clean_ok | Success (1 pages, 6229ms) |
+| RLIMIT_DATA | 8192 | gao | 0 | 1138.4 | 7.1 | clean_ok | Success (1 pages, 6078ms) |
+| RLIMIT_AS | 1024 | tableformer | -11 | 77.9 | 0.68 | abort_sig | Killed by signal 11 (e.g. SIGABRT/SIGSEGV). Stderr:  |
+| RLIMIT_AS | 2048 | tableformer | -11 | 77.8 | 0.79 | abort_sig | Killed by signal 11 (e.g. SIGABRT/SIGSEGV). Stderr:  |
+| RLIMIT_AS | 3072 | tableformer | 1 | 413.2 | 2.69 | abort_sig | Exit code 1. Stderr: OpenBLAS error: Memory allocation still failed after 10 retries, giving up.  |
+| RLIMIT_AS | 4096 | tableformer | 0 | 783.1 | 7.93 | clean_err | Protocol error event: Conversion error: Resource temporarily unavailable |
+| RLIMIT_AS | 6144 | tableformer | 0 | 2087.4 | 27.88 | clean_ok | Success (10 pages, 26837ms) |
+| RLIMIT_AS | 8192 | tableformer | 0 | 2092.1 | 28.08 | clean_ok | Success (10 pages, 27127ms) |
+| RLIMIT_DATA | 1024 | tableformer | -11 | 77.6 | 0.75 | abort_sig | Killed by signal 11 (e.g. SIGABRT/SIGSEGV). Stderr:  |
+| RLIMIT_DATA | 2048 | tableformer | 0 | 118.6 | 0.57 | clean_err | Protocol error event: Failed to import docling:  |
+| RLIMIT_DATA | 3072 | tableformer | 0 | 564.3 | 5.39 | clean_err | Protocol error event: Conversion error: Resource temporarily unavailable |
+| RLIMIT_DATA | 4096 | tableformer | -11 | 1587.0 | 11.92 | abort_sig | Killed by signal 11 (e.g. SIGABRT/SIGSEGV). Stderr:  Loading weights:   0%|          | 0/770 [00:00<?, ?it/s] Loading weights: 100%|██████████| 770/770 [00:00<00:00, 13721.90it/s]  libgomp: Th |
+| RLIMIT_DATA | 6144 | tableformer | 0 | 2087.1 | 27.36 | clean_ok | Success (10 pages, 26362ms) |
+| RLIMIT_DATA | 8192 | tableformer | 0 | 2002.7 | 27.75 | clean_ok | Success (10 pages, 26730ms) |
+
+## Smallest Workable Caps
+- **RLIMIT_AS (gao)**: Smallest workable cap = 6144 MiB (6.0 GiB), Peak RSS = 1139.7 MiB, Time = 6.89s
+- **RLIMIT_AS (tableformer)**: Smallest workable cap = 6144 MiB (6.0 GiB), Peak RSS = 2087.4 MiB, Time = 27.88s
+- **RLIMIT_DATA (gao)**: Smallest workable cap = 4096 MiB (4.0 GiB), Peak RSS = 1138.1 MiB, Time = 7.23s
+- **RLIMIT_DATA (tableformer)**: Smallest workable cap = 6144 MiB (6.0 GiB), Peak RSS = 2087.1 MiB, Time = 27.36s

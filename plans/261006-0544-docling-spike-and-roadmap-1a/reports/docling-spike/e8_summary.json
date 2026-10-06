@@ -1,0 +1,104 @@
+{
+  "gao": {
+    "file": "pd-en-gao-08-35-highlights.pdf",
+    "ir_blocks": 13,
+    "ir_assets": 1,
+    "docx_bytes": 34219,
+    "total_loss_events": 13,
+    "loss_by_field": {
+      "provenance_bbox": 13
+    },
+    "candidate_counts": {
+      "provenance_bbox": 13,
+      "furniture": 0,
+      "table_header_flags": 0,
+      "table_footnotes": 0,
+      "picture_bytes_unrendered": 0,
+      "formula_tex": 0
+    },
+    "candidate_notes": {
+      "furniture": "0 detected: Docling Heron layout model did not classify separate page headers/footers on this fixture; elements folded into body layer",
+      "table_footnotes": "0 present: Docling TableFormer output has empty table.footnotes list on this fixture",
+      "picture_bytes_unrendered": "0 unrendered: All picture elements (1 assets) successfully rendered to PNG and preserved in IR asset store",
+      "table_header_flags": "0 row headers: Document contains no tables or tables have only column headers",
+      "provenance_bbox": "13 bounding box coordinates dropped by IR v0"
+    }
+  },
+  "tableformer": {
+    "file": "arxiv-tableformer-2203-01017-v1.pdf",
+    "ir_blocks": 100,
+    "ir_assets": 6,
+    "docx_bytes": 394706,
+    "total_loss_events": 168,
+    "loss_by_field": {
+      "provenance_bbox": 140,
+      "row_header_cell": 25,
+      "formula_tex": 3
+    },
+    "candidate_counts": {
+      "provenance_bbox": 140,
+      "furniture": 0,
+      "table_header_flags": 25,
+      "table_footnotes": 0,
+      "picture_bytes_unrendered": 0,
+      "formula_tex": 3
+    },
+    "candidate_notes": {
+      "furniture": "0 detected: Docling Heron layout model did not classify separate page headers/footers on this fixture; elements folded into body layer",
+      "table_footnotes": "0 present: Docling TableFormer output has empty table.footnotes list on this fixture",
+      "picture_bytes_unrendered": "0 unrendered: All picture elements (6 assets) successfully rendered to PNG and preserved in IR asset store",
+      "table_header_flags": "25 row headers detected by TableFormer, dropped by IR v0 TableCell",
+      "provenance_bbox": "140 bounding box coordinates dropped by IR v0"
+    }
+  },
+  "congbao": {
+    "file": "vn-congbao-42-2020-p31.png",
+    "ir_blocks": 7,
+    "ir_assets": 0,
+    "docx_bytes": 11470,
+    "total_loss_events": 11,
+    "loss_by_field": {
+      "provenance_bbox": 11
+    },
+    "candidate_counts": {
+      "provenance_bbox": 11,
+      "furniture": 0,
+      "table_header_flags": 0,
+      "table_footnotes": 0,
+      "picture_bytes_unrendered": 0,
+      "formula_tex": 0
+    },
+    "candidate_notes": {
+      "furniture": "0 detected: Docling Heron layout model did not classify separate page headers/footers on this fixture; elements folded into body layer",
+      "table_footnotes": "0 present: Docling TableFormer output has empty table.footnotes list on this fixture",
+      "picture_bytes_unrendered": "0 unrendered: All picture elements (0 assets) successfully rendered to PNG and preserved in IR asset store",
+      "table_header_flags": "0 row headers: Document contains no tables or tables have only column headers",
+      "provenance_bbox": "11 bounding box coordinates dropped by IR v0"
+    }
+  },
+  "decree": {
+    "file": "pd-vi-decree-39-2022.pdf",
+    "ir_blocks": 5,
+    "ir_assets": 5,
+    "docx_bytes": 150876,
+    "total_loss_events": 5,
+    "loss_by_field": {
+      "provenance_bbox": 5
+    },
+    "candidate_counts": {
+      "provenance_bbox": 5,
+      "furniture": 0,
+      "table_header_flags": 0,
+      "table_footnotes": 0,
+      "picture_bytes_unrendered": 0,
+      "formula_tex": 0
+    },
+    "candidate_notes": {
+      "furniture": "0 detected: Docling Heron layout model did not classify separate page headers/footers on this fixture; elements folded into body layer",
+      "table_footnotes": "0 present: Docling TableFormer output has empty table.footnotes list on this fixture",
+      "picture_bytes_unrendered": "0 unrendered: All picture elements (5 assets) successfully rendered to PNG and preserved in IR asset store",
+      "table_header_flags": "0 row headers: Document contains no tables or tables have only column headers",
+      "provenance_bbox": "5 bounding box coordinates dropped by IR v0"
+    }
+  }
+}
