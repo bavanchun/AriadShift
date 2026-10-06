@@ -298,7 +298,7 @@ fn is_windows_device_name(segment: &str) -> bool {
         .split('.')
         .next()
         .unwrap_or_default()
-        .trim_end_matches(|character| character == ' ' || character == '.');
+        .trim_end_matches([' ', '.']);
     let stem = stem.to_ascii_uppercase();
     matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
         || ["COM", "LPT"].iter().any(|prefix| {
