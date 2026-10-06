@@ -16,7 +16,11 @@ if [ ! -x "$committed" ]; then
 fi
 
 status=0
-"$committed" --config "$repo_root/committed.toml" "$range" || status=1
+# Merge commits come from promotions and hotfix back-merges, and GitHub
+# writes their subjects, so only the other commits must follow the format.
+for sha in $(git rev-list --no-merges "$range"); do
+    "$committed" --config "$repo_root/committed.toml" "$sha" || status=1
+done
 
 for sha in $(git rev-list "$range"); do
     message=$(git log -1 --format=%B "$sha")

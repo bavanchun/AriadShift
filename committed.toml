@@ -6,7 +6,5 @@ line_length = 72
 subject_capitalized = false
 subject_not_punctuated = true
 imperative_subject = true
-# Promotions and hotfix back-merges into dev are merge commits.
-merge_commit = false
 # Dependabot writes its own subjects; scripts/check-commits.sh still checks them for tool references.
 ignore_author_re = "^dependabot\\[bot\\]$"
