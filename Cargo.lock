@@ -114,6 +114,10 @@ dependencies = [
 [[package]]
 name = "ariad-host"
 version = "0.0.0"
+dependencies = [
+ "tempfile",
+ "thiserror",
+]
 
 [[package]]
 name = "arraydeque"
