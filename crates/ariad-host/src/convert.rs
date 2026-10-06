@@ -1041,7 +1041,6 @@ mod tests {
         use super::{Limits, Workspace, copy_and_preflight_input};
         use ariad_core::protocol::{Input, Output, PROTOCOL, Request};
         use std::path::Path;
-        use tempfile::NamedTempFile;
 
         let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -1055,16 +1054,16 @@ mod tests {
             fixture_path.display()
         );
 
-        let temp_src = NamedTempFile::with_suffix(".docx").unwrap();
-        std::fs::copy(&fixture_path, temp_src.path()).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_src = temp_dir.path().join("source.docx");
+        std::fs::copy(&fixture_path, &temp_src).unwrap();
 
         let mut workspace = Workspace::new().unwrap();
         let limits = Limits::local();
-        let copy_path =
-            copy_and_preflight_input(temp_src.path(), "docx", &workspace, &limits).unwrap();
+        let copy_path = copy_and_preflight_input(&temp_src, "docx", &workspace, &limits).unwrap();
 
         // Mutate source file after copy: overwrite with garbage
-        std::fs::write(temp_src.path(), b"MUTATED_CORRUPT_SOURCE_GARBAGE").unwrap();
+        std::fs::write(&temp_src, b"MUTATED_CORRUPT_SOURCE_GARBAGE").unwrap();
 
         // Execute convert request through engine pointing to copy
         let request = Request::Convert {
@@ -1107,17 +1106,16 @@ mod tests {
     #[test]
     fn copy_and_preflight_input_enforces_max_input_bytes() {
         use super::{ConvertError, Limits, Workspace, copy_and_preflight_input};
-        use tempfile::NamedTempFile;
 
-        let temp_src = NamedTempFile::with_suffix(".docx").unwrap();
-        std::fs::write(temp_src.path(), [0u8; 1024]).unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_src = temp_dir.path().join("source.docx");
+        std::fs::write(&temp_src, [0u8; 1024]).unwrap();
 
         let mut workspace = Workspace::new().unwrap();
         let mut limits = Limits::local();
         limits.max_input_bytes = Some(500);
 
-        let err =
-            copy_and_preflight_input(temp_src.path(), "docx", &workspace, &limits).unwrap_err();
+        let err = copy_and_preflight_input(&temp_src, "docx", &workspace, &limits).unwrap_err();
         assert_eq!(err, ConvertError::LimitExceeded);
 
         let _ = workspace.close();
@@ -1160,20 +1158,18 @@ mod tests {
 
     #[test]
     fn convert_with_warning_emits_sanitized_warnings_without_private_details() {
-        use tempfile::NamedTempFile;
-
-        let in_file = NamedTempFile::with_suffix(".md").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let in_file = temp_dir.path().join("input.md");
         std::fs::write(
-            in_file.path(),
+            &in_file,
             b"# Title\n\n<script>secret_private_token()</script>\n",
         )
         .unwrap();
 
-        let out_file = NamedTempFile::with_suffix(".html").unwrap();
+        let out_file = temp_dir.path().join("output.html");
         let cancel = tokio_util::sync::CancellationToken::new();
 
-        let req = super::ConvertRequest::new(in_file.path(), out_file.path(), "html", "ashift");
-        let mut req = req;
+        let mut req = super::ConvertRequest::new(&in_file, &out_file, "html", "ashift");
         req.overwrite = true;
 
         let report = super::convert(&req, cancel, |_| {}).expect("conversion succeeds");
@@ -1197,20 +1193,16 @@ mod tests {
         use super::{
             ConvertRequest, DocumentFormat, ReaderEdge, Route, WriterEdge, convert_for_route,
         };
-        use tempfile::NamedTempFile;
 
-        let in_file = NamedTempFile::with_suffix(".md").unwrap();
-        std::fs::write(
-            in_file.path(),
-            b"# Custom Dispatch Test\n\nSome text here.\n",
-        )
-        .unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let in_file = temp_dir.path().join("input.md");
+        std::fs::write(&in_file, b"# Custom Dispatch Test\n\nSome text here.\n").unwrap();
 
-        let out_file = NamedTempFile::with_suffix(".txt").unwrap();
+        let out_file = temp_dir.path().join("output.txt");
         let cancel = tokio_util::sync::CancellationToken::new();
 
         // Target format string says "html", but route specifies WriterEdge::NativeMarkdown
-        let mut req = ConvertRequest::new(in_file.path(), out_file.path(), "html", "ashift");
+        let mut req = ConvertRequest::new(&in_file, &out_file, "html", "ashift");
         req.overwrite = true;
 
         let swapped_route = Route {
@@ -1242,13 +1234,13 @@ mod tests {
             ConvertError, ConvertRequest, DocumentFormat, ReaderEdge, Route, WriterEdge,
             convert_for_route,
         };
-        use tempfile::NamedTempFile;
 
-        let in_file = NamedTempFile::with_suffix(".md").unwrap();
-        std::fs::write(in_file.path(), b"# Same format\n").unwrap();
-        let out_file = NamedTempFile::with_suffix(".out").unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let in_file = temp_dir.path().join("input.md");
+        std::fs::write(&in_file, b"# Same format\n").unwrap();
+        let out_file = temp_dir.path().join("output.out");
 
-        let req = ConvertRequest::new(in_file.path(), out_file.path(), "md", "ashift");
+        let req = ConvertRequest::new(&in_file, &out_file, "md", "ashift");
         let same_route = Route {
             input_format: DocumentFormat::Markdown,
             output_format: DocumentFormat::Markdown,
