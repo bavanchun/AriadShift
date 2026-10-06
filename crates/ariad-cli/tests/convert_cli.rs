@@ -6,7 +6,7 @@ use std::{
     process::{Command, Output},
 };
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::{
     process::Stdio,
     thread,
@@ -257,24 +257,10 @@ fn ctrl_c_cancels_the_engine_and_removes_workspace_without_creating_output() {
         .spawn()
         .expect("start ashift");
 
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let mut workspace_seen = false;
-    while Instant::now() < deadline {
-        workspace_seen = fs::read_dir(&temp_root)
-            .expect("read temporary root")
-            .filter_map(Result::ok)
-            .any(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with("ariadshift-")
-            });
-        if workspace_seen {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
-    assert!(workspace_seen, "conversion workspace was not created");
+    assert!(
+        wait_for_workspace(&temp_root),
+        "conversion workspace was not created"
+    );
     thread::sleep(Duration::from_millis(250));
 
     let signal = Command::new("kill")
@@ -283,27 +269,112 @@ fn ctrl_c_cancels_the_engine_and_removes_workspace_without_creating_output() {
         .expect("send SIGINT");
     assert!(signal.success());
 
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if child.try_wait().expect("poll ashift").is_some() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
-    if child.try_wait().expect("poll ashift").is_none() {
+    if !wait_for_child_exit(&mut child, Duration::from_secs(10)) {
         child.kill().expect("stop stuck ashift process");
         panic!("ashift did not stop after SIGINT");
     }
     let result = child.wait_with_output().expect("collect ashift output");
     assert_eq!(result.status.code(), Some(130));
     assert!(!output.exists());
+    assert!(!has_workspace(&temp_root));
+}
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+#[test]
+fn ctrl_break_cancels_the_engine_and_removes_workspace_without_creating_output() {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+    let directory = tempdir().expect("create test directory");
+    let temp_root = directory.path().join("tmp");
+    fs::create_dir(&temp_root).expect("create temporary root");
+    let input = directory.path().join("slow.md");
+    let output = directory.path().join("slow.docx");
+    fs::write(&input, "# Slow conversion\n").expect("write Markdown");
+    let mut child = cli()
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "docx", "-o"])
+        .arg(&output)
+        .env("ARIAD_TEST_ENGINE", "hang")
+        .env("TMP", &temp_root)
+        .env("TEMP", &temp_root)
+        .creation_flags(CREATE_NEW_PROCESS_GROUP)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start ashift");
+
     assert!(
-        !fs::read_dir(temp_root)
+        wait_for_workspace(&temp_root),
+        "conversion workspace was not created"
+    );
+    thread::sleep(Duration::from_millis(250));
+
+    // SAFETY: child.id() is the process ID of the spawned child process. Since it was
+    // spawned with CREATE_NEW_PROCESS_GROUP, its process group ID matches child.id().
+    let status = unsafe {
+        windows_sys::Win32::System::Console::GenerateConsoleCtrlEvent(
+            windows_sys::Win32::System::Console::CTRL_BREAK_EVENT,
+            child.id(),
+        )
+    };
+    assert_ne!(status, 0, "failed to generate console ctrl event");
+
+    if !wait_for_child_exit(&mut child, Duration::from_secs(10)) {
+        child.kill().expect("stop stuck ashift process");
+        panic!("ashift did not stop after Ctrl-Break");
+    }
+    let result = child.wait_with_output().expect("collect ashift output");
+    assert_eq!(result.status.code(), Some(130));
+    assert!(!output.exists());
+    assert!(!has_workspace(&temp_root));
+}
+
+#[cfg(any(unix, windows))]
+fn wait_for_workspace(temp_root: &Path) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        let seen = fs::read_dir(temp_root)
             .expect("read temporary root")
             .filter_map(Result::ok)
-            .any(|entry| entry
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("ariadshift-")
+            });
+        if seen {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    false
+}
+
+#[cfg(any(unix, windows))]
+fn has_workspace(temp_root: &Path) -> bool {
+    fs::read_dir(temp_root)
+        .expect("read temporary root")
+        .filter_map(Result::ok)
+        .any(|entry| {
+            entry
                 .file_name()
                 .to_string_lossy()
-                .starts_with("ariadshift-"))
-    );
+                .starts_with("ariadshift-")
+        })
+}
+
+#[cfg(any(unix, windows))]
+fn wait_for_child_exit(child: &mut std::process::Child, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if child.try_wait().expect("poll ashift").is_some() {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    child.try_wait().expect("poll ashift").is_some()
 }
