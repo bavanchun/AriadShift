@@ -4,6 +4,7 @@
 
 pub mod format;
 pub mod ir;
+pub mod json_depth;
 pub mod limits;
 pub mod links;
 pub mod pandoc;
