@@ -64,6 +64,7 @@ pub fn preflight_archive(path: &Path, limits: &Limits) -> Result<(), ArchiveErro
 
     let mut header = [0u8; 46];
     loop {
+        let pos_before_read = raw_file.stream_position()?;
         let n = raw_file.read(&mut header)?;
         if n == 0 {
             break;
@@ -132,7 +133,41 @@ pub fn preflight_archive(path: &Path, limits: &Limits) -> Result<(), ArchiveErro
                 raw_file.read_exact(&mut eocd_rest[rest_read..18])?;
             }
             let eocd_entries = u16::from_le_bytes(eocd_rest[6..8].try_into().unwrap()) as usize;
-            if eocd_entries != 0xFFFF && eocd_entries != raw_cd_entries {
+            let cd_offset = u32::from_le_bytes(eocd_rest[12..16].try_into().unwrap());
+            if eocd_entries == 0xFFFF || cd_offset == 0xFFFF_FFFF {
+                if pos_before_read < 20 {
+                    return Err(ArchiveError::Zip(zip::result::ZipError::InvalidArchive(
+                        std::borrow::Cow::Borrowed("truncated zip64 locator"),
+                    )));
+                }
+                raw_file.seek(SeekFrom::Start(pos_before_read - 20))?;
+                let mut loc_buf = [0u8; 20];
+                raw_file.read_exact(&mut loc_buf)?;
+                if loc_buf[0..4] != [0x50, 0x4b, 0x06, 0x07] {
+                    return Err(ArchiveError::Zip(zip::result::ZipError::InvalidArchive(
+                        std::borrow::Cow::Borrowed("invalid zip64 locator signature"),
+                    )));
+                }
+                let z64_offset = u64::from_le_bytes(loc_buf[8..16].try_into().unwrap());
+                raw_file.seek(SeekFrom::Start(z64_offset))?;
+                let mut z64_buf = [0u8; 56];
+                raw_file.read_exact(&mut z64_buf)?;
+                if z64_buf[0..4] != [0x50, 0x4b, 0x06, 0x06] {
+                    return Err(ArchiveError::Zip(zip::result::ZipError::InvalidArchive(
+                        std::borrow::Cow::Borrowed(
+                            "invalid zip64 end of central directory signature",
+                        ),
+                    )));
+                }
+                let zip64_entries =
+                    u64::from_le_bytes(z64_buf[32..40].try_into().unwrap()) as usize;
+                if zip64_entries != raw_cd_entries {
+                    return Err(ArchiveError::EntryCountMismatch {
+                        eocd_count: zip64_entries,
+                        archive_count: raw_cd_entries,
+                    });
+                }
+            } else if eocd_entries != raw_cd_entries {
                 return Err(ArchiveError::EntryCountMismatch {
                     eocd_count: eocd_entries,
                     archive_count: raw_cd_entries,
@@ -142,7 +177,13 @@ pub fn preflight_archive(path: &Path, limits: &Limits) -> Result<(), ArchiveErro
         } else if sig == [0x50, 0x4b, 0x06, 0x06] {
             // Zip64 end of central directory record
             let mut zip64_rest = [0u8; 52];
-            raw_file.read_exact(&mut zip64_rest)?;
+            let already_read = (n.saturating_sub(4)).min(52);
+            if already_read > 0 {
+                zip64_rest[..already_read].copy_from_slice(&header[4..4 + already_read]);
+            }
+            if already_read < 52 {
+                raw_file.read_exact(&mut zip64_rest[already_read..52])?;
+            }
             let zip64_entries = u64::from_le_bytes(zip64_rest[28..36].try_into().unwrap()) as usize;
             if zip64_entries != raw_cd_entries {
                 return Err(ArchiveError::EntryCountMismatch {
@@ -554,6 +595,177 @@ mod tests {
         match err {
             ArchiveError::DuplicateEntryName { .. } => {}
             other => panic!("expected DuplicateEntryName, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn valid_zip64_archive_passes_preflight() {
+        let temp = NamedTempFile::new().unwrap();
+        let py_script = format!(
+            r#"
+import zipfile
+zipfile.ZIP_FILECOUNT_LIMIT = 0
+with zipfile.ZipFile(r'{}', 'w') as z:
+    z.writestr('doc1.txt', b'content one')
+    z.writestr('doc2.txt', b'content two')
+"#,
+            temp.path().display()
+        );
+        let status = std::process::Command::new("python3")
+            .args(["-c", &py_script])
+            .status()
+            .expect("run python3 to create zip64");
+        assert!(status.success(), "python3 script must succeed");
+
+        assert!(preflight_archive(temp.path(), &Limits::local()).is_ok());
+    }
+
+    #[test]
+    fn zip64_archive_with_duplicate_entry_name_is_rejected() {
+        let temp = NamedTempFile::new().unwrap();
+        let py_script = format!(
+            r#"
+import zipfile
+zipfile.ZIP_FILECOUNT_LIMIT = 0
+with zipfile.ZipFile(r'{}', 'w') as z:
+    z.writestr('a.txt', b'first')
+    z.writestr('b.txt', b'second')
+"#,
+            temp.path().display()
+        );
+        let status = std::process::Command::new("python3")
+            .args(["-c", &py_script])
+            .status()
+            .expect("run python3 to create zip64");
+        assert!(status.success());
+
+        let bytes = std::fs::read(temp.path()).unwrap();
+        let cd_sig = b"PK\x01\x02";
+        let cd_pos = bytes.windows(4).position(|w| w == cd_sig).expect("find CD");
+        let fn_len =
+            u16::from_le_bytes(bytes[cd_pos + 28..cd_pos + 30].try_into().unwrap()) as usize;
+        let extra_len =
+            u16::from_le_bytes(bytes[cd_pos + 30..cd_pos + 32].try_into().unwrap()) as usize;
+        let comment_len =
+            u16::from_le_bytes(bytes[cd_pos + 32..cd_pos + 34].try_into().unwrap()) as usize;
+        let cd_len = 46 + fn_len + extra_len + comment_len;
+        let cd_entry = &bytes[cd_pos..cd_pos + cd_len];
+
+        let mut tampered = Vec::new();
+        tampered.extend_from_slice(&bytes[..cd_pos]);
+        tampered.extend_from_slice(cd_entry);
+        tampered.extend_from_slice(&bytes[cd_pos..]);
+
+        let z64_sig = b"PK\x06\x06";
+        let z64_pos = tampered
+            .windows(4)
+            .rposition(|w| w == z64_sig)
+            .expect("find Z64");
+        let old_entries =
+            u64::from_le_bytes(tampered[z64_pos + 32..z64_pos + 40].try_into().unwrap());
+        tampered[z64_pos + 24..z64_pos + 32].copy_from_slice(&(old_entries + 1).to_le_bytes());
+        tampered[z64_pos + 32..z64_pos + 40].copy_from_slice(&(old_entries + 1).to_le_bytes());
+
+        std::fs::write(temp.path(), &tampered).unwrap();
+        let err = preflight_archive(temp.path(), &Limits::local()).unwrap_err();
+        match err {
+            ArchiveError::DuplicateEntryName { name } => assert_eq!(name, "a.txt"),
+            other => panic!("expected DuplicateEntryName, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn zip64_archive_with_hidden_entry_is_rejected() {
+        let temp = NamedTempFile::new().unwrap();
+        let py_script = format!(
+            r#"
+import zipfile
+zipfile.ZIP_FILECOUNT_LIMIT = 0
+with zipfile.ZipFile(r'{}', 'w') as z:
+    z.writestr('a.txt', b'first')
+    z.writestr('b.txt', b'second')
+"#,
+            temp.path().display()
+        );
+        let status = std::process::Command::new("python3")
+            .args(["-c", &py_script])
+            .status()
+            .expect("run python3");
+        assert!(status.success());
+
+        let mut bytes = std::fs::read(temp.path()).unwrap();
+        let z64_sig = b"PK\x06\x06";
+        let z64_pos = bytes
+            .windows(4)
+            .rposition(|w| w == z64_sig)
+            .expect("find Z64");
+        bytes[z64_pos + 24..z64_pos + 32].copy_from_slice(&3u64.to_le_bytes());
+        bytes[z64_pos + 32..z64_pos + 40].copy_from_slice(&3u64.to_le_bytes());
+
+        std::fs::write(temp.path(), &bytes).unwrap();
+        let err = preflight_archive(temp.path(), &Limits::local()).unwrap_err();
+        match err {
+            ArchiveError::EntryCountMismatch {
+                eocd_count,
+                archive_count,
+            } => {
+                assert_eq!(eocd_count, 3);
+                assert_eq!(archive_count, 2);
+            }
+            other => panic!("expected EntryCountMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn fuzz_style_truncated_and_garbage_eocd_records_never_panic() {
+        let temp = NamedTempFile::new().unwrap();
+        let py_script = format!(
+            r#"
+import zipfile
+zipfile.ZIP_FILECOUNT_LIMIT = 0
+with zipfile.ZipFile(r'{}', 'w') as z:
+    z.writestr('hello.txt', b'data')
+"#,
+            temp.path().display()
+        );
+        let status = std::process::Command::new("python3")
+            .args(["-c", &py_script])
+            .status()
+            .unwrap();
+        assert!(status.success());
+
+        let base_bytes = std::fs::read(temp.path()).unwrap();
+        let z64_sig = b"PK\x06\x06";
+        let z64_pos = base_bytes
+            .windows(4)
+            .rposition(|w| w == z64_sig)
+            .expect("find Z64");
+
+        // 1. Truncate at every byte boundary starting from the Zip64 EOCD
+        for truncate_len in z64_pos..base_bytes.len() {
+            let truncated = &base_bytes[..truncate_len];
+            let corrupt_file = NamedTempFile::new().unwrap();
+            std::fs::write(corrupt_file.path(), truncated).unwrap();
+            let _ = preflight_archive(corrupt_file.path(), &Limits::local());
+        }
+
+        // 2. Overwrite Zip64 EOCD with garbage bytes
+        let mut garbage_z64 = base_bytes.clone();
+        for b in &mut garbage_z64[z64_pos + 4..z64_pos + 50] {
+            *b = 0xFF;
+        }
+        let corrupt_file = NamedTempFile::new().unwrap();
+        std::fs::write(corrupt_file.path(), &garbage_z64).unwrap();
+        let _ = preflight_archive(corrupt_file.path(), &Limits::local());
+
+        // 3. Overwrite Zip64 locator with garbage bytes
+        let loc_sig = b"PK\x06\x07";
+        if let Some(loc_pos) = base_bytes.windows(4).rposition(|w| w == loc_sig) {
+            let mut garbage_loc = base_bytes.clone();
+            garbage_loc[loc_pos..loc_pos + 4].copy_from_slice(b"NOPE");
+            let corrupt_file = NamedTempFile::new().unwrap();
+            std::fs::write(corrupt_file.path(), &garbage_loc).unwrap();
+            let _ = preflight_archive(corrupt_file.path(), &Limits::local());
         }
     }
 }

@@ -240,6 +240,13 @@ pub fn copy_and_preflight_input(
     Ok(dest_path)
 }
 
+/// The outcome of converting an archive input to AriadShift IR.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ArchiveToIrOutput {
+    pub document: ariad_core::ir::Document,
+    pub warnings: Vec<ConvertWarning>,
+}
+
 /// Converts an untrusted archive input (DOCX or EPUB) to AriadShift IR.
 ///
 /// Order of operations (structural TOCTOU defense):
@@ -256,7 +263,7 @@ pub fn read_archive_to_ir(
     limits: &Limits,
     engine_program: &Path,
     cancel: CancellationToken,
-) -> Result<ariad_core::ir::Document, ConvertError> {
+) -> Result<ArchiveToIrOutput, ConvertError> {
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
@@ -279,13 +286,18 @@ pub fn read_archive_to_ir(
         limits: limits.clone(),
     };
 
+    let mut warnings = Vec::new();
     let engine_args = [OsString::from("__engine"), OsString::from("pandoc")];
     let outcome = runner::run(
         engine_program,
         &engine_args,
         &request,
         cancel.clone(),
-        |_| {},
+        |event| {
+            if let Event::Warning { code, message } = event {
+                warnings.push(ConvertWarning { code, message });
+            }
+        },
     )
     .map_err(map_run_error)?;
 
@@ -307,7 +319,10 @@ pub fn read_archive_to_ir(
         _ => ConvertError::Failed,
     })?;
 
-    Ok(doc)
+    Ok(ArchiveToIrOutput {
+        document: doc,
+        warnings,
+    })
 }
 
 fn is_markdown_docx_route(input: &Path, target_format: &str) -> bool {
