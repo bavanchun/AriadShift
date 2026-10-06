@@ -46,6 +46,7 @@ The CLI converts Markdown (`.md`/`.markdown`) to DOCX with `ashift convert`. Run
 ## Git
 
 - Follow [docs/git-workflow.md](docs/git-workflow.md) for the full Git workflow.
+- Work lands on `dev`. `main` is the stable branch: it receives `dev` only through a promotion, plus hotfixes, and release tags are cut on it.
 - Commit only when the user asks; an authorized plan run counts as that request for commits within the plan's scope.
 - Pushes and GitHub settings require the user's explicit go-ahead.
 - Stage explicit paths. Never run `git add -A` or `git add .` at the repository root.
