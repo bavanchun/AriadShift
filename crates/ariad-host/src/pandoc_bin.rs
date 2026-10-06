@@ -1,0 +1,137 @@
+use std::{env, ffi::OsStr, path::PathBuf, process::Command};
+
+use thiserror::Error;
+
+/// Pandoc versions accepted by the engine protocol implementation.
+pub const PANDOC_SUPPORTED: &str = ">= 3.12, < 4";
+
+/// Version used when producing reproducible golden documents.
+pub const PANDOC_GOLDEN_VERSION: &str = "3.12";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PandocBinary {
+    pub path: PathBuf,
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum PandocBinaryError {
+    #[error("Pandoc was not found. Install Pandoc with `just pandoc` or set ASHIFT_PANDOC.")]
+    Missing,
+    #[error(
+        "Pandoc must be {PANDOC_SUPPORTED}; install it with `just pandoc` or set ASHIFT_PANDOC."
+    )]
+    UnsupportedVersion,
+}
+
+/// Resolves Pandoc from an explicit override or the process PATH and checks its version.
+pub fn locate() -> Result<PandocBinary, PandocBinaryError> {
+    let path = match env::var_os("ASHIFT_PANDOC").filter(|value| !value.is_empty()) {
+        Some(explicit) => {
+            let path = PathBuf::from(explicit);
+            if !path.is_file() {
+                return Err(PandocBinaryError::Missing);
+            }
+            path
+        }
+        None => find_in_path(env::var_os("PATH").as_deref()).ok_or(PandocBinaryError::Missing)?,
+    };
+
+    let mut command = Command::new(&path);
+    command.arg("--version").env_clear();
+    if let Some(path_value) = env::var_os("PATH") {
+        command.env("PATH", path_value);
+    }
+    #[cfg(windows)]
+    if let Some(system_root) = env::var_os("SYSTEMROOT") {
+        command.env("SYSTEMROOT", system_root);
+    }
+    let output = command.output().map_err(|_| PandocBinaryError::Missing)?;
+    if !output.status.success() {
+        return Err(PandocBinaryError::UnsupportedVersion);
+    }
+    let version = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .and_then(parse_version_line)
+        .ok_or(PandocBinaryError::UnsupportedVersion)?;
+    if !is_supported(&version) {
+        return Err(PandocBinaryError::UnsupportedVersion);
+    }
+
+    Ok(PandocBinary { path, version })
+}
+
+fn find_in_path(path: Option<&OsStr>) -> Option<PathBuf> {
+    let path = path.filter(|value| !value.is_empty())?;
+    #[cfg(windows)]
+    let candidates = ["pandoc.exe", "pandoc"];
+    #[cfg(not(windows))]
+    let candidates = ["pandoc"];
+
+    env::split_paths(path)
+        .flat_map(|directory| candidates.iter().map(move |name| directory.join(name)))
+        .find(|candidate| candidate.is_file())
+}
+
+fn parse_version_line(line: &str) -> Option<String> {
+    let mut words = line.split_whitespace();
+    if words.next()? != "pandoc" {
+        return None;
+    }
+    let version = words.next()?;
+    if version.is_empty()
+        || version.split('.').any(|component| {
+            component.is_empty() || !component.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    {
+        return None;
+    }
+    Some(version.to_owned())
+}
+
+fn is_supported(version: &str) -> bool {
+    let Some((major, minor)) = version.split_once('.') else {
+        return false;
+    };
+    let Ok(major) = major.parse::<u32>() else {
+        return false;
+    };
+    let Ok(minor) = minor.split('.').next().unwrap_or_default().parse::<u32>() else {
+        return false;
+    };
+    major == 3 && minor >= 12
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{PANDOC_GOLDEN_VERSION, PANDOC_SUPPORTED, is_supported, parse_version_line};
+
+    #[test]
+    fn exposes_the_runtime_and_golden_version_contracts() {
+        assert_eq!(PANDOC_SUPPORTED, ">= 3.12, < 4");
+        assert_eq!(PANDOC_GOLDEN_VERSION, "3.12");
+    }
+
+    #[test]
+    fn parses_only_a_stable_pandoc_version_line() {
+        assert_eq!(parse_version_line("pandoc 3.12\n"), Some("3.12".to_owned()));
+        assert_eq!(
+            parse_version_line("pandoc 3.12.1\n"),
+            Some("3.12.1".to_owned())
+        );
+        assert_eq!(parse_version_line("Pandoc 3.12"), None);
+        assert_eq!(parse_version_line("pandoc 3.12-rc1"), None);
+    }
+
+    #[test]
+    fn enforces_the_supported_version_range() {
+        assert!(is_supported("3.12"));
+        assert!(is_supported("3.12.1"));
+        assert!(is_supported("3.99.0"));
+        assert!(!is_supported("3.11.9"));
+        assert!(!is_supported("4.0"));
+        assert!(!is_supported("4.0.0"));
+        assert!(!is_supported("3"));
+    }
+}
