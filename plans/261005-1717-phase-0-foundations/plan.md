@@ -49,9 +49,9 @@ Mode: `--deep`, HOLD SCOPE. Research reports:
 | # | Phase | Effort | Depends on | Status |
 |---|---|---|---|---|
 | 1 | [Record decisions in ARCHITECTURE and AGENTS](./phase-01-decisions-record.md) | 4h | none | Done |
-| 2 | [Workspace, toolchain, CI and public repo](./phase-02-workspace-toolchain-ci.md) | 9h | 1 | Done (Ubuntu CI pending) |
+| 2 | [Workspace, toolchain, CI and public repo](./phase-02-workspace-toolchain-ci.md) | 9h | 1 | Done |
 | 3 | [Fixture suite (60 documents + manifest)](./phase-03-fixture-suite.md) | 12h | 2 | Done |
-| 4 | [ariad-core: IR v0, Markdown reader, Pandoc AST](./phase-04-core-ir-markdown.md) | 14h | 2, 3 | Pending |
+| 4 | [ariad-core: IR v0, Markdown reader, Pandoc AST](./phase-04-core-ir-markdown.md) | 14h | 2, 3 | Done |
 | 5 | [Engine protocol draft and ariad-host runner](./phase-05-engine-protocol-host.md) | 16h | 4 | Pending |
 | 6 | [`ashift convert`, DOCX golden test, acceptance](./phase-06-cli-docx-golden-acceptance.md) | 9h | 3, 4, 5 | Pending |
 

@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Workspace, toolchain, CI and public repo"
-status: in-progress
+status: completed
 priority: P1
 effort: "9h"
 dependencies: [1]
@@ -189,7 +189,7 @@ ariadshift/
 - [x] LICENSE, NOTICE, README.md, docs/SECURITY.md
 - [x] CI workflow (SHA-pinned actions, pinned tools, no persisted credentials, Pandoc sanity step)
 - [x] AGENTS.md current state
-- [ ] User go-ahead → publish review → pinned gitleaks (history + tree) → public → first 3-OS run green (macOS + Windows green in run 37368437116; Ubuntu not yet run: GitHub runner-assignment incident 2026-10-05)
+- [x] User go-ahead → publish review → pinned gitleaks (history + tree) → public → first 3-OS run green (run 37387637286)
 
 ## Test scenario matrix
 

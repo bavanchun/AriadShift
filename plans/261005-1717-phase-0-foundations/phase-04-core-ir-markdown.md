@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "ariad-core: IR v0, Markdown reader, Pandoc AST"
-status: pending
+status: completed
 priority: P1
 effort: "14h"
 dependencies: [2, 3]
@@ -181,17 +181,17 @@ fixtures/golden/<id>.ir.snap
 
 ## Todo
 
-- [ ] YAML crate chosen, verified, recorded in §2.3
-- [ ] Limits (Option semantics, validate)
-- [ ] IR v0 types (struct variants), Format, Warning
-- [ ] Markdown reader (iterative, NFC prose-only, CRLF, BOM, shortcodes, limits)
-- [ ] Front matter parser (cap, no aliases, known keys)
-- [ ] Stack-safety tests (+ pre-scan if needed)
-- [ ] Serialize-only Pandoc AST
-- [ ] Mapping with link-scheme allow-list, closed Raw formats, metadata
-- [ ] `schemas/ir.v0.json` + drift test
-- [ ] IR snapshots (≥ 20 matched) + schema validation
-- [ ] wasm32 check + `just ci` green on 3 OSes
+- [x] YAML crate chosen, verified, recorded in §2.3
+- [x] Limits (Option semantics, validate)
+- [x] IR v0 types (struct variants), Format, Warning
+- [x] Markdown reader (iterative, NFC prose-only, CRLF, BOM, shortcodes, limits)
+- [x] Front matter parser (cap, no aliases, known keys)
+- [x] Stack-safety tests (+ pre-scan if needed)
+- [x] Serialize-only Pandoc AST
+- [x] Mapping with link-scheme allow-list, closed Raw formats, metadata
+- [x] `schemas/ir.v0.json` + drift test
+- [x] IR snapshots (≥ 20 matched) + schema validation
+- [x] wasm32 check + `just ci` green on 3 OSes
 
 ## Test scenario matrix
 
