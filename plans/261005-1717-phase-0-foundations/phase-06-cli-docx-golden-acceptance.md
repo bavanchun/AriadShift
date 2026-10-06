@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "ashift convert, DOCX golden test, acceptance"
-status: pending
+status: completed
 priority: P1
 effort: "9h"
 dependencies: [3, 4, 5]
@@ -151,15 +151,15 @@ Non-functional:
 
 ## Todo
 
-- [ ] `ariad-host::convert` with route table and full pipeline
-- [ ] CLI `convert` with Ctrl-C and exit-code contract
-- [ ] DOCX goldens (per-fixture entry lists, raw-XML assertions, injection guard)
-- [ ] Engine conformance tests
-- [ ] CLI contract tests (incl. exit 4, 6, 130)
-- [ ] Goldens reviewed and blessed
-- [ ] `just ci` green on ubuntu-26.04, macos-26, windows-2025
-- [ ] Manual LibreOffice/Word check recorded
-- [ ] README, AGENTS.md, plan.md updated
+- [x] `ariad-host::convert` with route table and full pipeline
+- [x] CLI `convert` with Ctrl-C and exit-code contract
+- [x] DOCX goldens (per-fixture entry lists, raw-XML assertions, injection guard)
+- [x] Engine conformance tests
+- [x] CLI contract tests (incl. exit 4, 6, 130)
+- [x] Goldens reviewed and blessed
+- [x] `just ci` green on ubuntu-26.04, macos-26, windows-2025
+- [x] Manual LibreOffice/Word check recorded
+- [x] README, AGENTS.md, plan.md updated
 
 ## Test scenario matrix
 
