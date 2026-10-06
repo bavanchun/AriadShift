@@ -3,7 +3,12 @@ mod support;
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
+};
+
+#[cfg(unix)]
+use std::{
+    process::Stdio,
     thread,
     time::{Duration, Instant},
 };
