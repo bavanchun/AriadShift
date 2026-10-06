@@ -457,28 +457,7 @@ fn raw_format(format: RawFormat) -> String {
 }
 
 fn allowed_link(url: &str) -> bool {
-    if url.starts_with('#') {
-        return true;
-    }
-    if url.trim() != url {
-        return false;
-    }
-    let Some((scheme, _)) = url.split_once(':') else {
-        return false;
-    };
-    let mut chars = scheme.chars();
-    if !chars
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic())
-        || !chars.all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '+' | '-' | '.')
-        })
-    {
-        return false;
-    }
-    scheme.eq_ignore_ascii_case("http")
-        || scheme.eq_ignore_ascii_case("https")
-        || scheme.eq_ignore_ascii_case("mailto")
+    crate::links::allowed_link(url)
 }
 
 fn collect_footnotes<'a>(blocks: &'a [IrBlock], footnotes: &mut BTreeMap<String, &'a [IrBlock]>) {

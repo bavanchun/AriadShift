@@ -410,8 +410,10 @@
         "markdown",
         "html",
         "docx",
-        "ariad_ir_json",
-        "pandoc_json"
+        "epub",
+        "pdf",
+        "ariad-ir+json",
+        "pandoc+json"
       ]
     },
     "Inline": {
