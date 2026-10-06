@@ -220,6 +220,7 @@ ariadshift/
 ├── .tools/                    # gitignored local tools
 ├── crates/
 │   ├── ariad-core/            # IR, format registry, planner, limits (I/O-free, WASM-compilable)
+│   │   └── data/capabilities.json # committed bootstrap & bench capabilities
 │   ├── ariad-host/            # engine runner, sandbox, engine packs, native adapters (feature flags)
 │   ├── ariad-cli/             # `ashift` binary (includes `ashift mcp`)
 │   ├── ariad-wasm/            # wasm-bindgen bindings for ariad-core
@@ -234,7 +235,7 @@ ariadshift/
 │   ├── ui/                    # shared React components (shadcn + Base UI)
 │   ├── sdk/                   # TypeScript SDK generated from OpenAPI
 │   └── config/                # tsconfig, Biome presets
-├── schemas/                   # JSON Schema: IR, engine protocol, capabilities (generated with schemars)
+├── schemas/                   # JSON Schema: IR, engine protocol, capabilities.v0.json (generated with schemars)
 ├── fixtures/
 │   ├── manifest.toml          # source, license and digest for each committed document
 │   ├── gen/                   # dev-only Python fixture generator; uv workspace member
@@ -312,16 +313,22 @@ Layout is optional. The `editable` profile discards it, while the `faithful` pro
 
 - **Nodes** represent formats (including `ariad-ir`). **Edges** represent engine capabilities.
 - Each edge carries **empirical metrics** from `bench/`: fidelity, editability, p50 time per page, peak memory, runtime availability (wasm / local / cloud), and license.
-- **Profiles** determine routing weights:
+- **Capabilities location**: `crates/ariad-core/data/capabilities.json` lives inside the `ariad-core` package, committed into version control, and embedded at compile time via `ariad_core::planner::embedded()`.
+- **Cost formula per edge**, evaluated for each profile:
+  $$\text{cost} = w_f \times (1 - \text{fidelity}) + w_e \times (1 - \text{editability}) + w_t \times \text{normalized}(p50\_ms) + \text{hop\_penalty}$$
+  - Execution time normalization: $\text{normalized}(p50\_ms) = \min(1.0, p50\_ms / 5000.0)$.
+  - Constant hop penalty: `HOP_PENALTY = 0.05` per graph edge to favor direct or shorter routes.
+  - **Unmeasured edge rule**: an edge with `metrics: null` receives a pessimistic default cost of `1.5` plus the hop penalty, and is flagged as unmeasured in the plan explanation.
+- **Profiles and Weights**:
 
-| Profile | Priority |
-|---|---|
-| `editable` (default) | Semantic accuracy, editability: real headings, lists, tables |
-| `faithful` | Visual page layout preservation |
-| `fast` | Execution speed |
-| `private` | Only local/wasm-capable edges; cloud routes are pruned from the graph |
+| Profile | Priority | $w_f$ (fidelity) | $w_e$ (editability) | $w_t$ (time) |
+|---|---|---|---|---|
+| `editable` (default) | Semantic accuracy, editability: real headings, lists, tables | 0.30 | 0.60 | 0.10 |
+| `faithful` | Visual page layout preservation | 0.70 | 0.20 | 0.10 |
+| `fast` | Execution speed | 0.15 | 0.15 | 0.70 |
+| `private` | Only local/wasm-capable edges; cloud routes are pruned | 0.30 | 0.60 | 0.10 |
 
-The planner runs Dijkstra's shortest-path algorithm over weighted costs. Decisions are always **explainable**:
+The planner runs Dijkstra's shortest-path algorithm over weighted costs with deterministic tie-breaking on engine ID then format ID. Cycles are prevented by rejecting routes that visit the same format more than once. The planner records the primary route, aggregated score (fidelity and editability multiply along the route, time adds), and up to 2 alternatives computed by removing each edge of the primary route in turn. Decisions are always **explainable**:
 
 ```text
 $ ashift plan paper.pdf --to docx
@@ -330,6 +337,10 @@ route   pdf ─docling→ ariad-ir ─pandoc→ docx
 score   fidelity 0.86 · editability 0.95 · estimated 9s · runs locally ✓
 alt     pdf ─pdfium(text)→ ariad-ir ─pandoc→ docx · 6x faster but loses table structure
 ```
+
+For pipeline composition and diagnostic testing, the CLI provides hidden hooks:
+- `ashift __ir <INPUT> -o <OUTPUT>` executes a single reader edge converting an input document to AriadShift IR.
+- `ashift __write <INPUT> --to <FORMAT> -o <OUTPUT>` executes a single writer edge converting an IR document to the target format. If the IR document lacks an explicit metadata title, target formats supporting titles (such as DOCX and EPUB) fall back to using the input filename stem, stripping any `.ir` suffix (e.g., `document.ir.json` -> `document`).
 
 ### 6.4 Format Matrix (v0.x Scope)
 
@@ -640,7 +651,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 | Fuzzing | cargo-fuzz 0.13.2 | Core readers, Pandoc AST mapper, IR JSON, limit validation (stable Rust with `-s none` in CI, date-pinned nightly ASan) |
 | E2E | Playwright (web), WebDriver (Tauri) | Primary user journeys |
 
-- Bench lives in `bench/` as a uv workspace member: jiwer 4.0.0 (CER/WER), rapidfuzz, apted 1.0.3, and our own TEDS. It generates `capabilities.json`, which is committed to the repository.
+- Bench lives in `bench/` as a uv workspace member: jiwer 4.0.0 (CER/WER), rapidfuzz, apted 1.0.3, and our own TEDS. It generates `crates/ariad-core/data/capabilities.json`, which is committed to the repository.
 - The planner reads this file; the website's "Quality" page displays metrics directly from it.
 - Every PR modifying an engine re-runs the benchmark suite and **reports score differentials**.
 - Fuzzing runs via cargo-fuzz 0.13.2 on stable with `-s none`, Linux CI only; the `fuzz/` crate is excluded from the Cargo workspace and never distributed. Six targets cover in-process readers, mappers and limits (archive preflight ZIP inspection and `docx_meta` XML parsing are not yet fuzzed; reserved as follow-up):
@@ -765,6 +776,8 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Engine memory limits | Engine-enforced in 0.x; host limiter in 1b | Generic host-side limiter via `RLIMIT_AS` or `pre_exec` in 1a | `RLIMIT_AS` causes hard PyTorch/GHC static TLS crashes below 6 GiB; `pre_exec` violates `#![forbid(unsafe_code)]` in `ariad-host`. When `limits.max_memory_mb` is `Some`, the host queries `describe` (with 30s timeout), caches capabilities within the process, and refuses with `limit_exceeded` before converting if `enforces_memory_limit` is false. |
 | Format wire id | Equals the registry id (`Format::id()`, e.g. `ariad-ir+json`) | snake_case variant identifiers (e.g. `ariad_ir_json`) | Unifies format identity across CLI, IR, engine protocol, and capabilities schema with zero drift. |
 | MPL-2.0 dependencies | Ammonia brings MPL-2.0 transitive crates; accepted as unmodified dependencies in native and WASM builds; each new MPL crate needs its own exception | Global MPL-2.0 allow list, hand-rolled HTML sanitizer | Keeps robust ammonia sanitization without opening a global allow-list; complies with OSI-only policy |
+| Capabilities location | `crates/ariad-core/data/capabilities.json` embedded at compile time via `embedded()` | Monorepo root `capabilities.json` | `cargo package` rejects `include_str!` paths outside the crate root; keeps `ariad-core` self-contained for crates.io and WASM |
+| Routing graph & planner | Weighted Dijkstra shortest-path in `ariad-core` over `capabilities.json` with profile weights, hop penalty, unmeasured penalty, and alternatives | Static hardcoded route table | Allows multi-engine routing with empirical benchmarks, explainability, and profile selection (`editable`, `faithful`, `fast`, `private`) |
 
 ---
 
