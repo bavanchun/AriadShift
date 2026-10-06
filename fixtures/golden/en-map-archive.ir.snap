@@ -1,0 +1,64 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Notes from the Map Room",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Browse the map index",
+              "type": "text"
+            }
+          ],
+          "title": null,
+          "type": "link",
+          "url": "https://example.org/map-index"
+        }
+      ],
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": "en",
+    "source_format": "html",
+    "subject": null,
+    "title": "Notes from the Map Room"
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}
