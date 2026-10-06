@@ -5,7 +5,6 @@ use comrak::{
     nodes::{AstNode, ListType, NodeValue, TableAlignment},
 };
 use thiserror::Error;
-use unicode_normalization::UnicodeNormalization;
 
 use crate::{
     format::Format,
@@ -14,15 +13,14 @@ use crate::{
         TableCell,
     },
     limits::{Limits, LimitsError},
-    reader::front_matter::parse_front_matter,
+    reader::{
+        common::{self, nfc, nonempty},
+        front_matter::parse_front_matter,
+    },
     warning::{SourcePos, Warning, WarningCode},
 };
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct ReadOutput {
-    pub document: Document,
-    pub warnings: Vec<Warning>,
-}
+pub use common::ReadOutput;
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ReadError {
@@ -480,10 +478,6 @@ fn parent_is_inline(node: &AstNode<'_>) -> bool {
     })
 }
 
-fn nonempty(value: &str) -> Option<String> {
-    (!value.is_empty()).then(|| value.to_owned())
-}
-
 fn text_inlines(text: &str, state: &WalkState) -> Vec<Inline> {
     let mut inlines = Vec::new();
     let mut cursor = 0;
@@ -622,10 +616,6 @@ fn normalize_footnote(label: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
-}
-
-fn nfc(value: &str) -> String {
-    value.nfc().collect()
 }
 
 fn unsupported(node: &AstNode<'_>, state: &mut WalkState, message: &str) {
