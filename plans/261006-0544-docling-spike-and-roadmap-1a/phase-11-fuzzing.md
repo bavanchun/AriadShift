@@ -52,7 +52,8 @@ Confirm the public entry points and their signatures for each target, and whethe
   - installs a **date-pinned** nightly (`rustup toolchain install nightly-YYYY-MM-DD --profile minimal`, where the date is a constant in the workflow, bumped deliberately);
   - runs `cargo +nightly-YYYY-MM-DD fuzz run <t>` with the default AddressSanitizer for 10 minutes each on `markdown_reader`, `html_reader`, `pandoc_ast_to_ir` and `ir_json`, the targets whose dependencies contain `unsafe`;
   - uploads `fuzz/artifacts/` on failure;
-  - has `permissions: contents: read`, SHA-pinned actions, and never builds release artifacts.
+  - has `permissions: contents: read`, SHA-pinned actions, and never builds release artifacts;
+  - checks out `dev` on scheduled runs, so the integration branch is fuzzed before a promotion. GitHub runs `schedule` and offers manual dispatch only for workflows on the default branch (`main`), so until the next promotion the workflow also runs on `pull_request` when its own file changes. That pull request run is the verification.
 - Any crash found during the phase is minimized (`cargo fuzz tmin`) and fixed, and the minimized input is added as a normal unit test in the owning crate with a descriptive name (no fuzz-run ids in names).
 
 ## Files
@@ -67,13 +68,13 @@ Confirm the public entry points and their signatures for each target, and whethe
 1. Scaffold `fuzz/` and one target (`markdown_reader`); run it 60 s locally. Commit.
 2. The other targets, each run for 5 minutes locally; fix and commit any finding separately (`fix(core): …` with a regression test). Commit the targets.
 3. Seeds, the typos exclude, and the `just fuzz` recipe. Commit.
-4. CI job; confirm it runs on a push and stays under 10 minutes total. Commit. Then `fuzz-nightly.yml`; trigger it once with `workflow_dispatch` and record the run. Commit.
+4. CI job; confirm it runs on a push and stays under 10 minutes total. Commit. Then `fuzz-nightly.yml`; record its run on the wave pull request that adds it. Commit.
 5. ARCHITECTURE §14. Commit.
 
 ## Success criteria
 
 - Every target runs 5 minutes locally without findings, or its findings are fixed with regression tests.
-- The CI `fuzz` job is green on `main` and its run time is recorded.
+- The CI `fuzz` job is green on `dev` and its run time is recorded.
 - `cargo build --workspace` on Windows never compiles the fuzz crate; the three-OS CI proves it.
 
 ## Risk assessment
