@@ -162,10 +162,11 @@ fn crash_captures_the_bounded_stderr_tail() {
 #[test]
 fn missing_result_is_a_crash() {
     let workspace = Workspace::new().expect("create workspace");
-    assert!(matches!(
-        run_probe(&workspace, "no-result", None, CancellationToken::new()),
-        Err(RunError::Crash { exit: Some(0), .. })
-    ));
+    let outcome = run_probe(&workspace, "no-result", None, CancellationToken::new());
+    assert!(
+        matches!(&outcome, Err(RunError::Crash { exit: Some(0), .. })),
+        "unexpected missing-result outcome: {outcome:?}"
+    );
 }
 
 #[test]
