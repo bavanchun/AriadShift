@@ -162,7 +162,9 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                             EngineFailure::limit_exceeded()
                         }
                         ir_io::ReadError::Io(_) => EngineFailure::io(),
-                        ir_io::ReadError::Json(_) => EngineFailure::invalid_request(),
+                        ir_io::ReadError::Json(_) | ir_io::ReadError::UnsupportedVersion => {
+                            EngineFailure::invalid_request()
+                        }
                     })?;
                 let mut mapped = from_ir(&document);
 

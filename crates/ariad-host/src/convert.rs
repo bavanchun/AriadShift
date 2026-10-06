@@ -7,8 +7,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub use ariad_core::planner::Profile;
 use ariad_core::{
+    format::Format,
     limits::Limits,
+    planner::{self, Plan, PlanError},
     protocol::{ErrorCode, Event, Input, Output, PROTOCOL, Request},
     reader::{html as reader_html, markdown as reader_markdown},
     warning::Warning,
@@ -19,7 +22,7 @@ use uuid::Uuid;
 
 use crate::{
     archive::{self, ArchiveError},
-    assets, package_meta,
+    assets, engines, package_meta,
     runner::{self, RunError},
     workspace::{Workspace, WorkspaceError},
 };
@@ -32,12 +35,88 @@ pub enum ReaderEdge {
     PandocEpub,
 }
 
+impl ReaderEdge {
+    /// All reader edges supported by the host executor.
+    pub const ALL: &'static [Self] = &[
+        Self::NativeMarkdown,
+        Self::NativeHtml,
+        Self::PandocDocx,
+        Self::PandocEpub,
+    ];
+
+    /// The format transformation and engine capability represented by this edge.
+    #[must_use]
+    pub const fn capability(self) -> (Format, Format, &'static str) {
+        match self {
+            Self::NativeMarkdown => (
+                Format::Markdown,
+                Format::AriadIrJson,
+                engines::IN_PROCESS_ENGINE,
+            ),
+            Self::NativeHtml => (
+                Format::Html,
+                Format::AriadIrJson,
+                engines::IN_PROCESS_ENGINE,
+            ),
+            Self::PandocDocx => (Format::Docx, Format::AriadIrJson, "pandoc"),
+            Self::PandocEpub => (Format::Epub, Format::AriadIrJson, "pandoc"),
+        }
+    }
+
+    /// Finds the reader edge corresponding to a specific format pair and engine.
+    #[must_use]
+    pub fn for_capability(from: Format, to: Format, engine: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|e| {
+            let (f, t, eng) = e.capability();
+            f == from && t == to && eng == engine
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WriterEdge {
     NativeMarkdown,
     NativeHtml,
     PandocDocx,
     PandocEpub,
+}
+
+impl WriterEdge {
+    /// All writer edges supported by the host executor.
+    pub const ALL: &'static [Self] = &[
+        Self::NativeMarkdown,
+        Self::NativeHtml,
+        Self::PandocDocx,
+        Self::PandocEpub,
+    ];
+
+    /// The format transformation and engine capability represented by this edge.
+    #[must_use]
+    pub const fn capability(self) -> (Format, Format, &'static str) {
+        match self {
+            Self::NativeMarkdown => (
+                Format::AriadIrJson,
+                Format::Markdown,
+                engines::IN_PROCESS_ENGINE,
+            ),
+            Self::NativeHtml => (
+                Format::AriadIrJson,
+                Format::Html,
+                engines::IN_PROCESS_ENGINE,
+            ),
+            Self::PandocDocx => (Format::AriadIrJson, Format::Docx, "pandoc"),
+            Self::PandocEpub => (Format::AriadIrJson, Format::Epub, "pandoc"),
+        }
+    }
+
+    /// Finds the writer edge corresponding to a specific format pair and engine.
+    #[must_use]
+    pub fn for_capability(from: Format, to: Format, engine: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|e| {
+            let (f, t, eng) = e.capability();
+            f == from && t == to && eng == engine
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -57,97 +136,6 @@ impl std::fmt::Display for Route {
             self.output_format.as_str()
         )
     }
-}
-
-pub const SUPPORTED_ROUTES: &[Route] = &[
-    Route {
-        input_format: DocumentFormat::Markdown,
-        output_format: DocumentFormat::Docx,
-        reader: ReaderEdge::NativeMarkdown,
-        writer: WriterEdge::PandocDocx,
-    },
-    Route {
-        input_format: DocumentFormat::Markdown,
-        output_format: DocumentFormat::Epub,
-        reader: ReaderEdge::NativeMarkdown,
-        writer: WriterEdge::PandocEpub,
-    },
-    Route {
-        input_format: DocumentFormat::Markdown,
-        output_format: DocumentFormat::Html,
-        reader: ReaderEdge::NativeMarkdown,
-        writer: WriterEdge::NativeHtml,
-    },
-    Route {
-        input_format: DocumentFormat::Html,
-        output_format: DocumentFormat::Docx,
-        reader: ReaderEdge::NativeHtml,
-        writer: WriterEdge::PandocDocx,
-    },
-    Route {
-        input_format: DocumentFormat::Html,
-        output_format: DocumentFormat::Epub,
-        reader: ReaderEdge::NativeHtml,
-        writer: WriterEdge::PandocEpub,
-    },
-    Route {
-        input_format: DocumentFormat::Html,
-        output_format: DocumentFormat::Markdown,
-        reader: ReaderEdge::NativeHtml,
-        writer: WriterEdge::NativeMarkdown,
-    },
-    Route {
-        input_format: DocumentFormat::Docx,
-        output_format: DocumentFormat::Markdown,
-        reader: ReaderEdge::PandocDocx,
-        writer: WriterEdge::NativeMarkdown,
-    },
-    Route {
-        input_format: DocumentFormat::Docx,
-        output_format: DocumentFormat::Html,
-        reader: ReaderEdge::PandocDocx,
-        writer: WriterEdge::NativeHtml,
-    },
-    Route {
-        input_format: DocumentFormat::Docx,
-        output_format: DocumentFormat::Epub,
-        reader: ReaderEdge::PandocDocx,
-        writer: WriterEdge::PandocEpub,
-    },
-    Route {
-        input_format: DocumentFormat::Epub,
-        output_format: DocumentFormat::Markdown,
-        reader: ReaderEdge::PandocEpub,
-        writer: WriterEdge::NativeMarkdown,
-    },
-    Route {
-        input_format: DocumentFormat::Epub,
-        output_format: DocumentFormat::Html,
-        reader: ReaderEdge::PandocEpub,
-        writer: WriterEdge::NativeHtml,
-    },
-    Route {
-        input_format: DocumentFormat::Epub,
-        output_format: DocumentFormat::Docx,
-        reader: ReaderEdge::PandocEpub,
-        writer: WriterEdge::PandocDocx,
-    },
-];
-
-#[must_use]
-pub fn route_for(input: DocumentFormat, output: DocumentFormat) -> Option<&'static Route> {
-    SUPPORTED_ROUTES
-        .iter()
-        .find(|route| route.input_format == input && route.output_format == output)
-}
-
-#[must_use]
-pub fn supported_routes_string() -> String {
-    SUPPORTED_ROUTES
-        .iter()
-        .map(|r| r.to_string())
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -200,6 +188,70 @@ impl DocumentFormat {
     }
 }
 
+impl From<DocumentFormat> for Format {
+    fn from(doc_fmt: DocumentFormat) -> Self {
+        match doc_fmt {
+            DocumentFormat::Markdown => Self::Markdown,
+            DocumentFormat::Html => Self::Html,
+            DocumentFormat::Docx => Self::Docx,
+            DocumentFormat::Epub => Self::Epub,
+        }
+    }
+}
+
+impl TryFrom<Format> for DocumentFormat {
+    type Error = ();
+
+    fn try_from(fmt: Format) -> Result<Self, Self::Error> {
+        match fmt {
+            Format::Markdown => Ok(Self::Markdown),
+            Format::Html => Ok(Self::Html),
+            Format::Docx => Ok(Self::Docx),
+            Format::Epub => Ok(Self::Epub),
+            _ => Err(()),
+        }
+    }
+}
+
+#[must_use]
+pub fn route_from_plan(plan: &Plan) -> Option<Route> {
+    if plan.steps.len() != 2 {
+        return None;
+    }
+    let reader_step = &plan.steps[0];
+    let writer_step = &plan.steps[1];
+
+    if reader_step.to != Format::AriadIrJson || writer_step.from != Format::AriadIrJson {
+        return None;
+    }
+
+    let input_format = DocumentFormat::try_from(reader_step.from).ok()?;
+    let output_format = DocumentFormat::try_from(writer_step.to).ok()?;
+
+    let reader = ReaderEdge::for_capability(reader_step.from, reader_step.to, &reader_step.engine)?;
+    let writer = WriterEdge::for_capability(writer_step.from, writer_step.to, &writer_step.engine)?;
+
+    Some(Route {
+        input_format,
+        output_format,
+        reader,
+        writer,
+    })
+}
+
+/// Returns the capability edges supported by the host executor.
+#[must_use]
+pub fn executor_edges() -> Vec<(Format, Format, &'static str)> {
+    let mut edges = Vec::with_capacity(ReaderEdge::ALL.len() + WriterEdge::ALL.len());
+    for r in ReaderEdge::ALL {
+        edges.push(r.capability());
+    }
+    for w in WriterEdge::ALL {
+        edges.push(w.capability());
+    }
+    edges
+}
+
 #[must_use]
 pub fn detect_format_from_path(path: &Path) -> Option<DocumentFormat> {
     let ext = path.extension()?.to_str()?;
@@ -208,7 +260,14 @@ pub fn detect_format_from_path(path: &Path) -> Option<DocumentFormat> {
 
 #[must_use]
 pub fn is_supported_route(input: DocumentFormat, output: DocumentFormat) -> bool {
-    route_for(input, output).is_some()
+    if input == output {
+        return false;
+    }
+    let caps = planner::embedded();
+    let from = Format::from(input);
+    let to = Format::from(output);
+    let engines = caps.registered_engines();
+    planner::plan(caps, from, to, Profile::Editable, &engines).is_ok()
 }
 
 #[must_use]
@@ -231,12 +290,17 @@ pub fn paths_refer_to_same_file(input: &Path, output: &Path) -> bool {
     input == output
 }
 
+fn stem_without_ir(path: &Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+    Some(stem.strip_suffix(".ir").unwrap_or(stem).to_owned())
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConvertRequest {
     pub input: PathBuf,
     pub output: PathBuf,
     pub target_format: String,
-    pub profile: Option<String>,
+    pub profile: Profile,
     pub overwrite: bool,
     pub engine_program: PathBuf,
     pub title_fallback: Option<String>,
@@ -254,7 +318,7 @@ impl ConvertRequest {
             input: input.into(),
             output: output.into(),
             target_format: target_format.into(),
-            profile: None,
+            profile: Profile::Editable,
             overwrite: false,
             engine_program: engine_program.into(),
             title_fallback: None,
@@ -277,26 +341,25 @@ pub struct ConvertReport {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConvertError {
-    UnsupportedRoute,
+    UnsupportedRoute { detail: Option<String> },
     DestinationSameAsInput,
     InputIo,
     LimitExceeded,
     ToolMissing,
     DestinationExists,
     Interrupted,
+    UnsupportedIrVersion,
+    InvalidCapabilities(String),
     Failed,
 }
 
 impl std::fmt::Display for ConvertError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnsupportedRoute => {
-                write!(
-                    f,
-                    "unsupported conversion route; supported routes: {}",
-                    supported_routes_string()
-                )
-            }
+            Self::UnsupportedRoute { detail } => match detail {
+                Some(info) => write!(f, "unsupported conversion route; {info}"),
+                None => write!(f, "unsupported conversion route"),
+            },
             Self::DestinationSameAsInput => {
                 write!(f, "the output path cannot be the same as the input file")
             }
@@ -313,6 +376,8 @@ impl std::fmt::Display for ConvertError {
                 )
             }
             Self::Interrupted => write!(f, "conversion was interrupted"),
+            Self::UnsupportedIrVersion => write!(f, "unsupported IR version"),
+            Self::InvalidCapabilities(err) => write!(f, "invalid capabilities: {err}"),
             Self::Failed => write!(f, "conversion failed"),
         }
     }
@@ -325,13 +390,35 @@ impl ConvertError {
     pub const fn exit_code(&self) -> u8 {
         match self {
             Self::DestinationSameAsInput => 2,
-            Self::UnsupportedRoute => 3,
+            Self::UnsupportedRoute { .. } => 3,
             Self::LimitExceeded => 4,
             Self::ToolMissing => 5,
             Self::DestinationExists => 6,
             Self::Interrupted => 130,
-            Self::InputIo | Self::Failed => 1,
+            Self::InputIo
+            | Self::UnsupportedIrVersion
+            | Self::InvalidCapabilities(_)
+            | Self::Failed => 1,
         }
+    }
+}
+
+fn reachable_targets_detail(from_str: &str, reachable: &[Format]) -> String {
+    let mut sorted_targets: Vec<&'static str> = reachable
+        .iter()
+        .copied()
+        .filter(|&f| f != Format::AriadIrJson)
+        .map(|f| DocumentFormat::try_from(f).map_or(f.id(), DocumentFormat::as_str))
+        .collect();
+    sorted_targets.sort_unstable();
+    sorted_targets.dedup();
+    if sorted_targets.is_empty() {
+        format!("no reachable targets from {from_str}")
+    } else {
+        format!(
+            "reachable targets from {from_str}: {}",
+            sorted_targets.join(", ")
+        )
     }
 }
 
@@ -361,7 +448,7 @@ where
         input: input.to_path_buf(),
         output: output.to_path_buf(),
         target_format: target_format.to_owned(),
-        profile: None,
+        profile: Profile::Editable,
         overwrite,
         engine_program: engine_program.to_path_buf(),
         title_fallback: None,
@@ -421,7 +508,12 @@ where
     }
 
     if route.input_format == route.output_format {
-        return Err(ConvertError::UnsupportedRoute);
+        return Err(ConvertError::UnsupportedRoute {
+            detail: Some(format!(
+                "no reachable targets from {}",
+                route.input_format.as_str()
+            )),
+        });
     }
 
     if paths_refer_to_same_file(&request.input, &request.output) {
@@ -533,6 +625,329 @@ where
     })
 }
 
+/// Request for converting an input document to AriadShift IR.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConvertToIrRequest {
+    pub input: PathBuf,
+    pub output: PathBuf,
+    pub overwrite: bool,
+    pub engine_program: PathBuf,
+}
+
+impl ConvertToIrRequest {
+    #[must_use]
+    pub fn new(
+        input: impl Into<PathBuf>,
+        output: impl Into<PathBuf>,
+        engine_program: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            input: input.into(),
+            output: output.into(),
+            overwrite: false,
+            engine_program: engine_program.into(),
+        }
+    }
+}
+
+/// Request for writing an AriadShift IR document to a target format.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WriteFromIrRequest {
+    pub input: PathBuf,
+    pub output: PathBuf,
+    pub target_format: String,
+    pub profile: Profile,
+    pub overwrite: bool,
+    pub engine_program: PathBuf,
+    pub title_fallback: Option<String>,
+}
+
+impl WriteFromIrRequest {
+    #[must_use]
+    pub fn new(
+        input: impl Into<PathBuf>,
+        output: impl Into<PathBuf>,
+        target_format: impl Into<String>,
+        engine_program: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            input: input.into(),
+            output: output.into(),
+            target_format: target_format.into(),
+            profile: Profile::Editable,
+            overwrite: false,
+            engine_program: engine_program.into(),
+            title_fallback: None,
+        }
+    }
+}
+
+/// Converts a document to AriadShift IR (single reader edge).
+pub fn convert_to_ir<F>(
+    request: &ConvertToIrRequest,
+    cancel: CancellationToken,
+    _on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+
+    if paths_refer_to_same_file(&request.input, &request.output) {
+        return Err(ConvertError::DestinationSameAsInput);
+    }
+
+    let ext = request
+        .input
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("unknown");
+    let input_format =
+        detect_format_from_path(&request.input).ok_or_else(|| ConvertError::UnsupportedRoute {
+            detail: Some(format!("no reachable targets from {ext}")),
+        })?;
+
+    let limits = Limits::local();
+    let started = Instant::now();
+    let mut warnings = Vec::new();
+
+    let reader = ReaderEdge::ALL
+        .iter()
+        .copied()
+        .find(|e| {
+            let (from, to, _) = e.capability();
+            from == Format::from(input_format) && to == Format::AriadIrJson
+        })
+        .ok_or_else(|| ConvertError::UnsupportedRoute {
+            detail: Some(format!(
+                "no reachable targets from {}",
+                input_format.as_str()
+            )),
+        })?;
+
+    let (_, _, engine) = reader.capability();
+    let engine_args = [OsString::from("__engine"), OsString::from(engine)];
+    if engine != engines::IN_PROCESS_ENGINE {
+        let avail = engines::availability(&request.engine_program, &engine_args, cancel.clone())
+            .map_err(map_run_error)?;
+        if !avail.is_available(engine) {
+            return Err(ConvertError::ToolMissing);
+        }
+    }
+
+    let (mut document, asset_base_dir) = match reader {
+        ReaderEdge::NativeMarkdown => {
+            let bytes = read_bounded_file(&request.input, limits.max_input_bytes)?;
+            let text = String::from_utf8(bytes).map_err(|_| ConvertError::InputIo)?;
+            let parsed = reader_markdown::read(&text, &limits).map_err(|err| match err {
+                reader_markdown::ReadError::NestingTooDeep { .. }
+                | reader_markdown::ReadError::TooManyBlocks { .. }
+                | reader_markdown::ReadError::InputTooLarge { .. }
+                | reader_markdown::ReadError::InvalidLimits(_) => ConvertError::LimitExceeded,
+            })?;
+            for w in &parsed.warnings {
+                warnings.push(safe_warning(w));
+            }
+            let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
+            (parsed.document, Some(base_dir))
+        }
+        ReaderEdge::NativeHtml => {
+            let bytes = read_bounded_file(&request.input, limits.max_input_bytes)?;
+            let parsed = reader_html::read(&bytes, &limits).map_err(|err| match err {
+                reader_html::ReadError::NestingTooDeep { .. }
+                | reader_html::ReadError::TooManyBlocks { .. }
+                | reader_html::ReadError::InputTooLarge { .. }
+                | reader_html::ReadError::TooManyNodes { .. }
+                | reader_html::ReadError::InvalidLimits(_) => ConvertError::LimitExceeded,
+            })?;
+            for w in &parsed.warnings {
+                warnings.push(safe_warning(w));
+            }
+            let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
+            (parsed.document, Some(base_dir))
+        }
+        ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => {
+            let format_str = if reader == ReaderEdge::PandocDocx {
+                "docx"
+            } else {
+                "epub"
+            };
+            let mut archive_workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+            let res = read_archive_to_ir(
+                &request.input,
+                format_str,
+                &mut archive_workspace,
+                &limits,
+                &request.engine_program,
+                cancel.clone(),
+            );
+            let _ = archive_workspace.close();
+            let archive_out = res?;
+            warnings.extend(archive_out.warnings);
+            (archive_out.document, None)
+        }
+    };
+
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+    if let Some(base_dir) = asset_base_dir {
+        let asset_warnings =
+            assets::resolve(&mut document, base_dir, &limits).map_err(|_| ConvertError::InputIo)?;
+        for w in &asset_warnings {
+            warnings.push(safe_warning(w));
+        }
+    }
+
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+
+    let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+    let ir_path = workspace.output_dir().join("document.ir.json");
+    let ir_file = fs::File::create(&ir_path).map_err(|_| ConvertError::Failed)?;
+    let mut buf_writer = std::io::BufWriter::new(ir_file);
+    serde_json::to_writer_pretty(&mut buf_writer, &document).map_err(|_| ConvertError::Failed)?;
+    buf_writer.flush().map_err(|_| ConvertError::Failed)?;
+
+    workspace
+        .promote(&ir_path, &request.output, request.overwrite)
+        .map_err(|error| match error {
+            WorkspaceError::DestinationExists => ConvertError::DestinationExists,
+            other => map_workspace_error(other),
+        })?;
+
+    let cleanup = workspace.close();
+    if cleanup.is_err() {
+        warnings.push(ConvertWarning {
+            code: "workspace_cleanup".to_owned(),
+            message: "Temporary workspace cleanup failed.".to_owned(),
+        });
+    }
+
+    Ok(ConvertReport {
+        output: request.output.clone(),
+        warnings,
+        elapsed: started.elapsed(),
+    })
+}
+
+/// Writes an AriadShift IR document to a target format (single writer edge).
+pub fn write_from_ir<F>(
+    request: &WriteFromIrRequest,
+    cancel: CancellationToken,
+    mut on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+
+    if paths_refer_to_same_file(&request.input, &request.output) {
+        return Err(ConvertError::DestinationSameAsInput);
+    }
+
+    let target_format = DocumentFormat::parse(&request.target_format).ok_or_else(|| {
+        let clean_target: String = request
+            .target_format
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(64)
+            .collect();
+        ConvertError::UnsupportedRoute {
+            detail: Some(format!("unknown target format '{clean_target}'")),
+        }
+    })?;
+
+    let limits = Limits::local();
+    let started = Instant::now();
+
+    let bytes = read_bounded_file(&request.input, Some(limits.max_ir_json_bytes))?;
+    let document = crate::ir_io::read_versioned(&bytes, &limits).map_err(|err| match err {
+        crate::ir_io::ReadError::ByteLimitExceeded { .. }
+        | crate::ir_io::ReadError::DepthExceeded(_)
+        | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
+        crate::ir_io::ReadError::UnsupportedVersion => ConvertError::UnsupportedIrVersion,
+        crate::ir_io::ReadError::Io(_) => ConvertError::InputIo,
+        _ => ConvertError::Failed,
+    })?;
+
+    let writer = WriterEdge::ALL
+        .iter()
+        .copied()
+        .find(|e| {
+            let (from, to, _) = e.capability();
+            from == Format::AriadIrJson && to == Format::from(target_format)
+        })
+        .ok_or_else(|| {
+            let clean_target: String = request
+                .target_format
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(64)
+                .collect();
+            ConvertError::UnsupportedRoute {
+                detail: Some(format!("unknown target format '{clean_target}'")),
+            }
+        })?;
+
+    let (_, _, engine) = writer.capability();
+    let engine_args = [OsString::from("__engine"), OsString::from(engine)];
+    if engine != engines::IN_PROCESS_ENGINE {
+        let avail = engines::availability(&request.engine_program, &engine_args, cancel.clone())
+            .map_err(map_run_error)?;
+        if !avail.is_available(engine) {
+            return Err(ConvertError::ToolMissing);
+        }
+    }
+
+    let convert_req = ConvertRequest {
+        input: request.input.clone(),
+        output: request.output.clone(),
+        target_format: request.target_format.clone(),
+        profile: request.profile,
+        overwrite: request.overwrite,
+        engine_program: request.engine_program.clone(),
+        title_fallback: request
+            .title_fallback
+            .clone()
+            .or_else(|| stem_without_ir(&request.input)),
+    };
+
+    let mut warnings = Vec::new();
+
+    let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+    let result = write_in_workspace(
+        &mut workspace,
+        &document,
+        writer,
+        &convert_req,
+        &engine_args,
+        limits,
+        cancel,
+        &mut warnings,
+        &mut on_event,
+    );
+    let cleanup = workspace.close();
+    result?;
+    if cleanup.is_err() {
+        warnings.push(ConvertWarning {
+            code: "workspace_cleanup".to_owned(),
+            message: "Temporary workspace cleanup failed.".to_owned(),
+        });
+    }
+
+    Ok(ConvertReport {
+        output: request.output.clone(),
+        warnings,
+        elapsed: started.elapsed(),
+    })
+}
+
 fn convert_executor<F>(
     request: &ConvertRequest,
     engine_args: &[OsString],
@@ -547,13 +962,136 @@ where
         return Err(ConvertError::Interrupted);
     }
 
-    let input_format =
-        detect_format_from_path(&request.input).ok_or(ConvertError::UnsupportedRoute)?;
-    let target_format =
-        DocumentFormat::parse(&request.target_format).ok_or(ConvertError::UnsupportedRoute)?;
+    let ext = request
+        .input
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("unknown");
+    let clean_ext: String = ext.chars().filter(|c| !c.is_control()).take(32).collect();
 
-    let route = route_for(input_format, target_format).ok_or(ConvertError::UnsupportedRoute)?;
-    convert_for_route(request, route, engine_args, limits, cancel, on_event)
+    let input_format = match detect_format_from_path(&request.input) {
+        Some(fmt) => fmt,
+        None => {
+            return Err(ConvertError::UnsupportedRoute {
+                detail: Some(format!("no reachable targets from {clean_ext}")),
+            });
+        }
+    };
+
+    let caps = planner::embedded();
+    let from_fmt = Format::from(input_format);
+
+    let target_format = match DocumentFormat::parse(&request.target_format) {
+        Some(fmt) => fmt,
+        None => {
+            let clean_target: String = request
+                .target_format
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(64)
+                .collect();
+            let registered = caps.registered_engines();
+            let reachable =
+                planner::reachable_formats(caps, from_fmt, request.profile, &registered);
+            let detail = if reachable.is_empty() {
+                format!(
+                    "unknown target format '{clean_target}'; no reachable targets from {}",
+                    input_format.as_str()
+                )
+            } else {
+                format!(
+                    "unknown target format '{clean_target}'; {}",
+                    reachable_targets_detail(input_format.as_str(), &reachable)
+                )
+            };
+            return Err(ConvertError::UnsupportedRoute {
+                detail: Some(detail),
+            });
+        }
+    };
+
+    let to_fmt = Format::from(target_format);
+
+    if input_format == target_format {
+        let registered = caps.registered_engines();
+        let reachable = planner::reachable_formats(caps, from_fmt, request.profile, &registered);
+        let detail = reachable_targets_detail(input_format.as_str(), &reachable);
+        return Err(ConvertError::UnsupportedRoute {
+            detail: Some(detail),
+        });
+    }
+
+    let registered_engines = caps.registered_engines();
+    let initial_plan =
+        match planner::plan(caps, from_fmt, to_fmt, request.profile, &registered_engines) {
+            Ok(p) => p,
+            Err(PlanError::NoRoute { reachable, .. }) => {
+                let detail = reachable_targets_detail(input_format.as_str(), &reachable);
+                return Err(ConvertError::UnsupportedRoute {
+                    detail: Some(detail),
+                });
+            }
+            Err(PlanError::InvalidCapabilities(err)) => {
+                return Err(ConvertError::InvalidCapabilities(err.to_string()));
+            }
+            Err(PlanError::SameFormat { .. }) => {
+                let detail = format!("no reachable targets from {}", input_format.as_str());
+                return Err(ConvertError::UnsupportedRoute {
+                    detail: Some(detail),
+                });
+            }
+        };
+
+    let is_pure_core = initial_plan
+        .steps
+        .iter()
+        .all(|s| s.engine == engines::IN_PROCESS_ENGINE);
+    let plan = if is_pure_core {
+        initial_plan
+    } else {
+        let avail = engines::availability(&request.engine_program, engine_args, cancel.clone())
+            .map_err(map_run_error)?;
+        let available_engine_ids = avail.available_engine_ids();
+
+        let all_needed_available = initial_plan
+            .steps
+            .iter()
+            .all(|s| available_engine_ids.contains(&s.engine));
+
+        if all_needed_available {
+            initial_plan
+        } else {
+            match planner::plan(
+                caps,
+                from_fmt,
+                to_fmt,
+                request.profile,
+                &available_engine_ids,
+            ) {
+                Ok(p) => p,
+                Err(PlanError::NoRoute { .. }) => {
+                    return Err(ConvertError::ToolMissing);
+                }
+                Err(PlanError::InvalidCapabilities(err)) => {
+                    return Err(ConvertError::InvalidCapabilities(err.to_string()));
+                }
+                Err(PlanError::SameFormat { .. }) => {
+                    let detail = format!("no reachable targets from {}", input_format.as_str());
+                    return Err(ConvertError::UnsupportedRoute {
+                        detail: Some(detail),
+                    });
+                }
+            }
+        }
+    };
+
+    let route = route_from_plan(&plan).ok_or_else(|| {
+        let detail = format!("no reachable targets from {}", input_format.as_str());
+        ConvertError::UnsupportedRoute {
+            detail: Some(detail),
+        }
+    })?;
+    convert_for_route(request, &route, engine_args, limits, cancel, on_event)
 }
 
 // Helper coordinating writer invocation, stamping, and atomic promotion.
@@ -587,10 +1125,11 @@ where
             path
         }
         WriterEdge::NativeHtml => {
+            let fallback_stem = stem_without_ir(&request.input);
             let title_fallback = request
                 .title_fallback
                 .as_deref()
-                .or_else(|| request.input.file_stem().and_then(|stem| stem.to_str()));
+                .or(fallback_stem.as_deref());
             let write_output = writer_html::write_with_title_fallback(document, title_fallback);
             for w in &write_output.warnings {
                 warnings.push(safe_warning(w));
@@ -602,7 +1141,9 @@ where
         WriterEdge::PandocDocx | WriterEdge::PandocEpub => {
             let ir_path = workspace.input_dir().join("document.ir.json");
             let ir_file = fs::File::create(&ir_path).map_err(|_| ConvertError::Failed)?;
-            serde_json::to_writer(ir_file, document).map_err(|_| ConvertError::Failed)?;
+            let mut buf_writer = std::io::BufWriter::new(ir_file);
+            serde_json::to_writer(&mut buf_writer, document).map_err(|_| ConvertError::Failed)?;
+            buf_writer.flush().map_err(|_| ConvertError::Failed)?;
 
             let target_str = if writer == WriterEdge::PandocDocx {
                 "docx"
@@ -610,19 +1151,12 @@ where
                 "epub"
             };
             let mut options = BTreeMap::new();
-            if let Some(profile) = &request.profile {
-                options.insert(
-                    "profile".to_owned(),
-                    serde_json::Value::String(profile.clone()),
-                );
-            }
+            options.insert(
+                "profile".to_owned(),
+                serde_json::Value::String(request.profile.as_str().to_owned()),
+            );
             let title_fallback = request.title_fallback.clone().unwrap_or_else(|| {
-                request
-                    .input
-                    .file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .unwrap_or("Untitled")
-                    .to_owned()
+                stem_without_ir(&request.input).unwrap_or_else(|| "Untitled".to_owned())
             });
             options.insert(
                 "title_fallback".to_owned(),
@@ -842,7 +1376,8 @@ pub fn read_archive_to_ir(
         .ok_or(ConvertError::Failed)?;
 
     let ir_file = fs::File::open(&artifact.path).map_err(|_| ConvertError::Failed)?;
-    let doc = crate::ir_io::read(ir_file, limits).map_err(|err| match err {
+    let buf_reader = std::io::BufReader::new(ir_file);
+    let doc = crate::ir_io::read(buf_reader, limits).map_err(|err| match err {
         crate::ir_io::ReadError::ByteLimitExceeded { .. }
         | crate::ir_io::ReadError::DepthExceeded(_)
         | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
@@ -1005,7 +1540,7 @@ mod tests {
             (ConvertError::InputIo, 1),
             (ConvertError::Failed, 1),
             (ConvertError::DestinationSameAsInput, 2),
-            (ConvertError::UnsupportedRoute, 3),
+            (ConvertError::UnsupportedRoute { detail: None }, 3),
             (ConvertError::LimitExceeded, 4),
             (ConvertError::ToolMissing, 5),
             (ConvertError::DestinationExists, 6),
@@ -1257,7 +1792,7 @@ mod tests {
             |_| {},
         );
 
-        assert!(matches!(result, Err(ConvertError::UnsupportedRoute)));
+        assert!(matches!(result, Err(ConvertError::UnsupportedRoute { .. })));
     }
 
     #[test]
