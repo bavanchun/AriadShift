@@ -172,10 +172,11 @@ fn missing_result_is_a_crash() {
 #[test]
 fn malformed_and_trailing_events_are_protocol_violations() {
     let workspace = Workspace::new().expect("create workspace");
-    assert!(matches!(
-        run_probe(&workspace, "bad-json", None, CancellationToken::new()),
-        Err(RunError::ProtocolViolation(_))
-    ));
+    let bad_json = run_probe(&workspace, "bad-json", None, CancellationToken::new());
+    assert!(
+        matches!(&bad_json, Err(RunError::ProtocolViolation(_))),
+        "unexpected bad JSON outcome: {bad_json:?}"
+    );
 
     let workspace = Workspace::new().expect("create workspace");
     assert!(matches!(

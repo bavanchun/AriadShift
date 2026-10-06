@@ -221,7 +221,11 @@ where
         .take()
         .ok_or_else(|| RunError::Io(io::Error::other("engine stdin pipe is missing")))?;
     tokio::select! {
-        result = stdin.write_all(&request_line) => result.map_err(RunError::Io)?,
+        result = stdin.write_all(&request_line) => match result {
+            Ok(()) => {},
+            Err(error) if error.kind() == io::ErrorKind::BrokenPipe => {},
+            Err(error) => return Err(RunError::Io(error)),
+        },
         _ = cancel.cancelled() => return Err(RunError::Cancelled),
         _ = wait_deadline(deadline) => return Err(RunError::Timeout),
     }
