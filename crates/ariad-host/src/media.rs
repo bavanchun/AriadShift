@@ -1,5 +1,5 @@
 use std::{
-    fs, io,
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -10,16 +10,8 @@ use ariad_core::{
 };
 use cap_std::{ambient_authority, fs::Dir};
 use sha2::{Digest, Sha256};
-use thiserror::Error;
 
 use crate::assets;
-
-#[derive(Debug, Error)]
-pub enum MediaError {
-    #[allow(dead_code)]
-    #[error("failed to open media directory: {0}")]
-    MediaDirectory(#[source] io::Error),
-}
 
 /// Ingests media files extracted into `<work_dir>/media` by Pandoc.
 ///
@@ -34,11 +26,7 @@ pub enum MediaError {
 /// Unreferenced media files are ignored.
 /// Missing or invalid media emits a `WarningCode::ImageNotEmbedded` warning and
 /// the image falls back to its alt text (or figure to its caption paragraph).
-pub fn ingest_media(
-    document: &mut Document,
-    work_dir: &Path,
-    limits: &Limits,
-) -> Result<Vec<Warning>, MediaError> {
+pub fn ingest_media(document: &mut Document, work_dir: &Path, limits: &Limits) -> Vec<Warning> {
     let media_dir = work_dir.join("media");
     let mut warnings = Vec::new();
 
@@ -65,7 +53,7 @@ pub fn ingest_media(
         &mut warnings,
     );
 
-    Ok(warnings)
+    warnings
 }
 
 fn is_windows_drive_path(s: &str) -> bool {
@@ -439,7 +427,7 @@ mod tests {
             }],
         });
 
-        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
+        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local());
         assert!(warnings.is_empty());
         assert_eq!(doc.assets.len(), 1);
 
@@ -476,7 +464,7 @@ mod tests {
             }],
         });
 
-        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
+        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local());
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
         assert!(doc.assets.is_empty());
@@ -509,7 +497,7 @@ mod tests {
             }],
         });
 
-        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
+        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local());
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
         assert!(doc.assets.is_empty());
@@ -541,7 +529,7 @@ mod tests {
             }],
         });
 
-        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
+        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local());
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
         assert!(doc.assets.is_empty());
@@ -568,7 +556,7 @@ mod tests {
         let mut limits = Limits::local();
         limits.max_asset_bytes = Some(10); // smaller than PNG_BYTES
 
-        let warnings = ingest_media(&mut doc, work_dir.path(), &limits).unwrap();
+        let warnings = ingest_media(&mut doc, work_dir.path(), &limits);
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
         assert!(doc.assets.is_empty());
@@ -592,7 +580,7 @@ mod tests {
             }],
         });
 
-        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
+        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local());
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
         assert!(doc.assets.is_empty());
@@ -612,7 +600,7 @@ mod tests {
             }],
         });
 
-        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
+        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local());
         assert!(warnings.is_empty());
         assert!(doc.assets.is_empty());
     }
@@ -659,7 +647,7 @@ mod tests {
             }],
         });
 
-        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
+        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local());
         assert!(
             warnings.is_empty(),
             "expected no warnings, got: {warnings:?}"
@@ -694,7 +682,7 @@ mod tests {
                 }],
             });
 
-            let warnings = ingest_media(&mut doc, work_dir, &Limits::local()).unwrap();
+            let warnings = ingest_media(&mut doc, work_dir, &Limits::local());
             assert_eq!(warnings.len(), 1, "failed at prefix_len {prefix_len}");
             assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
             match &doc.body[0] {
@@ -726,7 +714,7 @@ mod tests {
                 }],
             });
 
-            let warnings = ingest_media(&mut doc, work_dir, &Limits::local()).unwrap();
+            let warnings = ingest_media(&mut doc, work_dir, &Limits::local());
             assert_eq!(warnings.len(), 1, "failed at prefix_len {prefix_len}");
             assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
             match &doc.body[0] {

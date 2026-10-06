@@ -391,7 +391,7 @@ The `Event` enum is tagged by `type`:
 - `artifact { path, format }`: produced outputs; paths stay inside `output.dir`.
 - `result { ok, metrics?, error? }`: occurs exactly once and last.
 
-Error codes are closed to `invalid_request`, `unsupported_route`, `limit_exceeded`, `engine_failure`, `tool_missing`, `tool_version`, and `io`.
+Error codes are closed to `invalid_request`, `unsupported_route`, `limit_exceeded`, `engine_failure`, `tool_missing`, `tool_version`, and `io`. Corrupt or encrypted archive inputs rejected by preflight map to `engine_failure` with a descriptive message rather than `invalid_request`.
 
 Protocol rules:
 

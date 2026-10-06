@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::VecDeque,
     env,
     ffi::OsString,
@@ -30,12 +31,22 @@ const PANDOC_INSTALL_HINT: &str = "Install Pandoc with `just pandoc` or set ASHI
 #[derive(Debug)]
 struct EngineFailure {
     code: ErrorCode,
-    message: &'static str,
+    message: Cow<'static, str>,
 }
 
 impl EngineFailure {
     const fn new(code: ErrorCode, message: &'static str) -> Self {
-        Self { code, message }
+        Self {
+            code,
+            message: Cow::Borrowed(message),
+        }
+    }
+
+    fn custom(code: ErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: Cow::Owned(message.into()),
+        }
     }
 
     const fn invalid_request() -> Self {
@@ -85,7 +96,7 @@ pub fn serve<R: BufRead, W: Write>(mut input: R, mut output: W) -> ExitCode {
                     metrics: None,
                     error: Some(EngineError {
                         code: failure.code,
-                        message: failure.message.to_owned(),
+                        message: failure.message.into_owned(),
                     }),
                 },
             );
@@ -221,13 +232,17 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                         | crate::archive::ArchiveError::DecompressedSizeExceeded { .. } => {
                             EngineFailure::limit_exceeded()
                         }
+                        crate::archive::ArchiveError::Encrypted => EngineFailure::new(
+                            ErrorCode::EngineFailure,
+                            "archive is encrypted: password-protected archives are not supported",
+                        ),
                         crate::archive::ArchiveError::DuplicateEntryName { .. }
                         | crate::archive::ArchiveError::EntryCountMismatch { .. }
-                        | crate::archive::ArchiveError::InvalidEntryName { .. } => {
-                            EngineFailure::invalid_request()
+                        | crate::archive::ArchiveError::InvalidEntryName { .. }
+                        | crate::archive::ArchiveError::Io(_)
+                        | crate::archive::ArchiveError::Zip(_) => {
+                            EngineFailure::custom(ErrorCode::EngineFailure, err.to_string())
                         }
-                        crate::archive::ArchiveError::Io(_)
-                        | crate::archive::ArchiveError::Zip(_) => EngineFailure::failure(),
                     },
                 )?;
 
@@ -278,8 +293,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
 
                 let mut document = mapped.document;
                 let media_warnings =
-                    media::ingest_media(&mut document, Path::new(&work_dir), &limits)
-                        .map_err(|_| EngineFailure::failure())?;
+                    media::ingest_media(&mut document, Path::new(&work_dir), &limits);
 
                 for warning in media_warnings {
                     let code = serde_json::to_string(&warning.code)
@@ -511,6 +525,15 @@ fn run_pandoc(
     Ok(())
 }
 
+pub(crate) fn rts_memory_cap_mb(limits: &Limits) -> u32 {
+    match limits.max_memory_mb {
+        Some(mb) => mb.max(1),
+        None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
+            .unwrap_or(u32::MAX)
+            .max(512),
+    }
+}
+
 fn run_pandoc_reader(
     pandoc_path: &Path,
     limits: &Limits,
@@ -521,12 +544,7 @@ fn run_pandoc_reader(
     input_format: &str,
 ) -> Result<Pandoc, EngineFailure> {
     let mut command = Command::new(pandoc_path);
-    let rts_cap_mb = match limits.max_memory_mb {
-        Some(mb) => mb.max(1),
-        None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
-            .unwrap_or(u32::MAX)
-            .max(512),
-    };
+    let rts_cap_mb = rts_memory_cap_mb(limits);
     command
         .arg("+RTS")
         .arg(format!("-M{rts_cap_mb}M"))
@@ -698,7 +716,7 @@ mod tests {
     use ariad_core::{limits::Limits, protocol::ErrorCode, protocol::Event};
     use tempfile::tempdir;
 
-    use super::{EngineFailure, pandoc_log_warnings};
+    use super::{EngineFailure, pandoc_log_warnings, rts_memory_cap_mb};
 
     #[test]
     fn maps_pandoc_warning_log_entries_to_safe_warning_events() {
@@ -1023,32 +1041,13 @@ mod tests {
         let mut limits = Limits::local();
         limits.max_memory_mb = None;
         limits.max_decompressed_bytes = u64::MAX;
-
-        let rts_cap_mb = match limits.max_memory_mb {
-            Some(mb) => mb.max(1),
-            None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
-                .unwrap_or(u32::MAX)
-                .max(512),
-        };
-        assert_eq!(rts_cap_mb, u32::MAX);
+        assert_eq!(rts_memory_cap_mb(&limits), u32::MAX);
 
         limits.max_decompressed_bytes = 0;
-        let rts_cap_mb = match limits.max_memory_mb {
-            Some(mb) => mb.max(1),
-            None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
-                .unwrap_or(u32::MAX)
-                .max(512),
-        };
-        assert_eq!(rts_cap_mb, 512);
+        assert_eq!(rts_memory_cap_mb(&limits), 512);
 
         limits.max_memory_mb = Some(0);
-        let rts_cap_mb = match limits.max_memory_mb {
-            Some(mb) => mb.max(1),
-            None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
-                .unwrap_or(u32::MAX)
-                .max(512),
-        };
-        assert_eq!(rts_cap_mb, 1);
+        assert_eq!(rts_memory_cap_mb(&limits), 1);
     }
 
     #[test]

@@ -19,6 +19,8 @@ pub enum ArchiveError {
     InvalidEntryName { name: String },
     #[error("archive contains duplicate entry name `{name}`")]
     DuplicateEntryName { name: String },
+    #[error("archive is encrypted: password-protected archives are not supported")]
+    Encrypted,
     #[error(
         "archive entry count mismatch: end-of-central-directory reports {eocd_count}, but zip archive indexed {archive_count}"
     )]
@@ -86,6 +88,11 @@ pub fn preflight_archive(path: &Path, limits: &Limits) -> Result<(), ArchiveErro
                     count: raw_cd_entries,
                     limit: limits.max_archive_entries,
                 });
+            }
+
+            let flags = u16::from_le_bytes(header[8..10].try_into().unwrap());
+            if flags & 1 != 0 {
+                return Err(ArchiveError::Encrypted);
             }
 
             let uncomp_size = u32::from_le_bytes(header[24..28].try_into().unwrap()) as u64;
@@ -209,7 +216,15 @@ pub fn preflight_archive(path: &Path, limits: &Limits) -> Result<(), ArchiveErro
     let mut buffer = [0u8; 64 * 1024];
 
     for i in 0..entry_count {
-        let mut entry = archive.by_index(i)?;
+        let mut entry = match archive.by_index(i) {
+            Ok(e) => e,
+            Err(zip::result::ZipError::UnsupportedArchive(msg))
+                if msg.to_ascii_lowercase().contains("password") =>
+            {
+                return Err(ArchiveError::Encrypted);
+            }
+            Err(e) => return Err(ArchiveError::Zip(e)),
+        };
         let remaining = limits.max_decompressed_bytes.saturating_sub(inflated_total);
 
         let mut counting_reader = (&mut entry).take(remaining.saturating_add(1));
@@ -766,6 +781,32 @@ with zipfile.ZipFile(r'{}', 'w') as z:
             let corrupt_file = NamedTempFile::new().unwrap();
             std::fs::write(corrupt_file.path(), &garbage_loc).unwrap();
             let _ = preflight_archive(corrupt_file.path(), &Limits::local());
+        }
+    }
+
+    #[test]
+    fn encrypted_archive_is_rejected_with_typed_error() {
+        let mut buffer = Vec::new();
+        {
+            let mut zip = ZipWriter::new(Cursor::new(&mut buffer));
+            zip.start_file("secret.txt", SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"secret data").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let cd_sig = b"PK\x01\x02";
+        let cd_pos = buffer.windows(4).position(|w| w == cd_sig).unwrap();
+        let flags = u16::from_le_bytes(buffer[cd_pos + 8..cd_pos + 10].try_into().unwrap());
+        buffer[cd_pos + 8..cd_pos + 10].copy_from_slice(&(flags | 0x0001).to_le_bytes());
+
+        let temp = NamedTempFile::new().unwrap();
+        std::fs::write(temp.path(), &buffer).unwrap();
+
+        let err = preflight_archive(temp.path(), &Limits::local()).unwrap_err();
+        match err {
+            ArchiveError::Encrypted => {}
+            other => panic!("expected ArchiveError::Encrypted, got {other:?}"),
         }
     }
 }
