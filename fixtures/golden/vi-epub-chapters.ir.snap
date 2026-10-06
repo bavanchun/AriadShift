@@ -1,0 +1,164 @@
+---
+source: crates/ariad-cli/tests/reader_golden.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Khu vườn đọc sách",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Sinh hoạt hằng tuần",
+          "type": "text"
+        }
+      ],
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Hành trình ven sông",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Đoạn đường men bến đá",
+          "type": "text"
+        }
+      ],
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Lan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Ghi chép hằng ngày",
+          "type": "text"
+        }
+      ],
+      "level": 3,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Khi trời nắng, bóng cây đổ thành những vệt dài trên mặt nước. Buổi chiều, trẻ con mang diều ra bãi cỏ, còn người lớn ngồi dưới mái hiên nói chuyện mùa mưa. Lối đi không dẫn đến một nơi đặc biệt; giá trị của nó nằm ở những cuộc gặp gỡ hằng ngày.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Không gian sinh hoạt chung",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Cả khu vườn và lối đi ven sông đều mở cửa cho mọi người ghé thăm bất kỳ lúc nào.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Gặp gỡ cuối tuần",
+          "type": "text"
+        }
+      ],
+      "level": 2,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Mỗi buổi chiều, người dân trong khu phố lại cùng nhau trò chuyện và chia sẻ những câu chuyện thường nhật.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [
+      "AriadShift contributors"
+    ],
+    "date": null,
+    "keywords": [],
+    "language": "vi",
+    "source_format": "epub",
+    "subject": null,
+    "title": "Tuyển tập đọc sách và hành trình"
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}
