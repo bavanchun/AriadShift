@@ -87,12 +87,19 @@ fn extract_relative_path(href: &str, media_dir: &Path) -> Result<PathBuf, &'stat
 
     let forward_slash_href = decoded.replace('\\', "/");
     let media_dir_str = media_dir.to_string_lossy().replace('\\', "/");
+    let media_dir_prefix = if media_dir_str.ends_with('/') {
+        media_dir_str
+    } else {
+        format!("{media_dir_str}/")
+    };
 
-    let rel_str = if forward_slash_href.len() >= media_dir_str.len()
-        && forward_slash_href[..media_dir_str.len()].eq_ignore_ascii_case(&media_dir_str)
+    let rel_str = if forward_slash_href
+        .get(..media_dir_prefix.len())
+        .is_some_and(|p| p.eq_ignore_ascii_case(&media_dir_prefix))
     {
-        let rest = &forward_slash_href[media_dir_str.len()..];
-        rest.trim_start_matches('/')
+        forward_slash_href
+            .get(media_dir_prefix.len()..)
+            .unwrap_or("")
     } else if let Some(rest) = forward_slash_href.strip_prefix("./media/") {
         rest
     } else if let Some(rest) = forward_slash_href.strip_prefix("media/") {
@@ -667,6 +674,70 @@ mod tests {
                 other => panic!("expected Inline::Image, got {other:?}"),
             },
             other => panic!("expected Paragraph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn multibyte_vietnamese_image_href_never_panics_at_any_work_dir_length() {
+        for prefix_len in 40..=80 {
+            let base = "x".repeat(prefix_len);
+            let work_dir = Path::new(&base);
+            let href = "hình_ảnh_minh_họa_tiếng_việt_chất_lượng_cao_12345.png";
+            let mut doc = Document::default();
+            doc.body.push(Block::Paragraph {
+                content: vec![Inline::Image {
+                    target: AssetRef::Url {
+                        href: href.to_owned(),
+                    },
+                    alt: "Hình minh họa".to_owned(),
+                    title: None,
+                }],
+            });
+
+            let warnings = ingest_media(&mut doc, work_dir, &Limits::local()).unwrap();
+            assert_eq!(warnings.len(), 1, "failed at prefix_len {prefix_len}");
+            assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
+            match &doc.body[0] {
+                Block::Paragraph { content } => match &content[0] {
+                    Inline::Text { text } => {
+                        assert_eq!(text, "Hình minh họa");
+                    }
+                    other => panic!("expected Inline::Text, got {other:?}"),
+                },
+                other => panic!("expected Paragraph, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn probe_multibyte_repeated_chars_missing_image_at_variable_prefix_lengths() {
+        for prefix_len in 40..=80 {
+            let base = format!("/tmp/{}", "a".repeat(prefix_len - 5));
+            let work_dir = Path::new(&base);
+            let href = "ảảảảảảảảảảảảảảảảảảả.png";
+            let mut doc = Document::default();
+            doc.body.push(Block::Paragraph {
+                content: vec![Inline::Image {
+                    target: AssetRef::Url {
+                        href: href.to_owned(),
+                    },
+                    alt: "Fallback alt".to_owned(),
+                    title: None,
+                }],
+            });
+
+            let warnings = ingest_media(&mut doc, work_dir, &Limits::local()).unwrap();
+            assert_eq!(warnings.len(), 1, "failed at prefix_len {prefix_len}");
+            assert_eq!(warnings[0].code, WarningCode::ImageNotEmbedded);
+            match &doc.body[0] {
+                Block::Paragraph { content } => match &content[0] {
+                    Inline::Text { text } => {
+                        assert_eq!(text, "Fallback alt");
+                    }
+                    other => panic!("expected Inline::Text, got {other:?}"),
+                },
+                other => panic!("expected Paragraph, got {other:?}"),
+            }
         }
     }
 }
