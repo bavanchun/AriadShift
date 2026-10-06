@@ -165,10 +165,9 @@ where
     let ir_file = fs::File::create(&ir_path).map_err(|_| ConvertError::Failed)?;
     serde_json::to_writer(ir_file, document).map_err(|_| ConvertError::Failed)?;
 
-    let request = Request {
+    let request = Request::Convert {
         protocol: PROTOCOL.to_owned(),
         job: Uuid::new_v4().simple().to_string(),
-        op: "convert".to_owned(),
         input: Input {
             path: ir_path.to_string_lossy().into_owned(),
             format: "ariad-ir+json".to_owned(),

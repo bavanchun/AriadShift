@@ -21,10 +21,9 @@ use tokio_util::sync::CancellationToken;
 fn request_for(workspace: &Workspace, document: &Document, limits: Limits) -> Request {
     let input_path = workspace.input_dir().join("document.ir.json");
     fs::write(&input_path, serde_json::to_vec(document).unwrap()).unwrap();
-    Request {
+    Request::Convert {
         protocol: PROTOCOL.to_owned(),
         job: "pandoc-engine-test".to_owned(),
-        op: "convert".to_owned(),
         input: Input {
             path: input_path.to_string_lossy().into_owned(),
             format: "ariad-ir+json".to_owned(),
