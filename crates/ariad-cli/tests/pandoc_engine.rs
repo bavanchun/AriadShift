@@ -179,3 +179,41 @@ fn unknown_hidden_engine_command_uses_the_usage_exit_code() {
         .expect("start ashift");
     assert_eq!(output.status.code(), Some(2));
 }
+
+#[test]
+fn pandoc_engine_answers_describe_request() {
+    let mut captured_events = Vec::new();
+    let args = ["__engine".into(), "pandoc".into()];
+    let request = Request::Describe {
+        protocol: PROTOCOL.to_owned(),
+        job: "describe-job".to_owned(),
+    };
+    let outcome = runner::run(
+        Path::new(env!("CARGO_BIN_EXE_ashift")),
+        &args,
+        &request,
+        CancellationToken::new(),
+        |event| captured_events.push(event),
+    )
+    .expect("runner executes describe");
+    assert!(outcome.artifacts.is_empty());
+    assert_eq!(captured_events.len(), 2);
+    match &captured_events[0] {
+        Event::Capabilities {
+            engine,
+            tool,
+            routes,
+            enforces_memory_limit,
+            ..
+        } => {
+            assert_eq!(engine, "pandoc");
+            assert_eq!(tool.name, "pandoc");
+            assert_eq!(tool.status, ariad_core::protocol::ToolAvailability::Found);
+            assert!(enforces_memory_limit);
+            assert_eq!(routes.len(), 1);
+            assert_eq!(routes[0].input, "ariad-ir+json");
+            assert_eq!(routes[0].output, "docx");
+        }
+        other => panic!("expected capabilities event, got {other:?}"),
+    }
+}

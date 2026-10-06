@@ -260,6 +260,11 @@ where
                         }
                         let event: Event = serde_json::from_slice(&line)
                             .map_err(|_| RunError::ProtocolViolation("event line is not valid protocol JSON"))?;
+                        if matches!(&event, Event::Capabilities { .. }) && output_dir.is_some() {
+                            return Err(RunError::ProtocolViolation(
+                                "capabilities emitted for convert request",
+                            ));
+                        }
                         if let Event::Artifact { path, format } = &event {
                             let artifact_path = Path::new(path);
                             let Some(dir) = output_dir else {

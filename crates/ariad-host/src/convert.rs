@@ -181,6 +181,7 @@ where
         limits,
     };
     let args = ["__engine".into(), "pandoc".into()];
+    let mut protocol_violation = false;
     let outcome = runner::run(
         engine_program,
         &args,
@@ -196,9 +197,16 @@ where
                 });
             }
             Event::Artifact { .. } | Event::Result { .. } => {}
+            Event::Capabilities { .. } => {
+                protocol_violation = true;
+            }
         },
     )
     .map_err(map_run_error)?;
+
+    if protocol_violation {
+        return Err(ConvertError::Failed);
+    }
 
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
