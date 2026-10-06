@@ -77,7 +77,7 @@ docs: record the ashift binary name in ARCHITECTURE.md
    - Rust: `cargo fmt --all`, then `cargo clippy --workspace --all-targets` and `cargo nextest run -p <crate>`.
    - Brand: `pnpm --dir brand build`, then check `brand/preview.png` (see AGENTS.md).
    - Shared contracts (IR, engine protocol, schemas, CI): `just ci`.
-2. Before a push, run `just ci`. It is the same gate CI runs. This includes documentation-only commits: `typos` also checks Markdown, so a plan or a report alone can turn CI red.
+2. Before a push, run `just ci` and `just lint-commits`. They are the same checks CI runs ([ci.md](ci.md)). This includes documentation-only commits: `typos` also checks Markdown, so a plan or a report alone can turn CI red.
 3. Check `git status` for stray files: editor backups, `.tools/`, `target/`, `node_modules/`.
 
 ## Staging
