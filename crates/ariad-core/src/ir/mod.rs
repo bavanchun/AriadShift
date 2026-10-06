@@ -19,6 +19,8 @@ pub struct Document {
     pub assets: AssetStore,
     pub layout: Option<LayoutIndex>,
     pub provenance: Option<Provenance>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub furniture: Vec<Block>,
 }
 
 impl Default for Document {
@@ -30,6 +32,7 @@ impl Default for Document {
             assets: AssetStore::new(),
             layout: None,
             provenance: None,
+            furniture: Vec::new(),
         }
     }
 }
@@ -38,7 +41,7 @@ impl Document {
     /// Recursively counts all blocks in the document.
     #[must_use]
     pub fn block_count(&self) -> usize {
-        count_blocks(&self.body)
+        count_blocks(&self.body) + count_blocks(&self.furniture)
     }
 }
 
@@ -122,6 +125,8 @@ pub enum Block {
         columns: Vec<ColumnSpec>,
         head: Vec<Vec<TableCell>>,
         body: Vec<Vec<TableCell>>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        footnotes: Vec<Inline>,
     },
     Figure {
         asset: AssetRef,
@@ -211,6 +216,8 @@ pub struct ColumnSpec {
 pub struct TableCell {
     pub rowspan: u32,
     pub colspan: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<bool>,
     pub blocks: Vec<Block>,
 }
 
@@ -240,10 +247,38 @@ pub struct Asset {
     pub bytes: Vec<u8>,
 }
 
-/// Optional layout hints, keyed by a stable extension identifier.
+/// Bounding box coordinates with a top-left origin: `[left, top, right, bottom]`.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BoundingBox {
+    pub left: f64,
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+}
+
+/// Page dimensions and geometry with a top-left origin.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PageGeometry {
+    pub page_no: u32,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Position and page location for a block in the layout index.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BlockPosition {
+    pub page_no: u32,
+    pub bbox: BoundingBox,
+}
+
+/// Page geometry and per-block bounding boxes keyed by stable block path.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(transparent)]
-pub struct LayoutIndex(pub BTreeMap<String, serde_json::Value>);
+pub struct LayoutIndex {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pages: Vec<PageGeometry>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub blocks: BTreeMap<String, BlockPosition>,
+}
 
 /// Optional source and processing metadata, keyed by a stable extension identifier.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -322,5 +357,95 @@ mod tests {
     fn raw_format_is_closed_to_html_and_tex() {
         assert!(serde_json::from_str::<RawFormat>("\"openxml\"").is_err());
         assert_eq!(serde_json::to_string(&RawFormat::Tex).unwrap(), "\"tex\"");
+    }
+
+    #[test]
+    fn new_ir_fields_omit_when_empty_and_roundtrip_when_populated() {
+        let default_doc = Document::default();
+        let default_json = serde_json::to_string(&default_doc).unwrap();
+        assert!(!default_json.contains("\"furniture\""));
+
+        let mut custom_doc = Document::default();
+        custom_doc.furniture.push(Block::Paragraph {
+            content: vec![Inline::Text {
+                text: "Header text".to_owned(),
+            }],
+        });
+        let mut blocks = std::collections::BTreeMap::new();
+        blocks.insert(
+            "body/0".to_owned(),
+            super::BlockPosition {
+                page_no: 1,
+                bbox: super::BoundingBox {
+                    left: 10.0,
+                    top: 20.0,
+                    right: 100.0,
+                    bottom: 50.0,
+                },
+            },
+        );
+        custom_doc.layout = Some(super::LayoutIndex {
+            pages: vec![super::PageGeometry {
+                page_no: 1,
+                width: 612.0,
+                height: 792.0,
+            }],
+            blocks,
+        });
+
+        let custom_json = serde_json::to_string(&custom_doc).unwrap();
+        assert!(custom_json.contains("\"furniture\""));
+        assert!(custom_json.contains("\"pages\""));
+        assert!(custom_json.contains("\"blocks\""));
+
+        let roundtripped: Document = serde_json::from_str(&custom_json).unwrap();
+        assert_eq!(roundtripped, custom_doc);
+    }
+
+    #[test]
+    fn table_header_and_footnotes_omit_when_empty_and_roundtrip() {
+        let cell_empty = super::TableCell {
+            rowspan: 1,
+            colspan: 1,
+            header: None,
+            blocks: Vec::new(),
+        };
+        let cell_empty_json = serde_json::to_string(&cell_empty).unwrap();
+        assert!(!cell_empty_json.contains("\"header\""));
+
+        let cell_header = super::TableCell {
+            rowspan: 1,
+            colspan: 1,
+            header: Some(true),
+            blocks: Vec::new(),
+        };
+        let cell_header_json = serde_json::to_string(&cell_header).unwrap();
+        assert!(cell_header_json.contains("\"header\":true"));
+        let roundtrip_cell: super::TableCell = serde_json::from_str(&cell_header_json).unwrap();
+        assert_eq!(roundtrip_cell, cell_header);
+
+        let table_empty = Block::Table {
+            caption: None,
+            columns: Vec::new(),
+            head: Vec::new(),
+            body: Vec::new(),
+            footnotes: Vec::new(),
+        };
+        let table_empty_json = serde_json::to_string(&table_empty).unwrap();
+        assert!(!table_empty_json.contains("\"footnotes\""));
+
+        let table_with_footnotes = Block::Table {
+            caption: None,
+            columns: Vec::new(),
+            head: Vec::new(),
+            body: Vec::new(),
+            footnotes: vec![Inline::Text {
+                text: "Table note".to_owned(),
+            }],
+        };
+        let table_footnotes_json = serde_json::to_string(&table_with_footnotes).unwrap();
+        assert!(table_footnotes_json.contains("\"footnotes\""));
+        let roundtrip_table: Block = serde_json::from_str(&table_footnotes_json).unwrap();
+        assert_eq!(roundtrip_table, table_with_footnotes);
     }
 }

@@ -138,6 +138,7 @@ impl Mapper<'_> {
                 columns,
                 head,
                 body,
+                footnotes: _,
             } => {
                 let caption = caption
                     .as_deref()
@@ -701,6 +702,7 @@ mod tests {
                     head: vec![vec![TableCell {
                         rowspan: 1,
                         colspan: 2,
+                        header: None,
                         blocks: vec![IrBlock::Paragraph {
                             content: vec![IrInline::Text {
                                 text: "head".to_owned(),
@@ -710,12 +712,14 @@ mod tests {
                     body: vec![vec![TableCell {
                         rowspan: 2,
                         colspan: 1,
+                        header: None,
                         blocks: vec![IrBlock::Paragraph {
                             content: vec![IrInline::Text {
                                 text: "body".to_owned(),
                             }],
                         }],
                     }]],
+                    footnotes: Vec::new(),
                 },
                 IrBlock::Figure {
                     asset: AssetRef::Asset {

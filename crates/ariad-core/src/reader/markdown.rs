@@ -285,6 +285,7 @@ fn convert_node(
                 columns,
                 head,
                 body,
+                footnotes: Vec::new(),
             })
         }
         NodeValue::TableRow(header) => ConvertedNode::TableRow {
@@ -307,6 +308,7 @@ fn convert_node(
             ConvertedNode::TableCell(TableCell {
                 rowspan: 1,
                 colspan: 1,
+                header: None,
                 blocks: cell_blocks,
             })
         }
