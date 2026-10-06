@@ -35,6 +35,23 @@ fn main() -> ExitCode {
             println!("not-json");
             ExitCode::SUCCESS
         }
+        "stray-stdout" => {
+            println!("stray line from native library or runtime");
+            emit(&ok_result());
+            ExitCode::SUCCESS
+        }
+        "dump-env" => {
+            let mut map = std::collections::BTreeMap::new();
+            for (key, val) in env::vars() {
+                map.insert(key, serde_json::Value::String(val));
+            }
+            emit(&Event::Result {
+                ok: true,
+                metrics: Some(map),
+                error: None,
+            });
+            ExitCode::SUCCESS
+        }
         "event-after-result" => {
             emit(&ok_result());
             emit(&Event::Progress {
