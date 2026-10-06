@@ -21,6 +21,8 @@ pub enum ReadError {
     Json(#[from] serde_json::Error),
     #[error("Document block count {count} exceeds limit of {limit}")]
     BlockLimitExceeded { count: usize, limit: u32 },
+    #[error("unsupported IR version")]
+    UnsupportedVersion,
 }
 
 /// An adapter that streams from an underlying `Read`, enforcing a byte limit
@@ -143,14 +145,7 @@ pub fn read_json<T: for<'de> Deserialize<'de>>(
     Ok(value)
 }
 
-/// Reads an IR document with bounded byte size, incremental nesting depth scan,
-/// deep deserialization without whole-file buffering, and post-parse block count validation.
-pub fn read(reader: impl Read, limits: &Limits) -> Result<Document, ReadError> {
-    let byte_cap = limits.max_ir_json_bytes;
-    let depth_budget = json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
-
-    let document: Document = read_json(reader, byte_cap, depth_budget)?;
-
+fn validate_block_count(document: &Document, limits: &Limits) -> Result<(), ReadError> {
     let block_count = document.block_count();
     if block_count > limits.max_blocks as usize {
         return Err(ReadError::BlockLimitExceeded {
@@ -158,6 +153,122 @@ pub fn read(reader: impl Read, limits: &Limits) -> Result<Document, ReadError> {
             limit: limits.max_blocks,
         });
     }
+    Ok(())
+}
+
+/// Reads an IR document with bounded byte size, incremental nesting depth scan,
+/// deep deserialization without whole-file buffering, and post-parse block count validation.
+pub fn read(reader: impl Read, limits: &Limits) -> Result<Document, ReadError> {
+    let byte_cap = limits.max_ir_json_bytes;
+    let depth_budget = json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
+
+    let document: Document = read_json(reader, byte_cap, depth_budget)?;
+    validate_block_count(&document, limits)?;
 
     Ok(document)
+}
+
+#[derive(Deserialize)]
+struct VersionProbe {
+    version: Option<String>,
+}
+
+/// Reads an IR document from a byte slice with version verification,
+/// bounded depth scan, and block count limit.
+pub fn read_versioned(slice: &[u8], limits: &Limits) -> Result<Document, ReadError> {
+    if (slice.len() as u64) > limits.max_ir_json_bytes {
+        return Err(ReadError::ByteLimitExceeded {
+            limit: limits.max_ir_json_bytes,
+        });
+    }
+
+    let depth_budget = json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
+    let mut scanner = JsonDepthScanner::new(depth_budget);
+    scanner.feed(slice)?;
+
+    let probe: Result<VersionProbe, serde_json::Error> = serde_json::from_slice(slice);
+    match probe {
+        Ok(v) => {
+            if v.version.as_deref() != Some(ariad_core::ir::IR_VERSION) {
+                return Err(ReadError::UnsupportedVersion);
+            }
+        }
+        Err(err) => {
+            if err.is_data() {
+                return Err(ReadError::UnsupportedVersion);
+            }
+            return Err(ReadError::Json(err));
+        }
+    }
+
+    let document: Document = read_json(slice, limits.max_ir_json_bytes, depth_budget)?;
+    validate_block_count(&document, limits)?;
+
+    Ok(document)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ariad_core::ir::Block;
+
+    #[test]
+    fn read_versioned_accepts_valid_ir() {
+        let doc = Document {
+            version: ariad_core::ir::IR_VERSION.to_owned(),
+            body: vec![Block::Paragraph { content: vec![] }],
+            ..Default::default()
+        };
+        let bytes = serde_json::to_vec(&doc).unwrap();
+        let read = read_versioned(&bytes, &Limits::local()).unwrap();
+        assert_eq!(read, doc);
+    }
+
+    #[test]
+    fn read_versioned_rejects_unsupported_version() {
+        let json = br#"{"version":"ariad-ir/999","meta":{"authors":[],"date":null},"body":[]}"#;
+        let err = read_versioned(json, &Limits::local()).unwrap_err();
+        assert!(matches!(err, ReadError::UnsupportedVersion));
+    }
+
+    #[test]
+    fn read_versioned_rejects_missing_version() {
+        let json = br#"{"meta":{"authors":[],"date":null},"body":[]}"#;
+        let err = read_versioned(json, &Limits::local()).unwrap_err();
+        assert!(matches!(err, ReadError::UnsupportedVersion));
+    }
+
+    #[test]
+    fn read_versioned_rejects_top_level_array() {
+        let json = br#"[1, 2, 3]"#;
+        let err = read_versioned(json, &Limits::local()).unwrap_err();
+        assert!(matches!(err, ReadError::UnsupportedVersion));
+    }
+
+    #[test]
+    fn read_versioned_rejects_malformed_json_as_json_error() {
+        let json = br#"{"version": "ariad-ir/0", broken"#;
+        let err = read_versioned(json, &Limits::local()).unwrap_err();
+        assert!(matches!(err, ReadError::Json(_)));
+    }
+
+    #[test]
+    fn read_versioned_rejects_exceeded_blocks() {
+        let mut limits = Limits::local();
+        limits.max_blocks = 1;
+        let doc = Document {
+            version: ariad_core::ir::IR_VERSION.to_owned(),
+            body: vec![
+                Block::Paragraph { content: vec![] },
+                Block::Paragraph { content: vec![] },
+            ],
+            ..Default::default()
+        };
+        let bytes = serde_json::to_vec(&doc).unwrap();
+        let err = read_versioned(&bytes, &limits).unwrap_err();
+        assert!(matches!(
+            err,
+            ReadError::BlockLimitExceeded { count: 2, limit: 1 }
+        ));
+    }
 }

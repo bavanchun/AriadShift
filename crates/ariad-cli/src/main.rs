@@ -7,7 +7,7 @@ use std::{
 #[cfg(debug_assertions)]
 use std::time::Duration;
 
-use ariad_host::convert::{ConvertError, ConvertEvent, ConvertReport};
+use ariad_host::convert::{ConvertError, ConvertEvent, ConvertReport, Profile};
 use clap::{Args, Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
@@ -21,11 +21,46 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     Convert(ConvertArgs),
+    #[command(name = "__ir", hide = true)]
+    Ir(IrArgs),
+    #[command(name = "__write", hide = true)]
+    Write(WriteArgs),
     #[command(name = "__engine", hide = true)]
     Engine {
         #[command(subcommand)]
         command: EngineCommand,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
+#[clap(rename_all = "lower")]
+enum CliProfile {
+    Editable,
+    Faithful,
+    Fast,
+    Private,
+}
+
+impl From<CliProfile> for Profile {
+    fn from(p: CliProfile) -> Self {
+        match p {
+            CliProfile::Editable => Self::Editable,
+            CliProfile::Faithful => Self::Faithful,
+            CliProfile::Fast => Self::Fast,
+            CliProfile::Private => Self::Private,
+        }
+    }
+}
+
+impl From<Profile> for CliProfile {
+    fn from(p: Profile) -> Self {
+        match p {
+            Profile::Editable => Self::Editable,
+            Profile::Faithful => Self::Faithful,
+            Profile::Fast => Self::Fast,
+            Profile::Private => Self::Private,
+        }
+    }
 }
 
 #[derive(Args)]
@@ -36,6 +71,37 @@ struct ConvertArgs {
     target_format: String,
     #[arg(short, long, value_name = "OUTPUT")]
     output: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = CliProfile::Editable)]
+    profile: CliProfile,
+    #[arg(long)]
+    overwrite: bool,
+}
+
+#[derive(Args)]
+struct IrArgs {
+    #[arg(value_name = "INPUT")]
+    input: PathBuf,
+    #[arg(short, long, value_name = "OUTPUT")]
+    output: PathBuf,
+    #[arg(long)]
+    overwrite: bool,
+}
+
+/// Arguments for writing an AriadShift IR document to a target format.
+///
+/// If the IR document does not contain an explicit metadata title, target formats that
+/// support or require titles (including HTML, DOCX, and EPUB) fall back to using the input filename
+/// stem (stripping any `.ir` suffix, e.g. `doc.ir.json` -> `doc`).
+#[derive(Args)]
+struct WriteArgs {
+    #[arg(value_name = "INPUT")]
+    input: PathBuf,
+    #[arg(long = "to", value_name = "FORMAT")]
+    target_format: String,
+    #[arg(short, long, value_name = "OUTPUT")]
+    output: PathBuf,
+    #[arg(long, value_enum, default_value_t = CliProfile::Editable)]
+    profile: CliProfile,
     #[arg(long)]
     overwrite: bool,
 }
@@ -49,6 +115,8 @@ fn main() -> ExitCode {
     match Cli::try_parse() {
         Ok(cli) => match cli.command {
             Some(Command::Convert(args)) => run_convert(args),
+            Some(Command::Ir(args)) => run_ir(args),
+            Some(Command::Write(args)) => run_write(args),
             Some(Command::Engine {
                 command: EngineCommand::Pandoc,
             }) => serve_pandoc(),
@@ -62,41 +130,12 @@ fn main() -> ExitCode {
     }
 }
 
-fn run_convert(args: ConvertArgs) -> ExitCode {
-    let output = match args.output {
-        Some(path) => path,
-        None => {
-            let ext = match ariad_host::convert::DocumentFormat::parse(&args.target_format) {
-                Some(fmt) => fmt.default_extension(),
-                None => args.target_format.as_str(),
-            };
-            args.input.with_extension(ext)
-        }
-    };
-    let target_format_str = args.target_format;
-    let engine_program = match std::env::current_exe() {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("ashift: conversion failed");
-            return ExitCode::from(1);
-        }
-    };
+fn run_blocking<F>(f: F) -> ExitCode
+where
+    F: FnOnce(CancellationToken) -> Result<ConvertReport, ConvertError> + Send + 'static,
+{
     let cancel = CancellationToken::new();
     let task_cancel = cancel.clone();
-    let input = args.input;
-    let overwrite = args.overwrite;
-    let stderr_is_terminal = io::stderr().is_terminal();
-
-    let request = ariad_host::convert::ConvertRequest {
-        input,
-        output,
-        target_format: target_format_str,
-        profile: None,
-        overwrite,
-        engine_program,
-        title_fallback: None,
-    };
-
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -109,14 +148,7 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
     };
 
     runtime.block_on(async move {
-        let task = tokio::task::spawn_blocking(move || {
-            ariad_host::convert::convert(&request, task_cancel, |event| match event {
-                ConvertEvent::Progress { stage } if stderr_is_terminal => {
-                    eprintln!("progress: {stage}");
-                }
-                ConvertEvent::Progress { .. } => {}
-            })
-        });
+        let task = tokio::task::spawn_blocking(move || f(task_cancel));
         tokio::pin!(task);
 
         tokio::select! {
@@ -142,6 +174,100 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
                 }
             }
         }
+    })
+}
+
+fn run_convert(args: ConvertArgs) -> ExitCode {
+    let output = match args.output {
+        Some(path) => path,
+        None => {
+            let ext = match ariad_host::convert::DocumentFormat::parse(&args.target_format) {
+                Some(fmt) => fmt.default_extension(),
+                None => args.target_format.as_str(),
+            };
+            args.input.with_extension(ext)
+        }
+    };
+    let engine_program = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(_) => {
+            eprintln!("ashift: conversion failed");
+            return ExitCode::from(1);
+        }
+    };
+    let stderr_is_terminal = io::stderr().is_terminal();
+    let request = ariad_host::convert::ConvertRequest {
+        input: args.input,
+        output,
+        target_format: args.target_format,
+        profile: args.profile.into(),
+        overwrite: args.overwrite,
+        engine_program,
+        title_fallback: None,
+    };
+
+    run_blocking(move |cancel| {
+        ariad_host::convert::convert(&request, cancel, |event| match event {
+            ConvertEvent::Progress { stage } if stderr_is_terminal => {
+                eprintln!("progress: {stage}");
+            }
+            ConvertEvent::Progress { .. } => {}
+        })
+    })
+}
+
+fn run_ir(args: IrArgs) -> ExitCode {
+    let engine_program = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(_) => {
+            eprintln!("ashift: conversion failed");
+            return ExitCode::from(1);
+        }
+    };
+    let stderr_is_terminal = io::stderr().is_terminal();
+    let request = ariad_host::convert::ConvertToIrRequest {
+        input: args.input,
+        output: args.output,
+        overwrite: args.overwrite,
+        engine_program,
+    };
+
+    run_blocking(move |cancel| {
+        ariad_host::convert::convert_to_ir(&request, cancel, |event| match event {
+            ConvertEvent::Progress { stage } if stderr_is_terminal => {
+                eprintln!("progress: {stage}");
+            }
+            ConvertEvent::Progress { .. } => {}
+        })
+    })
+}
+
+fn run_write(args: WriteArgs) -> ExitCode {
+    let engine_program = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(_) => {
+            eprintln!("ashift: conversion failed");
+            return ExitCode::from(1);
+        }
+    };
+    let stderr_is_terminal = io::stderr().is_terminal();
+    let request = ariad_host::convert::WriteFromIrRequest {
+        input: args.input,
+        output: args.output,
+        target_format: args.target_format,
+        profile: args.profile.into(),
+        overwrite: args.overwrite,
+        engine_program,
+        title_fallback: None,
+    };
+
+    run_blocking(move |cancel| {
+        ariad_host::convert::write_from_ir(&request, cancel, |event| match event {
+            ConvertEvent::Progress { stage } if stderr_is_terminal => {
+                eprintln!("progress: {stage}");
+            }
+            ConvertEvent::Progress { .. } => {}
+        })
     })
 }
 
@@ -186,7 +312,7 @@ fn finish_conversion(
 fn serve_pandoc() -> ExitCode {
     #[cfg(debug_assertions)]
     if test_engine_override() {
-        return test_hang();
+        return serve_test_override(io::stdin().lock(), io::stdout().lock());
     }
     ariad_host::engines::pandoc::serve(io::stdin().lock(), io::stdout().lock())
 }
@@ -194,6 +320,19 @@ fn serve_pandoc() -> ExitCode {
 #[cfg(debug_assertions)]
 fn test_engine_override() -> bool {
     std::env::var_os("ARIAD_TEST_ENGINE").is_some_and(|value| value == "hang")
+}
+
+#[cfg(debug_assertions)]
+fn serve_test_override(mut input: impl io::BufRead, output: impl io::Write) -> ExitCode {
+    let mut line = String::new();
+    if input.read_line(&mut line).is_err() {
+        return ExitCode::from(1);
+    }
+    if line.contains("\"describe\"") {
+        let cursor = io::Cursor::new(line.into_bytes());
+        return ariad_host::engines::pandoc::serve(cursor, output);
+    }
+    test_hang()
 }
 
 #[cfg(debug_assertions)]

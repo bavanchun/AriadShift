@@ -146,8 +146,12 @@ struct CapabilitiesCacheKey {
     mtime: Option<std::time::SystemTime>,
 }
 
+/// In-memory cache storing whether an external engine enforces memory limits (`enforces_memory_limit`).
+/// Keyed by executable path, invocation args, and file metadata (size, mtime) to ensure cache
+/// invalidation when an engine binary or arguments change.
 type CapabilitiesCache = Mutex<HashMap<CapabilitiesCacheKey, bool>>;
 
+/// Global cache avoiding repeated `describe` process executions when checking memory enforcement.
 static CAPABILITIES_CACHE: OnceLock<CapabilitiesCache> = OnceLock::new();
 
 fn capabilities_cache() -> &'static CapabilitiesCache {
