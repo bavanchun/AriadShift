@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Engine protocol draft and ariad-host runner"
-status: pending
+status: completed
 priority: P1
 effort: "16h"
 dependencies: [4]
@@ -196,16 +196,16 @@ ashift convert ─ ariad-host::convert (phase 6)
 
 ## Todo
 
-- [ ] Protocol types, error codes, outcome rule, schema + drift
-- [ ] Workspace (layout, close with retry, atomic no-clobber promote, symlink check)
-- [ ] Runner (tree kill on every non-success path, cancellation, optional timeout, bounded I/O, grammar)
-- [ ] Assets (lexical → cap-std → regular file → sniff → NFC/NFD)
-- [ ] Pandoc lookup + shared version constants
-- [ ] Pandoc engine (stdio, env, optional `-M`, log → warnings)
-- [ ] Deep-IR JSON reads
-- [ ] DOCX timestamp stamp
-- [ ] Hidden `ashift __engine pandoc`
-- [ ] Probe, asset, promote, stamp and end-to-end tests green on 3 OSes
+- [x] Protocol types, error codes, outcome rule, schema + drift
+- [x] Workspace (layout, close with retry, atomic no-clobber promote, symlink check)
+- [x] Runner (tree kill on every non-success path, cancellation, optional timeout, bounded I/O, grammar)
+- [x] Assets (lexical → cap-std → regular file → sniff → NFC/NFD)
+- [x] Pandoc lookup + shared version constants
+- [x] Pandoc engine (stdio, env, optional `-M`, log → warnings)
+- [x] Deep-IR JSON reads
+- [x] DOCX timestamp stamp
+- [x] Hidden `ashift __engine pandoc`
+- [x] Probe, asset, promote, stamp and end-to-end tests green on 3 OSes
 
 ## Test scenario matrix
 

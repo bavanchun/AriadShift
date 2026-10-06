@@ -52,7 +52,7 @@ Mode: `--deep`, HOLD SCOPE. Research reports:
 | 2 | [Workspace, toolchain, CI and public repo](./phase-02-workspace-toolchain-ci.md) | 9h | 1 | Done |
 | 3 | [Fixture suite (60 documents + manifest)](./phase-03-fixture-suite.md) | 12h | 2 | Done |
 | 4 | [ariad-core: IR v0, Markdown reader, Pandoc AST](./phase-04-core-ir-markdown.md) | 14h | 2, 3 | Done |
-| 5 | [Engine protocol draft and ariad-host runner](./phase-05-engine-protocol-host.md) | 16h | 4 | Pending |
+| 5 | [Engine protocol draft and ariad-host runner](./phase-05-engine-protocol-host.md) | 16h | 4 | Done |
 | 6 | [`ashift convert`, DOCX golden test, acceptance](./phase-06-cli-docx-golden-acceptance.md) | 9h | 3, 4, 5 | Pending |
 
 The phases run strictly in sequence: 1 → 2 → 3 → 4 → 5 → 6. Phase 3 must land before phase 4, because phase 4's IR snapshots cover phase 3's fixtures and CI would otherwise be red at an intermediate commit. Each phase ends with `just ci` green on three OSes.
