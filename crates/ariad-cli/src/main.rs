@@ -112,7 +112,7 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
 
         tokio::select! {
             result = &mut task => finish_conversion(result),
-            signal = tokio::signal::ctrl_c() => {
+            signal = interrupt() => {
                 cancel.cancel();
                 match signal {
                     Ok(()) => {
@@ -129,6 +129,20 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
             }
         }
     })
+}
+
+#[cfg(not(windows))]
+async fn interrupt() -> io::Result<()> {
+    tokio::signal::ctrl_c().await
+}
+
+#[cfg(windows)]
+async fn interrupt() -> io::Result<()> {
+    let mut ctrl_break = tokio::signal::windows::ctrl_break()?;
+    tokio::select! {
+        signal = tokio::signal::ctrl_c() => signal,
+        _ = ctrl_break.recv() => Ok(()),
+    }
 }
 
 fn finish_conversion(

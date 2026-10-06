@@ -201,7 +201,7 @@ The Phase 0 conversion command is `ashift convert <INPUT> --to <FORMAT> [-o <OUT
 | 6 | destination exists |
 | 130 | interrupted |
 
-Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains only the output path. Ctrl-C cancels the run, kills the engine process tree, deletes the workspace, returns 130, and leaves the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX timestamps for reproducible goldens. Future commands reuse the same exit-code table.
+Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains only the output path. Ctrl-C (and Ctrl-Break on Windows) cancels the run, kills the engine process tree, deletes the workspace, returns 130, and leaves the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX timestamps for reproducible goldens. Future commands reuse the same exit-code table.
 
 ---
 
@@ -542,7 +542,7 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 | `max_blocks` | 1,000,000 | 10,000,000 |
 | `max_front_matter_bytes` | 64 KiB | 64 KiB |
 
-An unlimited value is represented by an absent field or `null` (`None` in Rust); it adds no timeout and no Pandoc `+RTS -M` flag. Local runs remain cancellable: Ctrl-C kills the engine process tree and removes its workspace. The nesting limit stays below comrak's internal list-depth cap of 100.
+An unlimited value is represented by an absent field or `null` (`None` in Rust); it adds no timeout and no Pandoc `+RTS -M` flag. Local runs remain cancellable: Ctrl-C (and Ctrl-Break on Windows) kills the engine process tree and removes its workspace. The nesting limit stays below comrak's internal list-depth cap of 100.
 
 ### 11.3 Isolation Layers
 
