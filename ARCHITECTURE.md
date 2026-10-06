@@ -271,13 +271,20 @@ The IR serves as the "lingua franca" across readers and writers. Designed in thr
 
 The versioned schema is `ariad-ir/0` at `schemas/ir.v0.json` during 0.x; breaking changes are allowed. It freezes as `ariad-ir/1` together with `ariad-engine/1` in roadmap 1b.
 
-Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants. Format variants serialize with a single wire identity matching `Format::id()` (for example `ariad-ir+json` and `pandoc+json`).
+Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants. Format variants serialize with a single wire identity matching `Format::id()` (for example `ariad-ir+json` and `pandoc+json`). In addition to `Markdown`, `Html`, and `Docx`, the format registry provides `Epub`, `Pdf`, and `Png` (required by the spike for image inputs and source-format deserialization without a reader in 1a).
 
 New IR fields follow the rule: **omit when empty** (`#[serde(default, skip_serializing_if = ...)]`). Existing fields keep their current `null` serialization. Every snapshot remains byte-identical.
 
 `Document` has `{ version, meta, body, assets, layout, provenance, furniture }`. `furniture: Vec<Block>` carries running page headers and footers outside `body` and is omitted when empty. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
 
-`LayoutIndex` specifies page geometry plus per-block bounding boxes with a top-left origin: `{ pages, blocks }`, where each page has `{ page_no, width, height }` and blocks are keyed by a stable block path (such as `"body/0"`) to `{ page_no, bbox: { left, top, right, bottom } }`. It is omitted when empty.
+`LayoutIndex` specifies page geometry plus per-block bounding boxes: `{ pages, blocks }`. Coordinates (`left`, `top`, `right`, `bottom`) and dimensions (`width`, `height`) use typographical points (pt, 1/72 inch) with origin `(0, 0)` at the top-left of each page. Blocks are keyed by stable `/`-separated block paths:
+- Top-level body blocks: `"body/<index>"` (e.g. `"body/0"`).
+- Furniture blocks: `"furniture/<index>"` (e.g. `"furniture/0"`).
+- Nested list item blocks: `"body/<index>/items/<item_index>/blocks/<block_index>"`.
+- Nested table cell blocks: `"body/<index>/head/<row_index>/cells/<cell_index>/blocks/<block_index>"` or `"body/<index>/body/<row_index>/cells/<cell_index>/blocks/<block_index>"`.
+- Nested quote blocks: `"body/<index>/quote/<block_index>"`.
+
+Each block position entry contains `{ page_no, bbox: { left, top, right, bottom } }`. `LayoutIndex` is omitted when empty. Old free-form layout objects (such as arbitrary JSON maps) are no longer accepted under the `ariad-ir/0` draft; layout content must strictly conform to the `LayoutIndex` schema.
 
 `Block` variants and fields are:
 
@@ -387,16 +394,17 @@ Protocol rules:
 
 - Engines **read and write only within the designated workspace** and **open no network connections**.
 - **Stdout discipline:** stdout carries NDJSON protocol lines only; all diagnostic logging belongs on stderr. The host runner treats any non-JSON line on stdout as a protocol violation. Adapters redirect native library stdout (fd 1) to stderr (fd 2) and emit protocol events only over a duplicated protocol descriptor.
-- **Engine configuration contract:** engine settings travel in request `options` (e.g. `artifacts_path`, `tessdata_path`). The runner clears the environment (`env_clear()`) and inherits only allow-listed variables: `PATH`, `TMPDIR`/`TMP`/`TEMP` (pointing to `work_dir` on convert), `ASHIFT_PANDOC`, and on Windows `SYSTEMROOT`, `USERPROFILE`, and `APPDATA`. Adapters set engine-specific flags (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `TESSDATA_PREFIX`) from request `options`.
-- **Memory rule (no host limiter in 1a):** `max_memory_mb` is enforced by the engine (e.g. Pandoc `+RTS -M` or Python adapter `resource.setrlimit(RLIMIT_DATA)`). An engine that cannot enforce it reports `enforces_memory_limit: false` in `describe`. The host refuses any request setting `max_memory_mb` for that engine with `limit_exceeded` rather than silently ignoring it. Host-side generic limiting is deferred to 1b because Linux `RLIMIT_AS` causes aborts in GHC/PyTorch runtimes and safe in-process `pre_exec` rlimits conflict with `#![forbid(unsafe_code)]`.
+- **Engine configuration contract:** engine settings travel in request `options` (e.g. `artifacts_path`, `tessdata_path`). The runner clears the environment (`env_clear()`) and inherits only allow-listed variables: `PATH`, `TMPDIR`/`TMP`/`TEMP` (pointing to `work_dir` on convert), `ASHIFT_PANDOC`, and on Windows `SYSTEMROOT`. Windows profile variables (such as `USERPROFILE` and `APPDATA`) were not measured in the spike and are decided in 1b. Adapters set engine-specific flags (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `TESSDATA_PREFIX`) from request `options`.
+- **Memory rule (no host limiter in 1a):** `max_memory_mb` is enforced by the engine (e.g. Pandoc `+RTS -M` or Python adapter `resource.setrlimit(RLIMIT_DATA)`). An engine that cannot enforce it reports `enforces_memory_limit: false` in `describe`. When `limits.max_memory_mb` is specified, the host checks engine capabilities before starting conversion, querying `describe` with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`) and caching the capabilities lookup per engine program and arguments within the process. If `enforces_memory_limit` is false, the host refuses the convert request with a typed `limit_exceeded` error before spawning the conversion process rather than silently ignoring it. Host-side generic limiting is deferred to 1b because Linux `RLIMIT_AS` causes aborts in GHC/PyTorch runtimes and safe in-process `pre_exec` rlimits conflict with `#![forbid(unsafe_code)]`.
+- `describe` runs with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`), preventing hung engines from blocking host discovery commands or MCP tools.
 - `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation.
 - Receiving `capabilities` during a convert request is a protocol violation.
 - The schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "draft"`. All engines must pass a shared conformance test suite.
 - `ariad-engine/1` is a draft until the Docling engine passes conformance (roadmap phase 1b); breaking changes are allowed only before that point.
+- PDFium also runs out-of-process: `ariad-host` re-executes its own binary via `ashift __engine pdfium`.
 
 Decided extensions (implemented in 1b):
-- **Structured warning events:** `Event::Warning { code, message }` in protocol to surface non-fatal font/layout substitutions cleanly without scraping stderr.
-- **Stateful session mode:** `Request::Session { session_id, ... }` gated by `describe` to preserve warm Python/PyTorch processes for desktop and daemon modes (1.56x measured throughput speedup).
+- **Stateful session mode:** wire shape consists of an optional `session_id: Option<String>` field on `Request::Convert` and an advertised boolean `supports_session: bool` in `capabilities`. When `supports_session: true` is reported, a session is opened on the first `convert` request carrying that `session_id`. Subsequent `convert` requests carrying the same `session_id` reuse the warm running engine process without re-initialization (1.56x measured throughput speedup). The session closes when the host closes stdin, on idle timeout, or on host shutdown.
 
 The Pandoc engine is reached through `ashift __engine pandoc`. For `describe`, it reports tool status, version, and the `("ariad-ir+json", "docx")` route. For `convert`, the job workspace contains `in/`, `out/`, `tmp/`, and `log/`; the request's `work_dir` is `tmp/`. The engine reads the IR, maps it to Pandoc AST JSON, and runs:
 
@@ -575,9 +583,9 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 
 An unlimited value is represented by an absent field or `null` (`None` in Rust); it adds no timeout and no Pandoc `+RTS -M` flag. Local runs remain cancellable: Ctrl-C (and Ctrl-Break on Windows) kills the engine process tree and removes its workspace. The nesting limit stays below comrak's internal list-depth cap of 100. Unlike workload limits, archive and IR JSON limits are finite locally on purpose to guard against bombs.
 
-IR JSON reading (`ariad_host::ir_io::read`) is bounded to prevent resource exhaustion and stack overflows:
-1. **Byte cap:** `Read::take(max_ir_json_bytes + 1)` enforces the byte limit; reaching the cap is a typed `limit_exceeded` error, not a truncation.
-2. **Depth pre-scan:** an I/O-free, token-level pre-scan (`ariad_core::json_depth::prescan_json_depth`) counts JSON `[` and `{` depth outside string literals in a single pass without recursion. The budget is derived from `max_nesting_depth` via `json_depth_budget_for_nesting(depth) = (depth * 8) + 64`. Rejecting excessive depth before deserializing ensures dropping invalid deep trees never overflows the call stack.
+IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a bounding reader adapter to prevent memory amplification and stack overflows:
+1. **Streaming byte cap:** `BoundedScannerReader` counts incoming bytes against `max_ir_json_bytes` while streaming directly into serde, eliminating whole-file buffering and double residency. Exceeding the cap immediately aborts the stream with a typed `limit_exceeded` error before allocating the document tree.
+2. **Streaming depth scanner:** the adapter incrementally feeds chunks to an I/O-free state machine (`ariad_core::json_depth::JsonDepthScanner`) that tracks JSON `[` and `{` depth outside string literals without recursion. Each IR nesting level produces 2 to 5 levels of JSON nesting (e.g. nested lists or tables in table cells); the budget formula `json_depth_budget_for_nesting(depth) = (depth * 8) + 64` covers legitimate deep nesting while rejecting excessive depth before deserializing, preventing stack overflow on build or drop.
 3. **Deep deserialization:** `serde_stacker` deserializes on a grown stack.
 4. **Block count check:** `Document::block_count` asserts total blocks (body and furniture) stay within `max_blocks`. Every failure maps to a typed `limit_exceeded` error.
 
@@ -733,7 +741,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Sanitizer fuzzing | A nightly scheduled CI job on a date-pinned Rust nightly, running cargo-fuzz with AddressSanitizer on the in-process parsers; never used for builds or releases | No sanitizer runs | Parse-path dependencies contain `unsafe`; this is the only exception to the no-pre-release-toolchain policy, and AGENTS.md "Versions" names it. |
 | crates.io | Publish `ariad-core`, `ariad-host` and `ariad-cli` from a CI job in the `release` environment, in dependency order, with a scoped token | Not publishing (binstall `--git` only) | Gives `cargo binstall ariad-cli` and `cargo install ariad-cli`; the crate names keep the `ariad-*` prefix. |
 | winget identifier | `VChun.AriadShift`, moniker `ashift` | `bavanchun.AriadShift`, `AriadShift.AriadShift` | Matches the copyright holder in LICENSE and NOTICE. |
-| Engine memory limits | Engine-enforced in 0.x; host limiter in 1b | Generic host-side limiter via `RLIMIT_AS` or `pre_exec` in 1a | `RLIMIT_AS` causes hard PyTorch/GHC static TLS crashes below 6 GiB; `pre_exec` violates `#![forbid(unsafe_code)]` in `ariad-host`. The host checks `enforces_memory_limit` and refuses with `limit_exceeded`. |
+| Engine memory limits | Engine-enforced in 0.x; host limiter in 1b | Generic host-side limiter via `RLIMIT_AS` or `pre_exec` in 1a | `RLIMIT_AS` causes hard PyTorch/GHC static TLS crashes below 6 GiB; `pre_exec` violates `#![forbid(unsafe_code)]` in `ariad-host`. When `limits.max_memory_mb` is `Some`, the host queries `describe` (with 30s timeout), caches capabilities within the process, and refuses with `limit_exceeded` before converting if `enforces_memory_limit` is false. |
 | Format wire id | Equals the registry id (`Format::id()`, e.g. `ariad-ir+json`) | snake_case variant identifiers (e.g. `ariad_ir_json`) | Unifies format identity across CLI, IR, engine protocol, and capabilities schema with zero drift. |
 
 ---
