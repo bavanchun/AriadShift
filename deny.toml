@@ -25,6 +25,15 @@ allow = [
 ]
 confidence-threshold = 0.9
 
+# Transitive dependencies of ammonia (HTML sanitizer).
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "cssparser"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "dtoa-short"
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
