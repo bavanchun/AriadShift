@@ -60,7 +60,7 @@ Research:
 | 4 | [Pandoc readers to IR (DOCX, EPUB)](./phase-04-pandoc-readers-to-ir.md) | 14h | 3 | Done |
 | 5 | [Native HTML reader](./phase-05-native-html-reader.md) | 12h | 3 | Done |
 | 6 | [Writers and route execution](./phase-06-writers-and-route-execution.md) | 15h | 4, 5 | Done |
-| 7 | [Planner and capabilities.json](./phase-07-planner-and-capabilities.md) | 10h | 6 | Pending |
+| 7 | [Planner and capabilities.json](./phase-07-planner-and-capabilities.md) | 10h | 6 | Done |
 | 8 | [Bench harness](./phase-08-bench-harness.md) | 16h | 7 | Pending |
 | 9 | [`inspect`, `plan`, `engines`, `doctor`](./phase-09-cli-inspect-plan-engines-doctor.md) | 9h | 7 | Pending |
 | 10 | [MCP server](./phase-10-mcp-server.md) | 13h | 9 | Pending |
