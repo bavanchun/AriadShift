@@ -169,6 +169,12 @@
       "description": "Resource limits applied to one conversion.\n\nCloud plan entitlements (§9.5) fill this shape; `None` means unlimited.",
       "type": "object",
       "properties": {
+        "max_archive_entries": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 20000,
+          "minimum": 0
+        },
         "max_asset_bytes": {
           "type": [
             "integer",
@@ -183,6 +189,12 @@
           "default": 10000000,
           "minimum": 0
         },
+        "max_decompressed_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 4294967296,
+          "minimum": 0
+        },
         "max_front_matter_bytes": {
           "type": "integer",
           "format": "uint32",
@@ -195,6 +207,12 @@
             "null"
           ],
           "format": "uint64",
+          "minimum": 0
+        },
+        "max_ir_json_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 6442450944,
           "minimum": 0
         },
         "max_memory_mb": {

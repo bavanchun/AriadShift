@@ -23,6 +23,9 @@ pub struct Limits {
     pub max_nesting_depth: u16,
     pub max_blocks: u32,
     pub max_front_matter_bytes: u32,
+    pub max_archive_entries: u32,
+    pub max_decompressed_bytes: u64,
+    pub max_ir_json_bytes: u64,
 }
 
 impl Default for Limits {
@@ -44,6 +47,9 @@ impl Limits {
             max_nesting_depth: 64,
             max_blocks: 10_000_000,
             max_front_matter_bytes: 64 * 1024,
+            max_archive_entries: 20_000,
+            max_decompressed_bytes: 4 * 1024 * 1024 * 1024,
+            max_ir_json_bytes: 6 * 1024 * 1024 * 1024,
         }
     }
 
@@ -59,6 +65,9 @@ impl Limits {
             max_nesting_depth: 64,
             max_blocks: 1_000_000,
             max_front_matter_bytes: 64 * 1024,
+            max_archive_entries: 10_000,
+            max_decompressed_bytes: 2 * 1024 * 1024 * 1024,
+            max_ir_json_bytes: 3 * 1024 * 1024 * 1024,
         }
     }
 
@@ -72,6 +81,15 @@ impl Limits {
             ("max_asset_bytes", self.max_asset_bytes),
         ] {
             if value == Some(0) {
+                return Err(LimitsError::ZeroLimit { field });
+            }
+        }
+        for (field, value) in [
+            ("max_archive_entries", u64::from(self.max_archive_entries)),
+            ("max_decompressed_bytes", self.max_decompressed_bytes),
+            ("max_ir_json_bytes", self.max_ir_json_bytes),
+        ] {
+            if value == 0 {
                 return Err(LimitsError::ZeroLimit { field });
             }
         }
@@ -108,6 +126,9 @@ mod tests {
         assert_eq!(local.max_nesting_depth, 64);
         assert_eq!(local.max_blocks, 10_000_000);
         assert_eq!(local.max_front_matter_bytes, 64 * 1024);
+        assert_eq!(local.max_archive_entries, 20_000);
+        assert_eq!(local.max_decompressed_bytes, 4 * 1024 * 1024 * 1024);
+        assert_eq!(local.max_ir_json_bytes, 6 * 1024 * 1024 * 1024);
 
         let cloud = Limits::cloud();
         assert_eq!(cloud.max_input_bytes, Some(2 * 1024 * 1024 * 1024));
@@ -118,12 +139,15 @@ mod tests {
         assert_eq!(cloud.max_nesting_depth, 64);
         assert_eq!(cloud.max_blocks, 1_000_000);
         assert_eq!(cloud.max_front_matter_bytes, 64 * 1024);
+        assert_eq!(cloud.max_archive_entries, 10_000);
+        assert_eq!(cloud.max_decompressed_bytes, 2 * 1024 * 1024 * 1024);
+        assert_eq!(cloud.max_ir_json_bytes, 3 * 1024 * 1024 * 1024);
         assert!(local.validate().is_ok());
         assert!(cloud.validate().is_ok());
     }
 
     #[test]
-    fn validate_rejects_zero_optional_caps() {
+    fn validate_rejects_zero_caps() {
         let mut limits = Limits::local();
         limits.max_input_bytes = Some(0);
         assert_eq!(
@@ -160,6 +184,33 @@ mod tests {
             limits.validate(),
             Err(LimitsError::ZeroLimit { .. })
         ));
+
+        let mut limits = Limits::local();
+        limits.max_archive_entries = 0;
+        assert_eq!(
+            limits.validate(),
+            Err(LimitsError::ZeroLimit {
+                field: "max_archive_entries"
+            })
+        );
+
+        let mut limits = Limits::local();
+        limits.max_decompressed_bytes = 0;
+        assert_eq!(
+            limits.validate(),
+            Err(LimitsError::ZeroLimit {
+                field: "max_decompressed_bytes"
+            })
+        );
+
+        let mut limits = Limits::local();
+        limits.max_ir_json_bytes = 0;
+        assert_eq!(
+            limits.validate(),
+            Err(LimitsError::ZeroLimit {
+                field: "max_ir_json_bytes"
+            })
+        );
     }
 
     #[test]
