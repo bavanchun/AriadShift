@@ -224,7 +224,8 @@ pub fn copy_and_preflight_input(
                 let _ = fs::remove_file(&dest_path);
                 ConvertError::LimitExceeded
             }
-            ArchiveError::DuplicateEntryName { .. }
+            ArchiveError::Encrypted
+            | ArchiveError::DuplicateEntryName { .. }
             | ArchiveError::EntryCountMismatch { .. }
             | ArchiveError::InvalidEntryName { .. } => {
                 let _ = fs::remove_file(&dest_path);
@@ -497,9 +498,11 @@ mod tests {
             .parent()
             .unwrap()
             .join("fixtures/docx/vi-styled-report.docx");
-        if !fixture_path.is_file() {
-            return;
-        }
+        assert!(
+            fixture_path.is_file(),
+            "fixture must exist: {}",
+            fixture_path.display()
+        );
 
         let temp_src = NamedTempFile::with_suffix(".docx").unwrap();
         std::fs::copy(&fixture_path, temp_src.path()).unwrap();
