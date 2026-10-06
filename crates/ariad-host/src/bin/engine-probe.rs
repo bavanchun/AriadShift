@@ -114,13 +114,17 @@ fn echo_request() -> ExitCode {
         Ok(request) => request,
         Err(_) => return ExitCode::from(1),
     };
-    let artifact = std::path::Path::new(&request.output.dir).join("document.docx");
+    let (output_dir, output_format) = match request {
+        Request::Convert { output, .. } => (output.dir, output.format),
+        Request::Describe { .. } => return ExitCode::from(1),
+    };
+    let artifact = std::path::Path::new(&output_dir).join("document.docx");
     if fs::write(&artifact, b"probe document").is_err() {
         return ExitCode::from(1);
     }
     emit(&Event::Artifact {
         path: artifact.to_string_lossy().into_owned(),
-        format: request.output.format,
+        format: output_format,
     });
     emit(&ok_result());
     ExitCode::SUCCESS

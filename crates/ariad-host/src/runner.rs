@@ -76,10 +76,11 @@ pub fn run<S>(
 where
     S: FnMut(Event),
 {
-    request
-        .limits
-        .validate()
-        .map_err(|_| RunError::ProtocolViolation("request contains invalid limits"))?;
+    if let Request::Convert { limits, .. } = request {
+        limits
+            .validate()
+            .map_err(|_| RunError::ProtocolViolation("request contains invalid limits"))?;
+    }
     if cancel.is_cancelled() {
         return Err(RunError::Cancelled);
     }
@@ -118,10 +119,12 @@ async fn run_async<S>(
 where
     S: FnMut(Event),
 {
-    let deadline = request
-        .limits
-        .timeout_s
-        .and_then(|seconds| Instant::now().checked_add(Duration::from_secs(seconds)));
+    let (output_dir, timeout_s) = match request {
+        Request::Convert { output, limits, .. } => (Some(output.dir.as_str()), limits.timeout_s),
+        Request::Describe { .. } => (None, None),
+    };
+    let deadline =
+        timeout_s.and_then(|seconds| Instant::now().checked_add(Duration::from_secs(seconds)));
 
     let mut command = CommandWrap::with_new(program.as_os_str(), |command| {
         command
@@ -130,10 +133,14 @@ where
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear()
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .env("TMPDIR", &request.work_dir)
-            .env("TMP", &request.work_dir)
-            .env("TEMP", &request.work_dir);
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default());
+
+        if let Request::Convert { work_dir, .. } = request {
+            command
+                .env("TMPDIR", work_dir)
+                .env("TMP", work_dir)
+                .env("TEMP", work_dir);
+        }
 
         if let Some(pandoc) = std::env::var_os("ASHIFT_PANDOC") {
             command.env("ASHIFT_PANDOC", pandoc);
@@ -175,7 +182,7 @@ where
         &mut child,
         stdout,
         request_line,
-        &request.output.dir,
+        output_dir,
         deadline,
         cancel,
         sink,
@@ -212,7 +219,7 @@ async fn run_child<S>(
     child: &mut Box<dyn ChildWrapper>,
     stdout: impl AsyncRead + Unpin,
     request_line: Vec<u8>,
-    output_dir: &str,
+    output_dir: Option<&str>,
     deadline: Option<Instant>,
     cancel: CancellationToken,
     mut sink: S,
@@ -255,7 +262,10 @@ where
                             .map_err(|_| RunError::ProtocolViolation("event line is not valid protocol JSON"))?;
                         if let Event::Artifact { path, format } = &event {
                             let artifact_path = Path::new(path);
-                            if !artifact_is_confined(artifact_path, Path::new(output_dir)) {
+                            let Some(dir) = output_dir else {
+                                return Err(RunError::ProtocolViolation("artifact emitted for request without output directory"));
+                            };
+                            if !artifact_is_confined(artifact_path, Path::new(dir)) {
                                 return Err(RunError::ProtocolViolation("artifact path is outside output.dir"));
                             }
                             artifacts.push(Artifact {

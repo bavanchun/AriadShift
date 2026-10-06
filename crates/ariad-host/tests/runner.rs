@@ -20,10 +20,9 @@ use tokio_util::sync::CancellationToken;
 fn make_request(workspace: &Workspace, timeout_s: Option<u64>) -> Request {
     let mut limits = Limits::local();
     limits.timeout_s = timeout_s;
-    Request {
+    Request::Convert {
         protocol: PROTOCOL.to_owned(),
         job: "runner-test".to_owned(),
-        op: "convert".to_owned(),
         input: Input {
             path: workspace
                 .input_dir()

@@ -264,43 +264,75 @@
       ]
     },
     "Request": {
-      "type": "object",
-      "properties": {
-        "input": {
-          "$ref": "#/$defs/Input"
-        },
-        "job": {
-          "type": "string"
-        },
-        "limits": {
-          "$ref": "#/$defs/Limits"
-        },
-        "op": {
-          "type": "string"
-        },
-        "options": {
+      "oneOf": [
+        {
           "type": "object",
-          "additionalProperties": true
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/Input"
+            },
+            "job": {
+              "type": "string"
+            },
+            "limits": {
+              "$ref": "#/$defs/Limits",
+              "default": {
+                "max_archive_entries": 20000,
+                "max_blocks": 10000000,
+                "max_decompressed_bytes": 4294967296,
+                "max_front_matter_bytes": 65536,
+                "max_ir_json_bytes": 6442450944,
+                "max_nesting_depth": 64
+              }
+            },
+            "op": {
+              "type": "string",
+              "const": "convert"
+            },
+            "options": {
+              "type": "object",
+              "additionalProperties": true,
+              "default": {}
+            },
+            "output": {
+              "$ref": "#/$defs/Output"
+            },
+            "protocol": {
+              "type": "string"
+            },
+            "work_dir": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "protocol",
+            "job",
+            "input",
+            "output",
+            "work_dir"
+          ]
         },
-        "output": {
-          "$ref": "#/$defs/Output"
-        },
-        "protocol": {
-          "type": "string"
-        },
-        "work_dir": {
-          "type": "string"
+        {
+          "type": "object",
+          "properties": {
+            "job": {
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "describe"
+            },
+            "protocol": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "protocol",
+            "job"
+          ]
         }
-      },
-      "required": [
-        "protocol",
-        "job",
-        "op",
-        "input",
-        "output",
-        "work_dir",
-        "options",
-        "limits"
       ]
     }
   }

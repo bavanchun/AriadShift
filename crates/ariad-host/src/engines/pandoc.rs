@@ -11,8 +11,9 @@ use std::{
 };
 
 use ariad_core::{
+    limits::Limits,
     pandoc::from_ir,
-    protocol::{EngineError, ErrorCode, Event, PROTOCOL, Request},
+    protocol::{EngineError, ErrorCode, Event, Input, Output, PROTOCOL, Request},
 };
 use serde::Deserialize;
 
@@ -115,104 +116,125 @@ fn read_request(reader: &mut impl BufRead) -> Result<Request, EngineFailure> {
 }
 
 fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailure> {
-    let workspace = validate_request(&request)?;
-    let input = File::open(&request.input.path).map_err(|_| EngineFailure::io())?;
-    let document =
-        ir_io::read(BufReader::new(input), &request.limits).map_err(|err| match err {
-            ir_io::ReadError::ByteLimitExceeded { .. }
-            | ir_io::ReadError::DepthExceeded(_)
-            | ir_io::ReadError::BlockLimitExceeded { .. } => EngineFailure::limit_exceeded(),
-            ir_io::ReadError::Io(_) => EngineFailure::io(),
-            ir_io::ReadError::Json(_) => EngineFailure::invalid_request(),
-        })?;
-    let mapped = from_ir(&document);
+    match request {
+        Request::Convert {
+            protocol,
+            job: _,
+            input,
+            output: req_output,
+            work_dir,
+            options: _,
+            limits,
+        } => {
+            let workspace =
+                validate_convert_request(&protocol, &input, &req_output, &work_dir, &limits)?;
+            let input_file = File::open(&input.path).map_err(|_| EngineFailure::io())?;
+            let document =
+                ir_io::read(BufReader::new(input_file), &limits).map_err(|err| match err {
+                    ir_io::ReadError::ByteLimitExceeded { .. }
+                    | ir_io::ReadError::DepthExceeded(_)
+                    | ir_io::ReadError::BlockLimitExceeded { .. } => {
+                        EngineFailure::limit_exceeded()
+                    }
+                    ir_io::ReadError::Io(_) => EngineFailure::io(),
+                    ir_io::ReadError::Json(_) => EngineFailure::invalid_request(),
+                })?;
+            let mapped = from_ir(&document);
 
-    for warning in mapped.warnings {
-        let code = serde_json::to_string(&warning.code).map_err(|_| EngineFailure::failure())?;
-        emit(
-            output,
-            Event::Warning {
-                code: format!("ir_{}", code.trim_matches('"')),
-                message: warning.message,
-            },
-        )
-        .map_err(|_| EngineFailure::io())?;
-    }
+            for warning in mapped.warnings {
+                let code =
+                    serde_json::to_string(&warning.code).map_err(|_| EngineFailure::failure())?;
+                emit(
+                    output,
+                    Event::Warning {
+                        code: format!("ir_{}", code.trim_matches('"')),
+                        message: warning.message,
+                    },
+                )
+                .map_err(|_| EngineFailure::io())?;
+            }
 
-    let binary = pandoc_bin::locate().map_err(|error| match error {
-        pandoc_bin::PandocBinaryError::Missing => {
-            EngineFailure::new(ErrorCode::ToolMissing, PANDOC_INSTALL_HINT)
+            let binary = pandoc_bin::locate().map_err(|error| match error {
+                pandoc_bin::PandocBinaryError::Missing => {
+                    EngineFailure::new(ErrorCode::ToolMissing, PANDOC_INSTALL_HINT)
+                }
+                pandoc_bin::PandocBinaryError::UnsupportedVersion => EngineFailure::new(
+                    ErrorCode::ToolVersion,
+                    "Pandoc must be >= 3.12 and < 4. Install a supported release with `just pandoc`.",
+                ),
+            })?;
+
+            let output_path = Path::new(&req_output.dir).join("document.docx");
+            let log_path = workspace.join("log").join("pandoc-log.json");
+            let pandoc_json =
+                serde_json::to_vec(&mapped.pandoc).map_err(|_| EngineFailure::failure())?;
+            run_pandoc(
+                &binary.path,
+                &limits,
+                &work_dir,
+                &workspace,
+                &log_path,
+                &output_path,
+                &pandoc_json,
+            )?;
+
+            for warning in pandoc_log_warnings(&log_path)? {
+                emit(output, warning).map_err(|_| EngineFailure::io())?;
+            }
+            if !output_path.is_file() {
+                return Err(EngineFailure::failure());
+            }
+            emit(
+                output,
+                Event::Artifact {
+                    path: output_path.to_string_lossy().into_owned(),
+                    format: "docx".to_owned(),
+                },
+            )
+            .map_err(|_| EngineFailure::io())?;
+            emit(
+                output,
+                Event::Result {
+                    ok: true,
+                    metrics: None,
+                    error: None,
+                },
+            )
+            .map_err(|_| EngineFailure::io())?;
+            Ok(())
         }
-        pandoc_bin::PandocBinaryError::UnsupportedVersion => EngineFailure::new(
-            ErrorCode::ToolVersion,
-            "Pandoc must be >= 3.12 and < 4. Install a supported release with `just pandoc`.",
-        ),
-    })?;
-
-    let output_path = Path::new(&request.output.dir).join("document.docx");
-    let log_path = workspace.join("log").join("pandoc-log.json");
-    let pandoc_json = serde_json::to_vec(&mapped.pandoc).map_err(|_| EngineFailure::failure())?;
-    run_pandoc(
-        &binary.path,
-        &request,
-        &workspace,
-        &log_path,
-        &output_path,
-        &pandoc_json,
-    )?;
-
-    for warning in pandoc_log_warnings(&log_path)? {
-        emit(output, warning).map_err(|_| EngineFailure::io())?;
+        Request::Describe { .. } => Err(EngineFailure::unsupported_route()),
     }
-    if !output_path.is_file() {
-        return Err(EngineFailure::failure());
-    }
-    emit(
-        output,
-        Event::Artifact {
-            path: output_path.to_string_lossy().into_owned(),
-            format: "docx".to_owned(),
-        },
-    )
-    .map_err(|_| EngineFailure::io())?;
-    emit(
-        output,
-        Event::Result {
-            ok: true,
-            metrics: None,
-            error: None,
-        },
-    )
-    .map_err(|_| EngineFailure::io())?;
-    Ok(())
 }
 
-fn validate_request(request: &Request) -> Result<PathBuf, EngineFailure> {
-    if request.protocol != PROTOCOL {
+fn validate_convert_request(
+    protocol: &str,
+    input: &Input,
+    output: &Output,
+    work_dir: &str,
+    limits: &Limits,
+) -> Result<PathBuf, EngineFailure> {
+    if protocol != PROTOCOL {
         return Err(EngineFailure::invalid_request());
     }
-    if request.op != "convert" {
+    if input.format != "ariad-ir+json" || output.format != "docx" {
         return Err(EngineFailure::unsupported_route());
     }
-    if request.input.format != "ariad-ir+json" || request.output.format != "docx" {
-        return Err(EngineFailure::unsupported_route());
-    }
-    request
-        .limits
+    limits
         .validate()
         .map_err(|_| EngineFailure::invalid_request())?;
 
-    let work_dir = Path::new(&request.work_dir);
-    let workspace = work_dir
+    let work_dir_path = Path::new(work_dir);
+    let workspace = work_dir_path
         .parent()
-        .filter(|_| work_dir.file_name().is_some_and(|name| name == "tmp"))
+        .filter(|_| work_dir_path.file_name().is_some_and(|name| name == "tmp"))
         .ok_or_else(EngineFailure::invalid_request)?;
-    let input_path = Path::new(&request.input.path);
+    let input_path = Path::new(&input.path);
     let expected_input_dir = workspace.join("in");
     let expected_output_dir = workspace.join("out");
     if input_path.parent() != Some(expected_input_dir.as_path())
-        || Path::new(&request.output.dir) != expected_output_dir
-        || !work_dir.is_absolute()
+        || Path::new(&output.dir) != expected_output_dir
+        || !work_dir_path.is_absolute()
         || !input_path.is_absolute()
         || !expected_output_dir.is_absolute()
     {
@@ -223,14 +245,15 @@ fn validate_request(request: &Request) -> Result<PathBuf, EngineFailure> {
 
 fn run_pandoc(
     pandoc_path: &Path,
-    request: &Request,
+    limits: &Limits,
+    work_dir: &str,
     workspace: &Path,
     log_path: &Path,
     output_path: &Path,
     pandoc_json: &[u8],
 ) -> Result<(), EngineFailure> {
     let mut command = Command::new(pandoc_path);
-    if let Some(max_memory_mb) = request.limits.max_memory_mb {
+    if let Some(max_memory_mb) = limits.max_memory_mb {
         command
             .arg("+RTS")
             .arg(format!("-M{max_memory_mb}M"))
@@ -243,7 +266,7 @@ fn run_pandoc(
         .arg(log_argument)
         .args(["-f", "json", "-t", "docx", "-o"])
         .arg(output_path)
-        .current_dir(request.work_dir.as_str())
+        .current_dir(work_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -259,8 +282,7 @@ fn run_pandoc(
         command.env("SYSTEMROOT", system_root);
     }
 
-    let timeout = request
-        .limits
+    let timeout = limits
         .timeout_s
         .and_then(|seconds| seconds.checked_sub(PANDOC_TIMEOUT_MARGIN_SECONDS))
         .map(Duration::from_secs);
@@ -303,7 +325,7 @@ fn run_pandoc(
         return Err(EngineFailure::io());
     }
     if !status.success() {
-        if request.limits.max_memory_mb.is_some() && memory_limit_was_hit(&stderr_tail) {
+        if limits.max_memory_mb.is_some() && memory_limit_was_hit(&stderr_tail) {
             return Err(EngineFailure::new(
                 ErrorCode::LimitExceeded,
                 "Pandoc exceeded the configured memory limit.",

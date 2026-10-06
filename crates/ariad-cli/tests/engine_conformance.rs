@@ -36,10 +36,9 @@ fn request_for(workspace: &ariad_host::workspace::Workspace) -> Request {
         serde_json::to_vec(&Document::default()).expect("serialize IR document"),
     )
     .expect("write IR document");
-    Request {
+    Request::Convert {
         protocol: PROTOCOL.to_owned(),
         job: "engine-conformance".to_owned(),
-        op: "convert".to_owned(),
         input: Input {
             path: input_path.to_string_lossy().into_owned(),
             format: "ariad-ir+json".to_owned(),
@@ -140,17 +139,21 @@ fn engine_rejects_invalid_wrong_protocol_and_missing_input_requests() {
 
     let workspace = ariad_host::workspace::Workspace::new().expect("create engine workspace");
     let mut wrong_protocol = request_for(&workspace);
-    wrong_protocol.protocol = "ariad-engine/999".to_owned();
+    if let Request::Convert { protocol, .. } = &mut wrong_protocol {
+        *protocol = "ariad-engine/999".to_owned();
+    }
     let events = validate_stdout(&run_engine(&wrong_protocol));
     assert_eq!(events.last().unwrap()["ok"], false);
     assert_eq!(events.last().unwrap()["error"]["code"], "invalid_request");
 
     let mut missing_input = request_for(&workspace);
-    missing_input.input.path = workspace
-        .input_dir()
-        .join("missing.ir.json")
-        .display()
-        .to_string();
+    if let Request::Convert { input, .. } = &mut missing_input {
+        input.path = workspace
+            .input_dir()
+            .join("missing.ir.json")
+            .display()
+            .to_string();
+    }
     let events = validate_stdout(&run_engine(&missing_input));
     assert_eq!(events.last().unwrap()["ok"], false);
     assert_eq!(events.last().unwrap()["error"]["code"], "io");
