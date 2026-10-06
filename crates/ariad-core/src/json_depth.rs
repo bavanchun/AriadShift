@@ -15,11 +15,86 @@ pub enum JsonDepthError {
 
 /// Derives a JSON depth budget from the configured IR `max_nesting_depth`.
 ///
-/// Each IR nesting level produces 2 to 4 levels of JSON nesting (objects and arrays).
+/// Each IR nesting level produces 2 to 5 levels of JSON nesting (objects and arrays,
+/// e.g. nested lists or tables in table cells).
 /// A margin is added to accommodate document root structures and metadata.
 #[must_use]
 pub const fn json_depth_budget_for_nesting(max_nesting_depth: u16) -> usize {
     (max_nesting_depth as usize) * 8 + 64
+}
+
+/// Incremental state machine for scanning JSON nesting depth without recursion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JsonDepthScanner {
+    in_string: bool,
+    escaped: bool,
+    current_depth: usize,
+    max_observed_depth: usize,
+    max_depth: usize,
+}
+
+impl JsonDepthScanner {
+    /// Creates a new scanner with the specified maximum nesting depth limit.
+    #[must_use]
+    pub const fn new(max_depth: usize) -> Self {
+        Self {
+            in_string: false,
+            escaped: false,
+            current_depth: 0,
+            max_observed_depth: 0,
+            max_depth,
+        }
+    }
+
+    /// Feeds a chunk of bytes to the scanner, updating the current depth.
+    ///
+    /// Returns [`JsonDepthError::DepthExceeded`] if `current_depth` exceeds `max_depth`.
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<(), JsonDepthError> {
+        for &byte in bytes {
+            if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                } else if byte == b'"' {
+                    self.in_string = false;
+                }
+            } else {
+                match byte {
+                    b'"' => self.in_string = true,
+                    b'{' | b'[' => {
+                        self.current_depth = self.current_depth.saturating_add(1);
+                        if self.current_depth > self.max_depth {
+                            return Err(JsonDepthError::DepthExceeded {
+                                depth: self.current_depth,
+                                max_depth: self.max_depth,
+                            });
+                        }
+                        if self.current_depth > self.max_observed_depth {
+                            self.max_observed_depth = self.current_depth;
+                        }
+                    }
+                    b'}' | b']' => {
+                        self.current_depth = self.current_depth.saturating_sub(1);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns the maximum depth observed so far.
+    #[must_use]
+    pub const fn max_observed_depth(&self) -> usize {
+        self.max_observed_depth
+    }
+
+    /// Returns the current nesting depth.
+    #[must_use]
+    pub const fn current_depth(&self) -> usize {
+        self.current_depth
+    }
 }
 
 /// Scans `bytes` for JSON nesting depth in a single pass without recursion.
@@ -27,44 +102,9 @@ pub const fn json_depth_budget_for_nesting(max_nesting_depth: u16) -> usize {
 /// Returns the maximum observed depth, or [`JsonDepthError::DepthExceeded`] if
 /// depth exceeds `max_depth` at any point.
 pub fn prescan_json_depth(bytes: &[u8], max_depth: usize) -> Result<usize, JsonDepthError> {
-    let mut in_string = false;
-    let mut escaped = false;
-    let mut current_depth = 0_usize;
-    let mut max_observed_depth = 0_usize;
-
-    for &byte in bytes {
-        if in_string {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == b'"' {
-                in_string = false;
-            }
-        } else {
-            match byte {
-                b'"' => in_string = true,
-                b'{' | b'[' => {
-                    current_depth = current_depth.saturating_add(1);
-                    if current_depth > max_depth {
-                        return Err(JsonDepthError::DepthExceeded {
-                            depth: current_depth,
-                            max_depth,
-                        });
-                    }
-                    if current_depth > max_observed_depth {
-                        max_observed_depth = current_depth;
-                    }
-                }
-                b'}' | b']' => {
-                    current_depth = current_depth.saturating_sub(1);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Ok(max_observed_depth)
+    let mut scanner = JsonDepthScanner::new(max_depth);
+    scanner.feed(bytes)?;
+    Ok(scanner.max_observed_depth())
 }
 
 #[cfg(test)]
