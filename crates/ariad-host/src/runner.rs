@@ -69,23 +69,29 @@ pub enum RunError {
 ///
 /// The caller owns workspace cleanup. On every non-success path this function explicitly kills
 /// the wrapped process group or Windows job object and waits for it to stop.
-pub fn run<S>(
+fn run_internal<S>(
     program: &Path,
     args: &[OsString],
     request: &Request,
+    describe_timeout_override: Option<Duration>,
     cancel: CancellationToken,
     sink: S,
 ) -> Result<RunOutcome, RunError>
 where
     S: FnMut(Event),
 {
+    if cancel.is_cancelled() {
+        return Err(RunError::Cancelled);
+    }
+
     if let Request::Convert { limits, .. } = request {
         limits
             .validate()
             .map_err(|_| RunError::ProtocolViolation("request contains invalid limits"))?;
-    }
-    if cancel.is_cancelled() {
-        return Err(RunError::Cancelled);
+
+        if limits.max_memory_mb.is_some() {
+            check_memory_limit_support(program, args, limits, cancel.clone())?;
+        }
     }
 
     let mut request_line =
@@ -106,52 +112,41 @@ where
         args,
         request,
         request_line,
-        None,
+        describe_timeout_override,
         cancel,
         sink,
     ))
 }
 
-/// Runs an engine process with an optional timeout override.
-pub fn run_with_timeout<S>(
+/// Starts an engine synchronously while Tokio handles its bounded streams internally.
+///
+/// The caller owns workspace cleanup. On every non-success path this function explicitly kills
+/// the wrapped process group or Windows job object and waits for it to stop.
+pub fn run<S>(
     program: &Path,
     args: &[OsString],
     request: &Request,
-    timeout: Option<Duration>,
     cancel: CancellationToken,
     sink: S,
 ) -> Result<RunOutcome, RunError>
 where
     S: FnMut(Event),
 {
-    let mut request_line = serde_json::to_vec(request)
-        .map_err(|_| RunError::ProtocolViolation("invalid request JSON"))?;
-    if request_line.len() > MAX_NDJSON_LINE_BYTES {
-        return Err(RunError::ProtocolViolation(
-            "request line exceeds the 1 MiB limit",
-        ));
-    }
-    request_line.push(b'\n');
-
-    let runtime = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(RunError::Io)?;
-    runtime.block_on(run_async(
-        program,
-        args,
-        request,
-        request_line,
-        timeout,
-        cancel,
-        sink,
-    ))
+    run_internal(program, args, request, None, cancel, sink)
 }
 
 /// Fixed timeout for engine `describe` requests.
 pub const DESCRIBE_TIMEOUT: Duration = Duration::from_secs(30);
 
-type CapabilitiesCache = Mutex<HashMap<(PathBuf, Vec<OsString>), bool>>;
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct CapabilitiesCacheKey {
+    program: PathBuf,
+    args: Vec<OsString>,
+    file_size: Option<u64>,
+    mtime: Option<std::time::SystemTime>,
+}
+
+type CapabilitiesCache = Mutex<HashMap<CapabilitiesCacheKey, bool>>;
 
 static CAPABILITIES_CACHE: OnceLock<CapabilitiesCache> = OnceLock::new();
 
@@ -172,7 +167,7 @@ pub fn describe_with_timeout(
     };
     let mut capabilities = None;
     let mut count = 0_usize;
-    run_with_timeout(program, args, &request, Some(timeout), cancel, |event| {
+    run_internal(program, args, &request, Some(timeout), cancel, |event| {
         if let Event::Capabilities { .. } = &event {
             count += 1;
             capabilities = Some(event);
@@ -215,7 +210,16 @@ pub fn check_memory_limit_support(
         return Ok(());
     }
 
-    let key = (program.to_path_buf(), args.to_vec());
+    let (file_size, mtime) = match std::fs::metadata(program) {
+        Ok(meta) => (Some(meta.len()), meta.modified().ok()),
+        Err(_) => (None, None),
+    };
+    let key = CapabilitiesCacheKey {
+        program: program.to_path_buf(),
+        args: args.to_vec(),
+        file_size,
+        mtime,
+    };
     let cached = {
         let cache = capabilities_cache().lock().unwrap();
         cache.get(&key).copied()
@@ -256,7 +260,7 @@ async fn run_async<S>(
     args: &[OsString],
     request: &Request,
     request_line: Vec<u8>,
-    timeout_override: Option<Duration>,
+    describe_timeout_override: Option<Duration>,
     cancel: CancellationToken,
     sink: S,
 ) -> Result<RunOutcome, RunError>
@@ -266,9 +270,12 @@ where
     let (output_dir, timeout) = match request {
         Request::Convert { output, limits, .. } => (
             Some(output.dir.as_str()),
-            timeout_override.or_else(|| limits.timeout_s.map(Duration::from_secs)),
+            limits.timeout_s.map(Duration::from_secs),
         ),
-        Request::Describe { .. } => (None, Some(timeout_override.unwrap_or(DESCRIBE_TIMEOUT))),
+        Request::Describe { .. } => (
+            None,
+            Some(describe_timeout_override.unwrap_or(DESCRIBE_TIMEOUT)),
+        ),
     };
     let deadline = timeout.and_then(|duration| Instant::now().checked_add(duration));
 

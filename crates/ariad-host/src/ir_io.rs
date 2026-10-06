@@ -71,6 +71,7 @@ impl<R: Read> Read for BoundedScannerReader<R> {
         let to_read = (buf.len() as u64).min(remaining) as usize;
         let n = match self.inner.read(&mut buf[..to_read]) {
             Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => return Err(e),
             Err(e) => {
                 self.inner_io_error = Some(io::Error::new(e.kind(), e.to_string()));
                 return Err(e);
