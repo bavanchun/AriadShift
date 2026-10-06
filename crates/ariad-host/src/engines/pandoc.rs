@@ -20,6 +20,7 @@ use ariad_core::{
     },
 };
 use serde::Deserialize;
+use sha2::Digest;
 
 use crate::{ir_io, media, pandoc_bin};
 
@@ -39,13 +40,6 @@ impl EngineFailure {
         Self {
             code,
             message: Cow::Borrowed(message),
-        }
-    }
-
-    fn custom(code: ErrorCode, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: Cow::Owned(message.into()),
         }
     }
 
@@ -81,6 +75,8 @@ struct PandocLogEntry {
     #[serde(rename = "type")]
     kind: String,
     verbosity: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
 }
 
 /// Reads one engine request, emits NDJSON events, and returns the engine process exit status.
@@ -137,7 +133,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
             input,
             output: req_output,
             work_dir,
-            options: _,
+            options,
             limits,
         } => {
             let workspace =
@@ -153,10 +149,13 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 ),
             })?;
 
-            if input.format == "ariad-ir+json" && req_output.format == "docx" {
-                let input_file = File::open(&input.path).map_err(|_| EngineFailure::io())?;
-                let document =
-                    ir_io::read(BufReader::new(input_file), &limits).map_err(|err| match err {
+            if input.format == "ariad-ir+json"
+                && (req_output.format == "docx" || req_output.format == "epub")
+            {
+                let is_epub = req_output.format == "epub";
+                let input_bytes = fs::read(&input.path).map_err(|_| EngineFailure::io())?;
+                let document = ir_io::read(BufReader::new(input_bytes.as_slice()), &limits)
+                    .map_err(|err| match err {
                         ir_io::ReadError::ByteLimitExceeded { .. }
                         | ir_io::ReadError::DepthExceeded(_)
                         | ir_io::ReadError::BlockLimitExceeded { .. } => {
@@ -165,7 +164,49 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                         ir_io::ReadError::Io(_) => EngineFailure::io(),
                         ir_io::ReadError::Json(_) => EngineFailure::invalid_request(),
                     })?;
-                let mapped = from_ir(&document);
+                let mut mapped = from_ir(&document);
+
+                if is_epub {
+                    let ns = uuid::Uuid::new_v5(
+                        &uuid::Uuid::NAMESPACE_URL,
+                        b"https://ariadshift.ariadnev.com",
+                    );
+                    let ir_sha = sha2::Sha256::digest(&input_bytes);
+                    let id_uuid = uuid::Uuid::new_v5(&ns, &ir_sha);
+                    let identifier = format!("urn:uuid:{id_uuid}");
+                    mapped.pandoc.meta.insert(
+                        "identifier".to_owned(),
+                        ariad_core::pandoc::ast::MetaValue::MetaString(identifier),
+                    );
+
+                    let needs_title_fallback = match mapped.pandoc.meta.get("title") {
+                        None => true,
+                        Some(val) => is_meta_empty_or_whitespace(val),
+                    };
+                    if needs_title_fallback {
+                        let title_text = options
+                            .get("title_fallback")
+                            .and_then(|v| v.as_str())
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or("Untitled");
+                        mapped.pandoc.meta.insert(
+                            "title".to_owned(),
+                            ariad_core::pandoc::ast::MetaValue::MetaInlines(vec![
+                                ariad_core::pandoc::ast::Inline::Str(title_text.to_owned()),
+                            ]),
+                        );
+                    }
+
+                    if !mapped.pandoc.meta.contains_key("lang") {
+                        mapped.pandoc.meta.insert(
+                            "lang".to_owned(),
+                            ariad_core::pandoc::ast::MetaValue::MetaInlines(vec![
+                                ariad_core::pandoc::ast::Inline::Str("und".to_owned()),
+                            ]),
+                        );
+                    }
+                }
 
                 for warning in mapped.warnings {
                     let code = serde_json::to_string(&warning.code)
@@ -180,19 +221,26 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     .map_err(|_| EngineFailure::io())?;
                 }
 
-                let output_path = Path::new(&req_output.dir).join("document.docx");
+                let target_format = if is_epub { "epub3" } else { "docx" };
+                let output_filename = if is_epub {
+                    "document.epub"
+                } else {
+                    "document.docx"
+                };
+                let output_path = Path::new(&req_output.dir).join(output_filename);
                 let log_path = workspace.join("log").join("pandoc-log.json");
                 let pandoc_json =
                     serde_json::to_vec(&mapped.pandoc).map_err(|_| EngineFailure::failure())?;
-                run_pandoc(
-                    &binary.path,
-                    &limits,
-                    &work_dir,
-                    &workspace,
-                    &log_path,
-                    &output_path,
-                    &pandoc_json,
-                )?;
+                let writer_config = PandocWriterConfig {
+                    binary_path: &binary.path,
+                    limits: &limits,
+                    work_dir: &work_dir,
+                    workspace: &workspace,
+                    log_path: &log_path,
+                    output_path: &output_path,
+                    target_format,
+                };
+                run_pandoc(&writer_config, &pandoc_json)?;
 
                 for warning in pandoc_log_warnings(&log_path)? {
                     emit(output, warning).map_err(|_| EngineFailure::io())?;
@@ -204,7 +252,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     output,
                     Event::Artifact {
                         path: output_path.to_string_lossy().into_owned(),
-                        format: "docx".to_owned(),
+                        format: req_output.format.clone(),
                     },
                 )
                 .map_err(|_| EngineFailure::io())?;
@@ -238,11 +286,20 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                         ),
                         crate::archive::ArchiveError::DuplicateEntryName { .. }
                         | crate::archive::ArchiveError::EntryCountMismatch { .. }
-                        | crate::archive::ArchiveError::InvalidEntryName { .. }
-                        | crate::archive::ArchiveError::Io(_)
-                        | crate::archive::ArchiveError::Zip(_) => {
-                            EngineFailure::custom(ErrorCode::EngineFailure, err.to_string())
+                        | crate::archive::ArchiveError::InvalidEntryName { .. } => {
+                            EngineFailure::new(
+                                ErrorCode::EngineFailure,
+                                "archive layout is invalid or corrupted",
+                            )
                         }
+                        crate::archive::ArchiveError::Io(_) => EngineFailure::new(
+                            ErrorCode::EngineFailure,
+                            "failed to read archive: I/O error",
+                        ),
+                        crate::archive::ArchiveError::Zip(_) => EngineFailure::new(
+                            ErrorCode::EngineFailure,
+                            "failed to parse archive: invalid zip structure",
+                        ),
                     },
                 )?;
 
@@ -366,6 +423,10 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                             output: "docx".to_owned(),
                         },
                         RouteCapability {
+                            input: "ariad-ir+json".to_owned(),
+                            output: "epub".to_owned(),
+                        },
+                        RouteCapability {
                             input: "docx".to_owned(),
                             output: "ariad-ir+json".to_owned(),
                         },
@@ -403,7 +464,8 @@ fn validate_convert_request(
     if protocol != PROTOCOL {
         return Err(EngineFailure::invalid_request());
     }
-    let is_writer = input.format == "ariad-ir+json" && output.format == "docx";
+    let is_writer =
+        input.format == "ariad-ir+json" && (output.format == "docx" || output.format == "epub");
     let is_reader =
         (input.format == "docx" || input.format == "epub") && output.format == "ariad-ir+json";
     if !is_writer && !is_reader {
@@ -432,37 +494,39 @@ fn validate_convert_request(
     Ok(workspace.to_path_buf())
 }
 
-fn run_pandoc(
-    pandoc_path: &Path,
-    limits: &Limits,
-    work_dir: &str,
-    workspace: &Path,
-    log_path: &Path,
-    output_path: &Path,
-    pandoc_json: &[u8],
-) -> Result<(), EngineFailure> {
-    let mut command = Command::new(pandoc_path);
-    if let Some(max_memory_mb) = limits.max_memory_mb {
+struct PandocWriterConfig<'a> {
+    binary_path: &'a Path,
+    limits: &'a Limits,
+    work_dir: &'a str,
+    workspace: &'a Path,
+    log_path: &'a Path,
+    output_path: &'a Path,
+    target_format: &'a str,
+}
+
+fn run_pandoc(config: &PandocWriterConfig<'_>, pandoc_json: &[u8]) -> Result<(), EngineFailure> {
+    let mut command = Command::new(config.binary_path);
+    if let Some(max_memory_mb) = config.limits.max_memory_mb {
         command
             .arg("+RTS")
             .arg(format!("-M{max_memory_mb}M"))
             .arg("-RTS");
     }
     let mut log_argument = OsString::from("--log=");
-    log_argument.push(log_path.as_os_str());
+    log_argument.push(config.log_path.as_os_str());
     command
         .arg("--sandbox")
         .arg(log_argument)
-        .args(["-f", "json", "-t", "docx", "-o"])
-        .arg(output_path)
-        .current_dir(work_dir)
+        .args(["-f", "json", "-t", config.target_format, "-o"])
+        .arg(config.output_path)
+        .current_dir(config.work_dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .env_clear()
-        .env("TMPDIR", workspace.join("tmp"))
-        .env("TMP", workspace.join("tmp"))
-        .env("TEMP", workspace.join("tmp"));
+        .env("TMPDIR", config.workspace.join("tmp"))
+        .env("TMP", config.workspace.join("tmp"))
+        .env("TEMP", config.workspace.join("tmp"));
     if let Some(path) = env::var_os("PATH") {
         command.env("PATH", path);
     }
@@ -471,7 +535,8 @@ fn run_pandoc(
         command.env("SYSTEMROOT", system_root);
     }
 
-    let timeout = limits
+    let timeout = config
+        .limits
         .timeout_s
         .and_then(|seconds| seconds.checked_sub(PANDOC_TIMEOUT_MARGIN_SECONDS))
         .map(Duration::from_secs);
@@ -514,7 +579,7 @@ fn run_pandoc(
         return Err(EngineFailure::io());
     }
     if !status.success() {
-        if limits.max_memory_mb.is_some() && memory_limit_was_hit(&stderr_tail) {
+        if config.limits.max_memory_mb.is_some() && memory_limit_was_hit(&stderr_tail) {
             return Err(EngineFailure::new(
                 ErrorCode::LimitExceeded,
                 "Pandoc exceeded the configured memory limit.",
@@ -680,6 +745,22 @@ fn pandoc_failure(_status: ExitStatus, _stderr_tail: &str) -> EngineFailure {
     EngineFailure::failure()
 }
 
+fn is_meta_empty_or_whitespace(val: &ariad_core::pandoc::ast::MetaValue) -> bool {
+    match val {
+        ariad_core::pandoc::ast::MetaValue::MetaString(s) => s.trim().is_empty(),
+        ariad_core::pandoc::ast::MetaValue::MetaInlines(inlines) => {
+            inlines.iter().all(|inline| match inline {
+                ariad_core::pandoc::ast::Inline::Str(s) => s.trim().is_empty(),
+                ariad_core::pandoc::ast::Inline::Space
+                | ariad_core::pandoc::ast::Inline::SoftBreak
+                | ariad_core::pandoc::ast::Inline::LineBreak => true,
+                _ => false,
+            })
+        }
+        _ => false,
+    }
+}
+
 fn pandoc_log_warnings(path: &Path) -> Result<Vec<Event>, EngineFailure> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
@@ -689,15 +770,31 @@ fn pandoc_log_warnings(path: &Path) -> Result<Vec<Event>, EngineFailure> {
     let entries: Vec<PandocLogEntry> =
         serde_json::from_slice(&bytes).map_err(|_| EngineFailure::failure())?;
     let mut warnings = Vec::new();
+    let mut has_translation_warning = false;
     for entry in entries {
         if entry.kind == "CouldNotFetchResource" {
             return Err(EngineFailure::failure());
         }
         if entry.verbosity.as_deref() == Some("WARNING") {
-            warnings.push(Event::Warning {
-                code: "pandoc_warning".to_owned(),
-                message: "Pandoc reported a conversion warning.".to_owned(),
-            });
+            let is_translation_noise = entry.kind.contains("Translation")
+                || entry
+                    .message
+                    .as_deref()
+                    .is_some_and(|m| m.contains("translation") || m.contains("translations"));
+            if is_translation_noise {
+                if !has_translation_warning {
+                    has_translation_warning = true;
+                    warnings.push(Event::Warning {
+                        code: "pandoc_warning".to_owned(),
+                        message: "Pandoc reported a conversion warning.".to_owned(),
+                    });
+                }
+            } else {
+                warnings.push(Event::Warning {
+                    code: "pandoc_warning".to_owned(),
+                    message: "Pandoc reported a conversion warning.".to_owned(),
+                });
+            }
         }
     }
     Ok(warnings)
@@ -798,13 +895,15 @@ mod tests {
         let caps: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
         assert_eq!(caps["type"], "capabilities");
         let routes = caps["routes"].as_array().unwrap();
-        assert_eq!(routes.len(), 3);
+        assert_eq!(routes.len(), 4);
         assert_eq!(routes[0]["input"], "ariad-ir+json");
         assert_eq!(routes[0]["output"], "docx");
-        assert_eq!(routes[1]["input"], "docx");
-        assert_eq!(routes[1]["output"], "ariad-ir+json");
-        assert_eq!(routes[2]["input"], "epub");
+        assert_eq!(routes[1]["input"], "ariad-ir+json");
+        assert_eq!(routes[1]["output"], "epub");
+        assert_eq!(routes[2]["input"], "docx");
         assert_eq!(routes[2]["output"], "ariad-ir+json");
+        assert_eq!(routes[3]["input"], "epub");
+        assert_eq!(routes[3]["output"], "ariad-ir+json");
     }
 
     #[test]
@@ -1106,5 +1205,210 @@ mod tests {
             }
             other => panic!("expected NestingTooDeep, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn convert_ir_to_epub_via_engine() {
+        use crate::workspace::Workspace;
+        use ariad_core::{
+            ir::{Block, Document, Inline},
+            limits::Limits,
+            protocol::{Input, Output, PROTOCOL, Request},
+        };
+        use sha2::Digest;
+        use std::{fs, io::Cursor, io::Read};
+
+        let workspace = Workspace::new().unwrap();
+        let input_path = workspace.input_dir().join("document.ir.json");
+        let mut doc = Document::default();
+        doc.body.push(Block::Heading {
+            level: 1,
+            content: vec![Inline::Text {
+                text: "EPUB Test Heading".to_owned(),
+            }],
+        });
+        doc.body.push(Block::Paragraph {
+            content: vec![Inline::Text {
+                text: "Paragraph in test EPUB.".to_owned(),
+            }],
+        });
+        let doc_json = serde_json::to_vec(&doc).unwrap();
+        fs::write(&input_path, &doc_json).unwrap();
+
+        let mut options = std::collections::BTreeMap::new();
+        options.insert(
+            "title_fallback".to_owned(),
+            serde_json::Value::String("Fallback Stem".to_owned()),
+        );
+
+        let request = Request::Convert {
+            protocol: PROTOCOL.to_owned(),
+            job: "test-ir-to-epub".to_owned(),
+            input: Input {
+                path: input_path.to_string_lossy().into_owned(),
+                format: "ariad-ir+json".to_owned(),
+            },
+            output: Output {
+                dir: workspace.output_dir().to_string_lossy().into_owned(),
+                format: "epub".to_owned(),
+            },
+            work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+            options,
+            limits: Limits::local(),
+        };
+
+        let mut input_bytes = serde_json::to_vec(&request).unwrap();
+        input_bytes.push(b'\n');
+        let mut output_bytes = Vec::new();
+
+        let exit = super::serve(Cursor::new(input_bytes), &mut output_bytes);
+        assert_eq!(exit, std::process::ExitCode::SUCCESS);
+
+        let out_epub = workspace.output_dir().join("document.epub");
+        assert!(out_epub.is_file());
+
+        // Verify OPF contents
+        let file = fs::File::open(&out_epub).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut opf = String::new();
+        archive
+            .by_name("EPUB/content.opf")
+            .unwrap()
+            .read_to_string(&mut opf)
+            .unwrap();
+
+        // 1. dc:title fallback
+        assert!(opf.contains("<dc:title id=\"epub-title-1\">Fallback Stem</dc:title>"));
+        // 2. dc:language fallback
+        assert!(opf.contains("<dc:language>und</dc:language>"));
+        // 3. dc:identifier UUIDv5
+        let ns = uuid::Uuid::new_v5(
+            &uuid::Uuid::NAMESPACE_URL,
+            b"https://ariadshift.ariadnev.com",
+        );
+        let ir_sha = sha2::Sha256::digest(&doc_json);
+        let expected_uuid = uuid::Uuid::new_v5(&ns, &ir_sha);
+        assert!(opf.contains(&format!(
+            "<dc:identifier id=\"epub-id-1\">urn:uuid:{expected_uuid}</dc:identifier>"
+        )));
+    }
+
+    #[test]
+    fn archive_error_mapping_does_not_leak_entry_names() {
+        use crate::workspace::Workspace;
+        use ariad_core::protocol::Request;
+        use std::io::{Cursor, Write};
+        use zip::write::SimpleFileOptions;
+
+        let workspace = Workspace::new().unwrap();
+        let zip_path = workspace.input_dir().join("duplicate.docx");
+        {
+            let file = fs::File::create(&zip_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let options = SimpleFileOptions::default();
+            zip.start_file("secret/path/private_1.txt", options)
+                .unwrap();
+            zip.write_all(b"content 1").unwrap();
+            zip.start_file("secret/path/private_2.txt", options)
+                .unwrap();
+            zip.write_all(b"content 2").unwrap();
+            zip.finish().unwrap();
+        }
+
+        // Patch private_2.txt to private_1.txt to create duplicate entry name
+        let mut zip_bytes = fs::read(&zip_path).unwrap();
+        let target = b"secret/path/private_2.txt";
+        let replacement = b"secret/path/private_1.txt";
+        let mut patched = 0;
+        for i in 0..zip_bytes.len().saturating_sub(target.len()) {
+            if &zip_bytes[i..i + target.len()] == target {
+                zip_bytes[i..i + target.len()].copy_from_slice(replacement);
+                patched += 1;
+            }
+        }
+        assert!(
+            patched >= 2,
+            "must patch both local and central dir headers"
+        );
+        fs::write(&zip_path, zip_bytes).unwrap();
+
+        let request = Request::Convert {
+            protocol: ariad_core::protocol::PROTOCOL.to_owned(),
+            job: "job-leak-test".to_owned(),
+            input: ariad_core::protocol::Input {
+                path: zip_path.to_string_lossy().into_owned(),
+                format: "docx".to_owned(),
+            },
+            output: ariad_core::protocol::Output {
+                dir: workspace.output_dir().to_string_lossy().into_owned(),
+                format: "ariad-ir+json".to_owned(),
+            },
+            work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+            options: std::collections::BTreeMap::new(),
+            limits: ariad_core::limits::Limits::local(),
+        };
+
+        let request_bytes = serde_json::to_vec(&request).unwrap();
+        let mut output_bytes = Vec::new();
+        let exit_code = super::serve(Cursor::new(request_bytes), &mut output_bytes);
+        assert_ne!(exit_code, std::process::ExitCode::SUCCESS);
+
+        let output_str = String::from_utf8(output_bytes).unwrap();
+        assert!(!output_str.contains("secret"));
+        assert!(!output_str.contains("private_doc"));
+
+        // Verify the emitted Event::Result contains the generic error message
+        let result_event = output_str
+            .lines()
+            .find_map(|line| {
+                if let Ok(Event::Result { ok, error, .. }) = serde_json::from_str::<Event>(line) {
+                    Some((ok, error))
+                } else {
+                    None
+                }
+            })
+            .expect("must emit Event::Result");
+
+        assert!(!result_event.0);
+        let error = result_event.1.expect("must have error");
+        assert_eq!(error.code, ErrorCode::EngineFailure);
+        assert_eq!(error.message, "archive layout is invalid or corrupted");
+    }
+
+    #[test]
+    fn is_meta_empty_or_whitespace_detects_empty_and_whitespace_values() {
+        use super::is_meta_empty_or_whitespace;
+        use ariad_core::pandoc::ast::{Inline, MetaValue};
+
+        // MetaString: empty string
+        assert!(is_meta_empty_or_whitespace(&MetaValue::MetaString(
+            "".to_owned()
+        )));
+        // MetaString: whitespace only (spaces, tabs, newlines)
+        assert!(is_meta_empty_or_whitespace(&MetaValue::MetaString(
+            "   \t\n  ".to_owned()
+        )));
+        // MetaString: non-empty
+        assert!(!is_meta_empty_or_whitespace(&MetaValue::MetaString(
+            "valid".to_owned()
+        )));
+
+        // MetaInlines: empty list
+        assert!(is_meta_empty_or_whitespace(&MetaValue::MetaInlines(vec![])));
+        // MetaInlines: whitespace only
+        assert!(is_meta_empty_or_whitespace(&MetaValue::MetaInlines(vec![
+            Inline::Space,
+            Inline::Str("   ".to_owned()),
+            Inline::SoftBreak,
+            Inline::LineBreak,
+        ])));
+        // MetaInlines: non-empty text
+        assert!(!is_meta_empty_or_whitespace(&MetaValue::MetaInlines(vec![
+            Inline::Space,
+            Inline::Str("valid title".to_owned()),
+        ])));
+
+        // Other MetaValue variants are not considered empty or whitespace
+        assert!(!is_meta_empty_or_whitespace(&MetaValue::MetaBool(true)));
     }
 }

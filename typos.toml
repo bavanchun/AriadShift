@@ -19,5 +19,5 @@ extend-exclude = [
     "fixtures/md/vi-*.md",
     "fixtures/md/mixed-*.md",
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
-    "fixtures/golden/*.ir.snap",
+    "fixtures/golden/*.snap",
 ]

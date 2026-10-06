@@ -1,0 +1,383 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+Package entries (sorted):
+- EPUB/content.opf
+- EPUB/nav.xhtml
+- EPUB/styles/stylesheet1.css
+- EPUB/text/ch001.xhtml
+- EPUB/text/title_page.xhtml
+- EPUB/toc.ncx
+- META-INF/com.apple.ibooks.display-options.xml
+- META-INF/container.xml
+- mimetype
+
+XML parts:
+
+--- EPUB/content.opf ---
+<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" xmlns="http://www.idpf.org/2007/opf" xml:lang="und" unique-identifier="epub-id-1" prefix="ibooks: http://vocabulary.itunes.apple.com/rdf/ibooks/vocabulary-extensions-1.0/">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:identifier id="epub-id-1">urn:uuid:299b4a1b-68b0-5dd2-969d-83ea8ddfa0fe</dc:identifier>
+    <dc:title id="epub-title-1">en-deep-list</dc:title>
+    <dc:date id="epub-date">2023-11-14T22:13:20Z</dc:date>
+    <dc:language>und</dc:language>
+    <meta property="dcterms:modified">2023-11-14T22:13:20Z</meta>
+    <meta property="schema:accessMode">textual</meta>
+    <meta property="schema:accessModeSufficient">textual</meta>
+    <meta property="schema:accessibilityFeature">alternativeText</meta>
+    <meta property="schema:accessibilityFeature">readingOrder</meta>
+    <meta property="schema:accessibilityFeature">structuralNavigation</meta>
+    <meta property="schema:accessibilityFeature">tableOfContents</meta>
+    <meta property="schema:accessibilityHazard">none</meta>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml" />
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />
+    <item id="stylesheet1" href="styles/stylesheet1.css" media-type="text/css" />
+    <item id="title_page_xhtml" href="text/title_page.xhtml" media-type="application/xhtml+xml" />
+    <item id="ch001_xhtml" href="text/ch001.xhtml" media-type="application/xhtml+xml" />
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="title_page_xhtml" linear="yes" />
+    <itemref idref="ch001_xhtml" />
+  </spine>
+  <guide>
+    <reference type="toc" title="en-deep-list" href="nav.xhtml" />
+  </guide>
+</package>
+
+
+--- EPUB/nav.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>en-deep-list</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="styles/stylesheet1.css" />
+</head>
+<body epub:type="frontmatter">
+<nav epub:type="toc" role="doc-toc" id="toc">
+      <h1 id="toc-title">en-deep-list</h1>
+      <ol class="toc">
+        <li id="toc-li-1">
+          <a href="text/ch001.xhtml#en-deep-list">en-deep-list</a>
+        </li>
+      </ol>
+    </nav>
+<nav epub:type="landmarks" id="landmarks" hidden="hidden">
+  <ol>
+    <li>
+      <a href="text/title_page.xhtml" epub:type="titlepage">Title Page</a>
+    </li>
+  </ol>
+</nav>
+</body>
+</html>
+
+
+--- EPUB/text/ch001.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>ch001.xhtml</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="../styles/stylesheet1.css" />
+</head>
+<body epub:type="bodymatter">
+<section id="en-deep-list" class="level1 unnumbered">
+<h1 class="unnumbered">en-deep-list</h1>
+<ul>
+<li>Layer 1
+<ul>
+<li>Layer 2
+<ul>
+<li>Layer 3
+<ul>
+<li>Layer 4
+<ul>
+<li>Layer 5
+<ul>
+<li>Layer 6
+<ul>
+<li>Layer 7
+<ul>
+<li>Layer 8
+<ul>
+<li>Layer 9
+<ul>
+<li>Layer 10
+<ul>
+<li>Layer 11
+<ul>
+<li>Layer 12
+<ul>
+<li>Layer 13
+<ul>
+<li>Layer 14
+<ul>
+<li>Layer 15
+<ul>
+<li>Layer 16
+<ul>
+<li>Layer 17
+<ul>
+<li>Layer 18
+<ul>
+<li>Layer 19
+<ul>
+<li>Layer 20
+<ul>
+<li>Layer 21
+<ul>
+<li>Layer 22
+<ul>
+<li>Layer 23
+<ul>
+<li>Layer 24
+<ul>
+<li>Layer 25
+<ul>
+<li>Layer 26
+<ul>
+<li>Layer 27
+<ul>
+<li>Layer 28
+<ul>
+<li>Layer 29
+<ul>
+<li>Layer 30
+<ul>
+<li>Layer 31
+<ul>
+<li>Layer 32
+<ul>
+<li>Layer 33
+<ul>
+<li>Layer 34
+<ul>
+<li>Layer 35
+<ul>
+<li>Layer 36
+<ul>
+<li>Layer 37
+<ul>
+<li>Layer 38
+<ul>
+<li>Layer 39
+<ul>
+<li>Layer 40
+<ul>
+<li>Layer 41
+<ul>
+<li>Layer 42
+<ul>
+<li>Layer 43
+<ul>
+<li>Layer 44
+<ul>
+<li>Layer 45
+<ul>
+<li>Layer 46
+<ul>
+<li>Layer 47
+<ul>
+<li>Layer 48
+<ul>
+<li>Layer 49
+<ul>
+<li>Layer 50
+<ul>
+<li>Layer 51
+<ul>
+<li>Layer 52
+<ul>
+<li>Layer 53
+<ul>
+<li>Layer 54
+<ul>
+<li>Layer 55
+<ul>
+<li>Layer 56
+<ul>
+<li>Layer 57
+<ul>
+<li>Layer 58
+<ul>
+<li>Layer 59
+<ul>
+<li>Layer 60
+<ul>
+<li>Layer 61
+<ul>
+<li>Layer 62
+<ul>
+<li>Layer 63
+<ul>
+<li>Layer 64</li>
+</ul>
+                                                                                                                                                                                                                                                                </li>
+</ul>
+                                                                                                                                                                                                                                                            </li>
+</ul>
+                                                                                                                                                                                                                                                        </li>
+</ul>
+                                                                                                                                                                                                                                                    </li>
+</ul>
+                                                                                                                                                                                                                                                </li>
+</ul>
+                                                                                                                                                                                                                                            </li>
+</ul>
+                                                                                                                                                                                                                                        </li>
+</ul>
+                                                                                                                                                                                                                                    </li>
+</ul>
+                                                                                                                                                                                                                                </li>
+</ul>
+                                                                                                                                                                                                                            </li>
+</ul>
+                                                                                                                                                                                                                        </li>
+</ul>
+                                                                                                                                                                                                                    </li>
+</ul>
+                                                                                                                                                                                                                </li>
+</ul>
+                                                                                                                                                                                                            </li>
+</ul>
+                                                                                                                                                                                                        </li>
+</ul>
+                                                                                                                                                                                                    </li>
+</ul>
+                                                                                                                                                                                                </li>
+</ul>
+                                                                                                                                                                                            </li>
+</ul>
+                                                                                                                                                                                        </li>
+</ul>
+                                                                                                                                                                                    </li>
+</ul>
+                                                                                                                                                                                </li>
+</ul>
+                                                                                                                                                                            </li>
+</ul>
+                                                                                                                                                                        </li>
+</ul>
+                                                                                                                                                                    </li>
+</ul>
+                                                                                                                                                                </li>
+</ul>
+                                                                                                                                                            </li>
+</ul>
+                                                                                                                                                        </li>
+</ul>
+                                                                                                                                                    </li>
+</ul>
+                                                                                                                                                </li>
+</ul>
+                                                                                                                                            </li>
+</ul>
+                                                                                                                                        </li>
+</ul>
+                                                                                                                                    </li>
+</ul>
+                                                                                                                                </li>
+</ul>
+                                                                                                                            </li>
+</ul>
+                                                                                                                        </li>
+</ul>
+                                                                                                                    </li>
+</ul>
+                                                                                                                </li>
+</ul>
+                                                                                                            </li>
+</ul>
+                                                                                                        </li>
+</ul>
+                                                                                                    </li>
+</ul>
+                                                                                                </li>
+</ul>
+                                                                                            </li>
+</ul>
+                                                                                        </li>
+</ul>
+                                                                                    </li>
+</ul>
+                                                                                </li>
+</ul>
+                                                                            </li>
+</ul>
+                                                                        </li>
+</ul>
+                                                                    </li>
+</ul>
+                                                                </li>
+</ul>
+                                                            </li>
+</ul>
+                                                        </li>
+</ul>
+                                                    </li>
+</ul>
+                                                </li>
+</ul>
+                                            </li>
+</ul>
+                                        </li>
+</ul>
+                                    </li>
+</ul>
+                                </li>
+</ul>
+                            </li>
+</ul>
+                        </li>
+</ul>
+                    </li>
+</ul>
+                </li>
+</ul>
+            </li>
+</ul>
+        </li>
+</ul>
+</section>
+</body>
+</html>
+
+
+--- EPUB/text/title_page.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>en-deep-list</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="../styles/stylesheet1.css" />
+</head>
+<body epub:type="frontmatter">
+<section epub:type="titlepage" class="titlepage">
+  <h1 class="title">en-deep-list</h1>
+</section>
+</body>
+</html>
+
+
+Template and media SHA-256:
+932ab19ee3371838c3dd65eb770a6515e2730fc1c4bdd5a533984f2e355c8b24  EPUB/styles/stylesheet1.css
+22ed76c0bb55276c11051118dadee71628efaeac5c69d29e1336d18bbd1ad5ce  EPUB/toc.ncx
+364a17d7a4967325d2956f09c0626d564c1884c9dfa02116dc115d6a49538f56  META-INF/com.apple.ibooks.display-options.xml
+7c06491ce25e3cc80ccec0eed382c4c5570265f886415e4ce0cbe5866a57c461  META-INF/container.xml
+e468e350d1143eb648f60c7b0bd6031101ec0544a361ca74ecef256ac901f48b  mimetype

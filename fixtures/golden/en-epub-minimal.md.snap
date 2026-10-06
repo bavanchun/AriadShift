@@ -1,0 +1,13 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+---
+title: "Minimal EPUB 3 document"
+author:
+  - "AriadShift contributors"
+lang: en
+---
+
+# Minimal Document
+
+This is a minimal valid EPUB 3 document for boundary testing.
