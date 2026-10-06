@@ -277,14 +277,15 @@ New IR fields follow the rule: **omit when empty** (`#[serde(default, skip_seria
 
 `Document` has `{ version, meta, body, assets, layout, provenance, furniture }`. `furniture: Vec<Block>` carries running page headers and footers outside `body` and is omitted when empty. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
 
-`LayoutIndex` specifies page geometry plus per-block bounding boxes: `{ pages, blocks }`. Coordinates (`left`, `top`, `right`, `bottom`) and dimensions (`width`, `height`) use typographical points (pt, 1/72 inch) with origin `(0, 0)` at the top-left of each page. Blocks are keyed by stable `/`-separated block paths:
+`LayoutIndex` specifies page geometry plus per-block bounding boxes: `{ pages, blocks }`. Coordinates (`left`, `top`, `right`, `bottom`) and dimensions (`width`, `height`) use typographical points (pt, 1/72 inch) with origin `(0, 0)` at the top-left of each page. Blocks are keyed by stable `/`-separated block paths where path segments match real AST field names and compose recursively for arbitrary nesting:
 - Top-level body blocks: `"body/<index>"` (e.g. `"body/0"`).
 - Furniture blocks: `"furniture/<index>"` (e.g. `"furniture/0"`).
+- Nested quote blocks: `"body/<index>/blocks/<block_index>"`.
+- Nested footnote blocks: `"body/<index>/blocks/<block_index>"`.
 - Nested list item blocks: `"body/<index>/items/<item_index>/blocks/<block_index>"`.
 - Nested table cell blocks: `"body/<index>/head/<row_index>/cells/<cell_index>/blocks/<block_index>"` or `"body/<index>/body/<row_index>/cells/<cell_index>/blocks/<block_index>"`.
-- Nested quote blocks: `"body/<index>/quote/<block_index>"`.
 
-Each block position entry contains `{ page_no, bbox: { left, top, right, bottom } }`. `LayoutIndex` is omitted when empty. Old free-form layout objects (such as arbitrary JSON maps) are no longer accepted under the `ariad-ir/0` draft; layout content must strictly conform to the `LayoutIndex` schema.
+Paths compose recursively across container boundaries (for example, a list item inside a quote is `"body/<index>/blocks/<block_index>/items/<item_index>/blocks/<inner_block_index>"`). Each block position entry contains `{ page_no, bbox: { left, top, right, bottom } }`. `LayoutIndex` is omitted when empty. Old free-form layout objects (such as arbitrary JSON maps) are ignored under the `ariad-ir/0` draft; layout content must conform to the `LayoutIndex` schema.
 
 `Block` variants and fields are:
 
