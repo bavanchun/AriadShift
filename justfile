@@ -56,3 +56,24 @@ ci: static clippy wasm test
 
 pandoc:
     bash scripts/install-pandoc.sh
+
+# Run fuzz targets on Linux (default: all targets, 60 s each)
+[linux]
+fuzz target="" seconds="60":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "{{target}}" ]; then
+        targets=("{{target}}")
+    else
+        targets=("markdown_reader" "front_matter" "html_reader" "pandoc_ast_to_ir" "ir_json" "limits_validate")
+    fi
+    for t in "${targets[@]}"; do
+        echo "=== Running fuzz target: $t ({{seconds}}s) ==="
+        mkdir -p "fuzz/corpus/$t"
+        cargo fuzz run -s none "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048
+    done
+
+[macos]
+[windows]
+fuzz target="" seconds="60":
+    @echo "fuzzing runs on Linux only" && exit 1

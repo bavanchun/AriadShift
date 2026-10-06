@@ -1,0 +1,78 @@
+name: Fuzz (Nightly)
+
+# Nightly AddressSanitizer fuzzing for unsafe-adjacent parsers.
+# Rules and rationale: docs/ci.md and ARCHITECTURE.md §14.
+on:
+  schedule:
+    # 02:00 UTC daily (09:00 Asia/Saigon).
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths: [.github/workflows/fuzz-nightly.yml]
+
+# Scheduled runs check out dev to fuzz the integration branch before promotion.
+# PR runs test workflow syntax and configuration changes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz-nightly:
+    name: Fuzz (ASan)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+          persist-credentials: false
+
+      - name: Install date-pinned nightly toolchain
+        run: |
+          rustup toolchain install nightly-2026-10-05 --profile minimal
+
+      - name: Cache cargo-fuzz
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-0.13.2-${{ runner.os }}
+
+      - name: Install cargo-fuzz
+        run: |
+          if ! command -v cargo-fuzz >/dev/null 2>&1; then
+            cargo install cargo-fuzz --version 0.13.2 --locked
+          fi
+
+      - name: Cache fuzz corpus
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/
+          key: fuzz-nightly-corpus-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-nightly-corpus-${{ runner.os }}-
+
+      - name: Run AddressSanitizer fuzzing
+        run: |
+          targets="markdown_reader html_reader pandoc_ast_to_ir ir_json"
+          for t in $targets; do
+            echo "=== Running ASan fuzz target: $t (600s) ==="
+            mkdir -p "fuzz/corpus/$t"
+            cargo +nightly-2026-10-05 fuzz run "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=600 -timeout=25 -rss_limit_mb=2048
+          done
+
+      - name: Upload crash artifacts on failure
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-nightly-artifacts
+          path: fuzz/artifacts/
+          retention-days: 14
