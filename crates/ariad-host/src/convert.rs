@@ -75,6 +75,8 @@ pub enum ConvertEvent {
 }
 
 /// Converts a supported Markdown input with custom engine args and limits.
+#[doc(hidden)]
+// Internal test hook exposing engine execution parameters for custom harness tests.
 #[allow(clippy::too_many_arguments)]
 pub fn convert_custom<F>(
     input: &Path,
@@ -140,35 +142,6 @@ where
     })
 }
 
-/// Converts a supported Markdown input into a DOCX through the configured engine process with custom limits.
-#[allow(clippy::too_many_arguments)]
-pub fn convert_with_limits<F>(
-    input: &Path,
-    output: &Path,
-    target_format: &str,
-    engine_program: &Path,
-    overwrite: bool,
-    limits: Limits,
-    cancel: CancellationToken,
-    on_event: F,
-) -> Result<ConvertReport, ConvertError>
-where
-    F: FnMut(ConvertEvent),
-{
-    let args = [OsString::from("__engine"), OsString::from("pandoc")];
-    convert_custom(
-        input,
-        output,
-        target_format,
-        engine_program,
-        &args,
-        overwrite,
-        limits,
-        cancel,
-        on_event,
-    )
-}
-
 /// Converts a supported Markdown input into a DOCX through the configured engine process.
 pub fn convert<F>(
     input: &Path,
@@ -182,11 +155,13 @@ pub fn convert<F>(
 where
     F: FnMut(ConvertEvent),
 {
-    convert_with_limits(
+    let args = [OsString::from("__engine"), OsString::from("pandoc")];
+    convert_custom(
         input,
         output,
         target_format,
         engine_program,
+        &args,
         overwrite,
         Limits::local(),
         cancel,
@@ -204,6 +179,7 @@ fn is_markdown_docx_route(input: &Path, target_format: &str) -> bool {
     source_is_markdown && target_format.eq_ignore_ascii_case("docx")
 }
 
+// Private workspace execution helper coordinating individual paths, buffers, and flags.
 #[allow(clippy::too_many_arguments)]
 fn convert_in_workspace<F>(
     workspace: &mut Workspace,
@@ -220,9 +196,6 @@ fn convert_in_workspace<F>(
 where
     F: FnMut(ConvertEvent),
 {
-    runner::check_memory_limit_support(engine_program, engine_args, &limits, cancel.clone())
-        .map_err(map_run_error)?;
-
     let ir_path = workspace.input_dir().join("document.ir.json");
     let ir_file = fs::File::create(&ir_path).map_err(|_| ConvertError::Failed)?;
     serde_json::to_writer(ir_file, document).map_err(|_| ConvertError::Failed)?;

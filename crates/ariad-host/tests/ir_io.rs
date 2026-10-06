@@ -218,3 +218,38 @@ fn rejects_over_deep_json_before_tree_grows() {
         )) if depth == budget + 1 && max_depth == budget
     ));
 }
+
+struct InterruptedOnceReader<R> {
+    inner: R,
+    interrupted: bool,
+}
+
+impl<R: std::io::Read> std::io::Read for InterruptedOnceReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if !self.interrupted {
+            self.interrupted = true;
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Interrupted,
+                "interrupted call",
+            ));
+        }
+        self.inner.read(buf)
+    }
+}
+
+#[test]
+fn retries_and_succeeds_on_interrupted_read() {
+    let document = Document {
+        body: vec![Block::Paragraph {
+            content: Vec::new(),
+        }],
+        ..Document::default()
+    };
+    let json = serde_json::to_vec(&document).unwrap();
+    let reader = InterruptedOnceReader {
+        inner: json.as_slice(),
+        interrupted: false,
+    };
+    let read = ir_io::read(reader, &Limits::local()).unwrap();
+    assert_eq!(read, document);
+}

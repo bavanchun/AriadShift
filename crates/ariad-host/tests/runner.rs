@@ -494,3 +494,40 @@ fn convert_with_enforcing_engine_runs_normally() {
     );
     assert!(output_path.exists(), "output artifact should be promoted");
 }
+
+#[test]
+fn runner_run_rejects_invalid_convert_limits() {
+    let workspace = Workspace::new().expect("create workspace");
+    let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    let args = [OsString::from("echo")];
+    let mut request = make_request(&workspace, None);
+    if let Request::Convert { limits, .. } = &mut request {
+        limits.max_archive_entries = 0;
+    }
+    let result = runner::run(&probe, &args, &request, CancellationToken::new(), |_| {});
+    assert!(matches!(
+        result,
+        Err(RunError::ProtocolViolation(
+            "request contains invalid limits"
+        ))
+    ));
+}
+
+#[test]
+fn runner_run_convert_refuses_unenforced_memory_limit() {
+    let workspace = Workspace::new().expect("create workspace");
+    let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    let args = [OsString::from("describe-no-memory-limit")];
+    let mut request = make_request(&workspace, None);
+    if let Request::Convert { limits, .. } = &mut request {
+        limits.max_memory_mb = Some(512);
+    }
+    let result = runner::run(&probe, &args, &request, CancellationToken::new(), |_| {});
+    assert!(matches!(
+        result,
+        Err(RunError::EngineFailed {
+            code: ariad_core::protocol::ErrorCode::LimitExceeded,
+            ..
+        })
+    ));
+}
