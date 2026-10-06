@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/*"]
+exclude = ["fuzz"]
 resolver = "3"
 
 [workspace.package]
@@ -11,14 +12,18 @@ repository = "https://github.com/bavanchun/AriadShift"
 publish = false
 
 [workspace.dependencies]
+ammonia = "4.2.1"
+ariad-core = { path = "crates/ariad-core", version = "0.0.0" }
+ariad-host = { path = "crates/ariad-host", version = "0.0.0" }
 assert_cmd = "2.2.2"
 axum = "0.8"
 base64 = "0.23.1"
 cap-std = "4.0.3"
-cargo-dist = "0.32"
 clap = { version = "4.6.7", features = ["derive"] }
 comrak = { version = "0.55.0", default-features = false, features = ["shortcodes"] }
+encoding_rs = "0.8.42"
 hex = "0.4.3"
+html5ever = "0.40.1"
 insta = { version = "1.49.0", features = ["json", "glob"] }
 jiff = "0.2"
 jsonwebtoken = "11"
@@ -28,7 +33,7 @@ opentelemetry = "0.33"
 pdfium-render = "0.9"
 process-wrap = { version = "10.0.1", features = ["tokio1", "process-group", "job-object"] }
 quick-xml = "0.42.0"
-rmcp = "3.5"
+rmcp = { version = "3.5.1", default-features = false }
 schemars = "1.2.2"
 serde = "1.0.229"
 serde_json = { version = "1.0.151", features = ["unbounded_depth"] }

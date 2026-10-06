@@ -8,13 +8,13 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-ariad-host = { path = "../ariad-host", version = "0.0.0" }
+ariad-host.workspace = true
 clap.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 tokio-util = { workspace = true, features = ["rt"] }
 
 [dev-dependencies]
-ariad-core = { path = "../ariad-core", version = "0.0.0" }
+ariad-core.workspace = true
 assert_cmd.workspace = true
 hex.workspace = true
 insta.workspace = true
