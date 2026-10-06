@@ -1,0 +1,2641 @@
+---
+source: crates/ariad-cli/tests/reader_golden.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Số: 49/2012/TT-BGDĐT",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "Hà Nội, ngày 12 tháng 12 năm 2012",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "emph"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "center"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "BỘ GIÁO DỤC VÀ ĐÀO TẠO",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "--------",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "Độc lập - Tự do - Hạnh phúc",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "---------------",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "type": "table"
+    },
+    {
+      "content": [
+        {
+          "text": " ",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "THÔNG TƯ",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Ban hành Quy định về tiêu chuẩn đánh giá chất lượng",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "chương trình đào tạo giáo viên trung học phổ thông trình độ đại học",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "_____________________",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Căn cứ Luật Giáo dục ngày 14 tháng 6 năm 2005; Luật sửa đổi, bổ sung một số điều của Luật giáo dục ngày 25 tháng 11 năm 2009;",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Căn cứ Luật giáo dục đại học ngày 18 tháng 6 năm 2012;",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Căn cứ Nghị định số 36/2012/NĐ-CP ngày 18 tháng 4 năm 2012 của Chính phủ quy định chức năng, nhiệm vụ, quyền hạn và cơ cấu tổ chức của các bộ, cơ quan ngang bộ;",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Căn cứ Nghị định số 32/2008/NĐ-CP ngày 19 tháng 3 năm 2008 của Chính phủ quy định chức năng, nhiệm vụ, quyền hạn và cơ cấu tổ chức của Bộ Giáo dục và Đào tạo;",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Căn cứ Nghị định số 75/2006/NĐ-CP ngày 02 tháng 8 năm 2006 của Chính phủ quy định chi tiết và hướng dẫn thi hành một số điều của Luật giáo dục; Nghị định số 31/2011/NĐ-CP ngày 11 tháng 5 năm 2011 của Chính phủ về việc sửa đổi, bổ sung một số điều của Nghị định số 75/2006/NĐ-CP ngày 02 tháng 8 năm 2006 của Chính phủ quy định chi tiết và hướng dẫn thi hành một số điều của Luật Giáo dục;",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Theo đề nghị của Cục trưởng Cục Khảo thí và Kiểm định chất lượng giáo dục;",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Bộ trưởng Bộ Giáo dục và Đào tạo ban hành Thông tư Quy định về tiêu chuẩn đánh giá chất lượng chương trình đào tạo giáo viên trung học phổ thông trình độ đại học.",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 1.",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        },
+        {
+          "text": " Ban hành kèm theo Thông tư này Quy định về tiêu chuẩn đánh giá chất lượng chương trình đào tạo giáo viên trung học phổ thông trình độ đại học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 2.",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        },
+        {
+          "text": " Thông tư này có hiệu lực thi hành kể từ ngày 01 tháng 02 năm 2013.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Thông tư này thay thế Quyết định số 03/2008/QĐ-BGDĐT ngày 04 tháng 02 năm 2008 của Bộ trưởng Bộ Giáo dục và Đào tạo ban hành Quy định về tiêu chuẩn đánh giá chất lượng chương trình đào tạo giáo viên trung học phổ thông trình độ đại học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 3.",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        },
+        {
+          "text": " Chánh Văn phòng, Cục trưởng Cục Khảo thí và Kiểm định chất lượng giáo dục, Thủ trưởng các đơn vị có liên quan thuộc Bộ Giáo dục và Đào tạo; Chủ tịch Ủy ban nhân dân tỉnh, thành phố trực thuộc Trung ương; Thủ trưởng các cơ quan quản lý các đại học, học viện, trường đại học; Giám đốc các đại học, học viện, Hiệu trưởng các trường đại học có thực hiện chương trình đào tạo giáo viên trung học phổ thông trình độ đại học; Giám đốc các tổ chức kiểm định chất lượng giáo dục chịu trách nhiệm thi hành Thông tư này./.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": " ",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "body": [],
+      "caption": null,
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": " ",
+                    "type": "text"
+                  },
+                  {
+                    "content": [
+                      {
+                        "content": [
+                          {
+                            "text": "Nơi nhận:",
+                            "type": "text"
+                          }
+                        ],
+                        "type": "strong"
+                      }
+                    ],
+                    "type": "emph"
+                  },
+                  {
+                    "type": "line_break"
+                  },
+                  {
+                    "text": "- Văn phòng Chính phủ;",
+                    "type": "text"
+                  },
+                  {
+                    "type": "line_break"
+                  },
+                  {
+                    "text": "- Ban Tuyên giáo TƯ;",
+                    "type": "text"
+                  },
+                  {
+                    "type": "line_break"
+                  },
+                  {
+                    "text": "- UBVHGDTNTNNĐ của QH;",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "items": [
+                  {
+                    "blocks": [
+                      {
+                        "content": [
+                          {
+                            "text": "Các Bộ, cơ quan ngang Bộ,",
+                            "type": "text"
+                          }
+                        ],
+                        "type": "paragraph"
+                      }
+                    ],
+                    "checked": null
+                  }
+                ],
+                "ordered": false,
+                "start": null,
+                "tight": false,
+                "type": "list"
+              },
+              {
+                "blocks": [
+                  {
+                    "content": [
+                      {
+                        "text": "cơ quan trực thuộc CP;",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "paragraph"
+                  },
+                  {
+                    "content": [
+                      {
+                        "text": "- Cục KtrVBQPPL (Bộ Tư pháp);",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "- Kiểm toán Nhà nước;",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "- Như Điều 3;",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "- Công báo;",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "- Website Chính phủ;",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "- Website Bộ GDĐT;",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "- Lưu: VT, Vụ PC, Cục KTKĐCLGD.",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "paragraph"
+                  }
+                ],
+                "type": "quote"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "KT. BỘ TRƯỞNG",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "THỨ TRƯỞNG",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "(Đã ký)",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "Bùi Văn Ga",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "type": "table"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "type": "line_break"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "body": [],
+      "caption": null,
+      "columns": [
+        {
+          "align": "center"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "BỘ GIÁO DỤC VÀ ĐÀO TẠO",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "--------",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "Độc lập - Tự do - Hạnh phúc",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "---------------",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "type": "table"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "QUY ĐỊNH",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Về tiêu chuẩn đánh giá chất lượng chương trình",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "đào tạo giáo viên trung học phổ thông trình độ đại học",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "(Ban hành kèm theo Thông tư số 49/2012/TT-BGDĐT",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "ngày 12 tháng 12 năm 2012 của Bộ trưởng Bộ Giáo dục và Đào tạo)",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "_______________________________",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Chương I",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "QUY ĐỊNH CHUNG",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 1. Phạm vi điều chỉnh và đối tượng áp dụng",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. Văn bản này quy định về tiêu chuẩn đánh giá chất lượng chương trình đào tạo giáo viên trung học phổ thông trình độ đại học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. Văn bản này áp dụng đối với các đại học, học viện, trường đại học (sau đây gọi chung là trường) có thực hiện chương trình đào tạo giáo viên trung học phổ thông trình độ đại học và các tổ chức, cá nhân có liên quan.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 2. Giải thích từ ngữ",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Trong văn bản này, một số từ ngữ dưới đây được hiểu như sau:",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "Chương trình đào tạo giáo viên trung học phổ thông trình độ đại học",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        },
+        {
+          "text": " là một tổ hợp bao gồm mục tiêu, chuẩn đầu ra; danh mục, thời lượng, nội dung môn học; phương thức tổ chức đào tạo, đánh giá và các nguồn lực đảm bảo để triển khai đào tạo một ngành học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "Chất lượng của chương trình đào tạo giáo viên trung học phổ thông trình độ đại học",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        },
+        {
+          "text": " là sự đáp ứng mục tiêu của chương trình đào tạo giáo viên trung học phổ thông trình độ đại học, đáp ứng các yêu cầu theo quy định của Luật Giáo dục, phù hợp với nhu cầu sử dụng giáo viên trung học phổ thông của địa phương và xã hội.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "3. ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "Tiêu chuẩn đánh giá chất lượng chương trình đào tạo giáo viên trung học phổ thông trình độ đại học",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        },
+        {
+          "text": " là mức độ yêu cầu và điều kiện mà chương trình cần đáp ứng để được công nhận đạt tiêu chuẩn chất lượng giáo dục.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 3. Mục đích ban hành tiêu chuẩn đánh giá chất lượng chương trình đào tạo giáo viên trung học phổ thông trình độ đại học",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Tiêu chuẩn đánh giá chất lượng chương trình đào tạo giáo viên trung học phổ thông trình độ đại học là công cụ để nhà trường tự đánh giá nhằm không ngừng nâng cao chất lượng đào tạo và giải trình với các cơ quan chức năng, xã hội về thực trạng chất lượng đào tạo; để cơ quan chức năng đánh giá và công nhận chương trình đạt tiêu chuẩn chất lượng giáo dục; để người học có cơ sở lựa chọn ngành học và nhà tuyển dụng lao động tuyển chọn nhân lực.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Chương II",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "TIÊU CHUẨN ĐÁNH GIÁ CHẤT LƯỢNG CHƯƠNG TRÌNH ĐÀO TẠO GIÁO VIÊN TRUNG HỌC PHỔ THÔNG TRÌNH ĐỘ ĐẠI HỌC",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 4. Tiêu chuẩn 1: Mục tiêu, chuẩn đầu ra, cơ cấu tổ chức, quản lý đào tạo và công tác đánh giá hoạt động đào tạo",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. Mục tiêu của chương trình đào tạo giáo viên trung học phổ thông trình độ đại học (sau đây gọi là chương trình) đáp ứng các quy định hiện hành và được định kỳ rà soát, bổ sung.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Mục tiêu của chương trình đáp ứng mục tiêu giáo dục đại học theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Mục tiêu của chương trình đáp ứng mục tiêu đào tạo khối ngành sư phạm theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Mục tiêu của chương trình được định kỳ rà soát và điều chỉnh theo hướng cải tiến, nâng cao chất lượng.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. Chuẩn đầu ra của chương trình đáp ứng yêu cầu đào tạo giáo viên trung học phổ thông.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Nội dung chuẩn đầu ra thể hiện đầy đủ yêu cầu cần đạt được về phẩm chất đạo đức, kiến thức chuyên môn, kỹ năng sư phạm theo yêu cầu của chuẩn nghề nghiệp giáo viên trung học phổ thông.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Nội dung chuẩn đầu ra phù hợp với yêu cầu đổi mới của giáo dục trung học phổ thông ở Việt Nam và hội nhập khu vực, quốc tế.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Nội dung chuẩn đầu ra chuyển tải được mục tiêu, sứ mạng của nhà trường và thực tiễn địa phương.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "3. Tổ chức và quản lý đào tạo giáo viên trung học phổ thông có hiệu quả",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có cơ cấu tổ chức hợp lý trong việc thực hiện chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Thực hiện đào tạo và quản lý đào tạo có chất lượng và hiệu quả.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Định kỳ tổng kết đánh giá và cải tiến cơ cấu tổ chức và quản lý trong việc thực hiện chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "4. Đội ngũ cán bộ quản lý đào tạo giáo viên trung học phổ thông đáp ứng yêu cầu.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Đội ngũ cán bộ quản lý đáp ứng các tiêu chuẩn theo Điều lệ trường đại học và Quy chế tổ chức và hoạt động của trường đại học tư thục đối với các trường đại học tư thục;",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Đội ngũ cán bộ quản lý được phân định trách nhiệm và quyền hạn rõ ràng;",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Định kỳ tổng kết đánh giá để nâng cao hiệu quả quản lý của đội ngũ cán bộ quản lý.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "5. Các hoạt động đào tạo giáo viên trung học phổ thông được định kỳ đánh giá để cải tiến nâng cao chất lượng.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Định kỳ triển khai đánh giá các hoạt động đào tạo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có biện pháp giám sát thực hiện đánh giá định kỳ các hoạt động đào tạo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Có biện pháp cải tiến để nâng cao chất lượng các hoạt động đào tạo theo kết quả đánh giá.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 5. Tiêu chuẩn 2: Chương trình và các hoạt động đào tạo",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. Việc xây dựng chương trình đào tạo phải đảm bảo tính hợp pháp và hợp lý.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Chương trình đào tạo được xây dựng theo các quy định hiện hành.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Chương trình đào tạo được xây dựng phải phù hợp với mục tiêu giáo dục trung học phổ thông.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Chương trình đào tạo được xây dựng phải đáp ứng nhu cầu sử dụng giáo viên của địa phương và xã hội.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. Chương trình đào tạo được xây dựng với sự tham gia của các đối tượng liên quan và có cấu trúc hợp lý.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Chương trình đào tạo được xây dựng với sự tham gia của các giảng viên, cán bộ nghiên cứu, cán bộ quản lý, nhà tuyển dụng và người tốt nghiệp.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Chương trình đào tạo được xây dựng đảm bảo tính hệ thống.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Chương trình đào tạo được xây dựng đảm bảo cân đối giữa lý thuyết, thực hành và tự học, tự nghiên cứu.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "3. Có kế hoạch đào tạo và đề cương chi tiết đáp ứng yêu cầu.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có và thực hiện đầy đủ kế hoạch đào tạo cho các hệ đào tạo khác nhau.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có và thực hiện đầy đủ đề cương chi tiết cho các học phần, môn học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Kế hoạch đào tạo, đề cương chi tiết được định kỳ rà soát, đánh giá, điều chỉnh theo hướng liên tục cải tiến chất lượng.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "4. Thực hiện đổi mới phương pháp dạy học có hiệu quả.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Thực hiện đổi mới phương pháp dạy học theo hướng phát huy năng lực tự học, tự nghiên cứu và phát triển năng lực hợp tác của người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Giảng viên sử dụng các phương pháp giảng dạy khác nhau và ứng dụng công nghệ thông tin trong giảng dạy.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Hàng năm, tổ chức tổng kết, đánh giá và phổ biến kinh nghiệm đổi mới phương pháp dạy học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "5. Thực hiện việc kiểm tra đánh giá người học có hiệu quả.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Việc kiểm tra, đánh giá người học được tổ chức một cách nghiêm túc, đúng quy chế, đảm bảo chính xác, công bằng và khách quan.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Thực hiện đổi mới kiểm tra đánh giá, sử dụng các hình thức kiểm tra, đánh giá đa dạng tạo động lực cho dạy và học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Hàng năm, tổ chức tổng kết, đánh giá rút kinh nghiệm và phổ biến kinh nghiệm đổi mới phương pháp kiểm tra đánh giá và định kỳ cải tiến trên cơ sở thu thập ý kiến phản hồi từ người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "6. Hoạt động thực tập sư phạm được tổ chức có hiệu quả.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Hoạt động thực hành, thực tập sư phạm được tổ chức tạo điều kiện cho người học vận dụng lý thuyết vào thực tiễn và phát triển kỹ năng sư phạm.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Thường xuyên lấy ý kiến phản hồi từ cơ sở thực tập và người học, giảng viên về hoạt động thực hành, thực tập sư phạm.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Hoạt động thực hành, thực tập sư phạm được cải tiến hàng năm trên cơ sở tổng kết các ý kiến phản hồi.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "7. Kết hợp các hoạt động dạy và học với nghiên cứu khoa học trong đào tạo giáo viên trung học phổ thông.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Nhà trường hoặc khoa có các biện pháp hữu hiệu kết hợp giữa dạy, học và nghiên cứu khoa học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Nhà trường hoặc khoa có các đề tài trong đó có nhiều người học tham gia nghiên cứu khoa học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Nhà trường hoặc khoa có các kết quả nghiên cứu khoa học giáo dục được ứng dụng trong giảng dạy và học tập.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "8. Đảm bảo an toàn, chính xác và khoa học trong lưu trữ kết quả học tập và rèn luyện của người học, đảm bảo thuận lợi cho việc phổ biến, quản lý, truy cập và tổng hợp báo cáo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có sự phân cấp, phân công trách nhiệm trong việc quản lý kết quả học tập và rèn luyện của người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Kết quả học tập được lưu trữ bằng nhiều hình thức đa dạng, có phần mềm chuyên dụng để lưu trữ kết quả học tập, đảm bảo an toàn và bảo mật.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Việc lưu trữ kết quả học tập thuận lợi cho việc quản lý, tổng hợp báo cáo và người học truy cập kết quả học tập của bản thân.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 6. Tiêu chuẩn 3: Đội ngũ giảng viên và nhân viên tham gia chương trình",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. Đội ngũ giảng viên đáp ứng yêu cầu về số lượng và cơ cấu chuyên môn.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có đủ số lượng giảng viên để thực hiện nhiệm vụ đào tạo theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Đội ngũ giảng viên có chuyên môn phù hợp với yêu cầu đào tạo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Cơ cấu giảng viên phù hợp với cơ cấu chuyên môn và quy mô đào tạo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. Đội ngũ giảng viên có trình độ chuyên môn, nghiệp vụ đáp ứng yêu cầu.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Đội ngũ giảng viên đạt trình độ chuẩn theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Đội ngũ giảng viên có năng lực chuyên môn và kỹ năng sư phạm đáp ứng được yêu cầu đào tạo của chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Năng lực chuyên môn của đội ngũ giảng viên đáp ứng được yêu cầu nghiên cứu khoa học của chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "3. Đội ngũ giảng viên có phẩm chất đạo đức và có sức khỏe.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Đội ngũ giảng viên đạt tiêu chuẩn về phẩm chất chính trị tư tưởng; được tham gia các lớp bồi dưỡng, học tập chính trị.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Đội ngũ giảng viên đạt tiêu chuẩn về đạo đức nhà giáo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Đội ngũ giảng viên đạt tiêu chuẩn về sức khỏe để đảm nhiệm các công việc được giao.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "4. Giảng viên thực hiện tốt các nhiệm vụ được giao.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Giảng viên thực hiện đầy đủ và có chất lượng chương trình đào tạo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Giảng viên tích cực tham gia xây dựng kế hoạch đào tạo, biên soạn giáo trình, tài liệu giảng dạy của khoa, bộ môn.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Hàng năm, giảng viên tham gia nghiên cứu khoa học theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "5. Giảng viên được phân công giảng dạy hợp lý và được tạo điều kiện nâng cao trình độ.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Giảng viên được phân công giảng dạy đúng theo năng lực chuyên môn được đào tạo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Giảng viên được tạo điều kiện nâng cao trình độ chuyên môn, nghiệp vụ.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Giảng viên được tạo điều kiện nâng cao trình độ chính trị, ngoại ngữ và tin học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "6. Giảng viên được đảm bảo các quyền và lợi ích theo quy định của pháp luật.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Các chủ trương, chính sách về quyền và lợi ích liên quan đến hoạt động nghề nghiệp của giảng viên được phổ biến đầy đủ, kịp thời.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có những biện pháp cụ thể để đảm bảo quyền và lợi ích liên quan đến hoạt động nghề nghiệp của giảng viên.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Việc xử lý các đơn thư khiếu nại về quyền và lợi ích của giảng viên được thực hiện đúng theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "7. Giảng viên được định kỳ đánh giá năng lực và được tạo điều kiện để hoàn thành nhiệm vụ.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Định kỳ tổ chức đánh giá về chất lượng giảng dạy của giảng viên trên cơ sở đánh giá của đồng nghiệp và của sinh viên.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có các biện pháp hỗ trợ, tạo điều kiện để giảng viên hoàn thành nhiệm vụ giảng dạy.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Giảng viên được hỗ trợ và tạo điều kiện trong việc hướng dẫn nghiên cứu khoa học và thực tập sư phạm.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "8. Có đội ngũ nhân viên đáp ứng yêu cầu đào tạo của chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Đội ngũ nhân viên đủ về số lượng, đáp ứng yêu cầu về phẩm chất đạo đức, trình độ chuyên môn, nghiệp vụ.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Đội ngũ nhân viên được định kỳ bồi dưỡng chuyên môn, nghiệp vụ.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Đội ngũ nhân viên thực hiện có hiệu quả nhiệm vụ được giao.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 7. Tiêu chuẩn 4: Người học và công tác hỗ trợ người học",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. Người học được tuyển chọn công bằng và khách quan.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Quy trình, hoạt động tuyển chọn người học đảm bảo công bằng và khách quan.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Công khai, minh bạch quy trình tuyển chọn người học của nhà trường.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Việc xử lý các đơn thư khiếu nại, đơn đề nghị phúc khảo trong công tác tuyển sinh của nhà trường liên quan đến chương trình được thực hiện theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. Người học được phổ biến đầy đủ các quy định cần thiết.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Tổ chức phổ biến, giới thiệu, quán triệt các quy định về tổ chức đào tạo, kiểm tra, thi và công nhận tốt nghiệp của Bộ Giáo dục và Đào tạo và của nhà trường cho người học, cung cấp cho người học tài liệu về cẩm nang đào tạo ngay từ khi mới nhập học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Định kỳ có các hoạt động phổ biến, giới thiệu, quán triệt các quy định về tổ chức đào tạo, kiểm tra, thi và công nhận tốt nghiệp của Bộ Giáo dục và Đào tạo và nhà trường cho người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Định kỳ rà soát, cập nhật các tài liệu phổ biến về tổ chức đào tạo, kiểm tra, thi và công nhận tốt nghiệp.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "3. Người học được tạo điều kiện học tập và tham gia nghiên cứu khoa học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có những chính sách và biện pháp tạo điều kiện cho người học trong học tập.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có những chính sách và biện pháp tạo điều kiện cho người học trong nghiên cứu khoa học, tỷ lệ người học tham gia nghiên cứu khoa học tăng hàng năm.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Có kinh phí sử dụng để hỗ trợ cho người học trong học tập và nghiên cứu khoa học hàng năm.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "4. Người học được tạo điều kiện rèn luyện tư tưởng chính trị, đạo đức, lối sống và tham gia tổ chức Đảng, Đoàn thanh niên cộng sản Hồ Chí Minh và các đoàn thể khác theo quy định của pháp luật.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Quan tâm đến việc rèn luyện chính trị, đạo đức của người học, tạo điều kiện cho người học được tham gia tổ chức Đảng.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Tạo điều kiện cho người học tham gia công tác Đoàn, Hội và các hoạt động xã hội khác theo quy định của pháp luật.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Người học được tạo điều kiện rèn luyện lối sống lành mạnh và các kỹ năng sống.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "5. Người học được đảm bảo các chế độ và được cung cấp các dịch vụ hỗ trợ.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Người học được cung cấp thông tin và đảm bảo chế độ chính sách xã hội theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Người học được cung cấp các dịch vụ hỗ trợ ăn, ở và giải trí.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Người học được tạo điều kiện bồi dưỡng sức khỏe, phát triển thể chất và được đảm bảo về dịch vụ y tế học đường.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "6. Người học thực hiện tốt nhiệm vụ học tập và rèn luyện.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Người học tự giác, tích cực thực hiện nhiệm vụ học tập và đạt kết quả tốt.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Người học chủ động, tích cực rèn luyện tư tưởng chính trị và đạt kết quả tốt.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Người học chủ động, tích cực rèn luyện đạo đức, lối sống và đạt kết quả tốt.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 8. Tiêu chuẩn 5: Cơ sở vật chất phục vụ chương trình",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. Hệ thống thư viện của khoa, trường đáp ứng yêu cầu.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có thư viện điện tử, đáp ứng yêu cầu truy cập thông tin của cán bộ, giảng viên, người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có đủ đầu giáo trình, sách tham khảo chính, tạp chí, tài liệu chuyên ngành và nghiệp vụ sư phạm đáp ứng yêu cầu của chương trình và được bổ sung, cập nhật thường xuyên.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Công tác thư viện phục vụ có hiệu quả các hoạt động đào tạo của chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. Hệ thống thiết bị giáo dục đáp ứng yêu cầu.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có đủ các thiết bị giáo dục đáp ứng yêu cầu giảng dạy, học tập, thực hành, thí nghiệm.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có đủ các thiết bị giáo dục đáp ứng yêu cầu nghiên cứu khoa học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Có đủ các thiết bị giáo dục đáp ứng yêu cầu về quản lý điều hành.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "3. Hệ thống phòng chức năng, phòng học, phòng thí nghiệm, phòng thực hành đáp ứng yêu cầu.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có đủ số lượng phòng chức năng, phòng học, phòng thí nghiệm, phòng thực hành.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Các phòng chức năng, phòng học, phòng thí nghiệm, phòng thực hành đảm bảo đủ diện tích và đúng quy cách.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Các phòng chức năng, phòng học, phòng thí nghiệm, phòng thực hành được sử dụng có hiệu quả.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "4. Cơ sở vật chất phục vụ giáo dục thể chất đáp ứng yêu cầu.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có đủ điều kiện về cơ sở vật chất đáp ứng yêu cầu giáo dục thể chất.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có đủ điều kiện về cơ sở vật chất để tổ chức các hoạt động thể dục thể thao để nâng cao sức khỏe và phát triển thể chất cho người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Có biện pháp cải tiến sử dụng hiệu quả các điều kiện cơ sở vật chất.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "5. Có các biện pháp cải tiến nâng cao chất lượng cơ sở vật chất phục vụ chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Định kỳ đánh giá chất lượng và hiệu quả sử dụng các phòng học, phòng chức năng và có các biện pháp cải tiến nâng cao hiệu quả sử dụng.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Định kỳ đánh giá chất lượng và hiệu quả sử dụng các phòng thí nghiệm, phòng thực hành và có các biện pháp cải tiến nâng cao hiệu quả sử dụng.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Định kỳ đánh giá chất lượng và hiệu quả sử dụng các cơ sở vật chất khác và có các biện pháp cải tiến nâng cao hiệu quả sử dụng.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "6. Đảm bảo môi trường sư phạm phục vụ chương trình đào tạo.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có biện pháp đảm bảo môi trường sư phạm xanh, sạch, đẹp.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có biện pháp đảm bảo môi trường không bạo lực, không có tệ nạn xã hội.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Có biện pháp đảm bảo an toàn cho người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 9. Tiêu chuẩn 6: Công tác tài chính phục vụ chương trình đào tạo",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. Có kế hoạch tài chính và quản lý tài chính đảm bảo cho hoạt động đào tạo giáo viên trung học phổ thông.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có dự trù kinh phí hàng năm cho chương trình đào tạo một cách rõ ràng, chi tiết.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có sự tham gia của các đơn vị thực hiện chương trình trong việc xây dựng kế hoạch và phân bổ tài chính cho các hoạt động của chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Đảm bảo kinh phí được phân bổ đúng quy định, phục vụ hiệu quả các hoạt động của chương trình, đáp ứng yêu cầu rèn luyện nghiệp vụ sư phạm và kiến tập, thực tập sư phạm của người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. Thực hiện chế độ kiểm tra, giám sát, đánh giá và báo cáo về tài chính theo quy định.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có hệ thống văn bản, biểu mẫu quản lý các hoạt động tài chính.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Hàng năm, có báo cáo quyết toán và đánh giá hiệu quả sử dụng các nguồn tài chính phục vụ hoạt động của chương trình một cách rõ ràng và minh bạch.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Kết quả kiểm toán hàng năm cho thấy không có những vi phạm về tài chính.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "3. Có các nguồn tài chính hợp pháp phục vụ chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có nguồn tài chính hợp pháp hỗ trợ các hoạt động đào tạo của chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có nguồn tài chính hợp pháp hỗ trợ công tác nghiên cứu khoa học của chương trình.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Có chiến lược để tăng kinh phí của các nguồn thu hợp pháp để đáp ứng các hoạt động đào tạo và nghiên cứu khoa học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "4. Thực hiện công khai tài chính và có cơ chế để cán bộ, giảng viên tham gia kiểm tra và giám sát tài chính.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có quy chế chi tiêu nội bộ minh bạch và hợp lý được xây dựng trên cơ sở lấy ý kiến rộng rãi của mọi thành viên trong khoa, trường.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Có cơ chế để cán bộ, giảng viên tham gia kiểm tra và giám sát tài chính.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Công khai tài chính hàng năm cho cán bộ, giảng viên tham gia đóng góp ý kiến.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 10. Tiêu chuẩn 7: Công tác đánh giá sinh viên tốt nghiệp và hoạt động tư vấn việc làm",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "1. Thực hiện tốt việc đánh giá sinh viên tốt nghiệp.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Xây dựng các bộ tiêu chuẩn đánh giá sinh viên tốt nghiệp về phẩm chất, tư tưởng chính trị, đạo đức nghề nghiệp và năng lực.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Sử dụng bộ tiêu chuẩn đánh giá sinh viên tốt nghiệp theo đúng quy trình và phương pháp khoa học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Việc đánh giá đảm bảo công bằng, khách quan cho kết quả chính xác.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "2. Thực hiện đánh giá tình hình việc làm của sinh viên tốt nghiệp.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Có bộ phận chuyên trách về công tác cựu sinh viên.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Xây dựng cơ sở dữ liệu về cựu sinh viên và thường xuyên cập nhật thông tin.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Định kỳ thực hiện điều tra về tình hình việc làm của sinh viên tốt nghiệp.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "3. Triển khai các hoạt động tư vấn nghề nghiệp và việc làm cho sinh viên tốt nghiệp.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "a) Hàng năm, tổ chức các hoạt động tư vấn nghề nghiệp và việc làm cho người học sắp tốt nghiệp.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "b) Người học được huấn luyện, tư vấn về các kỹ năng tìm việc làm.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "c) Có mối liên hệ thường xuyên với các nhà tuyển dụng và cựu sinh viên để tư vấn, giới thiệu việc làm cho người học.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Chương III",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "TỔ CHỨC THỰC HIỆN",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 11. Trách nhiệm của trường thực hiện chương trình đào tạo giáo viên trung học phổ thông trình độ đại học",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Các trường có thực hiện chương trình đào tạo giáo viên trung học phổ thông trình độ đại học phải căn cứ vào tình hình cụ thể của trường để lập kế hoạch xây dựng chương trình đạt tiêu chuẩn chất lượng giáo dục cho từng giai đoạn và có các biện pháp thực hiện tốt kế hoạch đề ra.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Điều 12. Trách nhiệm của các tổ chức kiểm định chất lượng giáo dục",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "Các tổ chức kiểm định chất lượng giáo dục căn cứ vào các tiêu chuẩn này để đánh giá, xem xét và công nhận chương trình giáo dục đạt tiêu chuẩn chất lượng giáo dục cho từng giai đoạn./.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "body": [],
+      "caption": null,
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": " ",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "KT. BỘ TRƯỞNG",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "THỨ TRƯỞNG",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "(Đã ký)",
+                        "type": "text"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "type": "line_break"
+                      },
+                      {
+                        "text": "Bùi Văn Ga",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "type": "table"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "docx",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}
