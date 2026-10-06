@@ -63,9 +63,17 @@ fn main() -> ExitCode {
 }
 
 fn run_convert(args: ConvertArgs) -> ExitCode {
-    let output = args
-        .output
-        .unwrap_or_else(|| args.input.with_extension("docx"));
+    let output = match args.output {
+        Some(path) => path,
+        None => {
+            let ext = match ariad_host::convert::DocumentFormat::parse(&args.target_format) {
+                Some(fmt) => fmt.default_extension(),
+                None => args.target_format.as_str(),
+            };
+            args.input.with_extension(ext)
+        }
+    };
+    let target_format_str = args.target_format;
     let engine_program = match std::env::current_exe() {
         Ok(path) => path,
         Err(_) => {
@@ -76,9 +84,18 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
     let cancel = CancellationToken::new();
     let task_cancel = cancel.clone();
     let input = args.input;
-    let target_format = args.target_format;
     let overwrite = args.overwrite;
     let stderr_is_terminal = io::stderr().is_terminal();
+
+    let request = ariad_host::convert::ConvertRequest {
+        input,
+        output,
+        target_format: target_format_str,
+        profile: None,
+        overwrite,
+        engine_program,
+        title_fallback: None,
+    };
 
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -93,20 +110,12 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
 
     runtime.block_on(async move {
         let task = tokio::task::spawn_blocking(move || {
-            ariad_host::convert::convert(
-                &input,
-                &output,
-                &target_format,
-                &engine_program,
-                overwrite,
-                task_cancel,
-                |event| match event {
-                    ConvertEvent::Progress { stage } if stderr_is_terminal => {
-                        eprintln!("progress: {stage}");
-                    }
-                    ConvertEvent::Progress { .. } => {}
-                },
-            )
+            ariad_host::convert::convert(&request, task_cancel, |event| match event {
+                ConvertEvent::Progress { stage } if stderr_is_terminal => {
+                    eprintln!("progress: {stage}");
+                }
+                ConvertEvent::Progress { .. } => {}
+            })
         });
         tokio::pin!(task);
 
@@ -114,14 +123,19 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
             result = &mut task => finish_conversion(result),
             signal = interrupt() => {
                 cancel.cancel();
+                let task_result = task.await;
                 match signal {
                     Ok(()) => {
-                        let _ = task.await;
-                        eprintln!("ashift: conversion was interrupted");
-                        ExitCode::from(130)
+                        match task_result {
+                            Ok(Ok(report)) => finish_conversion(Ok(Ok(report))),
+                            Ok(Err(ConvertError::Interrupted)) => {
+                                eprintln!("ashift: conversion was interrupted");
+                                ExitCode::from(130)
+                            }
+                            other => finish_conversion(other),
+                        }
                     }
                     Err(_) => {
-                        let _ = task.await;
                         eprintln!("ashift: could not install the interrupt handler");
                         ExitCode::from(1)
                     }

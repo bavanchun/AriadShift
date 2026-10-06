@@ -210,11 +210,16 @@ fn pandoc_engine_answers_describe_request() {
             assert_eq!(tool.name, "pandoc");
             assert_eq!(tool.status, ariad_core::protocol::ToolAvailability::Found);
             assert!(enforces_memory_limit);
-            assert_eq!(routes.len(), 3);
+            assert_eq!(routes.len(), 4);
             assert!(
                 routes
                     .iter()
                     .any(|r| r.input == "ariad-ir+json" && r.output == "docx")
+            );
+            assert!(
+                routes
+                    .iter()
+                    .any(|r| r.input == "ariad-ir+json" && r.output == "epub")
             );
             assert!(
                 routes

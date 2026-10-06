@@ -171,7 +171,7 @@ attribution = "AriadShift contributors"
 sha256 = "9e1757296ccaab593c8e382a5d4ec5eb1bb5d954825c96637d12c35e8cdfb93f"
 tags = ["headings", "long"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -190,7 +190,7 @@ attribution = "Nguyễn Du; edition compiled by Dương Quảng Hàm; scan from 
 sha256 = "2a1cb0de04182a451f2146a02a8516ac24d1ed24339563f407cc226c2f696640"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -209,7 +209,7 @@ attribution = "Phạm Đình Hổ; edition compiled by Dương Quảng Hàm; sca
 sha256 = "dcbc2995e560414b72c0184885ce083e8615a2510a27108fd5cc55fd35790cb1"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -228,7 +228,7 @@ attribution = "Lewis Carroll"
 sha256 = "2efba7b93571d006441cc99362c6433f84871a8ff827fda325d52eeb8d56501a"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -247,7 +247,7 @@ attribution = "Mark Twain"
 sha256 = "4e297f11b09c4c4a241df324164a0ed46bd3e19c8d09de3b3e4e6f9883946163"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -265,7 +265,7 @@ attribution = "AriadShift contributors"
 sha256 = "460d7eb9576b2fc910ea15fd829dadc4cb29bbe39fa04caa5986c5188149316b"
 tags = ["lists-nested", "long"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -283,7 +283,7 @@ attribution = "AriadShift contributors"
 sha256 = "0a2e4b5b91df6b0482cc13530b364e2b9a3bb1660dc5856510405e99f1ddd47c"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -301,7 +301,7 @@ attribution = "AriadShift contributors"
 sha256 = "fa6865f7f46e32a926383d5c5b0da25e73c69b7b814cc9be663345fc4854982c"
 tags = ["task-list"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -319,7 +319,7 @@ attribution = "AriadShift contributors"
 sha256 = "e4263b217adde2c2cfc9f57a9819a54d4487b924bdec19bcce59d9f6df57a244"
 tags = ["tables"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -337,7 +337,7 @@ attribution = "AriadShift contributors"
 sha256 = "ea46a05c4748b9355acf72458c9b49dbc86d0f29e7851ce74bbb680ab68931eb"
 tags = ["tables"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -355,7 +355,7 @@ attribution = "AriadShift contributors"
 sha256 = "3cb24015ea444bb4e17f17841cde023d32df17f78d6ef8d7cc7f7520d8e539fa"
 tags = ["footnotes"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -373,7 +373,7 @@ attribution = "AriadShift contributors"
 sha256 = "c83900117c10cf4a342776d8ad007d5a6a99c5f4e54254f4b7b174361e1de9a9"
 tags = ["math", "mixed-script"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -391,7 +391,7 @@ attribution = "AriadShift contributors"
 sha256 = "279de82c88707a0e607c0ca20203649d8f94655b399c0426e281d1c870ec0456"
 tags = ["code"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -409,7 +409,7 @@ attribution = "AriadShift contributors"
 sha256 = "51c84bf7c918c9bf387d5dfd4a24213b29548b09be03ff1acb7320c8a99fd52d"
 tags = ["blockquote"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -427,7 +427,7 @@ attribution = "AriadShift contributors"
 sha256 = "11cd9816315e3e7780e2faa3e24cbde3cfc0772fd2bcc1503613a8c496ac1385"
 tags = ["links"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -445,7 +445,7 @@ attribution = "AriadShift contributors"
 sha256 = "42aea073bf988ae1858e90fca93de048bf6093ecbe23289d77cf0a17e6eb28ed"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -463,7 +463,7 @@ attribution = "AriadShift contributors"
 sha256 = "08957d75993d70a36ae1bf6f90bd5fedca5f58d2d80402648ad915b50950324e"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -481,7 +481,7 @@ attribution = "AriadShift contributors"
 sha256 = "14f35f34627cdaa1104dbffd3906807d25c99aa98b844d890b6c9e368e2aa481"
 tags = ["html-inline"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -499,7 +499,7 @@ attribution = "AriadShift contributors"
 sha256 = "2707a2b00ee9cb42e88d867e33368725abf41b193fb74793bea072bc27cb1ef4"
 tags = ["images"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = [{ path = "fixtures/md/assets/vietnamese-route.png", sha256 = "6bca795730900c41e97ac33d04db2b054019dcd598e0e57f98dbc958e94291fb" }]
 
 [[fixture]]
@@ -517,7 +517,7 @@ attribution = "AriadShift contributors"
 sha256 = "dbf1779f21d4fa4566a76b2a99e7196dc6de2273a8eff87bc320f4d5f6c3d132"
 tags = ["emoji"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -535,7 +535,7 @@ attribution = "AriadShift contributors"
 sha256 = "b7583151f1767f7050b8cadff137b70d91d764935053733d8b0110a952e01c98"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -553,7 +553,7 @@ attribution = "AriadShift contributors"
 sha256 = "abca6e564fd6c98f53a8f725a722e4d16cd2d3c6f7a644ad31559a43e03ba4f1"
 tags = []
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -571,7 +571,7 @@ attribution = "AriadShift contributors"
 sha256 = "dae99685e67a4472dd0b763f0d34bd43f6627b84c125f3de1c5b375695967c56"
 tags = ["nfd-text"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -589,7 +589,7 @@ attribution = "AriadShift contributors"
 sha256 = "c53386c7c1cbf45cd7e84c96fb3ad9edfbee47630df0cad365e752d3411f05b1"
 tags = ["headings"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -607,7 +607,7 @@ attribution = "AriadShift contributors"
 sha256 = "03a4a71519957b37b8670e9d00fccfe993c39199b5ebfaae977662430eb51420"
 tags = ["headings"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -625,7 +625,7 @@ attribution = "AriadShift contributors"
 sha256 = "12d7d6347e59c0f1ba73b807342879f8dbaeae4a9af3683859f5078372118ba4"
 tags = ["tables", "task-list", "links"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -643,7 +643,7 @@ attribution = "AriadShift contributors"
 sha256 = "1b1960900d10c164a8f9e0765250c70cfbd6c0d3c5c97300d33341c9ccc1bde1"
 tags = ["blockquote", "code", "links"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -661,7 +661,7 @@ attribution = "AriadShift contributors"
 sha256 = "c289c6f78afd84b80ca1bbf9df5fd898a0b44e700963dd7eec181d3fe6b148d0"
 tags = ["mixed-script", "tables", "math", "task-list"]
 phase = "0"
-routes = ["md->docx"]
+routes = ["md->docx", "md->html", "md->epub"]
 companions = []
 
 [[fixture]]
@@ -679,7 +679,7 @@ attribution = "AriadShift contributors"
 sha256 = "b840b5ab8c790f352e8d1ce2b26acc814a17af430baa99d59292540c842a5b44"
 tags = []
 phase = "1a"
-routes = ["html->md"]
+routes = ["html->md", "html->docx"]
 companions = []
 
 [[fixture]]
@@ -715,7 +715,7 @@ attribution = "AriadShift contributors"
 sha256 = "ca0bd525f52fda0c14d83f2fee77897df622cc7e07dabf4baa71e53a1d0839f5"
 tags = []
 phase = "1a"
-routes = ["html->md"]
+routes = ["html->md", "html->docx"]
 companions = []
 
 [[fixture]]
@@ -751,7 +751,7 @@ attribution = "AriadShift contributors"
 sha256 = "5e510ac550db8771d6bcef7b1a4fb928c5b7a85a2feb737bbd6115936181055d"
 tags = []
 phase = "1a"
-routes = ["docx->md"]
+routes = ["docx->md", "docx->html"]
 companions = []
 
 [[fixture]]
@@ -769,7 +769,7 @@ attribution = "AriadShift contributors"
 sha256 = "d0f4b4aa0a55dc79c8f6582e10801747c514a8c264e8efd590b2abf0d6855117"
 tags = []
 phase = "1a"
-routes = ["docx->md"]
+routes = ["docx->md", "docx->html"]
 companions = []
 
 [[fixture]]

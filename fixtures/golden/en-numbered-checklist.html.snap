@@ -1,0 +1,70 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+<!DOCTYPE html>
+<html lang="und">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>en-numbered-checklist</title>
+  <style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+pre, code {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  padding: 1rem;
+  background: #f4f4f4;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #f8f8f8;
+}
+blockquote {
+  border-left: 4px solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #555;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+  </style>
+</head>
+<body>
+<h1>Before the café opens</h1>
+<p>The repair café opens one Saturday each month in the old tram depot. Neighbors bring lamps, clocks, radios, and small appliances that have stopped working. Volunteers set out screwdrivers and labeled trays so every loose part has a safe place.</p>
+<ol start="1">
+<li>Clear the workbench</li>
+<li>Check each lamp</li>
+<li>Label the parts tray</li>
+</ol>
+<ul>
+<li>Ask the visitor before replacing a part.</li>
+</ul>
+<ul>
+<li>Record the repair</li>
+</ul>
+<p>No one promises a quick fix. The visitor sits beside a volunteer, describes what happened, and learns how to inspect the object. Sometimes a clean contact solves the problem; sometimes the group discovers that a replacement part is no longer made.</p>
+</body>
+</html>

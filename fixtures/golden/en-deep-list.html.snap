@@ -1,0 +1,311 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+<!DOCTYPE html>
+<html lang="und">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>en-deep-list</title>
+  <style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+pre, code {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  padding: 1rem;
+  background: #f4f4f4;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #f8f8f8;
+}
+blockquote {
+  border-left: 4px solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #555;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+  </style>
+</head>
+<body>
+<ul>
+<li><p>Layer 1</p>
+<ul>
+<li><p>Layer 2</p>
+<ul>
+<li><p>Layer 3</p>
+<ul>
+<li><p>Layer 4</p>
+<ul>
+<li><p>Layer 5</p>
+<ul>
+<li><p>Layer 6</p>
+<ul>
+<li><p>Layer 7</p>
+<ul>
+<li><p>Layer 8</p>
+<ul>
+<li><p>Layer 9</p>
+<ul>
+<li><p>Layer 10</p>
+<ul>
+<li><p>Layer 11</p>
+<ul>
+<li><p>Layer 12</p>
+<ul>
+<li><p>Layer 13</p>
+<ul>
+<li><p>Layer 14</p>
+<ul>
+<li><p>Layer 15</p>
+<ul>
+<li><p>Layer 16</p>
+<ul>
+<li><p>Layer 17</p>
+<ul>
+<li><p>Layer 18</p>
+<ul>
+<li><p>Layer 19</p>
+<ul>
+<li><p>Layer 20</p>
+<ul>
+<li><p>Layer 21</p>
+<ul>
+<li><p>Layer 22</p>
+<ul>
+<li><p>Layer 23</p>
+<ul>
+<li><p>Layer 24</p>
+<ul>
+<li><p>Layer 25</p>
+<ul>
+<li><p>Layer 26</p>
+<ul>
+<li><p>Layer 27</p>
+<ul>
+<li><p>Layer 28</p>
+<ul>
+<li><p>Layer 29</p>
+<ul>
+<li><p>Layer 30</p>
+<ul>
+<li><p>Layer 31</p>
+<ul>
+<li><p>Layer 32</p>
+<ul>
+<li><p>Layer 33</p>
+<ul>
+<li><p>Layer 34</p>
+<ul>
+<li><p>Layer 35</p>
+<ul>
+<li><p>Layer 36</p>
+<ul>
+<li><p>Layer 37</p>
+<ul>
+<li><p>Layer 38</p>
+<ul>
+<li><p>Layer 39</p>
+<ul>
+<li><p>Layer 40</p>
+<ul>
+<li><p>Layer 41</p>
+<ul>
+<li><p>Layer 42</p>
+<ul>
+<li><p>Layer 43</p>
+<ul>
+<li><p>Layer 44</p>
+<ul>
+<li><p>Layer 45</p>
+<ul>
+<li><p>Layer 46</p>
+<ul>
+<li><p>Layer 47</p>
+<ul>
+<li><p>Layer 48</p>
+<ul>
+<li><p>Layer 49</p>
+<ul>
+<li><p>Layer 50</p>
+<ul>
+<li><p>Layer 51</p>
+<ul>
+<li><p>Layer 52</p>
+<ul>
+<li><p>Layer 53</p>
+<ul>
+<li><p>Layer 54</p>
+<ul>
+<li><p>Layer 55</p>
+<ul>
+<li><p>Layer 56</p>
+<ul>
+<li><p>Layer 57</p>
+<ul>
+<li><p>Layer 58</p>
+<ul>
+<li><p>Layer 59</p>
+<ul>
+<li><p>Layer 60</p>
+<ul>
+<li><p>Layer 61</p>
+<ul>
+<li><p>Layer 62</p>
+<ul>
+<li><p>Layer 63</p>
+<ul>
+<li>Layer 64</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</body>
+</html>

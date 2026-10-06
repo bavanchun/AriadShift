@@ -1,0 +1,14 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+# Bảng hành trình ven sông
+
+Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.
+
+| **Điểm dừng** | **Phút đi bộ** | **Ghi chú** |
+| --- | --- | --- |
+| Bến sông | 8 | Bóng mát |
+| Vườn đọc | 14 | Có ghế dài |
+| Lịch khảo sát cập nhật mỗi tháng. |  |  |
+
+Các khoảng thời gian là ước lượng đi bộ.

@@ -147,12 +147,17 @@ fn maps_usage_route_limit_tool_and_input_errors_to_documented_exit_codes() {
 
     let unsupported = cli()
         .args(["convert"])
-        .arg(directory.path().join("note.html"))
+        .arg(directory.path().join("note.pdf"))
         .args(["--to", "docx"])
         .output()
         .expect("start ashift");
     assert_eq!(unsupported.status.code(), Some(3));
-    assert!(String::from_utf8_lossy(&unsupported.stderr).contains("md/markdown -> docx"));
+    let stderr = String::from_utf8_lossy(&unsupported.stderr);
+    assert!(stderr.contains("unsupported conversion route"));
+    assert!(stderr.contains("md -> docx"));
+    assert!(stderr.contains("html -> docx"));
+    assert!(stderr.contains("docx -> md"));
+    assert!(stderr.contains("epub -> md"));
 
     let limited = run_convert(&source, &output);
     assert_eq!(limited.status.code(), Some(4));
@@ -377,4 +382,291 @@ fn wait_for_child_exit(child: &mut std::process::Child, timeout: Duration) -> bo
         thread::sleep(Duration::from_millis(25));
     }
     child.try_wait().expect("poll ashift").is_some()
+}
+
+#[test]
+fn same_format_routes_are_refused_with_exit_code_3() {
+    let directory = tempdir().expect("create test directory");
+    let md_file = directory.path().join("file.md");
+    fs::write(&md_file, "# Hello\n").expect("write markdown");
+
+    let result_md = cli()
+        .args(["convert"])
+        .arg(&md_file)
+        .args(["--to", "md"])
+        .output()
+        .expect("start ashift");
+    assert_eq!(result_md.status.code(), Some(3));
+
+    let result_docx = cli()
+        .args(["convert"])
+        .arg(directory.path().join("file.docx"))
+        .args(["--to", "docx"])
+        .output()
+        .expect("start ashift");
+    assert_eq!(result_docx.status.code(), Some(3));
+}
+
+#[test]
+fn output_canonicalizing_to_input_is_refused_with_exit_code_2() {
+    let directory = tempdir().expect("create test directory");
+    let md_file = directory.path().join("source.md");
+    fs::write(&md_file, "# Source\n").expect("write markdown");
+
+    // Exact same path
+    let result = cli()
+        .args(["convert"])
+        .arg(&md_file)
+        .args(["--to", "docx", "-o"])
+        .arg(&md_file)
+        .output()
+        .expect("start ashift");
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("cannot be the same"));
+
+    // Even with --overwrite
+    let result_overwrite = cli()
+        .args(["convert"])
+        .arg(&md_file)
+        .args(["--to", "docx", "-o"])
+        .arg(&md_file)
+        .arg("--overwrite")
+        .output()
+        .expect("start ashift");
+    assert_eq!(result_overwrite.status.code(), Some(2));
+}
+
+#[test]
+fn default_output_uses_target_format_extension() {
+    let directory = tempdir().expect("create test directory");
+    let input = directory.path().join("doc.md");
+    fs::write(&input, "# Test Heading\n\nContent paragraph.\n").expect("write markdown");
+
+    // Convert md -> html with default output
+    let result_html = cli()
+        .args(["convert"])
+        .arg(&input)
+        .args(["--to", "html"])
+        .output()
+        .expect("start ashift");
+    assert!(result_html.status.success());
+    let expected_html = directory.path().join("doc.html");
+    assert!(expected_html.is_file());
+    assert_eq!(
+        String::from_utf8_lossy(&result_html.stdout).trim(),
+        expected_html.to_string_lossy()
+    );
+
+    // Convert md -> epub with default output (if pandoc available)
+    if let Ok(pandoc) = std::env::var("ASHIFT_PANDOC") {
+        let result_epub = cli()
+            .args(["convert"])
+            .arg(&input)
+            .args(["--to", "epub"])
+            .env("ASHIFT_PANDOC", pandoc)
+            .output()
+            .expect("start ashift");
+        assert!(result_epub.status.success());
+        let expected_epub = directory.path().join("doc.epub");
+        assert!(expected_epub.is_file());
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn interrupted_conversion_cleans_workspace_and_output() {
+    let directory = tempdir().expect("create test directory");
+    let temp_root = directory.path().join("tmp");
+    fs::create_dir(&temp_root).expect("create temporary root");
+    let input = directory.path().join("slow_epub.md");
+    let output = directory.path().join("slow.epub");
+    fs::write(&input, "# Slow EPUB conversion\n").expect("write Markdown");
+    let mut child = cli()
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "epub", "-o"])
+        .arg(&output)
+        .env("ARIAD_TEST_ENGINE", "hang")
+        .env("TMPDIR", &temp_root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start ashift");
+
+    assert!(
+        wait_for_workspace(&temp_root),
+        "conversion workspace was not created"
+    );
+    thread::sleep(Duration::from_millis(250));
+
+    let signal = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("send SIGINT");
+    assert!(signal.success());
+
+    if !wait_for_child_exit(&mut child, Duration::from_secs(10)) {
+        child.kill().expect("stop stuck ashift process");
+        panic!("ashift did not stop after SIGINT");
+    }
+    let result = child.wait_with_output().expect("collect ashift output");
+    assert_eq!(result.status.code(), Some(130));
+    assert!(!output.exists());
+    assert!(!has_workspace(&temp_root));
+}
+
+#[test]
+fn native_interrupted_conversion_leaves_no_output() {
+    let directory = tempdir().expect("create test directory");
+    let in_file = directory.path().join("input.md");
+    let out_file = directory.path().join("output.html");
+    fs::write(&in_file, "# Document\n").unwrap();
+
+    let cancel = tokio_util::sync::CancellationToken::new();
+    cancel.cancel(); // Cancelled before promotion
+
+    let req = ariad_host::convert::ConvertRequest::new(&in_file, &out_file, "html", "ashift");
+    let result = ariad_host::convert::convert(&req, cancel, |_| {});
+    assert!(matches!(
+        result,
+        Err(ariad_host::convert::ConvertError::Interrupted)
+    ));
+    assert!(!out_file.exists());
+}
+
+#[test]
+fn hostile_markdown_cli_end_to_end_sanitization() {
+    let directory = tempdir().expect("create test directory");
+    let input = directory.path().join("hostile.md");
+    let output = directory.path().join("clean.html");
+    fs::write(
+        &input,
+        "# Hostile Document\n\n<script>alert('evil')</script>\n\n<img src=\"x\" onerror=\"alert('evil')\">\n\n[malicious](javascript:alert('evil'))\n",
+    )
+    .expect("write hostile markdown");
+
+    let result = cli()
+        .args(["convert"])
+        .arg(&input)
+        .args(["--to", "html", "-o"])
+        .arg(&output)
+        .output()
+        .expect("start ashift");
+
+    assert!(result.status.success(), "ashift convert should succeed");
+    assert!(output.is_file(), "output clean.html must be generated");
+
+    let html_content = fs::read_to_string(&output).expect("read clean.html");
+    assert!(
+        !html_content.contains("<script>"),
+        "script tag must be stripped"
+    );
+    assert!(
+        !html_content.contains("alert"),
+        "script payload must not execute"
+    );
+    assert!(
+        !html_content.contains("onerror"),
+        "onerror handler must be stripped"
+    );
+    assert!(
+        !html_content.contains("javascript:"),
+        "javascript URI must be stripped"
+    );
+
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(
+        stderr.contains("warning[raw_dropped]") || stderr.contains("warning[link_dropped]"),
+        "stderr must report sanitization warning, got: {stderr}"
+    );
+    assert!(!stderr.contains("evil"), "stderr must not leak content");
+}
+
+#[test]
+fn epub_raw_html_javascript_links_are_neutralized_in_markdown() {
+    if let Ok(pandoc) = std::env::var("ASHIFT_PANDOC") {
+        let directory = tempdir().expect("create test directory");
+        let html_input = directory.path().join("chapter.html");
+        let epub_file = directory.path().join("inj2.epub");
+        let md_output = directory.path().join("out.md");
+
+        fs::write(
+            &html_input,
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Injection</title></head><body><p>Q1 <button>[b](javascript:alert(1))</button> Q2 <object data=\"x\">[o](javascript:alert(2))</object></p></body></html>",
+        )
+        .expect("write html input");
+
+        let status = std::process::Command::new(&pandoc)
+            .args(["-f", "html", "-t", "epub", "-o"])
+            .arg(&epub_file)
+            .arg(&html_input)
+            .status()
+            .expect("run pandoc to create epub");
+        assert!(status.success(), "pandoc epub creation must succeed");
+
+        let result = cli()
+            .args(["convert"])
+            .arg(&epub_file)
+            .args(["--to", "md", "-o"])
+            .arg(&md_output)
+            .env("ASHIFT_PANDOC", pandoc)
+            .output()
+            .expect("start ashift");
+
+        assert!(
+            result.status.success(),
+            "ashift convert epub -> md should succeed"
+        );
+        assert!(md_output.is_file(), "output markdown must be generated");
+
+        let md_content = fs::read_to_string(&md_output).expect("read markdown");
+        assert!(
+            !md_content.contains("[b](javascript:"),
+            "live javascript link [b](javascript:) must not appear in markdown output, got: {md_content}"
+        );
+        assert!(
+            !md_content.contains("[o](javascript:"),
+            "live javascript link [o](javascript:) must not appear in markdown output, got: {md_content}"
+        );
+    }
+}
+
+#[test]
+fn placeholder_substitution_stored_xss_is_prevented_c1() {
+    let directory = tempdir().expect("create test directory");
+    let input = directory.path().join("ph.md");
+    let output = directory.path().join("ph.html");
+
+    fs::write(
+        &input,
+        "Hi <span title=\"XARIADPH0X\">[a](<https://x.example/ onmouseover=alert(1) b>)</span> and <span><img src=\"https://invalid.invalid/x.png\" title=\"XARIADPH0X\">[c](<https://y.example/ onerror=alert(2) z>)</span>.\n",
+    )
+    .expect("write ph.md");
+
+    let result = cli()
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "html", "-o"])
+        .arg(&output)
+        .output()
+        .expect("start ashift");
+    assert!(result.status.success(), "ashift convert must succeed");
+    assert!(output.is_file(), "output html must exist");
+
+    let html_content = fs::read_to_string(&output).expect("read html output");
+
+    // In the HTML writer, raw inline HTML is dropped to escaped text,
+    // and no textual placeholder substitution is performed. No attribute breakout can occur:
+    assert!(
+        !html_content.contains("<img src=\"https://invalid.invalid/x.png\" title=\"<a href="),
+        "attribute breakout detected in img title attribute, got:\n{html_content}"
+    );
+    assert!(
+        !html_content.contains("<span title=\"<a href="),
+        "attribute breakout detected in span title attribute, got:\n{html_content}"
+    );
+    assert!(
+        !html_content.contains("title=\"<a href="),
+        "attribute breakout detected in title attribute, got:\n{html_content}"
+    );
 }

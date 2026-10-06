@@ -24,7 +24,7 @@ tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "s
 tokio-util = { workspace = true, features = ["rt"] }
 unicode-normalization.workspace = true
 zip.workspace = true
-uuid = { workspace = true, features = ["v4"] }
+uuid = { workspace = true, features = ["v4", "v5"] }
 
 [features]
 test-probe = []
