@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -73,13 +74,16 @@ pub enum ConvertEvent {
     Progress { stage: String },
 }
 
-/// Converts a supported Markdown input into a DOCX through the configured engine process.
-pub fn convert<F>(
+/// Converts a supported Markdown input with custom engine args and limits.
+#[allow(clippy::too_many_arguments)]
+pub fn convert_custom<F>(
     input: &Path,
     output: &Path,
     target_format: &str,
     engine_program: &Path,
+    engine_args: &[OsString],
     overwrite: bool,
+    limits: Limits,
     cancel: CancellationToken,
     mut on_event: F,
 ) -> Result<ConvertReport, ConvertError>
@@ -94,7 +98,6 @@ where
     }
 
     let started = Instant::now();
-    let limits = Limits::local();
     let input_text = fs::read_to_string(input).map_err(|_| ConvertError::InputIo)?;
     let mut parsed = markdown::read(&input_text, &limits).map_err(|error| match error {
         markdown::ReadError::NestingTooDeep { .. }
@@ -119,6 +122,7 @@ where
         &parsed.document,
         output,
         engine_program,
+        engine_args,
         overwrite,
         limits,
         cancel,
@@ -134,6 +138,60 @@ where
         warnings,
         elapsed: started.elapsed(),
     })
+}
+
+/// Converts a supported Markdown input into a DOCX through the configured engine process with custom limits.
+#[allow(clippy::too_many_arguments)]
+pub fn convert_with_limits<F>(
+    input: &Path,
+    output: &Path,
+    target_format: &str,
+    engine_program: &Path,
+    overwrite: bool,
+    limits: Limits,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let args = [OsString::from("__engine"), OsString::from("pandoc")];
+    convert_custom(
+        input,
+        output,
+        target_format,
+        engine_program,
+        &args,
+        overwrite,
+        limits,
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts a supported Markdown input into a DOCX through the configured engine process.
+pub fn convert<F>(
+    input: &Path,
+    output: &Path,
+    target_format: &str,
+    engine_program: &Path,
+    overwrite: bool,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    convert_with_limits(
+        input,
+        output,
+        target_format,
+        engine_program,
+        overwrite,
+        Limits::local(),
+        cancel,
+        on_event,
+    )
 }
 
 fn is_markdown_docx_route(input: &Path, target_format: &str) -> bool {
@@ -152,6 +210,7 @@ fn convert_in_workspace<F>(
     document: &ariad_core::ir::Document,
     output: &Path,
     engine_program: &Path,
+    engine_args: &[OsString],
     overwrite: bool,
     limits: Limits,
     cancel: CancellationToken,
@@ -161,6 +220,9 @@ fn convert_in_workspace<F>(
 where
     F: FnMut(ConvertEvent),
 {
+    runner::check_memory_limit_support(engine_program, engine_args, &limits, cancel.clone())
+        .map_err(map_run_error)?;
+
     let ir_path = workspace.input_dir().join("document.ir.json");
     let ir_file = fs::File::create(&ir_path).map_err(|_| ConvertError::Failed)?;
     serde_json::to_writer(ir_file, document).map_err(|_| ConvertError::Failed)?;
@@ -180,11 +242,9 @@ where
         options: BTreeMap::new(),
         limits,
     };
-    let args = ["__engine".into(), "pandoc".into()];
-    let mut protocol_violation = false;
     let outcome = runner::run(
         engine_program,
-        &args,
+        engine_args,
         &request,
         cancel.clone(),
         |event| match event {
@@ -196,17 +256,10 @@ where
                     message: "The document could not be converted without a warning.".to_owned(),
                 });
             }
-            Event::Artifact { .. } | Event::Result { .. } => {}
-            Event::Capabilities { .. } => {
-                protocol_violation = true;
-            }
+            Event::Artifact { .. } | Event::Result { .. } | Event::Capabilities { .. } => {}
         },
     )
     .map_err(map_run_error)?;
-
-    if protocol_violation {
-        return Err(ConvertError::Failed);
-    }
 
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
