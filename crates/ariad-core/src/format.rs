@@ -3,12 +3,20 @@ use serde::{Deserialize, Serialize};
 
 /// A format supported by the core registry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
 pub enum Format {
+    #[serde(rename = "markdown")]
     Markdown,
+    #[serde(rename = "html")]
     Html,
+    #[serde(rename = "docx")]
     Docx,
+    #[serde(rename = "epub")]
+    Epub,
+    #[serde(rename = "pdf")]
+    Pdf,
+    #[serde(rename = "ariad-ir+json")]
     AriadIrJson,
+    #[serde(rename = "pandoc+json")]
     PandocJson,
 }
 
@@ -20,6 +28,8 @@ impl Format {
             Self::Markdown => "markdown",
             Self::Html => "html",
             Self::Docx => "docx",
+            Self::Epub => "epub",
+            Self::Pdf => "pdf",
             Self::AriadIrJson => "ariad-ir+json",
             Self::PandocJson => "pandoc+json",
         }
@@ -32,6 +42,8 @@ impl Format {
             Self::Markdown => &["md", "markdown", "mdown"],
             Self::Html => &["html", "htm"],
             Self::Docx => &["docx"],
+            Self::Epub => &["epub"],
+            Self::Pdf => &["pdf"],
             Self::AriadIrJson | Self::PandocJson => &["json"],
         }
     }
@@ -43,6 +55,8 @@ impl Format {
             Self::Markdown => "text/markdown",
             Self::Html => "text/html",
             Self::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            Self::Epub => "application/epub+zip",
+            Self::Pdf => "application/pdf",
             Self::AriadIrJson | Self::PandocJson => "application/json",
         }
     }
@@ -63,6 +77,10 @@ impl Format {
             Some(Self::Html)
         } else if extension.eq_ignore_ascii_case("docx") {
             Some(Self::Docx)
+        } else if extension.eq_ignore_ascii_case("epub") {
+            Some(Self::Epub)
+        } else if extension.eq_ignore_ascii_case("pdf") {
+            Some(Self::Pdf)
         } else if extension.eq_ignore_ascii_case("json") {
             Some(Self::AriadIrJson)
         } else {
@@ -81,7 +99,31 @@ mod tests {
         assert_eq!(Format::from_extension(".Markdown"), Some(Format::Markdown));
         assert_eq!(Format::from_extension("HTM"), Some(Format::Html));
         assert_eq!(Format::from_extension("DocX"), Some(Format::Docx));
+        assert_eq!(Format::from_extension("EPUB"), Some(Format::Epub));
+        assert_eq!(Format::from_extension(".epub"), Some(Format::Epub));
+        assert_eq!(Format::from_extension("PDF"), Some(Format::Pdf));
+        assert_eq!(Format::from_extension(".pdf"), Some(Format::Pdf));
         assert_eq!(Format::from_extension("JSON"), Some(Format::AriadIrJson));
         assert_eq!(Format::from_extension("unknown"), None);
+    }
+
+    #[test]
+    fn serde_names_equal_id_for_every_variant() {
+        let variants = [
+            Format::Markdown,
+            Format::Html,
+            Format::Docx,
+            Format::Epub,
+            Format::Pdf,
+            Format::AriadIrJson,
+            Format::PandocJson,
+        ];
+        for variant in variants {
+            let json = serde_json::to_string(&variant).expect("serialize format");
+            let expected = format!("\"{}\"", variant.id());
+            assert_eq!(json, expected, "serialized name for {:?}", variant);
+            let round_trip: Format = serde_json::from_str(&json).expect("deserialize format");
+            assert_eq!(round_trip, variant, "round trip for {:?}", variant);
+        }
     }
 }
