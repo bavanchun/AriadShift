@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod assets;
+pub mod convert;
 pub mod docx_meta;
 pub mod engines;
 pub mod ir_io;

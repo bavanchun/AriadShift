@@ -138,6 +138,10 @@ where
         if let Some(pandoc) = std::env::var_os("ASHIFT_PANDOC") {
             command.env("ASHIFT_PANDOC", pandoc);
         }
+        #[cfg(debug_assertions)]
+        if let Some(test_engine) = std::env::var_os("ARIAD_TEST_ENGINE") {
+            command.env("ARIAD_TEST_ENGINE", test_engine);
+        }
         #[cfg(windows)]
         if let Some(system_root) = std::env::var_os("SYSTEMROOT") {
             command.env("SYSTEMROOT", system_root);
