@@ -4,7 +4,7 @@ Rules for AI agents working in this repository. Design authority is [ARCHITECTUR
 
 ## Current state
 
-The CLI converts Markdown (`.md`/`.markdown`) to DOCX with `ashift convert`. Run `just pandoc` before working on conversion tasks. Run `just ci` as the local quality gate.
+The CLI converts between Markdown (`.md`/`.markdown`), HTML, DOCX and EPUB with `ashift convert`; an unsupported pair prints the supported routes. Run `just pandoc` before working on conversion tasks. Run `just ci` as the local quality gate.
 
 ## Architecture changes
 
@@ -24,6 +24,7 @@ The CLI converts Markdown (`.md`/`.markdown`) to DOCX with `ashift convert`. Run
 ## Licensing
 
 - Distributed artifacts must not contain AGPL or non-OSI code. This rules out PyMuPDF, `pdf2docx` and MinerU.
+- MPL-2.0 dependencies are allowed only unmodified and through per-crate cargo-deny exceptions.
 - GPL tools such as Pandoc are invoked as separate processes, never linked.
 - Fixtures exclude CC-BY-SA documents, GPL test suites, and research-only or non-commercial datasets. Record each fixture's source and license in `fixtures/manifest.toml`.
 - Model weights follow the same licensing rules as code; exclude OpenRAIL-M, custom or missing licenses.
