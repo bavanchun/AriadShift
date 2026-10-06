@@ -59,8 +59,11 @@ fuzz_target!(|data: &[u8]| {
         | Err(ReadError::DepthExceeded(_))
         | Err(ReadError::Json(_))
         | Err(ReadError::BlockLimitExceeded { .. })
-        | Err(ReadError::Io(_)) => {
-            // Valid typed errors from bounded read_json
+        | Err(ReadError::Io(_))
+        | Err(ReadError::UnsupportedVersion) => {
+            // Valid typed errors from bounded read_json. UnsupportedVersion is
+            // defined on ReadError for version-checked readers and cannot be produced
+            // by read_json::<Pandoc>, but is handled here to satisfy exhaustive matching.
         }
     }
 });

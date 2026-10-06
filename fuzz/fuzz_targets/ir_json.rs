@@ -72,6 +72,9 @@ fuzz_target!(|data: &[u8]| {
         Err(ReadError::Json(_)) | Err(ReadError::Io(_)) => {
             // Standard syntax/IO errors on malformed inputs
         }
+        Err(ReadError::UnsupportedVersion) => {
+            // Benign typed rejection: an input whose IR version is not supported is a legitimate rejection, not a bug.
+        }
     }
 
     // Second limits set with local depth (64) to exercise deep build and drop
