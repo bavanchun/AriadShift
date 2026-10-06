@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ariad_fixture_gen import docx, html, image, markdown, pdf, scan
+from ariad_fixture_gen import docx, epub, html, image, markdown, pdf, scan
 from ariad_fixture_gen.manifest import update_generated_hashes
 
 
@@ -15,6 +15,7 @@ def main() -> None:
         "md": markdown.generate,
         "html": html.generate,
         "docx": docx.generate,
+        "epub": epub.generate,
         "pdf": pdf.generate,
         "scan": scan.generate,
         "image": image.generate,
