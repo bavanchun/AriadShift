@@ -69,6 +69,69 @@ fn main() -> ExitCode {
             emit(&ok_result());
             ExitCode::SUCCESS
         }
+        "describe-multiple-capabilities" => {
+            let cap = Event::Capabilities {
+                engine: "probe-multi".to_owned(),
+                version: "0.1.0".to_owned(),
+                tool: ariad_core::protocol::ToolStatus {
+                    name: "probe".to_owned(),
+                    version: Some("0.1.0".to_owned()),
+                    status: ariad_core::protocol::ToolAvailability::Found,
+                },
+                license: "MIT".to_owned(),
+                routes: vec![],
+                enforces_memory_limit: false,
+                models: None,
+            };
+            emit(&cap);
+            emit(&cap);
+            emit(&ok_result());
+            ExitCode::SUCCESS
+        }
+        "describe-enforces-memory" => {
+            let mut line = Vec::new();
+            if BufReader::new(io::stdin().lock())
+                .read_until(b'\n', &mut line)
+                .is_err()
+            {
+                return ExitCode::from(1);
+            }
+            let request: Request = match serde_json::from_slice(&line) {
+                Ok(request) => request,
+                Err(_) => return ExitCode::from(1),
+            };
+            match request {
+                Request::Describe { .. } => {
+                    emit(&Event::Capabilities {
+                        engine: "probe-memory".to_owned(),
+                        version: "0.1.0".to_owned(),
+                        tool: ariad_core::protocol::ToolStatus {
+                            name: "probe".to_owned(),
+                            version: Some("0.1.0".to_owned()),
+                            status: ariad_core::protocol::ToolAvailability::Found,
+                        },
+                        license: "MIT".to_owned(),
+                        routes: vec![],
+                        enforces_memory_limit: true,
+                        models: None,
+                    });
+                    emit(&ok_result());
+                    ExitCode::SUCCESS
+                }
+                Request::Convert { output, .. } => {
+                    let artifact = std::path::Path::new(&output.dir).join("document.docx");
+                    if write_minimal_docx(&artifact).is_err() {
+                        return ExitCode::from(1);
+                    }
+                    emit(&Event::Artifact {
+                        path: artifact.to_string_lossy().into_owned(),
+                        format: output.format,
+                    });
+                    emit(&ok_result());
+                    ExitCode::SUCCESS
+                }
+            }
+        }
         "event-after-result" => {
             emit(&ok_result());
             emit(&Event::Progress {
@@ -209,4 +272,21 @@ fn hang() -> ! {
     loop {
         thread::sleep(Duration::from_secs(60));
     }
+}
+
+fn write_minimal_docx(path: &std::path::Path) -> io::Result<()> {
+    let file = fs::File::create(path)?;
+    let mut zip = zip::ZipWriter::new(file);
+    zip.start_file(
+        "docProps/core.xml",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .map_err(io::Error::other)?;
+    zip.write_all(br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dcterms:created xsi:type="dcterms:W3CDTF">2026-10-06T00:00:00Z</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">2026-10-06T00:00:00Z</dcterms:modified>
+</cp:coreProperties>"#)?;
+    zip.finish().map_err(io::Error::other)?;
+    Ok(())
 }

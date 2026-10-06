@@ -12,6 +12,7 @@ use ariad_core::{
     protocol::{Event, Input, Output, PROTOCOL, Request},
 };
 use ariad_host::{
+    convert::{self, ConvertError},
     runner::{self, Artifact, RunError, RunOutcome},
     workspace::Workspace,
 };
@@ -393,7 +394,8 @@ fn runner_describe_and_memory_limit_refusal() {
 
     let mut limits = Limits::local();
     limits.max_memory_mb = Some(512);
-    let check = runner::check_memory_limit_support(enforces_memory_limit, &limits);
+    let check =
+        runner::check_memory_limit_support(&probe, &args, &limits, CancellationToken::new());
     assert!(matches!(
         check,
         Err(RunError::EngineFailed {
@@ -403,6 +405,98 @@ fn runner_describe_and_memory_limit_refusal() {
     ));
 
     limits.max_memory_mb = None;
-    assert!(runner::check_memory_limit_support(enforces_memory_limit, &limits).is_ok());
-    assert!(runner::check_memory_limit_support(true, &limits).is_ok());
+    assert!(
+        runner::check_memory_limit_support(&probe, &args, &limits, CancellationToken::new())
+            .is_ok()
+    );
+}
+
+#[test]
+fn runner_describe_requires_exactly_one_capabilities_event() {
+    let args = [OsString::from("describe-multiple-capabilities")];
+    let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    let result = runner::describe(&probe, &args, CancellationToken::new());
+    assert!(matches!(
+        result,
+        Err(RunError::ProtocolViolation(
+            "engine must emit exactly one capabilities event"
+        ))
+    ));
+}
+
+#[test]
+fn describe_times_out_on_hung_engine() {
+    let args = [OsString::from("hang")];
+    let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    let result = runner::describe_with_timeout(
+        &probe,
+        &args,
+        Duration::from_millis(200),
+        CancellationToken::new(),
+    );
+    assert!(matches!(result, Err(RunError::Timeout)));
+}
+
+#[test]
+fn convert_refuses_unenforced_memory_limit_before_starting_conversion() {
+    let workspace = Workspace::new().expect("create workspace");
+    let input_path = workspace.work_dir().join("input.md");
+    fs::write(&input_path, "# Sample\n\nContent paragraph.").expect("write input markdown");
+    let output_path = workspace.work_dir().join("output.docx");
+
+    let mut limits = Limits::local();
+    limits.max_memory_mb = Some(512);
+
+    let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    let args = [OsString::from("describe-no-memory-limit")];
+
+    let result = convert::convert_custom(
+        &input_path,
+        &output_path,
+        "docx",
+        &probe,
+        &args,
+        false,
+        limits,
+        CancellationToken::new(),
+        |_| {},
+    );
+
+    assert_eq!(result, Err(ConvertError::LimitExceeded));
+    assert!(
+        !output_path.exists(),
+        "conversion must be refused before creating or promoting the output artifact"
+    );
+}
+
+#[test]
+fn convert_with_enforcing_engine_runs_normally() {
+    let workspace = Workspace::new().expect("create workspace");
+    let input_path = workspace.work_dir().join("input.md");
+    fs::write(&input_path, "# Sample\n\nContent paragraph.").expect("write input markdown");
+    let output_path = workspace.work_dir().join("output.docx");
+
+    let mut limits = Limits::local();
+    limits.max_memory_mb = Some(512);
+
+    let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    let args = [OsString::from("describe-enforces-memory")];
+
+    let result = convert::convert_custom(
+        &input_path,
+        &output_path,
+        "docx",
+        &probe,
+        &args,
+        false,
+        limits,
+        CancellationToken::new(),
+        |_| {},
+    );
+
+    assert!(
+        result.is_ok(),
+        "enforcing engine should succeed: {result:?}"
+    );
+    assert!(output_path.exists(), "output artifact should be promoted");
 }

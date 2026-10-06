@@ -1,10 +1,10 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     ffi::OsString,
     future, io,
     path::{Component, Path, PathBuf},
     process::Stdio,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
@@ -106,15 +106,64 @@ where
         args,
         request,
         request_line,
+        None,
         cancel,
         sink,
     ))
 }
 
-/// Queries an engine's capabilities by executing a `describe` request.
-pub fn describe(
+/// Runs an engine process with an optional timeout override.
+pub fn run_with_timeout<S>(
     program: &Path,
     args: &[OsString],
+    request: &Request,
+    timeout: Option<Duration>,
+    cancel: CancellationToken,
+    sink: S,
+) -> Result<RunOutcome, RunError>
+where
+    S: FnMut(Event),
+{
+    let mut request_line = serde_json::to_vec(request)
+        .map_err(|_| RunError::ProtocolViolation("invalid request JSON"))?;
+    if request_line.len() > MAX_NDJSON_LINE_BYTES {
+        return Err(RunError::ProtocolViolation(
+            "request line exceeds the 1 MiB limit",
+        ));
+    }
+    request_line.push(b'\n');
+
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(RunError::Io)?;
+    runtime.block_on(run_async(
+        program,
+        args,
+        request,
+        request_line,
+        timeout,
+        cancel,
+        sink,
+    ))
+}
+
+/// Fixed timeout for engine `describe` requests.
+pub const DESCRIBE_TIMEOUT: Duration = Duration::from_secs(30);
+
+type CapabilitiesCache = Mutex<HashMap<(PathBuf, Vec<OsString>), bool>>;
+
+static CAPABILITIES_CACHE: OnceLock<CapabilitiesCache> = OnceLock::new();
+
+fn capabilities_cache() -> &'static CapabilitiesCache {
+    CAPABILITIES_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Queries an engine's capabilities by executing a `describe` request with a custom timeout.
+pub fn describe_with_timeout(
+    program: &Path,
+    args: &[OsString],
+    timeout: Duration,
     cancel: CancellationToken,
 ) -> Result<Event, RunError> {
     let request = Request::Describe {
@@ -122,28 +171,83 @@ pub fn describe(
         job: format!("describe-{}", std::process::id()),
     };
     let mut capabilities = None;
-    run(program, args, &request, cancel, |event| {
+    let mut count = 0_usize;
+    run_with_timeout(program, args, &request, Some(timeout), cancel, |event| {
         if let Event::Capabilities { .. } = &event {
+            count += 1;
             capabilities = Some(event);
         }
     })?;
+    if count != 1 {
+        return Err(RunError::ProtocolViolation(
+            "engine must emit exactly one capabilities event",
+        ));
+    }
     capabilities.ok_or(RunError::ProtocolViolation(
         "engine did not emit a capabilities event",
     ))
 }
 
-/// Refuses a request that specifies a memory limit if the engine cannot enforce it.
+/// Queries an engine's capabilities by executing a `describe` request with a fixed 30s timeout.
+///
+/// Returns the engine's [`Event::Capabilities`] event. Requires that the engine emits
+/// exactly one capabilities event.
+pub fn describe(
+    program: &Path,
+    args: &[OsString],
+    cancel: CancellationToken,
+) -> Result<Event, RunError> {
+    describe_with_timeout(program, args, DESCRIBE_TIMEOUT, cancel)
+}
+
+/// Checks whether an engine enforces memory limits before converting.
+///
+/// If `limits.max_memory_mb` is `Some(_)`, this queries the engine's `describe` op
+/// (caching the result per engine binary path and args within the process).
+/// If the engine reports `enforces_memory_limit: false`, returns a typed `limit_exceeded` error.
 pub fn check_memory_limit_support(
-    enforces_memory_limit: bool,
+    program: &Path,
+    args: &[OsString],
     limits: &Limits,
+    cancel: CancellationToken,
 ) -> Result<(), RunError> {
-    if limits.max_memory_mb.is_some() && !enforces_memory_limit {
+    if limits.max_memory_mb.is_none() {
+        return Ok(());
+    }
+
+    let key = (program.to_path_buf(), args.to_vec());
+    let cached = {
+        let cache = capabilities_cache().lock().unwrap();
+        cache.get(&key).copied()
+    };
+
+    let enforces = match cached {
+        Some(enforces) => enforces,
+        None => {
+            let event = describe(program, args, cancel)?;
+            let Event::Capabilities {
+                enforces_memory_limit,
+                ..
+            } = event
+            else {
+                return Err(RunError::ProtocolViolation(
+                    "expected capabilities event from describe",
+                ));
+            };
+            let mut cache = capabilities_cache().lock().unwrap();
+            cache.insert(key, enforces_memory_limit);
+            enforces_memory_limit
+        }
+    };
+
+    if !enforces {
         return Err(RunError::EngineFailed {
             code: ErrorCode::LimitExceeded,
             message: "Engine does not enforce memory limits; request cannot specify max_memory_mb."
                 .to_owned(),
         });
     }
+
     Ok(())
 }
 
@@ -152,18 +256,21 @@ async fn run_async<S>(
     args: &[OsString],
     request: &Request,
     request_line: Vec<u8>,
+    timeout_override: Option<Duration>,
     cancel: CancellationToken,
     sink: S,
 ) -> Result<RunOutcome, RunError>
 where
     S: FnMut(Event),
 {
-    let (output_dir, timeout_s) = match request {
-        Request::Convert { output, limits, .. } => (Some(output.dir.as_str()), limits.timeout_s),
-        Request::Describe { .. } => (None, None),
+    let (output_dir, timeout) = match request {
+        Request::Convert { output, limits, .. } => (
+            Some(output.dir.as_str()),
+            timeout_override.or_else(|| limits.timeout_s.map(Duration::from_secs)),
+        ),
+        Request::Describe { .. } => (None, Some(timeout_override.unwrap_or(DESCRIBE_TIMEOUT))),
     };
-    let deadline =
-        timeout_s.and_then(|seconds| Instant::now().checked_add(Duration::from_secs(seconds)));
+    let deadline = timeout.and_then(|duration| Instant::now().checked_add(duration));
 
     let mut command = CommandWrap::with_new(program.as_os_str(), |command| {
         command
