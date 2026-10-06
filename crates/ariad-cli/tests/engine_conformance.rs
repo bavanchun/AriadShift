@@ -184,9 +184,13 @@ fn engine_answers_describe_request_without_workspace() {
     assert_eq!(capabilities["license"], "GPL-2.0-or-later");
     assert_eq!(capabilities["enforces_memory_limit"], true);
     let routes = capabilities["routes"].as_array().expect("routes array");
-    assert_eq!(routes.len(), 1);
+    assert_eq!(routes.len(), 3);
     assert_eq!(routes[0]["input"], "ariad-ir+json");
     assert_eq!(routes[0]["output"], "docx");
+    assert_eq!(routes[1]["input"], "docx");
+    assert_eq!(routes[1]["output"], "ariad-ir+json");
+    assert_eq!(routes[2]["input"], "epub");
+    assert_eq!(routes[2]["output"], "ariad-ir+json");
 
     let result = &events[1];
     assert_eq!(result["type"], "result");

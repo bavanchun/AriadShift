@@ -11,7 +11,6 @@ use std::{
 };
 
 use ariad_core::{
-    json_depth::{json_depth_budget_for_nesting, prescan_json_depth},
     limits::Limits,
     pandoc::{ast::Pandoc, from_ir, to_ir},
     protocol::{
@@ -215,7 +214,24 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 let log_path = workspace.join("log").join("pandoc-log.json");
                 let input_path = Path::new(&input.path);
 
-                let stdout_bytes = run_pandoc_reader(
+                // Defense-in-depth: run archive preflight at the engine boundary before starting Pandoc
+                crate::archive::preflight_archive(input_path, &limits).map_err(
+                    |err| match err {
+                        crate::archive::ArchiveError::EntryCountExceeded { .. }
+                        | crate::archive::ArchiveError::DecompressedSizeExceeded { .. } => {
+                            EngineFailure::limit_exceeded()
+                        }
+                        crate::archive::ArchiveError::DuplicateEntryName { .. }
+                        | crate::archive::ArchiveError::EntryCountMismatch { .. }
+                        | crate::archive::ArchiveError::InvalidEntryName { .. } => {
+                            EngineFailure::invalid_request()
+                        }
+                        crate::archive::ArchiveError::Io(_)
+                        | crate::archive::ArchiveError::Zip(_) => EngineFailure::failure(),
+                    },
+                )?;
+
+                let pandoc_ast = run_pandoc_reader(
                     &binary.path,
                     &limits,
                     &work_dir,
@@ -225,14 +241,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                     &input.format,
                 )?;
 
-                let depth_budget = json_depth_budget_for_nesting(limits.max_nesting_depth);
-                prescan_json_depth(&stdout_bytes, depth_budget)
-                    .map_err(|_| EngineFailure::limit_exceeded())?;
-
-                let pandoc_ast: Pandoc =
-                    serde_json::from_slice(&stdout_bytes).map_err(|_| EngineFailure::failure())?;
-
-                let mapped = to_ir(&pandoc_ast, &limits).map_err(|err| match err {
+                let mut mapped = to_ir(&pandoc_ast, &limits).map_err(|err| match err {
                     ariad_core::pandoc::to_ir::MapError::UnsupportedApiVersion { .. } => {
                         EngineFailure::new(
                             ErrorCode::ToolVersion,
@@ -247,6 +256,12 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                         EngineFailure::invalid_request()
                     }
                 })?;
+
+                mapped.document.meta.source_format = match input.format.as_str() {
+                    "docx" => Some(ariad_core::format::Format::Docx),
+                    "epub" => Some(ariad_core::format::Format::Epub),
+                    _ => None,
+                };
 
                 for warning in mapped.warnings {
                     let code = serde_json::to_string(&warning.code)
@@ -331,10 +346,20 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                         status,
                     },
                     license: "GPL-2.0-or-later".to_owned(),
-                    routes: vec![RouteCapability {
-                        input: "ariad-ir+json".to_owned(),
-                        output: "docx".to_owned(),
-                    }],
+                    routes: vec![
+                        RouteCapability {
+                            input: "ariad-ir+json".to_owned(),
+                            output: "docx".to_owned(),
+                        },
+                        RouteCapability {
+                            input: "docx".to_owned(),
+                            output: "ariad-ir+json".to_owned(),
+                        },
+                        RouteCapability {
+                            input: "epub".to_owned(),
+                            output: "ariad-ir+json".to_owned(),
+                        },
+                    ],
                     enforces_memory_limit: true,
                     models: None,
                 },
@@ -494,11 +519,13 @@ fn run_pandoc_reader(
     log_path: &Path,
     input_path: &Path,
     input_format: &str,
-) -> Result<Vec<u8>, EngineFailure> {
+) -> Result<Pandoc, EngineFailure> {
     let mut command = Command::new(pandoc_path);
     let rts_cap_mb = match limits.max_memory_mb {
-        Some(mb) => mb,
-        None => (limits.max_decompressed_bytes / (1024 * 1024)).max(512) as u32,
+        Some(mb) => mb.max(1),
+        None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
+            .unwrap_or(u32::MAX)
+            .max(512),
     };
     command
         .arg("+RTS")
@@ -546,8 +573,12 @@ fn run_pandoc_reader(
     let mut stdout = child.stdout.take().ok_or_else(EngineFailure::io)?;
     let mut stderr = child.stderr.take().ok_or_else(EngineFailure::io)?;
     let max_stdout_bytes = limits.max_ir_json_bytes;
+    let depth_budget =
+        ariad_core::json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
 
-    let stdout_thread = thread::spawn(move || drain_bounded_stdout(&mut stdout, max_stdout_bytes));
+    let stdout_thread = thread::spawn(move || {
+        crate::ir_io::read_json::<Pandoc>(&mut stdout, max_stdout_bytes, depth_budget)
+    });
     let stderr_thread = thread::spawn(move || drain_stderr(&mut stderr));
 
     let (status, timed_out) = loop {
@@ -574,6 +605,15 @@ fn run_pandoc_reader(
             "Pandoc exceeded the conversion time limit.",
         ));
     }
+
+    match stdout_result {
+        Err(crate::ir_io::ReadError::ByteLimitExceeded { .. })
+        | Err(crate::ir_io::ReadError::DepthExceeded(_)) => {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        _ => {}
+    }
+
     if !status.success() {
         if memory_limit_was_hit(&stderr_tail) {
             return Err(EngineFailure::new(
@@ -583,23 +623,13 @@ fn run_pandoc_reader(
         }
         return Err(pandoc_failure(status, &stderr_tail));
     }
-    stdout_result
-}
 
-fn drain_bounded_stdout(stdout: &mut impl Read, max_bytes: u64) -> Result<Vec<u8>, EngineFailure> {
-    let mut bytes = Vec::new();
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let n = stdout.read(&mut buffer).map_err(|_| EngineFailure::io())?;
-        if n == 0 {
-            break;
-        }
-        if (bytes.len() as u64).saturating_add(n as u64) > max_bytes {
-            return Err(EngineFailure::limit_exceeded());
-        }
-        bytes.extend_from_slice(&buffer[..n]);
-    }
-    Ok(bytes)
+    stdout_result.map_err(|err| match err {
+        crate::ir_io::ReadError::ByteLimitExceeded { .. }
+        | crate::ir_io::ReadError::DepthExceeded(_) => EngineFailure::limit_exceeded(),
+        crate::ir_io::ReadError::Io(_) => EngineFailure::io(),
+        _ => EngineFailure::failure(),
+    })
 }
 
 fn drain_stderr(stderr: &mut impl Read) -> io::Result<String> {
@@ -665,7 +695,7 @@ fn emit(writer: &mut impl Write, event: Event) -> io::Result<()> {
 mod tests {
     use std::fs;
 
-    use ariad_core::{protocol::ErrorCode, protocol::Event};
+    use ariad_core::{limits::Limits, protocol::ErrorCode, protocol::Event};
     use tempfile::tempdir;
 
     use super::{EngineFailure, pandoc_log_warnings};
@@ -750,9 +780,13 @@ mod tests {
         let caps: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
         assert_eq!(caps["type"], "capabilities");
         let routes = caps["routes"].as_array().unwrap();
-        assert_eq!(routes.len(), 1);
+        assert_eq!(routes.len(), 3);
         assert_eq!(routes[0]["input"], "ariad-ir+json");
         assert_eq!(routes[0]["output"], "docx");
+        assert_eq!(routes[1]["input"], "docx");
+        assert_eq!(routes[1]["output"], "ariad-ir+json");
+        assert_eq!(routes[2]["input"], "epub");
+        assert_eq!(routes[2]["output"], "ariad-ir+json");
     }
 
     #[test]
@@ -809,9 +843,11 @@ mod tests {
             .parent()
             .unwrap()
             .join("fixtures/docx/vi-styled-report.docx");
-        if !fixture_path.is_file() {
-            return;
-        }
+        assert!(
+            fixture_path.is_file(),
+            "fixture must exist: {}",
+            fixture_path.display()
+        );
         std::fs::copy(&fixture_path, &input_path).unwrap();
 
         let request = Request::Convert {
@@ -852,7 +888,224 @@ mod tests {
         let doc: ariad_core::ir::Document =
             serde_json::from_reader(std::fs::File::open(&out_doc_path).unwrap()).unwrap();
         assert!(!doc.body.is_empty());
+        assert_eq!(
+            doc.meta.source_format,
+            Some(ariad_core::format::Format::Docx)
+        );
 
         let _ = workspace.close();
+    }
+
+    #[test]
+    fn bomb_passed_directly_to_engine_is_refused_before_pandoc_starts() {
+        use crate::workspace::Workspace;
+        use ariad_core::limits::Limits;
+        use ariad_core::protocol::{Input, Output, PROTOCOL, Request};
+        use std::io::{Cursor, Write};
+        use tempfile::NamedTempFile;
+        use zip::{ZipWriter, write::SimpleFileOptions};
+
+        let temp_bomb = NamedTempFile::with_suffix(".docx").unwrap();
+        {
+            let file = std::fs::File::create(temp_bomb.path()).unwrap();
+            let mut zip = ZipWriter::new(file);
+            zip.start_file(
+                "bomb.txt",
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+            )
+            .unwrap();
+            zip.write_all(&[0u8; 10000]).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let mut workspace = Workspace::new().unwrap();
+        let input_path = workspace.input_dir().join("bomb.docx");
+        std::fs::copy(temp_bomb.path(), &input_path).unwrap();
+
+        let mut limits = Limits::local();
+        limits.max_decompressed_bytes = 1000;
+
+        let request = Request::Convert {
+            protocol: PROTOCOL.to_owned(),
+            job: "test-bomb-direct".to_owned(),
+            input: Input {
+                path: input_path.to_string_lossy().into_owned(),
+                format: "docx".to_owned(),
+            },
+            output: Output {
+                dir: workspace.output_dir().to_string_lossy().into_owned(),
+                format: "ariad-ir+json".to_owned(),
+            },
+            work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+            options: std::collections::BTreeMap::new(),
+            limits,
+        };
+
+        let mut input_bytes = serde_json::to_vec(&request).unwrap();
+        input_bytes.push(b'\n');
+        let mut output_bytes = Vec::new();
+
+        let exit = super::serve(Cursor::new(input_bytes), &mut output_bytes);
+        assert_ne!(exit, std::process::ExitCode::SUCCESS);
+
+        let lines = std::str::from_utf8(&output_bytes)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>();
+        let result_line = lines.last().unwrap();
+        let result: serde_json::Value = serde_json::from_str(result_line).unwrap();
+        assert_eq!(result["type"], "result");
+        assert_eq!(result["ok"], false);
+        assert_eq!(result["error"]["code"], "limit_exceeded");
+
+        let _ = workspace.close();
+    }
+
+    #[test]
+    fn over_cap_stdout_gives_limit_exceeded_through_engine() {
+        use crate::workspace::Workspace;
+        use ariad_core::limits::Limits;
+        use ariad_core::protocol::{Input, Output, PROTOCOL, Request};
+        use std::{io::Cursor, path::Path};
+
+        let mut workspace = Workspace::new().unwrap();
+        let input_path = workspace.input_dir().join("test.docx");
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("fixtures/docx/vi-styled-report.docx");
+        assert!(fixture_path.is_file());
+        std::fs::copy(&fixture_path, &input_path).unwrap();
+
+        let mut limits = Limits::local();
+        limits.max_ir_json_bytes = 100; // tiny cap will be exceeded immediately by Pandoc JSON stdout
+
+        let request = Request::Convert {
+            protocol: PROTOCOL.to_owned(),
+            job: "test-over-cap-stdout".to_owned(),
+            input: Input {
+                path: input_path.to_string_lossy().into_owned(),
+                format: "docx".to_owned(),
+            },
+            output: Output {
+                dir: workspace.output_dir().to_string_lossy().into_owned(),
+                format: "ariad-ir+json".to_owned(),
+            },
+            work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+            options: std::collections::BTreeMap::new(),
+            limits,
+        };
+
+        let mut input_bytes = serde_json::to_vec(&request).unwrap();
+        input_bytes.push(b'\n');
+        let mut output_bytes = Vec::new();
+
+        let exit = super::serve(Cursor::new(input_bytes), &mut output_bytes);
+        assert_ne!(exit, std::process::ExitCode::SUCCESS);
+
+        let lines = std::str::from_utf8(&output_bytes)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>();
+        let result_line = lines.last().unwrap();
+        let result: serde_json::Value = serde_json::from_str(result_line).unwrap();
+        assert_eq!(result["type"], "result");
+        assert_eq!(result["ok"], false);
+        assert_eq!(result["error"]["code"], "limit_exceeded");
+
+        let _ = workspace.close();
+    }
+
+    #[test]
+    fn rts_memory_cap_cannot_wrap_or_be_zero() {
+        let mut limits = Limits::local();
+        limits.max_memory_mb = None;
+        limits.max_decompressed_bytes = u64::MAX;
+
+        let rts_cap_mb = match limits.max_memory_mb {
+            Some(mb) => mb.max(1),
+            None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
+                .unwrap_or(u32::MAX)
+                .max(512),
+        };
+        assert_eq!(rts_cap_mb, u32::MAX);
+
+        limits.max_decompressed_bytes = 0;
+        let rts_cap_mb = match limits.max_memory_mb {
+            Some(mb) => mb.max(1),
+            None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
+                .unwrap_or(u32::MAX)
+                .max(512),
+        };
+        assert_eq!(rts_cap_mb, 512);
+
+        limits.max_memory_mb = Some(0);
+        let rts_cap_mb = match limits.max_memory_mb {
+            Some(mb) => mb.max(1),
+            None => u32::try_from(limits.max_decompressed_bytes / (1024 * 1024))
+                .unwrap_or(u32::MAX)
+                .max(512),
+        };
+        assert_eq!(rts_cap_mb, 1);
+    }
+
+    #[test]
+    fn nesting_depth_64_passes_and_65_fails_json_stacker() {
+        use ariad_core::{
+            json_depth::json_depth_budget_for_nesting,
+            limits::Limits,
+            pandoc::{ast::Pandoc, to_ir::to_ir},
+        };
+        use std::io::Cursor;
+
+        // Build Pandoc JSON AST with N nested BlockQuotes
+        fn build_nested_json(n: usize) -> String {
+            let mut s = String::from(r#"{"pandoc-api-version":[1,23,1,2],"meta":{},"blocks":["#);
+            for _ in 0..n {
+                s.push_str(r#"{"t":"BlockQuote","c":["#);
+            }
+            s.push_str(r#"{"t":"Para","c":[{"t":"Str","c":"deep"}]}"#);
+            for _ in 0..n {
+                s.push_str("]}");
+            }
+            s.push_str("]}");
+            s
+        }
+
+        // Depth 64: 1 top-level + 63 nested blockquotes = depth 64
+        let json_64 = build_nested_json(63);
+        let limits_64 = Limits {
+            max_nesting_depth: 64,
+            ..Limits::local()
+        };
+        let budget_64 = json_depth_budget_for_nesting(64);
+
+        // Deserializing 64 levels through read_json with serde_stacker succeeds (doesn't hit recursion limit 128)
+        let ast_64: Pandoc = crate::ir_io::read_json(
+            Cursor::new(json_64.as_bytes()),
+            limits_64.max_ir_json_bytes,
+            budget_64,
+        )
+        .expect("read_json 64 depth must succeed");
+        assert!(to_ir(&ast_64, &limits_64).is_ok());
+
+        // Depth 65: 1 top-level + 64 nested blockquotes = depth 65
+        let json_65 = build_nested_json(64);
+        let ast_65: Pandoc = crate::ir_io::read_json(
+            Cursor::new(json_65.as_bytes()),
+            limits_64.max_ir_json_bytes,
+            budget_64,
+        )
+        .expect("read_json 65 depth must succeed at parser level");
+        // But to_ir fails with NestingTooDeep
+        let err = to_ir(&ast_65, &limits_64).unwrap_err();
+        match err {
+            ariad_core::pandoc::to_ir::MapError::NestingTooDeep { limit } => {
+                assert_eq!(limit, 64);
+            }
+            other => panic!("expected NestingTooDeep, got {other:?}"),
+        }
     }
 }
