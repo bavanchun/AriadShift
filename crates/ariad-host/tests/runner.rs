@@ -375,3 +375,34 @@ fn assert_heartbeat_stopped(path: &Path) {
     thread::sleep(Duration::from_millis(250));
     assert_eq!(fs::metadata(path).unwrap().len(), size);
 }
+
+#[test]
+fn runner_describe_and_memory_limit_refusal() {
+    let args = [OsString::from("describe-no-memory-limit")];
+    let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    let event =
+        runner::describe(&probe, &args, CancellationToken::new()).expect("describe succeeds");
+    let Event::Capabilities {
+        enforces_memory_limit,
+        ..
+    } = event
+    else {
+        panic!("expected capabilities event");
+    };
+    assert!(!enforces_memory_limit);
+
+    let mut limits = Limits::local();
+    limits.max_memory_mb = Some(512);
+    let check = runner::check_memory_limit_support(enforces_memory_limit, &limits);
+    assert!(matches!(
+        check,
+        Err(RunError::EngineFailed {
+            code: ariad_core::protocol::ErrorCode::LimitExceeded,
+            ..
+        })
+    ));
+
+    limits.max_memory_mb = None;
+    assert!(runner::check_memory_limit_support(enforces_memory_limit, &limits).is_ok());
+    assert!(runner::check_memory_limit_support(true, &limits).is_ok());
+}

@@ -52,6 +52,23 @@ fn main() -> ExitCode {
             });
             ExitCode::SUCCESS
         }
+        "describe-no-memory-limit" => {
+            emit(&Event::Capabilities {
+                engine: "probe-no-memory".to_owned(),
+                version: "0.1.0".to_owned(),
+                tool: ariad_core::protocol::ToolStatus {
+                    name: "probe".to_owned(),
+                    version: Some("0.1.0".to_owned()),
+                    status: ariad_core::protocol::ToolAvailability::Found,
+                },
+                license: "MIT".to_owned(),
+                routes: vec![],
+                enforces_memory_limit: false,
+                models: None,
+            });
+            emit(&ok_result());
+            ExitCode::SUCCESS
+        }
         "event-after-result" => {
             emit(&ok_result());
             emit(&Event::Progress {
