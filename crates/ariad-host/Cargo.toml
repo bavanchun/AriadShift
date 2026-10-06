@@ -9,12 +9,16 @@ publish.workspace = true
 
 [dependencies]
 ariad-core = { path = "../ariad-core", version = "0.0.0" }
+cap-std.workspace = true
+hex.workspace = true
 process-wrap.workspace = true
+sha2.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "signal", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
+unicode-normalization.workspace = true
 
 [features]
 test-probe = []
