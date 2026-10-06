@@ -21,7 +21,8 @@ ashift convert book.epub --to md
 ```
 
 The default output is `<input stem>.<target extension>` beside the input. Use `-o` to choose another
-path and `--overwrite` to replace an existing destination. Same-format conversions (such as `md -> md`)
+path and `--overwrite` to replace an existing destination. Select a routing goal with
+`--profile <editable|faithful|fast|private>` (defaults to `editable`). Same-format conversions (such as `md -> md`)
 are refused with exit code 3; destinations matching the input path are refused with exit code 2. Stdout
 contains the output path; warnings are written to stderr. Press Ctrl-C to cancel a running
 conversion and clean up its temporary workspace. Set `ASHIFT_PANDOC` to select
