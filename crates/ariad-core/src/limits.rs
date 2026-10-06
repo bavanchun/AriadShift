@@ -10,10 +10,15 @@ const MAX_SUPPORTED_NESTING_DEPTH: u16 = 100;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Limits {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_input_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_pages: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_s: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_memory_mb: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_asset_bytes: Option<u64>,
     pub max_nesting_depth: u16,
     pub max_blocks: u32,

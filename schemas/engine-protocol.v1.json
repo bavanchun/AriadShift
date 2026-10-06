@@ -1,0 +1,289 @@
+{
+  "$id": "https://ariadshift.ariadnev.com/schemas/engine-protocol.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Message",
+  "description": "Either direction of one JSONL protocol message.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/Request"
+    },
+    {
+      "$ref": "#/$defs/Event"
+    }
+  ],
+  "x-status": "draft",
+  "$defs": {
+    "EngineError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "unsupported_route",
+        "limit_exceeded",
+        "engine_failure",
+        "tool_missing",
+        "tool_version",
+        "io"
+      ]
+    },
+    "Event": {
+      "description": "A single NDJSON event emitted by an engine.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "done": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "stage": {
+              "type": "string"
+            },
+            "total": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "progress"
+            }
+          },
+          "required": [
+            "type",
+            "stage"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "warning"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "format": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "artifact"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "format"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EngineError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "metrics": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "result"
+            }
+          },
+          "required": [
+            "type",
+            "ok"
+          ]
+        }
+      ]
+    },
+    "Input": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "format"
+      ]
+    },
+    "Limits": {
+      "description": "Resource limits applied to one conversion.\n\nCloud plan entitlements (§9.5) fill this shape; `None` means unlimited.",
+      "type": "object",
+      "properties": {
+        "max_asset_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "max_blocks": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 10000000,
+          "minimum": 0
+        },
+        "max_front_matter_bytes": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 65536,
+          "minimum": 0
+        },
+        "max_input_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "max_memory_mb": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "max_nesting_depth": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 64,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "max_pages": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "timeout_s": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      }
+    },
+    "Output": {
+      "type": "object",
+      "properties": {
+        "dir": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dir",
+        "format"
+      ]
+    },
+    "Request": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/Input"
+        },
+        "job": {
+          "type": "string"
+        },
+        "limits": {
+          "$ref": "#/$defs/Limits"
+        },
+        "op": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "output": {
+          "$ref": "#/$defs/Output"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "work_dir": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "job",
+        "op",
+        "input",
+        "output",
+        "work_dir",
+        "options",
+        "limits"
+      ]
+    }
+  }
+}

@@ -6,5 +6,6 @@ pub mod format;
 pub mod ir;
 pub mod limits;
 pub mod pandoc;
+pub mod protocol;
 pub mod reader;
 pub mod warning;
