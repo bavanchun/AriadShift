@@ -210,9 +210,22 @@ fn pandoc_engine_answers_describe_request() {
             assert_eq!(tool.name, "pandoc");
             assert_eq!(tool.status, ariad_core::protocol::ToolAvailability::Found);
             assert!(enforces_memory_limit);
-            assert_eq!(routes.len(), 1);
-            assert_eq!(routes[0].input, "ariad-ir+json");
-            assert_eq!(routes[0].output, "docx");
+            assert_eq!(routes.len(), 3);
+            assert!(
+                routes
+                    .iter()
+                    .any(|r| r.input == "ariad-ir+json" && r.output == "docx")
+            );
+            assert!(
+                routes
+                    .iter()
+                    .any(|r| r.input == "docx" && r.output == "ariad-ir+json")
+            );
+            assert!(
+                routes
+                    .iter()
+                    .any(|r| r.input == "epub" && r.output == "ariad-ir+json")
+            );
         }
         other => panic!("expected capabilities event, got {other:?}"),
     }
