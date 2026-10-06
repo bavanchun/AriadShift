@@ -6,10 +6,26 @@ default: ci
 fmt:
     cargo fmt --all
 
-lint:
+lint: fmt-check clippy spell
+
+fmt-check:
     cargo fmt --all --check
+
+clippy:
     cargo clippy --workspace --all-targets --features ariad-host/test-probe
+
+spell:
     typos
+
+lint-tools:
+    sh scripts/install-lint-tools.sh
+
+lint-workflows: lint-tools
+    .tools/bin/actionlint
+    uvx zizmor@1.30.1 .github
+
+lint-commits range="origin/dev..HEAD": lint-tools
+    sh scripts/check-commits.sh {{range}}
 
 wasm:
     cargo check -p ariad-core --target wasm32-unknown-unknown
@@ -21,6 +37,9 @@ test:
 deny:
     cargo deny check
 
+deny-advisories:
+    cargo deny check advisories
+
 js:
     pnpm install --frozen-lockfile
 
@@ -30,7 +49,10 @@ py:
 fixtures:
     uv run --package ariad-fixture-gen python -m ariad_fixture_gen
 
-ci: lint wasm test deny js py
+# Checks that do not depend on the OS; CI runs them once.
+static: fmt-check spell lint-workflows deny js py
+
+ci: static clippy wasm test
 
 pandoc:
     bash scripts/install-pandoc.sh
