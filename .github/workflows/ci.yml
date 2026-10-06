@@ -14,6 +14,33 @@ permissions:
   contents: read
 
 jobs:
+  lint-windows:
+    name: Lint (windows-2025)
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_BUILD_WARNINGS: deny
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --features ariad-host/test-probe
+
   verify:
     name: Verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
