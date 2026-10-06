@@ -39,12 +39,6 @@ pub fn allowed_link(url: &str) -> bool {
         || scheme.eq_ignore_ascii_case("mailto")
 }
 
-/// Alias for [`allowed_link`].
-#[must_use]
-pub fn is_allowed_link(url: &str) -> bool {
-    allowed_link(url)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -323,15 +323,7 @@
               "type": "string"
             },
             "limits": {
-              "$ref": "#/$defs/Limits",
-              "default": {
-                "max_archive_entries": 20000,
-                "max_blocks": 10000000,
-                "max_decompressed_bytes": 4294967296,
-                "max_front_matter_bytes": 65536,
-                "max_ir_json_bytes": 6442450944,
-                "max_nesting_depth": 64
-              }
+              "$ref": "#/$defs/Limits"
             },
             "op": {
               "type": "string",
@@ -358,7 +350,8 @@
             "job",
             "input",
             "output",
-            "work_dir"
+            "work_dir",
+            "limits"
           ]
         },
         {
