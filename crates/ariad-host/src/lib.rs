@@ -1,6 +1,7 @@
 //! Native engine execution and resource handling.
 #![forbid(unsafe_code)]
 
+pub mod archive;
 pub mod assets;
 pub mod convert;
 pub mod docx_meta;

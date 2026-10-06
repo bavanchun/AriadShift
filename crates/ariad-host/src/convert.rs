@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     fs,
+    io::{Read, Write},
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
@@ -17,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
+    archive::{self, ArchiveError},
     assets, docx_meta,
     runner::{self, RunError},
     workspace::{Workspace, WorkspaceError},
@@ -167,6 +169,77 @@ where
         cancel,
         on_event,
     )
+}
+
+/// Copies an untrusted input file into the workspace `in/` directory, bounded by `max_input_bytes`.
+/// If the input is an archive format (e.g. DOCX or EPUB), runs archive preflight on the workspace copy.
+///
+/// This closes the time-of-check/time-of-use gap by ensuring that subsequent engine operations
+/// read only the verified workspace copy, even if the source file is modified afterwards.
+pub fn copy_and_preflight_input(
+    input: &Path,
+    workspace: &Workspace,
+    limits: &Limits,
+) -> Result<PathBuf, ConvertError> {
+    let file_name = input
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty() && !name.contains('/') && !name.contains('\\'))
+        .unwrap_or("input.bin");
+    let dest_path = workspace.input_dir().join(file_name);
+
+    let mut source = fs::File::open(input).map_err(|_| ConvertError::InputIo)?;
+    let mut dest = fs::File::create(&dest_path).map_err(|_| ConvertError::Failed)?;
+
+    let mut buffer = [0u8; 64 * 1024];
+    let mut total_copied: u64 = 0;
+
+    loop {
+        let n = source
+            .read(&mut buffer)
+            .map_err(|_| ConvertError::InputIo)?;
+        if n == 0 {
+            break;
+        }
+        total_copied = total_copied.saturating_add(n as u64);
+        if limits.max_input_bytes.is_some_and(|max| total_copied > max) {
+            let _ = fs::remove_file(&dest_path);
+            return Err(ConvertError::LimitExceeded);
+        }
+        dest.write_all(&buffer[..n])
+            .map_err(|_| ConvertError::Failed)?;
+    }
+    dest.flush().map_err(|_| ConvertError::Failed)?;
+    drop(dest);
+
+    let is_archive = input
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            ext.eq_ignore_ascii_case("docx")
+                || ext.eq_ignore_ascii_case("epub")
+                || ext.eq_ignore_ascii_case("zip")
+        });
+
+    if is_archive {
+        archive::preflight_archive(&dest_path, limits).map_err(|err| match err {
+            ArchiveError::EntryCountExceeded { .. }
+            | ArchiveError::DecompressedSizeExceeded { .. } => {
+                let _ = fs::remove_file(&dest_path);
+                ConvertError::LimitExceeded
+            }
+            ArchiveError::InvalidEntryName { .. } => {
+                let _ = fs::remove_file(&dest_path);
+                ConvertError::Failed
+            }
+            ArchiveError::Io(_) | ArchiveError::Zip(_) => {
+                let _ = fs::remove_file(&dest_path);
+                ConvertError::InputIo
+            }
+        })?;
+    }
+
+    Ok(dest_path)
 }
 
 fn is_markdown_docx_route(input: &Path, target_format: &str) -> bool {
@@ -326,5 +399,59 @@ mod tests {
         for (error, expected) in cases {
             assert_eq!(error.exit_code(), expected);
         }
+    }
+
+    #[test]
+    fn mutating_source_after_copy_does_not_affect_workspace_copy() {
+        use super::{Limits, Workspace, copy_and_preflight_input};
+        use std::io::{Read, Write};
+        use tempfile::NamedTempFile;
+        use zip::{ZipWriter, write::SimpleFileOptions};
+
+        let temp_src = NamedTempFile::with_suffix(".docx").unwrap();
+        {
+            let file = std::fs::File::create(temp_src.path()).unwrap();
+            let mut zip = ZipWriter::new(file);
+            zip.start_file("word/document.xml", SimpleFileOptions::default())
+                .unwrap();
+            zip.write_all(b"<xml>original content</xml>").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let mut workspace = Workspace::new().unwrap();
+        let copy_path =
+            copy_and_preflight_input(temp_src.path(), &workspace, &Limits::local()).unwrap();
+
+        // Mutate the source file completely after copy
+        std::fs::write(temp_src.path(), b"mutated garbage data").unwrap();
+
+        // Verify the copy in workspace in/ is preserved and passes preflight
+        assert!(crate::archive::preflight_archive(&copy_path, &Limits::local()).is_ok());
+
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&copy_path).unwrap()).unwrap();
+        let mut entry = archive.by_name("word/document.xml").unwrap();
+        let mut content = String::new();
+        entry.read_to_string(&mut content).unwrap();
+        assert_eq!(content, "<xml>original content</xml>");
+
+        let _ = workspace.close();
+    }
+
+    #[test]
+    fn copy_and_preflight_input_enforces_max_input_bytes() {
+        use super::{Limits, Workspace, copy_and_preflight_input};
+        use tempfile::NamedTempFile;
+
+        let temp_src = NamedTempFile::with_suffix(".docx").unwrap();
+        std::fs::write(temp_src.path(), [0u8; 1024]).unwrap();
+
+        let mut workspace = Workspace::new().unwrap();
+        let mut limits = Limits::local();
+        limits.max_input_bytes = Some(500);
+
+        let err = copy_and_preflight_input(temp_src.path(), &workspace, &limits).unwrap_err();
+        assert_eq!(err, ConvertError::LimitExceeded);
+
+        let _ = workspace.close();
     }
 }
