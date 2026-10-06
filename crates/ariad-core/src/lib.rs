@@ -11,3 +11,4 @@ pub mod pandoc;
 pub mod protocol;
 pub mod reader;
 pub mod warning;
+pub mod writer;

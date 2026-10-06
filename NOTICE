@@ -3,3 +3,9 @@ Copyright 2026 VChun
 
 Files under fixtures/ are distributed under the per-file licenses recorded in
 fixtures/manifest.toml.
+
+This project includes unmodified third-party Rust crates licensed under the
+Mozilla Public License 2.0 (MPL-2.0), obtained from crates.io:
+- cssparser (https://crates.io/crates/cssparser)
+- dtoa-short (https://crates.io/crates/dtoa-short)
+These crates are used as transitive dependencies of the ammonia HTML sanitizer.
