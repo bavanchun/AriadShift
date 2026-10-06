@@ -414,6 +414,11 @@ pub fn read(input: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     // Iteratively convert DOM tree into Document IR
     let mut mapper = TreeMapper::new(&arena, limits, warnings);
     let body_blocks = convert_tree_iteratively(&mut mapper, doc_handle)?;
+    if blocks_depth(&body_blocks) > mapper.limits.max_nesting_depth {
+        return Err(ReadError::NestingTooDeep {
+            limit: mapper.limits.max_nesting_depth,
+        });
+    }
 
     Ok(ReadOutput {
         document: Document {
@@ -575,12 +580,18 @@ fn convert_node(
                 "ul" => {
                     let items = list_items(children);
                     mapper.check_block_limit()?;
-                    Ok(ConvertedNode::Blocks(vec![Block::List {
+                    let list = Block::List {
                         ordered: false,
                         start: None,
                         tight: false,
                         items,
-                    }]))
+                    };
+                    if block_depth(&list) > mapper.limits.max_nesting_depth {
+                        return Err(ReadError::NestingTooDeep {
+                            limit: mapper.limits.max_nesting_depth,
+                        });
+                    }
+                    Ok(ConvertedNode::Blocks(vec![list]))
                 }
                 "ol" => {
                     let mut start = None;
@@ -596,12 +607,18 @@ fn convert_node(
                     }
                     let items = list_items(children);
                     mapper.check_block_limit()?;
-                    Ok(ConvertedNode::Blocks(vec![Block::List {
+                    let list = Block::List {
                         ordered: true,
                         start,
                         tight: false,
                         items,
-                    }]))
+                    };
+                    if block_depth(&list) > mapper.limits.max_nesting_depth {
+                        return Err(ReadError::NestingTooDeep {
+                            limit: mapper.limits.max_nesting_depth,
+                        });
+                    }
+                    Ok(ConvertedNode::Blocks(vec![list]))
                 }
                 "li" => {
                     let checked = check_task_item(mapper.arena, handle);
@@ -753,7 +770,7 @@ fn convert_node(
                     };
                     Ok(ConvertedNode::Inlines(vec![Inline::Image {
                         target,
-                        alt: nfc(&alt),
+                        alt,
                         title: title.as_deref().and_then(nonempty),
                     }]))
                 }
@@ -919,6 +936,40 @@ fn convert_node(
     }
 }
 
+fn block_depth(block: &Block) -> u16 {
+    match block {
+        Block::Quote { blocks } => 1 + blocks_depth(blocks),
+        Block::List { items, .. } => {
+            1 + items
+                .iter()
+                .map(|item| blocks_depth(&item.blocks))
+                .max()
+                .unwrap_or(0)
+        }
+        Block::Table { head, body, .. } => {
+            1 + head
+                .iter()
+                .chain(body.iter())
+                .flat_map(|row| row.iter())
+                .map(|cell| blocks_depth(&cell.blocks))
+                .max()
+                .unwrap_or(0)
+        }
+        Block::Footnote { blocks, .. } => 1 + blocks_depth(blocks),
+        Block::Heading { .. }
+        | Block::Paragraph { .. }
+        | Block::Code { .. }
+        | Block::Math { .. }
+        | Block::Raw { .. }
+        | Block::PageBreak {}
+        | Block::Figure { .. } => 0,
+    }
+}
+
+fn blocks_depth(blocks: &[Block]) -> u16 {
+    blocks.iter().map(block_depth).max().unwrap_or(0)
+}
+
 fn blocks(
     mapper: &mut TreeMapper<'_>,
     children: Vec<ConvertedNode>,
@@ -938,12 +989,18 @@ fn blocks(
             ConvertedNode::ListItem(item) => {
                 flush_inlines(mapper, &mut pending_inlines, &mut blocks)?;
                 mapper.check_block_limit()?;
-                blocks.push(Block::List {
+                let list = Block::List {
                     ordered: false,
                     start: None,
                     tight: false,
                     items: vec![item],
-                });
+                };
+                if block_depth(&list) > mapper.limits.max_nesting_depth {
+                    return Err(ReadError::NestingTooDeep {
+                        limit: mapper.limits.max_nesting_depth,
+                    });
+                }
+                blocks.push(list);
             }
             ConvertedNode::TableRows(rows) => {
                 flush_inlines(mapper, &mut pending_inlines, &mut blocks)?;
@@ -1353,8 +1410,8 @@ fn parse_img_attrs(attrs: &[html5ever::Attribute]) -> (String, String, Option<St
         let local = &*attr.name.local;
         match local {
             "src" => src = attr.value.to_string(),
-            "alt" => alt = attr.value.to_string(),
-            "title" => title = Some(attr.value.to_string()),
+            "alt" => alt = nfc(&attr.value),
+            "title" => title = Some(nfc(&attr.value)),
             _ => {}
         }
     }
