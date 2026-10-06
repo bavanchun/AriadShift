@@ -6,8 +6,23 @@ AriadShift is an open-source, local-first document transformation platform in
 early development. Its goal is to turn documents into clean Markdown and
 structured data through a shared engine used by local and hosted interfaces.
 
-The current repository is a foundation: `ashift --version` works, but document
-conversion is not implemented yet.
+The current repository ships one local conversion route: Markdown to DOCX.
+
+## Convert Markdown to DOCX
+
+Convert `.md` or `.markdown` files with Pandoc 3.12 or newer in the supported
+3.x series:
+
+```sh
+just pandoc
+ashift convert notes.md --to docx
+```
+
+The default output is `notes.docx` beside the input. Use `-o` to choose another
+path and `--overwrite` to replace an existing destination. Stdout contains the
+output path; warnings are written to stderr. Press Ctrl-C to cancel a running
+conversion and clean up its temporary workspace. Set `ASHIFT_PANDOC` to select
+an existing Pandoc executable instead of installing the repository-pinned one.
 
 ## Development
 
