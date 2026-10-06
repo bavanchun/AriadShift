@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Engine protocol and IR revision"
-status: pending
+status: completed
 priority: P1
 effort: "13h"
 dependencies: [1, 2]
