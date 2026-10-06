@@ -84,12 +84,12 @@ Native Markdown parsing now, and native HTML parsing later, in `ariad-core` run 
 | serde / thiserror / clap / schemars / jiff / uuid | 1 / 2 / 4.6 / 1.2 / 0.2 / 1 | Common foundational utilities |
 | pdfium-render + PDFium | 0.9 + `chromium/8076` (bblanchon/pdfium-binaries, **non-V8** build) | PDF rendering, text extraction, images, metadata |
 | typst | 0.15 | IR → PDF |
-| rmcp | 3.5 | Official MCP SDK for Rust |
+| rmcp | **3.5.1** (`default-features = false`, `server`, `macros`, `transport-io`) | Official MCP SDK for Rust |
 | wasm-bindgen / wasm-pack | 0.2 / 0.15 | Build `ariad-wasm` |
 | jsonwebtoken | 11 | JWT verification from Better Auth |
 | tauri-specta | 1.0 | TS type generation for Tauri commands |
-| cargo-dist | 0.32 | Packaging and distribution for CLI |
 | comrak | **0.55.0** (`default-features = false`, `shortcodes`) | CommonMark/GFM Markdown reader in `ariad-core`; BSD-2-Clause |
+| html5ever | **0.40.1** (MIT OR Apache-2.0) | Native HTML reader in `ariad-core` |
 | process-wrap | **10.0.1** (`tokio1`, `process-group`, `job-object`) | Cross-platform engine process-tree control |
 | tokio-util | **0.7.19** | Bounded NDJSON line framing |
 | unicode-normalization | **0.1.25** | NFC normalization of prose text |
@@ -107,7 +107,7 @@ Native Markdown parsing now, and native HTML parsing later, in `ariad-core` run 
 
 | Component | Version | License | Role |
 |---|---|---|---|
-| Docling | 2.133 | MIT (weights: Apache-2.0 / CDLA-Permissive-2.0 / MIT) | Structural document parsing for PDF, images, DOCX/PPTX/XLSX (Heron layout, TableFormer) |
+| Docling | 2.134.0 | MIT (weights: Apache-2.0 / CDLA-Permissive-2.0 / MIT) | Structural document parsing for PDF, images, DOCX/PPTX/XLSX (Heron layout, TableFormer); OCR uses Docling's Tesseract CLI option (`TesseractCliOcrOptions`), not the `tesserocr` binding (no Windows wheel, bundles Tesseract 5.5.1, pulls in LGPL cysignals); Linux pack uses CPU-only PyTorch index |
 | Granite-Docling | 258M | Apache-2.0 | English complex layouts; ja/ar/zh are experimental; not used for Vietnamese |
 | RapidOCR + ONNX Runtime | 3.9.2 + 1.30.0 | Apache-2.0 / MIT | PP-OCRv6 OCR for English, Chinese, Japanese, and most Latin languages; never route Vietnamese here |
 | Tesseract + `tessdata_best` | 5.5.3 + `vie`/`eng`/`osd` | Apache-2.0 | Default OCR for Vietnamese and mixed Vietnamese-English |
@@ -188,7 +188,7 @@ ashift doctor                   # check environment
 ashift mcp                      # run MCP server over stdio
 ```
 
-The Phase 0 conversion command is `ashift convert <INPUT> --to <FORMAT> [-o <OUTPUT>] [--overwrite]`. It supports `md`/`markdown` → `docx`; the default output is `<input stem>.docx` beside the input.
+The Phase 0 conversion command is `ashift convert <INPUT> --to <FORMAT> [-o <OUTPUT>] [--overwrite]`. It supports `md`/`markdown` → `docx`; the default output is `<input stem>.docx` beside the input. `ashift mcp` confines file access to client roots plus `--allow-dir` paths; overwriting needs the server flag `--allow-overwrite`.
 
 | Exit code | Meaning |
 |---|---|
@@ -581,12 +581,13 @@ An unlimited value is represented by an absent field or `null` (`None` in Rust);
 | Structural metrics | `bench/` | Text CER/WER, heading tree distance, TEDS for tables, reading order |
 | Visual regression | Typst/LibreOffice → PDF → PDFium raster → SSIM | "faithful" profile routes |
 | Conformance | `schemas/engine-protocol.v1.json` | Protocol compliance across all engines |
-| Fuzzing | cargo-fuzz | Core readers, limit validation |
+| Fuzzing | cargo-fuzz 0.13.2 | Core readers, limit validation (stable Rust with `-s none`, Linux CI only) |
 | E2E | Playwright (web), WebDriver (Tauri) | Primary user journeys |
 
-- `bench/` generates `capabilities.json`, which is committed to the repository.
+- Bench lives in `bench/` as a uv workspace member: jiwer 4.0.0 (CER/WER), rapidfuzz, apted 1.0.3, and our own TEDS. It generates `capabilities.json`, which is committed to the repository.
 - The planner reads this file; the website's "Quality" page displays metrics directly from it.
 - Every PR modifying an engine re-runs the benchmark suite and **reports score differentials**.
+- Fuzzing runs via cargo-fuzz 0.13.2 on stable with `-s none`, Linux CI only; the `fuzz/` crate is excluded from the Cargo workspace and never distributed.
 - `cargo test --doc` runs alongside cargo-nextest because nextest does not run doctests.
 - DOCX goldens snapshot each fixture's sorted ZIP entry list and pretty-printed XML parts with insta; they hash template-derived XML parts and media. A shared `PANDOC_GOLDEN_VERSION` is asserted, and `SOURCE_DATE_EPOCH=1700000000` fixes timestamps.
 - Fixtures use only distributable public-domain, CC-BY, or generated documents; exclude CC-BY-SA, GPL test suites, and research-only or non-commercial datasets. `fixtures/manifest.toml` records each file's source and license.
@@ -625,11 +626,12 @@ An unlimited value is represented by an absent field or `null` (`None` in Rust);
 
 | Target | Tooling | Distribution Channels |
 |---|---|---|
-| CLI | cargo-dist | GitHub Releases, Homebrew tap, shell/PowerShell installers, `cargo binstall`, winget |
+| CLI | dist 0.33.0 | GitHub Releases, Homebrew tap, shell/PowerShell installers, `cargo binstall`, winget |
 | Desktop | Tauri bundler + `tauri-action` | Signed + notarized `.dmg`, signed `.msi`/NSIS, AppImage/deb/rpm, auto-updates |
 | Server | Docker buildx, multi-arch | GHCR; signed with cosign; SBOM |
 | Self-hosted | `infra/compose` | `docker compose up`: web, api, worker, postgres, seaweedfs |
 
+- CLI distribution uses dist 0.33.0. Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-pc-windows-msvc`. Installers: shell, PowerShell, Homebrew tap `bavanchun/homebrew-tap` with a run dependency on `pandoc`. cargo-binstall and winget (package identifier `VChun.AriadShift`, moniker `ashift`). The dist installer is fetched by exact version and checked against a recorded SHA-256 (`allow-dirty = ["ci"]`).
 - **Budgeted code-signing costs:** Apple Developer account ($99/year) and a Windows code-signing certificate (e.g., Azure Trusted Signing).
 
 ---
@@ -681,6 +683,19 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | TS-to-Rust Auth | JWT plugin + JWKS | Database session lookups on every request | Stateless, open standard, Axum verifies locally |
 | Task runner | just | Turborepo, Nx | Polyglot repo; a lightweight command runner suffices |
 | Engine isolation | Out-of-process + NDJSON protocol | Linking libraries directly into host process | Crashes and exploits cannot bring down the host application |
+| HTML reader | html5ever 0.40.1 with our own tree sink, fed in bounded chunks so a depth cap stops the parse | scraper, lol_html, tl, Pandoc for HTML input | WASM-safe, latest html5ever, no duplicate parser; html5ever's own stack makes deep nesting quadratic, so the cap must stop feeding, not just re-parent nodes. |
+| MCP file access | Client roots plus `--allow-dir`, canonicalized prefix checks, writes through capability handles, overwrite only with `--allow-overwrite`, hidden paths refused | Any user-readable path; overwrite on the agent's word | A prompt-injected agent must not read private files or destroy user files through the server. |
+| Bench | Python under `bench/` with jiwer, rapidfuzz, apted and an in-house TEDS | Packaged TEDS (GPL dependencies), Rust metric crates (stale) | Only permissive metrics libraries are available in Python. |
+| Fuzzing | cargo-fuzz on stable 1.99 with `-s none`, Linux CI | Nightly ASan on every PR, Windows fuzzing | No second toolchain on PRs. Our crates forbid `unsafe`, but parse-path dependencies (html5ever, serde_stacker) do not; sanitizer runs are covered by the validation decision recorded in the plan. |
+| Linux release binaries | musl, static | glibc builds on ubuntu-26.04 or 24.04 | No glibc floor for users. |
+| Release supply chain | Pinned actions through `[dist.github-action-commits]`, SHA-256-verified dist installer; `brew update` accepted as the only unpinned step and run in a job without the tap token; release secrets are fine-grained tokens scoped to one repo, stored in a `release` environment limited to `v*` tags | Unverified `curl \| sh`; classic PATs as repository secrets | Keeps the pinning policy except where Homebrew offers no pin, and keeps a compromised step from reaching a write token. |
+| EPUB determinism | Pandoc `--sandbox`, an explicit `identifier` (UUIDv5 from the input hash), a title fallback to the file stem, and a host rewrite of the `content.opf` dates | Running without the sandbox for reproducible dates | Keeps the sandbox boundary and produces valid, reproducible EPUB3. |
+| OCR binding | Tesseract CLI through Docling | `tesserocr` | Covers Windows, uses one Tesseract version, avoids LGPL. |
+| Raw HTML in HTML output | `ammonia` 4.2.1 allow-list sanitizer (same html5ever ^0.40), links through the shared scheme allow-list | Passing raw HTML through; dropping it all; escaping it as text | Keeps harmless formatting (`kbd`, `details`, `sub`) while no script, handler or unsafe URL reaches the output. |
+| Markdown output images | Embedded `data:` URIs | Sidecar asset directory; dropping images | One file keeps single-file atomic promotion and loses no image. |
+| Sanitizer fuzzing | A nightly scheduled CI job on a date-pinned Rust nightly, running cargo-fuzz with AddressSanitizer on the in-process parsers; never used for builds or releases | No sanitizer runs | Parse-path dependencies contain `unsafe`; this is the only exception to the no-pre-release-toolchain policy, and AGENTS.md "Versions" names it. |
+| crates.io | Publish `ariad-core`, `ariad-host` and `ariad-cli` from a CI job in the `release` environment, in dependency order, with a scoped token | Not publishing (binstall `--git` only) | Gives `cargo binstall ariad-cli` and `cargo install ariad-cli`; the crate names keep the `ariad-*` prefix. |
+| winget identifier | `VChun.AriadShift`, moniker `ashift` | `bavanchun.AriadShift`, `AriadShift.AriadShift` | Matches the copyright holder in LICENSE and NOTICE. |
 
 ---
 
