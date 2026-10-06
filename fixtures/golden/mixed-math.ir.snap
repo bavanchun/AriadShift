@@ -1,0 +1,68 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/mixed-math.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Measuring a Shared Path",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The walking estimate is ",
+          "type": "text"
+        },
+        {
+          "display": false,
+          "tex": "d = vt",
+          "type": "math"
+        },
+        {
+          "text": ". Với từng đoạn đường, ta có thể tính tổng như sau:",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "display": true,
+          "tex": "\nD = \\sum_{i=1}^{n} d_i\n",
+          "type": "math"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "content": [
+        {
+          "text": "A slower pace changes the total time, not the map scale.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

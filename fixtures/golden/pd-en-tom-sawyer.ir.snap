@@ -1,0 +1,30 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/pd-en-tom-sawyer.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "“Tom!” No answer. “TOM!” No answer. “What’s gone with that boy, I wonder? You TOM!”",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

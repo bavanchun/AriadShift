@@ -1,0 +1,81 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/en-task-list.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Before the Repair Café Opens",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "items": [
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Set out the work mats",
+                  "type": "text"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "checked": true
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Test the lamps",
+                  "type": "text"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "checked": false
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Leave a clear path to the door",
+                  "type": "text"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "checked": false
+        }
+      ],
+      "ordered": false,
+      "start": null,
+      "tight": true,
+      "type": "list"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

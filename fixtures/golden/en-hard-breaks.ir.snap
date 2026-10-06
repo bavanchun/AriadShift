@@ -1,0 +1,47 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/en-hard-breaks.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Two Lines on the Noticeboard",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The west door opens at nine.",
+          "type": "text"
+        },
+        {
+          "type": "line_break"
+        },
+        {
+          "text": "Bring a clean cloth for the workbench.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

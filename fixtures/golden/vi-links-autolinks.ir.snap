@@ -1,0 +1,70 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/vi-links-autolinks.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Ghi chú nguồn bản đồ",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "Bản ghi mở tại ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "https://example.org/river-survey",
+              "type": "text"
+            }
+          ],
+          "title": null,
+          "type": "link",
+          "url": "https://example.org/river-survey"
+        },
+        {
+          "text": ". Tên tuyến được đối chiếu với ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "sổ địa danh",
+              "type": "text"
+            }
+          ],
+          "title": null,
+          "type": "link",
+          "url": "https://example.org/place-names"
+        },
+        {
+          "text": ".",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

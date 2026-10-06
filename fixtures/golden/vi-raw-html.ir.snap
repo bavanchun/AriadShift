@@ -1,0 +1,55 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/vi-raw-html.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Bảng chỉ dẫn",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "format": "html",
+          "text": "<span lang=\"vi\">",
+          "type": "raw"
+        },
+        {
+          "text": "Lối xuống bến ở phía bên trái.",
+          "type": "text"
+        },
+        {
+          "format": "html",
+          "text": "</span>",
+          "type": "raw"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "format": "html",
+      "text": "<div data-route=\"river\">Đoạn đường này đang được sửa.</div>",
+      "type": "raw"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

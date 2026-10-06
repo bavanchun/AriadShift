@@ -1,0 +1,81 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/vi-ordered-start.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Trình tự kiểm tra bản đồ",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "items": [
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Ghi ngày khảo sát",
+                  "type": "text"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Đối chiếu tên đường",
+                  "type": "text"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        },
+        {
+          "blocks": [
+            {
+              "content": [
+                {
+                  "text": "Đánh dấu chỗ chưa chắc chắn",
+                  "type": "text"
+                }
+              ],
+              "type": "paragraph"
+            }
+          ],
+          "checked": null
+        }
+      ],
+      "ordered": true,
+      "start": 7,
+      "tight": true,
+      "type": "list"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

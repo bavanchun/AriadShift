@@ -1,0 +1,82 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/en-footnotes.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Notes from the Archive",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "text": "The map was redrawn after the flood.",
+          "type": "text"
+        },
+        {
+          "id": "date",
+          "type": "footnote_ref"
+        },
+        {
+          "text": " A pencil mark near the bridge was kept.",
+          "type": "text"
+        },
+        {
+          "id": "mark",
+          "type": "footnote_ref"
+        }
+      ],
+      "type": "paragraph"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "The river reached the lower stair in late May.",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        }
+      ],
+      "id": "date",
+      "type": "footnote"
+    },
+    {
+      "blocks": [
+        {
+          "content": [
+            {
+              "text": "The mark was not present on the earlier copy.",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        }
+      ],
+      "id": "mark",
+      "type": "footnote"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

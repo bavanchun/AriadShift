@@ -1,0 +1,808 @@
+{
+  "$id": "https://ariadshift.ariadnev.com/schemas/ir.v0.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Document",
+  "description": "A format-independent document.",
+  "type": "object",
+  "properties": {
+    "assets": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Asset"
+      },
+      "default": {}
+    },
+    "body": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Block"
+      }
+    },
+    "layout": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LayoutIndex"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "meta": {
+      "$ref": "#/$defs/Metadata",
+      "default": {
+        "authors": [],
+        "date": null,
+        "keywords": [],
+        "language": null,
+        "source_format": null,
+        "subject": null,
+        "title": null
+      }
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Provenance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "version": {
+      "type": "string",
+      "default": "ariad-ir/0"
+    }
+  },
+  "$defs": {
+    "Alignment": {
+      "type": "string",
+      "enum": [
+        "default",
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    "Asset": {
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "media_type",
+        "bytes"
+      ]
+    },
+    "AssetRef": {
+      "description": "An asset or external URL referenced by an image.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "asset"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "href": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "url"
+            }
+          },
+          "required": [
+            "type",
+            "href"
+          ]
+        }
+      ]
+    },
+    "Block": {
+      "description": "The document's semantic content.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "level": {
+              "type": "integer",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "heading"
+            }
+          },
+          "required": [
+            "type",
+            "level",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "paragraph"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "lang": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "code"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "display": {
+              "type": "boolean"
+            },
+            "tex": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "math"
+            }
+          },
+          "required": [
+            "type",
+            "tex",
+            "display"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Block"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "quote"
+            }
+          },
+          "required": [
+            "type",
+            "blocks"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "page_break"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ListItem"
+              }
+            },
+            "ordered": {
+              "type": "boolean"
+            },
+            "start": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "tight": {
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "list"
+            }
+          },
+          "required": [
+            "type",
+            "ordered",
+            "tight",
+            "items"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "body": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/TableCell"
+                }
+              }
+            },
+            "caption": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ColumnSpec"
+              }
+            },
+            "head": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/TableCell"
+                }
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "table"
+            }
+          },
+          "required": [
+            "type",
+            "columns",
+            "head",
+            "body"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "asset": {
+              "$ref": "#/$defs/AssetRef"
+            },
+            "caption": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "figure"
+            }
+          },
+          "required": [
+            "type",
+            "asset",
+            "caption"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "blocks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Block"
+              }
+            },
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "footnote"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "blocks"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "format": {
+              "$ref": "#/$defs/RawFormat"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "raw"
+            }
+          },
+          "required": [
+            "type",
+            "format",
+            "text"
+          ]
+        }
+      ]
+    },
+    "ColumnSpec": {
+      "type": "object",
+      "properties": {
+        "align": {
+          "$ref": "#/$defs/Alignment"
+        }
+      },
+      "required": [
+        "align"
+      ]
+    },
+    "Format": {
+      "description": "A format supported by the core registry.",
+      "type": "string",
+      "enum": [
+        "markdown",
+        "html",
+        "docx",
+        "ariad_ir_json",
+        "pandoc_json"
+      ]
+    },
+    "Inline": {
+      "description": "A span of inline content.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "text"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "emph"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "strong"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "strikeout"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "superscript"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "subscript"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "code"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "content": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "link"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url",
+            "content"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "alt": {
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/$defs/AssetRef"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "image"
+            }
+          },
+          "required": [
+            "type",
+            "target",
+            "alt"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "soft_break"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "line_break"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "display": {
+              "type": "boolean"
+            },
+            "tex": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "math"
+            }
+          },
+          "required": [
+            "type",
+            "tex",
+            "display"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "footnote_ref"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "format": {
+              "$ref": "#/$defs/RawFormat"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "raw"
+            }
+          },
+          "required": [
+            "type",
+            "format",
+            "text"
+          ]
+        }
+      ]
+    },
+    "LayoutIndex": {
+      "description": "Optional layout hints, keyed by a stable extension identifier.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "ListItem": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "checked": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "blocks"
+      ]
+    },
+    "Metadata": {
+      "description": "User-facing document metadata.",
+      "type": "object",
+      "properties": {
+        "authors": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "keywords": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "language": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "source_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Format"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "subject": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      }
+    },
+    "Provenance": {
+      "description": "Optional source and processing metadata, keyed by a stable extension identifier.",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "RawFormat": {
+      "description": "Formats permitted for raw passthrough blocks and inlines.",
+      "type": "string",
+      "enum": [
+        "html",
+        "tex"
+      ]
+    },
+    "TableCell": {
+      "type": "object",
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "colspan": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "rowspan": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "rowspan",
+        "colspan",
+        "blocks"
+      ]
+    }
+  }
+}

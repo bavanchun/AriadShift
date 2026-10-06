@@ -1,0 +1,75 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+input_file: fixtures/md/en-emphasis-strike.md
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "A Reminder",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Record",
+              "type": "text"
+            }
+          ],
+          "type": "emph"
+        },
+        {
+          "text": " the bridge before the route ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "turns east",
+              "type": "text"
+            }
+          ],
+          "type": "strong"
+        },
+        {
+          "text": ". ",
+          "type": "text"
+        },
+        {
+          "content": [
+            {
+              "text": "Ignore the old water mark",
+              "type": "text"
+            }
+          ],
+          "type": "strikeout"
+        },
+        {
+          "text": "; it still helps.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}
