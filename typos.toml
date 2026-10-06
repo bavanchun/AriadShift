@@ -6,6 +6,13 @@ locale = "en"
 Ba = "Ba"
 Nam = "Nam"
 OER = "OER"
+# EPUB package document (content.opf) and the Python CA bundle package.
+opf = "opf"
+certifi = "certifi"
+
+[default.extend-identifiers]
+# Plural of PNG; without this the case split reads it as "PN" + "Gs".
+PNGs = "PNGs"
 
 [files]
 extend-exclude = [
