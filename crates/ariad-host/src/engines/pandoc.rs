@@ -11,8 +11,9 @@ use std::{
 };
 
 use ariad_core::{
+    json_depth::{json_depth_budget_for_nesting, prescan_json_depth},
     limits::Limits,
-    pandoc::from_ir,
+    pandoc::{ast::Pandoc, from_ir, to_ir},
     protocol::{
         EngineError, ErrorCode, Event, Input, Output, PROTOCOL, Request, RouteCapability,
         ToolAvailability, ToolStatus,
@@ -20,7 +21,7 @@ use ariad_core::{
 };
 use serde::Deserialize;
 
-use crate::{ir_io, pandoc_bin};
+use crate::{ir_io, media, pandoc_bin};
 
 const MAX_REQUEST_LINE_BYTES: usize = 1 << 20;
 const STDERR_TAIL_BYTES: usize = 64 * 1024;
@@ -45,7 +46,7 @@ impl EngineFailure {
     const fn unsupported_route() -> Self {
         Self::new(
             ErrorCode::UnsupportedRoute,
-            "Pandoc supports AriadShift IR JSON to DOCX conversion.",
+            "Pandoc supports IR JSON to DOCX, and DOCX or EPUB to IR JSON conversion.",
         )
     }
 
@@ -131,31 +132,6 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
         } => {
             let workspace =
                 validate_convert_request(&protocol, &input, &req_output, &work_dir, &limits)?;
-            let input_file = File::open(&input.path).map_err(|_| EngineFailure::io())?;
-            let document =
-                ir_io::read(BufReader::new(input_file), &limits).map_err(|err| match err {
-                    ir_io::ReadError::ByteLimitExceeded { .. }
-                    | ir_io::ReadError::DepthExceeded(_)
-                    | ir_io::ReadError::BlockLimitExceeded { .. } => {
-                        EngineFailure::limit_exceeded()
-                    }
-                    ir_io::ReadError::Io(_) => EngineFailure::io(),
-                    ir_io::ReadError::Json(_) => EngineFailure::invalid_request(),
-                })?;
-            let mapped = from_ir(&document);
-
-            for warning in mapped.warnings {
-                let code =
-                    serde_json::to_string(&warning.code).map_err(|_| EngineFailure::failure())?;
-                emit(
-                    output,
-                    Event::Warning {
-                        code: format!("ir_{}", code.trim_matches('"')),
-                        message: warning.message,
-                    },
-                )
-                .map_err(|_| EngineFailure::io())?;
-            }
 
             let binary = pandoc_bin::locate().map_err(|error| match error {
                 pandoc_bin::PandocBinaryError::Missing => {
@@ -167,44 +143,171 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 ),
             })?;
 
-            let output_path = Path::new(&req_output.dir).join("document.docx");
-            let log_path = workspace.join("log").join("pandoc-log.json");
-            let pandoc_json =
-                serde_json::to_vec(&mapped.pandoc).map_err(|_| EngineFailure::failure())?;
-            run_pandoc(
-                &binary.path,
-                &limits,
-                &work_dir,
-                &workspace,
-                &log_path,
-                &output_path,
-                &pandoc_json,
-            )?;
+            if input.format == "ariad-ir+json" && req_output.format == "docx" {
+                let input_file = File::open(&input.path).map_err(|_| EngineFailure::io())?;
+                let document =
+                    ir_io::read(BufReader::new(input_file), &limits).map_err(|err| match err {
+                        ir_io::ReadError::ByteLimitExceeded { .. }
+                        | ir_io::ReadError::DepthExceeded(_)
+                        | ir_io::ReadError::BlockLimitExceeded { .. } => {
+                            EngineFailure::limit_exceeded()
+                        }
+                        ir_io::ReadError::Io(_) => EngineFailure::io(),
+                        ir_io::ReadError::Json(_) => EngineFailure::invalid_request(),
+                    })?;
+                let mapped = from_ir(&document);
 
-            for warning in pandoc_log_warnings(&log_path)? {
-                emit(output, warning).map_err(|_| EngineFailure::io())?;
+                for warning in mapped.warnings {
+                    let code = serde_json::to_string(&warning.code)
+                        .map_err(|_| EngineFailure::failure())?;
+                    emit(
+                        output,
+                        Event::Warning {
+                            code: format!("ir_{}", code.trim_matches('"')),
+                            message: warning.message,
+                        },
+                    )
+                    .map_err(|_| EngineFailure::io())?;
+                }
+
+                let output_path = Path::new(&req_output.dir).join("document.docx");
+                let log_path = workspace.join("log").join("pandoc-log.json");
+                let pandoc_json =
+                    serde_json::to_vec(&mapped.pandoc).map_err(|_| EngineFailure::failure())?;
+                run_pandoc(
+                    &binary.path,
+                    &limits,
+                    &work_dir,
+                    &workspace,
+                    &log_path,
+                    &output_path,
+                    &pandoc_json,
+                )?;
+
+                for warning in pandoc_log_warnings(&log_path)? {
+                    emit(output, warning).map_err(|_| EngineFailure::io())?;
+                }
+                if !output_path.is_file() {
+                    return Err(EngineFailure::failure());
+                }
+                emit(
+                    output,
+                    Event::Artifact {
+                        path: output_path.to_string_lossy().into_owned(),
+                        format: "docx".to_owned(),
+                    },
+                )
+                .map_err(|_| EngineFailure::io())?;
+                emit(
+                    output,
+                    Event::Result {
+                        ok: true,
+                        metrics: None,
+                        error: None,
+                    },
+                )
+                .map_err(|_| EngineFailure::io())?;
+                Ok(())
+            } else if (input.format == "docx" || input.format == "epub")
+                && req_output.format == "ariad-ir+json"
+            {
+                let output_path = Path::new(&req_output.dir).join("document.ir.json");
+                let log_path = workspace.join("log").join("pandoc-log.json");
+                let input_path = Path::new(&input.path);
+
+                let stdout_bytes = run_pandoc_reader(
+                    &binary.path,
+                    &limits,
+                    &work_dir,
+                    &workspace,
+                    &log_path,
+                    input_path,
+                    &input.format,
+                )?;
+
+                let depth_budget = json_depth_budget_for_nesting(limits.max_nesting_depth);
+                prescan_json_depth(&stdout_bytes, depth_budget)
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+
+                let pandoc_ast: Pandoc =
+                    serde_json::from_slice(&stdout_bytes).map_err(|_| EngineFailure::failure())?;
+
+                let mapped = to_ir(&pandoc_ast, &limits).map_err(|err| match err {
+                    ariad_core::pandoc::to_ir::MapError::UnsupportedApiVersion { .. } => {
+                        EngineFailure::new(
+                            ErrorCode::ToolVersion,
+                            "Pandoc API version is unsupported.",
+                        )
+                    }
+                    ariad_core::pandoc::to_ir::MapError::NestingTooDeep { .. }
+                    | ariad_core::pandoc::to_ir::MapError::TooManyBlocks { .. } => {
+                        EngineFailure::limit_exceeded()
+                    }
+                    ariad_core::pandoc::to_ir::MapError::InvalidLimits(_) => {
+                        EngineFailure::invalid_request()
+                    }
+                })?;
+
+                for warning in mapped.warnings {
+                    let code = serde_json::to_string(&warning.code)
+                        .map_err(|_| EngineFailure::failure())?;
+                    emit(
+                        output,
+                        Event::Warning {
+                            code: format!("ir_{}", code.trim_matches('"')),
+                            message: warning.message,
+                        },
+                    )
+                    .map_err(|_| EngineFailure::io())?;
+                }
+
+                let mut document = mapped.document;
+                let media_warnings =
+                    media::ingest_media(&mut document, Path::new(&work_dir), &limits)
+                        .map_err(|_| EngineFailure::failure())?;
+
+                for warning in media_warnings {
+                    let code = serde_json::to_string(&warning.code)
+                        .map_err(|_| EngineFailure::failure())?;
+                    emit(
+                        output,
+                        Event::Warning {
+                            code: format!("ir_{}", code.trim_matches('"')),
+                            message: warning.message,
+                        },
+                    )
+                    .map_err(|_| EngineFailure::io())?;
+                }
+
+                for warning in pandoc_log_warnings(&log_path)? {
+                    emit(output, warning).map_err(|_| EngineFailure::io())?;
+                }
+
+                let out_file = File::create(&output_path).map_err(|_| EngineFailure::io())?;
+                serde_json::to_writer_pretty(out_file, &document)
+                    .map_err(|_| EngineFailure::failure())?;
+
+                emit(
+                    output,
+                    Event::Artifact {
+                        path: output_path.to_string_lossy().into_owned(),
+                        format: "ariad-ir+json".to_owned(),
+                    },
+                )
+                .map_err(|_| EngineFailure::io())?;
+                emit(
+                    output,
+                    Event::Result {
+                        ok: true,
+                        metrics: None,
+                        error: None,
+                    },
+                )
+                .map_err(|_| EngineFailure::io())?;
+                Ok(())
+            } else {
+                Err(EngineFailure::unsupported_route())
             }
-            if !output_path.is_file() {
-                return Err(EngineFailure::failure());
-            }
-            emit(
-                output,
-                Event::Artifact {
-                    path: output_path.to_string_lossy().into_owned(),
-                    format: "docx".to_owned(),
-                },
-            )
-            .map_err(|_| EngineFailure::io())?;
-            emit(
-                output,
-                Event::Result {
-                    ok: true,
-                    metrics: None,
-                    error: None,
-                },
-            )
-            .map_err(|_| EngineFailure::io())?;
-            Ok(())
         }
         Request::Describe { protocol, job: _ } => {
             if protocol != PROTOCOL {
@@ -261,7 +364,10 @@ fn validate_convert_request(
     if protocol != PROTOCOL {
         return Err(EngineFailure::invalid_request());
     }
-    if input.format != "ariad-ir+json" || output.format != "docx" {
+    let is_writer = input.format == "ariad-ir+json" && output.format == "docx";
+    let is_reader =
+        (input.format == "docx" || input.format == "epub") && output.format == "ariad-ir+json";
+    if !is_writer && !is_reader {
         return Err(EngineFailure::unsupported_route());
     }
     limits
@@ -378,6 +484,122 @@ fn run_pandoc(
         return Err(pandoc_failure(status, &stderr_tail));
     }
     Ok(())
+}
+
+fn run_pandoc_reader(
+    pandoc_path: &Path,
+    limits: &Limits,
+    work_dir: &str,
+    workspace: &Path,
+    log_path: &Path,
+    input_path: &Path,
+    input_format: &str,
+) -> Result<Vec<u8>, EngineFailure> {
+    let mut command = Command::new(pandoc_path);
+    let rts_cap_mb = match limits.max_memory_mb {
+        Some(mb) => mb,
+        None => (limits.max_decompressed_bytes / (1024 * 1024)).max(512) as u32,
+    };
+    command
+        .arg("+RTS")
+        .arg(format!("-M{rts_cap_mb}M"))
+        .arg("-RTS");
+
+    let mut log_argument = OsString::from("--log=");
+    log_argument.push(log_path.as_os_str());
+
+    let media_dir = Path::new(work_dir).join("media");
+    let mut extract_media_arg = OsString::from("--extract-media=");
+    extract_media_arg.push(media_dir.as_os_str());
+
+    command
+        .arg("--sandbox")
+        .arg(log_argument)
+        .args(["-f", input_format, "-t", "json"])
+        .arg(extract_media_arg)
+        .arg(input_path)
+        .current_dir(work_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_clear()
+        .env("TMPDIR", workspace.join("tmp"))
+        .env("TMP", workspace.join("tmp"))
+        .env("TEMP", workspace.join("tmp"));
+    if let Some(path) = env::var_os("PATH") {
+        command.env("PATH", path);
+    }
+    #[cfg(windows)]
+    if let Some(system_root) = env::var_os("SYSTEMROOT") {
+        command.env("SYSTEMROOT", system_root);
+    }
+
+    let timeout = limits
+        .timeout_s
+        .and_then(|seconds| seconds.checked_sub(PANDOC_TIMEOUT_MARGIN_SECONDS))
+        .map(Duration::from_secs);
+    let deadline = timeout.and_then(|duration| Instant::now().checked_add(duration));
+    let mut child = command
+        .spawn()
+        .map_err(|_| EngineFailure::new(ErrorCode::ToolMissing, PANDOC_INSTALL_HINT))?;
+
+    let mut stdout = child.stdout.take().ok_or_else(EngineFailure::io)?;
+    let mut stderr = child.stderr.take().ok_or_else(EngineFailure::io)?;
+    let max_stdout_bytes = limits.max_ir_json_bytes;
+
+    let stdout_thread = thread::spawn(move || drain_bounded_stdout(&mut stdout, max_stdout_bytes));
+    let stderr_thread = thread::spawn(move || drain_stderr(&mut stderr));
+
+    let (status, timed_out) = loop {
+        if let Some(status) = child.try_wait().map_err(|_| EngineFailure::io())? {
+            break (status, false);
+        }
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            let _ = child.kill();
+            let status = child.wait().map_err(|_| EngineFailure::io())?;
+            break (status, true);
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+
+    let stdout_result = stdout_thread.join().map_err(|_| EngineFailure::io())?;
+    let stderr_tail = stderr_thread
+        .join()
+        .map_err(|_| EngineFailure::io())?
+        .map_err(|_| EngineFailure::io())?;
+
+    if timed_out {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Pandoc exceeded the conversion time limit.",
+        ));
+    }
+    if !status.success() {
+        if memory_limit_was_hit(&stderr_tail) {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Pandoc exceeded the configured memory limit.",
+            ));
+        }
+        return Err(pandoc_failure(status, &stderr_tail));
+    }
+    stdout_result
+}
+
+fn drain_bounded_stdout(stdout: &mut impl Read, max_bytes: u64) -> Result<Vec<u8>, EngineFailure> {
+    let mut bytes = Vec::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let n = stdout.read(&mut buffer).map_err(|_| EngineFailure::io())?;
+        if n == 0 {
+            break;
+        }
+        if (bytes.len() as u64).saturating_add(n as u64) > max_bytes {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        bytes.extend_from_slice(&buffer[..n]);
+    }
+    Ok(bytes)
 }
 
 fn drain_stderr(stderr: &mut impl Read) -> io::Result<String> {
@@ -502,5 +724,135 @@ mod tests {
     fn engine_failure_messages_do_not_include_document_content() {
         let failure = EngineFailure::failure();
         assert_eq!(failure.message, "Pandoc could not convert the document.");
+    }
+
+    #[test]
+    fn describe_reports_docx_and_epub_reader_routes() {
+        use ariad_core::protocol::{PROTOCOL, Request};
+        use std::io::Cursor;
+
+        let request = Request::Describe {
+            protocol: PROTOCOL.to_owned(),
+            job: "test-describe".to_owned(),
+        };
+        let input_bytes = serde_json::to_vec(&request).unwrap();
+        let mut output_bytes = Vec::new();
+
+        let exit = super::serve(Cursor::new(input_bytes), &mut output_bytes);
+        assert_eq!(exit, std::process::ExitCode::SUCCESS);
+
+        let lines = std::str::from_utf8(&output_bytes)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2); // Capabilities and Result
+
+        let caps: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(caps["type"], "capabilities");
+        let routes = caps["routes"].as_array().unwrap();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0]["input"], "ariad-ir+json");
+        assert_eq!(routes[0]["output"], "docx");
+    }
+
+    #[test]
+    fn convert_rejects_unsupported_route() {
+        use ariad_core::limits::Limits;
+        use ariad_core::protocol::{Input, Output, PROTOCOL, Request};
+        use std::io::Cursor;
+
+        let request = Request::Convert {
+            protocol: PROTOCOL.to_owned(),
+            job: "test-unsupported".to_owned(),
+            input: Input {
+                path: "/work/in/doc.pdf".to_owned(),
+                format: "pdf".to_owned(),
+            },
+            output: Output {
+                dir: "/work/out".to_owned(),
+                format: "docx".to_owned(),
+            },
+            work_dir: "/work/tmp".to_owned(),
+            options: std::collections::BTreeMap::new(),
+            limits: Limits::local(),
+        };
+        let mut input_bytes = serde_json::to_vec(&request).unwrap();
+        input_bytes.push(b'\n');
+        let mut output_bytes = Vec::new();
+
+        let exit = super::serve(Cursor::new(input_bytes), &mut output_bytes);
+        assert_ne!(exit, std::process::ExitCode::SUCCESS);
+
+        let result_line = std::str::from_utf8(&output_bytes)
+            .unwrap()
+            .lines()
+            .last()
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_str(result_line).unwrap();
+        assert_eq!(result["type"], "result");
+        assert_eq!(result["ok"], false);
+        assert_eq!(result["error"]["code"], "unsupported_route");
+    }
+
+    #[test]
+    fn convert_docx_to_ir_via_engine() {
+        use crate::workspace::Workspace;
+        use ariad_core::limits::Limits;
+        use ariad_core::protocol::{Input, Output, PROTOCOL, Request};
+        use std::{io::Cursor, path::Path};
+
+        let mut workspace = Workspace::new().unwrap();
+        let input_path = workspace.input_dir().join("test.docx");
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("fixtures/docx/vi-styled-report.docx");
+        if !fixture_path.is_file() {
+            return;
+        }
+        std::fs::copy(&fixture_path, &input_path).unwrap();
+
+        let request = Request::Convert {
+            protocol: PROTOCOL.to_owned(),
+            job: "test-docx-to-ir".to_owned(),
+            input: Input {
+                path: input_path.to_string_lossy().into_owned(),
+                format: "docx".to_owned(),
+            },
+            output: Output {
+                dir: workspace.output_dir().to_string_lossy().into_owned(),
+                format: "ariad-ir+json".to_owned(),
+            },
+            work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+            options: std::collections::BTreeMap::new(),
+            limits: Limits::local(),
+        };
+
+        let mut input_bytes = serde_json::to_vec(&request).unwrap();
+        input_bytes.push(b'\n');
+        let mut output_bytes = Vec::new();
+
+        let exit = super::serve(Cursor::new(input_bytes), &mut output_bytes);
+        assert_eq!(exit, std::process::ExitCode::SUCCESS);
+
+        let lines = std::str::from_utf8(&output_bytes)
+            .unwrap()
+            .lines()
+            .collect::<Vec<_>>();
+        let result_line = lines.last().unwrap();
+        let result: serde_json::Value = serde_json::from_str(result_line).unwrap();
+        assert_eq!(result["type"], "result");
+        assert_eq!(result["ok"], true);
+
+        let out_doc_path = workspace.output_dir().join("document.ir.json");
+        assert!(out_doc_path.is_file());
+
+        let doc: ariad_core::ir::Document =
+            serde_json::from_reader(std::fs::File::open(&out_doc_path).unwrap()).unwrap();
+        assert!(!doc.body.is_empty());
+
+        let _ = workspace.close();
     }
 }
