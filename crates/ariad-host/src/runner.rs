@@ -8,7 +8,10 @@ use std::{
     time::Duration,
 };
 
-use ariad_core::protocol::{EngineError, ErrorCode, Event, Request};
+use ariad_core::{
+    limits::Limits,
+    protocol::{EngineError, ErrorCode, Event, PROTOCOL, Request},
+};
 #[cfg(windows)]
 use process_wrap::tokio::JobObject;
 #[cfg(unix)]
@@ -106,6 +109,42 @@ where
         cancel,
         sink,
     ))
+}
+
+/// Queries an engine's capabilities by executing a `describe` request.
+pub fn describe(
+    program: &Path,
+    args: &[OsString],
+    cancel: CancellationToken,
+) -> Result<Event, RunError> {
+    let request = Request::Describe {
+        protocol: PROTOCOL.to_owned(),
+        job: format!("describe-{}", std::process::id()),
+    };
+    let mut capabilities = None;
+    run(program, args, &request, cancel, |event| {
+        if let Event::Capabilities { .. } = &event {
+            capabilities = Some(event);
+        }
+    })?;
+    capabilities.ok_or(RunError::ProtocolViolation(
+        "engine did not emit a capabilities event",
+    ))
+}
+
+/// Refuses a request that specifies a memory limit if the engine cannot enforce it.
+pub fn check_memory_limit_support(
+    enforces_memory_limit: bool,
+    limits: &Limits,
+) -> Result<(), RunError> {
+    if limits.max_memory_mb.is_some() && !enforces_memory_limit {
+        return Err(RunError::EngineFailed {
+            code: ErrorCode::LimitExceeded,
+            message: "Engine does not enforce memory limits; request cannot specify max_memory_mb."
+                .to_owned(),
+        });
+    }
+    Ok(())
 }
 
 async fn run_async<S>(
