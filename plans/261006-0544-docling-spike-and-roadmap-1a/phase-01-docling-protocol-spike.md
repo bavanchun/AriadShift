@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Docling protocol spike"
-status: pending
+status: completed
 priority: P1
 effort: "12h"
 dependencies: []
