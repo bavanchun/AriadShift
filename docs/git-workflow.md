@@ -9,7 +9,7 @@ How changes move into this repository. It applies to people and AI agents alike.
   - `main` is the stable branch. It receives `dev` only through a promotion, and urgent fixes through a hotfix (see [Promotion and hotfixes](#promotion-and-hotfixes)). Release tags (`v*`) are cut on `main` only.
 - Both must always build, and `just ci` must stay green on Linux, macOS and Windows.
 - Small, verified steps land directly on `dev`. Use a short-lived branch from `dev` and a pull request into `dev` when you want CI to pass before the change merges: a risky refactor, a toolchain or CI change, or anything you cannot verify on your own OS.
-- Branch names follow `<type>/<short-kebab-topic>`, for example `feat/markdown-reader`, `fix/windows-temp-cleanup` or `ci/pin-actions`. Delete the branch after it merges.
+- Branch names follow `<type>/<short-kebab-topic>`, for example `feat/markdown-reader`, `fix/windows-temp-cleanup` or `ci/pin-actions`. Delete the branch after it merges with `gh pr merge --rebase --delete-branch`. The repository does not delete head branches automatically, because that would also delete `dev` when a promotion merges.
 - GitHub's default branch stays `main`, so always pass the base explicitly: `gh pr create --base dev`.
 - Never force-push `main` or `dev`, and never rewrite history that has already been pushed.
 
@@ -111,7 +111,7 @@ When you use a branch:
 
 ## Promotion and hotfixes
 
-- **Promotion.** When `dev` is stable (CI green on all three OSes, no known regression) and the maintainer agrees, open a pull request from `dev` into `main` titled `chore: promote dev to main`. Merge it with a merge commit (`gh pr merge --merge`), never squash or rebase, so the promoted commits keep their SHAs and the next promotion stays a clean merge.
+- **Promotion.** When `dev` is stable (CI green on all three OSes, no known regression) and the maintainer agrees, open a pull request from `dev` into `main` titled `chore: promote dev to main`. Merge it with a merge commit (`gh pr merge --merge`, never with `--delete-branch`), never squash or rebase, so the promoted commits keep their SHAs and the next promotion stays a clean merge. Afterwards `dev` and `main` hold the same tree.
 - **Release.** Bump the version on `dev` through the usual flow, promote, then tag `vX.Y.Z` on the resulting `main` commit. The release workflow runs only from that tag.
 - **Hotfix.** Branch `fix/<topic>` from `main`, open the pull request into `main`, and merge it once CI is green. Then merge `main` back into `dev` (`git switch dev && git merge main`, then push) so the fix is not lost at the next promotion.
 - Promotions, hotfixes into `main` and tags are outward-facing. Agents perform them only on the maintainer's explicit go-ahead for that action.
