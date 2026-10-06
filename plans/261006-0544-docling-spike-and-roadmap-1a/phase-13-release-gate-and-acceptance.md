@@ -17,19 +17,19 @@ Stop for the user's go-ahead, then publish v0.1.0 through every channel, verify 
 
 This phase starts with a stop. The coordinator presents the following and waits. `--auto` does not answer it: it is publication, outside any in-plan decision.
 
-1. The final `main` SHA and its three-OS CI run, the bench diff, and the dry-run evidence from phase 12.
+1. The final `dev` SHA and its three-OS CI run, the bench diff, and the dry-run evidence from phase 12.
 2. The exact outward actions, each confirmed separately:
    - create the public repo `bavanchun/homebrew-tap` (the coordinator runs `gh repo create`);
    - create the `release` environment with a `v*` tag deployment rule, then the tokens and secrets named in phase 12. `HOMEBREW_TAP_TOKEN` is a fine-grained token with `contents: write` on `bavanchun/homebrew-tap` only. **The user creates the tokens and sets the secrets themselves** (for example `! gh secret set HOMEBREW_TAP_TOKEN --env release`); the coordinator never sees or stores a token value;
-   - bump the version to 0.1.0, push the tag `v0.1.0`, and let `release.yml` publish the GitHub Release, the installers and the formula;
+   - bump the version to 0.1.0 on `dev`, promote `dev` to `main`, push the tag `v0.1.0` on `main`, and let `release.yml` publish the GitHub Release, the installers and the formula;
    - the first winget submission (a PR to `microsoft/winget-pkgs` from the user's fork), as the binstall/winget report and phase 12 describe;
    - the crates.io publication of `ariad-core`, `ariad-host` and `ariad-cli` 0.1.0 by `publish-crates.yml` (validation decision). The user creates the scoped crates.io token and sets `CARGO_REGISTRY_TOKEN` in the `release` environment. Crate names cannot be reclaimed once published.
 3. Nothing outward happens without an explicit "yes" for that item. A declined item is recorded as not done, with the acceptance criterion left open.
 
 ## Requirements after the go-ahead
 
-- Version 0.1.0 in `[workspace.package]` and in `Cargo.lock`, committed as `chore(release): prepare 0.1.0`. The internal dependencies are workspace-inherited since phase 2, and phase 12 rehearsed the bump, so this is a one-line manifest change plus the lockfile. The release notes come from dist's generated body plus a short summary of 1a. Root markdown stays limited (AGENTS.md), so there is no `CHANGELOG.md` at the root; the notes live in the GitHub Release.
-- Tag `v0.1.0` on that commit. Watch `release.yml` to completion.
+- Version 0.1.0 in `[workspace.package]` and in `Cargo.lock`, committed as `chore(release): prepare 0.1.0` on a branch from `dev` and merged into `dev` through a pull request. The internal dependencies are workspace-inherited since phase 2, and phase 12 rehearsed the bump, so this is a one-line manifest change plus the lockfile. The release notes come from dist's generated body plus a short summary of 1a. Root markdown stays limited (AGENTS.md), so there is no `CHANGELOG.md` at the root; the notes live in the GitHub Release.
+- Promote `dev` to `main` with a pull request merged as a merge commit ([docs/git-workflow.md](../../docs/git-workflow.md) "Promotion and hotfixes"). Tag `v0.1.0` on that merge commit. Watch `release.yml` to completion.
 - Run `release-smoke.yml` (phase 12) against v0.1.0 and confirm on clean runners:
   - `macos-26`: `brew install bavanchun/tap/ashift`, then `ashift doctor` and `ashift convert` on a Markdown file to DOCX and EPUB;
   - `ubuntu-26.04`: the shell installer, plus Homebrew on Linux if the runner image has it;
@@ -40,7 +40,8 @@ This phase starts with a stop. The coordinator presents the following and waits.
   - Tick the plan's acceptance criteria with evidence (run URLs, the release URL, the winget PR URL).
   - Fill a "Completion record" in `plan.md`.
   - Update AGENTS.md "Current state" (commands and routes now available) and README (install section with every channel and the Intel-Mac Pandoc note).
-  - Write a short `docs/releasing.md` describing the release procedure for the next version.
+  - Write a short `docs/releasing.md` describing the release procedure for the next version (bump on `dev`, promote, tag on `main`).
+  - The close-out commits land on `dev` through the usual pull request. They reach `main` at the next promotion, or at once if the user approves a second promotion.
 
 ## Files
 

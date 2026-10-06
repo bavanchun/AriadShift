@@ -54,7 +54,7 @@ Docs: `docs/bench.md` covers the metric definitions and formulas, the references
 
 CI:
 - `just bench` runs the harness; `just bench-check` runs `check`. `just ci` gains `bench-check`, which is cheap and needs only `ashift` to be built.
-- `.github/workflows/bench.yml` runs on `pull_request` with the label `bench` and on a nightly `schedule`. It builds `ashift` in release mode, installs Pandoc, runs `bench run` on `ubuntu-26.04`, and writes `bench diff` to the job summary. It fails only on `check` errors, never on score changes. Permissions are `contents: read`, and every action is SHA-pinned.
+- `.github/workflows/bench.yml` runs on `pull_request` with the label `bench` and on a nightly `schedule`. It builds `ashift` in release mode, installs Pandoc, runs `bench run` on `ubuntu-26.04`, and writes `bench diff` to the job summary. It fails only on `check` errors, never on score changes. Permissions are `contents: read`, and every action is SHA-pinned. Scheduled runs check out `dev`. GitHub reads `schedule` only from the default branch (`main`), so the nightly run starts after the next promotion; until then the labelled pull request run is the verification.
 
 Commit the measured `crates/ariad-core/data/capabilities.json`, replacing the phase 7 bootstrap. The planner's goldens must stay the same; if a measured score changes a route, the phase stops and reports it to the coordinator.
 
@@ -80,7 +80,7 @@ Commit the measured `crates/ariad-core/data/capabilities.json`, replacing the ph
 
 - `just bench-check` passes in `just ci` on three OSes.
 - `crates/ariad-core/data/capabilities.json` has measured metrics for every edge, and `ashift plan` (phase 9) shows them.
-- The `bench.yml` run on a labelled test PR (or `workflow_dispatch`) posts a diff table.
+- The `bench.yml` run on a labelled test PR posts a diff table.
 
 ## Risk assessment
 

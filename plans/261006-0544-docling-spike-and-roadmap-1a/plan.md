@@ -4,7 +4,7 @@ description: "Run a time-boxed Docling spike through the draft engine protocol, 
 status: pending
 priority: P1
 effort: 152h
-branch: main
+branch: dev
 tags: [feature, backend, api, infra, critical]
 blockedBy: [261005-1717-phase-0-foundations]
 blocks: []
@@ -29,7 +29,7 @@ Research:
 | Topic | Decision |
 |---|---|
 | Plan shape | One plan. The spike is phase 1 and runs in parallel with phase 2 |
-| Spike code | Only the report and the measurement scripts land on `main`. The adapter lives on the pushed branch `spike/docling` and is never merged |
+| Spike code | Only the report and the measurement scripts land on `dev`. The adapter lives on the pushed branch `spike/docling` and is never merged |
 | HTML reader | Native, in `ariad-core` (html5ever with our own tree sink), WASM-safe and fuzzed |
 | MCP file access | Restricted to client roots plus `--allow-dir`. Other paths are refused |
 | Publishing | Everything is prepared and dry-run. Creating the tap repo, adding secrets, tagging v0.1.0 and the winget submission wait at a stop in phase 13, where the user confirms again |
@@ -46,6 +46,8 @@ Research:
 | Legacy HTML charsets | Supported through `encoding_rs` (for example `windows-1258`) |
 | Sanitizer fuzzing | A nightly scheduled job on a date-pinned Rust nightly with AddressSanitizer; the only pre-release-toolchain exception, recorded in AGENTS.md |
 | crates.io | `ariad-core`, `ariad-host` and `ariad-cli` published by a CI job in the `release` environment, after the phase 13 stop |
+| Git workflow | Work lands on `dev`, the integration branch. Each wave runs on one branch from `dev` and lands through one pull request, rebase-merged when the three OS jobs are green ([docs/git-workflow.md](../../docs/git-workflow.md) "Working through a plan"). `main` changes only through a promotion the user approves, in phase 13 |
+| Push and merge authority | The coordinator may push the run's branches (wave branches, `spike/docling`, `release/dry-run`), open pull requests into `dev` and merge them when green. Promotion to `main`, tags, GitHub settings and publishing are not covered |
 | Raw HTML in HTML output | Sanitized with `ammonia` 4.2.1 (chosen by the coordinator at the user's request: same html5ever ^0.40, MIT OR Apache-2.0, keeps harmless tags, strips script, handlers and unsafe URLs) |
 
 ## Phases
@@ -66,7 +68,7 @@ Research:
 | 12 | [Release pipeline](./phase-12-release-pipeline.md) | 11h | 9, 10 | Pending |
 | 13 | [Release gate and acceptance](./phase-13-release-gate-and-acceptance.md) | 7h | all | Pending |
 
-Execution waves. Each wave starts when its dependencies are accepted. Two workers at most, in separate worktrees:
+Execution waves. Each wave starts when its dependencies are accepted, on a fresh branch from `dev`. Two workers at most, in separate worktrees; phase 1 keeps its adapter in a worktree on `spike/docling`:
 
 1. Phases 1 and 2.
 2. Phase 3.
@@ -177,6 +179,18 @@ Results:
 - Phases 4–6: copy-then-preflight with streaming inflate; chunked HTML parsing; `data:` URI images; ammonia sanitizing; `ConvertRequest`.
 - Phases 7–8: `capabilities.json` inside `ariad-core`; a single availability source; authored-truth references.
 - Phases 10–13: MCP confinement in `ariad-host` with capability handles; termination guarantees; the nightly ASan job; crates.io publishing; `release` environment secrets; `VChun.AriadShift`.
+
+### Session 2 — 2026-10-06
+**Trigger:** the user asked to settle the Git workflow before execution. CI on `main` was red at the time: `typos` flagged `OPF`, `certifi` and `PNGs` in this plan's files, fixed separately in `typos.toml`.
+**Questions asked:** 6 in 2 rounds, settling five decisions (the first branch-protection question came back as the branch-model question).
+
+1. **[Process]** Where the run's commits land. **Answer:** one branch and one pull request per wave.
+2. **[Process]** Push and merge authority. **Answer:** granted for this run, as recorded in the decisions table.
+3. **[Process]** Fixing the red `main`. **Answer:** commit and push the `typos.toml` fix at once.
+4. **[Process]** Branch model. **Answer:** add a `dev` integration branch; `main` stays stable and receives `dev` through promotions. This supersedes session 1's "report only on `main`", which now reads `dev`.
+5. **[Process]** Branch protection on `main`. **Answer:** not enabled.
+
+Impact on phases: phase 1 creates `spike/docling` from `dev` in its own worktree; phases 8 and 11 run their scheduled jobs against `dev` and verify them on the pull request until the next promotion; phase 12 uses its wave pull request as the dry run and `release/dry-run` only for the version-bump rehearsal; phase 13 bumps on `dev`, promotes to `main` and tags there.
 
 ### Whole-Plan Consistency Sweep (validation)
 

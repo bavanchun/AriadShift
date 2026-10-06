@@ -100,8 +100,8 @@ Docs:
 4. crates.io metadata, `package-check` and `publish-crates.yml` (a dry run with `cargo publish --dry-run` per crate where the registry allows). binstall metadata; prove it locally with `cargo binstall --manifest-path crates/ariad-cli/Cargo.toml --dry-run` against the PR-run artifacts if possible, otherwise record it as verified in phase 13. Commit each.
 5. winget template and fill script, tested against the PR-run Windows zip's SHA-256. Commit.
 6. `release-smoke.yml`. Commit.
-7. **Version-bump rehearsal** on the dry-run branch: set `[workspace.package] version` to `0.1.0` there only, and confirm `cargo metadata`, `dist plan` and the PR build all pass. Phase 2's workspace-inherited internal dependencies make this a one-line change. Do not merge the bump.
-8. Dry run in CI: the coordinator pushes a branch `release/dry-run` and opens a PR (owned repo, no publication). It confirms that every target builds and uploads artifacts, downloads them, and checks each archive's layout and the Windows zip name used by winget and binstall. It then closes the PR without merging the branch, or merges the config if the PR was the delivery vehicle; the coordinator decides per the git workflow.
+7. **Version-bump rehearsal.** On a throwaway branch `release/dry-run` from the wave branch, set `[workspace.package] version` to `0.1.0` and confirm that `cargo metadata`, `dist plan` and the build of a draft pull request into `dev` all pass. Phase 2's workspace-inherited internal dependencies make this a one-line change. Close that pull request without merging and delete the branch.
+8. **Dry run in CI.** The wave's own pull request into `dev` is the dry run: `pr-run-mode = "upload"` builds every target without publishing. The coordinator confirms that every target builds and uploads artifacts, downloads them, and checks each archive's layout and the Windows zip name used by winget and binstall.
 9. README; `just ci`. Commit.
 
 ## Success criteria

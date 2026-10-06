@@ -31,7 +31,7 @@ Run Docling end to end through the real `ariad-host` runner and the draft `ariad
 
 ## Requirements
 
-1. On branch `spike/docling` (created from `main`, pushed for reference, never merged):
+1. On branch `spike/docling` (created from `dev` in its own worktree, pushed for reference, never merged):
    - `spike/docling/pyproject.toml`: a uv project pinned to Python 3.14 and `docling[...]==2.134.0`. torch and torchvision are direct dependencies from an explicit CPU index on Linux.
    - `spike/docling/engine.py`: an adapter that speaks `ariad-engine/1` (`op = "convert"`, input `pdf` or `png`/`jpeg`, output `docling+json` and `ariad-ir+json`), with no network and `artifacts_path` from the request options.
    - `spike/docling/to_ir.py`: a throwaway DoclingDocument → IR v0 JSON mapper, used to find the gaps.
@@ -60,7 +60,7 @@ Run Docling end to end through the real `ariad-host` runner and the draft `ariad
 
 ## Files
 
-On `main` (owned by this phase):
+On the wave branch, merged into `dev` (owned by this phase):
 - Create `plans/261006-0544-docling-spike-and-roadmap-1a/reports/docling-spike-report.md`
 - Create `plans/261006-0544-docling-spike-and-roadmap-1a/reports/docling-spike/` with the measurement scripts and raw timing CSVs (small text only, no models, no PDFs)
 
@@ -70,7 +70,7 @@ Moved to the 1b plan (red-team review): the three-OS install workflow and the Wi
 
 ## Implementation steps
 
-1. Create the branch `spike/docling` from `main`. Nothing under `spike/` is ever added to `main`.
+1. Create the branch `spike/docling` from `dev` in its own worktree; the wave branch stays checked out in the primary worktree for phase 2. Nothing under `spike/` is ever added to `dev` or `main`.
 2. Fetch tessdata with checksums into `.tools/tessdata/`, set up the uv project, and prefetch the `layout` and `tableformer` models into `.tools/docling-models/`.
 3. Write `engine.py`; settle E0 first (configuration), then E1 (a clean stream), because every later experiment depends on both.
 4. Write the Rust spike test and run E0, E1, E2, E4 and E5 through the real runner.
@@ -78,26 +78,26 @@ Moved to the 1b plan (red-team review): the three-OS install workflow and the Wi
 6. Write `to_ir.py`, then run E8 and render the IR to DOCX with `ashift __engine pandoc`.
 7. Push `spike/docling` for reference (authorized by the user's plan decision). Any web research goes to an `agy` worker per the user's research rule.
 8. Write the report: a summary table, one section per experiment, a "protocol changes" list and an "IR changes" list, each tagged *required before 1a commands*, *required before the 1b freeze*, or *not needed*, with evidence.
-9. Commit only the report and the small scripts on `main`.
+9. Commit only the report and the small scripts on the wave branch.
 
 ## Success criteria
 
 - Each of E0–E8 has a result with evidence, or is explicitly marked blocked with the reason.
 - The report gives phase 3 a closed list of changes. Each change names the protocol or IR field, the reason, and the experiment that proves it.
-- `main` gains no Python project, no Rust code and no workflow from the spike.
+- `dev` gains no Python project, no Rust code and no workflow from the spike.
 - The branch `spike/docling` is pushed, and the report links its head commit.
 
 ## Validation
 
-- `git diff --stat main~1..main` shows only files under `plans/.../reports/`.
-- `just ci` still passes on `main`.
+- Every commit of this phase on the wave branch touches only files under `plans/.../reports/` (`git show --stat` per commit).
+- `just ci` still passes on the wave branch.
 
 ## Risk assessment
 
 | Risk | Signal | Response |
 |---|---|---|
 | Docling regresses or misbehaves on a fixture | A crash or wrong structure in E8 | Record it with the upstream issue number; do not work around it in the spike |
-| Spike creeps into product code | Any spike file appears in a `main` diff | Reject the commit; only reports land |
+| Spike creeps into product code | Any spike file appears in a wave branch or `dev` diff | Reject the commit; only reports land |
 | Time box is exceeded | More than 12h spent | Stop, report what is proven, and mark the rest as 1b questions |
 
 ## Security
