@@ -12,4 +12,5 @@ pub mod pandoc_bin;
 pub mod runner;
 pub mod workspace;
 
+pub use convert::read_archive_to_ir;
 pub use pandoc_bin::{PANDOC_GOLDEN_VERSION, PANDOC_SUPPORTED};

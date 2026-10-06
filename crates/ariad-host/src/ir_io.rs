@@ -101,23 +101,24 @@ impl<R: Read> Read for BoundedScannerReader<R> {
     }
 }
 
-/// Reads an IR document with bounded byte size, incremental nesting depth scan,
-/// deep deserialization without whole-file buffering, and post-parse block count validation.
-pub fn read(reader: impl Read, limits: &Limits) -> Result<Document, ReadError> {
-    let byte_cap = limits.max_ir_json_bytes;
-    let depth_budget = json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
-
-    let mut adapter = BoundedScannerReader::new(reader, byte_cap, depth_budget);
+/// Reads any JSON structure with bounded byte size, incremental nesting depth scan,
+/// and deep deserialization using `serde_stacker` and `disable_recursion_limit()`.
+pub fn read_json<T: for<'de> Deserialize<'de>>(
+    reader: impl Read,
+    max_bytes: u64,
+    depth_budget: usize,
+) -> Result<T, ReadError> {
+    let mut adapter = BoundedScannerReader::new(reader, max_bytes, depth_budget);
     let mut deserializer = serde_json::Deserializer::from_reader(&mut adapter);
     deserializer.disable_recursion_limit();
 
     let result = {
         let stacked = serde_stacker::Deserializer::new(&mut deserializer);
-        Document::deserialize(stacked)
+        T::deserialize(stacked)
     };
 
-    let document = match result {
-        Ok(doc) => doc,
+    let value = match result {
+        Ok(val) => val,
         Err(err) => {
             if let Some(overflow) = adapter.overflow_error {
                 return Err(overflow);
@@ -138,6 +139,17 @@ pub fn read(reader: impl Read, limits: &Limits) -> Result<Document, ReadError> {
         }
         return Err(ReadError::Json(err));
     }
+
+    Ok(value)
+}
+
+/// Reads an IR document with bounded byte size, incremental nesting depth scan,
+/// deep deserialization without whole-file buffering, and post-parse block count validation.
+pub fn read(reader: impl Read, limits: &Limits) -> Result<Document, ReadError> {
+    let byte_cap = limits.max_ir_json_bytes;
+    let depth_budget = json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
+
+    let document: Document = read_json(reader, byte_cap, depth_budget)?;
 
     let block_count = document.block_count();
     if block_count > limits.max_blocks as usize {

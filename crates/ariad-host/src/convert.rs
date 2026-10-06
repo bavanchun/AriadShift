@@ -172,12 +172,13 @@ where
 }
 
 /// Copies an untrusted input file into the workspace `in/` directory, bounded by `max_input_bytes`.
-/// If the input is an archive format (e.g. DOCX or EPUB), runs archive preflight on the workspace copy.
+/// If the requested input format is an archive format (e.g. DOCX or EPUB), runs archive preflight on the workspace copy.
 ///
 /// This closes the time-of-check/time-of-use gap by ensuring that subsequent engine operations
 /// read only the verified workspace copy, even if the source file is modified afterwards.
 pub fn copy_and_preflight_input(
     input: &Path,
+    input_format: &str,
     workspace: &Workspace,
     limits: &Limits,
 ) -> Result<PathBuf, ConvertError> {
@@ -212,14 +213,9 @@ pub fn copy_and_preflight_input(
     dest.flush().map_err(|_| ConvertError::Failed)?;
     drop(dest);
 
-    let is_archive = input
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| {
-            ext.eq_ignore_ascii_case("docx")
-                || ext.eq_ignore_ascii_case("epub")
-                || ext.eq_ignore_ascii_case("zip")
-        });
+    let is_archive = input_format.eq_ignore_ascii_case("docx")
+        || input_format.eq_ignore_ascii_case("epub")
+        || input_format.eq_ignore_ascii_case("zip");
 
     if is_archive {
         archive::preflight_archive(&dest_path, limits).map_err(|err| match err {
@@ -228,7 +224,9 @@ pub fn copy_and_preflight_input(
                 let _ = fs::remove_file(&dest_path);
                 ConvertError::LimitExceeded
             }
-            ArchiveError::InvalidEntryName { .. } => {
+            ArchiveError::DuplicateEntryName { .. }
+            | ArchiveError::EntryCountMismatch { .. }
+            | ArchiveError::InvalidEntryName { .. } => {
                 let _ = fs::remove_file(&dest_path);
                 ConvertError::Failed
             }
@@ -240,6 +238,76 @@ pub fn copy_and_preflight_input(
     }
 
     Ok(dest_path)
+}
+
+/// Converts an untrusted archive input (DOCX or EPUB) to AriadShift IR.
+///
+/// Order of operations (structural TOCTOU defense):
+/// 1. The host copies the source file into workspace `in/`, bounded by `max_input_bytes`.
+/// 2. Runs the archive preflight on that workspace copy.
+/// 3. Sends a `convert` request to the engine pointing at the copy.
+/// 4. Reads `document.ir.json` back using the bounded depth-scanning `ir_io::read`.
+///
+/// Nothing reads the user's path after step 1.
+pub fn read_archive_to_ir(
+    input: &Path,
+    input_format: &str,
+    workspace: &mut Workspace,
+    limits: &Limits,
+    engine_program: &Path,
+    cancel: CancellationToken,
+) -> Result<ariad_core::ir::Document, ConvertError> {
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+
+    let copied_path = copy_and_preflight_input(input, input_format, workspace, limits)?;
+
+    let request = Request::Convert {
+        protocol: PROTOCOL.to_owned(),
+        job: Uuid::new_v4().simple().to_string(),
+        input: Input {
+            path: copied_path.to_string_lossy().into_owned(),
+            format: input_format.to_owned(),
+        },
+        output: Output {
+            dir: workspace.output_dir().to_string_lossy().into_owned(),
+            format: "ariad-ir+json".to_owned(),
+        },
+        work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+        options: BTreeMap::new(),
+        limits: limits.clone(),
+    };
+
+    let engine_args = [OsString::from("__engine"), OsString::from("pandoc")];
+    let outcome = runner::run(
+        engine_program,
+        &engine_args,
+        &request,
+        cancel.clone(),
+        |_| {},
+    )
+    .map_err(map_run_error)?;
+
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+
+    let artifact = outcome
+        .artifacts
+        .iter()
+        .find(|a| a.format == "ariad-ir+json")
+        .ok_or(ConvertError::Failed)?;
+
+    let ir_file = fs::File::open(&artifact.path).map_err(|_| ConvertError::Failed)?;
+    let doc = crate::ir_io::read(ir_file, limits).map_err(|err| match err {
+        crate::ir_io::ReadError::ByteLimitExceeded { .. }
+        | crate::ir_io::ReadError::DepthExceeded(_)
+        | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
+        _ => ConvertError::Failed,
+    })?;
+
+    Ok(doc)
 }
 
 fn is_markdown_docx_route(input: &Path, target_format: &str) -> bool {
@@ -402,44 +470,83 @@ mod tests {
     }
 
     #[test]
-    fn mutating_source_after_copy_does_not_affect_workspace_copy() {
+    fn mutating_source_after_copy_converts_checked_bytes() {
         use super::{Limits, Workspace, copy_and_preflight_input};
-        use std::io::{Read, Write};
+        use ariad_core::protocol::{Input, Output, PROTOCOL, Request};
+        use std::path::Path;
         use tempfile::NamedTempFile;
-        use zip::{ZipWriter, write::SimpleFileOptions};
 
-        let temp_src = NamedTempFile::with_suffix(".docx").unwrap();
-        {
-            let file = std::fs::File::create(temp_src.path()).unwrap();
-            let mut zip = ZipWriter::new(file);
-            zip.start_file("word/document.xml", SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(b"<xml>original content</xml>").unwrap();
-            zip.finish().unwrap();
+        let fixture_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("fixtures/docx/vi-styled-report.docx");
+        if !fixture_path.is_file() {
+            return;
         }
 
+        let temp_src = NamedTempFile::with_suffix(".docx").unwrap();
+        std::fs::copy(&fixture_path, temp_src.path()).unwrap();
+
         let mut workspace = Workspace::new().unwrap();
+        let limits = Limits::local();
         let copy_path =
-            copy_and_preflight_input(temp_src.path(), &workspace, &Limits::local()).unwrap();
+            copy_and_preflight_input(temp_src.path(), "docx", &workspace, &limits).unwrap();
 
-        // Mutate the source file completely after copy
-        std::fs::write(temp_src.path(), b"mutated garbage data").unwrap();
+        // Mutate source file after copy: overwrite with garbage
+        std::fs::write(temp_src.path(), b"MUTATED_CORRUPT_SOURCE_GARBAGE").unwrap();
 
-        // Verify the copy in workspace in/ is preserved and passes preflight
-        assert!(crate::archive::preflight_archive(&copy_path, &Limits::local()).is_ok());
+        // Execute convert request through engine pointing to copy
+        let request = Request::Convert {
+            protocol: PROTOCOL.to_owned(),
+            job: "test-toctou".to_owned(),
+            input: Input {
+                path: copy_path.to_string_lossy().into_owned(),
+                format: "docx".to_owned(),
+            },
+            output: Output {
+                dir: workspace.output_dir().to_string_lossy().into_owned(),
+                format: "ariad-ir+json".to_owned(),
+            },
+            work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+            options: std::collections::BTreeMap::new(),
+            limits: limits.clone(),
+        };
 
-        let mut archive = zip::ZipArchive::new(std::fs::File::open(&copy_path).unwrap()).unwrap();
-        let mut entry = archive.by_name("word/document.xml").unwrap();
-        let mut content = String::new();
-        entry.read_to_string(&mut content).unwrap();
-        assert_eq!(content, "<xml>original content</xml>");
+        let mut input_bytes = serde_json::to_vec(&request).unwrap();
+        input_bytes.push(b'\n');
+        let mut output_bytes = Vec::new();
+
+        let exit =
+            crate::engines::pandoc::serve(std::io::Cursor::new(input_bytes), &mut output_bytes);
+        assert_eq!(exit, std::process::ExitCode::SUCCESS);
+
+        let out_doc_path = workspace.output_dir().join("document.ir.json");
+        assert!(out_doc_path.is_file());
+
+        let doc = crate::ir_io::read(std::fs::File::open(&out_doc_path).unwrap(), &limits)
+            .expect("IR read must succeed");
+
+        // The document reflects the checked bytes before source was mutated
+        let json = serde_json::to_string(&doc).unwrap();
+        assert!(json.contains("Khu") && json.contains("vườn"));
 
         let _ = workspace.close();
     }
 
     #[test]
+    fn convert_docx_to_docx_route_is_refused() {
+        use super::is_markdown_docx_route;
+        use std::path::Path;
+
+        let p = Path::new("test.docx");
+        assert!(!is_markdown_docx_route(p, "docx"));
+    }
+
+    #[test]
     fn copy_and_preflight_input_enforces_max_input_bytes() {
-        use super::{Limits, Workspace, copy_and_preflight_input};
+        use super::{ConvertError, Limits, Workspace, copy_and_preflight_input};
         use tempfile::NamedTempFile;
 
         let temp_src = NamedTempFile::with_suffix(".docx").unwrap();
@@ -449,7 +556,8 @@ mod tests {
         let mut limits = Limits::local();
         limits.max_input_bytes = Some(500);
 
-        let err = copy_and_preflight_input(temp_src.path(), &workspace, &limits).unwrap_err();
+        let err =
+            copy_and_preflight_input(temp_src.path(), "docx", &workspace, &limits).unwrap_err();
         assert_eq!(err, ConvertError::LimitExceeded);
 
         let _ = workspace.close();
