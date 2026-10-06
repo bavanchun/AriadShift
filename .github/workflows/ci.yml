@@ -1,74 +1,79 @@
 name: CI
 
+# Event rules and the reasoning behind them: docs/ci.md.
 on:
-  push:
-    branches: [main, dev]
   pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
   workflow_dispatch:
 
+# A new push to a pull request cancels its older run. Runs on dev and main are
+# grouped by commit, so they are never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
-  lint-windows:
-    name: Lint (windows-2025)
-    runs-on: windows-2025
+  scope:
+    name: Scope
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
     permissions:
       contents: read
-    defaults:
-      run:
-        shell: bash
-    env:
-      CARGO_BUILD_WARNINGS: deny
+      actions: read
+    outputs:
+      range: ${{ steps.scope.outputs.range }}
+      heavy: ${{ steps.scope.outputs.heavy }}
     steps:
       - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide what to run
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          REF_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: sh scripts/ci-scope.sh
+
+  static:
+    name: Static checks
+    needs: scope
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
-          components: clippy, rustfmt
-
-      - name: Check formatting
-        run: cargo fmt --all --check
-
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --features ariad-host/test-probe
-
-  verify:
-    name: Verify (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-26.04, macos-26, windows-2025]
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Check out source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Set up Rust toolchain
-        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
-        with:
-          target: wasm32-unknown-unknown
+          components: rustfmt
+          cache: false
 
       - name: Install command-line tools
         uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
-          tool: just@1.58.0,cargo-nextest@0.9.146,cargo-deny@0.20.2,typos@1.50.3
+          tool: just@1.58.0,cargo-deny@0.20.2,typos@1.50.3
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.2
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 12.9.1
           run_install: false
@@ -86,8 +91,79 @@ jobs:
           version: 0.12.23
           python-version: "3.14"
 
-      - name: Install Python
-        run: uv python install 3.14
+      - name: Install lint tools
+        run: just lint-tools
+
+      - name: Check commit messages
+        if: needs.scope.outputs.range != ''
+        env:
+          RANGE: ${{ needs.scope.outputs.range }}
+        run: just lint-commits "$RANGE"
+
+      - name: Run static checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just static
+
+  lint-windows:
+    name: Lint (windows-2025)
+    needs: scope
+    if: needs.scope.outputs.heavy == 'true'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_BUILD_WARNINGS: deny
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          components: clippy
+          cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --features ariad-host/test-probe
+
+  verify:
+    name: Verify (${{ matrix.os }})
+    needs: scope
+    if: needs.scope.outputs.heavy == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, macos-26, windows-2025]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          target: wasm32-unknown-unknown
+          cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: just@1.58.0,cargo-nextest@0.9.146
 
       - name: Cache Pandoc archive
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -109,5 +185,40 @@ jobs:
       - name: Verify Pandoc installation
         run: '"$ASHIFT_PANDOC" --version'
 
-      - name: Run repository checks
-        run: just ci
+      # The Windows lint job already runs Clippy there.
+      - name: Run Clippy
+        if: runner.os != 'Windows'
+        run: just clippy
+
+      # ariad-core must stay WASM-safe; the check does not depend on the host OS.
+      - name: Check the WASM build
+        if: runner.os == 'Linux'
+        run: just wasm
+
+      - name: Run tests
+        run: just test
+
+  ci-passed:
+    name: CI passed
+    needs: [scope, static, lint-windows, verify]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check job results
+        env:
+          HEAVY: ${{ needs.scope.outputs.heavy }}
+          SCOPE: ${{ needs.scope.result }}
+          STATIC: ${{ needs.static.result }}
+          WINDOWS: ${{ needs.lint-windows.result }}
+          VERIFY: ${{ needs.verify.result }}
+        run: |
+          printf 'scope=%s static=%s lint-windows=%s verify=%s heavy=%s\n' \
+            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$HEAVY"
+          [ "$SCOPE" = success ] && [ "$STATIC" = success ] || exit 1
+          if [ "$HEAVY" = true ]; then
+            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] || exit 1
+          else
+            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] || exit 1
+          fi

@@ -1,0 +1,8 @@
+# Link check for the weekly Links workflow.
+exclude_path = ["fixtures", "node_modules", "target", ".tools", ".venv"]
+# Rate-limited answers are not broken links.
+accept = ["200..=299", "429"]
+max_retries = 3
+timeout = 30
+# Plans link to reports that a later phase creates.
+exclude = ['reports/docling-spike-report\.md$']
