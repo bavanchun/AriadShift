@@ -1,0 +1,19 @@
+[project]
+name = "ariad-spike-docling"
+version = "0.1.0"
+description = "Docling protocol spike adapter for AriadShift"
+requires-python = "~=3.14.0"
+dependencies = [
+    "docling==2.134.0",
+    "torch==2.14.1",
+    "torchvision==0.29.1",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
