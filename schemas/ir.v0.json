@@ -19,6 +19,12 @@
         "$ref": "#/$defs/Block"
       }
     },
+    "furniture": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Block"
+      }
+    },
     "layout": {
       "anyOf": [
         {
@@ -303,6 +309,12 @@
                 "$ref": "#/$defs/ColumnSpec"
               }
             },
+            "footnotes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Inline"
+              }
+            },
             "head": {
               "type": "array",
               "items": {
@@ -390,6 +402,52 @@
             "text"
           ]
         }
+      ]
+    },
+    "BlockPosition": {
+      "description": "Position and page location for a block in the layout index.",
+      "type": "object",
+      "properties": {
+        "bbox": {
+          "$ref": "#/$defs/BoundingBox"
+        },
+        "page_no": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "page_no",
+        "bbox"
+      ]
+    },
+    "BoundingBox": {
+      "description": "Bounding box coordinates with a top-left origin: `[left, top, right, bottom]`.",
+      "type": "object",
+      "properties": {
+        "bottom": {
+          "type": "number",
+          "format": "double"
+        },
+        "left": {
+          "type": "number",
+          "format": "double"
+        },
+        "right": {
+          "type": "number",
+          "format": "double"
+        },
+        "top": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "left",
+        "top",
+        "right",
+        "bottom"
       ]
     },
     "ColumnSpec": {
@@ -684,9 +742,22 @@
       ]
     },
     "LayoutIndex": {
-      "description": "Optional layout hints, keyed by a stable extension identifier.",
+      "description": "Page geometry and per-block bounding boxes keyed by stable block path.",
       "type": "object",
-      "additionalProperties": true
+      "properties": {
+        "blocks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/BlockPosition"
+          }
+        },
+        "pages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PageGeometry"
+          }
+        }
+      }
     },
     "ListItem": {
       "type": "object",
@@ -767,6 +838,30 @@
         }
       }
     },
+    "PageGeometry": {
+      "description": "Page dimensions and geometry with a top-left origin.",
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "number",
+          "format": "double"
+        },
+        "page_no": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "width": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "page_no",
+        "width",
+        "height"
+      ]
+    },
     "Provenance": {
       "description": "Optional source and processing metadata, keyed by a stable extension identifier.",
       "type": "object",
@@ -793,6 +888,12 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0
+        },
+        "header": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "rowspan": {
           "type": "integer",

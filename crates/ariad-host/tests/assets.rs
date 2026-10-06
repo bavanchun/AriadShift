@@ -175,9 +175,11 @@ fn resolves_images_nested_in_quotes_tables_figures_and_inline_wrappers() {
                         head: vec![vec![TableCell {
                             rowspan: 1,
                             colspan: 1,
+                            header: None,
                             blocks: vec![figure],
                         }]],
                         body: Vec::new(),
+                        footnotes: Vec::new(),
                     }],
                 }],
             }],
