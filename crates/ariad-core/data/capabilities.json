@@ -1,0 +1,95 @@
+{
+  "version": "ariad-capabilities/0",
+  "generated_at": "2026-10-06T00:00:00Z",
+  "bench": {
+    "fixture_count": 0,
+    "pandoc_version": "3.12",
+    "ashift_version": "0.0.0"
+  },
+  "edges": [
+    {
+      "from": "ariad-ir+json",
+      "to": "docx",
+      "engine": "pandoc",
+      "runtime": [
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": null
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "epub",
+      "engine": "pandoc",
+      "runtime": [
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": null
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "html",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "markdown",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "docx",
+      "to": "ariad-ir+json",
+      "engine": "pandoc",
+      "runtime": [
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": null
+    },
+    {
+      "from": "epub",
+      "to": "ariad-ir+json",
+      "engine": "pandoc",
+      "runtime": [
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": null
+    },
+    {
+      "from": "html",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "markdown",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    }
+  ]
+}

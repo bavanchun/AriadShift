@@ -1,0 +1,199 @@
+{
+  "$id": "https://ariadshift.ariadnev.com/schemas/capabilities.v0.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Capabilities",
+  "description": "The root capabilities registry specifying format conversion edges and empirical metrics.",
+  "type": "object",
+  "properties": {
+    "bench": {
+      "description": "Benchmark environment and toolchain metadata.",
+      "$ref": "#/$defs/BenchMetadata"
+    },
+    "edges": {
+      "description": "Directed format conversion capability edges.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CapabilityEdge"
+      }
+    },
+    "generated_at": {
+      "description": "ISO 8601 / RFC 3339 timestamp of generation.",
+      "type": "string"
+    },
+    "version": {
+      "description": "Schema version, e.g. `\"ariad-capabilities/0\"`.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "generated_at",
+    "bench",
+    "edges"
+  ],
+  "$defs": {
+    "BenchMetadata": {
+      "description": "Metadata about the benchmark run that produced the capabilities.",
+      "type": "object",
+      "properties": {
+        "ashift_version": {
+          "description": "AriadShift CLI/core version.",
+          "type": "string"
+        },
+        "fixture_count": {
+          "description": "Number of fixtures measured.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "pandoc_version": {
+          "description": "Pandoc version used, if present.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "fixture_count",
+        "ashift_version"
+      ]
+    },
+    "CapabilityEdge": {
+      "description": "A directed edge representing an engine's ability to convert from one format to another.",
+      "type": "object",
+      "properties": {
+        "engine": {
+          "description": "Engine identifier, e.g. `\"ariad-core\"` or `\"pandoc\"`.",
+          "type": "string"
+        },
+        "from": {
+          "description": "Source format.",
+          "$ref": "#/$defs/Format"
+        },
+        "license": {
+          "description": "Software license identifier of the engine or component.",
+          "type": "string"
+        },
+        "metrics": {
+          "description": "Empirical benchmark metrics, or `null` if unmeasured.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EdgeMetrics"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "description": "Supported runtime environments, e.g. `[\"wasm\", \"local\"]` or `[\"local\"]`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Runtime"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "to": {
+          "description": "Target format.",
+          "$ref": "#/$defs/Format"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "engine",
+        "runtime",
+        "license",
+        "metrics"
+      ]
+    },
+    "EdgeMetrics": {
+      "description": "Empirical quality and performance metrics for a conversion edge.",
+      "type": "object",
+      "properties": {
+        "editability": {
+          "description": "Semantic editability score in `[0.0, 1.0]`.",
+          "type": "number",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0
+        },
+        "fidelity": {
+          "description": "Structural and content fidelity score in `[0.0, 1.0]`.",
+          "type": "number",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0
+        },
+        "p50_ms": {
+          "description": "Median conversion latency in milliseconds.",
+          "type": "number",
+          "format": "double",
+          "maximum": 86400000.0,
+          "minimum": 0.0
+        },
+        "peak_mem_mb": {
+          "description": "Peak memory residency in megabytes.",
+          "type": "number",
+          "format": "double",
+          "maximum": 1048576.0,
+          "minimum": 0.0
+        },
+        "samples": {
+          "description": "Number of benchmark samples.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "fidelity",
+        "editability",
+        "p50_ms",
+        "peak_mem_mb",
+        "samples"
+      ]
+    },
+    "Format": {
+      "description": "A format supported by the core registry.",
+      "type": "string",
+      "enum": [
+        "markdown",
+        "html",
+        "docx",
+        "epub",
+        "pdf",
+        "png",
+        "ariad-ir+json",
+        "pandoc+json"
+      ]
+    },
+    "Runtime": {
+      "description": "Supported runtime environments for conversion capabilities.",
+      "oneOf": [
+        {
+          "description": "In-process WebAssembly or pure-Rust environment.",
+          "type": "string",
+          "const": "wasm"
+        },
+        {
+          "description": "Local native executable or OS process.",
+          "type": "string",
+          "const": "local"
+        },
+        {
+          "description": "Remote network or cloud execution service.",
+          "type": "string",
+          "const": "cloud"
+        }
+      ]
+    }
+  }
+}
