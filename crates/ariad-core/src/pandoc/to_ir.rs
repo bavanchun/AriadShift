@@ -23,8 +23,6 @@ pub struct ToIrOutput {
     pub warnings: Vec<Warning>,
 }
 
-pub type MapOutput = ToIrOutput;
-
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum MapError {
     #[error(transparent)]
@@ -50,9 +48,12 @@ pub fn to_ir(pandoc: &Pandoc, limits: &Limits) -> Result<ToIrOutput, MapError> {
 
     let mut mapper = ToIrMapper::new(limits);
     let mut body = mapper.map_blocks(&pandoc.blocks, 1)?;
-    body.extend(mapper.footnotes);
+    mapper.footnotes.sort_by_key(|(seq, _)| *seq);
+    for (_, footnote_block) in mapper.footnotes {
+        body.push(footnote_block);
+    }
 
-    let meta = map_metadata(&pandoc.meta);
+    let meta = map_metadata(&pandoc.meta, limits.max_nesting_depth);
 
     Ok(ToIrOutput {
         document: Document {
@@ -67,7 +68,8 @@ pub fn to_ir(pandoc: &Pandoc, limits: &Limits) -> Result<ToIrOutput, MapError> {
 struct ToIrMapper<'a> {
     limits: &'a Limits,
     block_count: u32,
-    footnotes: Vec<IrBlock>,
+    footnote_counter: usize,
+    footnotes: Vec<(usize, IrBlock)>,
     warnings: Vec<Warning>,
 }
 
@@ -76,6 +78,7 @@ impl<'a> ToIrMapper<'a> {
         Self {
             limits,
             block_count: 0,
+            footnote_counter: 0,
             footnotes: Vec::new(),
             warnings: Vec::new(),
         }
@@ -115,8 +118,11 @@ impl<'a> ToIrMapper<'a> {
 
         match block {
             Block::Plain(inlines) | Block::Para(inlines) => {
-                self.check_block_budget()?;
                 let content = self.map_inlines(inlines, depth)?;
+                if content.is_empty() {
+                    return Ok(Vec::new());
+                }
+                self.check_block_budget()?;
                 Ok(vec![IrBlock::Paragraph { content }])
             }
             Block::LineBlock(lines) => {
@@ -404,17 +410,20 @@ impl<'a> ToIrMapper<'a> {
             let mapped = self.map_inline(inline, depth)?;
             result.extend(mapped);
         }
-        Ok(result)
+        Ok(coalesce_inlines(result))
     }
 
     fn map_inline(&mut self, inline: &Inline, depth: u16) -> Result<Vec<IrInline>, MapError> {
+        self.check_depth(depth)?;
+        let next_depth = depth.saturating_add(1);
+
         match inline {
             Inline::Str(text) => {
                 let normalized: String = text.nfc().collect();
                 Ok(vec![IrInline::Text { text: normalized }])
             }
             Inline::Emph(inlines) => {
-                let content = self.map_inlines(inlines, depth)?;
+                let content = self.map_inlines(inlines, next_depth)?;
                 Ok(vec![IrInline::Emph { content }])
             }
             Inline::Underline(inlines) => {
@@ -422,23 +431,23 @@ impl<'a> ToIrMapper<'a> {
                     WarningCode::UnsupportedNode,
                     "underline is not supported in IR and was mapped to emphasis",
                 ));
-                let content = self.map_inlines(inlines, depth)?;
+                let content = self.map_inlines(inlines, next_depth)?;
                 Ok(vec![IrInline::Emph { content }])
             }
             Inline::Strong(inlines) => {
-                let content = self.map_inlines(inlines, depth)?;
+                let content = self.map_inlines(inlines, next_depth)?;
                 Ok(vec![IrInline::Strong { content }])
             }
             Inline::Strikeout(inlines) => {
-                let content = self.map_inlines(inlines, depth)?;
+                let content = self.map_inlines(inlines, next_depth)?;
                 Ok(vec![IrInline::Strikeout { content }])
             }
             Inline::Superscript(inlines) => {
-                let content = self.map_inlines(inlines, depth)?;
+                let content = self.map_inlines(inlines, next_depth)?;
                 Ok(vec![IrInline::Superscript { content }])
             }
             Inline::Subscript(inlines) => {
-                let content = self.map_inlines(inlines, depth)?;
+                let content = self.map_inlines(inlines, next_depth)?;
                 Ok(vec![IrInline::Subscript { content }])
             }
             Inline::SmallCaps(inlines) => {
@@ -446,10 +455,10 @@ impl<'a> ToIrMapper<'a> {
                     WarningCode::UnsupportedNode,
                     "small caps formatting is not supported in IR and was degraded to text",
                 ));
-                self.map_inlines(inlines, depth)
+                self.map_inlines(inlines, next_depth)
             }
             Inline::Quoted(quote_type, inlines) => {
-                let inner = self.map_inlines(inlines, depth)?;
+                let inner = self.map_inlines(inlines, next_depth)?;
                 let (open, close) = match quote_type {
                     QuoteType::SingleQuote => ("'", "'"),
                     QuoteType::DoubleQuote => ("\"", "\""),
@@ -468,7 +477,7 @@ impl<'a> ToIrMapper<'a> {
                     WarningCode::UnsupportedNode,
                     "citation is not supported in IR and was degraded to inline text",
                 ));
-                self.map_inlines(inlines, depth)
+                self.map_inlines(inlines, next_depth)
             }
             Inline::Code(_attr, text) => Ok(vec![IrInline::Code { text: text.clone() }]),
             Inline::Space => Ok(vec![IrInline::Text {
@@ -511,7 +520,7 @@ impl<'a> ToIrMapper<'a> {
                     } else {
                         Some(target.1.nfc().collect())
                     };
-                    let content = self.map_inlines(inlines, depth)?;
+                    let content = self.map_inlines(inlines, next_depth)?;
                     Ok(vec![IrInline::Link {
                         url: url.clone(),
                         title,
@@ -522,11 +531,14 @@ impl<'a> ToIrMapper<'a> {
                         WarningCode::LinkDropped,
                         format!("link `{url}` dropped because its scheme is not allowed"),
                     ));
-                    self.map_inlines(inlines, depth)
+                    self.map_inlines(inlines, next_depth)
                 }
             }
             Inline::Image(_attr, inlines, target) => {
-                let alt: String = inlines_to_text(inlines).nfc().collect();
+                let alt: String =
+                    inlines_to_text(inlines, next_depth, self.limits.max_nesting_depth)
+                        .nfc()
+                        .collect();
                 let title = if target.1.is_empty() {
                     None
                 } else {
@@ -541,21 +553,46 @@ impl<'a> ToIrMapper<'a> {
                 }])
             }
             Inline::Note(blocks) => {
-                let id = format!("fn{}", self.footnotes.len() + 1);
+                self.footnote_counter = self.footnote_counter.saturating_add(1);
+                let note_number = self.footnote_counter;
+                let id = format!("fn{note_number}");
                 self.check_block_budget()?;
-                let mapped_blocks = self.map_blocks(blocks, depth.saturating_add(1))?;
-                self.footnotes.push(IrBlock::Footnote {
-                    id: id.clone(),
-                    blocks: mapped_blocks,
-                });
+                let mapped_blocks = self.map_blocks(blocks, next_depth)?;
+                self.footnotes.push((
+                    note_number,
+                    IrBlock::Footnote {
+                        id: id.clone(),
+                        blocks: mapped_blocks,
+                    },
+                ));
                 Ok(vec![IrInline::FootnoteRef { id }])
             }
             Inline::Span(_attr, inlines) => {
                 // Span flattens
-                self.map_inlines(inlines, depth)
+                self.map_inlines(inlines, next_depth)
             }
         }
     }
+}
+
+fn coalesce_inlines(inlines: Vec<IrInline>) -> Vec<IrInline> {
+    let mut coalesced = Vec::with_capacity(inlines.len());
+    for inline in inlines {
+        match inline {
+            IrInline::Text { text } => {
+                if text.is_empty() {
+                    continue;
+                }
+                if let Some(IrInline::Text { text: prev_text }) = coalesced.last_mut() {
+                    prev_text.push_str(&text);
+                } else {
+                    coalesced.push(IrInline::Text { text });
+                }
+            }
+            other => coalesced.push(other),
+        }
+    }
+    coalesced
 }
 
 fn detect_task_checkbox(blocks: &mut [IrBlock]) -> Option<bool> {
@@ -627,7 +664,10 @@ fn map_alignment(align: Alignment) -> IrAlignment {
     }
 }
 
-fn inlines_to_text(inlines: &[Inline]) -> String {
+fn inlines_to_text(inlines: &[Inline], depth: u16, max_depth: u16) -> String {
+    if depth > max_depth {
+        return String::new();
+    }
     let mut out = String::new();
     for inline in inlines {
         match inline {
@@ -644,17 +684,24 @@ fn inlines_to_text(inlines: &[Inline]) -> String {
             | Inline::Quoted(_, ins)
             | Inline::Cite(_, ins)
             | Inline::Span(_, ins)
-            | Inline::Link(_, ins, _) => out.push_str(&inlines_to_text(ins)),
+            | Inline::Link(_, ins, _) => {
+                out.push_str(&inlines_to_text(ins, depth.saturating_add(1), max_depth))
+            }
             Inline::SoftBreak | Inline::LineBreak => out.push(' '),
             Inline::Math(_, s) | Inline::RawInline(_, s) => out.push_str(s),
-            Inline::Image(_, alt, _) => out.push_str(&inlines_to_text(alt)),
+            Inline::Image(_, alt, _) => {
+                out.push_str(&inlines_to_text(alt, depth.saturating_add(1), max_depth))
+            }
             Inline::Note(_) => {}
         }
     }
     out
 }
 
-fn blocks_to_text(blocks: &[Block]) -> String {
+fn blocks_to_text(blocks: &[Block], depth: u16, max_depth: u16) -> String {
+    if depth > max_depth {
+        return String::new();
+    }
     let mut out = String::new();
     for block in blocks {
         match block {
@@ -662,7 +709,7 @@ fn blocks_to_text(blocks: &[Block]) -> String {
                 if !out.is_empty() {
                     out.push('\n');
                 }
-                out.push_str(&inlines_to_text(ins));
+                out.push_str(&inlines_to_text(ins, depth.saturating_add(1), max_depth));
             }
             Block::CodeBlock(_, s) | Block::RawBlock(_, s) => {
                 if !out.is_empty() {
@@ -671,7 +718,7 @@ fn blocks_to_text(blocks: &[Block]) -> String {
                 out.push_str(s);
             }
             Block::BlockQuote(bls) | Block::Div(_, bls) => {
-                let inner = blocks_to_text(bls);
+                let inner = blocks_to_text(bls, depth.saturating_add(1), max_depth);
                 if !inner.is_empty() {
                     if !out.is_empty() {
                         out.push('\n');
@@ -685,14 +732,25 @@ fn blocks_to_text(blocks: &[Block]) -> String {
     out
 }
 
-fn extract_meta_string(val: &MetaValue) -> Option<String> {
+fn extract_meta_string(val: &MetaValue, depth: u16, max_depth: u16) -> Option<String> {
+    if depth > max_depth {
+        return None;
+    }
     match val {
         MetaValue::MetaString(s) => Some(s.clone()),
-        MetaValue::MetaInlines(inlines) => Some(inlines_to_text(inlines)),
-        MetaValue::MetaBlocks(blocks) => Some(blocks_to_text(blocks)),
+        MetaValue::MetaInlines(inlines) => {
+            Some(inlines_to_text(inlines, depth.saturating_add(1), max_depth))
+        }
+        MetaValue::MetaBlocks(blocks) => {
+            Some(blocks_to_text(blocks, depth.saturating_add(1), max_depth))
+        }
         MetaValue::MetaBool(b) => Some(b.to_string()),
         MetaValue::MetaList(list) => {
-            let parts: Vec<String> = list.iter().filter_map(extract_meta_string).collect();
+            let next_depth = depth.saturating_add(1);
+            let parts: Vec<String> = list
+                .iter()
+                .filter_map(|item| extract_meta_string(item, next_depth, max_depth))
+                .collect();
             if parts.is_empty() {
                 None
             } else {
@@ -703,17 +761,29 @@ fn extract_meta_string(val: &MetaValue) -> Option<String> {
     }
 }
 
-fn extract_meta_strings(val: &MetaValue) -> Vec<String> {
+fn extract_meta_strings(val: &MetaValue, depth: u16, max_depth: u16) -> Vec<String> {
+    if depth > max_depth {
+        return Vec::new();
+    }
     match val {
-        MetaValue::MetaList(list) => list.iter().filter_map(extract_meta_string).collect(),
+        MetaValue::MetaList(list) => {
+            let next_depth = depth.saturating_add(1);
+            list.iter()
+                .filter_map(|item| extract_meta_string(item, next_depth, max_depth))
+                .collect()
+        }
         MetaValue::MetaString(s) => vec![s.clone()],
-        MetaValue::MetaInlines(inlines) => vec![inlines_to_text(inlines)],
-        MetaValue::MetaBlocks(blocks) => vec![blocks_to_text(blocks)],
+        MetaValue::MetaInlines(inlines) => {
+            vec![inlines_to_text(inlines, depth.saturating_add(1), max_depth)]
+        }
+        MetaValue::MetaBlocks(blocks) => {
+            vec![blocks_to_text(blocks, depth.saturating_add(1), max_depth)]
+        }
         _ => Vec::new(),
     }
 }
 
-fn map_metadata(meta: &std::collections::BTreeMap<String, MetaValue>) -> Metadata {
+fn map_metadata(meta: &std::collections::BTreeMap<String, MetaValue>, max_depth: u16) -> Metadata {
     let mut title = None;
     let mut authors = Vec::new();
     let mut language = None;
@@ -731,32 +801,32 @@ fn map_metadata(meta: &std::collections::BTreeMap<String, MetaValue>) -> Metadat
 
         match key.to_ascii_lowercase().as_str() {
             "title" => {
-                if let Some(s) = extract_meta_string(val) {
+                if let Some(s) = extract_meta_string(val, 0, max_depth) {
                     title = Some(s.nfc().collect());
                 }
             }
             "author" | "authors" => {
-                for author in extract_meta_strings(val) {
+                for author in extract_meta_strings(val, 0, max_depth) {
                     authors.push(author.nfc().collect());
                 }
             }
             "lang" | "language" => {
-                if let Some(s) = extract_meta_string(val) {
+                if let Some(s) = extract_meta_string(val, 0, max_depth) {
                     language = Some(s.nfc().collect());
                 }
             }
             "date" => {
-                if let Some(s) = extract_meta_string(val) {
+                if let Some(s) = extract_meta_string(val, 0, max_depth) {
                     date = Some(s.nfc().collect());
                 }
             }
             "subject" => {
-                if let Some(s) = extract_meta_string(val) {
+                if let Some(s) = extract_meta_string(val, 0, max_depth) {
                     subject = Some(s.nfc().collect());
                 }
             }
             "keywords" => {
-                for kw in extract_meta_strings(val) {
+                for kw in extract_meta_strings(val, 0, max_depth) {
                     keywords.push(kw.nfc().collect());
                 }
             }

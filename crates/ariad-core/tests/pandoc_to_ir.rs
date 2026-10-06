@@ -527,16 +527,7 @@ fn degrades_underline_smallcaps_and_cite_with_warnings() {
                     }]
                 },
                 IrInline::Text {
-                    text: " ".to_owned()
-                },
-                IrInline::Text {
-                    text: "small caps".to_owned()
-                },
-                IrInline::Text {
-                    text: " ".to_owned()
-                },
-                IrInline::Text {
-                    text: "[@ref]".to_owned()
+                    text: " small caps [@ref]".to_owned()
                 },
             ]
         }
@@ -628,10 +619,7 @@ fn enforces_link_scheme_allow_list() {
                     }],
                 },
                 IrInline::Text {
-                    text: " ".to_owned()
-                },
-                IrInline::Text {
-                    text: "unsafe link".to_owned()
+                    text: " unsafe link".to_owned()
                 },
             ]
         }
@@ -684,4 +672,142 @@ fn normalizes_vietnamese_prose_to_nfc_and_drops_presentation_metadata() {
         panic!("expected text");
     };
     assert_eq!(text, "Khu vườn đọc sách");
+}
+
+#[test]
+fn nested_footnote_assigns_stable_distinct_ids_in_document_order() {
+    let doc = Pandoc {
+        pandoc_api_version: vec![1, 23, 1, 2],
+        meta: BTreeMap::new(),
+        blocks: vec![Block::Para(vec![
+            Inline::Str("Outer text".to_owned()),
+            Inline::Note(vec![Block::Para(vec![
+                Inline::Str("Footnote 1 text".to_owned()),
+                Inline::Note(vec![Block::Para(vec![Inline::Str(
+                    "Footnote 2 text".to_owned(),
+                )])]),
+            ])]),
+        ])],
+    };
+
+    let out = to_ir(&doc, &Limits::local()).unwrap();
+
+    assert_eq!(out.document.body.len(), 3);
+
+    let IrBlock::Paragraph { content } = &out.document.body[0] else {
+        panic!("expected paragraph");
+    };
+    assert_eq!(
+        content[0],
+        IrInline::Text {
+            text: "Outer text".to_owned()
+        }
+    );
+    assert_eq!(
+        content[1],
+        IrInline::FootnoteRef {
+            id: "fn1".to_owned()
+        }
+    );
+
+    let IrBlock::Footnote {
+        id,
+        blocks: fn1_blocks,
+    } = &out.document.body[1]
+    else {
+        panic!("expected footnote def fn1");
+    };
+    assert_eq!(id, "fn1");
+    let IrBlock::Paragraph { content: fn1_para } = &fn1_blocks[0] else {
+        panic!("expected footnote 1 paragraph");
+    };
+    assert_eq!(
+        fn1_para[0],
+        IrInline::Text {
+            text: "Footnote 1 text".to_owned()
+        }
+    );
+    assert_eq!(
+        fn1_para[1],
+        IrInline::FootnoteRef {
+            id: "fn2".to_owned()
+        }
+    );
+
+    let IrBlock::Footnote {
+        id: fn2_id,
+        blocks: fn2_blocks,
+    } = &out.document.body[2]
+    else {
+        panic!("expected footnote def fn2");
+    };
+    assert_eq!(fn2_id, "fn2");
+    let IrBlock::Paragraph { content: fn2_para } = &fn2_blocks[0] else {
+        panic!("expected footnote 2 paragraph");
+    };
+    assert_eq!(
+        fn2_para[0],
+        IrInline::Text {
+            text: "Footnote 2 text".to_owned()
+        }
+    );
+}
+
+#[test]
+fn inline_nesting_at_sixty_four_passes_and_at_sixty_five_fails() {
+    let limits = Limits::local(); // max_nesting_depth = 64
+
+    fn make_nested_emph(depth_count: usize) -> Inline {
+        let mut cur = Inline::Str("leaf".to_owned());
+        for _ in 0..depth_count {
+            cur = Inline::Emph(vec![cur]);
+        }
+        cur
+    }
+
+    // 63 Emph: depth goes up to 1 (Para) + 63 (Emph) = 64. Passes!
+    let pass_doc = Pandoc {
+        pandoc_api_version: vec![1, 23, 1, 2],
+        meta: BTreeMap::new(),
+        blocks: vec![Block::Para(vec![make_nested_emph(63)])],
+    };
+    assert!(to_ir(&pass_doc, &limits).is_ok());
+
+    // 64 Emph: depth reaches 65. Fails!
+    let fail_doc = Pandoc {
+        pandoc_api_version: vec![1, 23, 1, 2],
+        meta: BTreeMap::new(),
+        blocks: vec![Block::Para(vec![make_nested_emph(64)])],
+    };
+    let err = to_ir(&fail_doc, &limits).unwrap_err();
+    assert_eq!(err, MapError::NestingTooDeep { limit: 64 });
+}
+
+#[test]
+fn coalesces_adjacent_text_and_space_nodes_and_supports_task_lists() {
+    let doc = Pandoc {
+        pandoc_api_version: vec![1, 23, 1, 2],
+        meta: BTreeMap::new(),
+        blocks: vec![Block::Para(vec![
+            Inline::Str("[".to_owned()),
+            Inline::Str("x".to_owned()),
+            Inline::Str("]".to_owned()),
+            Inline::Space,
+            Inline::Str("done".to_owned()),
+            Inline::Space,
+            Inline::Str("task".to_owned()),
+        ])],
+    };
+
+    let out = to_ir(&doc, &Limits::local()).unwrap();
+    let IrBlock::Paragraph { content } = &out.document.body[0] else {
+        panic!("expected paragraph");
+    };
+    assert_eq!(content.len(), 1);
+    assert_eq!(
+        content[0],
+        IrInline::Text {
+            text: "[x] done task".to_owned()
+        }
+    );
 }

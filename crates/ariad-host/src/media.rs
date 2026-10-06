@@ -1,11 +1,10 @@
 use std::{
-    fs,
-    io::{self, Read},
-    path::{Component, Path, PathBuf},
+    fs, io,
+    path::{Path, PathBuf},
 };
 
 use ariad_core::{
-    ir::{Asset, AssetRef, AssetStore, Block, Document, Inline},
+    ir::{AssetRef, AssetStore, Block, Document, Inline},
     limits::Limits,
     warning::{Warning, WarningCode},
 };
@@ -13,8 +12,11 @@ use cap_std::{ambient_authority, fs::Dir};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+use crate::assets;
+
 #[derive(Debug, Error)]
 pub enum MediaError {
+    #[allow(dead_code)]
     #[error("failed to open media directory: {0}")]
     MediaDirectory(#[source] io::Error),
 }
@@ -66,104 +68,43 @@ pub fn ingest_media(
     Ok(warnings)
 }
 
+fn is_windows_drive_path(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes[2] == b'/' || bytes[2] == b'\\')
+}
+
 fn extract_relative_path(href: &str, media_dir: &Path) -> Result<PathBuf, &'static str> {
-    if href.is_empty() || href.contains('\0') {
+    let decoded = assets::percent_decode(href).map_err(|_| "href has invalid percent encoding")?;
+    if decoded.is_empty() || decoded.contains('\0') {
         return Err("empty or null byte in path");
     }
-    if href.contains(':') {
-        return Err("path contains scheme or drive prefix");
-    }
-    if href.contains('\\') {
-        return Err("path contains backslash");
+    if !is_windows_drive_path(&decoded) && assets::has_url_scheme(&decoded) {
+        return Err("path contains URL scheme");
     }
 
-    let p = Path::new(href);
-    let rel = if p.is_absolute() {
-        if let Ok(rel) = p.strip_prefix(media_dir) {
-            rel
-        } else {
-            return Err("absolute path escapes media directory");
-        }
-    } else if let Ok(rel) = p.strip_prefix("media") {
-        rel
-    } else if let Ok(rel) = p.strip_prefix("./media") {
-        rel
+    let forward_slash_href = decoded.replace('\\', "/");
+    let media_dir_str = media_dir.to_string_lossy().replace('\\', "/");
+
+    let rel_str = if forward_slash_href.len() >= media_dir_str.len()
+        && forward_slash_href[..media_dir_str.len()].eq_ignore_ascii_case(&media_dir_str)
+    {
+        let rest = &forward_slash_href[media_dir_str.len()..];
+        rest.trim_start_matches('/')
+    } else if let Some(rest) = forward_slash_href.strip_prefix("./media/") {
+        rest
+    } else if let Some(rest) = forward_slash_href.strip_prefix("media/") {
+        rest
+    } else if forward_slash_href.starts_with('/') || forward_slash_href.contains(':') {
+        return Err("absolute path escapes media directory");
     } else {
-        p
+        &forward_slash_href
     };
 
-    for component in rel.components() {
-        match component {
-            Component::Normal(_) => {}
-            _ => return Err("path contains non-normal component or traverses directories"),
-        }
-    }
-
-    Ok(rel.to_path_buf())
-}
-
-fn read_media(
-    dir: &Dir,
-    rel_path: &Path,
-    max_asset_bytes: Option<u64>,
-) -> Result<Asset, &'static str> {
-    let metadata = match dir.symlink_metadata(rel_path) {
-        Ok(m) => m,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Err("file not found"),
-        Err(_) => return Err("I/O error reading metadata"),
-    };
-
-    if !metadata.file_type().is_file() {
-        return Err("media path is not a regular file or is a symlink");
-    }
-
-    if max_asset_bytes.is_some_and(|max| metadata.len() > max) {
-        return Err("media file exceeds max_asset_bytes");
-    }
-
-    let mut options = cap_std::fs::OpenOptions::new();
-    options.read(true);
-    let mut file = dir
-        .open_with(rel_path, &options)
-        .map_err(|_| "failed to open media file")?;
-
-    let file_meta = file
-        .metadata()
-        .map_err(|_| "failed to query file metadata")?;
-    if !file_meta.is_file() {
-        return Err("media path is not a regular file");
-    }
-
-    let mut bytes = Vec::new();
-    if let Some(max) = max_asset_bytes {
-        let mut limited = (&mut file).take(max.saturating_add(1));
-        limited
-            .read_to_end(&mut bytes)
-            .map_err(|_| "I/O error reading media bytes")?;
-        if bytes.len() as u64 > max {
-            return Err("media file exceeds max_asset_bytes");
-        }
-    } else {
-        file.read_to_end(&mut bytes)
-            .map_err(|_| "I/O error reading media bytes")?;
-    }
-
-    let media_type = sniff_image_type(&bytes).ok_or("unsupported media format")?;
-    Ok(Asset { media_type, bytes })
-}
-
-fn sniff_image_type(bytes: &[u8]) -> Option<String> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some("image/png".to_owned())
-    } else if bytes.starts_with(b"\xff\xd8\xff") {
-        Some("image/jpeg".to_owned())
-    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        Some("image/gif".to_owned())
-    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        Some("image/webp".to_owned())
-    } else {
-        None
-    }
+    assets::lexical_path(rel_str)
+        .map_err(|_| "path traverses directories or contains invalid components")
 }
 
 fn resolve_media_asset(
@@ -171,16 +112,25 @@ fn resolve_media_asset(
     media_dir: &Path,
     dir: Option<&Dir>,
     max_asset_bytes: Option<u64>,
-    assets: &mut AssetStore,
+    assets_store: &mut AssetStore,
 ) -> Result<String, &'static str> {
     match target {
         AssetRef::Asset { id } => Ok(id.clone()),
         AssetRef::Url { href } => {
             let rel_path = extract_relative_path(href, media_dir)?;
             let dir = dir.ok_or("media directory does not exist")?;
-            let asset = read_media(dir, &rel_path, max_asset_bytes)?;
+            let asset =
+                assets::read_image(dir, &rel_path, max_asset_bytes).map_err(|err| match err {
+                    assets::ReadImageError::Missing => "media file not found",
+                    assets::ReadImageError::NotRegularFile => {
+                        "media path is not a regular file or is a symlink"
+                    }
+                    assets::ReadImageError::TooLarge => "media file exceeds max_asset_bytes",
+                    assets::ReadImageError::NotImage => "unsupported media format",
+                    assets::ReadImageError::Io => "I/O error reading media bytes",
+                })?;
             let id = hex::encode(Sha256::digest(&asset.bytes));
-            assets.entry(id.clone()).or_insert(asset);
+            assets_store.entry(id.clone()).or_insert(asset);
             Ok(id)
         }
     }
@@ -451,7 +401,7 @@ fn resolve_blocks(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, path::Path};
 
     use ariad_core::{
         ir::{AssetRef, Block, Document, Inline},
@@ -460,7 +410,7 @@ mod tests {
     };
     use tempfile::tempdir;
 
-    use super::ingest_media;
+    use super::{extract_relative_path, ingest_media};
 
     const PNG_BYTES: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82";
 
@@ -658,5 +608,65 @@ mod tests {
         let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
         assert!(warnings.is_empty());
         assert!(doc.assets.is_empty());
+    }
+
+    #[test]
+    fn windows_style_absolute_media_path_confined_and_resolved() {
+        let media_dir = Path::new(r"C:\work\tmp\media");
+        let href = r"C:\work\tmp\media\sub\image.png";
+        let rel = extract_relative_path(href, media_dir).unwrap();
+        assert_eq!(rel, Path::new("sub/image.png"));
+    }
+
+    #[test]
+    fn windows_drive_letter_case_insensitive() {
+        let media_dir = Path::new(r"C:\work\tmp\media");
+        let href = r"c:\work\tmp\media\image.png";
+        let rel = extract_relative_path(href, media_dir).unwrap();
+        assert_eq!(rel, Path::new("image.png"));
+    }
+
+    #[test]
+    fn path_traversal_with_windows_separators_rejected() {
+        let media_dir = Path::new("/work/tmp/media");
+        assert!(extract_relative_path(r"media\..\..\secret.txt", media_dir).is_err());
+        assert!(extract_relative_path(r"..\secret.txt", media_dir).is_err());
+        assert!(extract_relative_path(r"C:\Windows\System32\cmd.exe", media_dir).is_err());
+    }
+
+    #[test]
+    fn percent_encoded_media_path_resolved() {
+        let work_dir = tempdir().unwrap();
+        let media_dir = work_dir.path().join("media");
+        fs::create_dir_all(&media_dir).unwrap();
+        fs::write(media_dir.join("image with space.png"), PNG_BYTES).unwrap();
+
+        let mut doc = Document::default();
+        doc.body.push(Block::Paragraph {
+            content: vec![Inline::Image {
+                target: AssetRef::Url {
+                    href: "media/image%20with%20space.png".to_owned(),
+                },
+                alt: "Space image".to_owned(),
+                title: None,
+            }],
+        });
+
+        let warnings = ingest_media(&mut doc, work_dir.path(), &Limits::local()).unwrap();
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings, got: {warnings:?}"
+        );
+        assert_eq!(doc.assets.len(), 1);
+        let id = doc.assets.keys().next().unwrap();
+        match &doc.body[0] {
+            Block::Paragraph { content } => match &content[0] {
+                Inline::Image { target, .. } => {
+                    assert_eq!(target, &AssetRef::Asset { id: id.clone() });
+                }
+                other => panic!("expected Inline::Image, got {other:?}"),
+            },
+            other => panic!("expected Paragraph, got {other:?}"),
+        }
     }
 }

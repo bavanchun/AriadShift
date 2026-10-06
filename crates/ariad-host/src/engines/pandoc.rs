@@ -299,8 +299,8 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 }
 
                 let out_file = File::create(&output_path).map_err(|_| EngineFailure::io())?;
-                serde_json::to_writer_pretty(out_file, &document)
-                    .map_err(|_| EngineFailure::failure())?;
+                let writer = io::BufWriter::new(out_file);
+                serde_json::to_writer(writer, &document).map_err(|_| EngineFailure::failure())?;
 
                 emit(
                     output,
