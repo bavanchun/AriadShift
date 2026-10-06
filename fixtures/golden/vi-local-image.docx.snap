@@ -1,0 +1,290 @@
+---
+source: crates/ariad-cli/tests/docx_golden.rs
+---
+Package entries (sorted):
+- [Content_Types].xml
+- _rels/.rels
+- docProps/app.xml
+- docProps/core.xml
+- docProps/custom.xml
+- word/_rels/document.xml.rels
+- word/_rels/footnotes.xml.rels
+- word/comments.xml
+- word/document.xml
+- word/fontTable.xml
+- word/footnotes.xml
+- word/media/rId9.png
+- word/numbering.xml
+- word/settings.xml
+- word/styles.xml
+- word/theme/theme1.xml
+- word/webSettings.xml
+
+XML parts:
+
+--- [Content_Types].xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml" />
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />
+  <Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont" />
+  <Override PartName="/word/webSettings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml" />
+  <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml" />
+  <Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml" />
+  <Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml" />
+  <Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml" />
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml" />
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml" />
+  <Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml" />
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml" />
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml" />
+  <Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml" />
+  <Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml" />
+  <Override PartName="/word/media/rId9.png" ContentType="image/png" />
+</Types>
+
+--- _rels/.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml" />
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml" />
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml" />
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml" />
+</Relationships>
+
+--- docProps/core.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>
+  </dc:title>
+  <dc:creator>
+  </dc:creator>
+  <cp:keywords>
+  </cp:keywords>
+  <dcterms:created xsi:type="dcterms:W3CDTF">2023-11-14T22:13:20Z</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">2023-11-14T22:13:20Z</dcterms:modified>
+</cp:coreProperties>
+
+--- word/_rels/document.xml.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Id="rId8" Target="numbering.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Id="rId7" Target="styles.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Id="rId6" Target="settings.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/webSettings" Id="rId5" Target="webSettings.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Id="rId4" Target="fontTable.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Id="rId3" Target="theme/theme1.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Id="rId2" Target="footnotes.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Id="rId1" Target="comments.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Id="rId9" Target="media/rId9.png" />
+</Relationships>
+
+--- word/_rels/footnotes.xml.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships" />
+
+--- word/document.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+<w:body>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Heading1" />
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Sơ đồ lối ven sông</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="FirstParagraph" />
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="BodyText" />
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="BodyText" />
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="BodyText" />
+      </w:pPr>
+      <w:r>
+        <w:drawing>
+          <wp:inline>
+            <wp:extent cx="5334000" cy="2222500" />
+            <wp:effectExtent b="0" l="0" r="0" t="0" />
+            <wp:docPr descr="Sơ đồ tuyến đi bộ" title="Đường ven sông và các điểm dừng" id="10" name="Picture" />
+            <a:graphic>
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic>
+                  <pic:nvPicPr>
+                    <pic:cNvPr descr="data:image/png;base64,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" id="11" name="Picture" />
+                    <pic:cNvPicPr>
+                      <a:picLocks noChangeArrowheads="1" noChangeAspect="1" />
+                    </pic:cNvPicPr>
+                  </pic:nvPicPr>
+                  <pic:blipFill>
+                    <a:blip r:embed="rId9" />
+                    <a:stretch>
+                      <a:fillRect />
+                    </a:stretch>
+                  </pic:blipFill>
+                  <pic:spPr bwMode="auto">
+                    <a:xfrm>
+                      <a:off x="0" y="0" />
+                      <a:ext cx="5334000" cy="2222500" />
+                    </a:xfrm>
+                    <a:prstGeom prst="rect">
+                      <a:avLst />
+                    </a:prstGeom>
+                    <a:noFill />
+                    <a:ln w="9525">
+                      <a:noFill />
+                      <a:headEnd />
+                      <a:tailEnd />
+                    </a:ln>
+                  </pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>
+    <w:sectPr>
+      <w:footnotePr>
+        
+                
+        <w:numRestart w:val="eachSect" />
+        
+              
+      </w:footnotePr>
+    </w:sectPr>
+  </w:body>
+</w:document>
+
+
+--- word/footnotes.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+  <w:footnote w:type="continuationSeparator" w:id="0">
+    <w:p>
+      <w:r>
+        <w:continuationSeparator />
+      </w:r>
+    </w:p>
+  </w:footnote>
+  <w:footnote w:type="separator" w:id="-1">
+    <w:p>
+      <w:r>
+        <w:separator />
+      </w:r>
+    </w:p>
+  </w:footnote>
+</w:footnotes>
+
+--- word/numbering.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="990">
+    <w:nsid w:val="0000A990" />
+    <w:multiLevelType w:val="multilevel" />
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="720" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="1">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="1440" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="2">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2160" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="3">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2880" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="4">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="3600" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="5">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="4320" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="6">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5040" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="7">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5760" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="8">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="6480" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="1000">
+    <w:abstractNumId w:val="990" />
+  </w:num>
+</w:numbering>
+
+Template and media SHA-256:
+855d35ae8c32c3d324061d647f19946c5bb587086f20534898db100b63e7c20f  word/fontTable.xml
+6bca795730900c41e97ac33d04db2b054019dcd598e0e57f98dbc958e94291fb  word/media/rId9.png
+7c3e582b8c0c8d60d097edd0338b0e609eb1d6cbba1ef30ac592054c85757991  word/settings.xml
+819710d6c278b68ac018347609cb8cd7f40318b01227c63ca8025a39da7b9b29  word/styles.xml
+287e41f62eb4a943f333f886d04665d31fb7397ec8f48c589a055c9f1d0cecbf  word/theme/theme1.xml

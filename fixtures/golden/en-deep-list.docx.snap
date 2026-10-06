@@ -1,0 +1,1270 @@
+---
+source: crates/ariad-cli/tests/docx_golden.rs
+---
+Package entries (sorted):
+- [Content_Types].xml
+- _rels/.rels
+- docProps/app.xml
+- docProps/core.xml
+- docProps/custom.xml
+- word/_rels/document.xml.rels
+- word/_rels/footnotes.xml.rels
+- word/comments.xml
+- word/document.xml
+- word/fontTable.xml
+- word/footnotes.xml
+- word/numbering.xml
+- word/settings.xml
+- word/styles.xml
+- word/theme/theme1.xml
+- word/webSettings.xml
+
+XML parts:
+
+--- [Content_Types].xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml" />
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />
+  <Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont" />
+  <Override PartName="/word/webSettings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml" />
+  <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml" />
+  <Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml" />
+  <Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml" />
+  <Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml" />
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml" />
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml" />
+  <Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml" />
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml" />
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml" />
+  <Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml" />
+  <Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml" />
+</Types>
+
+--- _rels/.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml" />
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml" />
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml" />
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml" />
+</Relationships>
+
+--- docProps/core.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>
+  </dc:title>
+  <dc:creator>
+  </dc:creator>
+  <cp:keywords>
+  </cp:keywords>
+  <dcterms:created xsi:type="dcterms:W3CDTF">2023-11-14T22:13:20Z</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">2023-11-14T22:13:20Z</dcterms:modified>
+</cp:coreProperties>
+
+--- word/_rels/document.xml.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Id="rId8" Target="numbering.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Id="rId7" Target="styles.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Id="rId6" Target="settings.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/webSettings" Id="rId5" Target="webSettings.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Id="rId4" Target="fontTable.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Id="rId3" Target="theme/theme1.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Id="rId2" Target="footnotes.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Id="rId1" Target="comments.xml" />
+</Relationships>
+
+--- word/_rels/footnotes.xml.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships" />
+
+--- word/document.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+<w:body>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="0" />
+          <w:numId w:val="1001" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 1</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="1" />
+          <w:numId w:val="1002" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 2</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="2" />
+          <w:numId w:val="1003" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 3</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="3" />
+          <w:numId w:val="1004" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 4</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="4" />
+          <w:numId w:val="1005" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 5</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="5" />
+          <w:numId w:val="1006" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 6</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="6" />
+          <w:numId w:val="1007" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 7</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="7" />
+          <w:numId w:val="1008" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 8</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="8" />
+          <w:numId w:val="1009" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 9</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="9" />
+          <w:numId w:val="1010" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 10</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="10" />
+          <w:numId w:val="1011" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 11</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="11" />
+          <w:numId w:val="1012" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 12</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="12" />
+          <w:numId w:val="1013" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 13</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="13" />
+          <w:numId w:val="1014" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 14</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="14" />
+          <w:numId w:val="1015" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 15</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="15" />
+          <w:numId w:val="1016" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 16</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="16" />
+          <w:numId w:val="1017" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 17</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="17" />
+          <w:numId w:val="1018" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 18</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="18" />
+          <w:numId w:val="1019" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 19</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="19" />
+          <w:numId w:val="1020" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 20</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="20" />
+          <w:numId w:val="1021" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 21</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="21" />
+          <w:numId w:val="1022" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 22</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="22" />
+          <w:numId w:val="1023" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 23</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="23" />
+          <w:numId w:val="1024" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 24</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="24" />
+          <w:numId w:val="1025" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 25</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="25" />
+          <w:numId w:val="1026" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 26</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="26" />
+          <w:numId w:val="1027" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 27</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="27" />
+          <w:numId w:val="1028" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 28</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="28" />
+          <w:numId w:val="1029" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 29</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="29" />
+          <w:numId w:val="1030" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 30</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="30" />
+          <w:numId w:val="1031" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 31</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="31" />
+          <w:numId w:val="1032" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 32</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="32" />
+          <w:numId w:val="1033" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 33</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="33" />
+          <w:numId w:val="1034" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 34</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="34" />
+          <w:numId w:val="1035" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 35</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="35" />
+          <w:numId w:val="1036" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 36</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="36" />
+          <w:numId w:val="1037" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 37</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="37" />
+          <w:numId w:val="1038" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 38</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="38" />
+          <w:numId w:val="1039" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 39</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="39" />
+          <w:numId w:val="1040" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 40</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="40" />
+          <w:numId w:val="1041" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 41</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="41" />
+          <w:numId w:val="1042" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 42</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="42" />
+          <w:numId w:val="1043" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 43</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="43" />
+          <w:numId w:val="1044" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 44</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="44" />
+          <w:numId w:val="1045" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 45</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="45" />
+          <w:numId w:val="1046" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 46</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="46" />
+          <w:numId w:val="1047" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 47</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="47" />
+          <w:numId w:val="1048" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 48</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="48" />
+          <w:numId w:val="1049" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 49</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="49" />
+          <w:numId w:val="1050" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 50</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="50" />
+          <w:numId w:val="1051" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 51</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="51" />
+          <w:numId w:val="1052" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 52</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="52" />
+          <w:numId w:val="1053" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 53</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="53" />
+          <w:numId w:val="1054" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 54</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="54" />
+          <w:numId w:val="1055" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 55</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="55" />
+          <w:numId w:val="1056" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 56</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="56" />
+          <w:numId w:val="1057" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 57</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="57" />
+          <w:numId w:val="1058" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 58</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="58" />
+          <w:numId w:val="1059" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 59</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="59" />
+          <w:numId w:val="1060" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 60</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="60" />
+          <w:numId w:val="1061" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 61</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="61" />
+          <w:numId w:val="1062" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 62</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="62" />
+          <w:numId w:val="1063" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 63</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="63" />
+          <w:numId w:val="1064" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Layer 64</w:t>
+      </w:r>
+    </w:p>
+    <w:sectPr>
+      <w:footnotePr>
+        
+                
+        <w:numRestart w:val="eachSect" />
+        
+              
+      </w:footnotePr>
+    </w:sectPr>
+  </w:body>
+</w:document>
+
+
+--- word/footnotes.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+  <w:footnote w:type="continuationSeparator" w:id="0">
+    <w:p>
+      <w:r>
+        <w:continuationSeparator />
+      </w:r>
+    </w:p>
+  </w:footnote>
+  <w:footnote w:type="separator" w:id="-1">
+    <w:p>
+      <w:r>
+        <w:separator />
+      </w:r>
+    </w:p>
+  </w:footnote>
+</w:footnotes>
+
+--- word/numbering.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="990">
+    <w:nsid w:val="0000A990" />
+    <w:multiLevelType w:val="multilevel" />
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="720" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="1">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="1440" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="2">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2160" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="3">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2880" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="4">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="3600" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="5">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="4320" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="6">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5040" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="7">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5760" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="8">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="6480" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:abstractNum w:abstractNumId="991">
+    <w:nsid w:val="0000A991" />
+    <w:multiLevelType w:val="multilevel" />
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="720" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:cs="Symbol" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="1">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="o" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="1440" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="2">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2160" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings" w:cs="Wingdings" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="3">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2880" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:cs="Symbol" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="4">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="o" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="3600" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="5">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="4320" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings" w:cs="Wingdings" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="6">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5040" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:cs="Symbol" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="7">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="o" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5760" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Courier New" w:hAnsi="Courier New" w:cs="Courier New" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+    <w:lvl w:ilvl="8">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="6480" w:hanging="360" />
+      </w:pPr>
+      <w:rPr>
+        <w:rFonts w:ascii="Wingdings" w:hAnsi="Wingdings" w:cs="Wingdings" w:hint="default" />
+      </w:rPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="1000">
+    <w:abstractNumId w:val="990" />
+  </w:num>
+  <w:num w:numId="1001">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1002">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1003">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1004">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1005">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1006">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1007">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1008">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1009">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1010">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1011">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1012">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1013">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1014">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1015">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1016">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1017">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1018">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1019">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1020">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1021">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1022">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1023">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1024">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1025">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1026">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1027">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1028">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1029">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1030">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1031">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1032">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1033">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1034">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1035">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1036">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1037">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1038">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1039">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1040">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1041">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1042">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1043">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1044">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1045">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1046">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1047">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1048">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1049">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1050">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1051">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1052">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1053">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1054">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1055">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1056">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1057">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1058">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1059">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1060">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1061">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1062">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1063">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+  <w:num w:numId="1064">
+    <w:abstractNumId w:val="991" />
+  </w:num>
+</w:numbering>
+
+Template and media SHA-256:
+855d35ae8c32c3d324061d647f19946c5bb587086f20534898db100b63e7c20f  word/fontTable.xml
+7c3e582b8c0c8d60d097edd0338b0e609eb1d6cbba1ef30ac592054c85757991  word/settings.xml
+819710d6c278b68ac018347609cb8cd7f40318b01227c63ca8025a39da7b9b29  word/styles.xml
+287e41f62eb4a943f333f886d04665d31fb7397ec8f48c589a055c9f1d0cecbf  word/theme/theme1.xml

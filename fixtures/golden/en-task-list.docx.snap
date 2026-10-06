@@ -1,0 +1,412 @@
+---
+source: crates/ariad-cli/tests/docx_golden.rs
+---
+Package entries (sorted):
+- [Content_Types].xml
+- _rels/.rels
+- docProps/app.xml
+- docProps/core.xml
+- docProps/custom.xml
+- word/_rels/document.xml.rels
+- word/_rels/footnotes.xml.rels
+- word/comments.xml
+- word/document.xml
+- word/fontTable.xml
+- word/footnotes.xml
+- word/numbering.xml
+- word/settings.xml
+- word/styles.xml
+- word/theme/theme1.xml
+- word/webSettings.xml
+
+XML parts:
+
+--- [Content_Types].xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml" />
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />
+  <Default Extension="odttf" ContentType="application/vnd.openxmlformats-officedocument.obfuscatedFont" />
+  <Override PartName="/word/webSettings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml" />
+  <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml" />
+  <Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml" />
+  <Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml" />
+  <Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml" />
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml" />
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml" />
+  <Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml" />
+  <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml" />
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml" />
+  <Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml" />
+  <Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml" />
+</Types>
+
+--- _rels/.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml" />
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml" />
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml" />
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml" />
+</Relationships>
+
+--- docProps/core.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>
+  </dc:title>
+  <dc:creator>
+  </dc:creator>
+  <cp:keywords>
+  </cp:keywords>
+  <dcterms:created xsi:type="dcterms:W3CDTF">2023-11-14T22:13:20Z</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">2023-11-14T22:13:20Z</dcterms:modified>
+</cp:coreProperties>
+
+--- word/_rels/document.xml.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Id="rId8" Target="numbering.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Id="rId7" Target="styles.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Id="rId6" Target="settings.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/webSettings" Id="rId5" Target="webSettings.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable" Id="rId4" Target="fontTable.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Id="rId3" Target="theme/theme1.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Id="rId2" Target="footnotes.xml" />
+  <Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Id="rId1" Target="comments.xml" />
+</Relationships>
+
+--- word/_rels/footnotes.xml.rels ---
+<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships" />
+
+--- word/document.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+<w:body>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Heading1" />
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Before the Repair Café Opens</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="0" />
+          <w:numId w:val="1001" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Set out the work mats</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="0" />
+          <w:numId w:val="1002" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Test the lamps</w:t>
+      </w:r>
+    </w:p>
+    <w:p>
+      <w:pPr>
+        <w:pStyle w:val="Compact" />
+        <w:numPr>
+          <w:ilvl w:val="0" />
+          <w:numId w:val="1003" />
+        </w:numPr>
+      </w:pPr>
+      <w:r>
+        <w:t xml:space="preserve">Leave a clear path to the door</w:t>
+      </w:r>
+    </w:p>
+    <w:sectPr>
+      <w:footnotePr>
+        
+                
+        <w:numRestart w:val="eachSect" />
+        
+              
+      </w:footnotePr>
+    </w:sectPr>
+  </w:body>
+</w:document>
+
+
+--- word/footnotes.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+  <w:footnote w:type="continuationSeparator" w:id="0">
+    <w:p>
+      <w:r>
+        <w:continuationSeparator />
+      </w:r>
+    </w:p>
+  </w:footnote>
+  <w:footnote w:type="separator" w:id="-1">
+    <w:p>
+      <w:r>
+        <w:separator />
+      </w:r>
+    </w:p>
+  </w:footnote>
+</w:footnotes>
+
+--- word/numbering.xml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:abstractNum w:abstractNumId="990">
+    <w:nsid w:val="0000A990" />
+    <w:multiLevelType w:val="multilevel" />
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="720" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="1">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="1440" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="2">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2160" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="3">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2880" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="4">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="3600" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="5">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="4320" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="6">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5040" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="7">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5760" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="8">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val=" " />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="6480" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:abstractNum w:abstractNumId="993">
+    <w:nsid w:val="0000A993" />
+    <w:multiLevelType w:val="multilevel" />
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="720" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="1">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="1440" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="2">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2160" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="3">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2880" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="4">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="3600" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="5">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="4320" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="6">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5040" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="7">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5760" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="8">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☒" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="6480" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:abstractNum w:abstractNumId="992">
+    <w:nsid w:val="0000A992" />
+    <w:multiLevelType w:val="multilevel" />
+    <w:lvl w:ilvl="0">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="720" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="1">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="1440" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="2">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2160" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="3">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="2880" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="4">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="3600" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="5">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="4320" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="6">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5040" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="7">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="5760" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+    <w:lvl w:ilvl="8">
+      <w:numFmt w:val="bullet" />
+      <w:lvlText w:val="☐" />
+      <w:lvlJc w:val="left" />
+      <w:pPr>
+        <w:ind w:left="6480" w:hanging="360" />
+      </w:pPr>
+    </w:lvl>
+  </w:abstractNum>
+  <w:num w:numId="1000">
+    <w:abstractNumId w:val="990" />
+  </w:num>
+  <w:num w:numId="1001">
+    <w:abstractNumId w:val="993" />
+  </w:num>
+  <w:num w:numId="1002">
+    <w:abstractNumId w:val="992" />
+  </w:num>
+  <w:num w:numId="1003">
+    <w:abstractNumId w:val="992" />
+  </w:num>
+</w:numbering>
+
+Template and media SHA-256:
+855d35ae8c32c3d324061d647f19946c5bb587086f20534898db100b63e7c20f  word/fontTable.xml
+7c3e582b8c0c8d60d097edd0338b0e609eb1d6cbba1ef30ac592054c85757991  word/settings.xml
+819710d6c278b68ac018347609cb8cd7f40318b01227c63ca8025a39da7b9b29  word/styles.xml
+287e41f62eb4a943f333f886d04665d31fb7397ec8f48c589a055c9f1d0cecbf  word/theme/theme1.xml
