@@ -187,6 +187,48 @@ fn malformed_and_trailing_events_are_protocol_violations() {
         ),
         Err(RunError::ProtocolViolation(_))
     ));
+
+    let workspace = Workspace::new().expect("create workspace");
+    let stray = run_probe(&workspace, "stray-stdout", None, CancellationToken::new());
+    assert!(
+        matches!(&stray, Err(RunError::ProtocolViolation(_))),
+        "unexpected stray stdout outcome: {stray:?}"
+    );
+}
+
+#[test]
+fn runner_clears_environment_and_preserves_allowlist() {
+    let workspace = Workspace::new().expect("create workspace");
+    let outcome = run_probe(&workspace, "dump-env", None, CancellationToken::new())
+        .expect("dump-env probe succeeds");
+    let metrics = outcome.metrics.expect("metrics present in result");
+    assert!(
+        !metrics.contains_key("HOME"),
+        "runner must clear HOME from child environment"
+    );
+    assert!(
+        !metrics.contains_key("USER"),
+        "runner must clear USER from child environment"
+    );
+    assert!(
+        metrics.contains_key("PATH"),
+        "runner must preserve PATH in child process"
+    );
+    #[cfg(windows)]
+    {
+        if std::env::var_os("USERPROFILE").is_some() {
+            assert!(
+                metrics.contains_key("USERPROFILE"),
+                "runner must pass USERPROFILE on Windows"
+            );
+        }
+        if std::env::var_os("APPDATA").is_some() {
+            assert!(
+                metrics.contains_key("APPDATA"),
+                "runner must pass APPDATA on Windows"
+            );
+        }
+    }
 }
 
 #[test]
