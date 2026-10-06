@@ -8,12 +8,16 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+ariad-host = { path = "../ariad-host", version = "0.0.0" }
 clap.workspace = true
 
 [dev-dependencies]
+ariad-core = { path = "../ariad-core", version = "0.0.0" }
 hex.workspace = true
 serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 sha2.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
 toml.workspace = true
 
 [[bin]]

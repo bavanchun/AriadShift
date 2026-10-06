@@ -3,6 +3,7 @@
 
 pub mod assets;
 pub mod docx_meta;
+pub mod engines;
 pub mod ir_io;
 pub mod pandoc_bin;
 pub mod runner;

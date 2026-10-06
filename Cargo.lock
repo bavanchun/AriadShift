@@ -100,10 +100,14 @@ dependencies = [
 name = "ariad-cli"
 version = "0.0.0"
 dependencies = [
+ "ariad-core",
+ "ariad-host",
  "clap",
  "hex",
  "serde",
+ "serde_json",
  "sha2",
+ "tokio-util",
  "toml",
 ]
 
