@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Pandoc readers to IR (DOCX, EPUB)"
-status: pending
+status: completed
 priority: P1
 effort: "12h"
 dependencies: [3]

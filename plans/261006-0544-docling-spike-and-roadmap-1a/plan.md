@@ -57,7 +57,7 @@ Research:
 | 1 | [Docling protocol spike](./phase-01-docling-protocol-spike.md) | 12h | none | Done |
 | 2 | [Record 1a decisions](./phase-02-decisions-record.md) | 4h | none | Done |
 | 3 | [Engine protocol and IR revision](./phase-03-engine-protocol-and-ir-revision.md) | 13h | 1, 2 | Done |
-| 4 | [Pandoc readers to IR (DOCX, EPUB)](./phase-04-pandoc-readers-to-ir.md) | 14h | 3 | Pending |
+| 4 | [Pandoc readers to IR (DOCX, EPUB)](./phase-04-pandoc-readers-to-ir.md) | 14h | 3 | Done |
 | 5 | [Native HTML reader](./phase-05-native-html-reader.md) | 12h | 3 | Done |
 | 6 | [Writers and route execution](./phase-06-writers-and-route-execution.md) | 15h | 4, 5 | Pending |
 | 7 | [Planner and capabilities.json](./phase-07-planner-and-capabilities.md) | 10h | 6 | Pending |
