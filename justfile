@@ -1,5 +1,6 @@
 export ASHIFT_PANDOC := justfile_directory() / ".tools" / "pandoc" / "bin" / ("pandoc" + if os() == "windows" { ".exe" } else { "" })
 export CARGO_BUILD_WARNINGS := "deny"
+set positional-arguments
 
 default: ci
 
@@ -49,10 +50,22 @@ py:
 fixtures:
     uv run --package ariad-fixture-gen python -m ariad_fixture_gen
 
+bench *args:
+    uv run --package ariad-bench python -m ariad_bench run "$@"
+
+bench-check:
+    uv run --package ariad-bench python -m ariad_bench check
+
+bench-test:
+    uv run --package ariad-bench pytest bench/tests
+
+bench-mutation:
+    uv run --package ariad-bench pytest bench/tests/test_rendered_vs_truth.py -k test_structural_drift_mutations_detected
+
 # Checks that do not depend on the OS; CI runs them once.
 static: fmt-check spell lint-workflows deny js py
 
-ci: static clippy wasm test
+ci: static clippy wasm test bench-test bench-check
 
 pandoc:
     bash scripts/install-pandoc.sh
