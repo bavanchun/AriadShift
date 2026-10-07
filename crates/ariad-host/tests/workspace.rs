@@ -212,7 +212,30 @@ fn promote_into_parent_swapped_after_check_does_not_redirect_write() {
 
     // Step 2: Attacker swaps the parent directory after the check
     let moved_away = root_temp.path().join("allowed_parent_moved");
-    fs::rename(&allowed_parent, &moved_away).expect("rename away allowed_parent");
+    #[cfg(windows)]
+    {
+        if let Err(err) = fs::rename(&allowed_parent, &moved_away) {
+            // Windows error code 32: ERROR_SHARING_VIOLATION ("The process cannot access the file because it is being used by another process.")
+            // An open directory handle prevents the rename, which is the OS-level protection against swapping.
+            if err.raw_os_error() == Some(32) {
+                let leaked_path = untrusted_secret.join("out.docx");
+                assert!(
+                    !leaked_path.exists(),
+                    "nothing should be written to untrusted_secret"
+                );
+                assert!(
+                    allowed_parent.exists(),
+                    "allowed parent still exists when rename fails with sharing violation"
+                );
+                return;
+            }
+            panic!("rename away allowed_parent: {err:?}");
+        }
+    }
+    #[cfg(unix)]
+    {
+        fs::rename(&allowed_parent, &moved_away).expect("rename away allowed_parent");
+    }
 
     #[cfg(unix)]
     {
@@ -286,7 +309,13 @@ fn sweep_stale_and_count_stale_refuse_symlinks() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&target_dir, &symlink_ws).expect("create symlink");
     #[cfg(windows)]
-    let _ = std::os::windows::fs::symlink_dir(&target_dir, &symlink_ws);
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&symlink_ws)
+            .arg(&target_dir)
+            .status();
+    }
 
     // Stale real workspace
     let real_ws = temp_root.join(format!("ariadshift-real-{}", unique_suffix));

@@ -1158,9 +1158,12 @@ fn is_process_alive(pid: u32) -> bool {
 #[cfg(unix)]
 fn find_hanging_engine(parent_pid: u32, timeout: std::time::Duration) -> Option<u32> {
     let start = std::time::Instant::now();
+    let min_sustained = std::time::Duration::from_millis(750);
+    let mut candidate: Option<(u32, std::time::Instant)> = None;
+
     while start.elapsed() < timeout {
         if let Ok(output) = Command::new("ps")
-            .args(["-axo", "pid=,ppid=,command="])
+            .args(["-axo", "pid=,ppid=,stat=,command="])
             .output()
             && output.status.success()
         {
@@ -1178,15 +1181,22 @@ fn find_hanging_engine(parent_pid: u32, timeout: std::time::Duration) -> Option<
                 let Some(ppid_str) = parts.next() else {
                     continue;
                 };
+                let Some(stat_str) = parts.next() else {
+                    continue;
+                };
                 let Ok(pid) = pid_str.parse::<u32>() else {
                     continue;
                 };
                 let Ok(ppid) = ppid_str.parse::<u32>() else {
                     continue;
                 };
+                if stat_str.contains('Z') {
+                    continue;
+                }
                 let after_pid = trimmed[pid_str.len()..].trim_start();
-                let cmdline = if after_pid.len() >= ppid_str.len() {
-                    after_pid[ppid_str.len()..].trim_start()
+                let after_ppid = after_pid[ppid_str.len()..].trim_start();
+                let cmdline = if after_ppid.len() >= stat_str.len() {
+                    after_ppid[stat_str.len()..].trim_start()
                 } else {
                     ""
                 };
@@ -1203,20 +1213,34 @@ fn find_hanging_engine(parent_pid: u32, timeout: std::time::Duration) -> Option<
                 }
             }
 
+            let mut engine_pids = Vec::new();
             for &(pid, _, cmdline) in &procs {
                 if descendants.contains(&pid)
                     && cmdline.contains("__engine")
                     && is_process_alive(pid)
                 {
-                    // Verify it is alive and sustained (not transient describe child)
-                    std::thread::sleep(std::time::Duration::from_millis(60));
-                    if is_process_alive(pid) {
-                        return Some(pid);
-                    }
+                    engine_pids.push(pid);
                 }
             }
+
+            if let Some((cand_pid, cand_since)) = candidate {
+                if engine_pids.contains(&cand_pid) && is_process_alive(cand_pid) {
+                    if cand_since.elapsed() >= min_sustained {
+                        return Some(cand_pid);
+                    }
+                } else {
+                    // Candidate exited or died (e.g. transient describe child)
+                    candidate = None;
+                }
+            }
+
+            if candidate.is_none()
+                && let Some(&first_engine_pid) = engine_pids.first()
+            {
+                candidate = Some((first_engine_pid, std::time::Instant::now()));
+            }
         }
-        std::thread::sleep(std::time::Duration::from_millis(30));
+        std::thread::sleep(std::time::Duration::from_millis(50));
     }
     None
 }
