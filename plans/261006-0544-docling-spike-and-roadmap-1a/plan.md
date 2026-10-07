@@ -65,7 +65,7 @@ Research:
 | 9 | [`inspect`, `plan`, `engines`, `doctor`](./phase-09-cli-inspect-plan-engines-doctor.md) | 9h | 7 | Done |
 | 10 | [MCP server](./phase-10-mcp-server.md) | 13h | 9 | Done |
 | 11 | [Fuzzing](./phase-11-fuzzing.md) | 6h | 3, 4, 5 | Done |
-| 12 | [Release pipeline](./phase-12-release-pipeline.md) | 11h | 9, 10 | Pending |
+| 12 | [Release pipeline](./phase-12-release-pipeline.md) | 11h | 9, 10 | Done |
 | 13 | [Release gate and acceptance](./phase-13-release-gate-and-acceptance.md) | 7h | all | Pending |
 
 Execution waves. Each wave starts when its dependencies are accepted, on a fresh branch from `dev`. Two workers at most, in separate worktrees; phase 1 keeps its adapter in a worktree on `spike/docling`:
