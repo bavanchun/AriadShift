@@ -680,7 +680,7 @@ sha256 = "b840b5ab8c790f352e8d1ce2b26acc814a17af430baa99d59292540c842a5b44"
 tags = []
 phase = "1a"
 routes = ["html->md", "html->docx"]
-companions = []
+companions = [{ path = "fixtures/html/vi-garden-notice.truth.json", sha256 = "c1148dc0caef2d57773112d282b8321a4efd5c9803112ff28f425d501e621a23" }]
 
 [[fixture]]
 id = "vi-route-table"
@@ -698,7 +698,7 @@ sha256 = "09518053fe190e8b00a6f086d1e73e6e1a41c684791eb557a13d0336044c621c"
 tags = []
 phase = "1a"
 routes = ["html->md"]
-companions = []
+companions = [{ path = "fixtures/html/vi-route-table.truth.json", sha256 = "291e43468e0e5caeb9851798f8ab417bd077aa2a7ce66482c3ea8b66143416f5" }]
 
 [[fixture]]
 id = "en-repair-cafe"
@@ -716,7 +716,7 @@ sha256 = "ca0bd525f52fda0c14d83f2fee77897df622cc7e07dabf4baa71e53a1d0839f5"
 tags = []
 phase = "1a"
 routes = ["html->md", "html->docx"]
-companions = []
+companions = [{ path = "fixtures/html/en-repair-cafe.truth.json", sha256 = "29843ec9b976a776e372f68cbba90b49e6343f9f49fece1133eec3501c24b8de" }]
 
 [[fixture]]
 id = "en-map-archive"
@@ -734,7 +734,7 @@ sha256 = "f3cd32f9f9b57a3d0d4faf78d77bf9f6f16ebb64ee707cf869e5aef33457b596"
 tags = []
 phase = "1a"
 routes = ["html->md"]
-companions = []
+companions = [{ path = "fixtures/html/en-map-archive.truth.json", sha256 = "1050b639e2ab53f0b2fe54c2b62bbae20e73589373d9772ea00456a75d6b8fa0" }]
 
 [[fixture]]
 id = "vi-styled-report"
@@ -752,7 +752,7 @@ sha256 = "5e510ac550db8771d6bcef7b1a4fb928c5b7a85a2feb737bbd6115936181055d"
 tags = []
 phase = "1a"
 routes = ["docx->md", "docx->html"]
-companions = []
+companions = [{ path = "fixtures/docx/vi-styled-report.truth.json", sha256 = "9946ad8eeabfe7363181d66965cdc7340c96925537f8a808d23bdedd9975f501" }]
 
 [[fixture]]
 id = "en-numbered-checklist"
@@ -770,7 +770,7 @@ sha256 = "d0f4b4aa0a55dc79c8f6582e10801747c514a8c264e8efd590b2abf0d6855117"
 tags = []
 phase = "1a"
 routes = ["docx->md", "docx->html"]
-companions = []
+companions = [{ path = "fixtures/docx/en-numbered-checklist.truth.json", sha256 = "fd915dcfc22702fd80da506f673545a7f81711834880484460d708d1b5ee883f" }]
 
 [[fixture]]
 id = "vi-route-data"
@@ -788,7 +788,7 @@ sha256 = "f7b75e85725a05f6d30671e5b4d8ed1de12b36520b5e8e0bf80dfe11c3575199"
 tags = []
 phase = "1a"
 routes = ["docx->md"]
-companions = []
+companions = [{ path = "fixtures/docx/vi-route-data.truth.json", sha256 = "7259509495869077c70dadfbe9d5b84c1ee5a351811fe2745cd62ea343f3fd4a" }]
 
 [[fixture]]
 id = "en-footnotes-docx"
@@ -806,7 +806,7 @@ sha256 = "1d9fbf5adb9ec6a618444f7a0eaf5f9a09029979b8880cd3103a92860a05fbbd"
 tags = []
 phase = "1a"
 routes = ["docx->md"]
-companions = []
+companions = [{ path = "fixtures/docx/en-footnotes-docx.truth.json", sha256 = "b4e6707d47bbfadfbd9ae772ee6eabe4e347996952bf72ddeb6f522ab810e2f7" }]
 
 [[fixture]]
 id = "synthetic-merged-table"
@@ -824,7 +824,7 @@ sha256 = "0f78c3ed02416eb6a1732d7d6957004225c96a445cf2994d2f7d7ec5ce3aed41"
 tags = []
 phase = "1a"
 routes = ["docx->md"]
-companions = []
+companions = [{ path = "fixtures/docx/synthetic-merged-table.truth.json", sha256 = "1208a374840ade165d58843bc55f99b3a30e564887a10427094817eb1f522b8a" }]
 
 [[fixture]]
 id = "synthetic-two-column"
@@ -842,7 +842,7 @@ sha256 = "f2e6e40e713e9f5d5d8c67197e00e44e6e7b2ace7b61437bcc2f791712f7d749"
 tags = []
 phase = "1a"
 routes = ["docx->md"]
-companions = []
+companions = [{ path = "fixtures/docx/synthetic-two-column.truth.json", sha256 = "ea5442d523007cfbd0c0501235381253589e31c21efa15d13bf43b11994540d5" }]
 
 [[fixture]]
 id = "pd-vi-truyen-kieu-html"
@@ -1131,7 +1131,7 @@ sha256 = "e872d0d3afa7968ef8d4c60d3cc3c8659c7f8db4c3706654b0631dc802c6806f"
 tags = ["headings"]
 phase = "1a"
 routes = ["epub->md"]
-companions = []
+companions = [{ path = "fixtures/epub/vi-epub-chapters.truth.json", sha256 = "70d3fd2691f60300d45a8f383074068dd536defee864d8bcc531d60606347fe8" }]
 
 [[fixture]]
 id = "en-epub-footnotes"
@@ -1149,7 +1149,7 @@ sha256 = "11c3c0366a14bee01eb20fea48eb4f4b9d0cb85bf893429ae400e4bc41feb8e5"
 tags = ["footnotes"]
 phase = "1a"
 routes = ["epub->md"]
-companions = []
+companions = [{ path = "fixtures/epub/en-epub-footnotes.truth.json", sha256 = "27abc88e8be00236edd9632733b539b2233fcf112ce7d5424a5c7d0a8372066d" }]
 
 [[fixture]]
 id = "vi-epub-table-image"
@@ -1167,7 +1167,7 @@ sha256 = "a6cdf669fad4d54e54ff8353815daeae5ccd03530f124f8395181e361087fe7f"
 tags = ["tables", "tables-merged", "images"]
 phase = "1a"
 routes = ["epub->md"]
-companions = []
+companions = [{ path = "fixtures/epub/vi-epub-table-image.truth.json", sha256 = "e08dbcfe8cd4775e2780ecf262c12267b25284dc6c1d77052c2575ddbda29871" }]
 
 [[fixture]]
 id = "en-epub-minimal"
@@ -1185,4 +1185,4 @@ sha256 = "99f0c6fb67541d81842910c4fe05b87dcc17e73583464444d83f36c4b2294ab4"
 tags = []
 phase = "1a"
 routes = ["epub->md"]
-companions = []
+companions = [{ path = "fixtures/epub/en-epub-minimal.truth.json", sha256 = "90cb516fa80b83cbd22fdff4354d9c8f992fb0bf090c98a45d2143a826c8e75b" }]

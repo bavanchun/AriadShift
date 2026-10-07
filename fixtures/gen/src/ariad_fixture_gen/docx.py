@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 from zipfile import ZIP_STORED, ZipFile, ZipInfo
 
 from docx import Document
@@ -12,6 +14,19 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.shared import Inches
 from lxml import etree
+
+from ariad_fixture_gen.truth import (
+    Cell,
+    FootnoteBlock,
+    HeadingBlock,
+    ListBlock,
+    PageBreakBlock,
+    ParagraphBlock,
+    TableBlock,
+    UnscoredBlock,
+    blocks_to_canonical,
+    blocks_to_ir,
+)
 
 _WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -41,96 +56,6 @@ def _set_cell_text(cell, text: str, *, bold: bool = False) -> None:
     for paragraph in cell.paragraphs:
         for run in paragraph.runs:
             run.bold = bold
-
-
-def _styled_report(garden: list[str]) -> bytes:
-    document = _document("Khu vườn đọc sách")
-    section = document.sections[0]
-    section.top_margin = Inches(0.8)
-    section.bottom_margin = Inches(0.8)
-    section.header.paragraphs[0].text = "Thư viện phường"
-    section.footer.paragraphs[0].text = "Sổ chăm vườn"
-    document.add_heading("Khu vườn đọc sách", level=1)
-    document.add_paragraph(garden[0])
-    note = document.add_paragraph(style="Quote")
-    note.add_run("Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách.").italic = True
-    document.add_heading("Sinh hoạt hằng tuần", level=2)
-    document.add_paragraph(garden[1])
-    document.add_paragraph(garden[2])
-    return _save(document)
-
-
-def _numbered_checklist(repair_cafe: list[str]) -> bytes:
-    document = _document("Repair café opening checklist")
-    document.add_heading("Before the café opens", level=1)
-    document.add_paragraph(repair_cafe[0])
-    for item in ("Clear the workbench", "Check each lamp", "Label the parts tray"):
-        document.add_paragraph(item, style="List Number")
-    document.add_paragraph("Ask the visitor before replacing a part.", style="List Bullet")
-    document.add_paragraph("Record the repair", style="List Bullet 2")
-    document.add_paragraph(repair_cafe[1])
-    return _save(document)
-
-
-def _route_table(river: list[str]) -> bytes:
-    document = _document("Bảng hành trình ven sông")
-    document.add_heading("Bảng hành trình ven sông", level=1)
-    document.add_paragraph(river[0])
-    table = document.add_table(rows=1, cols=3)
-    table.style = "Light Shading Accent 1"
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    for cell, heading in zip(table.rows[0].cells, ("Điểm dừng", "Phút đi bộ", "Ghi chú"), strict=True):
-        _set_cell_text(cell, heading, bold=True)
-    for row in (("Bến sông", "8", "Bóng mát"), ("Vườn đọc", "14", "Có ghế dài")):
-        cells = table.add_row().cells
-        for cell, value in zip(cells, row, strict=True):
-            _set_cell_text(cell, value)
-    note = table.add_row().cells
-    _set_cell_text(note[0].merge(note[2]), "Lịch khảo sát cập nhật mỗi tháng.")
-    document.add_paragraph("Các khoảng thời gian là ước lượng đi bộ.")
-    return _save(document)
-
-
-def _footnote_report(map_room: list[str]) -> bytes:
-    document = _document("Map archive note with a footnote")
-    document.add_heading("Notes from the Map Room", level=1)
-    paragraph = document.add_paragraph(map_room[0])
-    paragraph.add_run("__FOOTNOTE_1__")
-    document.add_paragraph(map_room[1])
-    return _save(document, footnote_text="The archive keeps older map editions beside later revisions.")
-
-
-def _merged_table_case() -> bytes:
-    document = _document("Synthetic merged-table edge case")
-    document.add_heading("Sparse route record", level=1)
-    table = document.add_table(rows=3, cols=4)
-    table.style = "Table Grid"
-    _set_cell_text(table.cell(0, 0).merge(table.cell(0, 3)), "Route / Tuyến", bold=True)
-    _set_cell_text(table.cell(1, 0), "Riverbank")
-    _set_cell_text(table.cell(1, 1), "Bến sông")
-    _set_cell_text(table.cell(1, 2), "")
-    _set_cell_text(table.cell(1, 3), "8 min")
-    _set_cell_text(table.cell(2, 0).merge(table.cell(2, 1)), "Nested record")
-    nested = table.cell(2, 2).add_table(rows=1, cols=1)
-    nested.style = "Table Grid"
-    _set_cell_text(nested.cell(0, 0), "empty neighbor")
-    _set_cell_text(table.cell(2, 3), "")
-    document.add_paragraph("")
-    return _save(document)
-
-
-def _two_column_case(map_room: list[str]) -> bytes:
-    document = _document("Synthetic two-column reading-order edge case")
-    section = document.sections[0]
-    columns = section._sectPr.xpath("./w:cols")
-    columns[0].set(qn("w:num"), "2")
-    columns[0].set(qn("w:space"), "720")
-    document.add_heading("Two-column archive note", level=1)
-    document.add_paragraph(map_room[0])
-    document.add_paragraph(map_room[1])
-    document.add_page_break()
-    document.add_paragraph("This paragraph follows the page break and preserves document order.")
-    return _save(document)
 
 
 def _xml_bytes(root) -> bytes:
@@ -241,16 +166,216 @@ def _save(document: Document, *, footnote_text: str | None = None) -> bytes:
     return output.getvalue()
 
 
-def generate(root: Path) -> dict[str, bytes]:
+@dataclass
+class DocxSpec:
+    path: str
+    doc_id: str
+    title: str
+    lang: str
+    blocks: list[Any]
+    margins: tuple[float, float] | None = None
+    header_text: str | None = None
+    footer_text: str | None = None
+    columns: int | None = None
+    column_space: int | None = None
+
+
+def _render_docx(spec: DocxSpec) -> bytes:
+    """Render DOCX binary bytes directly from the spec's ordered block list."""
+    document = _document(spec.title)
+    section = document.sections[0]
+
+    if spec.margins is not None:
+        section.top_margin = Inches(spec.margins[0])
+        section.bottom_margin = Inches(spec.margins[1])
+    if spec.header_text is not None:
+        section.header.paragraphs[0].text = spec.header_text
+    if spec.footer_text is not None:
+        section.footer.paragraphs[0].text = spec.footer_text
+    if spec.columns is not None:
+        cols_xml = section._sectPr.xpath("./w:cols")
+        cols_xml[0].set(qn("w:num"), str(spec.columns))
+        cols_xml[0].set(qn("w:space"), str(spec.column_space or 720))
+
+    footnote_text: str | None = None
+
+    for block in spec.blocks:
+        if isinstance(block, HeadingBlock):
+            document.add_heading(block.text, level=block.level)
+        elif isinstance(block, ParagraphBlock):
+            if block.quote:
+                note = document.add_paragraph(style="Quote")
+                note.add_run(block.text).italic = True
+            else:
+                para = document.add_paragraph(block.text)
+                if block.footnote_anchor:
+                    para.add_run(block.footnote_anchor)
+        elif isinstance(block, ListBlock):
+            for item in block.items:
+                style = block.style or ("List Number" if block.ordered else "List Bullet")
+                document.add_paragraph(item, style=style)
+        elif isinstance(block, PageBreakBlock):
+            document.add_page_break()
+        elif isinstance(block, TableBlock):
+            num_cols = sum(cell.colspan for cell in block.rows[0])
+            table = document.add_table(rows=len(block.rows), cols=num_cols)
+            if block.table_style:
+                table.style = block.table_style
+            if block.alignment == "CENTER":
+                table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+            for r_idx, row in enumerate(block.rows):
+                c_idx = 0
+                for cell in row:
+                    target_cell = table.cell(r_idx, c_idx)
+                    if cell.colspan > 1:
+                        target_cell = target_cell.merge(table.cell(r_idx, c_idx + cell.colspan - 1))
+                    if cell.nested_table is not None:
+                        nested = target_cell.add_table(rows=1, cols=1)
+                        if cell.nested_table.table_style:
+                            nested.style = cell.nested_table.table_style
+                        _set_cell_text(nested.cell(0, 0), cell.nested_table.rows[0][0].text)
+                    else:
+                        _set_cell_text(target_cell, cell.text, bold=cell.is_header)
+                    c_idx += cell.colspan
+        elif isinstance(block, FootnoteBlock):
+            footnote_text = block.text
+
+    return _save(document, footnote_text=footnote_text)
+
+
+def _get_specs(root: Path) -> list[DocxSpec]:
     garden = _source(root, "vietnamese-garden.md")
     river = _source(root, "vietnamese-river.md")
     repair_cafe = _source(root, "english-repair-cafe.md")
     map_room = _source(root, "english-map-room.md")
-    return {
-        "fixtures/docx/vi-styled-report.docx": _styled_report(garden),
-        "fixtures/docx/en-numbered-checklist.docx": _numbered_checklist(repair_cafe),
-        "fixtures/docx/vi-route-table.docx": _route_table(river),
-        "fixtures/docx/en-footnotes.docx": _footnote_report(map_room),
-        "fixtures/docx/edge-case-merged-table.docx": _merged_table_case(),
-        "fixtures/docx/edge-case-two-column.docx": _two_column_case(map_room),
+
+    return [
+        DocxSpec(
+            path="fixtures/docx/vi-styled-report.docx",
+            doc_id="vi-styled-report",
+            title="Khu vườn đọc sách",
+            lang="vi",
+            margins=(0.8, 0.8),
+            header_text="Thư viện phường",
+            footer_text="Sổ chăm vườn",
+            blocks=[
+                HeadingBlock(level=1, text="Khu vườn đọc sách"),
+                ParagraphBlock(text=garden[0]),
+                ParagraphBlock(text="Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách.", quote=True),
+                HeadingBlock(level=2, text="Sinh hoạt hằng tuần"),
+                ParagraphBlock(text=garden[1]),
+                ParagraphBlock(text=garden[2]),
+            ],
+        ),
+        DocxSpec(
+            path="fixtures/docx/en-numbered-checklist.docx",
+            doc_id="en-numbered-checklist",
+            title="Repair café opening checklist",
+            lang="en",
+            blocks=[
+                HeadingBlock(level=1, text="Before the café opens"),
+                ParagraphBlock(text=repair_cafe[0]),
+                ListBlock(items=["Clear the workbench", "Check each lamp", "Label the parts tray"], ordered=True),
+                ListBlock(items=["Ask the visitor before replacing a part."], ordered=False),
+                ListBlock(items=["Record the repair"], ordered=False, style="List Bullet 2"),
+                ParagraphBlock(text=repair_cafe[1]),
+            ],
+        ),
+        DocxSpec(
+            path="fixtures/docx/vi-route-table.docx",
+            doc_id="vi-route-data",
+            title="Bảng hành trình ven sông",
+            lang="vi",
+            blocks=[
+                HeadingBlock(level=1, text="Bảng hành trình ven sông"),
+                ParagraphBlock(text=river[0]),
+                TableBlock(
+                    rows=[
+                        [Cell(text="Điểm dừng", is_header=True), Cell(text="Phút đi bộ", is_header=True), Cell(text="Ghi chú", is_header=True)],
+                        [Cell(text="Bến sông"), Cell(text="8"), Cell(text="Bóng mát")],
+                        [Cell(text="Vườn đọc"), Cell(text="14"), Cell(text="Có ghế dài")],
+                        [Cell(text="Lịch khảo sát cập nhật mỗi tháng.", colspan=3)],
+                    ],
+                    table_style="Light Shading Accent 1",
+                    alignment="CENTER",
+                ),
+                ParagraphBlock(text="Các khoảng thời gian là ước lượng đi bộ."),
+            ],
+        ),
+        DocxSpec(
+            path="fixtures/docx/en-footnotes.docx",
+            doc_id="en-footnotes-docx",
+            title="Map archive note with a footnote",
+            lang="en",
+            blocks=[
+                HeadingBlock(level=1, text="Notes from the Map Room"),
+                ParagraphBlock(text=map_room[0], footnote_anchor="__FOOTNOTE_1__"),
+                ParagraphBlock(text=map_room[1]),
+                FootnoteBlock(text="The archive keeps older map editions beside later revisions."),
+            ],
+        ),
+        DocxSpec(
+            path="fixtures/docx/edge-case-merged-table.docx",
+            doc_id="synthetic-merged-table",
+            title="Synthetic merged-table edge case",
+            lang="en",
+            blocks=[
+                HeadingBlock(level=1, text="Sparse route record"),
+                TableBlock(
+                    rows=[
+                        [Cell(text="Route / Tuyến", is_header=True, colspan=4)],
+                        [Cell(text="Riverbank"), Cell(text="Bến sông"), Cell(text=""), Cell(text="8 min")],
+                        [
+                            Cell(text="Nested record", colspan=2),
+                            Cell(text="", nested_table=TableBlock(rows=[[Cell(text="empty neighbor")]], table_style="Table Grid")),
+                            Cell(text=""),
+                        ],
+                    ],
+                    table_style="Table Grid",
+                ),
+                ParagraphBlock(text=""),
+                UnscoredBlock(reason="nested table inside cell cannot be expressed in canonical form"),
+            ],
+        ),
+        DocxSpec(
+            path="fixtures/docx/edge-case-two-column.docx",
+            doc_id="synthetic-two-column",
+            title="Synthetic two-column reading-order edge case",
+            lang="en",
+            columns=2,
+            column_space=720,
+            blocks=[
+                HeadingBlock(level=1, text="Two-column archive note"),
+                ParagraphBlock(text=map_room[0]),
+                ParagraphBlock(text=map_room[1]),
+                PageBreakBlock(),
+                ParagraphBlock(text="This paragraph follows the page break and preserves document order."),
+            ],
+        ),
+    ]
+
+
+def generate(root: Path) -> dict[str, bytes]:
+    """Generate all DOCX fixtures directly from their ordered block specifications."""
+    specs = _get_specs(root)
+    return {spec.path: _render_docx(spec) for spec in specs}
+
+
+def generate_truth(root: Path) -> dict[str, dict[str, Any]]:
+    """Build canonical truth companions directly from the ordered block specifications."""
+    specs = _get_specs(root)
+    truth_dict: dict[str, dict[str, Any]] = {}
+    companion_name_map = {
+        "vi-styled-report": "fixtures/docx/vi-styled-report.truth.json",
+        "en-numbered-checklist": "fixtures/docx/en-numbered-checklist.truth.json",
+        "vi-route-data": "fixtures/docx/vi-route-data.truth.json",
+        "en-footnotes-docx": "fixtures/docx/en-footnotes-docx.truth.json",
+        "synthetic-merged-table": "fixtures/docx/synthetic-merged-table.truth.json",
+        "synthetic-two-column": "fixtures/docx/synthetic-two-column.truth.json",
     }
+    for spec in specs:
+        truth_path = companion_name_map[spec.doc_id]
+        ir_doc = blocks_to_ir(spec.title, spec.lang, spec.blocks)
+        truth_dict[truth_path] = blocks_to_canonical(spec.doc_id, spec.blocks, ir_doc=ir_doc)
+    return truth_dict
