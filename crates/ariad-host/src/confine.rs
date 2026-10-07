@@ -430,7 +430,30 @@ pub fn open_file_nofollow(root_dir: &cap_std::fs::Dir, relative: &Path) -> io::R
     {
         options.custom_flags(libc::O_NOFOLLOW);
     }
+
+    #[cfg(unix)]
+    if parent_dir
+        .symlink_metadata(file_name)
+        .is_ok_and(|m| m.is_symlink())
+    {
+        return Err(io::Error::from_raw_os_error(libc::ELOOP));
+    }
+
     let cap_file = parent_dir.open_with(file_name, &options)?;
+
+    #[cfg(unix)]
+    {
+        use cap_std::fs::MetadataExt;
+        let post_meta = parent_dir.symlink_metadata(file_name)?;
+        if post_meta.is_symlink() {
+            return Err(io::Error::from_raw_os_error(libc::ELOOP));
+        }
+        let file_meta = cap_file.metadata()?;
+        if post_meta.dev() != file_meta.dev() || post_meta.ino() != file_meta.ino() {
+            return Err(io::Error::from_raw_os_error(libc::ELOOP));
+        }
+    }
+
     Ok(cap_file.into_std())
 }
 
