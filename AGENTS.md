@@ -4,7 +4,7 @@ Rules for AI agents working in this repository. Design authority is [ARCHITECTUR
 
 ## Current state
 
-The CLI converts between Markdown (`.md`/`.markdown`), HTML, DOCX and EPUB with `ashift convert`; an unsupported pair prints the supported routes. Run `just pandoc` before working on conversion tasks. Run `just ci` as the local quality gate.
+The CLI provides `ashift convert` (Markdown, HTML, DOCX, EPUB with `--json`), `ashift inspect`, `ashift plan`, `ashift engines`, and `ashift doctor`; an unsupported pair prints the supported routes. Run `just pandoc` before working on conversion tasks. Run `just ci` as the local quality gate.
 
 ## Architecture changes
 

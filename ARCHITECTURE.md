@@ -188,20 +188,26 @@ ashift doctor                   # check environment
 ashift mcp                      # run MCP server over stdio
 ```
 
-The conversion command is `ashift convert <INPUT> --to <FORMAT> [-o <OUTPUT>] [--overwrite]`. It supports converting between `md`/`markdown`, `html`, `docx`, and `epub` across all 12 distinct format pairs. The default output is `<input stem>.<target extension>` beside the input. Same-format routes (such as `md -> md`) are refused with exit code 3; destinations that canonicalize to the input path are refused with exit code 2 even when `--overwrite` is specified. In Markdown and HTML writers, asset-backed images are embedded as `data:` URIs so output remains a single file. `ashift mcp` confines file access to client roots plus `--allow-dir` paths; overwriting needs the server flag `--allow-overwrite`.
+The conversion command is `ashift convert <INPUT> --to <FORMAT> [-o <OUTPUT>] [--overwrite] [--profile <PROFILE>] [--json]`. It supports converting between `md`/`markdown`, `html`, `docx`, and `epub` across all 12 distinct format pairs. The default output is `<input stem>.<target extension>` beside the input. Same-format routes (such as `md -> md`) are refused with exit code 3; destinations that canonicalize to the input path are refused with exit code 2 even when `--overwrite` is specified. In Markdown and HTML writers, asset-backed images are embedded as `data:` URIs so output remains a single file. `ashift mcp` confines file access to client roots plus `--allow-dir` paths; overwriting needs the server flag `--allow-overwrite`.
+
+Diagnostic and introspection commands:
+- `ashift inspect <INPUT> [--json]`: detects format through prefix/central-directory sniffing, structural element counts, metadata, and reachable targets. Regular-file verification prevents blocking on FIFOs or device nodes; files over 32 MiB skip deep structural counting (emitting `warning[document_too_large]`). Peak memory usage during AST expansion is bounded to approximately 100x the input document size.
+- `ashift plan <INPUT> --to <FORMAT> [--profile <PROFILE>] [--json]`: renders route and fidelity/editability/latency scores without converting. File summaries are bounded to 4 MiB to keep planning fast.
+- `ashift engines [--json]`: lists registered engines, versions, licenses, and supported routes from the availability provider.
+- `ashift doctor [--json]`: checks Pandoc availability and version, temporary workspace creation/cleanup, and engine describe round trips.
 
 | Exit code | Meaning |
 |---|---|
 | 0 | ok |
-| 1 | conversion failed |
+| 1 | conversion / operation failed |
 | 2 | usage |
-| 3 | unsupported route (prints the supported routes) |
+| 3 | unsupported route (prints the supported routes) or unknown format |
 | 4 | limit exceeded |
 | 5 | tool missing or wrong version (prints a hint) |
 | 6 | destination exists |
 | 130 | interrupted |
 
-Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains only the output path. Ctrl-C (and Ctrl-Break on Windows) cancels the run, kills the engine process tree, deletes the workspace, returns 130, and leaves the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX and EPUB timestamps for reproducible goldens. Future commands reuse the same exit-code table.
+Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains human output (or the output path for `convert`), or exactly one JSON document when `--json` is specified. Ctrl-C (and Ctrl-Break on Windows) cancels the run, kills the engine process tree, deletes the workspace, returns 130, and leaves the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX and EPUB timestamps for reproducible goldens. Commands reuse the same exit-code table. Full reference: [docs/cli.md](docs/cli.md).
 
 ---
 
@@ -778,6 +784,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | MPL-2.0 dependencies | Ammonia brings MPL-2.0 transitive crates; accepted as unmodified dependencies in native and WASM builds; each new MPL crate needs its own exception | Global MPL-2.0 allow list, hand-rolled HTML sanitizer | Keeps robust ammonia sanitization without opening a global allow-list; complies with OSI-only policy |
 | Capabilities location | `crates/ariad-core/data/capabilities.json` embedded at compile time via `embedded()` | Monorepo root `capabilities.json` | `cargo package` rejects `include_str!` paths outside the crate root; keeps `ariad-core` self-contained for crates.io and WASM |
 | Routing graph & planner | Weighted Dijkstra shortest-path in `ariad-core` over `capabilities.json` with profile weights, hop penalty, unmeasured penalty, and alternatives | Static hardcoded route table | Allows multi-engine routing with empirical benchmarks, explainability, and profile selection (`editable`, `faithful`, `fast`, `private`) |
+| Inspection and plan caps | 32 MiB cap for deep document structure counting in `inspect`, and 4 MiB cap for `plan` summary parsing; regular-file preflight on all input reads | 256 MiB or unbounded reading and parsing of arbitrary file sizes, FIFOs, and special devices | Bounds peak memory expansion to ~100x input size (~3 GB peak RSS at 32 MiB) and prevents unbounded delays during diagnostic CLI runs without compromising standard document analysis |
 
 ---
 
