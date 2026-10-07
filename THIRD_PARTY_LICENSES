@@ -4024,9 +4024,9 @@ License: Apache License 2.0 (Apache-2.0)
 --------------------------------------------------------------------------------
 
 Used by:
-  - ariad-cli 0.0.0 (https://github.com/bavanchun/AriadShift)
-  - ariad-core 0.0.0 (https://github.com/bavanchun/AriadShift)
-  - ariad-host 0.0.0 (https://github.com/bavanchun/AriadShift)
+  - ariad-cli 0.1.0 (https://github.com/bavanchun/AriadShift)
+  - ariad-core 0.1.0 (https://github.com/bavanchun/AriadShift)
+  - ariad-host 0.1.0 (https://github.com/bavanchun/AriadShift)
   - arraydeque 0.5.1 (https://github.com/andylokandy/arraydeque)
   - dtoa 1.0.11 (https://github.com/dtolnay/dtoa)
   - dyn-clone 1.0.20 (https://github.com/dtolnay/dyn-clone)
