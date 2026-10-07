@@ -105,6 +105,7 @@ impl McpTestClient {
         self.child.as_ref().expect("child exists").id()
     }
 
+    #[cfg(unix)]
     fn close_stdin(&mut self) {
         drop(self.stdin.take());
     }
@@ -1117,6 +1118,19 @@ fn test_resources_read_recheck_revocation_and_deletion() {
     client.close_and_assert_purity();
 }
 
+#[cfg(unix)]
+struct EngineGuard(Option<u32>);
+
+#[cfg(unix)]
+impl Drop for EngineGuard {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
+        }
+    }
+}
+
+#[cfg(unix)]
 fn wait_with_timeout(
     child: &mut Child,
     timeout: std::time::Duration,
@@ -1145,36 +1159,59 @@ fn is_process_alive(pid: u32) -> bool {
 fn find_hanging_engine(parent_pid: u32, timeout: std::time::Duration) -> Option<u32> {
     let start = std::time::Instant::now();
     while start.elapsed() < timeout {
-        if let Ok(entries) = fs::read_dir("/proc") {
-            for entry in entries.flatten() {
-                if let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() {
-                    let stat_path = format!("/proc/{pid}/stat");
-                    let Ok(stat) = fs::read_to_string(&stat_path) else {
-                        continue;
-                    };
-                    let Some(paren_idx) = stat.rfind(')') else {
-                        continue;
-                    };
-                    let rest = &stat[paren_idx + 2..];
-                    let parts: Vec<&str> = rest.split_whitespace().collect();
-                    if parts.len() < 2 {
-                        continue;
+        if let Ok(output) = Command::new("ps")
+            .args(["-axo", "pid=,ppid=,command="])
+            .output()
+            && output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut procs = Vec::new();
+            for line in stdout.lines() {
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let mut parts = trimmed.split_whitespace();
+                let Some(pid_str) = parts.next() else {
+                    continue;
+                };
+                let Some(ppid_str) = parts.next() else {
+                    continue;
+                };
+                let Ok(pid) = pid_str.parse::<u32>() else {
+                    continue;
+                };
+                let Ok(ppid) = ppid_str.parse::<u32>() else {
+                    continue;
+                };
+                let after_pid = trimmed[pid_str.len()..].trim_start();
+                let cmdline = if after_pid.len() >= ppid_str.len() {
+                    after_pid[ppid_str.len()..].trim_start()
+                } else {
+                    ""
+                };
+                procs.push((pid, ppid, cmdline));
+            }
+
+            let mut descendants = std::collections::HashSet::new();
+            let mut queue = vec![parent_pid];
+            while let Some(current) = queue.pop() {
+                for &(pid, ppid, _) in &procs {
+                    if ppid == current && descendants.insert(pid) {
+                        queue.push(pid);
                     }
-                    let state = parts[0];
-                    let Ok(ppid) = parts[1].parse::<u32>() else {
-                        continue;
-                    };
-                    if ppid == parent_pid && state != "Z" {
-                        let cmdline_path = format!("/proc/{pid}/cmdline");
-                        if let Ok(cmdline) = fs::read_to_string(&cmdline_path)
-                            && cmdline.contains("__engine")
-                            && is_process_alive(pid)
-                        {
-                            std::thread::sleep(std::time::Duration::from_millis(60));
-                            if is_process_alive(pid) {
-                                return Some(pid);
-                            }
-                        }
+                }
+            }
+
+            for &(pid, _, cmdline) in &procs {
+                if descendants.contains(&pid)
+                    && cmdline.contains("__engine")
+                    && is_process_alive(pid)
+                {
+                    // Verify it is alive and sustained (not transient describe child)
+                    std::thread::sleep(std::time::Duration::from_millis(60));
+                    if is_process_alive(pid) {
+                        return Some(pid);
                     }
                 }
             }
@@ -1248,6 +1285,7 @@ fn test_stdin_eof_with_hanging_convert_cleans_engine_and_workspace() {
         // Wait until engine child process is running
         let engine_pid = find_hanging_engine(ashift_pid, std::time::Duration::from_secs(5))
             .expect("engine process should have been spawned by ashift mcp");
+        let mut _engine_guard = EngineGuard(Some(engine_pid));
         assert!(
             is_process_alive(engine_pid),
             "engine must be alive before EOF"
@@ -1279,6 +1317,7 @@ fn test_stdin_eof_with_hanging_convert_cleans_engine_and_workspace() {
             !engine_alive,
             "engine process {engine_pid} must be dead after EOF in iter {iter}"
         );
+        _engine_guard.0 = None;
 
         // Assert no ariadshift-* workspace directories remain in isolated_tmp
         let entries: Vec<_> = fs::read_dir(&isolated_tmp)
@@ -1335,6 +1374,7 @@ fn test_real_request_cancellation_preserves_server_and_cleans_engine() {
     // Wait until engine child process is running
     let engine_pid = find_hanging_engine(ashift_pid, std::time::Duration::from_secs(5))
         .expect("engine process should have been spawned by ashift mcp");
+    let mut _engine_guard = EngineGuard(Some(engine_pid));
     assert!(
         is_process_alive(engine_pid),
         "engine must be alive before cancellation"
@@ -1363,6 +1403,7 @@ fn test_real_request_cancellation_preserves_server_and_cleans_engine() {
         !engine_alive,
         "engine process {engine_pid} must be dead after cancellation"
     );
+    _engine_guard.0 = None;
 
     // Assert no ariadshift-* workspace directories remain in isolated_tmp
     let entries: Vec<_> = fs::read_dir(&isolated_tmp)
