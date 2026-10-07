@@ -61,8 +61,8 @@ Research:
 | 5 | [Native HTML reader](./phase-05-native-html-reader.md) | 12h | 3 | Done |
 | 6 | [Writers and route execution](./phase-06-writers-and-route-execution.md) | 15h | 4, 5 | Done |
 | 7 | [Planner and capabilities.json](./phase-07-planner-and-capabilities.md) | 10h | 6 | Done |
-| 8 | [Bench harness](./phase-08-bench-harness.md) | 16h | 7 | Pending |
-| 9 | [`inspect`, `plan`, `engines`, `doctor`](./phase-09-cli-inspect-plan-engines-doctor.md) | 9h | 7 | Pending |
+| 8 | [Bench harness](./phase-08-bench-harness.md) | 16h | 7 | Done |
+| 9 | [`inspect`, `plan`, `engines`, `doctor`](./phase-09-cli-inspect-plan-engines-doctor.md) | 9h | 7 | Done |
 | 10 | [MCP server](./phase-10-mcp-server.md) | 13h | 9 | Pending |
 | 11 | [Fuzzing](./phase-11-fuzzing.md) | 6h | 3, 4, 5 | Done |
 | 12 | [Release pipeline](./phase-12-release-pipeline.md) | 11h | 9, 10 | Pending |
