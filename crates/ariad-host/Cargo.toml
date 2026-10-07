@@ -12,8 +12,9 @@ ariad-core.workspace = true
 cap-std.workspace = true
 hex.workspace = true
 jiff.workspace = true
-process-wrap.workspace = true
+process-wrap = { workspace = true, features = ["std"] }
 quick-xml.workspace = true
+schemars.workspace = true
 serde.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
@@ -25,6 +26,9 @@ tokio-util = { workspace = true, features = ["rt"] }
 unicode-normalization.workspace = true
 zip.workspace = true
 uuid = { workspace = true, features = ["v4", "v5"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
 
 [features]
 test-probe = []

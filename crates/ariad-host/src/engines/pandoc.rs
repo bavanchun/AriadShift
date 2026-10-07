@@ -139,14 +139,21 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
             let workspace =
                 validate_convert_request(&protocol, &input, &req_output, &work_dir, &limits)?;
 
-            let binary = pandoc_bin::locate().map_err(|error| match error {
+            let binary = pandoc_bin::locate_with(None, false).map_err(|error| match error {
                 pandoc_bin::PandocBinaryError::Missing => {
                     EngineFailure::new(ErrorCode::ToolMissing, PANDOC_INSTALL_HINT)
                 }
-                pandoc_bin::PandocBinaryError::UnsupportedVersion => EngineFailure::new(
+                pandoc_bin::PandocBinaryError::UnsupportedVersion { .. } => EngineFailure::new(
                     ErrorCode::ToolVersion,
                     "Pandoc must be >= 3.12 and < 4. Install a supported release with `just pandoc`.",
                 ),
+                pandoc_bin::PandocBinaryError::TimedOut => EngineFailure::new(
+                    ErrorCode::EngineFailure,
+                    "Pandoc timed out while checking version",
+                ),
+                pandoc_bin::PandocBinaryError::Interrupted => {
+                    EngineFailure::new(ErrorCode::EngineFailure, "Pandoc locate was interrupted")
+                }
             })?;
 
             if input.format == "ariad-ir+json"
@@ -278,7 +285,8 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 // Defense-in-depth: run archive preflight at the engine boundary before starting Pandoc
                 crate::archive::preflight_archive(input_path, &limits).map_err(
                     |err| match err {
-                        crate::archive::ArchiveError::EntryCountExceeded { .. }
+                        crate::archive::ArchiveError::CentralDirectorySizeExceeded { .. }
+                        | crate::archive::ArchiveError::EntryCountExceeded { .. }
                         | crate::archive::ArchiveError::DecompressedSizeExceeded { .. } => {
                             EngineFailure::limit_exceeded()
                         }
@@ -401,12 +409,16 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
             if protocol != PROTOCOL {
                 return Err(EngineFailure::invalid_request());
             }
-            let (status, version) = match pandoc_bin::locate() {
+            let (status, version) = match pandoc_bin::locate_with(None, false) {
                 Ok(binary) => (ToolAvailability::Found, Some(binary.version)),
-                Err(pandoc_bin::PandocBinaryError::UnsupportedVersion) => {
-                    (ToolAvailability::WrongVersion, None)
+                Err(pandoc_bin::PandocBinaryError::UnsupportedVersion { found }) => {
+                    (ToolAvailability::WrongVersion, found)
                 }
-                Err(pandoc_bin::PandocBinaryError::Missing) => (ToolAvailability::Missing, None),
+                Err(pandoc_bin::PandocBinaryError::Missing)
+                | Err(pandoc_bin::PandocBinaryError::TimedOut)
+                | Err(pandoc_bin::PandocBinaryError::Interrupted) => {
+                    (ToolAvailability::Missing, None)
+                }
             };
             emit(
                 output,
