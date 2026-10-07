@@ -62,10 +62,41 @@ bench-test:
 bench-mutation:
     uv run --package ariad-bench pytest bench/tests/test_rendered_vs_truth.py -k test_structural_drift_mutations_detected
 
-# Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js py
+# Pinned version of cargo-about used for license inventory checks.
+# .github/workflows/ci.yml pins the same version in the static job install-action step.
+cargo_about_version := "0.9.2"
 
-ci: static clippy wasm test bench-test bench-check
+check-release-workflow:
+    sh scripts/check-release-workflow.sh
+    sh scripts/test-check-release-workflow.sh
+
+test-winget-manifest:
+    sh scripts/test-winget-manifest.sh
+
+licenses-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    actual=$(cargo about --version 2>/dev/null || true)
+    if [ "$actual" != "cargo-about {{cargo_about_version}}" ]; then
+        echo "ERROR: cargo-about {{cargo_about_version}} required, found '$actual'" >&2
+        exit 1
+    fi
+    tmp=$(mktemp)
+    trap 'rm -f "$tmp"' EXIT
+    cargo about generate about.hbs > "$tmp"
+    if ! cmp -s "$tmp" THIRD_PARTY_LICENSES; then
+        echo "ERROR: THIRD_PARTY_LICENSES is out of date. Run 'cargo about generate about.hbs > THIRD_PARTY_LICENSES' to update." >&2
+        diff -u THIRD_PARTY_LICENSES "$tmp" | head -n 30 || true
+        exit 1
+    fi
+
+# Checks that do not depend on the OS; CI runs them once.
+static: fmt-check spell lint-workflows deny js py check-release-workflow licenses-check test-winget-manifest
+
+package-check:
+    cargo package --workspace --allow-dirty
+
+ci: static clippy wasm test bench-test bench-check package-check
 
 pandoc:
     bash scripts/install-pandoc.sh
