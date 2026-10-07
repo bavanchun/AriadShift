@@ -24,7 +24,7 @@ The default output is `<input stem>.<target extension>` beside the input. Use `-
 path and `--overwrite` to replace an existing destination. Select a routing goal with
 `--profile <editable|faithful|fast|private>` (defaults to `editable`). Same-format conversions (such as `md -> md`)
 are refused with exit code 3; destinations matching the input path are refused with exit code 2. Stdout
-contains the output path; warnings are written to stderr. Press Ctrl-C to cancel a running
+contains the output path; warnings are written to stderr. Press Ctrl-C (or send SIGTERM/SIGHUP) to cancel a running
 conversion and clean up its temporary workspace. Set `ASHIFT_PANDOC` to select
 an existing Pandoc executable instead of installing the repository-pinned one.
 
@@ -40,6 +40,16 @@ ashift doctor
 ```
 
 Add `--json` to any command for structured machine-readable output. See [`docs/cli.md`](docs/cli.md) for the complete reference.
+
+## Model Context Protocol (MCP)
+
+Run an MCP server over standard I/O for AI assistants (such as Claude Code, Claude Desktop, or Cursor):
+
+```sh
+ashift mcp --allow-dir ~/Documents
+```
+
+The server exposes 4 tools (`list_engines`, `inspect`, `plan`, and `convert`) with strict path confinement, capability-based directory access, dynamic roots synchronization, and `resources/read` support. See [`docs/mcp.md`](docs/mcp.md) for configuration and tool details.
 
 ## Development
 
@@ -92,6 +102,7 @@ with `pnpm --dir brand build`. The root `package.json`,
 ## Project documents
 
 - [CLI reference](docs/cli.md)
+- [MCP server reference](docs/mcp.md)
 - [System architecture](ARCHITECTURE.md)
 - [Security reporting](docs/SECURITY.md)
 - [Git workflow](docs/git-workflow.md)

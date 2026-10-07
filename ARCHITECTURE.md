@@ -194,7 +194,15 @@ Diagnostic and introspection commands:
 - `ashift inspect <INPUT> [--json]`: detects format through prefix/central-directory sniffing, structural element counts, metadata, and reachable targets. Regular-file verification prevents blocking on FIFOs or device nodes; files over 32 MiB skip deep structural counting (emitting `warning[document_too_large]`). Peak memory usage during AST expansion is bounded to approximately 100x the input document size.
 - `ashift plan <INPUT> --to <FORMAT> [--profile <PROFILE>] [--json]`: renders route and fidelity/editability/latency scores without converting. File summaries are bounded to 4 MiB to keep planning fast.
 - `ashift engines [--json]`: lists registered engines, versions, licenses, and supported routes from the availability provider.
-- `ashift doctor [--json]`: checks Pandoc availability and version, temporary workspace creation/cleanup, and engine describe round trips.
+- `ashift doctor [--json]`: checks Pandoc availability and version, temporary workspace creation/cleanup, reports stale workspace counts without deleting them, and engine describe round trips.
+
+### Model Context Protocol (MCP) Server
+
+`ashift mcp [--allow-dir <DIR>...] [--allow-overwrite]` runs an MCP server over standard I/O (stdio) using `rmcp 3.5.1`. It exposes four tools (`list_engines`, `inspect`, `plan`, `convert`) whose structured output schemas match their CLI JSON equivalents and returns `structuredContent` matching CLI `--json` value-for-value:
+- **Confinement and Security**: Enforces path confinement (`ariad_host::confine`). File access is confined to `--allow-dir` roots and client-advertised workspace roots synchronized via `roots/list` and `notifications/roots/list_changed`. Rejects symlink/junction escapes, hidden path components, non-regular inputs, mismatched output extensions, and same-file input/output collisions. Relative paths resolve against the server's working directory.
+- **Capability-Based Promotion**: Conversions write outputs inside isolated workspaces (`ariad_host::workspace`) and promote them into the destination using `cap_std::fs::Dir` capability handles opened relative to the confined root to mitigate race-condition directory swap attacks. Replacing existing files requires `--allow-overwrite` on the server and `overwrite: true` on the tool call; unforced publication uses hard-link creation to guarantee atomic refusal without clobbering.
+- **Resources & Inlining**: Successful conversions register `file://` URIs for `resources/read`. Markdown outputs `<= 256 KiB` are inlined directly into tool results.
+- **Process Isolation & Lifecycle**: Subprocess engines run under isolated process groups and Windows Job Objects with `KillOnDrop`. Stale workspaces older than 24 hours are swept on server startup and stale counts reported in `doctor`. SIGTERM, SIGHUP, Ctrl-C, and Ctrl-Break promptly cancel in-flight jobs, terminate engine subprocess trees, clean up workspaces, and exit cleanly without hanging on open stdin.
 
 | Exit code | Meaning |
 |---|---|
@@ -207,7 +215,7 @@ Diagnostic and introspection commands:
 | 6 | destination exists |
 | 130 | interrupted |
 
-Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains human output (or the output path for `convert`), or exactly one JSON document when `--json` is specified. Ctrl-C (and Ctrl-Break on Windows) cancels the run, kills the engine process tree, deletes the workspace, returns 130, and leaves the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX and EPUB timestamps for reproducible goldens. Commands reuse the same exit-code table. Full reference: [docs/cli.md](docs/cli.md).
+Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains human output (or the output path for `convert`), or exactly one JSON document when `--json` is specified. SIGTERM and SIGHUP (Unix), Ctrl-C, and Ctrl-Break (Windows) cancel the run, kill the engine process tree, delete the workspace, return 130, and leave the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX and EPUB timestamps for reproducible goldens. Commands reuse the same exit-code table. Full reference: [docs/cli.md](docs/cli.md) and [docs/mcp.md](docs/mcp.md).
 
 ---
 

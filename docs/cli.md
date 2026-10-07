@@ -333,7 +333,7 @@ ashift doctor [OPTIONS]
 #### Diagnostic Checks
 
 1. **Pandoc**: Verifies Pandoc executable is found and satisfies `>= 3.12, < 4`.
-2. **Workspace**: Verifies temporary directory is writable and workspaces can be created and cleaned up.
+2. **Workspace**: Verifies temporary directory is writable, workspaces can be created and cleaned up, and reports count of stale workspaces older than 24 hours without deleting them.
 3. **Engine Describe**: Verifies the out-of-process engine runner can exchange protocol messages with the Pandoc engine.
 
 #### Exit Codes
