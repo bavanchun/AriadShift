@@ -250,6 +250,10 @@ class TestMetrics(unittest.TestCase):
         edge = aggregate_edge_metrics([s1, s2, s3])
         self.assertEqual(edge.p50_ms, 20.0)
 
+    @unittest.skipIf(
+        sys.platform == "darwin",
+        "macOS lacks per-process high-water mark (VmHWM/peak_wset); peak memory is a best-effort lower bound and not scored by these tests",
+    )
     def test_measure_execution_captures_child_rss(self) -> None:
         """Verify measure_execution captures child process memory in the process tree."""
         cmd = [
@@ -263,6 +267,10 @@ class TestMetrics(unittest.TestCase):
         # Parent RSS is ~15 MB; child RSS adds 40 MB -> combined tree peak exceeds 35 MB.
         self.assertGreater(peak_rss, 35 * 1024 * 1024)
 
+    @unittest.skipIf(
+        sys.platform == "darwin",
+        "macOS lacks per-process high-water mark (VmHWM/peak_wset); peak memory is a best-effort lower bound and not scored by these tests",
+    )
     def test_measure_execution_captures_thread_spawned_child_rss(self) -> None:
         """Verify measure_execution captures child process spawned from a non-main thread."""
         cmd = [
@@ -283,6 +291,10 @@ class TestMetrics(unittest.TestCase):
         # Parent RSS is ~15 MB; thread-spawned child allocates 50 MB -> combined tree peak exceeds 45 MB.
         self.assertGreater(peak_rss, 45 * 1024 * 1024)
 
+    @unittest.skipIf(
+        sys.platform == "darwin",
+        "macOS lacks per-process high-water mark (VmHWM/peak_wset); peak memory is a best-effort lower bound and not scored by these tests",
+    )
     def test_measure_execution_footprint_discrimination(self) -> None:
         """Verify measure_execution clearly distinguishes different memory allocations."""
         cmd_small = [

@@ -72,7 +72,7 @@ To prevent harness memory leakage, the sampler measures only verified post-exec 
 Platform measurement mechanisms:
 - **Linux:** Reads the kernel high-water mark (`VmHWM`) directly from `/proc/<pid>/status` with recursive child process tracking across all threads via `/proc/<pid>/task/*/children`. This captures the true peak resident memory even for fast-executing native commands (~3–8 ms) and external engines launched from worker threads.
 - **Windows:** Queries process memory info using `peak_wset` (peak working set).
-- **macOS / BSD:** Instantaneous RSS sampling provides a lower-bound estimate.
+- **macOS / BSD:** Instantaneous RSS sampling provides a best-effort lower bound estimate and is not scored by these tests (the benchmark itself runs on Linux in `bench.yml` and the committed numbers come from Linux).
 
 If a command finishes before any post-exec sample can be obtained, it is recorded as a sampling miss (`None`, never clamped to 0.0 or harness memory). If all samples on an edge are misses, the edge fails verification and its metrics are omitted (`edge["metrics"] = None`), avoiding invalid null values in `capabilities.json`. An all-miss edge causes the benchmark run to exit with a non-zero code, and `bench-check` rejects any capabilities file where an edge that was measured in the committed baseline becomes null.
 
