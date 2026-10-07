@@ -5,7 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish.workspace = true
+description = "Host engine orchestration and sandboxed document conversion pipeline for AriadShift"
+readme = "../../README.md"
+keywords = ["document-conversion", "pandoc", "sandboxing", "markdown", "epub"]
+categories = ["text-processing", "command-line-utilities"]
+publish = true
 
 [dependencies]
 ariad-core.workspace = true
@@ -39,6 +43,9 @@ path = "src/bin/engine-probe.rs"
 required-features = ["test-probe"]
 test = false
 bench = false
+
+[package.metadata.dist]
+dist = false
 
 [lints]
 workspace = true

@@ -1,0 +1,30 @@
+Third-Party Licenses for AriadShift
+====================================
+
+This document contains licensing notices and terms for third-party software
+components included in or used to build this binary distribution.
+
+Table of Contents
+-----------------
+{{#each overview}}
+- {{{name}}} ({{id}}): {{count}} component(s)
+{{/each}}
+
+================================================================================
+{{#each licenses}}
+
+--------------------------------------------------------------------------------
+License: {{{name}}} ({{id}})
+--------------------------------------------------------------------------------
+
+Used by:
+{{#each used_by}}
+  - {{crate.name}} {{crate.version}}{{#if crate.repository}} ({{crate.repository}}){{/if}}
+{{/each}}
+
+License Text:
+-------------
+{{{text}}}
+
+================================================================================
+{{/each}}

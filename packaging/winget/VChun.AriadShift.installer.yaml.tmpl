@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+PackageIdentifier: VChun.AriadShift
+PackageVersion: {{VERSION}}
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+  - RelativeFilePath: ashift.exe
+    PortableCommandAlias: ashift
+Commands:
+  - ashift
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/bavanchun/AriadShift/releases/download/v{{VERSION}}/ariad-cli-x86_64-pc-windows-msvc.zip
+    InstallerSha256: {{SHA256}}
+ManifestType: installer
+ManifestVersion: 1.9.0
