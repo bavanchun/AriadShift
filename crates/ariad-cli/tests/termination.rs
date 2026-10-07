@@ -1,11 +1,13 @@
 use std::{
     fs,
-    io::Write,
     path::PathBuf,
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
+
+#[cfg(unix)]
+use std::io::Write;
 
 fn ashift_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_ashift"))
@@ -23,6 +25,7 @@ fn pandoc_path() -> PathBuf {
     repository_root().join(".tools/pandoc/bin").join(name)
 }
 
+#[cfg(unix)]
 fn test_capabilities_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -39,11 +42,13 @@ fn repository_root() -> PathBuf {
 }
 
 /// Kill-on-drop guard to ensure test processes never leak as orphans (H4).
+#[cfg(unix)]
 struct ProcessGuard {
     child: Option<Child>,
     engine_pid: Option<u32>,
 }
 
+#[cfg(unix)]
 impl ProcessGuard {
     fn new(child: Child) -> Self {
         Self {
@@ -57,9 +62,9 @@ impl ProcessGuard {
     }
 }
 
+#[cfg(unix)]
 impl Drop for ProcessGuard {
     fn drop(&mut self) {
-        #[cfg(unix)]
         if let Some(pid) = self.engine_pid {
             let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
         }
@@ -70,6 +75,7 @@ impl Drop for ProcessGuard {
     }
 }
 
+#[cfg(unix)]
 fn wait_with_timeout(
     child: &mut Child,
     timeout: Duration,
@@ -98,37 +104,59 @@ fn is_process_alive(pid: u32) -> bool {
 fn find_hanging_engine(parent_pid: u32, timeout: Duration) -> Option<u32> {
     let start = Instant::now();
     while start.elapsed() < timeout {
-        if let Ok(entries) = fs::read_dir("/proc") {
-            for entry in entries.flatten() {
-                if let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() {
-                    let stat_path = format!("/proc/{pid}/stat");
-                    let Ok(stat) = fs::read_to_string(&stat_path) else {
-                        continue;
-                    };
-                    let Some(paren_idx) = stat.rfind(')') else {
-                        continue;
-                    };
-                    let rest = &stat[paren_idx + 2..];
-                    let parts: Vec<&str> = rest.split_whitespace().collect();
-                    if parts.len() < 2 {
-                        continue;
+        if let Ok(output) = Command::new("ps")
+            .args(["-axo", "pid=,ppid=,command="])
+            .output()
+            && output.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let mut procs = Vec::new();
+            for line in stdout.lines() {
+                let trimmed = line.trim_start();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let mut parts = trimmed.split_whitespace();
+                let Some(pid_str) = parts.next() else {
+                    continue;
+                };
+                let Some(ppid_str) = parts.next() else {
+                    continue;
+                };
+                let Ok(pid) = pid_str.parse::<u32>() else {
+                    continue;
+                };
+                let Ok(ppid) = ppid_str.parse::<u32>() else {
+                    continue;
+                };
+                let after_pid = trimmed[pid_str.len()..].trim_start();
+                let cmdline = if after_pid.len() >= ppid_str.len() {
+                    after_pid[ppid_str.len()..].trim_start()
+                } else {
+                    ""
+                };
+                procs.push((pid, ppid, cmdline));
+            }
+
+            let mut descendants = std::collections::HashSet::new();
+            let mut queue = vec![parent_pid];
+            while let Some(current) = queue.pop() {
+                for &(pid, ppid, _) in &procs {
+                    if ppid == current && descendants.insert(pid) {
+                        queue.push(pid);
                     }
-                    let state = parts[0];
-                    let Ok(ppid) = parts[1].parse::<u32>() else {
-                        continue;
-                    };
-                    if ppid == parent_pid && state != "Z" {
-                        let cmdline_path = format!("/proc/{pid}/cmdline");
-                        if let Ok(cmdline) = fs::read_to_string(&cmdline_path) {
-                            // Engine process has __engine in cmdline
-                            if cmdline.contains("__engine") && is_process_alive(pid) {
-                                // Verify it is alive and sustained (not transient describe child)
-                                thread::sleep(Duration::from_millis(60));
-                                if is_process_alive(pid) {
-                                    return Some(pid);
-                                }
-                            }
-                        }
+                }
+            }
+
+            for &(pid, _, cmdline) in &procs {
+                if descendants.contains(&pid)
+                    && cmdline.contains("__engine")
+                    && is_process_alive(pid)
+                {
+                    // Verify it is alive and sustained (not transient describe child)
+                    thread::sleep(Duration::from_millis(60));
+                    if is_process_alive(pid) {
+                        return Some(pid);
                     }
                 }
             }
