@@ -1,7 +1,7 @@
 ---
 phase: 9
 title: "inspect, plan, engines, doctor"
-status: pending
+status: completed
 priority: P1
 effort: "10h"
 dependencies: [7]

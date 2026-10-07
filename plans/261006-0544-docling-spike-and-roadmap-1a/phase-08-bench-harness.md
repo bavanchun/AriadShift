@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "Bench harness"
-status: pending
+status: completed
 priority: P1
 effort: "14h"
 dependencies: [7]
