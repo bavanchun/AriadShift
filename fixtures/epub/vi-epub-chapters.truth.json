@@ -1,0 +1,298 @@
+{
+  "version": "ariad-truth/0",
+  "id": "vi-epub-chapters",
+  "canonical": {
+    "text": "Khu vườn đọc sách\nKhu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.\nSinh hoạt hằng tuần\nMỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.\nVào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.\nHành trình ven sông\nThành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.\nĐoạn đường men bến đá\nLan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn.\nGhi chép hằng ngày\nKhi trời nắng, bóng cây đổ thành những vệt dài trên mặt nước. Buổi chiều, trẻ con mang diều ra bãi cỏ, còn người lớn ngồi dưới mái hiên nói chuyện mùa mưa. Lối đi không dẫn đến một nơi đặc biệt; giá trị của nó nằm ở những cuộc gặp gỡ hằng ngày.\nKhông gian sinh hoạt chung\nCả khu vườn và lối đi ven sông đều mở cửa cho mọi người ghé thăm bất kỳ lúc nào.\nGặp gỡ cuối tuần\nMỗi buổi chiều, người dân trong khu phố lại cùng nhau trò chuyện và chia sẻ những câu chuyện thường nhật.",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Khu vườn đọc sách",
+        "children": [
+          {
+            "level": 2,
+            "text": "Sinh hoạt hằng tuần",
+            "children": []
+          }
+        ]
+      },
+      {
+        "level": 1,
+        "text": "Hành trình ven sông",
+        "children": [
+          {
+            "level": 2,
+            "text": "Đoạn đường men bến đá",
+            "children": [
+              {
+                "level": 3,
+                "text": "Ghi chép hằng ngày",
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "level": 1,
+        "text": "Không gian sinh hoạt chung",
+        "children": [
+          {
+            "level": 2,
+            "text": "Gặp gỡ cuối tuần",
+            "children": []
+          }
+        ]
+      }
+    ],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "blocks": [
+    {
+      "type": "chapter_break",
+      "file_name": "chapter1.xhtml",
+      "nav_title": "Khu vườn đọc sách"
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Khu vườn đọc sách"
+    },
+    {
+      "type": "paragraph",
+      "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Sinh hoạt hằng tuần"
+    },
+    {
+      "type": "paragraph",
+      "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc."
+    },
+    {
+      "type": "paragraph",
+      "text": "Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc."
+    },
+    {
+      "type": "chapter_break",
+      "file_name": "chapter2.xhtml",
+      "nav_title": "Hành trình ven sông"
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Hành trình ven sông"
+    },
+    {
+      "type": "paragraph",
+      "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Đoạn đường men bến đá"
+    },
+    {
+      "type": "paragraph",
+      "text": "Lan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn."
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "Ghi chép hằng ngày"
+    },
+    {
+      "type": "paragraph",
+      "text": "Khi trời nắng, bóng cây đổ thành những vệt dài trên mặt nước. Buổi chiều, trẻ con mang diều ra bãi cỏ, còn người lớn ngồi dưới mái hiên nói chuyện mùa mưa. Lối đi không dẫn đến một nơi đặc biệt; giá trị của nó nằm ở những cuộc gặp gỡ hằng ngày."
+    },
+    {
+      "type": "chapter_break",
+      "file_name": "chapter3.xhtml",
+      "nav_title": "Không gian sinh hoạt chung"
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Không gian sinh hoạt chung"
+    },
+    {
+      "type": "paragraph",
+      "text": "Cả khu vườn và lối đi ven sông đều mở cửa cho mọi người ghé thăm bất kỳ lúc nào."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Gặp gỡ cuối tuần"
+    },
+    {
+      "type": "paragraph",
+      "text": "Mỗi buổi chiều, người dân trong khu phố lại cùng nhau trò chuyện và chia sẻ những câu chuyện thường nhật."
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Tuyển tập đọc sách và hành trình",
+      "language": "vi",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Khu vườn đọc sách"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng."
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "Sinh hoạt hằng tuần"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc."
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Hành trình ven sông"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "Đoạn đường men bến đá"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Lan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn."
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 3,
+        "content": [
+          {
+            "type": "text",
+            "text": "Ghi chép hằng ngày"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Khi trời nắng, bóng cây đổ thành những vệt dài trên mặt nước. Buổi chiều, trẻ con mang diều ra bãi cỏ, còn người lớn ngồi dưới mái hiên nói chuyện mùa mưa. Lối đi không dẫn đến một nơi đặc biệt; giá trị của nó nằm ở những cuộc gặp gỡ hằng ngày."
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Không gian sinh hoạt chung"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Cả khu vườn và lối đi ven sông đều mở cửa cho mọi người ghé thăm bất kỳ lúc nào."
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "Gặp gỡ cuối tuần"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Mỗi buổi chiều, người dân trong khu phố lại cùng nhau trò chuyện và chia sẻ những câu chuyện thường nhật."
+          }
+        ]
+      }
+    ],
+    "assets": {},
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}

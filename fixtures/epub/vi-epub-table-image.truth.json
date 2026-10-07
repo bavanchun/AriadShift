@@ -1,0 +1,444 @@
+{
+  "version": "ariad-truth/0",
+  "id": "vi-epub-table-image",
+  "canonical": {
+    "text": "Hành trình ven sông và sơ đồ\nThành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.\nBảng hành trình ven sông\nĐiểm dừng\nPhút đi bộ\nGhi chú\nBến sông\n8\nBóng mát\nVườn đọc\n14\nCó ghế dài\nLịch khảo sát cập nhật mỗi tháng.\nSơ đồ tuyến đường ven sông\nLan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn.",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Hành trình ven sông và sơ đồ",
+        "children": []
+      }
+    ],
+    "tables": [
+      {
+        "caption": "Bảng hành trình ven sông",
+        "rows": [
+          [
+            {
+              "text": "Điểm dừng",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            },
+            {
+              "text": "Phút đi bộ",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            },
+            {
+              "text": "Ghi chú",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            }
+          ],
+          [
+            {
+              "text": "Bến sông",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "8",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "Bóng mát",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ],
+          [
+            {
+              "text": "Vườn đọc",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "14",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "Có ghế dài",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ],
+          [
+            {
+              "text": "Lịch khảo sát cập nhật mỗi tháng.",
+              "rowspan": 1,
+              "colspan": 3,
+              "is_header": false
+            }
+          ]
+        ]
+      }
+    ],
+    "lists": [],
+    "image_count": 1,
+    "link_count": 0
+  },
+  "blocks": [
+    {
+      "type": "chapter_break",
+      "file_name": "chapter1.xhtml",
+      "nav_title": "Hành trình ven sông và sơ đồ"
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Hành trình ven sông và sơ đồ"
+    },
+    {
+      "type": "paragraph",
+      "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+    },
+    {
+      "type": "table",
+      "caption": "Bảng hành trình ven sông",
+      "rows": [
+        [
+          {
+            "text": "Điểm dừng",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          },
+          {
+            "text": "Phút đi bộ",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          },
+          {
+            "text": "Ghi chú",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          }
+        ],
+        [
+          {
+            "text": "Bến sông",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "8",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "Bóng mát",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ],
+        [
+          {
+            "text": "Vườn đọc",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "14",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "Có ghế dài",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ],
+        [
+          {
+            "text": "Lịch khảo sát cập nhật mỗi tháng.",
+            "rowspan": 1,
+            "colspan": 3,
+            "is_header": false
+          }
+        ]
+      ]
+    },
+    {
+      "type": "figure",
+      "alt": "Sơ đồ tuyến đường ven sông",
+      "caption": "Sơ đồ tuyến đường ven sông",
+      "media_type": "image/png",
+      "asset_id": "6bca795730900c41e97ac33d04db2b054019dcd598e0e57f98dbc958e94291fb"
+    },
+    {
+      "type": "paragraph",
+      "text": "Lan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn."
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Bảng và hình ảnh hành trình ven sông",
+      "language": "vi",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Hành trình ven sông và sơ đồ"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "caption": [
+          {
+            "type": "text",
+            "text": "Bảng hành trình ven sông"
+          }
+        ],
+        "columns": [
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          }
+        ],
+        "head": [
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Điểm dừng"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Phút đi bộ"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Ghi chú"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            }
+          ]
+        ],
+        "body": [
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Bến sông"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "8"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Bóng mát"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Vườn đọc"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "14"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Có ghế dài"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "rowspan": 1,
+              "colspan": 3,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Lịch khảo sát cập nhật mỗi tháng."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        ]
+      },
+      {
+        "type": "figure",
+        "asset": {
+          "type": "asset",
+          "id": "6bca795730900c41e97ac33d04db2b054019dcd598e0e57f98dbc958e94291fb"
+        },
+        "caption": [
+          {
+            "type": "text",
+            "text": "Sơ đồ tuyến đường ven sông"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Lan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn."
+          }
+        ]
+      }
+    ],
+    "assets": {
+      "6bca795730900c41e97ac33d04db2b054019dcd598e0e57f98dbc958e94291fb": {
+        "bytes": "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",
+        "media_type": "image/png"
+      }
+    },
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}

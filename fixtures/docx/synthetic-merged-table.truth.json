@@ -1,0 +1,6 @@
+{
+  "version": "ariad-truth/0",
+  "id": "synthetic-merged-table",
+  "unscored": true,
+  "unscored_reason": "nested table inside cell cannot be expressed in canonical form"
+}

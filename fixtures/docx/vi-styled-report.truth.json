@@ -1,0 +1,134 @@
+{
+  "version": "ariad-truth/0",
+  "id": "vi-styled-report",
+  "canonical": {
+    "text": "Khu vườn đọc sách\nKhu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.\nMỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách.\nSinh hoạt hằng tuần\nMỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.\nVào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Khu vườn đọc sách",
+        "children": [
+          {
+            "level": 2,
+            "text": "Sinh hoạt hằng tuần",
+            "children": []
+          }
+        ]
+      }
+    ],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Khu vườn đọc sách"
+    },
+    {
+      "type": "paragraph",
+      "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng."
+    },
+    {
+      "type": "paragraph",
+      "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách.",
+      "quote": true
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Sinh hoạt hằng tuần"
+    },
+    {
+      "type": "paragraph",
+      "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc."
+    },
+    {
+      "type": "paragraph",
+      "text": "Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc."
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Khu vườn đọc sách",
+      "language": "vi",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Khu vườn đọc sách"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng."
+          }
+        ]
+      },
+      {
+        "type": "quote",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "Sinh hoạt hằng tuần"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc."
+          }
+        ]
+      }
+    ],
+    "assets": {},
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}
