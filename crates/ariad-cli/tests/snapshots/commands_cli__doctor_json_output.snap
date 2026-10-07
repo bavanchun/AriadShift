@@ -25,5 +25,6 @@ expression: normalize_doctor_json_stdout(&output)
       "message": "engine 'pandoc' passes describe round trip",
       "hint": ""
     }
-  ]
+  ],
+  "stale_workspaces": 0
 }

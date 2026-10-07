@@ -11,6 +11,7 @@ use ariad_host::convert::{ConvertError, ConvertEvent, Profile};
 use clap::{Args, Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
+mod mcp;
 mod render;
 
 /// Document conversion engine and CLI tool.
@@ -37,6 +38,8 @@ enum Command {
     Engines(EnginesArgs),
     /// Check toolchain dependencies, workspace permissions, and engine health.
     Doctor(DoctorArgs),
+    /// Serve Model Context Protocol (MCP) over stdio.
+    Mcp(mcp::McpArgs),
     #[command(name = "__ir", hide = true)]
     Ir(IrArgs),
     #[command(name = "__write", hide = true)]
@@ -201,6 +204,7 @@ fn main() -> ExitCode {
             Some(Command::Plan(args)) => run_plan(args),
             Some(Command::Engines(args)) => run_engines(args),
             Some(Command::Doctor(args)) => run_doctor(args),
+            Some(Command::Mcp(args)) => run_mcp_entry(args),
             Some(Command::Ir(args)) => run_ir(args),
             Some(Command::Write(args)) => run_write(args),
             Some(Command::Engine {
@@ -214,6 +218,22 @@ fn main() -> ExitCode {
             ExitCode::from(code)
         }
     }
+}
+
+fn run_mcp_entry(args: mcp::McpArgs) -> ExitCode {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(_) => {
+            let _ = writeln!(io::stderr(), "ashift: mcp server failed to start runtime");
+            return ExitCode::from(1);
+        }
+    };
+    let exit_code = runtime.block_on(mcp::run_mcp(args));
+    runtime.shutdown_background();
+    exit_code
 }
 
 fn run_blocking<T, F, R>(command_name: &'static str, f: F, render: R) -> ExitCode
@@ -331,6 +351,7 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
         overwrite: args.overwrite,
         engine_program,
         title_fallback: None,
+        asset_base_dir: None,
     };
 
     run_blocking(
@@ -605,9 +626,18 @@ fn run_write(args: WriteArgs) -> ExitCode {
     )
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
 async fn interrupt() -> io::Result<()> {
-    tokio::signal::ctrl_c().await
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut sigterm = signal(SignalKind::terminate())?;
+    let mut sighup = signal(SignalKind::hangup())?;
+
+    tokio::select! {
+        res = tokio::signal::ctrl_c() => res,
+        _ = sigterm.recv() => Ok(()),
+        _ = sighup.recv() => Ok(()),
+    }
 }
 
 #[cfg(windows)]
