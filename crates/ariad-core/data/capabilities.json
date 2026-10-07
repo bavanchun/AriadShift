@@ -1,8 +1,8 @@
 {
   "version": "ariad-capabilities/0",
-  "generated_at": "2026-10-06T00:00:00Z",
+  "generated_at": "2026-10-07T03:29:05Z",
   "bench": {
-    "fixture_count": 0,
+    "fixture_count": 41,
     "pandoc_version": "3.12",
     "ashift_version": "0.0.0"
   },
@@ -15,7 +15,13 @@
         "local"
       ],
       "license": "GPL-2.0-or-later",
-      "metrics": null
+      "metrics": {
+        "fidelity": 0.991,
+        "editability": 0.971,
+        "p50_ms": 100.0,
+        "peak_mem_mb": 216.0,
+        "samples": 30
+      }
     },
     {
       "from": "ariad-ir+json",
@@ -25,7 +31,13 @@
         "local"
       ],
       "license": "GPL-2.0-or-later",
-      "metrics": null
+      "metrics": {
+        "fidelity": 0.851,
+        "editability": 0.786,
+        "p50_ms": 80.0,
+        "peak_mem_mb": 242.0,
+        "samples": 28
+      }
     },
     {
       "from": "ariad-ir+json",
@@ -36,7 +48,13 @@
         "local"
       ],
       "license": "Apache-2.0",
-      "metrics": null
+      "metrics": {
+        "fidelity": 1.0,
+        "editability": 1.0,
+        "p50_ms": 0.0,
+        "peak_mem_mb": 8.0,
+        "samples": 30
+      }
     },
     {
       "from": "ariad-ir+json",
@@ -47,7 +65,13 @@
         "local"
       ],
       "license": "Apache-2.0",
-      "metrics": null
+      "metrics": {
+        "fidelity": 0.989,
+        "editability": 0.981,
+        "p50_ms": 0.0,
+        "peak_mem_mb": 8.0,
+        "samples": 13
+      }
     },
     {
       "from": "docx",
@@ -57,7 +81,13 @@
         "local"
       ],
       "license": "GPL-2.0-or-later",
-      "metrics": null
+      "metrics": {
+        "fidelity": 1.0,
+        "editability": 1.0,
+        "p50_ms": 200.0,
+        "peak_mem_mb": 145.0,
+        "samples": 5
+      }
     },
     {
       "from": "epub",
@@ -67,7 +97,13 @@
         "local"
       ],
       "license": "GPL-2.0-or-later",
-      "metrics": null
+      "metrics": {
+        "fidelity": 1.0,
+        "editability": 1.0,
+        "p50_ms": 80.0,
+        "peak_mem_mb": 44.0,
+        "samples": 4
+      }
     },
     {
       "from": "html",
@@ -78,7 +114,13 @@
         "local"
       ],
       "license": "Apache-2.0",
-      "metrics": null
+      "metrics": {
+        "fidelity": 1.0,
+        "editability": 1.0,
+        "p50_ms": 0.0,
+        "peak_mem_mb": 8.0,
+        "samples": 4
+      }
     },
     {
       "from": "markdown",
@@ -89,7 +131,13 @@
         "local"
       ],
       "license": "Apache-2.0",
-      "metrics": null
+      "metrics": {
+        "fidelity": 1.0,
+        "editability": 1.0,
+        "p50_ms": 0.0,
+        "peak_mem_mb": 9.0,
+        "samples": 28
+      }
     }
   ]
 }
