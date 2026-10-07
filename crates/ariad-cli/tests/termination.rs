@@ -1,13 +1,13 @@
 use std::{
     fs,
     path::PathBuf,
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
 };
 
 #[cfg(unix)]
-use std::io::Write;
+use std::{io::Write, process::Child};
 
 fn ashift_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_ashift"))

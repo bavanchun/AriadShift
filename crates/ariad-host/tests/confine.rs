@@ -492,6 +492,12 @@ fn test_input_symlink_guards_isolated() {
         open_res.is_err(),
         "Layer 2 isolation: open_file_nofollow with O_NOFOLLOW must fail on symlink"
     );
+    let open_err = open_res.unwrap_err();
+    assert_eq!(
+        open_err.raw_os_error(),
+        Some(libc::ELOOP),
+        "Layer 2 isolation: open_file_nofollow must return ELOOP on symlink"
+    );
 }
 
 #[test]
