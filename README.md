@@ -8,6 +8,64 @@ structured data through a shared engine used by local and hosted interfaces.
 
 The repository provides local conversion across Markdown, HTML, DOCX, and EPUB.
 
+## Installation (from v0.1.0)
+
+Prebuilt standalone binaries will be distributed starting from v0.1.0 for Linux (x86_64, aarch64 musl), macOS (Apple Silicon, Intel), and Windows (x86_64).
+
+> [!NOTE]
+> AriadShift invokes Pandoc (`>= 3.12, < 4`) as an external, out-of-process executable for DOCX and EPUB conversions.
+> Homebrew installs Pandoc automatically as a package dependency. On other channels, download and install Pandoc from the [official release](https://github.com/jgm/pandoc/releases) (distribution packages are frequently older than 3.12) or set `ASHIFT_PANDOC` to the executable path. On Intel macOS (`x86_64-apple-darwin`), using the official Pandoc installer package is recommended and significantly faster than building Pandoc from source via Homebrew.
+
+### Homebrew (macOS & Linux)
+
+Available once v0.1.0 is tagged:
+
+```sh
+brew tap bavanchun/homebrew-tap
+brew install ashift
+```
+
+### Shell Installer (Linux & macOS)
+
+Available once v0.1.0 is published:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bavanchun/AriadShift/releases/download/v0.1.0/ariad-cli-installer.sh | sh
+```
+
+### PowerShell Installer (Windows)
+
+Available once v0.1.0 is published:
+
+```powershell
+irm https://github.com/bavanchun/AriadShift/releases/download/v0.1.0/ariad-cli-installer.ps1 | iex
+```
+
+### Windows Package Manager (WinGet)
+
+Available after the initial package submission is accepted by Microsoft:
+
+```powershell
+winget install VChun.AriadShift
+```
+
+### Cargo & cargo-binstall
+
+Available once published to crates.io:
+
+```sh
+# Fast prebuilt binary installation (resolves binary from GitHub Releases):
+cargo binstall ariad-cli
+
+# Or compile from source:
+cargo install ariad-cli
+```
+
+### Manual Download
+
+Starting with v0.1.0, standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`.
+
+
 ## Convert Documents
 
 Convert between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`) with `ashift convert`:

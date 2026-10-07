@@ -13,6 +13,9 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | [`fuzz-nightly.yml`](../.github/workflows/fuzz-nightly.yml) | Daily, manual, and pull requests that change it | Date-pinned nightly AddressSanitizer fuzzing on unsafe-adjacent parsers (10 min per target) |
 | [`links.yml`](../.github/workflows/links.yml) | Weekly, manual, and pull requests that change it | lychee checks every Markdown link on `dev`, configured by [`lychee.toml`](../lychee.toml) |
 | [`dependabot.yml`](../.github/dependabot.yml) | Weekly (Monday, Asia/Saigon) | Update pull requests into `dev` for GitHub Actions, Cargo, pnpm and uv |
+| [`release.yml`](../.github/workflows/release.yml) | Tag push `'**[0-9]+.[0-9]+.[0-9]+*'`, pull requests touching release paths (build-only rehearsal) | Builds 5 targets on 3 OSes, one CycloneDX SBOM per crate, Homebrew formula, and invokes `publish-crates.yml` (pull requests scoped via `paths:` filter) |
+| [`release-smoke.yml`](../.github/workflows/release-smoke.yml) | Manual dispatch (`workflow_dispatch`) | Multi-channel smoke test verifying binary installation across Homebrew, shell, PowerShell, and cargo-binstall |
+| [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | Called by `release.yml` | Publishes crates (`ariad-core`, `ariad-host`, `ariad-cli`) to crates.io with API version polling and idempotence |
 
 GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, only for workflows on the default branch, `main`. A new scheduled workflow therefore starts after the next promotion; until then, its pull request run is its test.
 
@@ -23,9 +26,9 @@ GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, on
 1. **Scope** (Linux, seconds) runs [`scripts/ci-scope.sh`](../scripts/ci-scope.sh). It picks the commit range to lint and decides whether the build, test and fuzz jobs must run.
 2. **Static checks** (Linux) run once for every event:
    - each new commit against the commit rules (`just lint-commits`);
-   - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, and the pnpm and uv lockfiles.
+   - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), and WinGet manifest generator test (`test-winget-manifest`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
 3. **Lint (windows-2025)** runs Clippy on Windows, for early feedback on Windows-only code.
-4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc, sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test`, `just bench-test`, and `just bench-check`.
+4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc, sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test`, `just bench-test`, `just bench-check`, and `just package-check`.
 5. **Fuzz** (Linux, `ubuntu-26.04`) runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `ir_json`, `limits_validate`), with cached corpus and crash artifact upload on failure or cancellation.
 6. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, and jobs 3, 4 and 5 either passed or were skipped by the scope decision.
 
@@ -61,11 +64,12 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 
 | Command | Runs |
 |---|---|
-| `just ci` | Everything CI runs on your OS: `just static`, Clippy, the WASM check, tests, `bench-test`, and `bench-check` |
+| `just ci` | Everything CI runs on your OS: `just static`, Clippy, the WASM check, tests, `bench-test`, `bench-check`, and `package-check` |
 | `just bench` | Run benchmark harness on fixture suite |
 | `just bench-check` | Validate capabilities.json against schema and invariants |
 | `just bench-test` | Run unit tests for benchmark harness |
-| `just static` | The OS-independent checks |
+| `just package-check` | Verify crate packaging for crates.io publishing |
+| `just static` | The OS-independent checks (requires `cargo-about 0.9.2`, `uv`, `python3`, and `pwsh` in CI) |
 | `just lint-commits` | Your commits since `origin/dev`; pass a range to check others, for example `just lint-commits main..dev` |
 | `just lint-workflows` | `actionlint` and `zizmor`. Set `GH_TOKEN` (for example `GH_TOKEN=$(gh auth token)`) to enable zizmor's online audits, which CI always runs |
 | `just deny-advisories` | The daily advisory scan |
