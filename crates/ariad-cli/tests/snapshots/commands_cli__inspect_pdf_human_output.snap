@@ -1,0 +1,7 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_stdout(&output)
+---
+format:    pdf
+bytes:     67775
+reachable: (none)

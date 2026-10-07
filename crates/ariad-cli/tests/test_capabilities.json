@@ -1,0 +1,159 @@
+{
+  "version": "ariad-capabilities/0",
+  "generated_at": "2026-10-06T00:00:00Z",
+  "bench": {
+    "fixture_count": 10,
+    "pandoc_version": "3.12",
+    "ashift_version": "0.0.0"
+  },
+  "edges": [
+    {
+      "from": "ariad-ir+json",
+      "to": "docx",
+      "engine": "pandoc",
+      "runtime": [
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": {
+        "fidelity": 0.95,
+        "editability": 0.90,
+        "p50_ms": 120.0,
+        "peak_mem_mb": 45.0,
+        "samples": 10
+      }
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "epub",
+      "engine": "pandoc",
+      "runtime": [
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": {
+        "fidelity": 0.92,
+        "editability": 0.88,
+        "p50_ms": 150.0,
+        "peak_mem_mb": 50.0,
+        "samples": 10
+      }
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "html",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": {
+        "fidelity": 0.98,
+        "editability": 0.95,
+        "p50_ms": 15.0,
+        "peak_mem_mb": 10.0,
+        "samples": 10
+      }
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "markdown",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": {
+        "fidelity": 0.99,
+        "editability": 0.98,
+        "p50_ms": 12.0,
+        "peak_mem_mb": 8.0,
+        "samples": 10
+      }
+    },
+    {
+      "from": "docx",
+      "to": "ariad-ir+json",
+      "engine": "pandoc",
+      "runtime": [
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": {
+        "fidelity": 0.94,
+        "editability": 0.91,
+        "p50_ms": 110.0,
+        "peak_mem_mb": 40.0,
+        "samples": 10
+      }
+    },
+    {
+      "from": "docx",
+      "to": "ariad-ir+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": {
+        "fidelity": 0.88,
+        "editability": 0.85,
+        "p50_ms": 140.0,
+        "peak_mem_mb": 45.0,
+        "samples": 10
+      }
+    },
+    {
+      "from": "epub",
+      "to": "ariad-ir+json",
+      "engine": "pandoc",
+      "runtime": [
+        "local"
+      ],
+      "license": "GPL-2.0-or-later",
+      "metrics": {
+        "fidelity": 0.90,
+        "editability": 0.85,
+        "p50_ms": 130.0,
+        "peak_mem_mb": 42.0,
+        "samples": 10
+      }
+    },
+    {
+      "from": "html",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": {
+        "fidelity": 0.97,
+        "editability": 0.96,
+        "p50_ms": 14.0,
+        "peak_mem_mb": 9.0,
+        "samples": 10
+      }
+    },
+    {
+      "from": "markdown",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": {
+        "fidelity": 0.99,
+        "editability": 0.98,
+        "p50_ms": 10.0,
+        "peak_mem_mb": 7.0,
+        "samples": 10
+      }
+    }
+  ]
+}

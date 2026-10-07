@@ -1,0 +1,8 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_engines_human_stdout(&output)
+---
+ENGINE       VERSION   LICENSE            STATUS                             ROUTES
+ariad-core  [VERSION]  Apache-2.0         ready                              ariad-ir+json -> html, ariad-ir+json -> markdown, html -> ariad-ir+json, markdown -> ariad-ir+json
+pandoc      [VERSION]  GPL-2.0-or-later   ready                              ariad-ir+json -> docx, ariad-ir+json -> epub, docx -> ariad-ir+json, epub -> ariad-ir+json
+docling      -         Apache-2.0         not installed (available in v0.2)  docx -> ariad-ir+json

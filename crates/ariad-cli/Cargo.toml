@@ -10,8 +10,12 @@ publish.workspace = true
 [dependencies]
 ariad-host.workspace = true
 clap.workspace = true
+serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 tokio-util = { workspace = true, features = ["rt"] }
+
+[features]
+test-probe = ["ariad-host/test-probe"]
 
 [dev-dependencies]
 ariad-core.workspace = true
@@ -21,7 +25,6 @@ insta.workspace = true
 jsonschema.workspace = true
 quick-xml.workspace = true
 serde = { workspace = true, features = ["derive"] }
-serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 toml.workspace = true
@@ -33,6 +36,11 @@ windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 [[bin]]
 name = "ashift"
 path = "src/main.rs"
+
+[[test]]
+name = "commands_cli"
+path = "tests/commands_cli.rs"
+required-features = ["ariad-host/test-probe"]
 
 [lints]
 workspace = true

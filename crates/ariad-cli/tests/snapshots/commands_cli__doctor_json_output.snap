@@ -1,0 +1,29 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_doctor_json_stdout(&output)
+---
+{
+  "checks": [
+    {
+      "id": "pandoc_version",
+      "ok": true,
+      "required": true,
+      "message": "Pandoc [VERSION] found in >= 3.12, < 4",
+      "hint": ""
+    },
+    {
+      "id": "workspace",
+      "ok": true,
+      "required": true,
+      "message": "temp directory is writable and workspace can be created and removed",
+      "hint": ""
+    },
+    {
+      "id": "engine_describe",
+      "ok": true,
+      "required": true,
+      "message": "engine 'pandoc' passes describe round trip",
+      "hint": ""
+    }
+  ]
+}
