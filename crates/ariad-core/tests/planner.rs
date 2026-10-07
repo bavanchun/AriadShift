@@ -92,13 +92,8 @@ fn embedded_capabilities_matches_fixed_table_routes_and_length_two() {
                     engine: expected_writer_engine.to_owned(),
                 }
             );
-
-            // In bootstrap data, all metrics are unmeasured
-            assert!(!p.measured);
-            assert_eq!(p.score.fidelity, None);
-            assert_eq!(p.score.editability, None);
-            assert_eq!(p.score.estimated_duration_ms, None);
             assert!(p.alternatives.is_empty());
+            assert!(p.measured);
         }
     }
 }

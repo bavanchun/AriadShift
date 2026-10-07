@@ -254,7 +254,7 @@ ariadshift/
 └── docs/
 ```
 
-The `justfile` initially provides `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, and `ci`. `dev` and `bench` arrive with `apps/` and `bench/`.
+The `justfile` provides `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, `ci`, `bench`, `bench-check`, `bench-test`, and `fixtures`. `dev` arrives with `apps/`.
 
 Only 5 crates exist initially. Further crate splits occur only when distinct boundaries emerge, such as an adapter requiring an independent release cycle.
 
@@ -651,15 +651,15 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 | Unit | cargo-nextest, Vitest, pytest | Pure business logic |
 | Snapshot | insta | IR generated from each fixture |
 | Golden | `fixtures/` | Route outputs against reference standards |
-| Structural metrics | `bench/` | Text CER/WER, heading tree distance, TEDS for tables, reading order |
+| Structural metrics | `bench/` | Text CER, heading tree distance (APTED), TEDS for tables, editability (see [docs/bench.md](docs/bench.md)) |
 | Visual regression | Typst/LibreOffice → PDF → PDFium raster → SSIM | "faithful" profile routes |
 | Conformance | `schemas/engine-protocol.v1.json` | Protocol compliance across all engines |
 | Fuzzing | cargo-fuzz 0.13.2 | Core readers, Pandoc AST mapper, IR JSON, limit validation (stable Rust with `-s none` in CI, date-pinned nightly ASan) |
 | E2E | Playwright (web), WebDriver (Tauri) | Primary user journeys |
 
-- Bench lives in `bench/` as a uv workspace member: jiwer 4.0.0 (CER/WER), rapidfuzz, apted 1.0.3, and our own TEDS. It generates `crates/ariad-core/data/capabilities.json`, which is committed to the repository.
+- Bench lives in `bench/` as a uv workspace member (`ariad-bench`): jiwer 4.0.0 (CER), rapidfuzz 3.14.6, apted 1.0.3, psutil 7.2.2, and our in-house TEDS implementation (Zhong et al. 2019). Full methodology, formulas, references, and bias disclosures are documented in [docs/bench.md](docs/bench.md). It generates `crates/ariad-core/data/capabilities.json`, which is committed to the repository.
 - The planner reads this file; the website's "Quality" page displays metrics directly from it.
-- Every PR modifying an engine re-runs the benchmark suite and **reports score differentials**.
+- The benchmark suite (`.github/workflows/bench.yml`) runs on pull requests with the `bench` label and on a nightly schedule (03:00 UTC). It compares metrics against the baseline and posts a diff table to the job summary, failing only on `bench-check` errors, never on score changes.
 - Fuzzing runs via cargo-fuzz 0.13.2 on stable with `-s none`, Linux CI only; the `fuzz/` crate is excluded from the Cargo workspace and never distributed. Six targets cover in-process readers, mappers and limits (archive preflight ZIP inspection and `docx_meta` XML parsing are not yet fuzzed; reserved as follow-up):
   - `markdown_reader`: Untrusted markdown input; asserts valid UTF-8 lossy conversion, block count and nesting depth limits, and JSON serialization roundtrip without panics.
   - `front_matter`: YAML front-matter parser; asserts rejection of anchors and aliases via independent event check, fallback to default metadata on error, and NFC normalization of text fields.

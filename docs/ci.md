@@ -7,6 +7,7 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | Workflow | Runs on | What it does |
 |---|---|---|
 | [`ci.yml`](../.github/workflows/ci.yml) | Pull requests into `dev` or `main`, pushes to `dev` or `main`, manual | The gate for every change (below) |
+| [`bench.yml`](../.github/workflows/bench.yml) | Pull requests with `bench` label, nightly schedule, manual | Runs benchmark harness, compares metrics against baseline, and validates capabilities schema |
 | [`codeql.yml`](../.github/workflows/codeql.yml) | Pull requests (code changes), pushes to `dev` or `main`, weekly, manual | CodeQL for Rust and for the workflows themselves; alerts go to the repository's Security tab |
 | [`security.yml`](../.github/workflows/security.yml) | Daily, manual, and pull requests that change it | `cargo deny check advisories` on `dev` and on `main`, so a newly published RustSec advisory fails a run even when no code changed |
 | [`fuzz-nightly.yml`](../.github/workflows/fuzz-nightly.yml) | Daily, manual, and pull requests that change it | Date-pinned nightly AddressSanitizer fuzzing on unsafe-adjacent parsers (10 min per target) |
@@ -24,7 +25,7 @@ GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, on
    - each new commit against the commit rules (`just lint-commits`);
    - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, and the pnpm and uv lockfiles.
 3. **Lint (windows-2025)** runs Clippy on Windows, for early feedback on Windows-only code.
-4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc and runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), and `just test`.
+4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc, sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test`, `just bench-test`, and `just bench-check`.
 5. **Fuzz** (Linux, `ubuntu-26.04`) runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `ir_json`, `limits_validate`), with cached corpus and crash artifact upload on failure or cancellation.
 6. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, and jobs 3, 4 and 5 either passed or were skipped by the scope decision.
 
@@ -60,7 +61,10 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 
 | Command | Runs |
 |---|---|
-| `just ci` | Everything CI runs on your OS: `just static`, Clippy, the WASM check and the tests |
+| `just ci` | Everything CI runs on your OS: `just static`, Clippy, the WASM check, tests, `bench-test`, and `bench-check` |
+| `just bench` | Run benchmark harness on fixture suite |
+| `just bench-check` | Validate capabilities.json against schema and invariants |
+| `just bench-test` | Run unit tests for benchmark harness |
 | `just static` | The OS-independent checks |
 | `just lint-commits` | Your commits since `origin/dev`; pass a range to check others, for example `just lint-commits main..dev` |
 | `just lint-workflows` | `actionlint` and `zizmor`. Set `GH_TOKEN` (for example `GH_TOKEN=$(gh auth token)`) to enable zizmor's online audits, which CI always runs |

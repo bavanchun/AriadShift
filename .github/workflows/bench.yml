@@ -1,0 +1,86 @@
+name: Benchmark
+
+# Benchmark harness execution and capability metric tracking.
+# Rules and rationale: docs/bench.md and ARCHITECTURE.md §14.
+on:
+  schedule:
+    # 03:00 UTC daily (10:00 Asia/Saigon).
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize, opened, reopened]
+
+# A new push to a PR cancels its older benchmark run. Scheduled runs check out dev.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark (Ubuntu)
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && (
+        (github.event.action == 'labeled' && github.event.label.name == 'bench') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'bench'))
+      ))
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: true
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: just@1.58.0
+
+      - name: Install Pandoc
+        run: bash scripts/install-pandoc.sh
+
+      - name: Build ashift CLI
+        run: cargo build --release -p ariad-cli
+
+      - name: Run benchmark harness
+        run: |
+          PATH="$PWD/.tools/pandoc/bin:$PATH" ASHIFT_PANDOC="$PWD/.tools/pandoc/bin/pandoc" just bench | tee bench-run.log
+
+      - name: Generate diff summary
+        run: |
+          {
+            echo "## Benchmark Results"
+            uv run --package ariad-bench python -m ariad_bench diff
+            if grep -q "Benchmark Run Summary:" bench-run.log; then
+              echo ""
+              echo "### Run Details"
+              echo '```'
+              sed -n '/Benchmark Run Summary:/,$p' bench-run.log
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate capabilities schema and invariants
+        run: just bench-check
