@@ -4,6 +4,7 @@
 pub mod archive;
 pub mod assets;
 pub mod commands;
+pub mod confine;
 pub mod convert;
 pub mod engines;
 pub mod ir_io;
