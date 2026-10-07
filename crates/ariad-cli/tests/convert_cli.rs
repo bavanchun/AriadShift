@@ -1156,6 +1156,7 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
 
     let errors = [
         (ConvertError::InputIo, 1),
+        (ConvertError::OutputIo, 1),
         (ConvertError::UnsupportedIrVersion, 1),
         (
             ConvertError::InvalidCapabilities("bad capability".to_owned()),
@@ -1180,6 +1181,7 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
         );
         match err {
             ConvertError::InputIo => {}
+            ConvertError::OutputIo => {}
             ConvertError::UnsupportedIrVersion => {}
             ConvertError::InvalidCapabilities(_) => {}
             ConvertError::Failed => {}

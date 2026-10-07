@@ -1,0 +1,26 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_stdout(&output)
+---
+{
+  "input": "pd-en-alice.md",
+  "route": [
+    {
+      "from": "markdown",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core"
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "docx",
+      "engine": "pandoc"
+    }
+  ],
+  "score": {
+    "fidelity": 0.9405,
+    "editability": 0.882,
+    "estimated_duration_ms": 130.0
+  },
+  "measured": true,
+  "alternatives": []
+}

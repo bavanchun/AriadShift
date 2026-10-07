@@ -1,0 +1,7 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_doctor_human_stdout(&output)
+---
+✓ Pandoc [VERSION] found in >= 3.12, < 4 at [PANDOC_PATH]
+✓ temp directory is writable and workspace can be created and removed
+✓ engine 'pandoc' passes describe round trip

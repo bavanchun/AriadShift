@@ -1,0 +1,40 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_engines_json_stdout(&output)
+---
+[
+  {
+    "id": "ariad-core",
+    "version": "[VERSION]",
+    "license": "Apache-2.0",
+    "status": "ready",
+    "routes": [
+      "ariad-ir+json -> html",
+      "ariad-ir+json -> markdown",
+      "html -> ariad-ir+json",
+      "markdown -> ariad-ir+json"
+    ]
+  },
+  {
+    "id": "pandoc",
+    "version": "[VERSION]",
+    "license": "GPL-2.0-or-later",
+    "status": "ready",
+    "routes": [
+      "ariad-ir+json -> docx",
+      "ariad-ir+json -> epub",
+      "docx -> ariad-ir+json",
+      "epub -> ariad-ir+json"
+    ]
+  },
+  {
+    "id": "docling",
+    "version": "-",
+    "license": "Apache-2.0",
+    "status": "not installed",
+    "note": "available in v0.2",
+    "routes": [
+      "docx -> ariad-ir+json"
+    ]
+  }
+]

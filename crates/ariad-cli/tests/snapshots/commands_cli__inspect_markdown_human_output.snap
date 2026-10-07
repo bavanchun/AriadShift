@@ -1,0 +1,8 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_stdout(&output)
+---
+format:    markdown
+bytes:     104
+counts:    0 headings, 1 paragraph, 0 tables, 0 images, 0 links, 0 footnotes, 21 words
+reachable: docx, epub, html
