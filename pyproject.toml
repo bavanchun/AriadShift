@@ -11,4 +11,5 @@ package = false
 [tool.uv.workspace]
 members = [
     "fixtures/gen",
+    "bench",
 ]
