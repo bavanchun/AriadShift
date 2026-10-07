@@ -1,4 +1,4 @@
-use std::{env, ffi::OsStr, path::PathBuf, process::Command};
+use std::{env, ffi::OsStr, path::PathBuf};
 
 use thiserror::Error;
 
@@ -21,11 +21,35 @@ pub enum PandocBinaryError {
     #[error(
         "Pandoc must be {PANDOC_SUPPORTED}; install it with `just pandoc` or set ASHIFT_PANDOC."
     )]
-    UnsupportedVersion,
+    UnsupportedVersion { found: Option<String> },
+    #[error("Pandoc timed out while checking version")]
+    TimedOut,
+    #[error("operation was interrupted")]
+    Interrupted,
 }
 
 /// Resolves Pandoc from an explicit override or the process PATH and checks its version.
 pub fn locate() -> Result<PandocBinary, PandocBinaryError> {
+    locate_with(None, true)
+}
+
+/// Resolves Pandoc from an explicit override or the process PATH with optional cancellation.
+pub fn locate_with_cancel(
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> Result<PandocBinary, PandocBinaryError> {
+    locate_with(cancel, true)
+}
+
+/// Resolves Pandoc from an explicit override or the process PATH with optional cancellation and group control.
+///
+/// Host-side callers (such as `doctor`) pass `own_group = true` so the probe leads its own process
+/// group and timeout kills the probe tree without affecting the host.
+/// In-engine callers (`ashift __engine pandoc`) pass `own_group = false` so the probe remains
+/// in the engine process group managed and reaped by `runner`.
+pub fn locate_with(
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+    own_group: bool,
+) -> Result<PandocBinary, PandocBinaryError> {
     let path = match env::var_os("ASHIFT_PANDOC").filter(|value| !value.is_empty()) {
         Some(explicit) => {
             let path = PathBuf::from(explicit);
@@ -37,26 +61,74 @@ pub fn locate() -> Result<PandocBinary, PandocBinaryError> {
         None => find_in_path(env::var_os("PATH").as_deref()).ok_or(PandocBinaryError::Missing)?,
     };
 
-    let mut command = Command::new(&path);
-    command.arg("--version").env_clear();
-    if let Some(path_value) = env::var_os("PATH") {
-        command.env("PATH", path_value);
-    }
+    use process_wrap::std::CommandWrap;
     #[cfg(windows)]
-    if let Some(system_root) = env::var_os("SYSTEMROOT") {
-        command.env("SYSTEMROOT", system_root);
+    use process_wrap::std::JobObject;
+    #[cfg(unix)]
+    use process_wrap::std::ProcessGroup;
+    use std::{
+        io::Read,
+        process::Stdio,
+        time::{Duration, Instant},
+    };
+
+    let mut command = CommandWrap::with_new(&path, |cmd| {
+        cmd.arg("--version").env_clear();
+        if let Some(path_value) = env::var_os("PATH") {
+            cmd.env("PATH", path_value);
+        }
+        #[cfg(windows)]
+        if let Some(system_root) = env::var_os("SYSTEMROOT") {
+            cmd.env("SYSTEMROOT", system_root);
+        }
+        cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+    });
+    if own_group {
+        #[cfg(unix)]
+        command.wrap(ProcessGroup::leader());
+        #[cfg(windows)]
+        command.wrap(JobObject);
     }
-    let output = command.output().map_err(|_| PandocBinaryError::Missing)?;
-    if !output.status.success() {
-        return Err(PandocBinaryError::UnsupportedVersion);
+
+    let mut child = command.spawn().map_err(|_| PandocBinaryError::Missing)?;
+    let start = Instant::now();
+    let timeout = Duration::from_secs(5);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if cancel.is_some_and(|c| c.is_cancelled()) {
+                    let _ = child.kill();
+                    return Err(PandocBinaryError::Interrupted);
+                }
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    return Err(PandocBinaryError::TimedOut);
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(_) => {
+                let _ = child.kill();
+                return Err(PandocBinaryError::Missing);
+            }
+        }
+    };
+    if !status.success() {
+        return Err(PandocBinaryError::UnsupportedVersion { found: None });
     }
-    let version = String::from_utf8_lossy(&output.stdout)
+    let mut stdout = Vec::new();
+    if let Some(out) = child.stdout().take() {
+        let _ = out.take(4096).read_to_end(&mut stdout);
+    }
+    let version = String::from_utf8_lossy(&stdout)
         .lines()
         .next()
         .and_then(parse_version_line)
-        .ok_or(PandocBinaryError::UnsupportedVersion)?;
+        .ok_or(PandocBinaryError::UnsupportedVersion { found: None })?;
     if !is_supported(&version) {
-        return Err(PandocBinaryError::UnsupportedVersion);
+        return Err(PandocBinaryError::UnsupportedVersion {
+            found: Some(version),
+        });
     }
 
     Ok(PandocBinary { path, version })

@@ -17,6 +17,8 @@ use ariad_core::{
     warning::Warning,
     writer::{html as writer_html, markdown as writer_markdown},
 };
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -125,6 +127,27 @@ pub struct Route {
     pub output_format: DocumentFormat,
     pub reader: ReaderEdge,
     pub writer: WriterEdge,
+}
+
+impl Route {
+    /// Returns the sequence of planner steps corresponding to this route.
+    #[must_use]
+    pub fn steps(&self) -> Vec<ariad_core::planner::PlanStep> {
+        let (r_from, r_to, r_eng) = self.reader.capability();
+        let (w_from, w_to, w_eng) = self.writer.capability();
+        vec![
+            ariad_core::planner::PlanStep {
+                from: r_from,
+                to: r_to,
+                engine: r_eng.to_owned(),
+            },
+            ariad_core::planner::PlanStep {
+                from: w_from,
+                to: w_to,
+                engine: w_eng.to_owned(),
+            },
+        ]
+    }
 }
 
 impl std::fmt::Display for Route {
@@ -326,7 +349,7 @@ impl ConvertRequest {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ConvertWarning {
     pub code: String,
     pub message: String,
@@ -335,8 +358,29 @@ pub struct ConvertWarning {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ConvertReport {
     pub output: PathBuf,
+    pub route: Vec<ariad_core::planner::PlanStep>,
     pub warnings: Vec<ConvertWarning>,
     pub elapsed: Duration,
+}
+
+/// Serialized output for `convert --json`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ConvertOutput {
+    pub output: String,
+    pub route: Vec<ariad_core::planner::PlanStep>,
+    pub warnings: Vec<ConvertWarning>,
+    pub elapsed_ms: u64,
+}
+
+impl From<&ConvertReport> for ConvertOutput {
+    fn from(report: &ConvertReport) -> Self {
+        Self {
+            output: report.output.display().to_string(),
+            route: report.route.clone(),
+            warnings: report.warnings.clone(),
+            elapsed_ms: u64::try_from(report.elapsed.as_millis()).unwrap_or(u64::MAX),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -344,6 +388,7 @@ pub enum ConvertError {
     UnsupportedRoute { detail: Option<String> },
     DestinationSameAsInput,
     InputIo,
+    OutputIo,
     LimitExceeded,
     ToolMissing,
     DestinationExists,
@@ -364,6 +409,7 @@ impl std::fmt::Display for ConvertError {
                 write!(f, "the output path cannot be the same as the input file")
             }
             Self::InputIo => write!(f, "the input file could not be read"),
+            Self::OutputIo => write!(f, "could not write to stdout"),
             Self::LimitExceeded => write!(f, "conversion limit exceeded"),
             Self::ToolMissing => write!(
                 f,
@@ -385,6 +431,21 @@ impl std::fmt::Display for ConvertError {
 
 impl std::error::Error for ConvertError {}
 
+impl From<ArchiveError> for ConvertError {
+    fn from(err: ArchiveError) -> Self {
+        match err {
+            ArchiveError::CentralDirectorySizeExceeded { .. }
+            | ArchiveError::EntryCountExceeded { .. }
+            | ArchiveError::DecompressedSizeExceeded { .. } => Self::LimitExceeded,
+            ArchiveError::Encrypted
+            | ArchiveError::DuplicateEntryName { .. }
+            | ArchiveError::EntryCountMismatch { .. }
+            | ArchiveError::InvalidEntryName { .. } => Self::Failed,
+            ArchiveError::Io(_) | ArchiveError::Zip(_) => Self::InputIo,
+        }
+    }
+}
+
 impl ConvertError {
     #[must_use]
     pub const fn exit_code(&self) -> u8 {
@@ -396,6 +457,7 @@ impl ConvertError {
             Self::DestinationExists => 6,
             Self::Interrupted => 130,
             Self::InputIo
+            | Self::OutputIo
             | Self::UnsupportedIrVersion
             | Self::InvalidCapabilities(_)
             | Self::Failed => 1,
@@ -469,8 +531,96 @@ where
     convert_executor(request, &args, Limits::local(), cancel, on_event)
 }
 
-fn read_bounded_file(path: &Path, max_bytes: Option<u64>) -> Result<Vec<u8>, ConvertError> {
-    let mut file = fs::File::open(path).map_err(|_| ConvertError::InputIo)?;
+/// Maximum input bytes allowed for document inspection and structural analysis (32 MiB).
+pub const ANALYSIS_MAX_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Maximum input bytes for parsing document body in plan summary (4 MiB).
+pub const PLAN_SUMMARY_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
+pub const MAX_ZIP_ENTRIES: usize = 20_000;
+pub const MAX_ZIP_ENTRY_NAME_BYTES: usize = 2048;
+
+/// Classification of an input file's format.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileClassification {
+    /// Detected format, or `None` if unknown.
+    pub format: Option<Format>,
+    /// Whether the file extension conflicts with the detected content format.
+    pub extension_mismatch: bool,
+    /// Total file size in bytes.
+    pub bytes: u64,
+}
+
+/// Classifies a file's format from its content prefix, ZIP central directory, and extension.
+pub fn classify_file(path: &Path) -> Result<FileClassification, std::io::Error> {
+    let mut file = open_regular_input(path)
+        .map_err(|_| std::io::Error::other("could not read regular input file"))?;
+    let metadata = file.metadata()?;
+    let bytes = metadata.len();
+
+    let mut prefix = [0u8; 1024];
+    let n = file.read(&mut prefix)?;
+    let prefix = &prefix[..n];
+
+    let ext = path.extension().and_then(|e| e.to_str());
+
+    let zip_entries: Option<Vec<String>> = if prefix.starts_with(b"PK\x03\x04") {
+        crate::archive::read_zip_entry_names(&mut file, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_NAME_BYTES)
+    } else {
+        None
+    };
+
+    let entry_refs: Option<Vec<&str>> = zip_entries
+        .as_ref()
+        .map(|entries| entries.iter().map(|s| s.as_str()).collect());
+
+    let content_fmt = ariad_core::format::classify(prefix, entry_refs.as_deref(), None);
+    let final_fmt = ariad_core::format::classify(prefix, entry_refs.as_deref(), ext);
+
+    let ext_fmt = ext.and_then(Format::from_extension);
+    let extension_mismatch = match (content_fmt, ext) {
+        (Some(cf), Some(_)) => ext_fmt != Some(cf),
+        _ => false,
+    };
+
+    Ok(FileClassification {
+        format: final_fmt,
+        extension_mismatch,
+        bytes,
+    })
+}
+
+/// Opens a regular input file for reading, rejecting directories, FIFOs,
+/// sockets, and device special files before open and via fstat to prevent hangs.
+pub fn open_regular_input(path: &Path) -> Result<fs::File, ConvertError> {
+    let pre_meta = fs::metadata(path).map_err(|_| ConvertError::InputIo)?;
+    if !pre_meta.file_type().is_file() {
+        return Err(ConvertError::InputIo);
+    }
+
+    #[cfg(unix)]
+    let file = {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut opts = fs::OpenOptions::new();
+        opts.read(true);
+        opts.custom_flags(libc::O_NONBLOCK);
+        opts.open(path).map_err(|_| ConvertError::InputIo)?
+    };
+
+    #[cfg(not(unix))]
+    let file = fs::File::open(path).map_err(|_| ConvertError::InputIo)?;
+
+    let post_meta = file.metadata().map_err(|_| ConvertError::InputIo)?;
+    if !post_meta.file_type().is_file() {
+        return Err(ConvertError::InputIo);
+    }
+
+    Ok(file)
+}
+
+/// Reads a regular file up to `max_bytes`.
+pub fn read_bounded_file(path: &Path, max_bytes: Option<u64>) -> Result<Vec<u8>, ConvertError> {
+    let mut file = open_regular_input(path)?;
     if let Ok(metadata) = file.metadata()
         && max_bytes.is_some_and(|max| metadata.len() > max)
     {
@@ -489,6 +639,118 @@ fn read_bounded_file(path: &Path, max_bytes: Option<u64>) -> Result<Vec<u8>, Con
         bytes.extend_from_slice(&buffer[..n]);
     }
     Ok(bytes)
+}
+
+/// Validates that a reader streams valid UTF-8 text using constant memory
+/// (streaming in 64 KiB chunks) and carrying incomplete multibyte sequences across
+/// chunk boundaries.
+pub fn validate_utf8_reader_streaming<R: Read>(mut reader: R) -> Result<(), ConvertError> {
+    const CHUNK_SIZE: usize = 64 * 1024;
+    let mut buffer = [0u8; 4 + CHUNK_SIZE];
+    let mut carry_len = 0usize;
+
+    loop {
+        let n = reader
+            .read(&mut buffer[carry_len..carry_len + CHUNK_SIZE])
+            .map_err(|_| ConvertError::InputIo)?;
+        if n == 0 {
+            if carry_len > 0 {
+                return Err(ConvertError::InputIo);
+            }
+            return Ok(());
+        }
+
+        let total_len = carry_len + n;
+        let slice = &buffer[..total_len];
+        match std::str::from_utf8(slice) {
+            Ok(_) => {
+                carry_len = 0;
+            }
+            Err(e) => {
+                let valid_up_to = e.valid_up_to();
+                match e.error_len() {
+                    Some(_) => return Err(ConvertError::InputIo),
+                    None => {
+                        let remaining = total_len - valid_up_to;
+                        buffer.copy_within(valid_up_to..total_len, 0);
+                        carry_len = remaining;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Validates that a regular file contains valid UTF-8 text using constant memory
+/// (streaming in 64 KiB chunks) and carrying incomplete multibyte sequences across
+/// chunk boundaries.
+pub fn validate_utf8_file_streaming(path: &Path) -> Result<(), ConvertError> {
+    let file = open_regular_input(path)?;
+    validate_utf8_reader_streaming(file)
+}
+
+/// Result of reading a supported in-process document format to Ariad IR.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReadDocumentResult {
+    pub document: ariad_core::ir::Document,
+    pub warnings: Vec<ConvertWarning>,
+}
+
+/// Reads a supported document format (Markdown or HTML) to Ariad IR in-process
+/// using strict bounds and UTF-8 verification.
+pub fn read_document_to_ir(
+    path: &Path,
+    format: DocumentFormat,
+    limits: &Limits,
+) -> Result<ReadDocumentResult, ConvertError> {
+    let mut warnings = Vec::new();
+    let document = match format {
+        DocumentFormat::Markdown => {
+            let bytes = read_bounded_file(path, limits.max_input_bytes)?;
+            let text = String::from_utf8(bytes).map_err(|_| ConvertError::InputIo)?;
+            let parsed = reader_markdown::read(&text, limits).map_err(|err| match err {
+                reader_markdown::ReadError::NestingTooDeep { .. }
+                | reader_markdown::ReadError::TooManyBlocks { .. }
+                | reader_markdown::ReadError::InputTooLarge { .. }
+                | reader_markdown::ReadError::InvalidLimits(_) => ConvertError::LimitExceeded,
+            })?;
+            for w in &parsed.warnings {
+                warnings.push(safe_warning(w));
+            }
+            parsed.document
+        }
+        DocumentFormat::Html => {
+            let bytes = read_bounded_file(path, limits.max_input_bytes)?;
+            let parsed = reader_html::read(&bytes, limits).map_err(|err| match err {
+                reader_html::ReadError::NestingTooDeep { .. }
+                | reader_html::ReadError::TooManyBlocks { .. }
+                | reader_html::ReadError::InputTooLarge { .. }
+                | reader_html::ReadError::TooManyNodes { .. }
+                | reader_html::ReadError::InvalidLimits(_) => ConvertError::LimitExceeded,
+            })?;
+            for w in &parsed.warnings {
+                warnings.push(safe_warning(w));
+            }
+            parsed.document
+        }
+        _ => {
+            return Err(ConvertError::UnsupportedRoute {
+                detail: Some(format!(
+                    "cannot read {} directly to IR in-process",
+                    format.as_str()
+                )),
+            });
+        }
+    };
+    Ok(ReadDocumentResult { document, warnings })
+}
+
+/// Sanitizes an identifier (e.g. extension or format name) by stripping control characters and bounding length.
+pub fn sanitize_identifier(s: &str, max_len: usize) -> String {
+    s.chars()
+        .filter(|c| !c.is_control())
+        .take(max_len)
+        .collect()
 }
 
 /// Converts a supported input document with custom engine args and limits for an explicit Route.
@@ -530,34 +792,16 @@ where
     let mut warnings = Vec::new();
     let (mut document, asset_base_dir) = match route.reader {
         ReaderEdge::NativeMarkdown => {
-            let bytes = read_bounded_file(&request.input, limits.max_input_bytes)?;
-            let text = String::from_utf8(bytes).map_err(|_| ConvertError::InputIo)?;
-            let parsed = reader_markdown::read(&text, &limits).map_err(|err| match err {
-                reader_markdown::ReadError::NestingTooDeep { .. }
-                | reader_markdown::ReadError::TooManyBlocks { .. }
-                | reader_markdown::ReadError::InputTooLarge { .. }
-                | reader_markdown::ReadError::InvalidLimits(_) => ConvertError::LimitExceeded,
-            })?;
-            for w in &parsed.warnings {
-                warnings.push(safe_warning(w));
-            }
+            let res = read_document_to_ir(&request.input, DocumentFormat::Markdown, &limits)?;
+            warnings.extend(res.warnings);
             let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
-            (parsed.document, Some(base_dir))
+            (res.document, Some(base_dir))
         }
         ReaderEdge::NativeHtml => {
-            let bytes = read_bounded_file(&request.input, limits.max_input_bytes)?;
-            let parsed = reader_html::read(&bytes, &limits).map_err(|err| match err {
-                reader_html::ReadError::NestingTooDeep { .. }
-                | reader_html::ReadError::TooManyBlocks { .. }
-                | reader_html::ReadError::InputTooLarge { .. }
-                | reader_html::ReadError::TooManyNodes { .. }
-                | reader_html::ReadError::InvalidLimits(_) => ConvertError::LimitExceeded,
-            })?;
-            for w in &parsed.warnings {
-                warnings.push(safe_warning(w));
-            }
+            let res = read_document_to_ir(&request.input, DocumentFormat::Html, &limits)?;
+            warnings.extend(res.warnings);
             let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
-            (parsed.document, Some(base_dir))
+            (res.document, Some(base_dir))
         }
         ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => {
             let format_str = if route.reader == ReaderEdge::PandocDocx {
@@ -620,6 +864,7 @@ where
 
     Ok(ConvertReport {
         output: request.output.clone(),
+        route: route.steps(),
         warnings,
         elapsed: started.elapsed(),
     })
@@ -699,19 +944,52 @@ where
         return Err(ConvertError::DestinationSameAsInput);
     }
 
-    let ext = request
-        .input
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("unknown");
-    let input_format =
-        detect_format_from_path(&request.input).ok_or_else(|| ConvertError::UnsupportedRoute {
-            detail: Some(format!("no reachable targets from {ext}")),
-        })?;
+    let (input_format, extension_mismatch) = match classify_file(&request.input) {
+        Ok(c) => {
+            let fmt = c
+                .format
+                .and_then(|f| DocumentFormat::try_from(f).ok())
+                .ok_or_else(|| {
+                    let ext = request
+                        .input
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("unknown");
+                    let clean_ext = sanitize_identifier(ext, 32);
+                    ConvertError::UnsupportedRoute {
+                        detail: Some(format!("no reachable targets from {clean_ext}")),
+                    }
+                })?;
+            (fmt, c.extension_mismatch)
+        }
+        Err(_) => {
+            if request.input.is_dir() {
+                return Err(ConvertError::InputIo);
+            }
+            let ext = request
+                .input
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown");
+            let clean_ext = sanitize_identifier(ext, 32);
+            if DocumentFormat::from_extension(&clean_ext).is_none() {
+                return Err(ConvertError::UnsupportedRoute {
+                    detail: Some(format!("no reachable targets from {clean_ext}")),
+                });
+            }
+            return Err(ConvertError::InputIo);
+        }
+    };
 
     let limits = Limits::local();
     let started = Instant::now();
     let mut warnings = Vec::new();
+    if extension_mismatch {
+        warnings.push(ConvertWarning {
+            code: "format_mismatch".to_owned(),
+            message: "The input file extension does not match the detected format.".to_owned(),
+        });
+    }
 
     let reader = ReaderEdge::ALL
         .iter()
@@ -739,34 +1017,16 @@ where
 
     let (mut document, asset_base_dir) = match reader {
         ReaderEdge::NativeMarkdown => {
-            let bytes = read_bounded_file(&request.input, limits.max_input_bytes)?;
-            let text = String::from_utf8(bytes).map_err(|_| ConvertError::InputIo)?;
-            let parsed = reader_markdown::read(&text, &limits).map_err(|err| match err {
-                reader_markdown::ReadError::NestingTooDeep { .. }
-                | reader_markdown::ReadError::TooManyBlocks { .. }
-                | reader_markdown::ReadError::InputTooLarge { .. }
-                | reader_markdown::ReadError::InvalidLimits(_) => ConvertError::LimitExceeded,
-            })?;
-            for w in &parsed.warnings {
-                warnings.push(safe_warning(w));
-            }
+            let res = read_document_to_ir(&request.input, DocumentFormat::Markdown, &limits)?;
+            warnings.extend(res.warnings);
             let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
-            (parsed.document, Some(base_dir))
+            (res.document, Some(base_dir))
         }
         ReaderEdge::NativeHtml => {
-            let bytes = read_bounded_file(&request.input, limits.max_input_bytes)?;
-            let parsed = reader_html::read(&bytes, &limits).map_err(|err| match err {
-                reader_html::ReadError::NestingTooDeep { .. }
-                | reader_html::ReadError::TooManyBlocks { .. }
-                | reader_html::ReadError::InputTooLarge { .. }
-                | reader_html::ReadError::TooManyNodes { .. }
-                | reader_html::ReadError::InvalidLimits(_) => ConvertError::LimitExceeded,
-            })?;
-            for w in &parsed.warnings {
-                warnings.push(safe_warning(w));
-            }
+            let res = read_document_to_ir(&request.input, DocumentFormat::Html, &limits)?;
+            warnings.extend(res.warnings);
             let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
-            (parsed.document, Some(base_dir))
+            (res.document, Some(base_dir))
         }
         ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => {
             let format_str = if reader == ReaderEdge::PandocDocx {
@@ -829,6 +1089,16 @@ where
 
     Ok(ConvertReport {
         output: request.output.clone(),
+        route: vec![ariad_core::planner::PlanStep {
+            from: Format::from(input_format),
+            to: Format::AriadIrJson,
+            engine: match reader {
+                ReaderEdge::NativeMarkdown | ReaderEdge::NativeHtml => {
+                    engines::IN_PROCESS_ENGINE.to_owned()
+                }
+                ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => "pandoc".to_owned(),
+            },
+        }],
         warnings,
         elapsed: started.elapsed(),
     })
@@ -852,12 +1122,7 @@ where
     }
 
     let target_format = DocumentFormat::parse(&request.target_format).ok_or_else(|| {
-        let clean_target: String = request
-            .target_format
-            .chars()
-            .filter(|c| !c.is_control())
-            .take(64)
-            .collect();
+        let clean_target = sanitize_identifier(&request.target_format, 64);
         ConvertError::UnsupportedRoute {
             detail: Some(format!("unknown target format '{clean_target}'")),
         }
@@ -884,12 +1149,7 @@ where
             from == Format::AriadIrJson && to == Format::from(target_format)
         })
         .ok_or_else(|| {
-            let clean_target: String = request
-                .target_format
-                .chars()
-                .filter(|c| !c.is_control())
-                .take(64)
-                .collect();
+            let clean_target = sanitize_identifier(&request.target_format, 64);
             ConvertError::UnsupportedRoute {
                 detail: Some(format!("unknown target format '{clean_target}'")),
             }
@@ -943,6 +1203,16 @@ where
 
     Ok(ConvertReport {
         output: request.output.clone(),
+        route: vec![ariad_core::planner::PlanStep {
+            from: Format::AriadIrJson,
+            to: Format::from(target_format),
+            engine: match writer {
+                WriterEdge::NativeMarkdown | WriterEdge::NativeHtml => {
+                    engines::IN_PROCESS_ENGINE.to_owned()
+                }
+                WriterEdge::PandocDocx | WriterEdge::PandocEpub => "pandoc".to_owned(),
+            },
+        }],
         warnings,
         elapsed: started.elapsed(),
     })
@@ -962,19 +1232,59 @@ where
         return Err(ConvertError::Interrupted);
     }
 
-    let ext = request
-        .input
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("unknown");
-    let clean_ext: String = ext.chars().filter(|c| !c.is_control()).take(32).collect();
-
-    let input_format = match detect_format_from_path(&request.input) {
-        Some(fmt) => fmt,
-        None => {
-            return Err(ConvertError::UnsupportedRoute {
-                detail: Some(format!("no reachable targets from {clean_ext}")),
-            });
+    let (input_format, extension_mismatch) = match classify_file(&request.input) {
+        Ok(c) => {
+            let fmt = match c.format.and_then(|f| DocumentFormat::try_from(f).ok()) {
+                Some(fmt) => fmt,
+                None => {
+                    let ext = request
+                        .input
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("unknown");
+                    let clean_ext = sanitize_identifier(ext, 32);
+                    return Err(ConvertError::UnsupportedRoute {
+                        detail: Some(format!("no reachable targets from {clean_ext}")),
+                    });
+                }
+            };
+            (fmt, c.extension_mismatch)
+        }
+        Err(_) => {
+            if request.input.is_dir() {
+                return Err(ConvertError::InputIo);
+            }
+            let ext = request
+                .input
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown");
+            let clean_ext = sanitize_identifier(ext, 32);
+            let fmt = match DocumentFormat::from_extension(&clean_ext) {
+                Some(f) => f,
+                None => {
+                    return Err(ConvertError::UnsupportedRoute {
+                        detail: Some(format!("no reachable targets from {clean_ext}")),
+                    });
+                }
+            };
+            if let Some(target) = DocumentFormat::parse(&request.target_format)
+                && fmt == target
+            {
+                let caps = planner::embedded();
+                let registered = caps.registered_engines();
+                let reachable = planner::reachable_formats(
+                    caps,
+                    Format::from(fmt),
+                    request.profile,
+                    &registered,
+                );
+                let detail = reachable_targets_detail(fmt.as_str(), &reachable);
+                return Err(ConvertError::UnsupportedRoute {
+                    detail: Some(detail),
+                });
+            }
+            return Err(ConvertError::InputIo);
         }
     };
 
@@ -984,12 +1294,7 @@ where
     let target_format = match DocumentFormat::parse(&request.target_format) {
         Some(fmt) => fmt,
         None => {
-            let clean_target: String = request
-                .target_format
-                .chars()
-                .filter(|c| !c.is_control())
-                .take(64)
-                .collect();
+            let clean_target = sanitize_identifier(&request.target_format, 64);
             let registered = caps.registered_engines();
             let reachable =
                 planner::reachable_formats(caps, from_fmt, request.profile, &registered);
@@ -1091,7 +1396,17 @@ where
             detail: Some(detail),
         }
     })?;
-    convert_for_route(request, &route, engine_args, limits, cancel, on_event)
+    let mut report = convert_for_route(request, &route, engine_args, limits, cancel, on_event)?;
+    if extension_mismatch {
+        report.warnings.insert(
+            0,
+            ConvertWarning {
+                code: "format_mismatch".to_owned(),
+                message: "The input file extension does not match the detected format.".to_owned(),
+            },
+        );
+    }
+    Ok(report)
 }
 
 // Helper coordinating writer invocation, stamping, and atomic promotion.
@@ -1281,23 +1596,9 @@ pub fn copy_and_preflight_input(
         || input_format.eq_ignore_ascii_case("zip");
 
     if is_archive {
-        archive::preflight_archive(&dest_path, limits).map_err(|err| match err {
-            ArchiveError::EntryCountExceeded { .. }
-            | ArchiveError::DecompressedSizeExceeded { .. } => {
-                let _ = fs::remove_file(&dest_path);
-                ConvertError::LimitExceeded
-            }
-            ArchiveError::Encrypted
-            | ArchiveError::DuplicateEntryName { .. }
-            | ArchiveError::EntryCountMismatch { .. }
-            | ArchiveError::InvalidEntryName { .. } => {
-                let _ = fs::remove_file(&dest_path);
-                ConvertError::Failed
-            }
-            ArchiveError::Io(_) | ArchiveError::Zip(_) => {
-                let _ = fs::remove_file(&dest_path);
-                ConvertError::InputIo
-            }
+        archive::preflight_archive(&dest_path, limits).map_err(|err| {
+            let _ = fs::remove_file(&dest_path);
+            ConvertError::from(err)
         })?;
     }
 
@@ -1412,7 +1713,7 @@ fn map_workspace_error(error: WorkspaceError) -> ConvertError {
     }
 }
 
-fn safe_warning(warning: &Warning) -> ConvertWarning {
+pub(crate) fn safe_warning(warning: &Warning) -> ConvertWarning {
     let code = serde_json::to_value(warning.code)
         .ok()
         .and_then(|value| value.as_str().map(str::to_owned))
@@ -1444,6 +1745,7 @@ fn safe_warning_message(code: &str) -> String {
         "image_not_embedded" => "An image was not embedded in the output document.",
         "footnote_missing" => "A footnote reference could not be resolved.",
         "footnote_unused" => "An unused footnote was omitted.",
+        "format_mismatch" => "The input file extension does not match the detected format.",
         _ => "The document could not be converted without a warning.",
     };
     msg.to_owned()
@@ -1455,9 +1757,13 @@ mod tests {
 
     use super::{
         ConvertError, DocumentFormat, detect_format_from_path, is_supported_route,
-        paths_refer_to_same_file, safe_warning, sanitize_warning,
+        open_regular_input, paths_refer_to_same_file, read_bounded_file, read_document_to_ir,
+        safe_warning, sanitize_warning,
     };
-    use ariad_core::warning::{Warning, WarningCode};
+    use ariad_core::{
+        limits::Limits,
+        warning::{Warning, WarningCode},
+    };
 
     #[test]
     fn detects_supported_document_formats() {
@@ -1876,5 +2182,111 @@ for line in sys.stdin:
         );
 
         let _ = workspace.close();
+    }
+
+    #[test]
+    fn open_regular_input_rejects_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let err = open_regular_input(temp.path()).unwrap_err();
+        assert_eq!(err, ConvertError::InputIo);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_regular_input_rejects_fifo_without_blocking() {
+        let temp = tempfile::tempdir().unwrap();
+        let fifo_path = temp.path().join("test.fifo");
+        if let Ok(status) = std::process::Command::new("mkfifo")
+            .arg(&fifo_path)
+            .status()
+            && status.success()
+        {
+            let err = open_regular_input(&fifo_path).unwrap_err();
+            assert_eq!(err, ConvertError::InputIo);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_regular_input_rejects_device_nodes() {
+        let dev_zero = Path::new("/dev/zero");
+        if dev_zero.exists() {
+            let err = open_regular_input(dev_zero).unwrap_err();
+            assert_eq!(err, ConvertError::InputIo);
+
+            let temp = tempfile::tempdir().unwrap();
+            let symlink = temp.path().join("symlink_to_zero");
+            if std::os::unix::fs::symlink(dev_zero, &symlink).is_ok() {
+                let err = open_regular_input(&symlink).unwrap_err();
+                assert_eq!(err, ConvertError::InputIo);
+            }
+        }
+    }
+
+    #[test]
+    fn read_bounded_file_enforces_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("data.bin");
+        std::fs::write(&file_path, vec![0u8; 1024]).unwrap();
+
+        let err = read_bounded_file(&file_path, Some(512)).unwrap_err();
+        assert_eq!(err, ConvertError::LimitExceeded);
+
+        let data = read_bounded_file(&file_path, Some(2048)).unwrap();
+        assert_eq!(data.len(), 1024);
+    }
+
+    #[test]
+    fn read_document_to_ir_rejects_invalid_utf8_markdown() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("bad.md");
+        std::fs::write(&file_path, b"# Title\n\nHello \xff\xfe world\n").unwrap();
+
+        let err = read_document_to_ir(&file_path, DocumentFormat::Markdown, &Limits::local())
+            .unwrap_err();
+        assert_eq!(err, ConvertError::InputIo);
+    }
+
+    #[test]
+    fn sanitize_identifier_filters_control_characters_and_esc() {
+        let raw = "foo\x1b[31mbar\x00baz\r\nqux";
+        let sanitized = super::sanitize_identifier(raw, 64);
+        assert_eq!(sanitized, "foo[31mbarbazqux");
+        assert!(!sanitized.contains('\x1b'));
+        assert!(!sanitized.contains('\x00'));
+        assert!(!sanitized.contains('\r'));
+        assert!(!sanitized.contains('\n'));
+    }
+
+    #[test]
+    fn validate_utf8_streaming_accepts_valid_content() {
+        let valid_text = "Hello, world! This is valid UTF-8 with € and ¢ and emojis 🚀.\n";
+        super::validate_utf8_reader_streaming(valid_text.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn validate_utf8_streaming_rejects_invalid_bytes() {
+        let invalid = b"Hello \xff\xfe world";
+        let err = super::validate_utf8_reader_streaming(&invalid[..]).unwrap_err();
+        assert_eq!(err, ConvertError::InputIo);
+    }
+
+    #[test]
+    fn validate_utf8_streaming_handles_boundary_crossing() {
+        // 1. Valid 2-byte UTF-8 character '¢' (0xC2, 0xA2) split across 64 KiB boundary
+        let mut buf = vec![b'a'; 64 * 1024 + 10];
+        buf[64 * 1024 - 1] = 0xC2;
+        buf[64 * 1024] = 0xA2;
+        super::validate_utf8_reader_streaming(&buf[..]).unwrap();
+
+        // 2. Invalid continuation byte across boundary (0xC2 followed by 0x20)
+        buf[64 * 1024] = 0x20;
+        let err = super::validate_utf8_reader_streaming(&buf[..]).unwrap_err();
+        assert_eq!(err, ConvertError::InputIo);
+
+        // 3. Trailing incomplete sequence at EOF (0xC2 with no continuation byte)
+        let truncated = &buf[..64 * 1024];
+        let err = super::validate_utf8_reader_streaming(truncated).unwrap_err();
+        assert_eq!(err, ConvertError::InputIo);
     }
 }

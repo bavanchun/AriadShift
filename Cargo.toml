@@ -28,6 +28,7 @@ insta = { version = "1.49.0", features = ["json", "glob"] }
 jiff = "0.2"
 jsonwebtoken = "11"
 jsonschema = "0.58.5"
+libc = "0.2"
 object_store = "0.14"
 opentelemetry = "0.33"
 pdfium-render = "0.9"

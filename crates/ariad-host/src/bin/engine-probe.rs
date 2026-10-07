@@ -16,6 +16,10 @@ fn main() -> ExitCode {
     };
 
     match operation.as_str() {
+        "--version" => {
+            println!("pandoc 2.19.2");
+            ExitCode::SUCCESS
+        }
         "echo" => echo_request(),
         "fail-typed" => fail_typed(ExitCode::from(1)),
         "fail-typed-zero" => fail_typed(ExitCode::SUCCESS),
