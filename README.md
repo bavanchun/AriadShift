@@ -28,6 +28,19 @@ contains the output path; warnings are written to stderr. Press Ctrl-C to cancel
 conversion and clean up its temporary workspace. Set `ASHIFT_PANDOC` to select
 an existing Pandoc executable instead of installing the repository-pinned one.
 
+## Inspect, Plan, and Diagnose
+
+Inspect document structure, preview planned conversion routes, and check local environment readiness:
+
+```sh
+ashift inspect report.docx
+ashift plan report.docx --to md
+ashift engines
+ashift doctor
+```
+
+Add `--json` to any command for structured machine-readable output. See [`docs/cli.md`](docs/cli.md) for the complete reference.
+
 ## Development
 
 Install Rust 1.99.0 with the `rustfmt`, `clippy`, and
@@ -78,6 +91,7 @@ with `pnpm --dir brand build`. The root `package.json`,
 
 ## Project documents
 
+- [CLI reference](docs/cli.md)
 - [System architecture](ARCHITECTURE.md)
 - [Security reporting](docs/SECURITY.md)
 - [Git workflow](docs/git-workflow.md)
