@@ -27,6 +27,8 @@ pub struct DoctorCheck {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DoctorReport {
     pub checks: Vec<DoctorCheck>,
+    #[serde(default)]
+    pub stale_workspaces: usize,
     #[serde(skip)]
     pub tool_path: Option<PathBuf>,
     #[serde(skip)]
@@ -141,14 +143,21 @@ pub fn doctor(
     }
 
     // 2. Temp directory and workspace check
+    let stale_found =
+        crate::workspace::count_stale(std::time::Duration::from_secs(24 * 3600)).unwrap_or(0);
     let workspace_check = match Workspace::new() {
         Ok(mut ws) => match ws.close() {
             Ok(()) => DoctorCheck {
                 id: "workspace".to_owned(),
                 ok: true,
                 required: true,
-                message: "temp directory is writable and workspace can be created and removed"
-                    .to_owned(),
+                message: if stale_found > 0 {
+                    format!(
+                        "temp directory is writable and workspace can be created and removed; found {stale_found} stale workspace(s)"
+                    )
+                } else {
+                    "temp directory is writable and workspace can be created and removed".to_owned()
+                },
                 hint: String::new(),
             },
             Err(e) => {
@@ -261,6 +270,7 @@ pub fn doctor(
 
     Ok(DoctorReport {
         checks,
+        stale_workspaces: stale_found,
         tool_path,
         failure_error,
     })

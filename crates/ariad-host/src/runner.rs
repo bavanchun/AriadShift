@@ -12,11 +12,11 @@ use ariad_core::{
     limits::Limits,
     protocol::{EngineError, ErrorCode, Event, PROTOCOL, Request},
 };
-#[cfg(windows)]
-use process_wrap::tokio::JobObject;
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
+#[cfg(windows)]
+use process_wrap::tokio::{JobObject, KillOnDrop};
 use serde_json::Value;
 use thiserror::Error;
 use tokio::{
@@ -316,7 +316,7 @@ where
     #[cfg(unix)]
     command.wrap(ProcessGroup::leader());
     #[cfg(windows)]
-    command.wrap(JobObject);
+    command.wrap(JobObject).wrap(KillOnDrop);
 
     let mut child = command.spawn().map_err(RunError::Spawn)?;
     let Some(stdout) = child.stdout().take() else {

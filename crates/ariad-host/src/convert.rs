@@ -327,6 +327,7 @@ pub struct ConvertRequest {
     pub overwrite: bool,
     pub engine_program: PathBuf,
     pub title_fallback: Option<String>,
+    pub asset_base_dir: Option<PathBuf>,
 }
 
 impl ConvertRequest {
@@ -345,6 +346,7 @@ impl ConvertRequest {
             overwrite: false,
             engine_program: engine_program.into(),
             title_fallback: None,
+            asset_base_dir: None,
         }
     }
 }
@@ -361,6 +363,8 @@ pub struct ConvertReport {
     pub route: Vec<ariad_core::planner::PlanStep>,
     pub warnings: Vec<ConvertWarning>,
     pub elapsed: Duration,
+    pub output_bytes: u64,
+    pub inline_markdown: Option<String>,
 }
 
 /// Serialized output for `convert --json`.
@@ -463,9 +467,27 @@ impl ConvertError {
             | Self::Failed => 1,
         }
     }
+
+    /// Short machine-readable error code string.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::DestinationSameAsInput => "destination_same_as_input",
+            Self::UnsupportedRoute { .. } => "unsupported_route",
+            Self::LimitExceeded => "limit_exceeded",
+            Self::ToolMissing => "tool_missing",
+            Self::DestinationExists => "destination_exists",
+            Self::Interrupted => "interrupted",
+            Self::InputIo => "input_io",
+            Self::OutputIo => "output_io",
+            Self::UnsupportedIrVersion => "unsupported_ir_version",
+            Self::InvalidCapabilities(_) => "invalid_capabilities",
+            Self::Failed => "failed",
+        }
+    }
 }
 
-fn reachable_targets_detail(from_str: &str, reachable: &[Format]) -> String {
+pub fn reachable_targets_detail(from_str: &str, reachable: &[Format]) -> String {
     let mut sorted_targets: Vec<&'static str> = reachable
         .iter()
         .copied()
@@ -514,8 +536,9 @@ where
         overwrite,
         engine_program: engine_program.to_path_buf(),
         title_fallback: None,
+        asset_base_dir: None,
     };
-    convert_executor(&request, engine_args, limits, cancel, on_event)
+    convert_executor(&request, None, engine_args, limits, cancel, on_event)
 }
 
 /// Converts a supported document into the requested target format through the route executor.
@@ -528,7 +551,29 @@ where
     F: FnMut(ConvertEvent),
 {
     let args = [OsString::from("__engine"), OsString::from("pandoc")];
-    convert_executor(request, &args, Limits::local(), cancel, on_event)
+    convert_executor(request, None, &args, Limits::local(), cancel, on_event)
+}
+
+/// Converts a supported document into the requested target format using capability-based promotion.
+pub fn convert_confined<F>(
+    request: &ConvertRequest,
+    destination_parent: &cap_std::fs::Dir,
+    file_name: &Path,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let args = [OsString::from("__engine"), OsString::from("pandoc")];
+    convert_executor(
+        request,
+        Some((destination_parent, file_name)),
+        &args,
+        Limits::local(),
+        cancel,
+        on_event,
+    )
 }
 
 /// Maximum input bytes allowed for document inspection and structural analysis (32 MiB).
@@ -756,6 +801,7 @@ pub fn sanitize_identifier(s: &str, max_len: usize) -> String {
 /// Converts a supported input document with custom engine args and limits for an explicit Route.
 pub(crate) fn convert_for_route<F>(
     request: &ConvertRequest,
+    destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
     route: &Route,
     engine_args: &[OsString],
     limits: Limits,
@@ -794,13 +840,21 @@ where
         ReaderEdge::NativeMarkdown => {
             let res = read_document_to_ir(&request.input, DocumentFormat::Markdown, &limits)?;
             warnings.extend(res.warnings);
-            let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
+            let base_dir = request
+                .asset_base_dir
+                .as_deref()
+                .or_else(|| request.input.parent())
+                .unwrap_or_else(|| Path::new("."));
             (res.document, Some(base_dir))
         }
         ReaderEdge::NativeHtml => {
             let res = read_document_to_ir(&request.input, DocumentFormat::Html, &limits)?;
             warnings.extend(res.warnings);
-            let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
+            let base_dir = request
+                .asset_base_dir
+                .as_deref()
+                .or_else(|| request.input.parent())
+                .unwrap_or_else(|| Path::new("."));
             (res.document, Some(base_dir))
         }
         ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => {
@@ -847,6 +901,7 @@ where
         &document,
         route.writer,
         request,
+        destination_parent,
         engine_args,
         limits,
         cancel,
@@ -854,7 +909,7 @@ where
         &mut on_event,
     );
     let cleanup = workspace.close();
-    result?;
+    let (output_bytes, inline_markdown) = result?;
     if cleanup.is_err() {
         warnings.push(ConvertWarning {
             code: "workspace_cleanup".to_owned(),
@@ -867,6 +922,8 @@ where
         route: route.steps(),
         warnings,
         elapsed: started.elapsed(),
+        output_bytes,
+        inline_markdown,
     })
 }
 
@@ -1072,6 +1129,7 @@ where
     serde_json::to_writer_pretty(&mut buf_writer, &document).map_err(|_| ConvertError::Failed)?;
     buf_writer.flush().map_err(|_| ConvertError::Failed)?;
 
+    let output_bytes = fs::metadata(&ir_path).map(|m| m.len()).unwrap_or(0);
     workspace
         .promote(&ir_path, &request.output, request.overwrite)
         .map_err(|error| match error {
@@ -1101,6 +1159,8 @@ where
         }],
         warnings,
         elapsed: started.elapsed(),
+        output_bytes,
+        inline_markdown: None,
     })
 }
 
@@ -1176,6 +1236,7 @@ where
             .title_fallback
             .clone()
             .or_else(|| stem_without_ir(&request.input)),
+        asset_base_dir: None,
     };
 
     let mut warnings = Vec::new();
@@ -1186,6 +1247,7 @@ where
         &document,
         writer,
         &convert_req,
+        None,
         &engine_args,
         limits,
         cancel,
@@ -1193,7 +1255,7 @@ where
         &mut on_event,
     );
     let cleanup = workspace.close();
-    result?;
+    let (output_bytes, inline_markdown) = result?;
     if cleanup.is_err() {
         warnings.push(ConvertWarning {
             code: "workspace_cleanup".to_owned(),
@@ -1215,11 +1277,14 @@ where
         }],
         warnings,
         elapsed: started.elapsed(),
+        output_bytes,
+        inline_markdown,
     })
 }
 
 fn convert_executor<F>(
     request: &ConvertRequest,
+    destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
     engine_args: &[OsString],
     limits: Limits,
     cancel: CancellationToken,
@@ -1396,7 +1461,15 @@ where
             detail: Some(detail),
         }
     })?;
-    let mut report = convert_for_route(request, &route, engine_args, limits, cancel, on_event)?;
+    let mut report = convert_for_route(
+        request,
+        destination_parent,
+        &route,
+        engine_args,
+        limits,
+        cancel,
+        on_event,
+    )?;
     if extension_mismatch {
         report.warnings.insert(
             0,
@@ -1416,12 +1489,13 @@ fn write_in_workspace<F>(
     document: &ariad_core::ir::Document,
     writer: WriterEdge,
     request: &ConvertRequest,
+    destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
     engine_args: &[OsString],
     limits: Limits,
     cancel: CancellationToken,
     warnings: &mut Vec<ConvertWarning>,
     on_event: &mut F,
-) -> Result<(), ConvertError>
+) -> Result<(u64, Option<String>), ConvertError>
 where
     F: FnMut(ConvertEvent),
 {
@@ -1535,18 +1609,37 @@ where
         }
     };
 
+    let output_bytes = fs::metadata(&artifact_path).map(|m| m.len()).unwrap_or(0);
+    let inline_markdown = if writer == WriterEdge::NativeMarkdown && output_bytes <= 256 * 1024 {
+        fs::read_to_string(&artifact_path).ok()
+    } else {
+        None
+    };
+
     // Step 5: Promotion (Commit point)
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
-    workspace
-        .promote(&artifact_path, &request.output, request.overwrite)
-        .map_err(|error| match error {
-            WorkspaceError::DestinationExists => ConvertError::DestinationExists,
-            other => map_workspace_error(other),
-        })?;
+    match destination_parent {
+        Some((parent_dir, file_name)) => {
+            workspace
+                .promote_into(&artifact_path, parent_dir, file_name, request.overwrite)
+                .map_err(|error| match error {
+                    WorkspaceError::DestinationExists => ConvertError::DestinationExists,
+                    other => map_workspace_error(other),
+                })?;
+        }
+        None => {
+            workspace
+                .promote(&artifact_path, &request.output, request.overwrite)
+                .map_err(|error| match error {
+                    WorkspaceError::DestinationExists => ConvertError::DestinationExists,
+                    other => map_workspace_error(other),
+                })?;
+        }
+    }
 
-    Ok(())
+    Ok((output_bytes, inline_markdown))
 }
 
 /// Copies an untrusted input file into the workspace `in/` directory, bounded by `max_input_bytes`.
@@ -2055,6 +2148,7 @@ mod tests {
 
         let report = convert_for_route(
             &req,
+            None,
             &swapped_route,
             &[],
             ariad_core::limits::Limits::local(),
@@ -2091,6 +2185,7 @@ mod tests {
 
         let result = convert_for_route(
             &req,
+            None,
             &same_route,
             &[],
             ariad_core::limits::Limits::local(),
