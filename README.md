@@ -8,63 +8,47 @@ structured data through a shared engine used by local and hosted interfaces.
 
 The repository provides local conversion across Markdown, HTML, DOCX, and EPUB.
 
-## Installation (from v0.1.0)
+## Installation
 
-Prebuilt standalone binaries will be distributed starting from v0.1.0 for Linux (x86_64, aarch64 musl), macOS (Apple Silicon, Intel), and Windows (x86_64).
+Prebuilt standalone binaries are published on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases) for Linux (`x86_64` and `aarch64` static musl), macOS (Apple Silicon and Intel), and Windows (`x86_64`).
 
 > [!NOTE]
 > AriadShift invokes Pandoc (`>= 3.12, < 4`) as an external, out-of-process executable for DOCX and EPUB conversions.
-> Homebrew installs Pandoc automatically as a package dependency. On other channels, download and install Pandoc from the [official release](https://github.com/jgm/pandoc/releases) (distribution packages are frequently older than 3.12) or set `ASHIFT_PANDOC` to the executable path. On Intel macOS (`x86_64-apple-darwin`), using the official Pandoc installer package is recommended and significantly faster than building Pandoc from source via Homebrew.
-
-### Homebrew (macOS & Linux)
-
-Available once v0.1.0 is tagged:
-
-```sh
-brew tap bavanchun/homebrew-tap
-brew install ashift
-```
+> Install Pandoc from the [official release](https://github.com/jgm/pandoc/releases) (distribution packages are frequently older than 3.12) or set `ASHIFT_PANDOC` to the executable path. The Homebrew formula, once published, installs Pandoc as a dependency; on Intel macOS (`x86_64-apple-darwin`) Homebrew builds Pandoc from source, so the official Pandoc installer package is significantly faster there.
 
 ### Shell Installer (Linux & macOS)
 
-Available once v0.1.0 is published:
-
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bavanchun/AriadShift/releases/download/v0.1.0/ariad-cli-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-installer.sh | sh
 ```
 
 ### PowerShell Installer (Windows)
 
-Available once v0.1.0 is published:
-
 ```powershell
-irm https://github.com/bavanchun/AriadShift/releases/download/v0.1.0/ariad-cli-installer.ps1 | iex
-```
-
-### Windows Package Manager (WinGet)
-
-Available after the initial package submission is accepted by Microsoft:
-
-```powershell
-winget install VChun.AriadShift
-```
-
-### Cargo & cargo-binstall
-
-Available once published to crates.io:
-
-```sh
-# Fast prebuilt binary installation (resolves binary from GitHub Releases):
-cargo binstall ariad-cli
-
-# Or compile from source:
-cargo install ariad-cli
+irm https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-installer.ps1 | iex
 ```
 
 ### Manual Download
 
-Starting with v0.1.0, standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`.
+Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`, and ships with a `.sha256` checksum.
 
+### Package managers (not yet published)
+
+The release pipeline is ready for Homebrew, crates.io and WinGet, but v0.1.0 has not reached them yet: the Homebrew formula and the crates were not published, and no WinGet submission exists. These commands work once each channel is published:
+
+```sh
+# Homebrew (macOS & Linux)
+brew install bavanchun/tap/ashift
+
+# crates.io: prebuilt binary through cargo-binstall, or a source build
+cargo binstall ariad-cli
+cargo install ariad-cli
+```
+
+```powershell
+# Windows Package Manager
+winget install VChun.AriadShift
+```
 
 ## Convert Documents
 
@@ -164,4 +148,5 @@ with `pnpm --dir brand build`. The root `package.json`,
 - [System architecture](ARCHITECTURE.md)
 - [Security reporting](docs/SECURITY.md)
 - [Git workflow](docs/git-workflow.md)
+- [Release procedure](docs/releasing.md)
 - [License](LICENSE) and [third-party notices](NOTICE)
