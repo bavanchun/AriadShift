@@ -58,7 +58,7 @@ uuid = "1"
 wasm-bindgen = "0.2"
 wasm-pack = "0.15"
 windows-sys = "0.61.2"
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

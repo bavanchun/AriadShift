@@ -126,7 +126,11 @@ fn resolves_images_when_the_input_is_a_bare_filename_in_its_own_directory() {
     let archive = ZipArchive::new(file).expect("read DOCX archive");
     let media = archive
         .file_names()
-        .filter(|name| name.starts_with("word/media/"))
+        .filter(|name| {
+            name.as_ref()
+                .expect("read DOCX entry name")
+                .starts_with("word/media/")
+        })
         .count();
     assert_eq!(media, 1);
 }
