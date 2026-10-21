@@ -1,0 +1,77 @@
+name: Publish Crates
+
+on:
+  workflow_call:
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-26.04
+    environment: release
+    steps:
+      - name: Validate registry token
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "ERROR: CARGO_REGISTRY_TOKEN secret is not set in release environment." >&2
+            exit 1
+          fi
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+
+      - name: Publish crates in dependency order
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        # CARGO_REGISTRY_TOKEN is in cargo publish environment until the first release; trusted publishing needs crates to exist on crates.io first.
+        run: | # zizmor: ignore[use-trusted-publishing]
+          set -euo pipefail
+          crates=("ariad-core" "ariad-host" "ariad-cli")
+
+          for crate in "${crates[@]}"; do
+            version=$(cargo metadata --format-version 1 --no-deps | jq -r ".packages[] | select(.name == \"$crate\") | .version")
+            echo "Checking if $crate $version is already published on crates.io..."
+
+            # Query crates.io API with custom User-Agent to check if version exists
+            status_code=$(curl -s -o /dev/null -w "%{http_code}" -H "User-Agent: AriadShift-Release-CI" "https://crates.io/api/v1/crates/${crate}/${version}" || true)
+
+            if [ "$status_code" = "200" ]; then
+              echo "$crate $version is already published on crates.io; skipping."
+              continue
+            fi
+
+            echo "Publishing $crate $version to crates.io..."
+            cargo publish -p "$crate"
+
+            echo "Waiting for $crate $version to appear in the crates.io API..."
+            found=false
+            for i in {1..30}; do
+              code=$(curl -s -o /dev/null -w "%{http_code}" -H "User-Agent: AriadShift-Release-CI" "https://crates.io/api/v1/crates/${crate}/${version}" || true)
+              if [ "$code" = "200" ]; then
+                echo "$crate $version is now available via API."
+                found=true
+                break
+              fi
+              echo "Waiting for API update (attempt $i/30)..."
+              sleep 10
+            done
+
+            if [ "$found" = "false" ]; then
+              echo "ERROR: Timed out waiting for $crate $version to appear on crates.io." >&2
+              exit 1
+            fi
+          done

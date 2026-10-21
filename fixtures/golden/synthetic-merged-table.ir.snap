@@ -1,0 +1,185 @@
+---
+source: crates/ariad-cli/tests/reader_golden.rs
+---
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "Sparse route record",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "body": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Riverbank",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Bến sông",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "8 min",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ],
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Nested record",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 2,
+            "rowspan": 1
+          },
+          {
+            "blocks": [
+              {
+                "body": [],
+                "caption": null,
+                "columns": [
+                  {
+                    "align": "default"
+                  }
+                ],
+                "head": [
+                  [
+                    {
+                      "blocks": [
+                        {
+                          "content": [
+                            {
+                              "text": "empty neighbor",
+                              "type": "text"
+                            }
+                          ],
+                          "type": "paragraph"
+                        }
+                      ],
+                      "colspan": 1,
+                      "header": true,
+                      "rowspan": 1
+                    }
+                  ]
+                ],
+                "type": "table"
+              }
+            ],
+            "colspan": 1,
+            "rowspan": 1
+          },
+          {
+            "blocks": [],
+            "colspan": 1,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "caption": null,
+      "columns": [
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        },
+        {
+          "align": "default"
+        }
+      ],
+      "head": [
+        [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "text": "Route / Tuyến",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "strong"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "colspan": 4,
+            "header": true,
+            "rowspan": 1
+          }
+        ]
+      ],
+      "type": "table"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "docx",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

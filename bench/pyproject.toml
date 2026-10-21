@@ -1,0 +1,29 @@
+[project]
+name = "ariad-bench"
+version = "0.0.0"
+description = "Benchmark harness for AriadShift capabilities"
+requires-python = ">=3.14"
+dependencies = [
+    "apted==1.0.3",
+    "jiwer==4.0.0",
+    "jsonschema==4.26.0",
+    "psutil==7.2.2",
+    "rapidfuzz==3.14.6",
+]
+classifiers = [
+    "Private :: Do Not Upload",
+]
+
+[dependency-groups]
+dev = [
+    "ariad-fixture-gen",
+    "lxml==6.1.3",
+    "pytest==9.1.1",
+]
+
+[tool.uv.sources]
+ariad-fixture-gen = { workspace = true }
+
+[build-system]
+requires = ["uv_build==0.12.23"]
+build-backend = "uv_build"

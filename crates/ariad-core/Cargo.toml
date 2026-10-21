@@ -5,12 +5,21 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish.workspace = true
+description = "Core document intermediate representation and deterministic AST types for AriadShift"
+readme = "../../README.md"
+keywords = ["document-conversion", "markdown", "docx", "epub", "ast"]
+categories = ["text-processing", "parser-implementations"]
+publish = true
 
 [dependencies]
+ammonia.workspace = true
 base64.workspace = true
 comrak.workspace = true
+encoding_rs.workspace = true
+hex.workspace = true
+html5ever.workspace = true
 schemars.workspace = true
+sha2.workspace = true
 saphyr-parser.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -18,10 +27,8 @@ thiserror.workspace = true
 unicode-normalization.workspace = true
 
 [dev-dependencies]
-hex.workspace = true
 insta.workspace = true
 jsonschema = { workspace = true, default-features = false }
-sha2.workspace = true
 toml.workspace = true
 
 [lints]

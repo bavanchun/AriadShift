@@ -1,0 +1,81 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>A Shared Route</title>
+  <style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+pre, code {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  padding: 1rem;
+  background: #f4f4f4;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #f8f8f8;
+}
+blockquote {
+  border-left: 4px solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #555;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+  </style>
+</head>
+<body>
+<h1>Một lối đi, two readers</h1>
+<p>Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.</p>
+<table>
+<thead>
+<tr>
+<th>Điểm dừng / Stop</th>
+<th align="right">Minute</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bến sông</td>
+<td align="right">8</td>
+</tr>
+<tr>
+<td>Reading garden</td>
+<td align="right">14</td>
+</tr>
+</tbody>
+</table>
+<p>The combined distance is <math><semantics><mtext>d_1 + d_2</mtext><annotation encoding="application/x-tex">d_1 + d_2</annotation></semantics></math>. <strong>Check the bridge</strong> before leaving.</p>
+<ul>
+<li class="task-list-item"><input type="checkbox" checked disabled> Save the route</li>
+<li class="task-list-item"><input type="checkbox" disabled> Share it with a neighbor</li>
+</ul>
+</body>
+</html>

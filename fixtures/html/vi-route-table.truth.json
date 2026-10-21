@@ -1,0 +1,283 @@
+{
+  "version": "ariad-truth/0",
+  "id": "vi-route-table",
+  "canonical": {
+    "text": "Các điểm dừng ven sông\nThành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.\nThời gian đi bộ\nĐiểm dừng\nPhút\nBến sông\n8\nVườn đọc\n14",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Các điểm dừng ven sông",
+        "children": []
+      }
+    ],
+    "tables": [
+      {
+        "caption": "Thời gian đi bộ",
+        "rows": [
+          [
+            {
+              "text": "Điểm dừng",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            },
+            {
+              "text": "Phút",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            }
+          ],
+          [
+            {
+              "text": "Bến sông",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "8",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ],
+          [
+            {
+              "text": "Vườn đọc",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "14",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ]
+        ]
+      }
+    ],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Các điểm dừng ven sông"
+    },
+    {
+      "type": "paragraph",
+      "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+    },
+    {
+      "type": "table",
+      "caption": "Thời gian đi bộ",
+      "rows": [
+        [
+          {
+            "text": "Điểm dừng",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          },
+          {
+            "text": "Phút",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          }
+        ],
+        [
+          {
+            "text": "Bến sông",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "8",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ],
+        [
+          {
+            "text": "Vườn đọc",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "14",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ]
+      ]
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Các điểm dừng ven sông",
+      "language": "vi",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Các điểm dừng ven sông"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "caption": [
+          {
+            "type": "text",
+            "text": "Thời gian đi bộ"
+          }
+        ],
+        "columns": [
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          }
+        ],
+        "head": [
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Điểm dừng"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Phút"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            }
+          ]
+        ],
+        "body": [
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Bến sông"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "8"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Vườn đọc"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "14"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    "assets": {},
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}

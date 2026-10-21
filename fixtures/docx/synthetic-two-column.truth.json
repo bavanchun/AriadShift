@@ -1,0 +1,100 @@
+{
+  "version": "ariad-truth/0",
+  "id": "synthetic-two-column",
+  "canonical": {
+    "text": "Two-column archive note\nThe map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.\nMara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.\nThis paragraph follows the page break and preserves document order.",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Two-column archive note",
+        "children": []
+      }
+    ],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Two-column archive note"
+    },
+    {
+      "type": "paragraph",
+      "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions."
+    },
+    {
+      "type": "paragraph",
+      "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map."
+    },
+    {
+      "type": "page_break"
+    },
+    {
+      "type": "paragraph",
+      "text": "This paragraph follows the page break and preserves document order."
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Synthetic two-column reading-order edge case",
+      "language": "en",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Two-column archive note"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map."
+          }
+        ]
+      },
+      {
+        "type": "page_break"
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "This paragraph follows the page break and preserves document order."
+          }
+        ]
+      }
+    ],
+    "assets": {},
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}

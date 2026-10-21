@@ -1,0 +1,8 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_stdout(&output)
+---
+input   vi-styled-report.docx · docx
+route   docx ─pandoc→ ariad-ir+json ─ariad-core→ markdown
+score   fidelity 0.93 · editability 0.89 · estimated 122ms · runs locally ✓
+alt     docx ─docling→ ariad-ir+json ─ariad-core→ markdown · fidelity 0.87 · editability 0.83 · estimated 152ms · engine missing (docling)

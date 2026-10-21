@@ -208,7 +208,7 @@ fn warn_not_embedded(warnings: &mut Vec<Warning>, reason: &'static str) {
     ));
 }
 
-fn percent_decode(href: &str) -> Result<String, &'static str> {
+pub(crate) fn percent_decode(href: &str) -> Result<String, &'static str> {
     let bytes = href.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
@@ -238,7 +238,7 @@ fn hex_value(byte: u8) -> Option<u8> {
     }
 }
 
-fn lexical_path(decoded: &str) -> Result<PathBuf, &'static str> {
+pub(crate) fn lexical_path(decoded: &str) -> Result<PathBuf, &'static str> {
     if decoded.is_empty() || decoded.contains('\0') {
         return Err("href is empty or contains a null byte");
     }
@@ -283,7 +283,7 @@ fn lexical_path(decoded: &str) -> Result<PathBuf, &'static str> {
     Ok(path.to_path_buf())
 }
 
-fn has_url_scheme(value: &str) -> bool {
+pub(crate) fn has_url_scheme(value: &str) -> bool {
     let Some((scheme, _)) = value.split_once(':') else {
         return false;
     };
@@ -307,7 +307,8 @@ fn is_windows_device_name(segment: &str) -> bool {
         })
 }
 
-enum ReadImageError {
+#[derive(Debug)]
+pub(crate) enum ReadImageError {
     Missing,
     NotRegularFile,
     TooLarge,
@@ -315,7 +316,7 @@ enum ReadImageError {
     Io,
 }
 
-fn read_image(
+pub(crate) fn read_image(
     directory: &Dir,
     path: &Path,
     max_asset_bytes: Option<u64>,
@@ -362,7 +363,7 @@ fn read_image(
     Ok(Asset { media_type, bytes })
 }
 
-fn sniff_image_type(bytes: &[u8]) -> Option<String> {
+pub(crate) fn sniff_image_type(bytes: &[u8]) -> Option<String> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("image/png".to_owned())
     } else if bytes.starts_with(b"\xff\xd8\xff") {

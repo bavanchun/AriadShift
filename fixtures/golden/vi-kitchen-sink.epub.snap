@@ -1,0 +1,172 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+Package entries (sorted):
+- EPUB/content.opf
+- EPUB/nav.xhtml
+- EPUB/styles/stylesheet1.css
+- EPUB/text/ch001.xhtml
+- EPUB/text/title_page.xhtml
+- EPUB/toc.ncx
+- META-INF/com.apple.ibooks.display-options.xml
+- META-INF/container.xml
+- mimetype
+
+XML parts:
+
+--- EPUB/content.opf ---
+<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" xmlns="http://www.idpf.org/2007/opf" xml:lang="und" unique-identifier="epub-id-1" prefix="ibooks: http://vocabulary.itunes.apple.com/rdf/ibooks/vocabulary-extensions-1.0/">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:identifier id="epub-id-1">urn:uuid:2610615f-6637-504a-95f3-d7c4684201b0</dc:identifier>
+    <dc:title id="epub-title-1">vi-kitchen-sink</dc:title>
+    <dc:date id="epub-date">2023-11-14T22:13:20Z</dc:date>
+    <dc:language>und</dc:language>
+    <meta property="dcterms:modified">2023-11-14T22:13:20Z</meta>
+    <meta property="schema:accessMode">textual</meta>
+    <meta property="schema:accessModeSufficient">textual</meta>
+    <meta property="schema:accessibilityFeature">alternativeText</meta>
+    <meta property="schema:accessibilityFeature">readingOrder</meta>
+    <meta property="schema:accessibilityFeature">structuralNavigation</meta>
+    <meta property="schema:accessibilityFeature">tableOfContents</meta>
+    <meta property="schema:accessibilityHazard">none</meta>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml" />
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />
+    <item id="stylesheet1" href="styles/stylesheet1.css" media-type="text/css" />
+    <item id="title_page_xhtml" href="text/title_page.xhtml" media-type="application/xhtml+xml" />
+    <item id="ch001_xhtml" href="text/ch001.xhtml" media-type="application/xhtml+xml" />
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="title_page_xhtml" linear="yes" />
+    <itemref idref="ch001_xhtml" />
+  </spine>
+  <guide>
+    <reference type="toc" title="vi-kitchen-sink" href="nav.xhtml" />
+  </guide>
+</package>
+
+
+--- EPUB/nav.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>vi-kitchen-sink</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="styles/stylesheet1.css" />
+</head>
+<body epub:type="frontmatter">
+<nav epub:type="toc" role="doc-toc" id="toc">
+      <h1 id="toc-title">vi-kitchen-sink</h1>
+      <ol class="toc">
+        <li id="toc-li-1">
+          <a href="text/ch001.xhtml#vườn-mở-cửa">Vườn mở cửa</a>
+        </li>
+      </ol>
+    </nav>
+<nav epub:type="landmarks" id="landmarks" hidden="hidden">
+  <ol>
+    <li>
+      <a href="text/title_page.xhtml" epub:type="titlepage">Title Page</a>
+    </li>
+  </ol>
+</nav>
+</body>
+</html>
+
+
+--- EPUB/text/ch001.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>ch001.xhtml</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="../styles/stylesheet1.css" />
+</head>
+<body epub:type="bodymatter">
+<section id="vườn-mở-cửa" class="level1">
+<h1>Vườn mở cửa</h1>
+<p>Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.</p>
+<p>Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.</p>
+<p>Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.</p>
+<table>
+<thead>
+<tr>
+<th>
+              <p>Việc</p>
+            </th>
+<th>
+              <p>Trạng thái</p>
+            </th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+              <p>Tưới cây</p>
+            </td>
+<td>
+              <p>Đã xong</p>
+            </td>
+</tr>
+<tr>
+<td>
+              <p>Mở cổng</p>
+            </td>
+<td>
+              <p>Đang chờ</p>
+            </td>
+</tr>
+</tbody>
+</table>
+<ul class="task-list">
+<li>
+          <label>
+            <input type="checkbox" checked="" />Quét lối đi</label>
+        </li>
+<li>
+          <label>
+            <input type="checkbox" />Đặt thêm ghế</label>
+        </li>
+</ul>
+<p>Xem <a href="https://example.org/garden">lịch sinh hoạt</a>.</p>
+</section>
+</body>
+</html>
+
+
+--- EPUB/text/title_page.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>vi-kitchen-sink</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="../styles/stylesheet1.css" />
+</head>
+<body epub:type="frontmatter">
+<section epub:type="titlepage" class="titlepage">
+  <h1 class="title">vi-kitchen-sink</h1>
+</section>
+</body>
+</html>
+
+
+Template and media SHA-256:
+932ab19ee3371838c3dd65eb770a6515e2730fc1c4bdd5a533984f2e355c8b24  EPUB/styles/stylesheet1.css
+3c6e39855bf16a51b2a366a869c8b8b0b76b395a67a74fcf461278b81094bd15  EPUB/toc.ncx
+364a17d7a4967325d2956f09c0626d564c1884c9dfa02116dc115d6a49538f56  META-INF/com.apple.ibooks.display-options.xml
+7c06491ce25e3cc80ccec0eed382c4c5570265f886415e4ce0cbe5866a57c461  META-INF/container.xml
+e468e350d1143eb648f60c7b0bd6031101ec0544a361ca74ecef256ac901f48b  mimetype

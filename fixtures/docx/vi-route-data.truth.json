@@ -1,0 +1,409 @@
+{
+  "version": "ariad-truth/0",
+  "id": "vi-route-data",
+  "canonical": {
+    "text": "Bảng hành trình ven sông\nThành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.\nĐiểm dừng\nPhút đi bộ\nGhi chú\nBến sông\n8\nBóng mát\nVườn đọc\n14\nCó ghế dài\nLịch khảo sát cập nhật mỗi tháng.\nCác khoảng thời gian là ước lượng đi bộ.",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Bảng hành trình ven sông",
+        "children": []
+      }
+    ],
+    "tables": [
+      {
+        "caption": "",
+        "rows": [
+          [
+            {
+              "text": "Điểm dừng",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            },
+            {
+              "text": "Phút đi bộ",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            },
+            {
+              "text": "Ghi chú",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            }
+          ],
+          [
+            {
+              "text": "Bến sông",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "8",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "Bóng mát",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ],
+          [
+            {
+              "text": "Vườn đọc",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "14",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "Có ghế dài",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ],
+          [
+            {
+              "text": "Lịch khảo sát cập nhật mỗi tháng.",
+              "rowspan": 1,
+              "colspan": 3,
+              "is_header": false
+            }
+          ]
+        ]
+      }
+    ],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Bảng hành trình ven sông"
+    },
+    {
+      "type": "paragraph",
+      "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+    },
+    {
+      "type": "table",
+      "caption": "",
+      "rows": [
+        [
+          {
+            "text": "Điểm dừng",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          },
+          {
+            "text": "Phút đi bộ",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          },
+          {
+            "text": "Ghi chú",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          }
+        ],
+        [
+          {
+            "text": "Bến sông",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "8",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "Bóng mát",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ],
+        [
+          {
+            "text": "Vườn đọc",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "14",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "Có ghế dài",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ],
+        [
+          {
+            "text": "Lịch khảo sát cập nhật mỗi tháng.",
+            "rowspan": 1,
+            "colspan": 3,
+            "is_header": false
+          }
+        ]
+      ]
+    },
+    {
+      "type": "paragraph",
+      "text": "Các khoảng thời gian là ước lượng đi bộ."
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Bảng hành trình ven sông",
+      "language": "vi",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Bảng hành trình ven sông"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "caption": [],
+        "columns": [
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          }
+        ],
+        "head": [
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Điểm dừng"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Phút đi bộ"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Ghi chú"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            }
+          ]
+        ],
+        "body": [
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Bến sông"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "8"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Bóng mát"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Vườn đọc"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "14"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Có ghế dài"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "rowspan": 1,
+              "colspan": 3,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Lịch khảo sát cập nhật mỗi tháng."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Các khoảng thời gian là ước lượng đi bộ."
+          }
+        ]
+      }
+    ],
+    "assets": {},
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}

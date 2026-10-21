@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Writers and route execution"
-status: pending
+status: completed
 priority: P1
 effort: "14h"
 dependencies: [4, 5]

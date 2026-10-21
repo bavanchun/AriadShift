@@ -1,0 +1,129 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+Package entries (sorted):
+- EPUB/content.opf
+- EPUB/nav.xhtml
+- EPUB/styles/stylesheet1.css
+- EPUB/text/ch001.xhtml
+- EPUB/text/title_page.xhtml
+- EPUB/toc.ncx
+- META-INF/com.apple.ibooks.display-options.xml
+- META-INF/container.xml
+- mimetype
+
+XML parts:
+
+--- EPUB/content.opf ---
+<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" xmlns="http://www.idpf.org/2007/opf" xml:lang="und" unique-identifier="epub-id-1" prefix="ibooks: http://vocabulary.itunes.apple.com/rdf/ibooks/vocabulary-extensions-1.0/">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:identifier id="epub-id-1">urn:uuid:8c085fa2-2658-596b-a2d7-45d4724d262e</dc:identifier>
+    <dc:title id="epub-title-1">pd-vi-prose</dc:title>
+    <dc:date id="epub-date">2023-11-14T22:13:20Z</dc:date>
+    <dc:language>und</dc:language>
+    <meta property="dcterms:modified">2023-11-14T22:13:20Z</meta>
+    <meta property="schema:accessMode">textual</meta>
+    <meta property="schema:accessModeSufficient">textual</meta>
+    <meta property="schema:accessibilityFeature">alternativeText</meta>
+    <meta property="schema:accessibilityFeature">readingOrder</meta>
+    <meta property="schema:accessibilityFeature">structuralNavigation</meta>
+    <meta property="schema:accessibilityFeature">tableOfContents</meta>
+    <meta property="schema:accessibilityHazard">none</meta>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml" />
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" />
+    <item id="stylesheet1" href="styles/stylesheet1.css" media-type="text/css" />
+    <item id="title_page_xhtml" href="text/title_page.xhtml" media-type="application/xhtml+xml" />
+    <item id="ch001_xhtml" href="text/ch001.xhtml" media-type="application/xhtml+xml" />
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="title_page_xhtml" linear="yes" />
+    <itemref idref="ch001_xhtml" />
+  </spine>
+  <guide>
+    <reference type="toc" title="pd-vi-prose" href="nav.xhtml" />
+  </guide>
+</package>
+
+
+--- EPUB/nav.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>pd-vi-prose</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="styles/stylesheet1.css" />
+</head>
+<body epub:type="frontmatter">
+<nav epub:type="toc" role="doc-toc" id="toc">
+      <h1 id="toc-title">pd-vi-prose</h1>
+      <ol class="toc">
+        <li id="toc-li-1">
+          <a href="text/ch001.xhtml#pd-vi-prose">pd-vi-prose</a>
+        </li>
+      </ol>
+    </nav>
+<nav epub:type="landmarks" id="landmarks" hidden="hidden">
+  <ol>
+    <li>
+      <a href="text/title_page.xhtml" epub:type="titlepage">Title Page</a>
+    </li>
+  </ol>
+</nav>
+</body>
+</html>
+
+
+--- EPUB/text/ch001.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>ch001.xhtml</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="../styles/stylesheet1.css" />
+</head>
+<body epub:type="bodymatter">
+<section id="pd-vi-prose" class="level1 unnumbered">
+<h1 class="unnumbered">pd-vi-prose</h1>
+<p>Thật là có đức rất khiêm nhường, không biết mình là thánh vậy.</p>
+</section>
+</body>
+</html>
+
+
+--- EPUB/text/title_page.xhtml ---
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="und" xml:lang="und">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <title>pd-vi-prose</title>
+  <style>
+  </style>
+  <link rel="stylesheet" type="text/css" href="../styles/stylesheet1.css" />
+</head>
+<body epub:type="frontmatter">
+<section epub:type="titlepage" class="titlepage">
+  <h1 class="title">pd-vi-prose</h1>
+</section>
+</body>
+</html>
+
+
+Template and media SHA-256:
+932ab19ee3371838c3dd65eb770a6515e2730fc1c4bdd5a533984f2e355c8b24  EPUB/styles/stylesheet1.css
+2087c5e179bd38f1a5bf6ffa0c547a1d5a6ea85356f1690145b37713ea0ca2c8  EPUB/toc.ncx
+364a17d7a4967325d2956f09c0626d564c1884c9dfa02116dc115d6a49538f56  META-INF/com.apple.ibooks.display-options.xml
+7c06491ce25e3cc80ccec0eed382c4c5570265f886415e4ce0cbe5866a57c461  META-INF/container.xml
+e468e350d1143eb648f60c7b0bd6031101ec0544a361ca74ecef256ac901f48b  mimetype

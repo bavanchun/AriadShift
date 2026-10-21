@@ -5,15 +5,20 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish.workspace = true
+description = "Host engine orchestration and sandboxed document conversion pipeline for AriadShift"
+readme = "../../README.md"
+keywords = ["document-conversion", "pandoc", "sandboxing", "markdown", "epub"]
+categories = ["text-processing", "command-line-utilities"]
+publish = true
 
 [dependencies]
-ariad-core = { path = "../ariad-core", version = "0.0.0" }
+ariad-core.workspace = true
 cap-std.workspace = true
 hex.workspace = true
 jiff.workspace = true
-process-wrap.workspace = true
+process-wrap = { workspace = true, features = ["std"] }
 quick-xml.workspace = true
+schemars.workspace = true
 serde.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
@@ -24,7 +29,10 @@ tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "s
 tokio-util = { workspace = true, features = ["rt"] }
 unicode-normalization.workspace = true
 zip.workspace = true
-uuid = { workspace = true, features = ["v4"] }
+uuid = { workspace = true, features = ["v4", "v5"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
 
 [features]
 test-probe = []
@@ -35,6 +43,9 @@ path = "src/bin/engine-probe.rs"
 required-features = ["test-probe"]
 test = false
 bench = false
+
+[package.metadata.dist]
+dist = false
 
 [lints]
 workspace = true

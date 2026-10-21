@@ -1,0 +1,59 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+<!DOCTYPE html>
+<html lang="und">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vi-raw-html</title>
+  <style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+pre, code {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  padding: 1rem;
+  background: #f4f4f4;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #f8f8f8;
+}
+blockquote {
+  border-left: 4px solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #555;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+  </style>
+</head>
+<body>
+<h1>Bảng chỉ dẫn</h1>
+<p>Lối xuống bến ở phía bên trái.</p>
+<div>Đoạn đường này đang được sửa.</div>
+</body>
+</html>

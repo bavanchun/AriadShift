@@ -1,0 +1,10 @@
+mode,document,pages,init_time_s,convert_time_s,total_wall_s
+isolated,gao-08-35,1,1.25,7.10,8.35
+isolated,vn-congbao,1,1.07,11.15,12.22
+isolated,arxiv-tableformer,10,1.15,37.70,38.86
+isolated_summary,all_3_docs,12,-,55.95,59.42
+session,gao-08-35,1,-,4.29,4.29
+session,vn-congbao,1,-,6.35,6.35
+session,arxiv-tableformer,10,-,27.16,27.16
+session_init,startup_warmup,0,0.17,-,0.17
+session_summary,all_3_docs_with_init,12,0.17,37.80,37.97

@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Native HTML reader"
-status: pending
+status: completed
 priority: P1
 effort: "12h"
 dependencies: [3]
@@ -35,7 +35,7 @@ Read `reader/markdown.rs` end to end and reuse its helpers: NFC and the warning 
   - Check `max_input_bytes` before parsing, when set.
   - **Bounding html5ever's cost.** The quadratic cost lives in html5ever's own open-element stack (scope checks on each start tag walk it), not in our sink. `TreeSink::append` cannot abort the parse. So:
     - feed the parser in chunks of at most 4 KiB through its incremental input API;
-    - have the sink set a shared `limit_hit` flag when the open-element depth passes a DOM cap of 512;
+    - have the sink set a shared `limit_hit` flag when the open-element depth passes a DOM cap of 1024 (settled during execution: the 600-deep passing test requires a cap above 600; the cap counts the implicit html and body elements, so 1022 nested divs pass and 1023 fail);
     - stop feeding at the next chunk boundary and return `ReadError::NestingTooDeep`.
 
     The work done after the cap is bounded by one chunk. Test with 1,000,000 nested `<div>`s (a real, non-ignored test with a generous wall-clock bound measured on CI) and with 600 nested (passes).
@@ -65,7 +65,7 @@ Read `reader/markdown.rs` end to end and reuse its helpers: NFC and the warning 
   - A relative `src` becomes `AssetRef::Url` and the host resolves it with the existing `assets::resolve` confinement.
   - An `http(s)` image is never fetched: it stays a URL, and the writer warns as it does today.
 - No network, no filesystem access and no `unsafe` in our code. `#![forbid(unsafe_code)]` stays.
-- The host wires `.html` and `.htm` input into the reader edge `html → IR`. Writers arrive in phase 6.
+- The reader edge `html → IR` is `reader::html::read`. Wiring `.html` and `.htm` input into the host belongs to the route executor of phase 6 (its reader-edge table lists native html, and the existing CLI test expects `note.html --to docx` to stay refused until then); this phase adds no host wiring.
 
 ## Files
 

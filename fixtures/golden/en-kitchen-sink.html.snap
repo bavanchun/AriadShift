@@ -1,0 +1,66 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+<!DOCTYPE html>
+<html lang="und">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>en-kitchen-sink</title>
+  <style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+pre, code {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  padding: 1rem;
+  background: #f4f4f4;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #f8f8f8;
+}
+blockquote {
+  border-left: 4px solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #555;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+  </style>
+</head>
+<body>
+<h1>The Map Room</h1>
+<p>The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.</p>
+<p>Mara volunteers on Thursday afternoons. She records the paper&#39;s date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.</p>
+<p>Visitors often arrive looking for one address and leave with a longer story. They discover a footbridge that no longer exists, a lane named after a vanished orchard, or a public stair hidden behind a market. The archive cannot answer every question, but it can show where to ask next.</p>
+<blockquote>
+<p>Keep a note of what the map cannot show.</p>
+</blockquote>
+<pre><code class="language-text">copy → compare → annotate
+</code></pre>
+<p>A route index lives at <a href="https://example.org/index" rel="noopener noreferrer">https://example.org/index</a>.</p>
+</body>
+</html>

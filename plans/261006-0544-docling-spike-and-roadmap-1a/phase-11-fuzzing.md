@@ -1,7 +1,7 @@
 ---
 phase: 11
 title: "Fuzzing"
-status: pending
+status: completed
 priority: P1
 effort: "6h"
 dependencies: [3, 4, 5]

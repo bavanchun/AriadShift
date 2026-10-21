@@ -1,19 +1,22 @@
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     ffi::OsString,
     future, io,
     path::{Component, Path, PathBuf},
     process::Stdio,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
-use ariad_core::protocol::{EngineError, ErrorCode, Event, Request};
-#[cfg(windows)]
-use process_wrap::tokio::JobObject;
+use ariad_core::{
+    limits::Limits,
+    protocol::{EngineError, ErrorCode, Event, PROTOCOL, Request},
+};
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
+#[cfg(windows)]
+use process_wrap::tokio::{JobObject, KillOnDrop};
 use serde_json::Value;
 use thiserror::Error;
 use tokio::{
@@ -66,22 +69,29 @@ pub enum RunError {
 ///
 /// The caller owns workspace cleanup. On every non-success path this function explicitly kills
 /// the wrapped process group or Windows job object and waits for it to stop.
-pub fn run<S>(
+fn run_internal<S>(
     program: &Path,
     args: &[OsString],
     request: &Request,
+    describe_timeout_override: Option<Duration>,
     cancel: CancellationToken,
     sink: S,
 ) -> Result<RunOutcome, RunError>
 where
     S: FnMut(Event),
 {
-    request
-        .limits
-        .validate()
-        .map_err(|_| RunError::ProtocolViolation("request contains invalid limits"))?;
     if cancel.is_cancelled() {
         return Err(RunError::Cancelled);
+    }
+
+    if let Request::Convert { limits, .. } = request {
+        limits
+            .validate()
+            .map_err(|_| RunError::ProtocolViolation("request contains invalid limits"))?;
+
+        if limits.max_memory_mb.is_some() {
+            check_memory_limit_support(program, args, limits, cancel.clone())?;
+        }
     }
 
     let mut request_line =
@@ -102,9 +112,151 @@ where
         args,
         request,
         request_line,
+        describe_timeout_override,
         cancel,
         sink,
     ))
+}
+
+/// Starts an engine synchronously while Tokio handles its bounded streams internally.
+///
+/// The caller owns workspace cleanup. On every non-success path this function explicitly kills
+/// the wrapped process group or Windows job object and waits for it to stop.
+pub fn run<S>(
+    program: &Path,
+    args: &[OsString],
+    request: &Request,
+    cancel: CancellationToken,
+    sink: S,
+) -> Result<RunOutcome, RunError>
+where
+    S: FnMut(Event),
+{
+    run_internal(program, args, request, None, cancel, sink)
+}
+
+/// Fixed timeout for engine `describe` requests.
+pub const DESCRIBE_TIMEOUT: Duration = Duration::from_secs(30);
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct CapabilitiesCacheKey {
+    program: PathBuf,
+    args: Vec<OsString>,
+    file_size: Option<u64>,
+    mtime: Option<std::time::SystemTime>,
+}
+
+/// In-memory cache storing whether an external engine enforces memory limits (`enforces_memory_limit`).
+/// Keyed by executable path, invocation args, and file metadata (size, mtime) to ensure cache
+/// invalidation when an engine binary or arguments change.
+type CapabilitiesCache = Mutex<HashMap<CapabilitiesCacheKey, bool>>;
+
+/// Global cache avoiding repeated `describe` process executions when checking memory enforcement.
+static CAPABILITIES_CACHE: OnceLock<CapabilitiesCache> = OnceLock::new();
+
+fn capabilities_cache() -> &'static CapabilitiesCache {
+    CAPABILITIES_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Queries an engine's capabilities by executing a `describe` request with a custom timeout.
+pub fn describe_with_timeout(
+    program: &Path,
+    args: &[OsString],
+    timeout: Duration,
+    cancel: CancellationToken,
+) -> Result<Event, RunError> {
+    let request = Request::Describe {
+        protocol: PROTOCOL.to_owned(),
+        job: format!("describe-{}", std::process::id()),
+    };
+    let mut capabilities = None;
+    let mut count = 0_usize;
+    run_internal(program, args, &request, Some(timeout), cancel, |event| {
+        if let Event::Capabilities { .. } = &event {
+            count += 1;
+            capabilities = Some(event);
+        }
+    })?;
+    if count != 1 {
+        return Err(RunError::ProtocolViolation(
+            "engine must emit exactly one capabilities event",
+        ));
+    }
+    capabilities.ok_or(RunError::ProtocolViolation(
+        "engine did not emit a capabilities event",
+    ))
+}
+
+/// Queries an engine's capabilities by executing a `describe` request with a fixed 30s timeout.
+///
+/// Returns the engine's [`Event::Capabilities`] event. Requires that the engine emits
+/// exactly one capabilities event.
+pub fn describe(
+    program: &Path,
+    args: &[OsString],
+    cancel: CancellationToken,
+) -> Result<Event, RunError> {
+    describe_with_timeout(program, args, DESCRIBE_TIMEOUT, cancel)
+}
+
+/// Checks whether an engine enforces memory limits before converting.
+///
+/// If `limits.max_memory_mb` is `Some(_)`, this queries the engine's `describe` op
+/// (caching the result per engine binary path and args within the process).
+/// If the engine reports `enforces_memory_limit: false`, returns a typed `limit_exceeded` error.
+pub fn check_memory_limit_support(
+    program: &Path,
+    args: &[OsString],
+    limits: &Limits,
+    cancel: CancellationToken,
+) -> Result<(), RunError> {
+    if limits.max_memory_mb.is_none() {
+        return Ok(());
+    }
+
+    let (file_size, mtime) = match std::fs::metadata(program) {
+        Ok(meta) => (Some(meta.len()), meta.modified().ok()),
+        Err(_) => (None, None),
+    };
+    let key = CapabilitiesCacheKey {
+        program: program.to_path_buf(),
+        args: args.to_vec(),
+        file_size,
+        mtime,
+    };
+    let cached = {
+        let cache = capabilities_cache().lock().unwrap();
+        cache.get(&key).copied()
+    };
+
+    let enforces = match cached {
+        Some(enforces) => enforces,
+        None => {
+            let event = describe(program, args, cancel)?;
+            let Event::Capabilities {
+                enforces_memory_limit,
+                ..
+            } = event
+            else {
+                return Err(RunError::ProtocolViolation(
+                    "expected capabilities event from describe",
+                ));
+            };
+            let mut cache = capabilities_cache().lock().unwrap();
+            cache.insert(key, enforces_memory_limit);
+            enforces_memory_limit
+        }
+    };
+
+    if !enforces {
+        return Err(RunError::EngineFailed {
+            code: ErrorCode::LimitExceeded,
+            message: "Engine does not enforce memory limits; request cannot specify max_memory_mb."
+                .to_owned(),
+        });
+    }
+
+    Ok(())
 }
 
 async fn run_async<S>(
@@ -112,16 +264,24 @@ async fn run_async<S>(
     args: &[OsString],
     request: &Request,
     request_line: Vec<u8>,
+    describe_timeout_override: Option<Duration>,
     cancel: CancellationToken,
     sink: S,
 ) -> Result<RunOutcome, RunError>
 where
     S: FnMut(Event),
 {
-    let deadline = request
-        .limits
-        .timeout_s
-        .and_then(|seconds| Instant::now().checked_add(Duration::from_secs(seconds)));
+    let (output_dir, timeout) = match request {
+        Request::Convert { output, limits, .. } => (
+            Some(output.dir.as_str()),
+            limits.timeout_s.map(Duration::from_secs),
+        ),
+        Request::Describe { .. } => (
+            None,
+            Some(describe_timeout_override.unwrap_or(DESCRIBE_TIMEOUT)),
+        ),
+    };
+    let deadline = timeout.and_then(|duration| Instant::now().checked_add(duration));
 
     let mut command = CommandWrap::with_new(program.as_os_str(), |command| {
         command
@@ -130,10 +290,14 @@ where
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear()
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
-            .env("TMPDIR", &request.work_dir)
-            .env("TMP", &request.work_dir)
-            .env("TEMP", &request.work_dir);
+            .env("PATH", std::env::var_os("PATH").unwrap_or_default());
+
+        if let Request::Convert { work_dir, .. } = request {
+            command
+                .env("TMPDIR", work_dir)
+                .env("TMP", work_dir)
+                .env("TEMP", work_dir);
+        }
 
         if let Some(pandoc) = std::env::var_os("ASHIFT_PANDOC") {
             command.env("ASHIFT_PANDOC", pandoc);
@@ -143,14 +307,16 @@ where
             command.env("ARIAD_TEST_ENGINE", test_engine);
         }
         #[cfg(windows)]
-        if let Some(system_root) = std::env::var_os("SYSTEMROOT") {
-            command.env("SYSTEMROOT", system_root);
+        {
+            if let Some(system_root) = std::env::var_os("SYSTEMROOT") {
+                command.env("SYSTEMROOT", system_root);
+            }
         }
     });
     #[cfg(unix)]
     command.wrap(ProcessGroup::leader());
     #[cfg(windows)]
-    command.wrap(JobObject);
+    command.wrap(JobObject).wrap(KillOnDrop);
 
     let mut child = command.spawn().map_err(RunError::Spawn)?;
     let Some(stdout) = child.stdout().take() else {
@@ -175,7 +341,7 @@ where
         &mut child,
         stdout,
         request_line,
-        &request.output.dir,
+        output_dir,
         deadline,
         cancel,
         sink,
@@ -212,7 +378,7 @@ async fn run_child<S>(
     child: &mut Box<dyn ChildWrapper>,
     stdout: impl AsyncRead + Unpin,
     request_line: Vec<u8>,
-    output_dir: &str,
+    output_dir: Option<&str>,
     deadline: Option<Instant>,
     cancel: CancellationToken,
     mut sink: S,
@@ -253,9 +419,17 @@ where
                         }
                         let event: Event = serde_json::from_slice(&line)
                             .map_err(|_| RunError::ProtocolViolation("event line is not valid protocol JSON"))?;
+                        if matches!(&event, Event::Capabilities { .. }) && output_dir.is_some() {
+                            return Err(RunError::ProtocolViolation(
+                                "capabilities emitted for convert request",
+                            ));
+                        }
                         if let Event::Artifact { path, format } = &event {
                             let artifact_path = Path::new(path);
-                            if !artifact_is_confined(artifact_path, Path::new(output_dir)) {
+                            let Some(dir) = output_dir else {
+                                return Err(RunError::ProtocolViolation("artifact emitted for request without output directory"));
+                            };
+                            if !artifact_is_confined(artifact_path, Path::new(dir)) {
                                 return Err(RunError::ProtocolViolation("artifact path is outside output.dir"));
                             }
                             artifacts.push(Artifact {

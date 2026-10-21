@@ -1,0 +1,47 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_stdout(&output)
+---
+{
+  "input": "vi-styled-report.docx",
+  "route": [
+    {
+      "from": "docx",
+      "to": "ariad-ir+json",
+      "engine": "pandoc"
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "markdown",
+      "engine": "ariad-core"
+    }
+  ],
+  "score": {
+    "fidelity": 0.9306,
+    "editability": 0.8918,
+    "estimated_duration_ms": 122.0
+  },
+  "measured": true,
+  "alternatives": [
+    {
+      "route": [
+        {
+          "from": "docx",
+          "to": "ariad-ir+json",
+          "engine": "docling"
+        },
+        {
+          "from": "ariad-ir+json",
+          "to": "markdown",
+          "engine": "ariad-core"
+        }
+      ],
+      "score": {
+        "fidelity": 0.8712,
+        "editability": 0.833,
+        "estimated_duration_ms": 152.0
+      },
+      "measured": true
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 ---
 phase: 12
 title: "Release pipeline"
-status: pending
+status: completed
 priority: P1
 effort: "10h"
 dependencies: [9, 10]

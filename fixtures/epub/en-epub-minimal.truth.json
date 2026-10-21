@@ -1,0 +1,73 @@
+{
+  "version": "ariad-truth/0",
+  "id": "en-epub-minimal",
+  "canonical": {
+    "text": "Minimal Document\nThis is a minimal valid EPUB 3 document for boundary testing.",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Minimal Document",
+        "children": []
+      }
+    ],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "blocks": [
+    {
+      "type": "chapter_break",
+      "file_name": "content.xhtml",
+      "nav_title": "Minimal Document"
+    },
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Minimal Document"
+    },
+    {
+      "type": "paragraph",
+      "text": "This is a minimal valid EPUB 3 document for boundary testing."
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Minimal EPUB 3 document",
+      "language": "en",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Minimal Document"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "This is a minimal valid EPUB 3 document for boundary testing."
+          }
+        ]
+      }
+    ],
+    "assets": {},
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}

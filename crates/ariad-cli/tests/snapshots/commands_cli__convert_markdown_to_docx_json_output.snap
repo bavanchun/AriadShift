@@ -1,0 +1,21 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_convert_json_stdout(&output)
+---
+{
+  "output": "[OUTPUT_PATH]",
+  "route": [
+    {
+      "from": "markdown",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core"
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "docx",
+      "engine": "pandoc"
+    }
+  ],
+  "warnings": [],
+  "elapsed_ms": 0
+}

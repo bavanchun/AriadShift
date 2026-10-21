@@ -46,6 +46,54 @@
         {
           "type": "object",
           "properties": {
+            "enforces_memory_limit": {
+              "type": "boolean"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "license": {
+              "type": "string"
+            },
+            "models": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RouteCapability"
+              }
+            },
+            "tool": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "type": {
+              "type": "string",
+              "const": "capabilities"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "engine",
+            "version",
+            "tool",
+            "license",
+            "routes",
+            "enforces_memory_limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
             "done": {
               "type": [
                 "integer",
@@ -169,6 +217,12 @@
       "description": "Resource limits applied to one conversion.\n\nCloud plan entitlements (§9.5) fill this shape; `None` means unlimited.",
       "type": "object",
       "properties": {
+        "max_archive_entries": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 20000,
+          "minimum": 0
+        },
         "max_asset_bytes": {
           "type": [
             "integer",
@@ -183,6 +237,12 @@
           "default": 10000000,
           "minimum": 0
         },
+        "max_decompressed_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 4294967296,
+          "minimum": 0
+        },
         "max_front_matter_bytes": {
           "type": "integer",
           "format": "uint32",
@@ -195,6 +255,12 @@
             "null"
           ],
           "format": "uint64",
+          "minimum": 0
+        },
+        "max_ir_json_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 6442450944,
           "minimum": 0
         },
         "max_memory_mb": {
@@ -246,43 +312,115 @@
       ]
     },
     "Request": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/Input"
+            },
+            "job": {
+              "type": "string"
+            },
+            "limits": {
+              "$ref": "#/$defs/Limits"
+            },
+            "op": {
+              "type": "string",
+              "const": "convert"
+            },
+            "options": {
+              "type": "object",
+              "additionalProperties": true,
+              "default": {}
+            },
+            "output": {
+              "$ref": "#/$defs/Output"
+            },
+            "protocol": {
+              "type": "string"
+            },
+            "work_dir": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "protocol",
+            "job",
+            "input",
+            "output",
+            "work_dir",
+            "limits"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "job": {
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "describe"
+            },
+            "protocol": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "protocol",
+            "job"
+          ]
+        }
+      ]
+    },
+    "RouteCapability": {
+      "description": "A supported conversion route reported by an engine.",
       "type": "object",
       "properties": {
         "input": {
-          "$ref": "#/$defs/Input"
-        },
-        "job": {
           "type": "string"
-        },
-        "limits": {
-          "$ref": "#/$defs/Limits"
-        },
-        "op": {
-          "type": "string"
-        },
-        "options": {
-          "type": "object",
-          "additionalProperties": true
         },
         "output": {
-          "$ref": "#/$defs/Output"
-        },
-        "protocol": {
-          "type": "string"
-        },
-        "work_dir": {
           "type": "string"
         }
       },
       "required": [
-        "protocol",
-        "job",
-        "op",
         "input",
-        "output",
-        "work_dir",
-        "options",
-        "limits"
+        "output"
+      ]
+    },
+    "ToolAvailability": {
+      "description": "Availability of the underlying external tool executed by an engine.",
+      "type": "string",
+      "enum": [
+        "found",
+        "missing",
+        "wrong_version"
+      ]
+    },
+    "ToolStatus": {
+      "description": "Discovery status of an engine's underlying external executable or runtime.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ToolAvailability"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "status"
       ]
     }
   }

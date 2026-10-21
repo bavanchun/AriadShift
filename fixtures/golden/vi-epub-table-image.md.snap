@@ -1,0 +1,23 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+---
+title: "Bảng và hình ảnh hành trình ven sông"
+author:
+  - "AriadShift contributors"
+lang: vi
+---
+
+# Hành trình ven sông và sơ đồ
+
+Thành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ.
+
+| Điểm dừng | Phút đi bộ | Ghi chú |
+| --- | --- | --- |
+| Bến sông | 8 | Bóng mát |
+| Vườn đọc | 14 | Có ghế dài |
+| Lịch khảo sát cập nhật mỗi tháng. |  |  |
+
+![Sơ đồ tuyến đường ven sông](data:image/png;base64,<redacted: 3568 base64 chars>)
+
+Lan thường đi chậm ở đoạn này. Cô ghi lại những thay đổi của bờ sông trong một cuốn sổ: bậc thềm mới, chiếc đèn được thay, và lối nhỏ vừa mở cạnh nhà kho. Mỗi ghi chú giúp người sau tìm đường dễ hơn.

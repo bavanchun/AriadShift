@@ -1,7 +1,7 @@
 ---
 phase: 10
 title: "MCP server"
-status: pending
+status: completed
 priority: P1
 effort: "13h"
 dependencies: [9]

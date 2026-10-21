@@ -1,0 +1,102 @@
+{
+  "version": "ariad-truth/0",
+  "id": "en-map-archive",
+  "canonical": {
+    "text": "Notes from the Map Room\nThe map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.\nMara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.\nBrowse the map index",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Notes from the Map Room",
+        "children": []
+      }
+    ],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 1
+  },
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Notes from the Map Room"
+    },
+    {
+      "type": "paragraph",
+      "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions."
+    },
+    {
+      "type": "paragraph",
+      "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map."
+    },
+    {
+      "type": "paragraph",
+      "text": "Browse the map index",
+      "link_url": "https://example.org/map-index",
+      "link_text": "Browse the map index"
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Notes from the Map Room",
+      "language": "en",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Notes from the Map Room"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "link",
+            "url": "https://example.org/map-index",
+            "content": [
+              {
+                "type": "text",
+                "text": "Browse the map index"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "assets": {},
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}

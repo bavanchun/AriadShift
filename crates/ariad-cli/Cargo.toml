@@ -5,27 +5,41 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish.workspace = true
+description = "Command-line interface and Model Context Protocol (MCP) server for AriadShift (ashift)"
+homepage = "https://github.com/bavanchun/AriadShift"
+readme = "../../README.md"
+keywords = ["document-conversion", "markdown", "docx", "epub", "mcp"]
+categories = ["command-line-utilities", "text-processing"]
+publish = true
 
 [dependencies]
-ariad-host = { path = "../ariad-host", version = "0.0.0" }
+ariad-core.workspace = true
+ariad-host.workspace = true
+base64.workspace = true
 clap.workspace = true
+rmcp = { workspace = true, features = ["server", "macros", "transport-io"] }
+schemars.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 tokio-util = { workspace = true, features = ["rt"] }
 
+[features]
+test-probe = ["ariad-host/test-probe"]
+
 [dev-dependencies]
-ariad-core = { path = "../ariad-core", version = "0.0.0" }
+ariad-core.workspace = true
 assert_cmd.workspace = true
 hex.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
 quick-xml.workspace = true
 serde = { workspace = true, features = ["derive"] }
-serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 toml.workspace = true
 zip.workspace = true
+
 
 [target.'cfg(windows)'.dev-dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
@@ -33,6 +47,31 @@ windows-sys = { workspace = true, features = ["Win32_System_Console"] }
 [[bin]]
 name = "ashift"
 path = "src/main.rs"
+
+[[test]]
+name = "commands_cli"
+path = "tests/commands_cli.rs"
+required-features = ["ariad-host/test-probe"]
+
+[[test]]
+name = "termination"
+path = "tests/termination.rs"
+
+[[test]]
+name = "mcp_stdio"
+path = "tests/mcp_stdio.rs"
+
+[package.metadata.dist]
+dist = true
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+bin-dir = "{ name }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "txz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+bin-dir = "{ bin }.exe"
 
 [lints]
 workspace = true

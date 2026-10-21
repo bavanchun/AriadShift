@@ -16,7 +16,11 @@ PNGs = "PNGs"
 
 [files]
 extend-exclude = [
+    "THIRD_PARTY_LICENSES",
     "fixtures/md/vi-*.md",
     "fixtures/md/mixed-*.md",
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
+    "fixtures/golden/*.snap",
+    "fixtures/**/*.truth.json",
+    "fuzz/seeds/**",
 ]

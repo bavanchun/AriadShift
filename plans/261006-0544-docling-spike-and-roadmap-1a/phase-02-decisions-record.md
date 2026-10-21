@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Record 1a decisions"
-status: pending
+status: completed
 priority: P1
 effort: "3h"
 dependencies: []

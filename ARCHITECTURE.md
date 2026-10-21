@@ -29,7 +29,7 @@ The name is derived from Ariadne's thread: AriadShift's planner navigates the fo
 | 8 | License clean | Apache-2.0 project; no AGPL in distribution; CI blocks invalid licenses |
 | 9 | No lock-in | Open standards at every boundary: S3 API, OpenAPI 3.1, JWT/JWKS, OpenTelemetry, MCP |
 
-Native Markdown parsing now, and native HTML parsing later, in `ariad-core` run in-process as explicit exceptions to Principle 3. These readers are pure Rust with `#![forbid(unsafe_code)]`, typed errors, and finite nesting and block limits; core readers are fuzzed starting in roadmap 1a. Every other parser runs out of process.
+Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exceptions to Principle 3. These readers are pure Rust with `#![forbid(unsafe_code)]`, typed errors, and finite nesting, node, and block limits; core readers are fuzzed starting in roadmap 1a. Every other parser runs out of process.
 
 ---
 
@@ -84,19 +84,19 @@ Native Markdown parsing now, and native HTML parsing later, in `ariad-core` run 
 | serde / thiserror / clap / schemars / jiff / uuid | 1 / 2 / 4.6 / 1.2 / 0.2 / 1 | Common foundational utilities |
 | pdfium-render + PDFium | 0.9 + `chromium/8076` (bblanchon/pdfium-binaries, **non-V8** build) | PDF rendering, text extraction, images, metadata |
 | typst | 0.15 | IR → PDF |
-| rmcp | 3.5 | Official MCP SDK for Rust |
+| rmcp | **3.5.1** (`default-features = false`, `server`, `macros`, `transport-io`) | Official MCP SDK for Rust |
 | wasm-bindgen / wasm-pack | 0.2 / 0.15 | Build `ariad-wasm` |
 | jsonwebtoken | 11 | JWT verification from Better Auth |
 | tauri-specta | 1.0 | TS type generation for Tauri commands |
-| cargo-dist | 0.32 | Packaging and distribution for CLI |
 | comrak | **0.55.0** (`default-features = false`, `shortcodes`) | CommonMark/GFM Markdown reader in `ariad-core`; BSD-2-Clause |
+| html5ever | **0.40.1** (MIT OR Apache-2.0) | Native HTML reader in `ariad-core` |
 | process-wrap | **10.0.1** (`tokio1`, `process-group`, `job-object`) | Cross-platform engine process-tree control |
 | tokio-util | **0.7.19** | Bounded NDJSON line framing |
 | unicode-normalization | **0.1.25** | NFC normalization of prose text |
 | sha2 | **0.11.0** | SHA-256 asset identifiers and golden hashes |
 | base64 | **0.23.1** | JSON asset bytes and embedded image data URLs |
 | cap-std | **4.0.3** | Capability-based asset file access |
-| zip | **8.6.0** | Runtime DOCX metadata rewrite; also used by goldens |
+| zip | **9.0.5** | Runtime DOCX metadata rewrite; also used by goldens |
 | serde_stacker | **0.1.14** | Deep IR JSON reads in the native host |
 | serde_json | **1.0.151** (`unbounded_depth` in the host) | IR and protocol JSON |
 | tempfile | **3.27.0** | Isolated conversion workspaces |
@@ -107,7 +107,7 @@ Native Markdown parsing now, and native HTML parsing later, in `ariad-core` run 
 
 | Component | Version | License | Role |
 |---|---|---|---|
-| Docling | 2.133 | MIT (weights: Apache-2.0 / CDLA-Permissive-2.0 / MIT) | Structural document parsing for PDF, images, DOCX/PPTX/XLSX (Heron layout, TableFormer) |
+| Docling | 2.134.0 | MIT (weights: Apache-2.0 / CDLA-Permissive-2.0 / MIT) | Structural document parsing for PDF, images, DOCX/PPTX/XLSX (Heron layout, TableFormer); OCR uses Docling's Tesseract CLI option (`TesseractCliOcrOptions`), not the `tesserocr` binding (no Windows wheel, bundles Tesseract 5.5.1, pulls in LGPL cysignals); Linux pack uses CPU-only PyTorch index |
 | Granite-Docling | 258M | Apache-2.0 | English complex layouts; ja/ar/zh are experimental; not used for Vietnamese |
 | RapidOCR + ONNX Runtime | 3.9.2 + 1.30.0 | Apache-2.0 / MIT | PP-OCRv6 OCR for English, Chinese, Japanese, and most Latin languages; never route Vietnamese here |
 | Tesseract + `tessdata_best` | 5.5.3 + `vie`/`eng`/`osd` | Apache-2.0 | Default OCR for Vietnamese and mixed Vietnamese-English |
@@ -188,20 +188,34 @@ ashift doctor                   # check environment
 ashift mcp                      # run MCP server over stdio
 ```
 
-The Phase 0 conversion command is `ashift convert <INPUT> --to <FORMAT> [-o <OUTPUT>] [--overwrite]`. It supports `md`/`markdown` → `docx`; the default output is `<input stem>.docx` beside the input.
+The conversion command is `ashift convert <INPUT> --to <FORMAT> [-o <OUTPUT>] [--overwrite] [--profile <PROFILE>] [--json]`. It supports converting between `md`/`markdown`, `html`, `docx`, and `epub` across all 12 distinct format pairs. The default output is `<input stem>.<target extension>` beside the input. Same-format routes (such as `md -> md`) are refused with exit code 3; destinations that canonicalize to the input path are refused with exit code 2 even when `--overwrite` is specified. In Markdown and HTML writers, asset-backed images are embedded as `data:` URIs so output remains a single file. `ashift mcp` confines file access to client roots plus `--allow-dir` paths; overwriting needs the server flag `--allow-overwrite`.
+
+Diagnostic and introspection commands:
+- `ashift inspect <INPUT> [--json]`: detects format through prefix/central-directory sniffing, structural element counts, metadata, and reachable targets. Regular-file verification prevents blocking on FIFOs or device nodes; files over 32 MiB skip deep structural counting (emitting `warning[document_too_large]`). Peak memory usage during AST expansion is bounded to approximately 100x the input document size.
+- `ashift plan <INPUT> --to <FORMAT> [--profile <PROFILE>] [--json]`: renders route and fidelity/editability/latency scores without converting. File summaries are bounded to 4 MiB to keep planning fast.
+- `ashift engines [--json]`: lists registered engines, versions, licenses, and supported routes from the availability provider.
+- `ashift doctor [--json]`: checks Pandoc availability and version, temporary workspace creation/cleanup, reports stale workspace counts without deleting them, and engine describe round trips.
+
+### Model Context Protocol (MCP) Server
+
+`ashift mcp [--allow-dir <DIR>...] [--allow-overwrite]` runs an MCP server over standard I/O (stdio) using `rmcp 3.5.1`. It exposes four tools (`list_engines`, `inspect`, `plan`, `convert`) whose structured output schemas match their CLI JSON equivalents and returns `structuredContent` matching CLI `--json` value-for-value:
+- **Confinement and Security**: Enforces path confinement (`ariad_host::confine`). File access is confined to `--allow-dir` roots and client-advertised workspace roots synchronized via `roots/list` and `notifications/roots/list_changed`. Rejects symlink/junction escapes, hidden path components, non-regular inputs, mismatched output extensions, and same-file input/output collisions. Relative paths resolve against the server's working directory.
+- **Capability-Based Promotion**: Conversions write outputs inside isolated workspaces (`ariad_host::workspace`) and promote them into the destination using `cap_std::fs::Dir` capability handles opened relative to the confined root to mitigate race-condition directory swap attacks. Replacing existing files requires `--allow-overwrite` on the server and `overwrite: true` on the tool call; unforced publication uses hard-link creation to guarantee atomic refusal without clobbering.
+- **Resources & Inlining**: Successful conversions register `file://` URIs for `resources/read`. Markdown outputs `<= 256 KiB` are inlined directly into tool results.
+- **Process Isolation & Lifecycle**: Subprocess engines run under isolated process groups and Windows Job Objects with `KillOnDrop`. Stale workspaces older than 24 hours are swept on server startup and stale counts reported in `doctor`. SIGTERM, SIGHUP, Ctrl-C, and Ctrl-Break promptly cancel in-flight jobs, terminate engine subprocess trees, clean up workspaces, and exit cleanly without hanging on open stdin.
 
 | Exit code | Meaning |
 |---|---|
 | 0 | ok |
-| 1 | conversion failed |
+| 1 | conversion / operation failed |
 | 2 | usage |
-| 3 | unsupported route (prints the supported route) |
+| 3 | unsupported route (prints the supported routes) or unknown format |
 | 4 | limit exceeded |
 | 5 | tool missing or wrong version (prints a hint) |
 | 6 | destination exists |
 | 130 | interrupted |
 
-Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains only the output path. Ctrl-C (and Ctrl-Break on Windows) cancels the run, kills the engine process tree, deletes the workspace, returns 130, and leaves the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX timestamps for reproducible goldens. Future commands reuse the same exit-code table.
+Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains human output (or the output path for `convert`), or exactly one JSON document when `--json` is specified. SIGTERM and SIGHUP (Unix), Ctrl-C, and Ctrl-Break (Windows) cancel the run, kill the engine process tree, delete the workspace, return 130, and leave the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX and EPUB timestamps for reproducible goldens. Commands reuse the same exit-code table. Full reference: [docs/cli.md](docs/cli.md) and [docs/mcp.md](docs/mcp.md).
 
 ---
 
@@ -220,6 +234,7 @@ ariadshift/
 ├── .tools/                    # gitignored local tools
 ├── crates/
 │   ├── ariad-core/            # IR, format registry, planner, limits (I/O-free, WASM-compilable)
+│   │   └── data/capabilities.json # committed bootstrap & bench capabilities
 │   ├── ariad-host/            # engine runner, sandbox, engine packs, native adapters (feature flags)
 │   ├── ariad-cli/             # `ashift` binary (includes `ashift mcp`)
 │   ├── ariad-wasm/            # wasm-bindgen bindings for ariad-core
@@ -234,7 +249,7 @@ ariadshift/
 │   ├── ui/                    # shared React components (shadcn + Base UI)
 │   ├── sdk/                   # TypeScript SDK generated from OpenAPI
 │   └── config/                # tsconfig, Biome presets
-├── schemas/                   # JSON Schema: IR, engine protocol, capabilities (generated with schemars)
+├── schemas/                   # JSON Schema: IR, engine protocol, capabilities.v0.json (generated with schemars)
 ├── fixtures/
 │   ├── manifest.toml          # source, license and digest for each committed document
 │   ├── gen/                   # dev-only Python fixture generator; uv workspace member
@@ -247,7 +262,7 @@ ariadshift/
 └── docs/
 ```
 
-The `justfile` initially provides `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, and `ci`. `dev` and `bench` arrive with `apps/` and `bench/`.
+The `justfile` provides `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, `ci`, `bench`, `bench-check`, `bench-test`, and `fixtures`. `dev` arrives with `apps/`.
 
 Only 5 crates exist initially. Further crate splits occur only when distinct boundaries emerge, such as an adapter requiring an independent release cycle.
 
@@ -271,15 +286,27 @@ The IR serves as the "lingua franca" across readers and writers. Designed in thr
 
 The versioned schema is `ariad-ir/0` at `schemas/ir.v0.json` during 0.x; breaking changes are allowed. It freezes as `ariad-ir/1` together with `ariad-engine/1` in roadmap 1b.
 
-Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants.
+Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants. Format variants serialize with a single wire identity matching `Format::id()` (for example `ariad-ir+json` and `pandoc+json`). In addition to `Markdown`, `Html`, and `Docx`, the format registry provides `Epub`, `Pdf`, and `Png` (required by the spike for image inputs and source-format deserialization without a reader in 1a).
 
-`Document` has `{ version, meta, body, assets, layout, provenance }`. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
+New IR fields follow the rule: **omit when empty** (`#[serde(default, skip_serializing_if = ...)]`). Existing fields keep their current `null` serialization. Every snapshot remains byte-identical.
+
+`Document` has `{ version, meta, body, assets, layout, provenance, furniture }`. `furniture: Vec<Block>` carries running page headers and footers outside `body` and is omitted when empty. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
+
+`LayoutIndex` specifies page geometry plus per-block bounding boxes: `{ pages, blocks }`. Coordinates (`left`, `top`, `right`, `bottom`) and dimensions (`width`, `height`) use typographical points (pt, 1/72 inch) with origin `(0, 0)` at the top-left of each page. Blocks are keyed by stable `/`-separated block paths where path segments match real AST field names and compose recursively for arbitrary nesting:
+- Top-level body blocks: `"body/<index>"` (e.g. `"body/0"`).
+- Furniture blocks: `"furniture/<index>"` (e.g. `"furniture/0"`).
+- Nested quote blocks: `"body/<index>/blocks/<block_index>"`.
+- Nested footnote blocks: `"body/<index>/blocks/<block_index>"`.
+- Nested list item blocks: `"body/<index>/items/<item_index>/blocks/<block_index>"`.
+- Nested table cell blocks: `"body/<index>/head/<row_index>/cells/<cell_index>/blocks/<block_index>"` or `"body/<index>/body/<row_index>/cells/<cell_index>/blocks/<block_index>"`.
+
+Paths compose recursively across container boundaries (for example, a list item inside a quote is `"body/<index>/blocks/<block_index>/items/<item_index>/blocks/<inner_block_index>"`). Each block position entry contains `{ page_no, bbox: { left, top, right, bottom } }`. `LayoutIndex` is omitted when empty. Old free-form layout objects (such as arbitrary JSON maps) are ignored under the `ariad-ir/0` draft; layout content must conform to the `LayoutIndex` schema.
 
 `Block` variants and fields are:
 
 - `Heading { level, content }`, `Paragraph { content }`, `Code { lang, text }`, `Math { tex, display }`, `Quote { blocks }`, and `PageBreak {}`.
 - `List { ordered, start, tight, items }`, where each `ListItem` is `{ checked, blocks }`.
-- `Table { caption, columns, head, body }`, with `ColumnSpec { align }` and cells `{ rowspan, colspan, blocks }`.
+- `Table { caption, columns, head, body, footnotes }`, with `ColumnSpec { align }`, cells `{ rowspan, colspan, header, blocks }`, and `footnotes: Vec<Inline>` (omitted when empty). `TableCell.header: Option<bool>` models row headers / stub columns and is omitted when None.
 - `Figure { asset, caption }`, `Footnote { id, blocks }`, and `Raw { format, text }`.
 
 `Inline` variants are `Text { text }`, `Emph { content }`, `Strong { content }`, `Strikeout { content }`, `Superscript { content }`, `Subscript { content }`, `Code { text }`, `Link { url, title, content }`, `Image { target, alt, title }`, `SoftBreak {}`, `LineBreak {}`, `Math { tex, display }`, `FootnoteRef { id }`, and `Raw { format, text }`.
@@ -290,7 +317,9 @@ Prose text, alt text, link text, and metadata strings are normalized to NFC. `Co
 
 The comrak reader accepts CommonMark and GFM tables, strikethrough, autolinks, task lists, footnotes, dollar math, raw HTML, emoji shortcodes, and YAML front matter. It strips a UTF-8 BOM, normalizes CRLF and CR to LF, and iteratively enforces configured input, nesting, and block limits. Unsupported nodes map to the closest IR block with a warning.
 
-The Pandoc mapper allows link schemes `http`, `https`, `mailto`, and in-document `#` anchors; other links become plain text with a warning. Asset-backed images are embedded as data URLs. An image that remains a URL becomes its alt text with a warning. The mapper may emit its own `openxml` page-break constant, but `RawFormat` never admits `openxml` from IR content.
+The native HTML reader uses `html5ever` with a custom `TreeSink` arena and chunked 4 KiB feeding to bound DOM tree building. It strips a UTF-8 BOM, honours `<meta charset>` or `http-equiv` prescan within the first 1024 bytes through `encoding_rs` (supporting legacy Vietnamese `windows-1258`), and defaults to UTF-8 with `U+FFFD` replacement warnings. The sink enforces the DOM depth cap (1024) and total node bounds during parsing, rejecting oversized DOM structures with typed `NestingTooDeep` and `TooManyNodes` errors. The DOM depth cap of 1024 counts all elements including implicit `html` and `body`, so exactly 1022 explicitly nested `div`s pass and 1023 fail with `ReadError::NestingTooDeep { limit: 1024 }`. The user-facing node bound is `min(8192 + 1 * input_len, 8192 + 16 * max_blocks)`, allowing large table-heavy pages (such as 6 MB with 120k rows) to parse under local limits while bounding amplification. Hostile formatting-element reconstruction input exhibits memory amplification of about 230 bytes of RSS per input byte (each reconstructed element clones its attributes), while the in-process HTML reader is bounded by its node budget and the container memory limit. Iterative heap-based conversion enforces IR nesting depth (`max_nesting_depth` counting both block and inline nesting) and block limits without recursion. Headings, paragraphs, lists, tables with alignment and cell spans, quotes, preformatted code, figures, links validated against `ariad_core::links`, math annotations, and doc-footnote/doc-noteref roles map to IR equivalents; phrasing elements flatten into inline content without splitting surrounding paragraphs, `div`, `section`, `form`, `dialog`, and similar containers are flattened, while scripts, styles, form controls, and other unsupported elements are dropped with once-per-kind warnings.
+
+The shared link policy in `ariad_core::links` enforces an allow-list for link schemes (`http`, `https`, `mailto`, and in-document `#` anchors); other links become plain text with a warning. Asset-backed images are embedded as data URLs. An image that remains a URL becomes its alt text with a warning. The mapper may emit its own `openxml` page-break constant, but `RawFormat` never admits `openxml` from IR content.
 
 Layout is optional. The `editable` profile discards it, while the `faithful` profile can use it to preserve positioning. Pandoc AST JSON is the bridge to the writer; Docling mappings arrive with the Docling engine in roadmap 1b.
 
@@ -298,16 +327,22 @@ Layout is optional. The `editable` profile discards it, while the `faithful` pro
 
 - **Nodes** represent formats (including `ariad-ir`). **Edges** represent engine capabilities.
 - Each edge carries **empirical metrics** from `bench/`: fidelity, editability, p50 time per page, peak memory, runtime availability (wasm / local / cloud), and license.
-- **Profiles** determine routing weights:
+- **Capabilities location**: `crates/ariad-core/data/capabilities.json` lives inside the `ariad-core` package, committed into version control, and embedded at compile time via `ariad_core::planner::embedded()`.
+- **Cost formula per edge**, evaluated for each profile:
+  $$\text{cost} = w_f \times (1 - \text{fidelity}) + w_e \times (1 - \text{editability}) + w_t \times \text{normalized}(p50\_ms) + \text{hop\_penalty}$$
+  - Execution time normalization: $\text{normalized}(p50\_ms) = \min(1.0, p50\_ms / 5000.0)$.
+  - Constant hop penalty: `HOP_PENALTY = 0.05` per graph edge to favor direct or shorter routes.
+  - **Unmeasured edge rule**: an edge with `metrics: null` receives a pessimistic default cost of `1.5` plus the hop penalty, and is flagged as unmeasured in the plan explanation.
+- **Profiles and Weights**:
 
-| Profile | Priority |
-|---|---|
-| `editable` (default) | Semantic accuracy, editability: real headings, lists, tables |
-| `faithful` | Visual page layout preservation |
-| `fast` | Execution speed |
-| `private` | Only local/wasm-capable edges; cloud routes are pruned from the graph |
+| Profile | Priority | $w_f$ (fidelity) | $w_e$ (editability) | $w_t$ (time) |
+|---|---|---|---|---|
+| `editable` (default) | Semantic accuracy, editability: real headings, lists, tables | 0.30 | 0.60 | 0.10 |
+| `faithful` | Visual page layout preservation | 0.70 | 0.20 | 0.10 |
+| `fast` | Execution speed | 0.15 | 0.15 | 0.70 |
+| `private` | Only local/wasm-capable edges; cloud routes are pruned | 0.30 | 0.60 | 0.10 |
 
-The planner runs Dijkstra's shortest-path algorithm over weighted costs. Decisions are always **explainable**:
+The planner runs Dijkstra's shortest-path algorithm over weighted costs with deterministic tie-breaking on engine ID then format ID. Cycles are prevented by rejecting routes that visit the same format more than once. The planner records the primary route, aggregated score (fidelity and editability multiply along the route, time adds), and up to 2 alternatives computed by removing each edge of the primary route in turn. Decisions are always **explainable**:
 
 ```text
 $ ashift plan paper.pdf --to docx
@@ -316,6 +351,10 @@ route   pdf ─docling→ ariad-ir ─pandoc→ docx
 score   fidelity 0.86 · editability 0.95 · estimated 9s · runs locally ✓
 alt     pdf ─pdfium(text)→ ariad-ir ─pandoc→ docx · 6x faster but loses table structure
 ```
+
+For pipeline composition and diagnostic testing, the CLI provides hidden hooks:
+- `ashift __ir <INPUT> -o <OUTPUT>` executes a single reader edge converting an input document to AriadShift IR.
+- `ashift __write <INPUT> --to <FORMAT> -o <OUTPUT>` executes a single writer edge converting an IR document to the target format. If the IR document lacks an explicit metadata title, target formats supporting titles (such as DOCX and EPUB) fall back to using the input filename stem, stripping any `.ir` suffix (e.g., `document.ir.json` -> `document`).
 
 ### 6.4 Format Matrix (v0.x Scope)
 
@@ -332,7 +371,7 @@ alt     pdf ─pdfium(text)→ ariad-ir ─pandoc→ docx · 6x faster but loses
 | JSON (IR, DoclingDocument) | ariad-core | ariad-core | ✓ |
 | Audio, video | — | — | Later phase (FFmpeg + Docling ASR) |
 
-Writing DOCX proceeds via **IR → Pandoc AST → Pandoc**. A single adapter outputs DOCX, ODT, EPUB, HTML, and LaTeX simultaneously. Writing a native DOCX writer in Rust is only justified if benchmarks prove Pandoc to be a bottleneck.
+Markdown and HTML are written natively in `ariad-core` (`writer::markdown::write` producing GFM with embedded `data:` URIs and dropping raw HTML tags to preserve inner text safely, and `writer::html::write` dropping inline raw HTML to escaped text while sanitizing block raw HTML through a single ammonia policy). The Markdown writer emits only what is provably safe: math outside a small safe character class becomes a fenced `math` block or a code span with a warning, and a task-list checkbox is dropped with a warning when the item starts with a code, math or raw block. Known limit: inline raw HTML formatting is reduced to its text in both writers. Writing DOCX and EPUB proceeds out of process via **IR → Pandoc AST → Pandoc** (`-t docx` and `-t epub3` under `--sandbox`), followed by host package metadata stamping (`package_meta`) honoring `SOURCE_DATE_EPOCH`. A single Pandoc adapter handles both formats. Writing a native DOCX writer in Rust is only justified if benchmarks prove Pandoc to be a bottleneck.
 
 ---
 
@@ -340,8 +379,9 @@ Writing DOCX proceeds via **IR → Pandoc AST → Pandoc**. A single adapter out
 
 Every heavy engine and untrusted parser except the native readers explicitly exempted in §1 runs as an **isolated process** speaking a common protocol: **JSON Lines over stdin/stdout** (`ariad-engine/1`). CLI, Desktop, and Workers invoke engines identically; cloud workers simply layer on job queuing and stricter sandboxing.
 
-Request: a single JSON line sent to stdin.
+Requests are op-tagged single JSON lines sent to stdin:
 
+1. **`op = "convert"`**: runs document conversion.
 ```json
 {"protocol":"ariad-engine/1","job":"job_01JABC","op":"convert",
  "input":{"path":"/work/in/document.ir.json","format":"ariad-ir+json"},
@@ -350,35 +390,67 @@ Request: a single JSON line sent to stdin.
  "limits":{"max_pages":null,"timeout_s":null,"max_memory_mb":null,"max_nesting_depth":64}}
 ```
 
+2. **`op = "describe"`**: queries engine capability, version, and tool health with no workspace:
+```json
+{"protocol":"ariad-engine/1","job":"job_01JXYZ","op":"describe"}
+```
+
 Events: multiple JSON lines read from stdout.
 
 ```json
-{"type":"progress","stage":"layout","done":12,"total":37}
+{"type":"capabilities","engine":"pandoc","version":"0.1.0","tool":{"name":"pandoc","version":"3.12","status":"found"},"license":"GPL-2.0-or-later","routes":[{"input":"ariad-ir+json","output":"docx"}],"enforces_memory_limit":true}
+{"type":"progress","stage":"convert","done":12,"total":37}
 {"type":"warning","code":"font_missing","message":"Font 'Cambria Math' substituted with 'STIX Two Math'"}
 {"type":"artifact","path":"/work/out/document.docx","format":"docx"}
 {"type":"result","ok":true,"metrics":{"pages":37,"elapsed_ms":8421}}
 ```
 
-`Request` contains `protocol`, `job`, `op`, `input { path, format }`, `output { dir, format }`, `work_dir`, `options` (a JSON map), and `limits` (`ariad-core::Limits`). `PROTOCOL` is `ariad-engine/1`; Phase 0 supports `op = "convert"`. The `Event` enum is tagged by `type` and has `progress`, `warning`, `artifact`, and `result { ok, metrics?, error? }` variants. Artifact paths stay inside `output.dir`. Error codes are closed to `invalid_request`, `unsupported_route`, `limit_exceeded`, `engine_failure`, `tool_missing`, `tool_version`, and `io`.
+`Request` is an op-tagged enum:
+- `Request::Convert { protocol, job, input { path, format }, output { dir, format }, work_dir, options, limits }`.
+- `Request::Describe { protocol, job }`.
+
+The `Event` enum is tagged by `type`:
+- `capabilities { engine, version, tool { name, version, status }, license, routes, enforces_memory_limit, models? }`: reports engine metadata and health without running conversions. `tool.status` is strictly `found`, `missing`, or `wrong_version`; it never exposes file paths to protect privacy. `routes` lists supported `(input, output)` format pairs using registry format IDs.
+- `progress { stage, done?, total? }`: progress unit is pages (`done: u64`, `total: u64`), and canonical stage name is `"convert"`.
+- `warning { code, message }`: non-fatal conversion notices.
+- `artifact { path, format }`: produced outputs; paths stay inside `output.dir`.
+- `result { ok, metrics?, error? }`: occurs exactly once and last.
+
+Error codes are closed to `invalid_request`, `unsupported_route`, `limit_exceeded`, `engine_failure`, `tool_missing`, `tool_version`, and `io`. Corrupt or encrypted archive inputs rejected by preflight map to `engine_failure` with a descriptive message rather than `invalid_request`.
 
 Protocol rules:
 
 - Engines **read and write only within the designated workspace** and **open no network connections**.
-- Errors return `{"type":"result","ok":false,"error":{"code":"...","message":"..."}}`.
-- `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation; `result` occurs exactly once and last.
+- **Stdout discipline:** stdout carries NDJSON protocol lines only; all diagnostic logging belongs on stderr. The host runner treats any non-JSON line on stdout as a protocol violation. Adapters redirect native library stdout (fd 1) to stderr (fd 2) and emit protocol events only over a duplicated protocol descriptor.
+- **Engine configuration contract:** engine settings travel in request `options` (e.g. `artifacts_path`, `tessdata_path`). The runner clears the environment (`env_clear()`) and inherits only allow-listed variables: `PATH`, `TMPDIR`/`TMP`/`TEMP` (pointing to `work_dir` on convert), `ASHIFT_PANDOC`, and on Windows `SYSTEMROOT`. Windows profile variables (such as `USERPROFILE` and `APPDATA`) were not measured in the spike and are decided in 1b. Adapters set engine-specific flags (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `TESSDATA_PREFIX`) from request `options`.
+- **Memory rule (no host limiter in 1a):** `max_memory_mb` is enforced by the engine (e.g. Pandoc `+RTS -M` or Python adapter `resource.setrlimit(RLIMIT_DATA)`). An engine that cannot enforce it reports `enforces_memory_limit: false` in `describe`. When `limits.max_memory_mb` is specified, the host checks engine capabilities before starting conversion, querying `describe` with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`) and caching the capabilities lookup per engine program and arguments within the process. If `enforces_memory_limit` is false, the host refuses the convert request with a typed `limit_exceeded` error before spawning the conversion process rather than silently ignoring it. Host-side generic limiting is deferred to 1b because Linux `RLIMIT_AS` causes aborts in GHC/PyTorch runtimes and safe in-process `pre_exec` rlimits conflict with `#![forbid(unsafe_code)]`.
+- `describe` runs with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`), preventing hung engines from blocking host discovery commands or MCP tools.
+- `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation.
+- Receiving `capabilities` during a convert request is a protocol violation.
 - The schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "draft"`. All engines must pass a shared conformance test suite.
 - `ariad-engine/1` is a draft until the Docling engine passes conformance (roadmap phase 1b); breaking changes are allowed only before that point.
 - PDFium also runs out-of-process: `ariad-host` re-executes its own binary via `ashift __engine pdfium`.
 
-The Pandoc engine is reached through `ashift __engine pandoc`. The job workspace contains `in/`, `out/`, `tmp/`, and `log/`; the request's `work_dir` is `tmp/`. The engine reads the IR, maps it to Pandoc AST JSON, and runs:
+Decided extensions (implemented in 1b):
+- **Stateful session mode:** wire shape consists of an optional `session_id: Option<String>` field on `Request::Convert` and an advertised boolean `supports_session: bool` in `capabilities`. When `supports_session: true` is reported, a session is opened on the first `convert` request carrying that `session_id`. Subsequent `convert` requests carrying the same `session_id` reuse the warm running engine process without re-initialization (1.56x measured throughput speedup). The session closes when the host closes stdin, on idle timeout, or on host shutdown.
+
+The Pandoc engine is reached through `ashift __engine pandoc`. For `describe`, it reports tool status, version, and supported reader/writer routes (`docx` and `epub` to/from `ariad-ir+json`). For `convert`, the job workspace contains `in/`, `out/`, `tmp/`, and `log/`; the request's `work_dir` is `tmp/`. For writer conversions (`ariad-ir+json` to `docx` or `epub`), the engine reads the IR, maps it to Pandoc AST JSON, and runs:
 
 ```text
-pandoc [+RTS -M{max_memory_mb}M -RTS] --sandbox --log=<workspace>/log/pandoc-log.json -f json -t docx -o <output.dir>/document.docx
+pandoc [+RTS -M{max_memory_mb}M -RTS] --sandbox --log=<workspace>/log/pandoc-log.json -f json -t <docx|epub3> -o <output.dir>/document.<docx|epub>
 ```
 
 The supported Pandoc range is `>= 3.12, < 4`; DOCX goldens assert the shared `PANDOC_GOLDEN_VERSION` constant, set to `3.12`. The `+RTS -M…` arguments are omitted when `max_memory_mb` is unlimited. The AST is written to stdin, stdout is discarded, and stderr is drained with a 64 KiB bound. `TMPDIR`, `TMP`, and `TEMP` point to `work_dir` (`tmp/`). Assets are embedded as `data:` URIs; Pandoc's structured log entries become `warning` events. Pandoc `--sandbox` is a reader/writer guard, not OS isolation.
 
-After Pandoc exits, the host rewrites `docProps/core.xml` `created` and `modified` timestamps to the conversion time, honoring `SOURCE_DATE_EPOCH` for reproducible goldens. Whether an engine may use loopback to contact its own `llama-server` child for `ocr-vlm` remains open; all other engine network access stays disabled.
+After Pandoc exits, the host rewrites package metadata timestamps (`docProps/core.xml` `created` and `modified` timestamps for DOCX, and `EPUB/content.opf` `dcterms:modified` and `dc:date` for EPUB) to the conversion time, honoring `SOURCE_DATE_EPOCH` for reproducible goldens. Whether an engine may use loopback to contact its own `llama-server` child for `ocr-vlm` remains open; all other engine network access stays disabled.
+
+For reader conversions (`docx` or `epub` to `ariad-ir+json`), the engine runs:
+
+```text
+pandoc +RTS -M{cap}M -RTS --sandbox --log=<workspace>/log/pandoc-log.json -f <docx|epub> -t json --extract-media=<work_dir>/media <input_path>
+```
+
+For archive inputs (DOCX, EPUB), the engine always bounds Pandoc memory usage with `+RTS -M<cap>M -RTS`. If `limits.max_memory_mb` is set, `<cap>` is `max_memory_mb` (e.g. 4096 MB under cloud defaults). Otherwise, `<cap>` defaults to `(limits.max_decompressed_bytes / (1024 * 1024)).max(512)` in megabytes (e.g. 4096 MB under local defaults), ensuring that archive reader conversions are memory-bounded even when `max_memory_mb` is omitted. Stdout is captured with a byte cap of `max_ir_json_bytes` and pre-scanned for JSON depth before deserializing the Pandoc AST. The AST is mapped to IR v0, media files in `<work_dir>/media` referenced by the document are verified within the directory without following symlinks and hashed into `AssetStore`, and the output document is written to `<output.dir>/document.ir.json`.
 
 ### 7.1 Engine Packs
 
@@ -521,7 +593,7 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 
 | Threat | Example | Mitigation |
 |---|---|---|
-| Decompression bomb | 10 KB OOXML/ZIP expands to 100 GB | Stream-level byte counting; limits on total decompressed bytes, entry count, recursion depth |
+| Decompression bomb | 10 KB OOXML/ZIP expands to 100 GB | Copy before inspect (TOCTOU guard); central directory preflight; stream-level byte counting with `take(limit+1)`; entry count and decompressed byte caps; Pandoc archive reader runs bounded by `+RTS -M<cap>` derived from `max_decompressed_bytes` |
 | Structural bomb | 2,000,000-page PDF, 100k × 100k image | Pre-inspection via PDFium before processing; limits on pages, pixels, and object counts |
 | Embedded code | LibreOffice macros, JavaScript in PDF | LibreOffice: maximum macro security, per-process user profiles (`-env:UserInstallation`); non-V8/non-XFA PDFium builds |
 | SSRF / local file inclusion | Remote images in HTML, XXE in OOXML, `\input` in LaTeX | Pandoc `--sandbox`; zero engine network access; Landlock restricts filesystem access to workspace |
@@ -541,8 +613,17 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 | `max_nesting_depth` | 64 | 64 |
 | `max_blocks` | 1,000,000 | 10,000,000 |
 | `max_front_matter_bytes` | 64 KiB | 64 KiB |
+| `max_archive_entries` | 10,000 | 20,000 |
+| `max_decompressed_bytes` | 2 GiB | 4 GiB |
+| `max_ir_json_bytes` | 3 GiB | 6 GiB |
 
-An unlimited value is represented by an absent field or `null` (`None` in Rust); it adds no timeout and no Pandoc `+RTS -M` flag. Local runs remain cancellable: Ctrl-C (and Ctrl-Break on Windows) kills the engine process tree and removes its workspace. The nesting limit stays below comrak's internal list-depth cap of 100.
+An unlimited value is represented by an absent field or `null` (`None` in Rust); it adds no timeout and no Pandoc `+RTS -M` flag. Local runs remain cancellable: Ctrl-C (and Ctrl-Break on Windows) kills the engine process tree and removes its workspace. The nesting limit stays below comrak's internal list-depth cap of 100. Unlike workload limits, archive and IR JSON limits are finite locally on purpose to guard against bombs.
+
+IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a bounding reader adapter to prevent memory amplification and stack overflows:
+1. **Streaming byte cap:** `BoundedScannerReader` counts incoming bytes against `max_ir_json_bytes` while streaming directly into serde, eliminating whole-file buffering and double residency. Exceeding the cap immediately aborts the stream with a typed `limit_exceeded` error before allocating the document tree.
+2. **Streaming depth scanner:** the adapter incrementally feeds chunks to an I/O-free state machine (`ariad_core::json_depth::JsonDepthScanner`) that tracks JSON `[` and `{` depth outside string literals without recursion. Each IR nesting level produces 2 to 5 levels of JSON nesting (e.g. nested lists or tables in table cells); the budget formula `json_depth_budget_for_nesting(depth) = (depth * 8) + 64` covers legitimate deep nesting while rejecting excessive depth before deserializing, preventing stack overflow on build or drop.
+3. **Deep deserialization:** `serde_stacker` deserializes on a grown stack.
+4. **Block count check:** `Document::block_count` asserts total blocks (body and furniture) stay within `max_blocks`. Every failure maps to a typed `limit_exceeded` error.
 
 ### 11.3 Isolation Layers
 
@@ -578,15 +659,25 @@ An unlimited value is represented by an absent field or `null` (`None` in Rust);
 | Unit | cargo-nextest, Vitest, pytest | Pure business logic |
 | Snapshot | insta | IR generated from each fixture |
 | Golden | `fixtures/` | Route outputs against reference standards |
-| Structural metrics | `bench/` | Text CER/WER, heading tree distance, TEDS for tables, reading order |
+| Structural metrics | `bench/` | Text CER, heading tree distance (APTED), TEDS for tables, editability (see [docs/bench.md](docs/bench.md)) |
 | Visual regression | Typst/LibreOffice → PDF → PDFium raster → SSIM | "faithful" profile routes |
 | Conformance | `schemas/engine-protocol.v1.json` | Protocol compliance across all engines |
-| Fuzzing | cargo-fuzz | Core readers, limit validation |
+| Fuzzing | cargo-fuzz 0.13.2 | Core readers, Pandoc AST mapper, IR JSON, limit validation (stable Rust with `-s none` in CI, date-pinned nightly ASan) |
 | E2E | Playwright (web), WebDriver (Tauri) | Primary user journeys |
 
-- `bench/` generates `capabilities.json`, which is committed to the repository.
+- Bench lives in `bench/` as a uv workspace member (`ariad-bench`): jiwer 4.0.0 (CER), rapidfuzz 3.14.6, apted 1.0.3, psutil 7.2.2, and our in-house TEDS implementation (Zhong et al. 2019). Full methodology, formulas, references, and bias disclosures are documented in [docs/bench.md](docs/bench.md). It generates `crates/ariad-core/data/capabilities.json`, which is committed to the repository.
 - The planner reads this file; the website's "Quality" page displays metrics directly from it.
-- Every PR modifying an engine re-runs the benchmark suite and **reports score differentials**.
+- The benchmark suite (`.github/workflows/bench.yml`) runs on pull requests with the `bench` label and on a nightly schedule (03:00 UTC). It compares metrics against the baseline and posts a diff table to the job summary, failing only on `bench-check` errors, never on score changes.
+- Fuzzing runs via cargo-fuzz 0.13.2 on stable with `-s none`, Linux CI only; the `fuzz/` crate is excluded from the Cargo workspace and never distributed. Six targets cover in-process readers, mappers and limits (archive preflight ZIP inspection and `docx_meta` XML parsing are not yet fuzzed; reserved as follow-up):
+  - `markdown_reader`: Untrusted markdown input; asserts valid UTF-8 lossy conversion, block count and nesting depth limits, and JSON serialization roundtrip without panics.
+  - `front_matter`: YAML front-matter parser; asserts rejection of anchors and aliases via independent event check, fallback to default metadata on error, and NFC normalization of text fields.
+  - `html_reader`: HTML parser; asserts that DOM depth never exceeds configured cap via typed error, text is NFC-normalized (excluding footnote identifier tokens), and block count and nesting depth limits are strictly respected without panics.
+  - `pandoc_ast_to_ir`: Pandoc AST to IR mapper exercising the engine's bounded `read_json` production path; asserts non-1.23 API versions and deep ASTs are rejected with typed errors, and valid ASTs map within limits without panics.
+  - `ir_json`: Bounded IR JSON reader; asserts byte, depth (verified against `prescan_json_depth`), and block limits are strictly enforced as typed errors without stack overflow, exercising both small limits and local limits (depth 64) for safe deep build and drop.
+  - `limits_validate`: Arbitrary Limits builder; asserts `Limits::validate` never panics and returns `Ok` if and only if all boundary constraints are satisfied.
+- Fuzzing cadence:
+  - PR and push CI gate (`ci.yml`): Runs on `ubuntu-26.04` with stable Rust (`-s none`) for 60 seconds per target on changes affecting code, with a 10s per-input timeout. Uses committed seeds in `fuzz/seeds/`, restores/saves cargo-fuzz, `fuzz/target`, and corpus caches on push to keep warm CI runtime well under 10 minutes (real CI duration is recorded after the first run on `dev`), and uploads crash artifacts on failure or cancellation.
+  - Nightly sanitizers (`fuzz-nightly.yml`): Runs daily on `ubuntu-26.04` using a date-pinned nightly toolchain (`nightly-2026-10-05`) with AddressSanitizer for 10 minutes each on targets with unsafe-adjacent dependencies (`markdown_reader`, `html_reader`, `pandoc_ast_to_ir`, `ir_json`), testing `dev` prior to promotion.
 - `cargo test --doc` runs alongside cargo-nextest because nextest does not run doctests.
 - DOCX goldens snapshot each fixture's sorted ZIP entry list and pretty-printed XML parts with insta; they hash template-derived XML parts and media. A shared `PANDOC_GOLDEN_VERSION` is asserted, and `SOURCE_DATE_EPOCH=1700000000` fixes timestamps.
 - Fixtures use only distributable public-domain, CC-BY, or generated documents; exclude CC-BY-SA, GPL test suites, and research-only or non-commercial datasets. `fixtures/manifest.toml` records each file's source and license.
@@ -611,7 +702,8 @@ An unlimited value is represented by an absent field or `null` (`None` in Rust);
 | Plus Jakarta Sans | OFL-1.1 | Outlines in logo | — |
 
 - **Excluded:** AGPL-licensed libraries in distributed artifacts, such as PyMuPDF and its dependents like `pdf2docx`; CC-BY-SA and GPL test-suite fixtures; research-only or non-commercial datasets; and model weights with OpenRAIL-M, custom, non-OSI, or missing licenses.
-- **Automated CI gating:** `cargo-deny` (licenses + security advisories), plus npm and Python license checkers. Every release generates `THIRD_PARTY_LICENSES` and an SBOM.
+- **Automated CI gating:** `cargo-deny` (licenses + security advisories), plus npm and Python license checkers.
+- **Release attribution & SBOM:** Every release archive contains `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES` (generated via `cargo-about` with committed `about.toml` and `about.hbs`). `NOTICE` records Apache-2.0 copyright for AriadShift, states that Pandoc (GPL-2.0-or-later) is invoked out-of-process and never bundled or linked, and provides repository links and source availability notices for unmodified MPL-2.0 transitive dependencies (`cssparser`, `dtoa-short`). Release builds embed dependency graphs via `cargo-auditable` (with `strip = "debuginfo"` preserving the `.dep-v0` section) and publish three CycloneDX SBOMs (one per workspace crate: `ariad-cli.cdx.xml`, `ariad-core.cdx.xml`, `ariad-host.cdx.xml`). Note on musl builds: although all primary crates and pure Rust libraries build without a C toolchain, `psm` (required transitively by stacker → serde_stacker) requires a musl C toolchain (`x86_64-linux-musl-gcc` from `musl-tools`) to link its stack-switching assembly.
 
 ---
 
@@ -625,11 +717,13 @@ An unlimited value is represented by an absent field or `null` (`None` in Rust);
 
 | Target | Tooling | Distribution Channels |
 |---|---|---|
-| CLI | cargo-dist | GitHub Releases, Homebrew tap, shell/PowerShell installers, `cargo binstall`, winget |
+| CLI | dist 0.33.0 | GitHub Releases, Homebrew tap, shell/PowerShell installers, `cargo binstall`, winget |
 | Desktop | Tauri bundler + `tauri-action` | Signed + notarized `.dmg`, signed `.msi`/NSIS, AppImage/deb/rpm, auto-updates |
 | Server | Docker buildx, multi-arch | GHCR; signed with cosign; SBOM |
 | Self-hosted | `infra/compose` | `docker compose up`: web, api, worker, postgres, seaweedfs |
 
+- CLI distribution uses dist 0.33.0. Targets: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl` (hosted on `ubuntu-26.04-arm`), `x86_64-pc-windows-msvc`. Installers: shell, PowerShell, Homebrew tap `bavanchun/homebrew-tap` with a runtime dependency on `pandoc`. `cargo-binstall` support is configured via explicit `[package.metadata.binstall]` metadata, and WinGet multi-file manifests (package identifier `VChun.AriadShift`, moniker `ashift`, schema 1.9.0) are generated via `scripts/winget-manifest.sh` from templates under `packaging/winget/`.
+- **Release pipeline hardening:** `.github/workflows/release.yml` builds release archives with `pr-run-mode = "upload"` and pins all action commits. The dist and CycloneDX archives are downloaded and verified against pinned SHA-256 digests on all build runners rather than piping unverified `curl | sh` or `irm | iex`. `cargo-auditable` is installed pinned via `taiki-e/install-action`. Secrets (`HOMEBREW_TAP_TOKEN`, `CARGO_REGISTRY_TOKEN`) will reside exclusively in a GitHub Actions `release` environment restricted to `v*` tags (to be configured for the first release); `HOMEBREW_TAP_TOKEN` is passed via step-level `env` strictly to the formula push step in an isolated publishing job separated from the unprivileged `brew update`/`style` step. Crates are published topologically (`ariad-core` -> `ariad-host` -> `ariad-cli`) via reusable workflow `.github/workflows/publish-crates.yml` with crates.io API availability polling (`https://crates.io/api/v1/crates/<crate>/<version>`). Multi-channel installation across Homebrew, shell, PowerShell, and cargo-binstall is defined via `.github/workflows/release-smoke.yml` for execution after the release gate.
 - **Budgeted code-signing costs:** Apple Developer account ($99/year) and a Windows code-signing certificate (e.g., Azure Trusted Signing).
 
 ---
@@ -668,7 +762,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Markdown reader | comrak 0.55.0 with default features off and shortcodes on | pulldown-cmark; markdown-rs | Active CommonMark/GFM implementation, pure Rust build, and an AST for the core reader |
 | Local limit defaults | Unlimited input, pages, asset bytes, time, and memory; finite nesting, block, and front-matter limits | Generous fixed local input/time/memory caps | Explicit unlimited semantics preserve local use while structural limits remain finite |
 | Tenancy and metering | Per-account workspace, plan-keyed entitlements, append-only usage events; billing adapter later | Per-handler quota constants; billing before paid tiers | Supports a free launch and lets paid plans arrive without changing the limits contract |
-| In-process native readers | Markdown now and HTML later in `ariad-core`, with pure Rust, typed errors, finite depth/block limits, and fuzzing from 1a | Running every native reader out of process | Enables lightweight native routes under a documented, bounded exception to Principle 3 |
+| In-process native readers | Markdown and HTML in `ariad-core`, with pure Rust, typed errors, finite depth, node, and block limits, and fuzzing from 1a | Running every native reader out of process | Enables lightweight native routes under a documented, bounded exception to Principle 3 |
 | Python fixture generator | Dev-only uv workspace member at `fixtures/gen/`; dependencies never ship | Shipping fixture-generation dependencies | Reproducible fixture creation without runtime dependencies |
 | IR version policy | `ariad-ir/0` with `schemas/ir.v0.json` through 0.x; freeze `/1` with the protocol in 1b | Starting Phase 0 at `/1` | Allows breaking changes while the foundation is still a draft |
 | DOCX timestamp rewrite | Host rewrites `created` and `modified` after Pandoc, honoring `SOURCE_DATE_EPOCH` | Keeping Pandoc's sandbox epoch-zero timestamps | User-facing documents get conversion-time metadata and golden outputs remain reproducible |
@@ -681,6 +775,26 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | TS-to-Rust Auth | JWT plugin + JWKS | Database session lookups on every request | Stateless, open standard, Axum verifies locally |
 | Task runner | just | Turborepo, Nx | Polyglot repo; a lightweight command runner suffices |
 | Engine isolation | Out-of-process + NDJSON protocol | Linking libraries directly into host process | Crashes and exploits cannot bring down the host application |
+| HTML reader | html5ever 0.40.1 with our own tree sink, fed in bounded chunks so a depth cap stops the parse | scraper, lol_html, tl, Pandoc for HTML input | WASM-safe, latest html5ever, no duplicate parser; html5ever's own stack makes deep nesting quadratic, so the cap must stop feeding, not just re-parent nodes. |
+| MCP file access | Client roots plus `--allow-dir`, canonicalized prefix checks, writes through capability handles, overwrite only with `--allow-overwrite`, hidden paths refused | Any user-readable path; overwrite on the agent's word | A prompt-injected agent must not read private files or destroy user files through the server. |
+| Bench | Python under `bench/` with jiwer, rapidfuzz, apted and an in-house TEDS | Packaged TEDS (GPL dependencies), Rust metric crates (stale) | Only permissive metrics libraries are available in Python. |
+| Fuzzing | cargo-fuzz on stable 1.99 with `-s none`, Linux CI | Nightly ASan on every PR, Windows fuzzing | No second toolchain on PRs. Our crates forbid `unsafe`, but parse-path dependencies (html5ever, serde_stacker) do not; sanitizer runs are covered by the validation decision recorded in the plan. |
+| Linux release binaries | musl, static | glibc builds on ubuntu-26.04 or 24.04 | No glibc floor for users. |
+| Release supply chain | Pinned actions through `[dist.github-action-commits]`, SHA-256-verified dist installer; `brew update` accepted as the only unpinned step and run in a job without the tap token; release secrets are fine-grained tokens scoped to one repo, stored in a `release` environment limited to `v*` tags | Unverified `curl \| sh`; classic PATs as repository secrets | Keeps the pinning policy except where Homebrew offers no pin, and keeps a compromised step from reaching a write token. |
+| EPUB determinism | Pandoc `--sandbox`, an explicit `identifier` (UUIDv5 from the input hash), a title fallback to the file stem, and `package_meta` stamping of `dc:date` / `dcterms:modified` honoring `SOURCE_DATE_EPOCH` | Running without the sandbox for reproducible dates, random UUIDs, or current wall-clock timestamps | Keeps the sandbox boundary and produces valid, reproducible EPUB3 across builds with matching IR and `SOURCE_DATE_EPOCH`. |
+| OCR binding | Tesseract CLI through Docling | `tesserocr` | Covers Windows, uses one Tesseract version, avoids LGPL. |
+| Raw HTML in HTML output | Dropping inline raw HTML tags to escaped text with one document-level warning; block raw HTML sanitized through a single `ammonia` 4.2.4 allow-list policy with links validated via `allowed_link` and a single document-level `RawDropped` warning | Hand-rolled inline tokenizer sanitizer (rejected to prevent tag-leak hijacking); passing raw HTML through; dropping all raw HTML | Accepted fidelity-for-safety trade-off for inline fragments; preserves safe block formatting (`div`, `details`, `table`) while eliminating unbalanced tag breakouts and XSS vectors. |
+| Raw HTML in Markdown output | Drop raw HTML tags, emit inner text escaped with a single document-level `RawDropped` warning | Passing raw HTML through (sanitized or unsanitized) | Markdown writer drops raw HTML (security trade-off of fidelity for safety); eliminates stored XSS and formatting breakout vectors while the HTML writer keeps its sanitized pass-through for block raw HTML only. |
+| Markdown output images | Embedded `data:` URIs | Sidecar asset directory; dropping images | One file keeps single-file atomic promotion and loses no image. |
+| Sanitizer fuzzing | A nightly scheduled CI job on a date-pinned Rust nightly, running cargo-fuzz with AddressSanitizer on the in-process parsers; never used for builds or releases | No sanitizer runs | Parse-path dependencies contain `unsafe`; this is the only exception to the no-pre-release-toolchain policy, and AGENTS.md "Versions" names it. |
+| crates.io | Publish `ariad-core`, `ariad-host` and `ariad-cli` from a CI job in the `release` environment, in dependency order, with a scoped token | Not publishing (binstall `--git` only) | Gives `cargo binstall ariad-cli` and `cargo install ariad-cli`; the crate names keep the `ariad-*` prefix. |
+| winget identifier | `VChun.AriadShift`, moniker `ashift` | `bavanchun.AriadShift`, `AriadShift.AriadShift` | Matches the copyright holder in LICENSE and NOTICE. |
+| Engine memory limits | Engine-enforced in 0.x; host limiter in 1b | Generic host-side limiter via `RLIMIT_AS` or `pre_exec` in 1a | `RLIMIT_AS` causes hard PyTorch/GHC static TLS crashes below 6 GiB; `pre_exec` violates `#![forbid(unsafe_code)]` in `ariad-host`. When `limits.max_memory_mb` is `Some`, the host queries `describe` (with 30s timeout), caches capabilities within the process, and refuses with `limit_exceeded` before converting if `enforces_memory_limit` is false. |
+| Format wire id | Equals the registry id (`Format::id()`, e.g. `ariad-ir+json`) | snake_case variant identifiers (e.g. `ariad_ir_json`) | Unifies format identity across CLI, IR, engine protocol, and capabilities schema with zero drift. |
+| MPL-2.0 dependencies | Ammonia brings MPL-2.0 transitive crates; accepted as unmodified dependencies in native and WASM builds; each new MPL crate needs its own exception | Global MPL-2.0 allow list, hand-rolled HTML sanitizer | Keeps robust ammonia sanitization without opening a global allow-list; complies with OSI-only policy |
+| Capabilities location | `crates/ariad-core/data/capabilities.json` embedded at compile time via `embedded()` | Monorepo root `capabilities.json` | `cargo package` rejects `include_str!` paths outside the crate root; keeps `ariad-core` self-contained for crates.io and WASM |
+| Routing graph & planner | Weighted Dijkstra shortest-path in `ariad-core` over `capabilities.json` with profile weights, hop penalty, unmeasured penalty, and alternatives | Static hardcoded route table | Allows multi-engine routing with empirical benchmarks, explainability, and profile selection (`editable`, `faithful`, `fast`, `private`) |
+| Inspection and plan caps | 32 MiB cap for deep document structure counting in `inspect`, and 4 MiB cap for `plan` summary parsing; regular-file preflight on all input reads | 256 MiB or unbounded reading and parsing of arbitrary file sizes, FIFOs, and special devices | Bounds peak memory expansion to ~100x input size (~3 GB peak RSS at 32 MiB) and prevents unbounded delays during diagnostic CLI runs without compromising standard document analysis |
 
 ---
 

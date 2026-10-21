@@ -1,0 +1,32 @@
+---
+source: crates/ariad-cli/tests/commands_cli.rs
+expression: normalize_stdout(&output)
+---
+{
+  "format": "markdown",
+  "bytes": 104,
+  "meta": {
+    "title": null,
+    "authors": [],
+    "language": null,
+    "date": null,
+    "subject": null,
+    "keywords": [],
+    "source_format": "markdown"
+  },
+  "counts": {
+    "headings": {},
+    "paragraphs": 1,
+    "tables": 0,
+    "images": 0,
+    "links": 0,
+    "footnotes": 0,
+    "words": 21
+  },
+  "warnings": [],
+  "reachable": [
+    "docx",
+    "epub",
+    "html"
+  ]
+}

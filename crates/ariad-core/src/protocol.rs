@@ -12,15 +12,41 @@ use crate::limits::Limits;
 pub const PROTOCOL: &str = "ariad-engine/1";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct Request {
-    pub protocol: String,
-    pub job: String,
-    pub op: String,
-    pub input: Input,
-    pub output: Output,
-    pub work_dir: String,
-    pub options: BTreeMap<String, Value>,
-    pub limits: Limits,
+#[serde(tag = "op", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
+pub enum Request {
+    Convert {
+        protocol: String,
+        job: String,
+        input: Input,
+        output: Output,
+        work_dir: String,
+        #[serde(default)]
+        options: BTreeMap<String, Value>,
+        limits: Limits,
+    },
+    Describe {
+        protocol: String,
+        job: String,
+    },
+}
+
+impl Request {
+    /// Returns the protocol version string declared by this request.
+    #[must_use]
+    pub fn protocol(&self) -> &str {
+        match self {
+            Self::Convert { protocol, .. } | Self::Describe { protocol, .. } => protocol,
+        }
+    }
+
+    /// Returns the job identifier declared by this request.
+    #[must_use]
+    pub fn job(&self) -> &str {
+        match self {
+            Self::Convert { job, .. } | Self::Describe { job, .. } => job,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -53,6 +79,31 @@ pub struct EngineError {
     pub message: String,
 }
 
+/// Availability of the underlying external tool executed by an engine.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolAvailability {
+    Found,
+    Missing,
+    WrongVersion,
+}
+
+/// Discovery status of an engine's underlying external executable or runtime.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolStatus {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub status: ToolAvailability,
+}
+
+/// A supported conversion route reported by an engine.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RouteCapability {
+    pub input: String,
+    pub output: String,
+}
+
 /// Either direction of one JSONL protocol message.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -65,6 +116,16 @@ pub enum Message {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
+    Capabilities {
+        engine: String,
+        version: String,
+        tool: ToolStatus,
+        license: String,
+        routes: Vec<RouteCapability>,
+        enforces_memory_limit: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        models: Option<Vec<String>>,
+    },
     Progress {
         stage: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,16 +165,47 @@ mod tests {
         let request: Request = serde_json::from_str(example).expect("request example deserializes");
         let message: Message = serde_json::from_str(example).expect("request message deserializes");
 
-        assert_eq!(request.protocol, PROTOCOL);
-        assert_eq!(request.job, "job_01JABC");
-        assert_eq!(request.input.path, "/work/in/document.ir.json");
-        assert_eq!(request.output.format, "docx");
-        assert_eq!(request.limits, Limits::local());
+        match &request {
+            Request::Convert {
+                protocol,
+                job,
+                input,
+                output,
+                limits,
+                ..
+            } => {
+                assert_eq!(protocol, PROTOCOL);
+                assert_eq!(job, "job_01JABC");
+                assert_eq!(input.path, "/work/in/document.ir.json");
+                assert_eq!(output.format, "docx");
+                assert_eq!(limits, &Limits::local());
+            }
+            Request::Describe { .. } => panic!("expected convert request"),
+        }
         assert!(matches!(message, Message::Request(_)));
 
         let encoded = serde_json::to_value(request).expect("request serializes");
+        assert_eq!(encoded["op"], "convert");
         assert!(encoded["limits"].get("timeout_s").is_none());
         assert_eq!(encoded["limits"]["max_nesting_depth"], 64);
+    }
+
+    #[test]
+    fn describe_request_round_trips() {
+        let describe = Request::Describe {
+            protocol: PROTOCOL.to_owned(),
+            job: "job-desc-1".to_owned(),
+        };
+        let value = serde_json::to_value(&describe).unwrap();
+        assert_eq!(value["op"], "describe");
+        assert_eq!(value["protocol"], PROTOCOL);
+        assert_eq!(value["job"], "job-desc-1");
+        assert!(value.get("input").is_none());
+        assert!(value.get("output").is_none());
+        assert!(value.get("work_dir").is_none());
+
+        let round_trip: Request = serde_json::from_value(value).unwrap();
+        assert_eq!(round_trip, describe);
     }
 
     #[test]
@@ -134,6 +226,27 @@ mod tests {
             assert!(matches!(message, Message::Event(_)));
         }
 
+        let cap_example = json!({
+            "type": "capabilities",
+            "engine": "pandoc",
+            "version": "0.1.0",
+            "tool": {
+                "name": "pandoc",
+                "version": "3.12",
+                "status": "found"
+            },
+            "license": "GPL-2.0-or-later",
+            "routes": [{"input":"ariad-ir+json","output":"docx"}],
+            "enforces_memory_limit": true
+        });
+        let cap_event: Event =
+            serde_json::from_value(cap_example.clone()).expect("capabilities deserializes");
+        let cap_message: Message =
+            serde_json::from_value(cap_example.clone()).expect("message deserializes");
+        let cap_encoded = serde_json::to_value(cap_event).expect("capabilities serializes");
+        assert_eq!(cap_encoded, cap_example);
+        assert!(matches!(cap_message, Message::Event(_)));
+
         let error_event = Event::Result {
             ok: false,
             metrics: None,
@@ -150,10 +263,9 @@ mod tests {
 
     #[test]
     fn request_accepts_arbitrary_options_as_a_json_map() {
-        let request = Request {
+        let request = Request::Convert {
             protocol: PROTOCOL.to_owned(),
             job: "job-1".to_owned(),
-            op: "convert".to_owned(),
             input: Input {
                 path: "/work/in/input.json".to_owned(),
                 format: "ariad-ir+json".to_owned(),
@@ -167,11 +279,25 @@ mod tests {
             limits: Limits::local(),
         };
         let value = serde_json::to_value(request).unwrap();
+        assert_eq!(value["op"], "convert");
         assert_eq!(value["options"]["profile"], "editable");
     }
 
     #[test]
     fn error_codes_are_closed() {
         assert!(serde_json::from_str::<ErrorCode>("\"unknown\"").is_err());
+    }
+
+    #[test]
+    fn convert_request_requires_limits() {
+        let json = json!({
+            "op": "convert",
+            "protocol": PROTOCOL,
+            "job": "job-1",
+            "input": {"path": "/in", "format": "ariad-ir+json"},
+            "output": {"dir": "/out", "format": "docx"},
+            "work_dir": "/tmp",
+        });
+        assert!(serde_json::from_value::<Request>(json).is_err());
     }
 }

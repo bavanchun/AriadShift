@@ -1,0 +1,83 @@
+---
+source: crates/ariad-cli/tests/route_golden.rs
+---
+<!DOCTYPE html>
+<html lang="und">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>vi-kitchen-sink</title>
+  <style>
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  line-height: 1.6;
+  max-width: 48rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+  background: #fff;
+}
+pre, code {
+  font-family: ui-monospace, monospace;
+}
+pre {
+  padding: 1rem;
+  background: #f4f4f4;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1rem 0;
+}
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5rem;
+  text-align: left;
+}
+th {
+  background: #f8f8f8;
+}
+blockquote {
+  border-left: 4px solid #ddd;
+  margin: 1rem 0;
+  padding-left: 1rem;
+  color: #555;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+  </style>
+</head>
+<body>
+<h1>Vườn mở cửa</h1>
+<p>Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.</p>
+<p>Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.</p>
+<p>Vào ngày nắng, chiếc bàn dưới giàn hoa giấy trở thành chỗ học bài. Khi mưa đến, mọi người chuyển vào mái hiên mà không cần đóng cửa khu vườn. Một tấm bảng gỗ ghi lịch chăm cây, nhưng ai đi ngang cũng có thể thêm một dòng nhắc việc.</p>
+<table>
+<thead>
+<tr>
+<th>Việc</th>
+<th>Trạng thái</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tưới cây</td>
+<td>Đã xong</td>
+</tr>
+<tr>
+<td>Mở cổng</td>
+<td>Đang chờ</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li class="task-list-item"><input type="checkbox" checked disabled> Quét lối đi</li>
+<li class="task-list-item"><input type="checkbox" disabled> Đặt thêm ghế</li>
+</ul>
+<p>Xem <a href="https://example.org/garden" rel="noopener noreferrer">lịch sinh hoạt</a>.</p>
+</body>
+</html>

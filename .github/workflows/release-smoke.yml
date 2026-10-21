@@ -1,0 +1,201 @@
+name: Release Smoke
+
+# Triggered manually via workflow_dispatch with a release version.
+# Note: 'release: [published]' is omitted because GitHub Releases created by GITHUB_TOKEN
+# do not trigger downstream workflow runs (GitHub Actions loop-prevention).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to smoke test (e.g. 0.1.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-homebrew:
+    name: Smoke test Homebrew (macos-26)
+    runs-on: macos-26
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install ashift via Homebrew
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          clean_ver="${VERSION#v}"
+          brew update
+          brew tap bavanchun/homebrew-tap
+          brew install ashift
+          installed_ver="$(ashift --version | awk '{print $2}')"
+          if [ "$installed_ver" != "$clean_ver" ]; then
+            echo "ERROR: Version mismatch: expected $clean_ver, got $installed_ver" >&2
+            exit 1
+          fi
+
+      - name: Verify ashift execution and doctor
+        run: |
+          ashift doctor
+
+      - name: Test document conversion
+        run: |
+          ashift convert --to docx fixtures/md/en-crlf.md -o /tmp/smoke-homebrew.docx
+          test -s /tmp/smoke-homebrew.docx
+          unzip -tq /tmp/smoke-homebrew.docx
+
+  smoke-shell:
+    name: Smoke test Shell installer (ubuntu-26.04)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Pandoc prerequisite
+        run: |
+          bash scripts/install-pandoc.sh
+          echo "ASHIFT_PANDOC=${GITHUB_WORKSPACE}/.tools/pandoc/bin/pandoc" >> "$GITHUB_ENV"
+
+      - name: Install ashift via shell installer
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          clean_ver="${VERSION#v}"
+          INSTALLER_URL="https://github.com/bavanchun/AriadShift/releases/download/v${clean_ver}/ariad-cli-installer.sh"
+          curl --proto '=https' --tlsv1.2 -LsSf "$INSTALLER_URL" -o /tmp/installer.sh
+          sh /tmp/installer.sh
+          export PATH="$HOME/.cargo/bin:$PATH"
+          installed_ver="$(ashift --version | awk '{print $2}')"
+          if [ "$installed_ver" != "$clean_ver" ]; then
+            echo "ERROR: Version mismatch: expected $clean_ver, got $installed_ver" >&2
+            exit 1
+          fi
+
+      - name: Verify ashift doctor
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ashift doctor
+
+      - name: Test document conversion
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ashift convert --to docx fixtures/md/en-crlf.md -o /tmp/smoke-shell.docx
+          test -s /tmp/smoke-shell.docx
+          unzip -tq /tmp/smoke-shell.docx
+
+  smoke-powershell:
+    name: Smoke test PowerShell installer (windows-2025)
+    runs-on: windows-2025
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Pandoc prerequisite
+        shell: bash
+        run: |
+          bash scripts/install-pandoc.sh
+          pandoc_path="${GITHUB_WORKSPACE}/.tools/pandoc/bin/pandoc"
+          pandoc_path="$(cygpath -m "${pandoc_path}.exe")"
+          printf 'ASHIFT_PANDOC=%s\n' "$pandoc_path" >> "$GITHUB_ENV"
+
+      - name: Install ashift via PowerShell installer
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          $ver = $env:VERSION -replace '^v',''
+          $installerUrl = "https://github.com/bavanchun/AriadShift/releases/download/v$ver/ariad-cli-installer.ps1"
+          Invoke-RestMethod -Uri $installerUrl -OutFile "$env:TEMP\installer.ps1"
+          & "$env:TEMP\installer.ps1"
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User") + ";" + [System.Environment]::GetEnvironmentVariable("Path","Machine")
+          $installedVer = (ashift --version).Split(' ')[1]
+          if ($installedVer -ne $ver) {
+            throw "Version mismatch: expected $ver, got $installedVer"
+          }
+
+      - name: Verify ashift doctor
+        shell: pwsh
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User") + ";" + [System.Environment]::GetEnvironmentVariable("Path","Machine")
+          ashift doctor
+
+      - name: Test document conversion
+        shell: pwsh
+        run: |
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","User") + ";" + [System.Environment]::GetEnvironmentVariable("Path","Machine")
+          ashift convert --to docx fixtures/md/en-crlf.md -o output.docx
+          if (-not (Test-Path output.docx) -or (Get-Item output.docx).Length -eq 0) {
+            throw "Output file output.docx does not exist or is empty"
+          }
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path output.docx).Path)
+          if ($zip.Entries.Count -eq 0) { throw "Empty docx archive" }
+          $zip.Dispose()
+
+  smoke-binstall:
+    name: Smoke test cargo-binstall (ubuntu-26.04)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Pandoc prerequisite
+        run: |
+          bash scripts/install-pandoc.sh
+          echo "ASHIFT_PANDOC=${GITHUB_WORKSPACE}/.tools/pandoc/bin/pandoc" >> "$GITHUB_ENV"
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          # Note: install-action chooses latest version for cargo-binstall
+          tool: cargo-binstall
+
+      - name: Install ashift via cargo-binstall
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          clean_ver="${VERSION#v}"
+          cargo binstall --no-confirm --disable-strategies compile,quick-install "ariad-cli@${clean_ver}"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          installed_ver="$(ashift --version | awk '{print $2}')"
+          if [ "$installed_ver" != "$clean_ver" ]; then
+            echo "ERROR: Version mismatch: expected $clean_ver, got $installed_ver" >&2
+            exit 1
+          fi
+
+      - name: Verify ashift doctor
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ashift doctor
+
+      - name: Test document conversion
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ashift convert --to docx fixtures/md/en-crlf.md -o /tmp/smoke-binstall.docx
+          test -s /tmp/smoke-binstall.docx
+          unzip -tq /tmp/smoke-binstall.docx

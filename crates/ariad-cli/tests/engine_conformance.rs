@@ -36,10 +36,9 @@ fn request_for(workspace: &ariad_host::workspace::Workspace) -> Request {
         serde_json::to_vec(&Document::default()).expect("serialize IR document"),
     )
     .expect("write IR document");
-    Request {
+    Request::Convert {
         protocol: PROTOCOL.to_owned(),
         job: "engine-conformance".to_owned(),
-        op: "convert".to_owned(),
         input: Input {
             path: input_path.to_string_lossy().into_owned(),
             format: "ariad-ir+json".to_owned(),
@@ -140,18 +139,73 @@ fn engine_rejects_invalid_wrong_protocol_and_missing_input_requests() {
 
     let workspace = ariad_host::workspace::Workspace::new().expect("create engine workspace");
     let mut wrong_protocol = request_for(&workspace);
-    wrong_protocol.protocol = "ariad-engine/999".to_owned();
+    if let Request::Convert { protocol, .. } = &mut wrong_protocol {
+        *protocol = "ariad-engine/999".to_owned();
+    }
     let events = validate_stdout(&run_engine(&wrong_protocol));
     assert_eq!(events.last().unwrap()["ok"], false);
     assert_eq!(events.last().unwrap()["error"]["code"], "invalid_request");
 
     let mut missing_input = request_for(&workspace);
-    missing_input.input.path = workspace
-        .input_dir()
-        .join("missing.ir.json")
-        .display()
-        .to_string();
+    if let Request::Convert { input, .. } = &mut missing_input {
+        input.path = workspace
+            .input_dir()
+            .join("missing.ir.json")
+            .display()
+            .to_string();
+    }
     let events = validate_stdout(&run_engine(&missing_input));
     assert_eq!(events.last().unwrap()["ok"], false);
     assert_eq!(events.last().unwrap()["error"]["code"], "io");
+}
+
+#[test]
+fn engine_answers_describe_request_without_workspace() {
+    let describe_request = Request::Describe {
+        protocol: PROTOCOL.to_owned(),
+        job: "describe-test".to_owned(),
+    };
+    let events = validate_stdout(&run_engine(&describe_request));
+    assert_eq!(events.len(), 2);
+
+    let capabilities = &events[0];
+    assert_eq!(capabilities["type"], "capabilities");
+    assert_eq!(capabilities["engine"], "pandoc");
+    assert!(capabilities["version"].is_string());
+    assert_eq!(capabilities["tool"]["name"], "pandoc");
+    assert_eq!(capabilities["tool"]["status"], "found");
+    assert!(capabilities["tool"]["version"].is_string());
+    // Crucial security invariant: never expose executable file paths.
+    assert!(capabilities["tool"].get("path").is_none());
+    let serialized_tool = serde_json::to_string(&capabilities["tool"]).unwrap();
+    assert!(!serialized_tool.contains('/'));
+    assert!(!serialized_tool.contains('\\'));
+
+    assert_eq!(capabilities["license"], "GPL-2.0-or-later");
+    assert_eq!(capabilities["enforces_memory_limit"], true);
+    let routes = capabilities["routes"].as_array().expect("routes array");
+    assert_eq!(routes.len(), 4);
+    assert_eq!(routes[0]["input"], "ariad-ir+json");
+    assert_eq!(routes[0]["output"], "docx");
+    assert_eq!(routes[1]["input"], "ariad-ir+json");
+    assert_eq!(routes[1]["output"], "epub");
+    assert_eq!(routes[2]["input"], "docx");
+    assert_eq!(routes[2]["output"], "ariad-ir+json");
+    assert_eq!(routes[3]["input"], "epub");
+    assert_eq!(routes[3]["output"], "ariad-ir+json");
+
+    let result = &events[1];
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["ok"], true);
+}
+
+#[test]
+fn engine_rejects_describe_with_wrong_protocol() {
+    let describe_request = Request::Describe {
+        protocol: "ariad-engine/999".to_owned(),
+        job: "describe-bad-proto".to_owned(),
+    };
+    let events = validate_stdout(&run_engine(&describe_request));
+    assert_eq!(events.last().unwrap()["ok"], false);
+    assert_eq!(events.last().unwrap()["error"]["code"], "invalid_request");
 }
