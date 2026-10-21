@@ -189,9 +189,10 @@ fn underline_in_docx_fixture_surfaces_as_warning_to_caller() {
         let mut zip_out = zip::ZipWriter::new(std::io::Cursor::new(&mut modified_zip_bytes));
         for i in 0..zip_in.len() {
             let mut file = zip_in.by_index(i).expect("zip entry");
+            let name = file.name().expect("zip entry name").into_owned();
             let mut content = Vec::new();
             file.read_to_end(&mut content).expect("read entry");
-            if file.name() == "word/document.xml" {
+            if name == "word/document.xml" {
                 let xml = String::from_utf8(content).expect("utf-8 document.xml");
                 let replaced = xml.replace(
                     "<w:t>Khu v",
@@ -202,9 +203,7 @@ fn underline_in_docx_fixture_surfaces_as_warning_to_caller() {
             }
             let options =
                 zip::write::SimpleFileOptions::default().compression_method(file.compression());
-            zip_out
-                .start_file(file.name(), options)
-                .expect("start file");
+            zip_out.start_file(name, options).expect("start file");
             zip_out.write_all(&content).expect("write entry");
         }
         zip_out.finish().expect("finish zip");

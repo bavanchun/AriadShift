@@ -327,7 +327,8 @@ pub fn parse_central_directory(
 ///    - Validates entry names (no absolute paths, drive prefixes, or `..` traversals).
 ///    - Validates declared uncompressed size against max_decompressed_bytes.
 /// 2. Stream-inflates every entry through a bounded reader `take(remaining + 1)`. Rejects as soon as
-///    the actual inflated bytes exceed max_decompressed_bytes, defeating lying zip bombs.
+///    the actual inflated bytes exceed `max_decompressed_bytes` or an entry inflates past its own
+///    declared uncompressed size, defeating lying zip bombs.
 pub fn preflight_archive(path: &Path, limits: &Limits) -> Result<(), ArchiveError> {
     let mut file = File::open(path)?;
     let summary = parse_central_directory(&mut file, limits)?;
@@ -360,7 +361,23 @@ pub fn preflight_archive(path: &Path, limits: &Limits) -> Result<(), ArchiveErro
 
         let mut counting_reader = (&mut entry).take(remaining.saturating_add(1));
         loop {
-            let n = counting_reader.read(&mut buffer)?;
+            let n = match counting_reader.read(&mut buffer) {
+                Ok(n) => n,
+                // zip 9 has no typed error for an entry inflating past its declared size, so
+                // the error message is matched; a declared-size lie is treated as a bomb and
+                // fails closed.
+                Err(e)
+                    if e.kind() == io::ErrorKind::InvalidData
+                        && e.to_string()
+                            .contains("larger than its declared uncompressed size") =>
+                {
+                    return Err(ArchiveError::DecompressedSizeExceeded {
+                        size: limits.max_decompressed_bytes.saturating_add(1),
+                        limit: limits.max_decompressed_bytes,
+                    });
+                }
+                Err(e) => return Err(ArchiveError::Io(e)),
+            };
             if n == 0 {
                 break;
             }
@@ -531,6 +548,120 @@ mod tests {
         match err {
             ArchiveError::DecompressedSizeExceeded { size, limit } => {
                 assert!(size > 500);
+                assert_eq!(limit, 500);
+            }
+            other => panic!("expected DecompressedSizeExceeded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn declared_size_lie_under_limit_rejected_as_decompressed_size_exceeded() {
+        let mut buffer = Vec::new();
+        {
+            let mut zip = ZipWriter::new(Cursor::new(&mut buffer));
+            zip.start_file(
+                "under_limit_lie.txt",
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+            )
+            .unwrap();
+            zip.write_all(&[0u8; 300]).unwrap();
+            zip.finish().unwrap();
+        }
+
+        // Declare 100 bytes in the central directory while actual inflated payload is 300 bytes.
+        let cd_sig = b"PK\x01\x02";
+        let cd_pos = buffer
+            .windows(4)
+            .position(|window| window == cd_sig)
+            .expect("central directory found");
+        let uncomp_size_pos = cd_pos + 24;
+        buffer[uncomp_size_pos..uncomp_size_pos + 4].copy_from_slice(&100u32.to_le_bytes());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("under_limit_lie.zip");
+        std::fs::write(&path, &buffer).unwrap();
+
+        let mut limits = Limits::local();
+        limits.max_decompressed_bytes = 500;
+
+        let err = preflight_archive(&path, &limits).unwrap_err();
+        match err {
+            ArchiveError::DecompressedSizeExceeded { size, limit } => {
+                assert_eq!(size, 501);
+                assert_eq!(limit, 500);
+            }
+            other => panic!("expected DecompressedSizeExceeded, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn streaming_inflate_take_cap_rejects_honest_entry_exceeding_limit() {
+        let mut buffer = Vec::new();
+        {
+            let mut zip = ZipWriter::new(Cursor::new(&mut buffer));
+            zip.start_file(
+                "honest_entry.txt",
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+            )
+            .unwrap();
+            zip.write_all(&[0u8; 2000]).unwrap();
+            zip.finish().unwrap();
+        }
+
+        // Use two Zip64 0x0001 extra blocks on a 0xFFFF_FFFF central-directory size sentinel:
+        // Step 1 (`read_zip64_uncompressed_size`) reads the first block (100 <= 500) so Step 2
+        // is reached, while `zip::ZipArchive` applies the last block (the honest 2000-byte size)
+        // so `Crc32Reader` does not fire before `take(limit + 1)` caps inflation at 501 bytes.
+        let cd_sig = b"PK\x01\x02";
+        let cd_pos = buffer
+            .windows(4)
+            .position(|window| window == cd_sig)
+            .expect("central directory found");
+        buffer[cd_pos + 24..cd_pos + 28].copy_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+        let fn_len =
+            u16::from_le_bytes(buffer[cd_pos + 28..cd_pos + 30].try_into().unwrap()) as usize;
+        let old_extra_len =
+            u16::from_le_bytes(buffer[cd_pos + 30..cd_pos + 32].try_into().unwrap());
+        let mut extra_blocks = Vec::with_capacity(24);
+        extra_blocks.extend_from_slice(&0x0001u16.to_le_bytes());
+        extra_blocks.extend_from_slice(&8u16.to_le_bytes());
+        extra_blocks.extend_from_slice(&100u64.to_le_bytes());
+        extra_blocks.extend_from_slice(&0x0001u16.to_le_bytes());
+        extra_blocks.extend_from_slice(&8u16.to_le_bytes());
+        extra_blocks.extend_from_slice(&2000u64.to_le_bytes());
+        buffer[cd_pos + 30..cd_pos + 32]
+            .copy_from_slice(&(old_extra_len + extra_blocks.len() as u16).to_le_bytes());
+        let insert_pos = cd_pos + 46 + fn_len + old_extra_len as usize;
+        buffer.splice(insert_pos..insert_pos, extra_blocks.iter().copied());
+
+        let eocd_sig = b"PK\x05\x06";
+        let eocd_pos = buffer
+            .windows(4)
+            .rposition(|window| window == eocd_sig)
+            .expect("EOCD found");
+        let old_cd_size =
+            u32::from_le_bytes(buffer[eocd_pos + 12..eocd_pos + 16].try_into().unwrap());
+        buffer[eocd_pos + 12..eocd_pos + 16]
+            .copy_from_slice(&(old_cd_size + extra_blocks.len() as u32).to_le_bytes());
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take_cap.zip");
+        std::fs::write(&path, &buffer).unwrap();
+
+        let mut limits = Limits::local();
+        limits.max_decompressed_bytes = 500;
+
+        // Confirm Step 1 passes and ZipArchive sees the honest 2000-byte declared size.
+        let summary =
+            super::parse_central_directory(&mut File::open(&path).unwrap(), &limits).unwrap();
+        assert_eq!(summary.declared_decompressed_bytes, 100);
+        let mut zf = zip::ZipArchive::new(File::open(&path).unwrap()).unwrap();
+        assert_eq!(zf.by_index(0).unwrap().size(), 2000);
+
+        let err = preflight_archive(&path, &limits).unwrap_err();
+        match err {
+            ArchiveError::DecompressedSizeExceeded { size, limit } => {
+                assert_eq!(size, 501);
                 assert_eq!(limit, 500);
             }
             other => panic!("expected DecompressedSizeExceeded, got {other:?}"),

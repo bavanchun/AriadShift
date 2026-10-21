@@ -10,9 +10,9 @@ checksum = "e9d4ee0d472d1cd2e28c97dfa124b3d8d992e10eb0a035f33f5d12e3a177ba3b"
 
 [[package]]
 name = "ammonia"
-version = "4.2.1"
+version = "4.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "850babe4998b8b9e2dad65a56be4ee1bb977bc3cb3934fa2b28feb2297c30a55"
+checksum = "1f45dfa685e1ec33b1bf1a3b93b8047cbdbef41b6040deebbe6bea7720a45574"
 dependencies = [
  "cssparser",
  "html5ever",
@@ -40,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-core"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ammonia",
  "base64",
@@ -73,14 +73,16 @@ dependencies = [
 
 [[package]]
 name = "ariad-host"
-version = "0.0.0"
+version = "0.1.0"
 dependencies = [
  "ariad-core",
  "cap-std",
  "hex",
  "jiff",
+ "libc",
  "process-wrap",
  "quick-xml",
+ "schemars",
  "serde",
  "serde_json",
  "serde_stacker",
@@ -2054,14 +2056,15 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.6.0"
+version = "9.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
 dependencies = [
  "crc32fast",
  "flate2",
  "indexmap",
  "memchr",
+ "nix",
  "typed-path",
  "zopfli",
 ]

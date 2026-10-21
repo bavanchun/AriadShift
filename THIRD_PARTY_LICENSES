@@ -6,7 +6,7 @@ components included in or used to build this binary distribution.
 
 Table of Contents
 -----------------
-- Apache License 2.0 (Apache-2.0): 167 component(s)
+- Apache License 2.0 (Apache-2.0): 168 component(s)
 - MIT License (MIT): 43 component(s)
 - Unicode License v3 (Unicode-3.0): 20 component(s)
 - BSD 3-Clause "New" or "Revised" License (BSD-3-Clause): 3 component(s)
@@ -1809,7 +1809,7 @@ License: Apache License 2.0 (Apache-2.0)
 --------------------------------------------------------------------------------
 
 Used by:
-  - ammonia 4.2.1 (https://github.com/rust-ammonia/ammonia)
+  - ammonia 4.2.4 (https://github.com/rust-ammonia/ammonia)
   - anstream 1.0.0 (https://github.com/rust-cli/anstyle.git)
   - anstyle-parse 1.0.0 (https://github.com/rust-cli/anstyle.git)
   - anstyle-query 1.1.5 (https://github.com/rust-cli/anstyle.git)
@@ -3596,6 +3596,7 @@ License: Apache License 2.0 (Apache-2.0)
 --------------------------------------------------------------------------------
 
 Used by:
+  - getrandom 0.3.4 (https://github.com/rust-random/getrandom)
   - getrandom 0.4.3 (https://github.com/rust-random/getrandom)
 
 License Text:
@@ -5231,7 +5232,7 @@ License: MIT License (MIT)
 
 Used by:
   - tracing-core 0.1.36 (https://github.com/tokio-rs/tracing)
-  - zip 8.6.0 (https://github.com/zip-rs/zip2)
+  - zip 9.0.5 (https://github.com/zip-rs/zip2)
 
 License Text:
 -------------

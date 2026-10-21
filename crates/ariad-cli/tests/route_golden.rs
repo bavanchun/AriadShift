@@ -15,7 +15,7 @@ fn read_package(path: &Path) -> Package {
     let mut entries = BTreeMap::new();
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).expect("read archive entry");
-        let name = entry.name().to_owned();
+        let name = entry.name().expect("read archive entry name").into_owned();
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).expect("read entry contents");
         entries.insert(name, bytes);

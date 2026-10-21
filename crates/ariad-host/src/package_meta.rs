@@ -72,7 +72,7 @@ where
         if entry.size() > MAX_ENTRY_BYTES {
             return Err(PackageMetaError::EntryTooLarge);
         }
-        if !is_target(entry.name()) {
+        if !is_target(&entry.name()?) {
             writer.raw_copy_file(entry)?;
             continue;
         }
@@ -81,7 +81,7 @@ where
         }
         found_properties = true;
 
-        let name = entry.name().to_owned();
+        let name = entry.name()?.into_owned();
         let options = entry.options().into_full_options();
         let mut xml = Vec::with_capacity(entry.size() as usize);
         (&mut entry)
@@ -498,7 +498,7 @@ mod tests {
         let mut archive = ZipArchive::new(File::open(path).unwrap()).unwrap();
         {
             let first_entry = archive.by_index(0).unwrap();
-            assert_eq!(first_entry.name(), "mimetype");
+            assert_eq!(first_entry.name().unwrap(), "mimetype");
             assert_eq!(first_entry.compression(), CompressionMethod::Stored);
         }
 
