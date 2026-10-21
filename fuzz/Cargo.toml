@@ -12,7 +12,7 @@ arbitrary = { version = "1.4.2", features = ["derive"] }
 ariad-core = { path = "../crates/ariad-core" }
 ariad-host = { path = "../crates/ariad-host" }
 libfuzzer-sys = "0.4.13"
-saphyr-parser = "0.1.0"
+saphyr-parser = "0.2.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["unbounded_depth"] }
 unicode-normalization = "0.1.25"
