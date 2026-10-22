@@ -389,12 +389,16 @@ impl From<&ConvertReport> for ConvertOutput {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConvertError {
-    UnsupportedRoute { detail: Option<String> },
+    UnsupportedRoute {
+        detail: Option<String>,
+    },
     DestinationSameAsInput,
     InputIo,
     OutputIo,
     LimitExceeded,
     ToolMissing,
+    /// Required sandbox mode could not isolate the engine.
+    SandboxUnavailable(String),
     DestinationExists,
     Interrupted,
     UnsupportedIrVersion,
@@ -415,6 +419,12 @@ impl std::fmt::Display for ConvertError {
             Self::InputIo => write!(f, "the input file could not be read"),
             Self::OutputIo => write!(f, "could not write to stdout"),
             Self::LimitExceeded => write!(f, "conversion limit exceeded"),
+            Self::SandboxUnavailable(detail) => {
+                write!(
+                    f,
+                    "the engine sandbox is required but unavailable: {detail}"
+                )
+            }
             Self::ToolMissing => write!(
                 f,
                 "Pandoc is missing or unsupported. Run `just pandoc` or set ASHIFT_PANDOC."
@@ -457,7 +467,7 @@ impl ConvertError {
             Self::DestinationSameAsInput => 2,
             Self::UnsupportedRoute { .. } => 3,
             Self::LimitExceeded => 4,
-            Self::ToolMissing => 5,
+            Self::ToolMissing | Self::SandboxUnavailable(_) => 5,
             Self::DestinationExists => 6,
             Self::Interrupted => 130,
             Self::InputIo
@@ -476,6 +486,7 @@ impl ConvertError {
             Self::UnsupportedRoute { .. } => "unsupported_route",
             Self::LimitExceeded => "limit_exceeded",
             Self::ToolMissing => "tool_missing",
+            Self::SandboxUnavailable(_) => "sandbox_unavailable",
             Self::DestinationExists => "destination_exists",
             Self::Interrupted => "interrupted",
             Self::InputIo => "input_io",
@@ -1583,6 +1594,7 @@ where
                 },
             )
             .map_err(map_run_error)?;
+            push_sandbox_warning(warnings, &outcome);
 
             if cancel.is_cancelled() {
                 return Err(ConvertError::Interrupted);
@@ -1760,6 +1772,7 @@ pub fn read_archive_to_ir(
         },
     )
     .map_err(map_run_error)?;
+    push_sandbox_warning(&mut warnings, &outcome);
 
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
@@ -1786,9 +1799,24 @@ pub fn read_archive_to_ir(
     })
 }
 
+/// Records reduced engine isolation once per conversion.
+fn push_sandbox_warning(warnings: &mut Vec<ConvertWarning>, outcome: &runner::RunOutcome) {
+    let Some(gap) = outcome.sandbox.gap() else {
+        return;
+    };
+    let warning = ConvertWarning {
+        code: "sandbox_unavailable".to_owned(),
+        message: format!("The engine ran with reduced isolation: {gap}."),
+    };
+    if !warnings.contains(&warning) {
+        warnings.push(warning);
+    }
+}
+
 fn map_run_error(error: RunError) -> ConvertError {
     match error {
         RunError::Cancelled => ConvertError::Interrupted,
+        RunError::SandboxUnavailable(detail) => ConvertError::SandboxUnavailable(detail),
         RunError::EngineFailed {
             code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
             ..

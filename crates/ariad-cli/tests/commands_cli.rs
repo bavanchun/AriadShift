@@ -677,8 +677,11 @@ fn cli_interrupt_signal_handling() {
             perms.set_mode(0o755);
             std::fs::set_permissions(&script_path, perms).unwrap();
 
+            // The fake Pandoc records its PID outside any workspace, which the engine sandbox
+            // forbids; this test is about signal handling, so it runs without the sandbox.
             let mut child = Command::new(env!("CARGO_BIN_EXE_ashift"))
                 .env("ASHIFT_PANDOC", &script_path)
+                .env("ASHIFT_SANDBOX", "off")
                 .args(*args)
                 .spawn()
                 .unwrap_or_else(|e| panic!("spawn ashift {} with {}: {}", cmd_name, style, e));

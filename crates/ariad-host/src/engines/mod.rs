@@ -1,4 +1,5 @@
 pub mod pandoc;
+pub mod sandbox;
 
 use std::{
     collections::HashMap,

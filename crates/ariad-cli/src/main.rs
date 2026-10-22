@@ -304,6 +304,14 @@ enum EngineCommand {
 }
 
 fn main() -> ExitCode {
+    // The sandbox launcher runs before anything else so it restricts and `exec`s the engine
+    // without parsing the engine's own arguments.
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "__sandbox")
+    {
+        return ariad_host::sandbox::launch(std::env::args_os().skip(2));
+    }
     match Cli::try_parse() {
         Ok(cli) => match cli.command {
             Some(Command::Convert(args)) => run_convert(args),
