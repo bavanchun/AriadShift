@@ -1566,6 +1566,7 @@ where
                 work_dir: workspace.work_dir().to_string_lossy().into_owned(),
                 options,
                 limits,
+                session_id: None,
             };
 
             let outcome = runner::run(
@@ -1742,6 +1743,7 @@ pub fn read_archive_to_ir(
         work_dir: workspace.work_dir().to_string_lossy().into_owned(),
         options: BTreeMap::new(),
         limits: limits.clone(),
+        session_id: None,
     };
 
     let mut warnings = Vec::new();
@@ -2014,6 +2016,7 @@ mod tests {
             work_dir: workspace.work_dir().to_string_lossy().into_owned(),
             options: std::collections::BTreeMap::new(),
             limits: limits.clone(),
+            session_id: None,
         };
 
         let mut input_bytes = serde_json::to_vec(&request).unwrap();

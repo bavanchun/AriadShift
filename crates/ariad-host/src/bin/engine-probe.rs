@@ -69,6 +69,7 @@ fn main() -> ExitCode {
                 routes: vec![],
                 enforces_memory_limit: false,
                 models: None,
+                supports_session: false,
             });
             emit(&ok_result());
             ExitCode::SUCCESS
@@ -86,6 +87,7 @@ fn main() -> ExitCode {
                 routes: vec![],
                 enforces_memory_limit: false,
                 models: None,
+                supports_session: false,
             };
             emit(&cap);
             emit(&cap);
@@ -118,6 +120,7 @@ fn main() -> ExitCode {
                         routes: vec![],
                         enforces_memory_limit: true,
                         models: None,
+                        supports_session: false,
                     });
                     emit(&ok_result());
                     ExitCode::SUCCESS

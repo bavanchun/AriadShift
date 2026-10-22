@@ -39,6 +39,7 @@ fn make_request(workspace: &Workspace, timeout_s: Option<u64>) -> Request {
         work_dir: workspace.work_dir().display().to_string(),
         options: BTreeMap::new(),
         limits,
+        session_id: None,
     }
 }
 
