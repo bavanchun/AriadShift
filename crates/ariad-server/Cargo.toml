@@ -46,6 +46,7 @@ utoipa-axum.workspace = true
 uuid = { workspace = true, features = ["serde", "v4"] }
 
 [dev-dependencies]
+axum = { workspace = true, features = ["form", "http1", "json", "tokio"] }
 tempfile.workspace = true
 
 [package.metadata.dist]
