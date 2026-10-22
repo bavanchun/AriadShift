@@ -7,4 +7,5 @@ subject_capitalized = false
 subject_not_punctuated = true
 imperative_subject = true
 # Dependabot writes its own subjects; scripts/check-commits.sh still checks them for tool references.
-ignore_author_re = "^dependabot\\[bot\\]$"
+# committed matches this against "Name <email>", so the name is anchored to the address.
+ignore_author_re = "^dependabot\\[bot\\] <"
