@@ -885,9 +885,7 @@ where
             .len()
             .saturating_add(count)
             .saturating_sub(STDERR_TAIL_BYTES);
-        for _ in 0..excess {
-            tail.pop_front();
-        }
+        tail.drain(..excess);
         tail.extend(&chunk[..count]);
     }
 }
