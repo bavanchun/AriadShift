@@ -5,7 +5,7 @@
 //! ```text
 //! <data>/packs/.locks/<name>.lock   exclusive while installing or removing <name>
 //! <data>/packs/.staging/<name>.<id> extraction targets, renamed into place on success
-//! <data>/packs/.cache/<sha256>      downloaded, hash-verified components (resume)
+//! <data>/packs/.cache/<name>.<sha256> downloaded, hash-verified components (resume)
 //! <data>/packs/<name>/current       active version
 //! <data>/packs/<name>/<version>/    install root with receipt.toml
 //! ```
@@ -360,7 +360,11 @@ pub fn install(
     if let Ok(existing) = read_receipt(&final_dir, &manifest.name)
         && existing.manifest == manifest_text
         && existing.target == target.triple
-        && quick_check(&final_dir, &existing).is_ok()
+        && match verify(context, &manifest.name, Some(&manifest.version), cancel) {
+            Ok(report) => report.ok,
+            Err(PackError::Interrupted) => return Err(PackError::Interrupted),
+            Err(_) => false,
+        }
     {
         write_current(&layout, &manifest.name, &manifest.version)?;
         return Ok(InstallReport {
@@ -386,7 +390,13 @@ pub fn install(
             None => manifest_location.resolve(&component.url)?,
         };
         cached.push(obtain(
-            &layout, &fetcher, &source, component, cancel, progress,
+            &layout,
+            &manifest.name,
+            &fetcher,
+            &source,
+            component,
+            cancel,
+            progress,
         )?);
     }
 
@@ -514,13 +524,14 @@ fn url_file_name(url: &str) -> Result<String, PackError> {
 /// Returns a hash-verified copy of the component in the download cache.
 fn obtain(
     layout: &Layout,
+    pack: &str,
     fetcher: &Fetcher,
     source: &Location,
     component: &super::Component,
     cancel: &CancellationToken,
     progress: &mut dyn FnMut(PackEvent),
 ) -> Result<PathBuf, PackError> {
-    let cached = layout.cache().join(&component.sha256);
+    let cached = layout.cache().join(format!("{pack}.{}", component.sha256));
     if cached.is_file() {
         progress(PackEvent::Stage(format!("check cached {}", component.name)));
         match fetch::sha256_file(&cached, cancel)? {
@@ -537,7 +548,7 @@ fn obtain(
     )));
     let part = layout
         .cache()
-        .join(format!("{}.{}.part", component.sha256, new_id()));
+        .join(format!("{pack}.{}.{}.part", component.sha256, new_id()));
     let mut part_cleanup = Cleanup::new(part.clone());
     let mut out = OpenOptions::new()
         .write(true)
@@ -758,13 +769,25 @@ pub fn list_installed(context: &PackContext) -> Result<Vec<InstalledVersion>, Pa
     Ok(out)
 }
 
-/// Quick check without hashing: receipt, file presence and sizes, link targets, and
+/// Quick check without hashing: signature, receipt, file presence and sizes, link targets, and
 /// compatibility with this `ashift`. Problems are described without paths.
 pub fn check(context: &PackContext, name: &str, version: &str) -> PackHealth {
     let root = Layout::new(context).version_dir(name, version);
     let Ok(receipt) = read_receipt(&root, name) else {
         return PackHealth::Problem("the install receipt is missing or invalid".to_owned());
     };
+    if context
+        .keys
+        .verify(
+            receipt.manifest.as_bytes(),
+            &receipt.signature,
+            &receipt.name,
+            &receipt.version,
+        )
+        .is_err()
+    {
+        return PackHealth::Problem("the manifest signature is invalid or untrusted".to_owned());
+    }
     if quick_check(&root, &receipt).is_err() {
         return PackHealth::Problem("files are missing or modified".to_owned());
     }

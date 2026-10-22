@@ -67,9 +67,9 @@ Recorded 2026-10-22 before implementation. Versions checked against crates.io th
 
 | Crate | Version | Licence | Use |
 |---|---|---|---|
-| `ureq` | 3.5.0, `default-features = false`, features `rustls-no-provider`, `_ring`, `platform-verifier` | MIT OR Apache-2.0 | Blocking HTTPS client. `timeout_connect` and `timeout_per_read` give connect and idle-read timeouts; the default config reads `ALL_PROXY`/`HTTPS_PROXY`/`HTTP_PROXY` and `NO_PROXY` |
-| `rustls` (through ureq) | 0.23.46 with `ring` 0.17.14 | Apache-2.0 OR ISC OR MIT / Apache-2.0 AND ISC | TLS. `ring` builds with the musl C toolchain the release workflow already installs for `psm`; `aws-lc-rs` is avoided (CMake, OpenSSL licence) |
-| `rustls-platform-verifier` | 0.7.1 | MIT OR Apache-2.0 | Certificates from the operating system store. `webpki-roots` is avoided: CDLA-Permissive-2.0 is not in `deny.toml` and is not OSI-approved |
+| `ureq` | 3.5.0, `default-features = false`, feature `rustls-no-provider` | MIT OR Apache-2.0 | Blocking HTTPS client. `timeout_connect` and `timeout_per_read` give connect and idle-read timeouts; the default config reads `ALL_PROXY`/`HTTPS_PROXY`/`HTTP_PROXY` and `NO_PROXY` |
+| `rustls` | 0.23.46 with `ring` 0.17.14 | Apache-2.0 OR ISC OR MIT / Apache-2.0 AND ISC | TLS, with an explicit ring provider. `ring` builds with the musl C toolchain the release workflow already installs for `psm`; `aws-lc-rs` is avoided (CMake, OpenSSL licence) |
+| `rustls-native-certs` | 0.8.5 | Apache-2.0 OR ISC OR MIT | Certificates from the operating system store, loaded once and supplied explicitly to rustls. `webpki-roots` is avoided: CDLA-Permissive-2.0 is not in `deny.toml` and is not OSI-approved |
 | `minisign-verify` | 0.3.0 | MIT | Detached signature check (prehashed signatures only) |
 | `tar` | 0.4.46, `default-features = false` | MIT OR Apache-2.0 | Tar reader; `xattr` off |
 | `ruzstd` | 0.9.1 | MIT | Pure-Rust zstd decoder |
@@ -77,6 +77,7 @@ Recorded 2026-10-22 before implementation. Versions checked against crates.io th
 | `directories` | 6.0.0 | MIT OR Apache-2.0 | Platform data directory. Its dependency `option-ext` 0.2.0 is MPL-2.0: unmodified, per-crate `deny.toml` exception, listed in `NOTICE` like `cssparser` (Tauri pulls the same crate later) |
 | `semver` | 1.0.28 | MIT OR Apache-2.0 | `requires_ashift` and pack versions |
 | `minisign` (dev) | 0.10.0 | MIT | Throwaway keys and signatures in tests only |
+| `rcgen` (dev) | 0.14.10, defaults disabled, `ring` | MIT OR Apache-2.0 | Throwaway TLS certificates generated in memory; version and licence checked with `cargo search` and `cargo info` on 2026-10-23 |
 
 `toml`, `zip`, `sha2`, `uuid`, `jiff`, `hex`, `base64` are already in the workspace.
 
@@ -95,7 +96,7 @@ Recorded 2026-10-22 before implementation. Versions checked against crates.io th
 <data>/packs/
   .locks/<name>.lock        # File::try_lock; install and remove of one pack are exclusive
   .staging/<name>.<uuid>/   # extraction target, renamed into place, swept under the lock
-  .cache/<sha256>           # fully downloaded and hash-verified components (resume); `.part` while downloading
+  .cache/<name>.<sha256>    # fully downloaded and hash-verified components (resume); `.part` while downloading
   <name>/current            # active version
   <name>/<version>/         # install root: components, plus receipt.toml (reserved name)
 ```
@@ -138,3 +139,13 @@ pub fn try_resolve(name: &str) -> Result<Option<InstalledPack>, PackError>;
 - Per-component `unpacked_size`, `entries`, `executable`: needed for the declared-size bound and single-file engines.
 - `--base`, `--entrypoint`, `--url-prefix`, `--dest` on `__pack manifest`: needed to produce a complete manifest and to merge targets built on different runners.
 - `verify --version`: lets a non-active version be checked.
+
+### Completion corrections
+
+- Reinstall re-hashes existing files before returning `already_installed`, so changes that preserve file size are repaired.
+- `zstd.rs` joins zstd data frames and skips metadata frames before the shared tar reader; scanning and extraction use the same stream.
+- The lightweight pack health check re-verifies the receipt's manifest signature against the current keys; full file hashing remains in `engines verify` and reinstall.
+- Cached component names include the pack name, matching the per-pack lock scope. Two pack installs with identical component bytes cannot delete each other's pending extraction inputs.
+- Completed extraction must match the signed entry count and unpacked byte count exactly, in addition to the streaming upper limits.
+- The TLS provider is selected explicitly. Certificate failures are permanent, carry the CA-bundle hint, and have a loopback HTTPS test for trusted and untrusted certificates.
+- A clean EOF below the declared component size is `size_mismatch` for both online and offline installs; transport errors remain retryable.

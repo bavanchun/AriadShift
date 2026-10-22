@@ -45,12 +45,14 @@ libc = { workspace = true }
 
 # The host never targets wasm32; the HTTP client is native-only.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rustls.workspace = true
 rustls-native-certs.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
 jsonschema.workspace = true
 minisign.workspace = true
+rcgen.workspace = true
 
 [features]
 test-probe = []

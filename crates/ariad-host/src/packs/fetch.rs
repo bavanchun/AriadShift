@@ -165,6 +165,10 @@ enum Attempt {
 
 impl Fetcher {
     pub(crate) fn new(policy: FetchPolicy) -> Self {
+        Self::with_roots(policy, Arc::clone(native_roots()))
+    }
+
+    fn with_roots(policy: FetchPolicy, roots: Arc<Vec<Certificate<'static>>>) -> Self {
         let agent = |https_only: bool| {
             ureq::Agent::config_builder()
                 .https_only(https_only)
@@ -175,7 +179,10 @@ impl Fetcher {
                 .tls_config(
                     TlsConfig::builder()
                         .provider(TlsProvider::Rustls)
-                        .root_certs(RootCerts::Specific(Arc::clone(native_roots())))
+                        .unversioned_rustls_crypto_provider(Arc::new(
+                            rustls::crypto::ring::default_provider(),
+                        ))
+                        .root_certs(RootCerts::Specific(Arc::clone(&roots)))
                         .build(),
                 )
                 .build()
@@ -327,20 +334,32 @@ impl Fetcher {
 }
 
 fn classify(url: &str, error: &ureq::Error) -> Attempt {
+    let tls_error = match error {
+        ureq::Error::Rustls(error) => Some(error),
+        ureq::Error::Io(error) => error
+            .get_ref()
+            .and_then(|inner| inner.downcast_ref::<rustls::Error>()),
+        _ => None,
+    };
+    if tls_error.is_some() || (url.starts_with("https://") && native_roots().is_empty()) {
+        let hint = if matches!(tls_error, Some(rustls::Error::InvalidCertificate(_)))
+            || native_roots().is_empty()
+        {
+            "; check the system trust store or set SSL_CERT_FILE to a trusted CA bundle"
+        } else {
+            ""
+        };
+        return Attempt::Fail(PackError::Download {
+            url: url.to_owned(),
+            detail: format!("{error}{hint}"),
+        });
+    }
     match error {
         ureq::Error::Io(_)
         | ureq::Error::Timeout(_)
         | ureq::Error::HostNotFound
         | ureq::Error::ConnectionFailed
         | ureq::Error::Protocol(_) => Attempt::Retry(error.to_string()),
-        _ if url.starts_with("https://") && native_roots().is_empty() => {
-            Attempt::Fail(PackError::Download {
-                url: url.to_owned(),
-                detail: format!(
-                    "{error}; no trusted root certificates were found, set SSL_CERT_FILE to a CA bundle"
-                ),
-            })
-        }
         _ => Attempt::Fail(PackError::Download {
             url: url.to_owned(),
             detail: error.to_string(),
@@ -384,9 +403,11 @@ fn copy_hashed(
         progress(total);
     }
     if total != size {
-        return Err(Attempt::Retry(format!(
-            "component '{component}' ended after {total} of {size} bytes"
-        )));
+        return Err(Attempt::Fail(PackError::SizeMismatch {
+            component: component.to_owned(),
+            expected: size,
+            actual: total,
+        }));
     }
     out.flush()
         .map_err(|error| Attempt::Fail(PackError::io("could not write", out_path, error)))?;
@@ -440,7 +461,117 @@ pub(crate) fn remove_file_quietly(path: &Path) {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        net::TcpListener,
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
+
     use super::*;
+
+    struct TlsServer {
+        url: String,
+        cert: Certificate<'static>,
+        connections: Arc<AtomicUsize>,
+        stop: Arc<AtomicBool>,
+        thread: Option<thread::JoinHandle<()>>,
+    }
+
+    impl TlsServer {
+        fn start() -> Self {
+            let generated = rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_owned()])
+                .expect("generate throwaway certificate");
+            let cert = Certificate::from_der(generated.cert.der().as_ref()).to_owned();
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            let config = rustls::ServerConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_no_client_auth()
+                .with_single_cert(
+                    vec![generated.cert.der().clone()],
+                    rustls::pki_types::PrivatePkcs8KeyDer::from(
+                        generated.signing_key.serialize_der(),
+                    )
+                    .into(),
+                )
+                .unwrap();
+            let config = Arc::new(config);
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let url = format!("https://{}/pack.toml", listener.local_addr().unwrap());
+            let stop = Arc::new(AtomicBool::new(false));
+            let stopping = Arc::clone(&stop);
+            let connections = Arc::new(AtomicUsize::new(0));
+            let accepted = Arc::clone(&connections);
+            let thread = thread::spawn(move || {
+                while !stopping.load(Ordering::SeqCst) {
+                    match listener.accept() {
+                        Ok((socket, _)) => {
+                            accepted.fetch_add(1, Ordering::SeqCst);
+                            socket
+                                .set_read_timeout(Some(Duration::from_secs(2)))
+                                .unwrap();
+                            socket
+                                .set_write_timeout(Some(Duration::from_secs(2)))
+                                .unwrap();
+                            let connection =
+                                rustls::ServerConnection::new(Arc::clone(&config)).unwrap();
+                            let mut tls = rustls::StreamOwned::new(connection, socket);
+                            let mut request = [0_u8; 4096];
+                            if tls.read(&mut request).is_ok_and(|read| read > 0) {
+                                let _ = tls.write_all(
+                                    b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\npack",
+                                );
+                            }
+                        }
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("TLS test server: {error}"),
+                    }
+                }
+            });
+            Self {
+                url,
+                cert,
+                connections,
+                stop,
+                thread: Some(thread),
+            }
+        }
+    }
+
+    impl Drop for TlsServer {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::SeqCst);
+            self.thread.take().unwrap().join().unwrap();
+        }
+    }
+
+    #[test]
+    fn https_uses_ring_and_rejects_untrusted_certificates_without_retrying() {
+        let server = TlsServer::start();
+        let location = Location::parse(&server.url).unwrap();
+        let policy = FetchPolicy {
+            attempts: 3,
+            backoff: Duration::from_millis(1),
+            connect_timeout: Duration::from_secs(5),
+            read_timeout: Duration::from_secs(5),
+        };
+        let trusted = Fetcher::with_roots(policy.clone(), Arc::new(vec![server.cert.clone()]));
+        assert_eq!(
+            trusted
+                .read_small(&location, 128, &CancellationToken::new())
+                .unwrap(),
+            b"pack"
+        );
+        let before = server.connections.load(Ordering::SeqCst);
+        let error = Fetcher::new(policy)
+            .read_small(&location, 128, &CancellationToken::new())
+            .unwrap_err();
+        assert!(matches!(error, PackError::Download { .. }), "{error}");
+        assert!(error.to_string().contains("SSL_CERT_FILE"), "{error}");
+        assert_eq!(server.connections.load(Ordering::SeqCst) - before, 1);
+    }
 
     #[test]
     fn urls_require_https_except_on_loopback() {

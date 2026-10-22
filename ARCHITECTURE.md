@@ -101,15 +101,15 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | serde_json | **1.0.154** (`unbounded_depth` in the host) | IR and protocol JSON |
 | tempfile | **3.27.0** | Isolated conversion workspaces |
 | saphyr-parser | **0.2.2** (MIT OR Apache-2.0) | Pure-Rust YAML 1.2 event parser; its `Alias` events let the reader reject aliases before interpreting front matter; wasm compatibility is checked in phase 4 |
-| ureq | **3.5.0** (`default-features = false`, `rustls-no-provider`, `_ring`) | Blocking HTTPS client for engine pack downloads: connect and idle-read timeouts, proxy variables; native targets only |
-| rustls + ring | **0.23.46** + **0.17.14** (through ureq) | TLS for pack downloads; ring builds with the musl C toolchain the release already uses for `psm` |
+| ureq | **3.5.0** (`default-features = false`, `rustls-no-provider`) | Blocking HTTPS client for engine pack downloads: connect and idle-read timeouts, proxy variables; native targets only |
+| rustls + ring | **0.23.46** + **0.17.14** | TLS for pack downloads; ring is selected explicitly through the client configuration and builds with the musl C toolchain the release already uses for `psm` |
 | rustls-native-certs | **0.8.5** | Trust anchors from the operating system store (`SSL_CERT_FILE`/`SSL_CERT_DIR` on Linux) |
 | minisign-verify | **0.3.0** (MIT) | Engine pack manifest signatures (prehashed minisign) |
 | tar / ruzstd / flate2 | **0.4.46** (`default-features = false`) / **0.9.1** / **1.1.10** (`zlib-rs`) | Pure-Rust pack archive readers (`tar.zst`, `tar.gz`); `zip` covers `.zip` |
 | directories | **6.0.0** | Platform data directory for packs; its `option-ext` 0.2.0 dependency is MPL-2.0 (per-crate exception) |
 | semver | **1.0.28** | Pack versions and `requires_ashift` |
 | toml | **1.1.8+spec-1.1.0** | Pack manifests, receipts and the pack index in `ariad-host`; fixture and test validation |
-| Dev-only test crates | insta **1.49.0** (`json`, `glob`), jsonschema **0.58.6**, assert_cmd **2.2.2**, quick-xml **0.42.0**, hex **0.4.3**, minisign **0.10.0** (throwaway pack signing keys) | Test and fixture validation only; never distributed |
+| Dev-only test crates | insta **1.49.0** (`json`, `glob`), jsonschema **0.58.6**, assert_cmd **2.2.2**, quick-xml **0.42.0**, hex **0.4.3**, minisign **0.10.0** (throwaway pack signing keys), rcgen **0.14.10** (`ring`, throwaway TLS certificates) | Test and fixture validation only; never distributed |
 
 ### 2.4 Engines and Infrastructure
 
@@ -813,6 +813,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Engine pack format and trust | `ariad-pack/1` TOML manifest with per-target components and a detached minisign signature verified by `minisign-verify` against compiled-in keys; the trusted comment must name pack and version; declared `unpacked_size` and `entries` bound extraction | Signing each archive, TUF metadata, unsigned hashes in the index | One signature covers every component hash; binding name and version in the trusted comment stops pairing a manifest with another version's signature; the declared sizes cap decompression bombs |
 | Pack download stack | `ureq` 3.5 (blocking) with rustls on ring and the OS trust store through `rustls-native-certs`; HTTPS only, loopback HTTP for tests and mirrors | reqwest, aws-lc-rs, OpenSSL/native-tls, `webpki-roots`, `rustls-platform-verifier` | Blocking fits the host's blocking commands; ring links with the musl toolchain the release already installs; `webpki-roots` (and `webpki-root-certs`, which `rustls-platform-verifier` pulls through its wasm32 edge into the licence graph) are CDLA-Permissive-2.0, which is not OSI-approved |
 | Pack data directory | `ASHIFT_DATA_DIR`, else `directories`' local (non-roaming) data directory; staging, cache, locks and receipts under `<data>/packs` | Roaming AppData on Windows, hand-written per-OS paths | Packs reach gigabytes and must not roam; `directories` brings the MPL-2.0 `option-ext` crate under a per-crate exception, the same crate Tauri pulls in later |
+| Pack completeness | Join all zstd data frames and require extracted entry and byte counts to equal the signed manifest | Upper limits alone | A decoder or short archive can end at a valid tar header boundary; exact counts prevent accepting and receipting an incomplete pack |
 | Pack extraction and targets | Reject `..`, absolute, backslash, `:` and special entries; never write through links; canonical containment check for every link; hard links copied; pack triples describe pack binaries, so musl `ashift` accepts glibc packs when a glibc loader exists | Sanitizing names, trusting archive metadata, matching the pack triple to `ashift`'s own triple | Refusing is safer than rewriting paths; lexical checks alone miss link chains; the docling pack needs glibc wheels while the CLI ships static musl binaries |
 | Inspection and plan caps | 32 MiB cap for deep document structure counting in `inspect`, and 4 MiB cap for `plan` summary parsing; regular-file preflight on all input reads | 256 MiB or unbounded reading and parsing of arbitrary file sizes, FIFOs, and special devices | Bounds peak memory expansion to ~100x input size (~3 GB peak RSS at 32 MiB) and prevents unbounded delays during diagnostic CLI runs without compromising standard document analysis |
 

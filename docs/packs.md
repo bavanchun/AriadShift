@@ -85,8 +85,8 @@ Test builds (the `test-probe` feature) also trust the public keys listed in `ASH
 
 - Remote URLs must be `https://`. Plain `http://` is accepted only for loopback hosts. Credentials in URLs are refused.
 - TLS is rustls with the operating system's trust store (`SSL_CERT_FILE` and `SSL_CERT_DIR` are honoured on Linux). `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY` and `NO_PROXY` are honoured.
-- Connections time out after 30 s; a transfer that stalls for 60 s fails. Connection errors, timeouts, truncated bodies, HTTP 408, 429 and 5xx are retried up to three attempts with backoff; other HTTP errors are not.
-- Each component streams to `packs/.cache/<sha256>.<id>.part` while it is hashed. A body longer than `size` stops at once; a SHA-256 mismatch fails the install (exit code 1). A verified component is renamed to `packs/.cache/<sha256>`, so a failed install resumes without downloading it again; a successful install deletes the cached files it used.
+- Connections time out after 30 s; a transfer that stalls for 60 s fails. Connection errors, timeouts, transport-truncated bodies, HTTP 408, 429 and 5xx are retried up to three attempts with backoff. TLS trust failures fail immediately with a CA-bundle hint. A complete response or local file whose size differs from the manifest fails with `size_mismatch` without retrying.
+- Each component streams to `packs/.cache/<name>.<sha256>.<id>.part` while it is hashed. A body longer than `size` stops at once; a SHA-256 mismatch fails the install (exit code 1). A verified component is renamed to `packs/.cache/<name>.<sha256>`, so a failed install resumes without downloading it again; a successful install deletes the cached files it used. The pack name keeps independent installers from consuming each other's downloads when components have identical hashes.
 - Progress is printed to stderr only when stderr is a terminal.
 
 ## Extraction rules
@@ -100,6 +100,9 @@ Every archive entry must pass these rules, or the install fails with `unsafe arc
 - Hard links must point at an earlier regular file of the same component and are written as copies.
 - `receipt.toml` at the top of the root is reserved.
 - Entry count and unpacked bytes stay within the declared bounds above; exceeding them is exit code 4.
+- Completed extraction must match the declared entry count and unpacked size exactly; a short or otherwise inconsistent archive is refused as corrupt.
+
+Zstd archives may span multiple data frames and contain skippable metadata frames; all data frames form one continuous tar stream.
 
 ## Layout
 
@@ -109,13 +112,13 @@ The data directory is `ASHIFT_DATA_DIR` when set, otherwise the platform's local
 <data>/packs/
   .locks/<name>.lock         install and remove of one pack are exclusive
   .staging/<name>.<id>/      extraction target; renamed into place on success
-  .cache/<sha256>            verified downloads kept for a resumed install
+  .cache/<name>.<sha256>     verified downloads kept for a resumed install
   <name>/current             active version
   <name>/<version>/          install root
   <name>/<version>/receipt.toml
 ```
 
-An install extracts into `.staging`, checks links, notices and the entrypoint, writes the receipt, then renames the directory into place and marks it active. Reinstalling an identical, intact version is a no-op (`already_installed`); a damaged one is replaced. Leftovers of interrupted installs are swept under the pack's lock. Several versions may be installed; the newest install is active, and removing the active version activates the highest remaining one.
+An install extracts into `.staging`, checks links, notices and the entrypoint, writes the receipt, then renames the directory into place and marks it active. Reinstalling an identical, intact version re-hashes its files before returning `already_installed`; a damaged one is replaced. Leftovers of interrupted installs are swept under the pack's lock. Several versions may be installed; the newest install is active, and removing the active version activates the highest remaining one.
 
 `receipt.toml` (`ariad-pack-receipt/1`) holds the manifest and signature as installed, the install time, the `ashift` version, the signing key id, and the path, size and SHA-256 of every file plus every link target. `ashift engines verify` re-hashes against it and re-checks the signature with the keys of the running `ashift`.
 
