@@ -42,7 +42,7 @@ const UNBOUNDED_VISIBILITY: Duration = Duration::from_secs(3600);
 const CANCEL_POLL: Duration = Duration::from_secs(2);
 
 /// Base delay before a failed attempt is retried.
-const RETRY_BACKOFF: Duration = Duration::from_secs(10);
+const RETRY_BACKOFF: Duration = Duration::from_secs(5);
 
 /// A worker process.
 pub struct Worker {
@@ -280,7 +280,7 @@ impl Worker {
             Err(Outcome::Canceled) => {
                 if shutdown.is_cancelled() {
                     let mut tx = self.db.begin().await?;
-                    if db::requeue_job(&mut tx, job.id).await? {
+                    if db::requeue_job(&mut tx, job.id, true).await? {
                         db::add_event(
                             &mut tx,
                             job.id,
@@ -305,7 +305,7 @@ impl Worker {
                 }
                 if failure.transient && attempts < self.config.max_attempts {
                     let mut tx = self.db.begin().await?;
-                    if db::requeue_job(&mut tx, job.id).await? {
+                    if db::requeue_job(&mut tx, job.id, false).await? {
                         db::add_event(
                             &mut tx,
                             job.id,

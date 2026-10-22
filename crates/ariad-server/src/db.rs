@@ -211,7 +211,8 @@ pub struct NewUpload<'a> {
     pub size_bytes: i64,
     pub sha256: &'a str,
     pub storage_key: &'a str,
-    pub expires_at: DateTime<Utc>,
+    /// Seconds until the stored file is deleted, counted from the database clock.
+    pub retention_s: i64,
 }
 
 macro_rules! upload_columns {
@@ -228,7 +229,7 @@ pub async fn insert_upload(
     sqlx::query_as(concat!(
         "INSERT INTO uploads (id, workspace_id, subject, filename, size_bytes, sha256, \
          storage_key, status, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8) RETURNING ",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', now() + make_interval(secs => $8)) RETURNING ",
         upload_columns!()
     ))
     .bind(upload.id)
@@ -238,7 +239,7 @@ pub async fn insert_upload(
     .bind(upload.size_bytes)
     .bind(upload.sha256)
     .bind(upload.storage_key)
-    .bind(upload.expires_at)
+    .bind(upload.retention_s as f64)
     .fetch_one(pool)
     .await
 }
@@ -339,14 +340,15 @@ pub struct NewJob<'a> {
     pub profile: &'a str,
     pub pack: Pack,
     pub limits: serde_json::Value,
-    pub expires_at: DateTime<Utc>,
+    /// Seconds until the job's files are deleted, counted from the database clock.
+    pub retention_s: i64,
 }
 
 pub async fn insert_job(conn: &mut PgConnection, job: &NewJob<'_>) -> Result<JobRow, sqlx::Error> {
     sqlx::query_as(concat!(
         "INSERT INTO jobs (id, workspace_id, subject, upload_id, source_format, target_format, \
          profile, pack, status, limits, expires_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, $10) RETURNING ",
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'queued', $9, now() + make_interval(secs => $10)) RETURNING ",
         job_columns!()
     ))
     .bind(job.id)
@@ -358,7 +360,7 @@ pub async fn insert_job(conn: &mut PgConnection, job: &NewJob<'_>) -> Result<Job
     .bind(job.profile)
     .bind(job.pack.as_str())
     .bind(sqlx::types::Json(&job.limits))
-    .bind(job.expires_at)
+    .bind(job.retention_s as f64)
     .fetch_one(conn)
     .await
 }
@@ -396,13 +398,22 @@ pub async fn start_job(pool: &PgPool, id: Uuid) -> Result<Option<JobRow>, sqlx::
     .await
 }
 
-/// Returns a running job to the queue after a transient failure.
-pub async fn requeue_job(conn: &mut PgConnection, id: Uuid) -> Result<bool, sqlx::Error> {
-    let done =
-        sqlx::query("UPDATE jobs SET status = 'queued' WHERE id = $1 AND status = 'running'")
-            .bind(id)
-            .execute(conn)
-            .await?;
+/// Returns a running job to the queue. With `refund`, the attempt does not
+/// count toward the retry limit (the worker stopped; the job did not fail).
+pub async fn requeue_job(
+    conn: &mut PgConnection,
+    id: Uuid,
+    refund: bool,
+) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query(
+        "UPDATE jobs SET status = 'queued', \
+         attempts = CASE WHEN $2 THEN GREATEST(attempts - 1, 0) ELSE attempts END \
+         WHERE id = $1 AND status = 'running'",
+    )
+    .bind(id)
+    .bind(refund)
+    .execute(conn)
+    .await?;
     Ok(done.rows_affected() == 1)
 }
 
