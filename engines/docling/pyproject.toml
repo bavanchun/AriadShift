@@ -1,0 +1,49 @@
+[project]
+name = "ariad-docling"
+version = "0.2.0"
+description = "Docling engine for AriadShift, speaking the ariad-engine/1 protocol"
+requires-python = "==3.14.*"
+license = "Apache-2.0"
+dependencies = [
+    "docling-slim[convert-core,feat-ocr-rapidocr-onnx,format-office,format-pdf,models-local]==2.142.0",
+    "torch==2.14.1",
+    "torchvision==0.29.1",
+]
+classifiers = [
+    "Private :: Do Not Upload",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.17.1",
+]
+
+# CPU-only PyTorch wheels keep the engine environment and the pack about
+# four times smaller than the default CUDA builds.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "RUF"]
+ignore = ["S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["uv_build==0.12.23"]
+build-backend = "uv_build"
