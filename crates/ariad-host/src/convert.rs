@@ -751,6 +751,24 @@ where
     )
 }
 
+/// Converts like [`convert`], but under explicit resource limits instead of
+/// [`Limits::local`]. Cloud workers pass their plan's entitlement here.
+pub fn convert_with_limits<F>(
+    request: &ConvertRequest,
+    limits: Limits,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    if limits.validate().is_err() {
+        return Err(ConvertError::LimitExceeded);
+    }
+    let args = [OsString::from("__engine"), OsString::from("pandoc")];
+    convert_executor(request, None, &args, limits, cancel, on_event)
+}
+
 /// Converts a supported document into the requested target format using capability-based promotion.
 pub fn convert_confined<F>(
     request: &ConvertRequest,
@@ -2566,6 +2584,37 @@ mod tests {
         assert!(json.contains("Khu") && json.contains("vườn"));
 
         let _ = workspace.close();
+    }
+
+    #[test]
+    fn convert_with_limits_applies_the_given_limits() {
+        use super::{ConvertRequest, convert_with_limits};
+        use tokio_util::sync::CancellationToken;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let input = temp_dir.path().join("notes.md");
+        std::fs::write(&input, "# Title\n\nBody text.\n").unwrap();
+        let output = temp_dir.path().join("notes.html");
+        let request = ConvertRequest::new(&input, &output, "html", "unused-engine");
+
+        let mut tight = Limits::local();
+        tight.max_input_bytes = Some(4);
+        let err = convert_with_limits(&request, tight, CancellationToken::new(), |_| {})
+            .expect_err("input above the limit");
+        assert_eq!(err, ConvertError::LimitExceeded);
+        assert!(!output.exists());
+
+        let mut invalid = Limits::local();
+        invalid.timeout_s = Some(0);
+        let err = convert_with_limits(&request, invalid, CancellationToken::new(), |_| {})
+            .expect_err("invalid limits");
+        assert_eq!(err, ConvertError::LimitExceeded);
+
+        let report =
+            convert_with_limits(&request, Limits::cloud(), CancellationToken::new(), |_| {})
+                .expect("native route converts under cloud limits");
+        assert_eq!(report.output, output);
+        assert!(std::fs::read_to_string(&output).unwrap().contains("Title"));
     }
 
     #[test]
