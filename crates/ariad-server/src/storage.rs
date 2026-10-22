@@ -206,7 +206,9 @@ impl Storage {
         }
     }
 
-    /// A presigned `PUT` that only accepts exactly `size` bytes hashing to `sha256`.
+    /// A presigned `PUT` for exactly `size` bytes hashing to `sha256`. S3
+    /// stores check the signed `x-amz-checksum-sha256`; local blob URLs check
+    /// size and hash while streaming.
     pub async fn presign_put(
         &self,
         key: &str,
@@ -219,26 +221,20 @@ impl Storage {
                 let digest = hex::decode(sha256_hex)
                     .map_err(|_| StorageError::Config("sha256 is not hex".to_owned()))?;
                 let checksum = STANDARD.encode(digest);
-                let options = SignedUrlOptions::default()
-                    .with_signed_header(
-                        HeaderName::from_static("content-length"),
-                        HeaderValue::from(size),
-                    )
-                    .with_signed_header(
-                        HeaderName::from_static(CHECKSUM_HEADER),
-                        HeaderValue::from_str(&checksum)
-                            .map_err(|e| StorageError::Config(e.to_string()))?,
-                    );
+                // The signer cannot bind content-length; a matching SHA-256
+                // fixes the exact bytes, and `complete` re-checks both.
+                let options = SignedUrlOptions::default().with_signed_header(
+                    HeaderName::from_static(CHECKSUM_HEADER),
+                    HeaderValue::from_str(&checksum)
+                        .map_err(|e| StorageError::Config(e.to_string()))?,
+                );
                 let url = signer
                     .signed_url_opts(Method::PUT, &Path::from(key), UPLOAD_URL_TTL, &options)
                     .await?;
                 Ok(Presigned {
                     method: "PUT",
                     url,
-                    headers: BTreeMap::from([
-                        ("content-length".to_owned(), size.to_string()),
-                        (CHECKSUM_HEADER.to_owned(), checksum),
-                    ]),
+                    headers: BTreeMap::from([(CHECKSUM_HEADER.to_owned(), checksum)]),
                     expires_at,
                 })
             }
@@ -253,7 +249,7 @@ impl Storage {
                 Ok(Presigned {
                     method: "PUT",
                     url: blob_url(base, secret, &claims)?,
-                    headers: BTreeMap::from([("content-length".to_owned(), size.to_string())]),
+                    headers: BTreeMap::new(),
                     expires_at,
                 })
             }
