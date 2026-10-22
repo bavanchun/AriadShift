@@ -36,3 +36,77 @@ Read first: ARCHITECTURE §2.3, §8.3, §9, §10, §11, §12, §13; `crates/aria
 - `cargo nextest run -p ariad-server` passes with the database available, and skips cleanly without it.
 - The OpenAPI document is committed and stable under the drift test.
 - ARCHITECTURE §9, §10, §13, the Decision Log, and `docs/api.md` are updated.
+
+## Design notes
+
+Recorded 2026-10-22 before implementation. Versions were checked against crates.io, GitHub Releases and npm on that date.
+
+### Crate and binary
+
+- `crates/ariad-server` (library plus binary `ariad-server`, `publish = false`, `dist = false`). Subcommands: `api`, `worker --packs core,office,docling`, `migrate`, and a hidden `openapi` that prints the document.
+- Modules: `config` (environment parsing from a map, so tests need no process environment), `db` (pool, embedded `sqlx::migrate!`, typed rows), `queue` (`JobQueue` trait, `PgmqQueue`), `storage` (`object_store` plus presigning), `auth` (JWKS cache, API keys, Turnstile), `entitlements`, `rate_limit`, `api` (router, handlers, OpenAPI), `worker`, `sweeper`, `sandbox`, `packs`, `telemetry`.
+- Conversions run through `ariad_host::convert` exactly as in the CLI. One small host addition, `convert_with_limits`, passes the plan's `Limits` (the existing `convert` always uses `Limits::local()`). The worker's engine program is the `ashift` binary (`ARIAD_ENGINE_PROGRAM`, default: `ashift` next to `ariad-server`, then `PATH`), so the engines that later land in `ashift __engine …` and the `ashift __sandbox` launcher need no server change.
+
+### Data (sqlx migrations, runtime-checked queries)
+
+- Tables: `plan_entitlements` (Limits columns of §11.2 plus `jobs_per_day`, `input_bytes_per_day`, `concurrent_jobs`, `requests_per_minute`, `retention_s`; seeded `free` with the cloud column and `anonymous` with small-file limits), `workspaces` (`owner_user_id` unique, `plan`), `uploads`, `jobs`, `job_steps`, `job_events` (trigger sends `pg_notify('ariad_job_events', …)`), `artifacts`, `usage_events` (unique `event_key`, update and delete rejected by a trigger), `rate_limit_counters`.
+- Job status: `queued → running → succeeded | failed | canceled → expired`, enforced by a `CHECK` and by guarded `UPDATE … WHERE status = …` transitions.
+- Queries use `sqlx::query_as` at runtime instead of the compile-time macros. The macros need a live database or committed offline metadata on every build; ariad-server builds on macOS and Windows CI without a database, and the integration tests run every query against PostgreSQL 18.
+- Timestamps use `chrono` (sqlx 0.9 has no `jiff` support; `object_store` already depends on `chrono`).
+- The API and worker refuse to start when embedded migrations are not applied; `ariad-server migrate` applies them (operators back up first, §9.2).
+
+### Queue
+
+- `JobQueue` trait: `send` (inside the job-creating transaction), `read(vt, qty)`, `extend(vt)`, `release` (visible now), `archive`. `PgmqQueue` calls `pgmq.send/read/set_vt/archive`. Queues `jobs_core`, `jobs_office`, `jobs_docling` are created by the migration.
+- The visibility timeout is the job's `timeout_s` plus a margin; a heartbeat extends it and polls for cancellation. A message whose job is no longer runnable is archived. Transient failures (storage, missing tool, engine crash) retry until `ARIAD_WORKER_MAX_ATTEMPTS` (default 3); permanent ones (unsupported route, limit exceeded, unreadable input) fail at once.
+- Pack for a route: `docling` when any step uses the docling engine, `office` for `libreoffice`, otherwise `core`. The API only plans over engines whose pack is listed in `ARIAD_PACKS`.
+
+### Storage
+
+- `object_store` 0.14.2 with `aws-base`, `reqwest` and `ring` (not the `aws` feature, which forces `aws-lc-rs` and its OpenSSL-licensed C code). `ARIAD_STORAGE_URL=s3://bucket` reads the standard `AWS_*` variables (SeaweedFS, R2); `file:///path` uses the local store.
+- Keys: `t/{tenant}/{owner}/{in|out}/{sha256}`, where `owner` is the upload id for inputs (an upload exists before any job and can feed several jobs) and the job id for outputs.
+- Uploads: `POST /v1/uploads {filename, size, sha256}` returns one presigned `PUT` (15 minutes) with `content-length` and `x-amz-checksum-sha256` bound to the signature through `SignedUrlOptions`; `complete` checks the size and re-hashes the object before the upload becomes usable. The local store has no signer, so the API serves HMAC-signed `PUT`/`GET /v1/blobs/{token}` URLs itself (size-capped and hashed while streaming); those routes are not part of the OpenAPI contract because clients only follow returned URLs.
+- Downloads: presigned `GET` valid for 5 minutes. A sweeper in the API process (one runner through `pg_try_advisory_lock`) deletes inputs and outputs after the plan's `retention_s` (3600 by default) and marks jobs `expired`.
+
+### Auth
+
+- Verified against Better Auth 1.7.12 source (`better-auth`, `@better-auth/api-key`):
+  - JWT: EdDSA/Ed25519 by default; JWKS at `{ARIAD_AUTH_URL}/api/auth/jwks` (override `ARIAD_AUTH_JWKS_URL` for an internal address); `iss` and `aud` default to the Better Auth base URL origin; `sub` is the user id. `jsonwebtoken` 11.1.0 with `rust_crypto` verifies each key with the algorithm its JWK names; the JWKS is cached and refetched on an unknown `kid` (at most every 30 s).
+  - API keys: header `x-api-key`; read-only lookup in `"apikey"` by `"key" = base64url_nopad(sha256(raw))`, honouring `"enabled"`, `"expiresAt"`, `"configId"` (allow-list, default `default`), an exhausted `"remaining"` and a full Better Auth rate-limit window. `"referenceId"` is the user id. Organization-owned keys are refused until an organization tenancy rule exists. The table is created only in test fixtures.
+- Every authenticated user gets a workspace on first use (upsert on `owner_user_id`).
+- Anonymous callers use the `anonymous` entitlement, are rate limited per hashed IP (`ARIAD_TRUSTED_CLIENT_IP_HEADER`, for example `CF-Connecting-IP`), and must pass Cloudflare Turnstile on `POST /v1/uploads` when `ARIAD_TURNSTILE_SECRET` is set. Anonymous uploads and jobs are reachable only through their random v4 ids.
+- Rate limits are fixed one-minute windows in PostgreSQL (shared across API replicas); quotas (`jobs_per_day`, `input_bytes_per_day`, `concurrent_jobs`) are computed from `usage_events` and `jobs`.
+
+### API and OpenAPI
+
+- axum 0.8.9, tower 0.5.3, tower-http 0.7.1 (request ids, CORS from `ARIAD_CORS_ORIGINS`, compression, a timeout on non-streaming routes, 1 MiB JSON body limit), utoipa 6.0.0 with `utoipa-axum` 0.3.0. The document is committed at `schemas/openapi.v1.json`; a drift test compares it (`ARIAD_BLESS_SCHEMAS=1` rewrites it, as for the other schemas).
+- Endpoints: `POST /v1/uploads`, `POST /v1/uploads/{id}/complete`, `POST /v1/plan`, `POST /v1/jobs`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/events` (SSE replaying `job_events` after `Last-Event-ID`, then following `LISTEN ariad_job_events` through one listener per process), `GET /v1/jobs/{id}/outputs`, `DELETE /v1/jobs/{id}`, `GET /v1/capabilities`, `GET /healthz`, `GET /readyz`.
+- Errors: `{"error": {"code", "message"}}` with the host's codes (`unsupported_route`, `limit_exceeded`, …) plus `unauthorized`, `not_found`, `rate_limited` (with `Retry-After`), `quota_exceeded`, `payload_too_large`, `invalid_request`, `conflict`.
+- Response types are API-owned DTOs (`ToSchema`), mapped from `ariad-core` types, so the public contract does not move with internal structs.
+
+### Worker
+
+- Reads its packs' queues with a concurrency semaphore (`ARIAD_WORKER_CONCURRENCY`, default 1), downloads the input into a per-job directory under `ARIAD_WORK_DIR` (default: the temp directory; the log line says whether it is tmpfs), verifies its hash, runs `convert_with_limits` on a blocking thread with a cancellation token, uploads the output, records `artifacts`, `job_steps`, events and a `job_completed` usage event, and removes the directory on every path.
+- Sandbox: `ARIAD_SANDBOX=required|best-effort|off` (default `required` on Linux). The `sandbox` module is the seam to the host's engine sandbox; until the host exposes one, `required` refuses to start.
+
+### Observability
+
+- `tracing` with `tracing-subscriber` 0.3.23 (text or JSON by `ARIAD_LOG_FORMAT`); OTLP over HTTP/protobuf with `opentelemetry` 0.33.1, `opentelemetry_sdk` 0.33.1, `opentelemetry-otlp` 0.33.1 and `tracing-opentelemetry` 0.34.0 when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The W3C trace context travels in the pgmq message, so a job's spans join across api, queue and worker.
+- Metrics use the §13 names. `conversion_success_ratio` is a histogram of 1 (success) and 0 (failure), so its mean is the ratio. `pages_processed_total` and `engine_peak_memory_bytes` are recorded when the host reports them.
+- Logs carry ids, sizes, formats and `sha256(filename)` prefixes, never file names or content.
+
+### Other dependencies (checked 2026-10-22)
+
+- sqlx 0.9.0 (`postgres`, `runtime-tokio`, `tls-rustls-ring-native-roots`, `uuid`, `chrono`, `json`, `migrate`, `macros`), reqwest 0.13.5 (`rustls-no-provider`, ring installed as the process provider), rustls 0.23.46, jsonwebtoken 11.1.0 (`rust_crypto`), hmac 0.13.0, tokio-stream 0.1.19, futures-util 0.3.34, tracing-subscriber 0.3.23.
+- PostgreSQL 18.6 with pgmq 1.13.1 (`ghcr.io/pgmq/pg18-pgmq:v1.13.1`) and SeaweedFS 4.48 for tests.
+
+### Tests and CI
+
+- Integration tests create one database per test from `ARIAD_TEST_DATABASE_URL` and skip with a message when it is unset; the S3 test also needs `ARIAD_TEST_S3_ENDPOINT`. `just test-server` starts `ariadshift-test-pg` (127.0.0.1:55442; 55432 is taken on the shared machine) and `ariadshift-test-s3` (127.0.0.1:58342), runs `cargo nextest run -p ariad-server`, and removes both containers.
+- A `server` CI job on `ubuntu-26.04` runs the same tests with a PostgreSQL service container and SeaweedFS.
+
+### Deviations
+
+- §9.1's multipart upload endpoints become one presigned `PUT` (plan decision); `/v1/uploads/{id}/parts` is not built.
+- The storage key's second segment is the owning upload or job id (see Storage).
+- `plan_entitlements` also holds an `anonymous` row so anonymous limits come from the same table as plan limits.
