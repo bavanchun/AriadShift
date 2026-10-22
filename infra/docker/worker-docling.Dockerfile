@@ -6,7 +6,8 @@
 # repository root:
 #   docker build -f infra/docker/worker-docling.Dockerfile \
 #     --build-arg SERVER_IMAGE=ariadshift-worker-office -t ariadshift-worker-docling .
-# Run with a tmpfs at /tmp; the default command reads the docling queue.
+# The signed pack must be published before this build can finish. The default
+# command reads the docling queue; see docs/server.md for runtime sizing.
 
 ARG SERVER_IMAGE=ariadshift-worker-office
 

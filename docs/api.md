@@ -43,6 +43,8 @@ curl -sS -N "$API/v1/jobs/$(jq -r .id job.json)/events" -H "x-api-key: $KEY"
 curl -sS "$API/v1/jobs/$(jq -r .id job.json)/outputs" -H "x-api-key: $KEY"
 ```
 
+Completion is the authoritative size and hash check. S3 URLs sign the checksum header, but compatible stores may accept mismatching bytes and the signer cannot bind content-length. An uncompleted upload expires after 20 minutes; a verified upload uses the plan's retention measured from its creation. Bucket CORS must allow `PUT` and `x-amz-checksum-sha256` from the web app's origin.
+
 One upload can feed several jobs, for example one per target format. Browsers upload with Uppy's `@uppy/aws-s3` plugin in single-request mode, using the presigned request as its upload parameters.
 
 ## Endpoints
@@ -60,11 +62,13 @@ One upload can feed several jobs, for example one per target format. Browsers up
 | `GET` | `/v1/capabilities` | Formats and conversion edges this deployment runs |
 | `GET` | `/healthz`, `/readyz` | Liveness, and readiness of the database and storage |
 
-Formats are named by registry id (`markdown`, `docx`) or extension (`md`, `htm`). Profiles are `editable` (default), `faithful` and `fast`. The local-only `private` profile is refused.
+Formats are named by registry id (`markdown`, `docx`) or extension (`md`, `htm`). Profiles are `editable` (default), `faithful` and `fast`. The local-only `private` profile is refused. Internal interchange formats such as `ariad-ir+json` are conversion steps, not upload or target formats; `capabilities.formats` lists only host-supported document formats.
 
 ## Jobs
 
 A job moves through `queued → running → succeeded | failed | canceled → expired`. Inputs and outputs are deleted when the plan's retention period ends (one hour by default) or on `DELETE`, and the job becomes `expired`; the job record stays. Transient failures, such as an engine crash or a storage error, are retried before a job fails. Failures caused by the document, such as an unsupported route or an exceeded limit, are final.
+
+Cloud jobs retain at most 64 warnings, with codes limited to 64 UTF-8 bytes and messages to 512 bytes. Repeated codes may be grouped with an occurrence count; `warnings_truncated` summarizes omitted occurrences. The CLI keeps its existing warning behavior.
 
 The event stream sends `event: <kind>`, `id: <event id>` and `data: <JobEvent JSON>` for each event and closes after the final one. Reconnecting after the final event closes immediately. Streams also close when the API shuts down:
 
@@ -93,10 +97,15 @@ Every error has the body `{"error": {"code": "…", "message": "…"}}`. Message
 | 413 | `limit_exceeded`: the file is larger than the plan accepts |
 | 422 | `invalid_request`, `unsupported_route` (with the reachable targets) |
 | 429 | `rate_limited` (with `Retry-After`), `quota_exceeded` |
-| 503 | `unavailable`: the database, storage or identity service cannot be reached |
+| 500 | `internal`: an internal database or storage operation failed |
+| 503 | `unavailable`: identity verification is unavailable |
 
 A failed job reports the cause in its `error`: `limit_exceeded` (the document exceeds the plan's limits), `unsupported_route`, `input_io` (the input is unreadable, no longer matches its hash, or was deleted), `output_io`, `tool_missing` (a worker lacks an engine), `storage` or `database` (a service stayed unreachable), or `failed` (the engine crashed or retries ran out).
 
 ## Limits and quotas
 
 Each plan sets the conversion limits (input size, pages, time, memory, structural caps) and the quotas: jobs per day, input bytes per day, concurrent jobs and requests per minute. Quotas for accounts count per workspace; anonymous quotas count per client address. The defaults are listed in [server.md](server.md#plans-quotas-and-rate-limits).
+
+Upload admission separately counts all uploads and their declared bytes over 24 hours, including deleted or abandoned ones, against `jobs_per_day` and `input_bytes_per_day`. Pending uploads reserve `concurrent_jobs` slots (64 when that quota is unlimited). Completing an upload releases its pending slot; conversion quotas are checked independently for every job. This bounds outstanding signed requests; on S3, actual size is enforced at completion rather than at PUT.
+
+Native Markdown and HTML input is also capped at `min(16 MiB, max_memory_mb × 1 MiB / 256)` to reserve parser/IR headroom (16 MiB for free and 4 MiB for anonymous). Conversion runs in a helper process with the plan deadline and five seconds of cancellation grace.

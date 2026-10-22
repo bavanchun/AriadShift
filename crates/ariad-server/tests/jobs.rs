@@ -559,3 +559,248 @@ async fn a_stopping_worker_hands_its_job_back() {
     assert_eq!(again.read_count, 2);
     h.stop().await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn interchange_formats_are_rejected_before_submission() {
+    let Some(h) = Harness::start(
+        "interchange_formats_are_rejected_before_submission",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    for target in ["json", "ariad-ir+json", "pandoc+json"] {
+        assert_eq!(
+            h.post(
+                &Auth::Anonymous,
+                "/v1/plan",
+                &json!({"from":"md","to":target})
+            )
+            .await
+            .status(),
+            422
+        );
+    }
+    let upload = h.upload(&Auth::Anonymous, "notes.md", MARKDOWN).await;
+    assert_eq!(
+        h.create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "json")
+            .await
+            .status(),
+        422
+    );
+    let upload = h
+        .upload(
+            &Auth::Anonymous,
+            "input.json",
+            b"{\"ir_version\":\"ariad-ir/1\",\"blocks\":[]}",
+        )
+        .await;
+    assert!(upload["format"].is_null());
+    assert_eq!(
+        h.create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "html")
+            .await
+            .status(),
+        422
+    );
+    let caps: Value = h
+        .get(&Auth::Anonymous, "/v1/capabilities")
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        caps["formats"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["id"] != "ariad-ir+json")
+    );
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs")
+        .fetch_one(&h.db.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn native_inputs_respect_the_parser_memory_budget() {
+    let Some(h) = Harness::start(
+        "native_inputs_respect_the_parser_memory_budget",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    h.sql_exec("UPDATE plan_entitlements SET max_memory_mb = 1 WHERE plan='anonymous'")
+        .await;
+    let body = vec![b'x'; 4097];
+    let upload = h.upload(&Auth::Anonymous, "large.md", &body).await;
+    let response = h
+        .create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "html")
+        .await;
+    assert_eq!(response.status(), 413);
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs")
+        .fetch_one(&h.db.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn duplicate_deliveries_keep_one_attempt_and_a_live_output() {
+    use ariad_server::{
+        packs::Pack,
+        queue::{JobMessage, JobQueue, PgmqQueue},
+    };
+    let Some(mut h) = Harness::start(
+        "duplicate_deliveries_keep_one_attempt_and_a_live_output",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    let upload = h.upload(&Auth::Anonymous, "duplicate.md", MARKDOWN).await;
+    let job: Value = h
+        .create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "html")
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id = uuid::Uuid::parse_str(job["id"].as_str().unwrap()).unwrap();
+    let queue = PgmqQueue::new(h.db.pool.clone());
+    let mut tx = h.db.pool.begin().await.unwrap();
+    queue
+        .send(
+            &mut tx,
+            Pack::Core,
+            &JobMessage { job_id: id },
+            &Default::default(),
+        )
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let mut lock = h.db.pool.acquire().await.unwrap();
+    lock.close_on_drop();
+    let key = format!("ariad-job:{id}");
+    sqlx::query("SELECT pg_advisory_lock(hashtextextended($1,0))")
+        .bind(&key)
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    h.start_worker_with(&[
+        ("ARIAD_WORKER_CONCURRENCY", "2"),
+        ("ARIAD_DATABASE_MAX_CONNECTIONS", "1"),
+    ]);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let deliveries: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM pgmq.q_jobs_core WHERE read_ct>0")
+                .fetch_one(&h.db.pool)
+                .await
+                .unwrap();
+        if deliveries == 2 {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "both messages were not delivered"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let attempts: i32 = sqlx::query_scalar("SELECT attempts FROM jobs WHERE id=$1")
+        .bind(id)
+        .fetch_one(&h.db.pool)
+        .await
+        .unwrap();
+    assert_eq!(attempts, 0, "another session holds the job lock");
+    sqlx::query("SELECT pg_advisory_unlock(hashtextextended($1,0))")
+        .bind(&key)
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    drop(lock);
+    let job = h
+        .wait_final(&Auth::Anonymous, &id.to_string(), Duration::from_secs(30))
+        .await;
+    assert_eq!(job["status"], "succeeded", "{job}");
+    assert_eq!(job["attempts"], 1);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let archived: i64 = sqlx::query_scalar("SELECT count(*) FROM pgmq.a_jobs_core")
+            .fetch_one(&h.db.pool)
+            .await
+            .unwrap();
+        if archived == 2 {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "duplicate message was not archived"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let outputs: Value = h
+        .get(&Auth::Anonymous, &format!("/v1/jobs/{id}/outputs"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let downloaded = h
+        .http
+        .get(outputs["outputs"][0]["url"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        downloaded.status(),
+        200,
+        "winner's artifact remains available"
+    );
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM usage_events WHERE kind='job_completed' AND job_id=$1",
+    )
+    .bind(id)
+    .fetch_one(&h.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 1);
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn oversized_verified_inputs_fail_without_retry() {
+    let Some(mut h) = Harness::start(
+        "oversized_verified_inputs_fail_without_retry",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    let upload = h.upload(&Auth::Anonymous, "changed.md", MARKDOWN).await;
+    let input = h.stored_files().into_iter().next().expect("stored input");
+    std::fs::write(input, vec![b'X'; MARKDOWN.len() * 2]).unwrap();
+    let job: Value = h
+        .create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "html")
+        .await
+        .json()
+        .await
+        .unwrap();
+    h.start_worker();
+    let job = h
+        .wait_final(
+            &Auth::Anonymous,
+            job["id"].as_str().unwrap(),
+            Duration::from_secs(20),
+        )
+        .await;
+    assert_eq!(job["status"], "failed");
+    assert_eq!(job["error"]["code"], "input_io");
+    assert_eq!(job["attempts"], 1);
+    h.stop().await;
+}

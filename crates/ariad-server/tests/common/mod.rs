@@ -222,10 +222,24 @@ impl Harness {
                 .iter()
                 .map(|(k, v)| ((*k).to_owned(), (*v).to_owned())),
         );
+        pairs.push((
+            "ARIAD_CONVERSION_PROGRAM".to_owned(),
+            env!("CARGO_BIN_EXE_ariad-server").to_owned(),
+        ));
         let config = WorkerConfig::from_env(&Env::from_pairs(pairs), &["core".to_owned()])
             .expect("worker config");
         let token = self.shutdown.child_token();
-        let pool = self.db.pool.clone();
+        let pool = if let Some((_, size)) = extra
+            .iter()
+            .find(|(name, _)| *name == "ARIAD_DATABASE_MAX_CONNECTIONS")
+        {
+            sqlx::postgres::PgPoolOptions::new()
+                .max_connections(size.parse().expect("worker pool size"))
+                .connect_lazy(&self.db.url)
+                .expect("worker pool")
+        } else {
+            self.db.pool.clone()
+        };
         let run_token = token.clone();
         let handle = tokio::spawn(async move {
             app::run_worker(config, pool, run_token)

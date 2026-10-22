@@ -223,7 +223,7 @@ macro_rules! upload_columns {
 }
 
 pub async fn insert_upload(
-    pool: &PgPool,
+    conn: &mut PgConnection,
     upload: &NewUpload<'_>,
 ) -> Result<UploadRow, sqlx::Error> {
     sqlx::query_as(concat!(
@@ -240,7 +240,7 @@ pub async fn insert_upload(
     .bind(upload.sha256)
     .bind(upload.storage_key)
     .bind(upload.retention_s as f64)
-    .fetch_one(pool)
+    .fetch_one(conn)
     .await
 }
 
@@ -260,14 +260,17 @@ pub async fn complete_upload(
     pool: &PgPool,
     id: Uuid,
     format: Option<&str>,
+    retention_s: i64,
 ) -> Result<Option<UploadRow>, sqlx::Error> {
     sqlx::query_as(concat!(
-        "UPDATE uploads SET status = 'completed', format = $2, completed_at = now() \
-         WHERE id = $1 AND status = 'pending' RETURNING ",
+        "UPDATE uploads SET status = 'completed', format = $2, completed_at = now(), \
+         expires_at = created_at + make_interval(secs => $3) \
+         WHERE id = $1 AND status = 'pending' AND expires_at > now() RETURNING ",
         upload_columns!()
     ))
     .bind(id)
     .bind(format)
+    .bind(retention_s as f64)
     .fetch_optional(pool)
     .await
 }

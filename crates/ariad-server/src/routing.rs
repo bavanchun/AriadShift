@@ -4,6 +4,7 @@ use ariad_core::{
     format::Format,
     planner::{self, Capabilities, Plan, PlanError, Profile},
 };
+use ariad_host::convert::executor_edges;
 
 use crate::packs::Pack;
 
@@ -16,7 +17,7 @@ pub fn resolve_format(name: &str) -> Option<Format> {
     let format = serde_json::from_value::<Format>(serde_json::Value::String(name.to_owned()))
         .ok()
         .or_else(|| Format::from_extension(name))?;
-    (format != Format::PandocJson).then_some(format)
+    (!matches!(format, Format::AriadIrJson | Format::PandocJson)).then_some(format)
 }
 
 /// Detects an upload's format from its first bytes and file name.
@@ -25,7 +26,8 @@ pub fn detect_format(prefix: &[u8], filename: &str) -> Option<Format> {
     let extension = std::path::Path::new(filename)
         .extension()
         .and_then(|e| e.to_str());
-    ariad_core::format::classify(prefix, None, extension).filter(|f| *f != Format::PandocJson)
+    ariad_core::format::classify(prefix, None, extension)
+        .filter(|f| !matches!(f, Format::AriadIrJson | Format::PandocJson))
 }
 
 /// The `--to` argument the host converter accepts for a format.
@@ -51,9 +53,12 @@ pub fn deployable_engines(caps: &Capabilities, packs: &[Pack]) -> Vec<String> {
 
 /// Plans a route over the deployable engines.
 pub fn plan(from: Format, to: Format, profile: Profile, packs: &[Pack]) -> Result<Plan, String> {
-    let caps = planner::embedded();
-    let engines = deployable_engines(caps, packs);
-    planner::plan(caps, from, to, profile, &engines).map_err(|err| match err {
+    let mut caps = planner::embedded().clone();
+    let supported = executor_edges();
+    caps.edges
+        .retain(|edge| supported.contains(&(edge.from, edge.to, edge.engine.as_str())));
+    let engines = deployable_engines(&caps, packs);
+    planner::plan(&caps, from, to, profile, &engines).map_err(|err| match err {
         PlanError::NoRoute { reachable, .. } => {
             let mut targets: Vec<&str> = reachable
                 .iter()
@@ -90,6 +95,12 @@ mod tests {
         assert_eq!(resolve_format("md"), Some(Format::Markdown));
         assert_eq!(resolve_format(".DOCX"), Some(Format::Docx));
         assert_eq!(resolve_format("pandoc+json"), None);
+        assert_eq!(resolve_format("json"), None);
+        assert_eq!(resolve_format("ariad-ir+json"), None);
+        assert_eq!(
+            detect_format(b"{\"ir_version\":\"ariad-ir/1\"}", "input.json"),
+            None
+        );
         assert_eq!(resolve_format("nope"), None);
         assert_eq!(target_arg(Format::Markdown), "md");
         assert_eq!(target_arg(Format::Docx), "docx");

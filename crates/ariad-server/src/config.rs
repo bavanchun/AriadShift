@@ -367,6 +367,7 @@ pub struct WorkerConfig {
     pub max_attempts: u32,
     pub poll: Duration,
     pub engine_program: PathBuf,
+    pub conversion_program: PathBuf,
     pub work_dir: PathBuf,
     pub sandbox: SandboxMode,
     pub storage: StorageConfig,
@@ -394,6 +395,11 @@ impl WorkerConfig {
             max_attempts,
             poll: env.secs_or("ARIAD_WORKER_POLL_S", 5)?,
             engine_program,
+            conversion_program: env
+                .get("ARIAD_CONVERSION_PROGRAM")
+                .map(PathBuf::from)
+                .or_else(|| std::env::current_exe().ok())
+                .ok_or(ConfigError::Missing("ARIAD_CONVERSION_PROGRAM"))?,
             work_dir: env
                 .get("ARIAD_WORK_DIR")
                 .map_or_else(std::env::temp_dir, PathBuf::from),

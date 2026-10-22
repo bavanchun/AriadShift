@@ -12,7 +12,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use thiserror::Error;
 
-/// Better Auth's default key length; shorter values are not keys it issued.
+/// Minimum accepted raw key length, including any configured prefix.
 const MIN_KEY_LEN: usize = 32;
 
 /// Longest value accepted before hashing.

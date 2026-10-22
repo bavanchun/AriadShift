@@ -124,6 +124,35 @@ pub struct Usage {
     pub active_jobs: u64,
 }
 
+/// Upload admission is independent of conversion usage: abandoned uploads
+/// consume the daily allocation too, and live pending uploads reserve slots.
+pub async fn admit_upload(
+    conn: &mut sqlx::PgConnection,
+    subject: &str,
+    entitlement: &Entitlement,
+    input_bytes: u64,
+) -> Result<(), crate::error::ApiError> {
+    let (uploads, bytes, pending): (i64, i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE created_at > now() - interval '1 day'), \
+         COALESCE(sum(size_bytes) FILTER (WHERE created_at > now() - interval '1 day'), 0)::bigint, \
+         (SELECT count(*) FROM uploads WHERE subject = $1 AND status = 'pending' AND expires_at > now()) \
+         FROM uploads WHERE subject = $1 AND created_at > now() - interval '1 day' "
+    ).bind(subject).fetch_one(conn).await?;
+    let exceeded = entitlement
+        .jobs_per_day
+        .is_some_and(|cap| uploads as u64 >= cap)
+        || entitlement
+            .input_bytes_per_day
+            .is_some_and(|cap| (bytes as u64).saturating_add(input_bytes) > cap)
+        || pending as u64 >= entitlement.concurrent_jobs.unwrap_or(64);
+    if exceeded {
+        return Err(crate::error::ApiError::quota_exceeded(
+            "the plan's upload allowance is exhausted",
+        ));
+    }
+    Ok(())
+}
+
 pub async fn usage(conn: &mut sqlx::PgConnection, subject: &str) -> Result<Usage, sqlx::Error> {
     let (jobs, bytes): (i64, i64) = sqlx::query_as(
         "SELECT count(*), COALESCE(sum(input_bytes), 0)::bigint FROM usage_events \

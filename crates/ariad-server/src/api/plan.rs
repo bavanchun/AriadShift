@@ -35,8 +35,11 @@ use crate::{
         (status = 200, description = "The planned route", body = PlanResponse),
         (status = 401, description = "Credentials rejected", body = ErrorBody),
         (status = 404, description = "No such upload", body = ErrorBody),
+        (status = 409, description = "The upload is not complete", body = ErrorBody),
         (status = 422, description = "Invalid request or unsupported route (`unsupported_route`)", body = ErrorBody),
         (status = 429, description = "Rate limited", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
     ),
     security((), ("bearer" = []), ("api_key" = [])),
 )]
@@ -113,14 +116,21 @@ pub async fn plan(
 )]
 pub async fn capabilities(State(state): State<AppState>) -> Response {
     let caps = planner::embedded();
+    let supported = ariad_host::convert::executor_edges();
     let engines = routing::deployable_engines(caps, &state.packs);
     let mut formats = BTreeMap::new();
     let edges: Vec<CapabilityEdge> = caps
         .edges
         .iter()
-        .filter(|edge| engines.contains(&edge.engine))
+        .filter(|edge| {
+            engines.contains(&edge.engine)
+                && supported.contains(&(edge.from, edge.to, edge.engine.as_str()))
+        })
         .map(|edge| {
             for format in [edge.from, edge.to] {
+                if routing::resolve_format(format.id()).is_none() {
+                    continue;
+                }
                 formats
                     .entry(format.id())
                     .or_insert_with(|| FormatInfo::from(format));
