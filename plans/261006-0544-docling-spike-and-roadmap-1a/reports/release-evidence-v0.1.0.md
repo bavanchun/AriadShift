@@ -4,6 +4,7 @@
 - **Repository:** `bavanchun/AriadShift`
 - **Plan:** `plans/261006-0544-docling-spike-and-roadmap-1a/phase-13-release-gate-and-acceptance.md`
 - **Scope:** Read-only evidence gathering for Phase 13 "Stop for the user" item 1 and pre-flight risk checks.
+- **Update (2026-10-22):** §1–§8 are the pre-release snapshot. §9 records the release outcome and the live channel state after the tag.
 
 ---
 
@@ -510,3 +511,75 @@ gh release view --repo microsoft/winget-create --json tagName,assets \
 | 6 | Promotion `dev` → `main` conflict pre-check | **GO** | `git merge-tree --write-tree origin/main origin/dev` (and with PR #17) exits `0` with zero conflicts |
 | 7 | `bavanchun/homebrew-tap` repo and `release` environment (`v*` tag policy) | **GO** | Both already exist on GitHub (`bavanchun/homebrew-tap` public; `release` environment tag policy `v*` active) |
 | 8 | `HOMEBREW_TAP_TOKEN` and `CARGO_REGISTRY_TOKEN` set in `release` environment | **BLOCKER (User action before tagging)** | Currently `total_count: 0` in `environments/release/secrets`. User must set both secrets before pushing tag `v0.1.0` |
+
+---
+
+## 9. Release Outcome and Live State (verified 2026-10-22)
+
+### Commands used
+
+```bash
+gh release view v0.1.0 --json tagName,publishedAt,targetCommitish,assets
+gh run list --workflow=release.yml --branch v0.1.0 --json databaseId,conclusion,createdAt
+gh run view 39601110509 --json jobs
+gh run view 39601110509 --log-failed
+gh api repos/bavanchun/AriadShift/environments/release/secrets
+gh api repos/bavanchun/homebrew-tap/contents/
+gh api repos/bavanchun/winget-pkgs
+curl -s -o /dev/null -w '%{http_code}' https://crates.io/api/v1/crates/<crate>
+gh workflow run release-smoke.yml --ref main -f version=0.1.0
+```
+
+### GitHub Release
+
+- **Release:** <https://github.com/bavanchun/AriadShift/releases/tag/v0.1.0>, published `2026-10-21T12:44:49Z`, not a draft or prerelease.
+- **Tag target:** `3e5f967e654045941e68b2aa8aba8de7c5b260e2`, the promotion merge of PR [#26](https://github.com/bavanchun/AriadShift/pull/26) (`dev` at `10a5867`). That tree passed [CI #39594052685](https://github.com/bavanchun/AriadShift/actions/runs/39594052685) on `dev` (three-OS `Verify`, `Lint (windows-2025)` and `Fuzz`); the `main` push run [CI #39601059026](https://github.com/bavanchun/AriadShift/actions/runs/39601059026) skipped the rebuild because the tree is identical.
+- **Assets (20):** five archives (`aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-unknown-linux-musl`, `x86_64-unknown-linux-musl`, `x86_64-pc-windows-msvc`) with `.sha256` files, `ariad-cli-installer.sh`, `ariad-cli-installer.ps1`, `ashift.rb`, `ariad-cli.cdx.xml`, `ariad-core.cdx.xml`, `ariad-host.cdx.xml`, `dist-manifest.json`, `sha256.sum`, `source.tar.gz` and `source.tar.gz.sha256`.
+
+### Release run [#39601110509](https://github.com/bavanchun/AriadShift/actions/runs/39601110509) (tag `v0.1.0`)
+
+| Job | Job ID | Conclusion |
+|---|---|---|
+| `plan` | `119225538833` | `success` |
+| `build-local-artifacts` (five targets) | `119225726186`, `119225726250`, `119225726345`, `119225726454`, `119225726498` | `success` |
+| `build-global-artifacts` | `119228325528` | `success` |
+| `host` | `119228580233` | `success` |
+| `prepare-homebrew-formula` | `119228810029` | `success` |
+| `custom-publish-crates / Publish to crates.io` | `119228810150` | `failure` |
+| `publish-homebrew-formula` | `119229252240` | `failure` |
+| `announce` | `119229356154` | `skipped` |
+
+Failure causes, from the job logs:
+
+- **crates.io:** `Validate registry token` passed (the secret is not empty), then `cargo publish` of `ariad-core`, the first crate, was refused: `the remote server responded with an error (status 401 Unauthorized): Invalid Authorization header: Found unexpected authentication scheme`. No crate was published, so the job can be re-run as is.
+- **Homebrew:** the `Push formula` step failed with `fatal: could not read Username for 'https://github.com': No such device or address`. GitHub did not accept the basic-auth header built from `HOMEBREW_TAP_TOKEN`, and git fell back to an interactive prompt.
+
+### Release secrets
+
+`environments/release/secrets` now lists `HOMEBREW_TAP_TOKEN` (created `2026-10-20T04:02:59Z`, updated `04:03:40Z`) and `CARGO_REGISTRY_TOKEN` (created `2026-10-20T04:04:14Z`). The "not set" blocker in §6 and §8 no longer applies. Both secrets exist, but neither holds a token the registry or GitHub accepts. Secret values are never read; the evidence is the two errors above.
+
+### Channel state
+
+| Channel | State on 2026-10-22 |
+|---|---|
+| GitHub Release archives and installers | Published (above) |
+| Homebrew `bavanchun/tap/ashift` | Not published: `bavanchun/homebrew-tap` holds only `README.md` (latest commit `7b19858`, "Initial commit") |
+| crates.io `ariad-core`, `ariad-host`, `ariad-cli` | Not published: the API returns HTTP `404` for each |
+| WinGet `VChun.AriadShift` | Not submitted: `repos/bavanchun/winget-pkgs` returns `404` and no pull request exists |
+
+### Clean-runner smoke: [Release Smoke #39802059667](https://github.com/bavanchun/AriadShift/actions/runs/39802059667)
+
+| Job | Runner | Conclusion | Reason |
+|---|---|---|---|
+| `smoke-shell` | `ubuntu-26.04` | `success` | Shell installer, `--version`, `doctor`, Markdown to DOCX |
+| `smoke-powershell` | `windows-2025` | `success` | PowerShell installer, `--version`, `doctor`, Markdown to DOCX |
+| `smoke-homebrew` | `macos-26` | `failure` | The tap has no `ashift` formula |
+| `smoke-binstall` | `ubuntu-26.04` | `failure` | crates.io has no `ariad-cli` |
+
+### Finishing the release
+
+1. The maintainer replaces `HOMEBREW_TAP_TOKEN` and `CARGO_REGISTRY_TOKEN` in the `release` environment with working tokens (scopes in [docs/releasing.md](../../../docs/releasing.md)).
+2. `gh run rerun 39601110509 --failed` re-runs `custom-publish-crates`, `publish-homebrew-formula` and `announce`. GitHub allows re-runs for 30 days, until 2026-11-20; after that, the next version tag publishes instead.
+3. Run `release-smoke.yml` for `0.1.0`; all four jobs must pass.
+4. Generate the WinGet manifests with `scripts/winget-manifest.sh 0.1.0` and submit them (§7).
+
