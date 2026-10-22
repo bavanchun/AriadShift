@@ -158,7 +158,7 @@ pub(crate) fn extract(
         links: Vec::new(),
         cancel,
     };
-    walk(
+    let stats = walk(
         source,
         component.unpack,
         &component.name,
@@ -168,6 +168,21 @@ pub(crate) fn extract(
         &mut sink,
         cancel,
     )?;
+    if component
+        .entries
+        .is_some_and(|entries| entries != stats.entries)
+        || component
+            .unpacked_size
+            .is_some_and(|bytes| bytes != stats.bytes)
+    {
+        return Err(corrupt(
+            &component.name,
+            format!(
+                "decoded {} entries and {} bytes, which do not match the manifest",
+                stats.entries, stats.bytes
+            ),
+        ));
+    }
     Ok(Extracted {
         files: sink.files,
         links: sink.links,
@@ -230,8 +245,7 @@ fn walk(
             sink.file(&full, &mut reader, executable, &mut budget)?;
         }
         Unpack::TarZst => {
-            let decoder = ruzstd::decoding::StreamingDecoder::new(BufReader::new(file))
-                .map_err(|error| corrupt(component, error))?;
+            let decoder = super::zstd::Decoder::new(BufReader::new(file));
             walk_tar(decoder, component, &dest_parts, &mut budget, sink, cancel)?;
         }
         Unpack::TarGz => {

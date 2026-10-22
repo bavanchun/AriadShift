@@ -305,6 +305,75 @@ fn component_size_mismatch_is_rejected() {
     assert_no_residue(data.path());
 }
 
+#[test]
+fn short_components_have_typed_size_errors_online_and_offline() {
+    let key = Key::generate();
+    let source = support::temp();
+    PackBuilder::standard("sample", "1.0.0").write(source.path(), &key);
+    let path = source.path().join("runtime.tar.zst");
+    let mut short = fs::read(&path).unwrap();
+    short.pop();
+    fs::write(&path, short).unwrap();
+    let server = Server::start();
+    server.put_dir("pack", source.path());
+    for source in [
+        InstallSource::Manifest(server.url("pack/pack.toml")),
+        InstallSource::Directory(source.path().to_path_buf()),
+    ] {
+        let data = support::temp();
+        let error = packs::install(
+            &context(data.path(), key.trusted()),
+            &InstallRequest {
+                name: "sample".to_owned(),
+                version: None,
+                source,
+            },
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert!(matches!(error, PackError::SizeMismatch { .. }), "{error}");
+        assert_no_residue(data.path());
+    }
+    assert_eq!(server.hits("pack/runtime.tar.zst"), 1);
+}
+
+#[test]
+fn decoded_counts_must_match_the_manifest() {
+    let key = Key::generate();
+    for change_entries in [true, false] {
+        let source = support::temp();
+        let text = PackBuilder::standard("sample", "1.0.0").write(source.path(), &key);
+        let mut manifest = packs::Manifest::parse(&text).unwrap();
+        let component = &mut manifest.targets[0].components[0];
+        if change_entries {
+            *component.entries.as_mut().unwrap() += 1;
+        } else {
+            *component.unpacked_size.as_mut().unwrap() += 1;
+        }
+        fs::write(
+            source.path().join(packs::MANIFEST_FILE),
+            manifest.to_toml().unwrap(),
+        )
+        .unwrap();
+        support::sign_into(source.path(), &key, "pack:sample version:1.0.0");
+        let data = support::temp();
+        let error = packs::install(
+            &context(data.path(), key.trusted()),
+            &InstallRequest {
+                name: "sample".to_owned(),
+                version: None,
+                source: InstallSource::Directory(source.path().to_path_buf()),
+            },
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert!(matches!(error, PackError::CorruptArchive { .. }), "{error}");
+        assert_no_residue(data.path());
+    }
+}
+
 fn unsafe_archive(entries: &[Entry]) -> PackError {
     let key = Key::generate();
     let builder = PackBuilder::new("evil", "1.0.0").component(
@@ -315,6 +384,23 @@ fn unsafe_archive(entries: &[Entry]) -> PackError {
     );
     let source = support::temp();
     builder.write_unscanned(source.path(), &key);
+    // Declare the real counts so each malformed path or link is the failure under test.
+    let manifest_path = source.path().join(packs::MANIFEST_FILE);
+    let mut manifest =
+        packs::Manifest::parse(&fs::read_to_string(&manifest_path).unwrap()).unwrap();
+    let component = &mut manifest.targets[0].components[0];
+    component.entries = Some(entries.len() as u64);
+    component.unpacked_size = Some(
+        entries
+            .iter()
+            .map(|entry| match entry {
+                Entry::File(_, bytes, _) => bytes.len() as u64,
+                _ => 0,
+            })
+            .sum(),
+    );
+    fs::write(manifest_path, manifest.to_toml().unwrap()).unwrap();
+    support::sign_into(source.path(), &key, "pack:evil version:1.0.0");
     let server = Server::start();
     server.put_dir("pack", source.path());
     let data = support::temp();
@@ -517,6 +603,34 @@ fn reinstall_is_idempotent_and_repairs_damage() {
     assert_eq!(install().unwrap().status, InstallStatus::AlreadyInstalled);
     assert_eq!(server.hits("pack/runtime.tar.zst"), 1, "no second download");
 
+    let weights = data.path().join("packs/sample/1.0.0/models/weights.bin");
+    fs::write(&weights, vec![8_u8; 4096]).unwrap();
+    assert!(
+        !packs::verify(&ctx, "sample", None, &CancellationToken::new())
+            .unwrap()
+            .ok
+    );
+    assert_eq!(install().unwrap().status, InstallStatus::Installed);
+    assert!(
+        packs::verify(&ctx, "sample", None, &CancellationToken::new())
+            .unwrap()
+            .ok,
+        "reinstall repairs changed content even when the size stays the same"
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&weights, fs::Permissions::from_mode(0o000)).unwrap();
+        assert_eq!(install().unwrap().status, InstallStatus::Installed);
+        assert!(
+            packs::verify(&ctx, "sample", None, &CancellationToken::new())
+                .unwrap()
+                .ok,
+            "an unreadable installed file must be replaceable"
+        );
+    }
+
     fs::remove_file(data.path().join("packs/sample/1.0.0/models/weights.bin")).unwrap();
     assert!(matches!(
         packs::check(&ctx, "sample", "1.0.0"),
@@ -529,6 +643,37 @@ fn reinstall_is_idempotent_and_repairs_damage() {
             .ok
     );
     assert_no_residue(data.path());
+}
+
+#[test]
+fn zstd_archives_can_span_multiple_frames() {
+    let archive = tar_bytes(&[
+        Entry::File("bin/engine", b"#!/bin/sh\nexit 0\n".to_vec(), 0o755),
+        Entry::File("LICENSE.txt", b"MIT licence text\n".to_vec(), 0o644),
+        Entry::File("models/weights.bin", vec![7_u8; 4096], 0o644),
+    ]);
+    // Split the tar stream after its first file, at a header boundary.
+    let mut compressed = zstd(&archive[..1024]);
+    compressed.extend(zstd(&archive[1024..]));
+    let key = Key::generate();
+    let data = support::temp();
+    let report = install_served(
+        &PackBuilder::new("sample", "1.0.0").component(
+            "runtime",
+            "runtime.tar.zst",
+            compressed,
+            ".",
+        ),
+        &key,
+        &key,
+        data.path(),
+    )
+    .expect("install every frame");
+    assert_eq!(report.files, 3);
+    assert_eq!(
+        fs::read(data.path().join("packs/sample/1.0.0/models/weights.bin")).unwrap(),
+        vec![7_u8; 4096]
+    );
 }
 
 #[test]
@@ -549,6 +694,12 @@ fn verify_detects_modified_and_missing_files() {
     assert_eq!(report.checked, 3);
     assert!(report.key_id.is_some());
 
+    let other = Key::generate();
+    assert!(matches!(
+        packs::check(&context(data.path(), other.trusted()), "sample", "1.0.0"),
+        PackHealth::Problem(_)
+    ));
+
     let root = data.path().join("packs/sample/1.0.0");
     fs::write(root.join("models/weights.bin"), vec![8_u8; 4096]).unwrap();
     fs::remove_file(root.join("LICENSE.txt")).unwrap();
@@ -557,7 +708,6 @@ fn verify_detects_modified_and_missing_files() {
     assert_eq!(report.modified, vec!["models/weights.bin".to_owned()]);
     assert_eq!(report.missing, vec!["LICENSE.txt".to_owned()]);
 
-    let other = Key::generate();
     let report = packs::verify(
         &context(data.path(), other.trusted()),
         "sample",
@@ -874,4 +1024,54 @@ fn sweeping_one_pack_leaves_other_packs_staging_alone() {
         !own.exists(),
         "this pack's stale staging directory is swept"
     );
+}
+
+#[test]
+fn installing_another_pack_keeps_downloads_available_for_extraction() {
+    let key = Key::generate();
+    let first = support::temp();
+    let second = support::temp();
+    PackBuilder::standard("first", "1.0.0").write(first.path(), &key);
+    PackBuilder::standard("second", "1.0.0").write(second.path(), &key);
+    let data = support::temp();
+    let ctx = context(data.path(), key.trusted());
+    let mut installed_first = false;
+    let second_report = packs::install(
+        &ctx,
+        &InstallRequest {
+            name: "second".to_owned(),
+            version: None,
+            source: InstallSource::Directory(second.path().to_path_buf()),
+        },
+        &CancellationToken::new(),
+        &mut |event| {
+            if matches!(event, packs::PackEvent::Stage(ref stage) if stage == "extract runtime") {
+                // Finish another install with identical component bytes between download
+                // and extraction, as two concurrently running pack installers can do.
+                packs::install(
+                    &ctx,
+                    &InstallRequest {
+                        name: "first".to_owned(),
+                        version: None,
+                        source: InstallSource::Directory(first.path().to_path_buf()),
+                    },
+                    &CancellationToken::new(),
+                    &mut |_| {},
+                )
+                .expect("install first pack");
+                installed_first = true;
+            }
+        },
+    )
+    .expect("another install must not consume this install's downloads");
+    assert!(installed_first);
+    assert_eq!(second_report.status, InstallStatus::Installed);
+    for name in ["first", "second"] {
+        assert!(
+            packs::verify(&ctx, name, None, &CancellationToken::new())
+                .unwrap()
+                .ok
+        );
+    }
+    assert_no_residue(data.path());
 }

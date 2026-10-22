@@ -12,6 +12,7 @@ mod index;
 mod install;
 pub mod manifest;
 mod signature;
+mod zstd;
 
 use std::{
     ffi::OsString,
