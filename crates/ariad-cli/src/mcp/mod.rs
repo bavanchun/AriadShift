@@ -12,7 +12,10 @@ use std::{
     time::Duration,
 };
 
-use ariad_host::confine::AllowedDirs;
+use ariad_host::{
+    confine::AllowedDirs,
+    session::{PoolConfig, SessionPool},
+};
 use clap::Args;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
@@ -133,6 +136,14 @@ impl ServerHandler for McpServer {
     }
 }
 
+/// Idle warm engine sessions survive this long between tool calls.
+const MCP_SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Closes the warm engine sessions on a blocking thread; closing waits for engines to exit.
+async fn shutdown_pool(pool: SessionPool) {
+    let _ = tokio::task::spawn_blocking(move || pool.shutdown()).await;
+}
+
 /// Runs the MCP stdio server.
 pub async fn run_mcp(args: McpArgs) -> ExitCode {
     // 1. Startup stale workspace sweep (older than 24h)
@@ -168,7 +179,12 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
         eof_serve_ct.cancel();
     });
 
+    let pool = SessionPool::new(PoolConfig {
+        idle_timeout: MCP_SESSION_IDLE_TIMEOUT,
+        ..PoolConfig::default()
+    });
     let server = McpServer {
+        pool: pool.clone(),
         allow_overwrite: args.allow_overwrite,
         allowed_dirs: Arc::new(RwLock::new(initial_allowed)),
         cli_allow_dirs: args.allow_dir,
@@ -215,6 +231,7 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
             {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
+            shutdown_pool(pool).await;
             ExitCode::from(130)
         }
         res = async {
@@ -232,6 +249,7 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
             {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
+            shutdown_pool(pool).await;
             match res {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(e) => {
