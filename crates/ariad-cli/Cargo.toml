@@ -34,6 +34,7 @@ assert_cmd.workspace = true
 hex.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
+minisign.workspace = true
 quick-xml.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
@@ -52,6 +53,11 @@ path = "src/main.rs"
 [[test]]
 name = "commands_cli"
 path = "tests/commands_cli.rs"
+required-features = ["ariad-host/test-probe"]
+
+[[test]]
+name = "packs_cli"
+path = "tests/packs_cli.rs"
 required-features = ["ariad-host/test-probe"]
 
 [[test]]

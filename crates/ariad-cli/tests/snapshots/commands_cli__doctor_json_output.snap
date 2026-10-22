@@ -24,6 +24,20 @@ expression: normalize_doctor_json_stdout(&output)
       "required": true,
       "message": "engine 'pandoc' passes describe round trip",
       "hint": ""
+    },
+    {
+      "id": "data_dir",
+      "ok": true,
+      "required": false,
+      "message": "engine pack directory is writable",
+      "hint": ""
+    },
+    {
+      "id": "pack_keys",
+      "ok": false,
+      "required": false,
+      "message": "no engine pack signing keys are built into this ashift",
+      "hint": "this build cannot install engine packs; use an official release build"
     }
   ],
   "stale_workspaces": 0

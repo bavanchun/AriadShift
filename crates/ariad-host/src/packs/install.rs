@@ -757,17 +757,19 @@ pub fn list_installed(context: &PackContext) -> Result<Vec<InstalledVersion>, Pa
     Ok(out)
 }
 
-/// Quick check without hashing: receipt, file presence and sizes, link targets.
+/// Quick check without hashing: receipt, file presence and sizes, link targets, and
+/// compatibility with this `ashift`. Problems are described without paths.
 pub fn check(context: &PackContext, name: &str, version: &str) -> PackHealth {
     let root = Layout::new(context).version_dir(name, version);
-    match read_receipt(&root, name) {
-        Ok(receipt) => match quick_check(&root, &receipt) {
-            Ok(()) => match Manifest::parse(&receipt.manifest).and_then(|m| m.check_ashift()) {
-                Ok(()) => PackHealth::Ok,
-                Err(error) => PackHealth::Problem(error.to_string()),
-            },
-            Err(problem) => PackHealth::Problem(problem),
-        },
+    let Ok(receipt) = read_receipt(&root, name) else {
+        return PackHealth::Problem("the install receipt is missing or invalid".to_owned());
+    };
+    if quick_check(&root, &receipt).is_err() {
+        return PackHealth::Problem("files are missing or modified".to_owned());
+    }
+    match Manifest::parse(&receipt.manifest).and_then(|manifest| manifest.check_ashift()) {
+        Ok(()) if context.targets.contains(&receipt.target) => PackHealth::Ok,
+        Ok(()) => PackHealth::Problem("the pack was built for another platform".to_owned()),
         Err(error) => PackHealth::Problem(error.to_string()),
     }
 }

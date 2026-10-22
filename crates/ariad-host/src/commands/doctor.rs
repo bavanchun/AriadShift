@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     convert::ConvertError,
+    packs::{self, PackContext, PackHealth},
     pandoc_bin::{self, PANDOC_SUPPORTED, PandocBinaryError},
     runner,
     workspace::Workspace,
@@ -31,6 +32,9 @@ pub struct DoctorReport {
     pub stale_workspaces: usize,
     #[serde(skip)]
     pub tool_path: Option<PathBuf>,
+    /// Engine pack data directory; printed by the human output only.
+    #[serde(skip)]
+    pub data_dir: Option<PathBuf>,
     #[serde(skip)]
     pub failure_error: Option<ConvertError>,
 }
@@ -268,12 +272,105 @@ pub fn doctor(
     };
     checks.push(describe_check);
 
+    // 4. Engine packs: data directory, trusted keys, installed packs. None are required.
+    let data_dir = pack_checks(&mut checks);
+
     Ok(DoctorReport {
         checks,
         stale_workspaces: stale_found,
         tool_path,
+        data_dir,
         failure_error,
     })
+}
+
+fn optional_check(id: String, ok: bool, message: String, hint: &str) -> DoctorCheck {
+    DoctorCheck {
+        id,
+        ok,
+        required: false,
+        message,
+        hint: if ok { String::new() } else { hint.to_owned() },
+    }
+}
+
+/// Adds the engine pack checks and returns the data directory when it is usable.
+fn pack_checks(checks: &mut Vec<DoctorCheck>) -> Option<PathBuf> {
+    let context = match PackContext::from_env() {
+        Ok(context) => context,
+        Err(_) => {
+            checks.push(optional_check(
+                "data_dir".to_owned(),
+                false,
+                "engine pack data directory could not be determined".to_owned(),
+                "set ASHIFT_DATA_DIR to a writable directory",
+            ));
+            return None;
+        }
+    };
+    let packs_dir = context.packs_dir();
+    let writable =
+        std::fs::create_dir_all(&packs_dir).is_ok() && tempfile::tempfile_in(&packs_dir).is_ok();
+    checks.push(optional_check(
+        "data_dir".to_owned(),
+        writable,
+        if writable {
+            "engine pack directory is writable".to_owned()
+        } else {
+            "engine pack directory is not writable".to_owned()
+        },
+        "set ASHIFT_DATA_DIR to a writable directory",
+    ));
+
+    let ids = context.keys.ids();
+    checks.push(optional_check(
+        "pack_keys".to_owned(),
+        !ids.is_empty(),
+        if ids.is_empty() {
+            "no engine pack signing keys are built into this ashift".to_owned()
+        } else {
+            format!("engine pack signing keys: {}", ids.join(", "))
+        },
+        "this build cannot install engine packs; use an official release build",
+    ));
+
+    for installed in packs::list_installed(&context).unwrap_or_default() {
+        let label = format!(
+            "engine pack {} {} ({})",
+            installed.name, installed.version, installed.target
+        );
+        let (ok, message) = match packs::check(&context, &installed.name, &installed.version) {
+            PackHealth::Ok if installed.active => {
+                (true, format!("{label} is installed and active"))
+            }
+            PackHealth::Ok => (true, format!("{label} is installed")),
+            PackHealth::Problem(problem) => (false, format!("{label}: {problem}")),
+        };
+        checks.push(optional_check(
+            format!("pack_{}", installed.name),
+            ok,
+            message,
+            &format!(
+                "run 'ashift engines verify {0}', or reinstall with 'ashift engines remove {0}' and 'ashift engines install {0}'",
+                installed.name
+            ),
+        ));
+    }
+    for name in packs::override_names() {
+        let variable = packs::override_var(&name);
+        let ok = matches!(packs::try_resolve(&name), Ok(Some(_)));
+        checks.push(optional_check(
+            format!("pack_{name}"),
+            ok,
+            if ok {
+                format!("engine pack {name} comes from the development override {variable}")
+            } else {
+                format!("the development override {variable} is unusable")
+            },
+            "point it at a directory holding pack.toml and the unpacked pack",
+        ));
+    }
+    writable.then_some(context.data_dir)
 }
 
 #[cfg(test)]

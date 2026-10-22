@@ -13,8 +13,20 @@ fn cli() -> Command {
     command
         .env("ASHIFT_PANDOC", pandoc_path())
         .env("SOURCE_DATE_EPOCH", "1700000000")
-        .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path());
+        .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path())
+        .env("ASHIFT_DATA_DIR", data_dir_path())
+        .env_remove("ASHIFT_TEST_PACK_KEYS");
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("ASHIFT_PACK_") {
+            command.env_remove(key);
+        }
+    }
     command
+}
+
+/// An engine pack data directory with no packs, so engine and doctor output is stable.
+fn data_dir_path() -> PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR")).join("commands-cli-data")
 }
 
 fn pandoc_path() -> PathBuf {
@@ -108,11 +120,15 @@ fn normalize_engines_json_stdout(output: &Output) -> String {
 fn normalize_doctor_human_stdout(output: &Output) -> String {
     let raw = normalize_stdout(output);
     let p_path = pandoc_path().display().to_string();
+    let data_path = data_dir_path().display().to_string();
     let mut lines = Vec::new();
     for line in raw.lines() {
         let mut line_str = line.to_string();
         if line_str.contains(&p_path) {
             line_str = line_str.replace(&p_path, "[PANDOC_PATH]");
+        }
+        if line_str.contains(&data_path) {
+            line_str = line_str.replace(&data_path, "[DATA_DIR]");
         }
         if line_str.contains("found in >=") {
             line_str = redact_pandoc_version_token(&line_str);
