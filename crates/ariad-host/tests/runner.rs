@@ -559,6 +559,33 @@ fn the_watchdog_counts_memory_of_the_engines_children() {
 }
 
 #[test]
+fn the_watchdog_runs_while_the_engine_is_not_reading_its_request() {
+    let workspace = Workspace::new().expect("create workspace");
+    let mut request = make_request(&workspace, Some(10));
+    if let Request::Convert {
+        limits, options, ..
+    } = &mut request
+    {
+        limits.max_memory_mb = Some(96);
+        options.insert(
+            "padding".to_owned(),
+            serde_json::json!("x".repeat(512 * 1024)),
+        );
+    }
+    let result = runner::run(
+        Path::new(env!("CARGO_BIN_EXE_engine-probe")),
+        &[OsString::from("hog"), OsString::from("512")],
+        &request,
+        CancellationToken::new(),
+        |_| {},
+    );
+    assert!(
+        matches!(result, Err(RunError::MemoryLimitExceeded { limit_mb: 96 })),
+        "request backpressure must not suspend the memory limit: {result:?}"
+    );
+}
+
+#[test]
 fn convert_reports_the_memory_limit_it_enforced() {
     let workspace = Workspace::new().expect("create workspace");
     let input_path = workspace.work_dir().join("input.md");

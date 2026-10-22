@@ -562,6 +562,10 @@ impl EngineProcess {
     where
         S: FnMut(Event),
     {
+        // Keep one watchdog alive across request delivery and event processing, including
+        // backpressure from an engine that has not started reading its request.
+        let memory_limit = wait_memory_limit(self.id(), job.memory_limit_mb);
+        tokio::pin!(memory_limit);
         let Some(stdin) = self.stdin.as_mut() else {
             return Err(RunError::Io(io::Error::other("engine stdin is closed")));
         };
@@ -577,20 +581,11 @@ impl EngineProcess {
             },
             _ = job.cancel.cancelled() => return Err(RunError::Cancelled),
             _ = wait_deadline(job.deadline) => return Err(RunError::Timeout),
+            limit_mb = &mut memory_limit => return Err(RunError::MemoryLimitExceeded { limit_mb }),
         }
         if mode == JobMode::OneShot {
             self.stdin = None;
         }
-
-        let mut watchdog = job
-            .memory_limit_mb
-            .zip(self.id())
-            .map(|(limit_mb, pid)| (limit_mb, MemoryWatchdog::new(pid, limit_mb)));
-        let mut sample = time::interval_at(
-            Instant::now() + watchdog::SAMPLE_INTERVAL,
-            watchdog::SAMPLE_INTERVAL,
-        );
-        sample.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         let mut result = None;
         let mut artifacts = Vec::new();
@@ -614,13 +609,7 @@ impl EngineProcess {
             tokio::select! {
                 _ = job.cancel.cancelled() => return Err(RunError::Cancelled),
                 _ = wait_deadline(job.deadline) => return Err(RunError::Timeout),
-                _ = sample.tick(), if watchdog.is_some() => {
-                    if let Some((limit_mb, watchdog)) = watchdog.as_mut()
-                        && watchdog.exceeded().is_some()
-                    {
-                        return Err(RunError::MemoryLimitExceeded { limit_mb: *limit_mb });
-                    }
-                }
+                limit_mb = &mut memory_limit => return Err(RunError::MemoryLimitExceeded { limit_mb }),
                 line = self.lines.next_line(), if !self.eof => {
                     match line {
                         Ok(Some(line)) => {
@@ -801,6 +790,24 @@ async fn wait_deadline(deadline: Option<Instant>) {
         time::sleep_until(deadline).await;
     } else {
         future::pending::<()>().await;
+    }
+}
+
+async fn wait_memory_limit(pid: Option<u32>, limit_mb: Option<u32>) -> u32 {
+    let Some((pid, limit_mb)) = pid.zip(limit_mb) else {
+        return future::pending().await;
+    };
+    let mut watchdog = MemoryWatchdog::new(pid, limit_mb);
+    let mut sample = time::interval_at(
+        Instant::now() + watchdog::SAMPLE_INTERVAL,
+        watchdog::SAMPLE_INTERVAL,
+    );
+    sample.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        sample.tick().await;
+        if watchdog.exceeded().is_some() {
+            return limit_mb;
+        }
     }
 }
 
