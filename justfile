@@ -159,6 +159,34 @@ ci: static clippy wasm test bench-test bench-check package-check web-ci
 pandoc:
     bash scripts/install-pandoc.sh
 
+# The docling engine's development environment, models and OCR data live here.
+docling_root := justfile_directory() / ".tools" / "docling"
+docling_python := docling_root / "python-env" / if os() == "windows" { "Scripts/python.exe" } else { "bin/python" }
+
+# Sync the docling engine environment and fetch its pinned models and OCR data (about 1.6 GiB).
+docling-dev:
+    UV_PROJECT_ENVIRONMENT="{{docling_root}}/python-env" uv sync --package ariad-docling --frozen
+    "{{docling_python}}" engines/docling/pack/fetch.py assets --dest "{{docling_root}}"
+
+# Lint and test the docling engine (needs `just docling-dev`, or only its uv sync for pytest).
+docling-test:
+    UV_PROJECT_ENVIRONMENT="{{docling_root}}/python-env" uv run --package ariad-docling --frozen ruff check engines/docling
+    UV_PROJECT_ENVIRONMENT="{{docling_root}}/python-env" uv run --package ariad-docling --frozen ruff format --check engines/docling
+    UV_PROJECT_ENVIRONMENT="{{docling_root}}/python-env" uv run --package ariad-docling --frozen pytest engines/docling/tests
+
+# Run the CLI tests that drive the real docling engine (needs `just docling-dev` and Tesseract).
+docling-engine-test:
+    ASHIFT_DOCLING_ENGINE='"{{docling_python}}" -I -m ariad_docling' cargo nextest run -p ariad-cli --features ariad-host/test-probe --run-ignored ignored-only --test-threads 2 -E 'binary(docling_engine)'
+
+# Build the unsigned docling engine pack for this host into target/pack-docling (needs uv).
+pack-docling out="target/pack-docling":
+    cargo build -p ariad-cli --bin ashift
+    uv run --no-project --python 3.14 python engines/docling/pack/build.py build --out "{{out}}" --ashift "{{justfile_directory()}}/target/debug/ashift{{ if os() == "windows" { ".exe" } else { "" } }}"
+
+# Convert a document with the pack that `just pack-docling` built, offline on Linux.
+pack-docling-verify out="target/pack-docling" input="fixtures/scan/vi-garden-300dpi.png" expect="Khu vườn đọc sách":
+    uv run --no-project --python 3.14 python engines/docling/pack/build.py verify --out "{{out}}" --input "{{input}}" --expect "{{expect}}" {{ if os() == "linux" { "--offline" } else { "" } }} --ashift "{{justfile_directory()}}/target/debug/ashift{{ if os() == "windows" { ".exe" } else { "" } }}"
+
 # Run fuzz targets on Linux (default: all targets, 60 s each)
 [linux]
 fuzz target="" seconds="60":
