@@ -131,3 +131,67 @@ fn html_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
         });
     }
 }
+
+#[test]
+fn docling_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
+    let root = support::repository_root()
+        .canonicalize()
+        .expect("canonicalize repository root");
+    let fixtures = support::fixtures::fixtures_for("docling->ir", "1b")
+        .expect("load DoclingDocument phase 1b fixtures");
+    assert!(
+        fixtures.len() >= 6,
+        "expected the six DoclingDocument fixtures, found {}",
+        fixtures.len()
+    );
+
+    let schema: Value = serde_json::from_str(
+        &fs::read_to_string(support::ir_schema_path()).expect("read generated IR schema"),
+    )
+    .expect("parse generated IR schema");
+    let validator = jsonschema::validator_for(&schema).expect("compile generated IR schema");
+
+    for fixture in &fixtures {
+        let bytes = fs::read(root.join(&fixture.path))
+            .unwrap_or_else(|error| panic!("read fixture {}: {error}", fixture.id));
+        let result = ariad_core::docling::read(&bytes, &Limits::local())
+            .unwrap_or_else(|error| panic!("map fixture {}: {error}", fixture.id));
+        let mut value = serde_json::to_value(&result.document).expect("serialize fixture IR");
+        let errors = validator
+            .iter_errors(&value)
+            .map(|error| error.to_string())
+            .collect::<Vec<_>>();
+        assert!(
+            errors.is_empty(),
+            "IR for fixture {} does not validate:\n{}",
+            fixture.id,
+            errors.join("\n")
+        );
+
+        // Embedded pictures are long base64 strings; the snapshot keeps their size instead.
+        if let Some(assets) = value.get_mut("assets").and_then(Value::as_object_mut) {
+            for (id, asset) in assets.iter_mut() {
+                let size = result.document.assets[id].bytes.len();
+                asset["bytes"] = Value::String(format!("<{size} bytes>"));
+            }
+        }
+        let warnings = result
+            .warnings
+            .iter()
+            .map(|warning| format!("{:?}: {}", warning.code, warning.message))
+            .collect::<Vec<_>>();
+
+        let snapshot_name = format!("{}.ir", fixture.id);
+        insta::with_settings!({
+            snapshot_path => "../../../fixtures/golden",
+            prepend_module_to_snapshot => false,
+            omit_expression => true,
+            snapshot_suffix => "",
+        }, {
+            insta::assert_json_snapshot!(
+                snapshot_name,
+                serde_json::json!({"document": value, "warnings": warnings})
+            );
+        });
+    }
+}

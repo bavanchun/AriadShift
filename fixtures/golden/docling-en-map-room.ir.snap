@@ -1,0 +1,301 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "document": {
+    "assets": {},
+    "body": [
+      {
+        "content": [
+          {
+            "text": "Notes from the Map Room",
+            "type": "text"
+          }
+        ],
+        "level": 2,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Visitors often arrive looking for one address and leave with a longer story. They discover a footbridge that no longer exists, a lane named after a vanished orchard, or a public stair hidden behind a market. The archive cannot answer every question, but it can show where to ask next.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "The repair café opens one Saturday each month in the old tram depot. Neighbors bring lamps, clocks, radios, and small appliances that have stopped working. Volunteers set out screwdrivers and labeled trays so every loose part has a safe place.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Archive note1",
+            "type": "text"
+          }
+        ],
+        "level": 2,
+        "type": "heading"
+      },
+      {
+        "body": [
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Archive item",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Recorded detail",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Street plan",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Survey date",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Overlay",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Transparent sheet",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Map weight",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Brass",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ]
+        ],
+        "caption": null,
+        "columns": [
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          }
+        ],
+        "footnotes": [
+          {
+            "text": "1The archive keeps older map editions beside later revisions.",
+            "type": "text"
+          }
+        ],
+        "head": [],
+        "type": "table"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "body/0": {
+          "bbox": {
+            "bottom": 77.167,
+            "left": 189.512,
+            "right": 405.764,
+            "top": 62.362
+          },
+          "page_no": 1
+        },
+        "body/1": {
+          "bbox": {
+            "bottom": 149.291,
+            "left": 62.362,
+            "right": 534.849,
+            "top": 109.746
+          },
+          "page_no": 1
+        },
+        "body/2": {
+          "bbox": {
+            "bottom": 200.045,
+            "left": 62.362,
+            "right": 532.913,
+            "top": 160.499
+          },
+          "page_no": 1
+        },
+        "body/3": {
+          "bbox": {
+            "bottom": 250.799,
+            "left": 62.362,
+            "right": 532.913,
+            "top": 211.254
+          },
+          "page_no": 1
+        },
+        "body/4": {
+          "bbox": {
+            "bottom": 301.553,
+            "left": 62.362,
+            "right": 534.849,
+            "top": 262.007
+          },
+          "page_no": 1
+        },
+        "body/5": {
+          "bbox": {
+            "bottom": 327.66,
+            "left": 62.362,
+            "right": 123.94,
+            "top": 318.431
+          },
+          "page_no": 1
+        },
+        "body/6": {
+          "bbox": {
+            "bottom": 416.303,
+            "left": 61.124,
+            "right": 533.315,
+            "top": 346.538
+          },
+          "page_no": 1
+        }
+      },
+      "pages": [
+        {
+          "height": 841.89,
+          "page_no": 1,
+          "width": 595.276
+        }
+      ]
+    },
+    "meta": {
+      "authors": [],
+      "date": null,
+      "keywords": [],
+      "language": null,
+      "source_format": "pdf",
+      "subject": null,
+      "title": null
+    },
+    "provenance": null,
+    "version": "ariad-ir/0"
+  },
+  "warnings": []
+}

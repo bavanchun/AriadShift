@@ -1,0 +1,296 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "document": {
+    "assets": {
+      "d2dfe6686f00310c69562d06414cf33bb665e3f68bb0ffb8fd3cea6f8c79dc04": {
+        "bytes": "<23073 bytes>",
+        "media_type": "image/png"
+      }
+    },
+    "body": [
+      {
+        "asset": {
+          "id": "d2dfe6686f00310c69562d06414cf33bb665e3f68bb0ffb8fd3cea6f8c79dc04",
+          "type": "asset"
+        },
+        "caption": [],
+        "type": "figure"
+      },
+      {
+        "content": [
+          {
+            "text": "Why GAO Did This Study",
+            "type": "text"
+          }
+        ],
+        "level": 2,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "In general, a fusion center is a collaborative effort to detect, prevent, investigate, and respond to criminal and terrorist activity. Recognizing that fusion centers are a mechanism for information sharing, the federal governmentincluding the Department of Homeland Security (DHS), the Department of Justice (DOJ), and the Program Manager for the Information Sharing Environment (PM-ISE), which has primary responsibility for governmentwide information sharing and is located in the Office of the Director of National Intelligence-is taking steps to partner with fusion centers.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "In response to your request, GAO examined (1) the status and characteristics of fusion centers and (2) to what extent federal efforts help alleviate challenges the centers identified. GAO reviewed center-related documents and conducted interviews with officials from DHS, DOJ, and the PM-ISE, and conducted semistructured interviews with 58 state and local fusion centers. The results are not generalizable to the universe of fusion centers. Data are not available on the total number of local fusion centers.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "What GAO Recommends",
+            "type": "text"
+          }
+        ],
+        "level": 2,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "GAO is recommending that the federal government determine and articulate its long-term fusion center role and whether it expects to provide resources to help ensure their sustainability. DHS and PMISE reviewed a report draft and agreed with our recommendation.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "To view the full product, including the scope and methodology, click on GAO-08-35. For more information, contact Eileen Larence at (202) 512-8777 or larencee@gao.gov.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "October 2007",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "HOMELAND SECURITY",
+            "type": "text"
+          }
+        ],
+        "level": 2,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "Federal Efforts Are Helping to Alleviate Some Challenges Encountered by State and Local Information Fusion Centers",
+            "type": "text"
+          }
+        ],
+        "level": 2,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "What GAO Found",
+            "type": "text"
+          }
+        ],
+        "level": 2,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "Most states and many local governments have established fusion centers to address gaps in information sharing. Fusion centers across the country vary in their stages of development-from operational to early in the planning stages. Officials in 43 of the centers GAO contacted described their centers as operational, and 34 of these centers had opened since January 2004. Law enforcement entities, such as state police or state bureaus of investigation, are the lead or managing agencies in the majority of the operational centers GAO contacted; however, the centers varied in their staff sizes and partnerships with other agencies. Nearly all of the operational fusion centers GAO contacted had federal personnel assigned to them. For example, DHS has assigned personnel to 17, and the FBI has assigned personnel to about three quarters of the operational centers GAO contacted.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "DHS and DOJ have several efforts under way that begin to address challenges fusion center officials identified. DHS and DOJ have provided many fusion centers access to their information systems, but fusion center officials cited challenges accessing and managing multiple information systems. Both DHS and the FBI have provided security clearances for state and local personnel and set timeliness goals. However, officials cited challenges obtaining and using security clearances. Officials in 43 of the 58 fusion centers contacted reported facing challenges related to obtaining personnel, and officials in 54 fusion centers reported challenges with funding, some of which affected these centers' sustainability. The officials said that these issues made it difficult to plan for the future and created concerns about the fusion centers' ability to sustain their capability for the long-term. To support fusion centers, both DHS and the FBI have assigned personnel to the centers. To help address funding issues, DHS has made several changes to address restrictions on the use of federal grants funds. These individual agency efforts help address some of the challenges with personnel and funding. However, the federal government has not clearly articulated the long-term role it expects to play in sustaining fusion centers. It is critical for center management to know whether to expect continued federal resources, such as personnel and grant funding, since the federal government, through the information sharing environment, expects to rely on a nationwide network of centers to facilitate information sharing with state and local governments. Finally, DHS, DOJ, and the PM-ISE have taken steps to develop guidance and provide technical assistance to fusion centers, for instance, by issuing guidelines for establishing and operating centers. However, officials at 31 of the 58 centers said they had challenges training their personnel, and officials at 11 centers expressed a need for the federal government to establish standards for training fusion center analysts to help ensure that analysts have similar skills. DHS and DOJ have initiated a technical assistance program for fusion centers. They have also developed a set of baseline capabilities, but the document was still in draft as of September and had not been issued.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      }
+    ],
+    "furniture": [
+      {
+        "content": [
+          {
+            "text": "United States Government Accountability Office",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "body/0": {
+          "bbox": {
+            "bottom": 132.23,
+            "left": 35.256,
+            "right": 209.82,
+            "top": 29.412
+          },
+          "page_no": 1
+        },
+        "body/1": {
+          "bbox": {
+            "bottom": 189.733,
+            "left": 43.996,
+            "right": 185.238,
+            "top": 178.619
+          },
+          "page_no": 1
+        },
+        "body/10": {
+          "bbox": {
+            "bottom": 189.733,
+            "left": 225.617,
+            "right": 325.126,
+            "top": 178.619
+          },
+          "page_no": 1
+        },
+        "body/11": {
+          "bbox": {
+            "bottom": 338.096,
+            "left": 226.799,
+            "right": 586.586,
+            "top": 196.957
+          },
+          "page_no": 1
+        },
+        "body/12": {
+          "bbox": {
+            "bottom": 722.53,
+            "left": 226.799,
+            "right": 585.579,
+            "top": 352.962
+          },
+          "page_no": 1
+        },
+        "body/2": {
+          "bbox": {
+            "bottom": 403.043,
+            "left": 45.36,
+            "right": 201.565,
+            "top": 196.327
+          },
+          "page_no": 1
+        },
+        "body/3": {
+          "bbox": {
+            "bottom": 590.062,
+            "left": 45.36,
+            "right": 199.781,
+            "top": 416.346
+          },
+          "page_no": 1
+        },
+        "body/4": {
+          "bbox": {
+            "bottom": 612.829,
+            "left": 46.067,
+            "right": 187.908,
+            "top": 601.729
+          },
+          "page_no": 1
+        },
+        "body/5": {
+          "bbox": {
+            "bottom": 708.983,
+            "left": 45.36,
+            "right": 200.033,
+            "top": 623.346
+          },
+          "page_no": 1
+        },
+        "body/6": {
+          "bbox": {
+            "bottom": 755.792,
+            "left": 45.359,
+            "right": 205.297,
+            "top": 721.47
+          },
+          "page_no": 1
+        },
+        "body/7": {
+          "bbox": {
+            "bottom": 39.513,
+            "left": 228.181,
+            "right": 278.835,
+            "top": 32.131
+          },
+          "page_no": 1
+        },
+        "body/8": {
+          "bbox": {
+            "bottom": 67.157,
+            "left": 226.8,
+            "right": 402.838,
+            "top": 52.338
+          },
+          "page_no": 1
+        },
+        "body/9": {
+          "bbox": {
+            "bottom": 121.515,
+            "left": 226.8,
+            "right": 528.596,
+            "top": 80.623
+          },
+          "page_no": 1
+        },
+        "furniture/0": {
+          "bbox": {
+            "bottom": 767.591,
+            "left": 405.765,
+            "right": 588.296,
+            "top": 760.181
+          },
+          "page_no": 1
+        }
+      },
+      "pages": [
+        {
+          "height": 792.0,
+          "page_no": 1,
+          "width": 612.0
+        }
+      ]
+    },
+    "meta": {
+      "authors": [],
+      "date": null,
+      "keywords": [],
+      "language": null,
+      "source_format": "pdf",
+      "subject": null,
+      "title": null
+    },
+    "provenance": null,
+    "version": "ariad-ir/0"
+  },
+  "warnings": []
+}
