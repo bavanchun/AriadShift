@@ -161,6 +161,9 @@ just fixtures
 `just pandoc` downloads Pandoc 3.12 and verifies its archive checksum. Run it
 before working on tasks that use Pandoc.
 
+`just test-server` runs the `ariad-server` database and S3 tests against
+throwaway PostgreSQL (with pgmq) and SeaweedFS containers; it needs Docker.
+
 Install JavaScript workspace dependencies with `just js`; then build the brand
 with `pnpm --dir brand build`. The root `package.json`,
 `pnpm-workspace.yaml`, and `pnpm-lock.yaml` own the JavaScript workspace
@@ -172,6 +175,7 @@ and the web app; `just web-browsers` and `just web-e2e` run its browser tests.
 - [CLI reference](docs/cli.md)
 - [MCP server reference](docs/mcp.md)
 - [Web app](docs/web.md)
+- [Cloud API reference](docs/api.md) and [cloud server operation](docs/server.md)
 - [System architecture](ARCHITECTURE.md)
 - [Security reporting](docs/SECURITY.md)
 - [Git workflow](docs/git-workflow.md)
