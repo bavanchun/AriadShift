@@ -49,6 +49,8 @@ The same tree is never built twice without a reason:
 
 The web job runs when a change touches `apps/`, `packages/`, `brand/`, `.node-version`, `crates/ariad-core/`, `crates/ariad-wasm/`, the root pnpm, Biome, Vitest, Cargo or toolchain files, the `justfile`, `ci.yml`, `ci-scope.sh` or `install-wasm-bindgen.sh`, and on manual runs and pushes without a known previous commit. Promotions follow the same tree rule as the other jobs.
 
+The web job downloads browser system libraries from Ubuntu's primary archive over HTTPS. Browser binaries come from the pinned Playwright release. Ubuntu's package signatures and the browser cache policy remain in effect.
+
 A newer push to the same pull request cancels its older run. Runs on `dev` and `main` are grouped by commit and are never cancelled.
 
 CodeQL is the one deliberate repeat: GitHub computes pull request alerts against the base branch's analysis, so `dev` and `main` are analysed on push too.
