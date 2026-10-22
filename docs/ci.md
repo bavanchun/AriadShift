@@ -22,7 +22,7 @@ GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, on
 
 ## The CI gate
 
-`ci.yml` has seven jobs:
+`ci.yml` has eight jobs:
 
 1. **Scope** (Linux, seconds) runs [`scripts/ci-scope.sh`](../scripts/ci-scope.sh). It picks the commit range to lint and decides whether the build, test and fuzz jobs must run, and separately whether the web job must run. The script also provides a `--classify` mode for table-driven offline testing.
 2. **Static checks** (Linux) run once for every event:
@@ -30,9 +30,10 @@ GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, on
    - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, the license check of production JavaScript dependencies (`js-licenses`), Biome (`web-lint`), release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), WinGet manifest generator test (`test-winget-manifest`), and scope classifier test (`test-ci-scope`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
 3. **Lint (windows-2025)** runs Clippy on Windows, for early feedback on Windows-only code.
 4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc, sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test`, `just bench-test`, `just bench-check`, and `just package-check`.
-5. **Fuzz** (Linux, `ubuntu-26.04`) runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `docling_to_ir`, `ir_json`, `limits_validate`), with cached corpus and crash artifact upload on failure or cancellation.
-6. **Web** (Linux, `ubuntu-26.04`) builds the wasm module, typechecks every JavaScript package, runs Vitest, builds the site (`just web-ci`) and runs Playwright on Chromium, Firefox and WebKit (`just web-e2e`), uploading traces on failure. See [web.md](web.md).
-7. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, jobs 3, 4 and 5 either passed or were skipped by the scope decision, and job 6 passed when the scope asked for it and was skipped otherwise.
+5. **Server integration** (Linux, `ubuntu-26.04`) runs the `ariad-server` tests against PostgreSQL 18 with pgmq (a service container) and SeaweedFS (started in a step, because service containers cannot take a command), with Pandoc installed and the `ashift` engine binary built. The database and S3 tests skip in the Verify job, where neither exists; `just test-server` runs the same suite locally in Docker.
+6. **Fuzz** (Linux, `ubuntu-26.04`) runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `docling_to_ir`, `ir_json`, `limits_validate`), with cached corpus and crash artifact upload on failure or cancellation.
+7. **Web** (Linux, `ubuntu-26.04`) builds the wasm module, typechecks every JavaScript package, runs Vitest, builds the site (`just web-ci`) and runs Playwright on Chromium, Firefox and WebKit (`just web-e2e`), uploading traces on failure. See [web.md](web.md).
+8. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, jobs 3 to 6 either passed or were skipped by the scope decision, and job 7 passed when the scope asked for it and was skipped otherwise.
 
 ### When the build, test and fuzz jobs are skipped
 
@@ -76,7 +77,8 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 | `just bench` | Run benchmark harness on fixture suite |
 | `just bench-check` | Validate capabilities.json against schema and invariants |
 | `just bench-test` | Run unit tests for benchmark harness |
-| `just package-check` | Verify crate packaging for crates.io publishing |
+| `just package-check` | Verify crate packaging for crates.io publishing (`ariad-server` is not published and is excluded) |
+| `just test-server` | The `ariad-server` database and S3 tests in throwaway Docker containers (`ariadshift-test-pg` on 127.0.0.1:55442, `ariadshift-test-s3` on 127.0.0.1:58342), removed afterwards |
 | `just static` | The OS-independent checks (requires `cargo-about 0.9.2`, `uv`, `python3`, and `pwsh` in CI) |
 | `just lint-commits` | Your commits since `origin/dev`; pass a range to check others, for example `just lint-commits main..dev` |
 | `just lint-workflows` | `actionlint` and `zizmor`. Set `GH_TOKEN` (for example `GH_TOKEN=$(gh auth token)`) to enable zizmor's online audits, which CI always runs |
