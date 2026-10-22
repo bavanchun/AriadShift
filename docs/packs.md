@@ -108,7 +108,7 @@ The data directory is `ASHIFT_DATA_DIR` when set, otherwise the platform's local
 ```text
 <data>/packs/
   .locks/<name>.lock         install and remove of one pack are exclusive
-  .staging/<name>-<id>/      extraction target; renamed into place on success
+  .staging/<name>.<id>/      extraction target; renamed into place on success
   .cache/<sha256>            verified downloads kept for a resumed install
   <name>/current             active version
   <name>/<version>/          install root

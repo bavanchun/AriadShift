@@ -843,3 +843,35 @@ fn generated_manifests_describe_archives_exactly() {
         Err(PackError::UnsafeArchive { .. })
     ));
 }
+
+#[test]
+fn sweeping_one_pack_leaves_other_packs_staging_alone() {
+    let key = Key::generate();
+    let source = support::temp();
+    PackBuilder::standard("sample", "1.0.0").write(source.path(), &key);
+    let data = support::temp();
+    let staging = data.path().join("packs/.staging");
+    let other = staging.join("sample-x.0123456789abcdef");
+    let own = staging.join("sample.0123456789abcdef");
+    fs::create_dir_all(&other).unwrap();
+    fs::create_dir_all(&own).unwrap();
+    packs::install(
+        &context(data.path(), key.trusted()),
+        &InstallRequest {
+            name: "sample".to_owned(),
+            version: None,
+            source: InstallSource::Directory(source.path().to_path_buf()),
+        },
+        &CancellationToken::new(),
+        &mut |_| {},
+    )
+    .unwrap();
+    assert!(
+        other.is_dir(),
+        "another pack's staging directory must survive"
+    );
+    assert!(
+        !own.exists(),
+        "this pack's stale staging directory is swept"
+    );
+}
