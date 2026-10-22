@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Engine packs"
-status: pending
+status: completed
 priority: P1
 effort: "16h"
 dependencies: []
@@ -149,3 +149,16 @@ pub fn try_resolve(name: &str) -> Result<Option<InstalledPack>, PackError>;
 - Completed extraction must match the signed entry count and unpacked byte count exactly, in addition to the streaming upper limits.
 - The TLS provider is selected explicitly. Certificate failures are permanent, carry the CA-bundle hint, and have a loopback HTTPS test for trusted and untrusted certificates.
 - A clean EOF below the declared component size is `size_mismatch` for both online and offline installs; transport errors remain retryable.
+
+
+## Verification
+
+Completed on 2026-10-23 in [PR #35](https://github.com/bavanchun/AriadShift/pull/35).
+
+- All 538 Linux Rust tests passed across scoped runs: 340 host/CLI and 198 core tests. This includes 35 pack/schema tests and trusted/untrusted loopback HTTPS. Five pre-existing HTML timing tests exceeded their limits during a heavily loaded parallel run; all passed in the final serial core run without changing the tests or thresholds.
+- Every local `just ci` component was verified: formatting, spelling, workflow checks, dependency policy, JS/Python lockfiles, release-workflow tests, licences, Clippy, WASM, Rust tests and doctests, 64 benchmark tests, benchmark schema and workspace packaging. Commit lint also passed.
+- [Implementation CI](https://github.com/bavanchun/AriadShift/actions/runs/39823796614) passed on ubuntu-26.04, macos-26 and windows-2025, including fuzzing. [CodeQL](https://github.com/bavanchun/AriadShift/actions/runs/39823796626) passed.
+- [Release rehearsal](https://github.com/bavanchun/AriadShift/actions/runs/39823796557) built all five release targets, including both musl architectures. A SHA-256-verified x86_64 musl release artifact was executed locally and completed HTTPS to GitHub, returning the expected 404 for the unpublished first pack.
+- [Independent review and resolution](../reports/code-review-261022-2347-engine-packs.md) records the completed Sonnet 5.5 review and repairs for every high/medium finding. A follow-up review attempt hit the review account's session limit; the repairs were checked directly and validated by tests and CI.
+
+The production trust key and first published pack remain release-phase work. The `InstalledPack` root, resolver and hidden manifest-authoring interfaces are stable for downstream integrations.
