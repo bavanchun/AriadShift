@@ -121,8 +121,12 @@ fn a_sandboxed_engine_keeps_its_install_root_and_workspace_but_nothing_else() {
     assert_eq!(probe.verdict("read_install_root"), "allowed");
     assert_eq!(probe.verdict("write_workspace"), "allowed");
 
-    if support.landlock_filesystem {
+    if support.gaps().is_empty() {
         assert_eq!(probe.outcome.sandbox, SandboxOutcome::Applied);
+    } else {
+        assert!(matches!(probe.outcome.sandbox, SandboxOutcome::Degraded(_)));
+    }
+    if support.landlock_filesystem {
         assert_eq!(probe.verdict("write_outside"), "denied");
         assert!(
             !probe.outside_file.exists(),
@@ -130,7 +134,6 @@ fn a_sandboxed_engine_keeps_its_install_root_and_workspace_but_nothing_else() {
         );
     } else {
         eprintln!("skipping filesystem denial: this kernel has no Landlock");
-        assert!(matches!(probe.outcome.sandbox, SandboxOutcome::Degraded(_)));
     }
 
     if support.landlock_network || support.seccomp {
