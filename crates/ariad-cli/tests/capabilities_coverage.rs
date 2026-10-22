@@ -27,8 +27,77 @@ fn every_executor_edge_appears_in_embedded_capabilities_and_vice_versa() {
     );
     assert_eq!(
         caps.edges.len(),
-        8,
-        "expected exactly 8 capability edges in initial bootstrap capabilities"
+        17,
+        "expected 8 core and Pandoc edges, 8 Docling extraction edges and the Docling mapper"
+    );
+}
+
+#[test]
+fn docling_inputs_plan_through_extraction_mapping_and_a_writer() {
+    let caps = planner::embedded();
+    let engines = [
+        String::from("ariad-core"),
+        String::from("pandoc"),
+        String::from("docling"),
+    ];
+    let inputs = [
+        DocumentFormat::Pdf,
+        DocumentFormat::Pptx,
+        DocumentFormat::Xlsx,
+        DocumentFormat::Png,
+        DocumentFormat::Jpeg,
+        DocumentFormat::Tiff,
+        DocumentFormat::Webp,
+    ];
+    let outputs = [
+        DocumentFormat::Markdown,
+        DocumentFormat::Html,
+        DocumentFormat::Docx,
+        DocumentFormat::Epub,
+    ];
+    for &from in &inputs {
+        for &to in &outputs {
+            let plan = planner::plan(
+                caps,
+                Format::from(from),
+                Format::from(to),
+                Profile::Editable,
+                &engines,
+            )
+            .expect("Docling inputs reach every writer");
+            assert_eq!(plan.steps.len(), 3, "{from:?} -> {to:?}");
+            assert_eq!(plan.steps[0].engine, "docling");
+            assert_eq!(plan.steps[1].from, Format::DoclingJson);
+            let route = route_from_plan(&plan).expect("three-step plans resolve to a route");
+            assert_eq!(route.input_format, from);
+            assert_eq!(route.output_format, to);
+            assert!(route.extract.is_some());
+        }
+    }
+
+    let plan = planner::plan(
+        caps,
+        Format::DoclingJson,
+        Format::Markdown,
+        Profile::Editable,
+        &engines[..1],
+    )
+    .expect("DoclingDocument JSON converts without any engine");
+    let route = route_from_plan(&plan).expect("mapper route");
+    assert_eq!(route.input_format, DocumentFormat::DoclingJson);
+    assert!(route.extract.is_none());
+
+    let docx = planner::plan(
+        caps,
+        Format::Docx,
+        Format::Markdown,
+        Profile::Editable,
+        &engines,
+    )
+    .expect("DOCX still converts");
+    assert_eq!(
+        docx.steps[0].engine, "pandoc",
+        "measured Pandoc edges win over the unmeasured Docling route"
     );
 }
 
@@ -79,6 +148,7 @@ fn reader_and_writer_edge_all_arrays_are_exhaustive() {
             ariad_host::convert::ReaderEdge::NativeHtml => {}
             ariad_host::convert::ReaderEdge::PandocDocx => {}
             ariad_host::convert::ReaderEdge::PandocEpub => {}
+            ariad_host::convert::ReaderEdge::DoclingJson => {}
         }
     }
     assert!(

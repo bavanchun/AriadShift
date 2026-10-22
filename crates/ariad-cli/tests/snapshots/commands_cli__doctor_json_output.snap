@@ -38,6 +38,13 @@ expression: normalize_doctor_json_stdout(&output)
       "required": false,
       "message": "no engine pack signing keys are built into this ashift",
       "hint": "this build cannot install engine packs; use an official release build"
+    },
+    {
+      "id": "docling_engine",
+      "ok": false,
+      "required": false,
+      "message": "docling engine is not installed; PDF, PPTX, XLSX and image routes need it",
+      "hint": "run 'ashift engines install docling', or set ASHIFT_DOCLING_ENGINE to a development engine"
     }
   ],
   "stale_workspaces": 0

@@ -57,19 +57,11 @@ fn reachable_from_targets(reachable: &[Format]) -> String {
     targets.join(", ")
 }
 
-fn check_route_engines(steps: &[PlanStep], pandoc_available: bool) -> (bool, Option<String>) {
+fn check_route_engines(steps: &[PlanStep], available: &[String]) -> (bool, Option<String>) {
     let missing = steps.iter().find_map(|step| {
-        if step.engine == crate::engines::IN_PROCESS_ENGINE {
-            None
-        } else if step.engine == "pandoc" {
-            if pandoc_available {
-                None
-            } else {
-                Some("pandoc".to_owned())
-            }
-        } else {
-            Some(step.engine.clone())
-        }
+        let ready =
+            step.engine == crate::engines::IN_PROCESS_ENGINE || available.contains(&step.engine);
+        (!ready).then(|| step.engine.clone())
     });
     (missing.is_none(), missing)
 }
@@ -200,24 +192,23 @@ pub fn plan(
 
     let summary = build_input_summary(path, input_format)?;
 
-    let pandoc_available = {
+    let available_engines: Vec<String> = {
         let default_exe = std::env::current_exe().ok();
         let ep = engine_program.or(default_exe.as_deref());
         if let Some(ep) = ep {
             match crate::engines::availability(ep, &[], cancel.clone()) {
-                Ok(report) => report
-                    .engines
-                    .iter()
-                    .any(|e| e.engine == "pandoc" && e.available),
+                Ok(report) => report.available_engine_ids(),
                 Err(crate::runner::RunError::Cancelled) => return Err(ConvertError::Interrupted),
-                Err(_) => false,
+                Err(_) => Vec::new(),
             }
+        } else if crate::pandoc_bin::locate_with_cancel(Some(&cancel)).is_ok() {
+            vec!["pandoc".to_owned()]
         } else {
-            crate::pandoc_bin::locate_with_cancel(Some(&cancel)).is_ok()
+            Vec::new()
         }
     };
 
-    let (runs_locally, missing_engine) = check_route_engines(&plan.steps, pandoc_available);
+    let (runs_locally, missing_engine) = check_route_engines(&plan.steps, &available_engines);
 
     let raw_name = path
         .file_name()
@@ -229,7 +220,7 @@ pub fn plan(
         .alternatives
         .into_iter()
         .map(|alt| {
-            let (alt_locally, alt_missing) = check_route_engines(&alt.steps, pandoc_available);
+            let (alt_locally, alt_missing) = check_route_engines(&alt.steps, &available_engines);
             PlanAlternative {
                 route: alt.steps,
                 score: alt.score,

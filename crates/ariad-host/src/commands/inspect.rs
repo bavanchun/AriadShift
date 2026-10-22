@@ -76,10 +76,14 @@ pub fn inspect(
     let reachable = reachable_from(format, caps);
 
     if format == Format::Pdf {
-        warnings.push(ConvertWarning {
-            code: "engine_missing".to_owned(),
-            message: "requires the docling engine (roadmap 1b)".to_owned(),
-        });
+        let docling_ready = crate::engines::docling::availability(cancel.clone())
+            .is_some_and(|docling| docling.available);
+        if !docling_ready {
+            warnings.push(ConvertWarning {
+                code: "engine_missing".to_owned(),
+                message: "requires the docling engine (roadmap 1b)".to_owned(),
+            });
+        }
         return Ok(InspectOutput {
             format,
             bytes: classification.bytes,
@@ -98,7 +102,10 @@ pub fn inspect(
         return Err(ConvertError::LimitExceeded);
     }
 
-    if format == Format::Docx || format == Format::Epub {
+    if matches!(
+        format,
+        Format::Docx | Format::Epub | Format::Pptx | Format::Xlsx
+    ) {
         crate::archive::preflight_archive(path, &limits)?;
     }
 
@@ -140,6 +147,17 @@ pub fn inspect(
             warnings.extend(res.warnings);
             res.document
         }
+        Format::DoclingJson => {
+            let res = crate::convert::read_docling_to_ir(
+                path,
+                None,
+                &limits,
+                cancel.clone(),
+                &mut |_| {},
+            )?;
+            warnings.extend(res.warnings);
+            res.document
+        }
         Format::Docx | Format::Epub => {
             let format_str = if format == Format::Docx {
                 "docx"
@@ -161,6 +179,19 @@ pub fn inspect(
             let archive_out = res?;
             warnings.extend(archive_out.warnings);
             archive_out.document
+        }
+        // Presentations, workbooks and images are only read through an engine; report what
+        // the file is and where it can go without converting it.
+        Format::Pptx | Format::Xlsx | Format::Png | Format::Jpeg | Format::Tiff | Format::Webp => {
+            return Ok(InspectOutput {
+                format,
+                bytes: classification.bytes,
+                page_count: None,
+                meta: None,
+                counts: None,
+                warnings,
+                reachable,
+            });
         }
         _ => {
             return Err(ConvertError::UnsupportedRoute {

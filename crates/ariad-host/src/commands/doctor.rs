@@ -6,8 +6,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
+use ariad_core::protocol::ToolAvailability;
+
 use crate::{
     convert::ConvertError,
+    engines::docling,
     packs::{self, PackContext, PackHealth},
     pandoc_bin::{self, PANDOC_SUPPORTED, PandocBinaryError},
     runner,
@@ -215,7 +218,7 @@ pub fn doctor(
         std::ffi::OsString::from("__engine"),
         std::ffi::OsString::from("pandoc"),
     ];
-    let describe_check = match runner::describe(engine_program, &default_args, cancel) {
+    let describe_check = match runner::describe(engine_program, &default_args, cancel.clone()) {
         Ok(ariad_core::protocol::Event::Capabilities {
             ref tool,
             ref engine,
@@ -299,6 +302,12 @@ pub fn doctor(
         ));
     }
     checks.push(sandbox_check);
+
+    // 5. The Docling engine and the Tesseract it runs. Neither is required.
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+    checks.extend(docling_checks(cancel));
 
     Ok(DoctorReport {
         checks,
@@ -477,6 +486,79 @@ fn sandbox_check() -> (DoctorCheck, DoctorSandbox) {
             support,
         },
     )
+}
+
+/// Optional checks for the Docling engine and the Tesseract it runs for Vietnamese OCR.
+fn docling_checks(cancel: CancellationToken) -> Vec<DoctorCheck> {
+    let Some(command) = docling::resolve() else {
+        return vec![DoctorCheck {
+            id: "docling_engine".to_owned(),
+            ok: false,
+            required: false,
+            message: "docling engine is not installed; PDF, PPTX, XLSX and image routes need it"
+                .to_owned(),
+            hint: format!(
+                "run 'ashift engines install docling', or set {} to a development engine",
+                docling::OVERRIDE_ENV
+            ),
+        }];
+    };
+    match docling::describe(&command, cancel) {
+        Ok(description) => {
+            let models = if description.models.is_empty() {
+                "no models found".to_owned()
+            } else {
+                format!("models: {}", description.models.join(", "))
+            };
+            let tesseract = &description.tesseract;
+            let tesseract_check = match tesseract.status {
+                ToolAvailability::Found => DoctorCheck {
+                    id: "tesseract".to_owned(),
+                    ok: true,
+                    required: false,
+                    message: format!(
+                        "Tesseract {} found for Vietnamese OCR",
+                        tesseract.version.as_deref().unwrap_or("5")
+                    ),
+                    hint: String::new(),
+                },
+                status => DoctorCheck {
+                    id: "tesseract".to_owned(),
+                    ok: false,
+                    required: false,
+                    message: if status == ToolAvailability::WrongVersion {
+                        "Tesseract is older than 5; Vietnamese OCR is unavailable".to_owned()
+                    } else {
+                        "Tesseract was not found; Vietnamese OCR is unavailable".to_owned()
+                    },
+                    hint: "install Tesseract 5 from your package manager (apt install tesseract-ocr, brew install tesseract) or the UB Mannheim installer on Windows, and put it on PATH".to_owned(),
+                },
+            };
+            vec![
+                DoctorCheck {
+                    id: "docling_engine".to_owned(),
+                    ok: true,
+                    required: false,
+                    message: format!(
+                        "docling engine (Docling {}) passes describe round trip; {models}",
+                        description.version
+                    ),
+                    hint: String::new(),
+                },
+                tesseract_check,
+            ]
+        }
+        Err(reason) => vec![DoctorCheck {
+            id: "docling_engine".to_owned(),
+            ok: false,
+            required: false,
+            message: format!("docling engine describe round trip failed: {reason}"),
+            hint: format!(
+                "run 'ashift engines verify docling', reinstall the pack, or check {}",
+                docling::OVERRIDE_ENV
+            ),
+        }],
+    }
 }
 
 #[cfg(test)]

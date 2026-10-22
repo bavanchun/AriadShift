@@ -15,6 +15,8 @@ fn cli() -> Command {
         .env("SOURCE_DATE_EPOCH", "1700000000")
         .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path())
         .env("ASHIFT_DATA_DIR", data_dir_path())
+        // Snapshots describe a machine without the optional Docling engine.
+        .env_remove("ASHIFT_DOCLING_ENGINE")
         .env_remove("ASHIFT_TEST_PACK_KEYS");
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("ASHIFT_PACK_") {

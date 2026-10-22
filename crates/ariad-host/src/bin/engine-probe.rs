@@ -435,6 +435,88 @@ fn emit_together(events: &[&Event]) {
     stdout.flush().unwrap();
 }
 
+/// Stands in for the Docling engine: `describe` reports a ready engine, and `convert` copies
+/// the DoclingDocument JSON fixture named on the command line into the output directory, or
+/// reports a missing tool when the fixture is `-`.
+fn docling(fixture: Option<String>) -> ExitCode {
+    let mut line = Vec::new();
+    if BufReader::new(io::stdin().lock())
+        .read_until(b'\n', &mut line)
+        .is_err()
+    {
+        return ExitCode::from(1);
+    }
+    let Ok(request) = serde_json::from_slice::<Request>(&line) else {
+        return ExitCode::from(1);
+    };
+    match request {
+        Request::Describe { .. } => {
+            emit(&Event::Capabilities {
+                engine: "docling".to_owned(),
+                version: "2.142.0".to_owned(),
+                tool: ariad_core::protocol::ToolStatus {
+                    name: "tesseract".to_owned(),
+                    version: Some("5.5.3".to_owned()),
+                    status: ariad_core::protocol::ToolAvailability::Found,
+                },
+                license: "MIT".to_owned(),
+                routes: vec![],
+                enforces_memory_limit: true,
+                supports_session: false,
+                models: Some(vec!["docling-layout-heron".to_owned()]),
+            });
+            emit(&ok_result());
+        }
+        Request::Convert { output, .. } => {
+            let Some(fixture) = fixture.filter(|fixture| fixture != "-") else {
+                emit(&Event::Result {
+                    ok: false,
+                    metrics: None,
+                    error: Some(EngineError {
+                        code: ErrorCode::ToolMissing,
+                        message: "OCR is required but Tesseract 5 was not found on PATH".to_owned(),
+                    }),
+                });
+                return ExitCode::SUCCESS;
+            };
+            emit(&Event::Progress {
+                stage: "convert".to_owned(),
+                done: Some(1),
+                total: Some(1),
+            });
+            emit(&Event::Warning {
+                code: "ocr_fallback".to_owned(),
+                message: "OCR was skipped because Tesseract 5 was not found on PATH".to_owned(),
+            });
+            let target = std::path::Path::new(&output.dir).join("document.docling.json");
+            // `symlink:<path>` publishes a link to the fixture instead of a copy.
+            let placed = match fixture.strip_prefix("symlink:") {
+                Some(source) => link(source, &target),
+                None => fs::copy(&fixture, &target).is_ok(),
+            };
+            if !placed {
+                return ExitCode::from(1);
+            }
+            emit(&Event::Artifact {
+                path: target.to_string_lossy().into_owned(),
+                format: "docling+json".to_owned(),
+            });
+            emit(&ok_result());
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+#[cfg(unix)]
+fn link(source: &str, target: &std::path::Path) -> bool {
+    std::os::unix::fs::symlink(source, target).is_ok()
+}
+
+#[cfg(not(unix))]
+fn link(_source: &str, _target: &std::path::Path) -> bool {
+    false
+}
+
 fn echo_request() -> ExitCode {
     let mut line = Vec::new();
     if BufReader::new(io::stdin().lock())

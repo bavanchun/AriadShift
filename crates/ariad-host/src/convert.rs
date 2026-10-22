@@ -9,6 +9,7 @@ use std::{
 
 pub use ariad_core::planner::Profile;
 use ariad_core::{
+    docling,
     format::Format,
     limits::Limits,
     planner::{self, Plan, PlanError},
@@ -58,6 +59,8 @@ pub enum ReaderEdge {
     NativeHtml,
     PandocDocx,
     PandocEpub,
+    /// The in-process DoclingDocument JSON mapper.
+    DoclingJson,
 }
 
 impl ReaderEdge {
@@ -67,6 +70,7 @@ impl ReaderEdge {
         Self::NativeHtml,
         Self::PandocDocx,
         Self::PandocEpub,
+        Self::DoclingJson,
     ];
 
     /// The format transformation and engine capability represented by this edge.
@@ -85,10 +89,67 @@ impl ReaderEdge {
             ),
             Self::PandocDocx => (Format::Docx, Format::AriadIrJson, "pandoc"),
             Self::PandocEpub => (Format::Epub, Format::AriadIrJson, "pandoc"),
+            Self::DoclingJson => (
+                Format::DoclingJson,
+                Format::AriadIrJson,
+                engines::IN_PROCESS_ENGINE,
+            ),
         }
     }
 
     /// Finds the reader edge corresponding to a specific format pair and engine.
+    #[must_use]
+    pub fn for_capability(from: Format, to: Format, engine: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|e| {
+            let (f, t, eng) = e.capability();
+            f == from && t == to && eng == engine
+        })
+    }
+}
+
+/// An out-of-process step that turns an input into DoclingDocument JSON before it is read.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExtractEdge {
+    DoclingPdf,
+    DoclingDocx,
+    DoclingPptx,
+    DoclingXlsx,
+    DoclingPng,
+    DoclingJpeg,
+    DoclingTiff,
+    DoclingWebp,
+}
+
+impl ExtractEdge {
+    /// All extraction edges supported by the host executor.
+    pub const ALL: &'static [Self] = &[
+        Self::DoclingPdf,
+        Self::DoclingDocx,
+        Self::DoclingPptx,
+        Self::DoclingXlsx,
+        Self::DoclingPng,
+        Self::DoclingJpeg,
+        Self::DoclingTiff,
+        Self::DoclingWebp,
+    ];
+
+    /// The format transformation and engine capability represented by this edge.
+    #[must_use]
+    pub const fn capability(self) -> (Format, Format, &'static str) {
+        let from = match self {
+            Self::DoclingPdf => Format::Pdf,
+            Self::DoclingDocx => Format::Docx,
+            Self::DoclingPptx => Format::Pptx,
+            Self::DoclingXlsx => Format::Xlsx,
+            Self::DoclingPng => Format::Png,
+            Self::DoclingJpeg => Format::Jpeg,
+            Self::DoclingTiff => Format::Tiff,
+            Self::DoclingWebp => Format::Webp,
+        };
+        (from, Format::DoclingJson, engines::docling::ENGINE_ID)
+    }
+
+    /// Finds the extraction edge corresponding to a specific format pair and engine.
     #[must_use]
     pub fn for_capability(from: Format, to: Format, engine: &str) -> Option<Self> {
         Self::ALL.iter().copied().find(|e| {
@@ -148,6 +209,8 @@ impl WriterEdge {
 pub struct Route {
     pub input_format: DocumentFormat,
     pub output_format: DocumentFormat,
+    /// An engine step that runs before the reader, such as Docling extracting a PDF.
+    pub extract: Option<ExtractEdge>,
     pub reader: ReaderEdge,
     pub writer: WriterEdge,
 }
@@ -156,20 +219,16 @@ impl Route {
     /// Returns the sequence of planner steps corresponding to this route.
     #[must_use]
     pub fn steps(&self) -> Vec<ariad_core::planner::PlanStep> {
-        let (r_from, r_to, r_eng) = self.reader.capability();
-        let (w_from, w_to, w_eng) = self.writer.capability();
-        vec![
-            ariad_core::planner::PlanStep {
-                from: r_from,
-                to: r_to,
-                engine: r_eng.to_owned(),
-            },
-            ariad_core::planner::PlanStep {
-                from: w_from,
-                to: w_to,
-                engine: w_eng.to_owned(),
-            },
-        ]
+        self.extract
+            .map(ExtractEdge::capability)
+            .into_iter()
+            .chain([self.reader.capability(), self.writer.capability()])
+            .map(|(from, to, engine)| ariad_core::planner::PlanStep {
+                from,
+                to,
+                engine: engine.to_owned(),
+            })
+            .collect()
     }
 }
 
@@ -190,36 +249,39 @@ pub enum DocumentFormat {
     Html,
     Docx,
     Epub,
+    Pdf,
+    Pptx,
+    Xlsx,
+    Png,
+    Jpeg,
+    Tiff,
+    Webp,
+    /// DoclingDocument JSON, recognised by content rather than by extension.
+    DoclingJson,
 }
 
 impl DocumentFormat {
     #[must_use]
     pub fn from_extension(ext: &str) -> Option<Self> {
-        if ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown") {
-            Some(Self::Markdown)
-        } else if ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm") {
-            Some(Self::Html)
-        } else if ext.eq_ignore_ascii_case("docx") {
-            Some(Self::Docx)
-        } else if ext.eq_ignore_ascii_case("epub") {
-            Some(Self::Epub)
-        } else {
-            None
-        }
+        Format::from_extension(ext).and_then(|format| Self::try_from(format).ok())
     }
 
+    /// Parses a target format; only formats that a writer edge produces are targets.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
-        Self::from_extension(s)
+        Self::from_extension(s).filter(|format| {
+            WriterEdge::ALL
+                .iter()
+                .any(|edge| edge.capability().1 == Format::from(*format))
+        })
     }
 
     #[must_use]
     pub const fn default_extension(self) -> &'static str {
         match self {
-            Self::Markdown => "md",
-            Self::Html => "html",
-            Self::Docx => "docx",
-            Self::Epub => "epub",
+            Self::Jpeg => "jpg",
+            Self::DoclingJson => "json",
+            other => other.as_str(),
         }
     }
 
@@ -230,6 +292,14 @@ impl DocumentFormat {
             Self::Html => "html",
             Self::Docx => "docx",
             Self::Epub => "epub",
+            Self::Pdf => "pdf",
+            Self::Pptx => "pptx",
+            Self::Xlsx => "xlsx",
+            Self::Png => "png",
+            Self::Jpeg => "jpeg",
+            Self::Tiff => "tiff",
+            Self::Webp => "webp",
+            Self::DoclingJson => "docling+json",
         }
     }
 }
@@ -241,6 +311,14 @@ impl From<DocumentFormat> for Format {
             DocumentFormat::Html => Self::Html,
             DocumentFormat::Docx => Self::Docx,
             DocumentFormat::Epub => Self::Epub,
+            DocumentFormat::Pdf => Self::Pdf,
+            DocumentFormat::Pptx => Self::Pptx,
+            DocumentFormat::Xlsx => Self::Xlsx,
+            DocumentFormat::Png => Self::Png,
+            DocumentFormat::Jpeg => Self::Jpeg,
+            DocumentFormat::Tiff => Self::Tiff,
+            DocumentFormat::Webp => Self::Webp,
+            DocumentFormat::DoclingJson => Self::DoclingJson,
         }
     }
 }
@@ -254,24 +332,40 @@ impl TryFrom<Format> for DocumentFormat {
             Format::Html => Ok(Self::Html),
             Format::Docx => Ok(Self::Docx),
             Format::Epub => Ok(Self::Epub),
-            _ => Err(()),
+            Format::Pdf => Ok(Self::Pdf),
+            Format::Pptx => Ok(Self::Pptx),
+            Format::Xlsx => Ok(Self::Xlsx),
+            Format::Png => Ok(Self::Png),
+            Format::Jpeg => Ok(Self::Jpeg),
+            Format::Tiff => Ok(Self::Tiff),
+            Format::Webp => Ok(Self::Webp),
+            Format::DoclingJson => Ok(Self::DoclingJson),
+            Format::AriadIrJson | Format::PandocJson => Err(()),
         }
     }
 }
 
+/// Turns a plan into an executable route: an optional extraction step, a reader and a writer.
 #[must_use]
 pub fn route_from_plan(plan: &Plan) -> Option<Route> {
-    if plan.steps.len() != 2 {
-        return None;
-    }
-    let reader_step = &plan.steps[0];
-    let writer_step = &plan.steps[1];
+    let (extract, reader_step, writer_step) = match plan.steps.as_slice() {
+        [reader, writer] => (None, reader, writer),
+        [extract, reader, writer] => {
+            let edge = ExtractEdge::for_capability(extract.from, extract.to, &extract.engine)?;
+            if extract.to != reader.from {
+                return None;
+            }
+            (Some(edge), reader, writer)
+        }
+        _ => return None,
+    };
 
     if reader_step.to != Format::AriadIrJson || writer_step.from != Format::AriadIrJson {
         return None;
     }
 
-    let input_format = DocumentFormat::try_from(reader_step.from).ok()?;
+    let source = extract.map_or(reader_step.from, |edge| edge.capability().0);
+    let input_format = DocumentFormat::try_from(source).ok()?;
     let output_format = DocumentFormat::try_from(writer_step.to).ok()?;
 
     let reader = ReaderEdge::for_capability(reader_step.from, reader_step.to, &reader_step.engine)?;
@@ -280,6 +374,7 @@ pub fn route_from_plan(plan: &Plan) -> Option<Route> {
     Some(Route {
         input_format,
         output_format,
+        extract,
         reader,
         writer,
     })
@@ -288,7 +383,11 @@ pub fn route_from_plan(plan: &Plan) -> Option<Route> {
 /// Returns the capability edges supported by the host executor.
 #[must_use]
 pub fn executor_edges() -> Vec<(Format, Format, &'static str)> {
-    let mut edges = Vec::with_capacity(ReaderEdge::ALL.len() + WriterEdge::ALL.len());
+    let mut edges =
+        Vec::with_capacity(ExtractEdge::ALL.len() + ReaderEdge::ALL.len() + WriterEdge::ALL.len());
+    for e in ExtractEdge::ALL {
+        edges.push(e.capability());
+    }
     for r in ReaderEdge::ALL {
         edges.push(r.capability());
     }
@@ -426,6 +525,10 @@ pub enum ConvertError {
     ToolMissing,
     /// Required sandbox mode could not isolate the engine.
     SandboxUnavailable(String),
+    /// No Docling engine is installed or configured.
+    DoclingMissing,
+    /// The Docling engine lacks Tesseract or its models for this document.
+    DoclingToolMissing,
     DestinationExists,
     Interrupted,
     UnsupportedIrVersion,
@@ -459,6 +562,15 @@ impl std::fmt::Display for ConvertError {
             Self::ToolMissing => write!(
                 f,
                 "Pandoc is missing or unsupported. Run `just pandoc` or set ASHIFT_PANDOC."
+            ),
+            Self::DoclingMissing => write!(
+                f,
+                "the docling engine is not installed; run `ashift engines install docling` or set {} for a development engine",
+                engines::docling::OVERRIDE_ENV
+            ),
+            Self::DoclingToolMissing => write!(
+                f,
+                "the docling engine is missing Tesseract 5 or its models for this document; run `ashift doctor` for details"
             ),
             Self::DestinationExists => {
                 write!(
@@ -498,7 +610,7 @@ impl ConvertError {
             Self::DestinationSameAsInput => 2,
             Self::UnsupportedRoute { .. } => 3,
             Self::LimitExceeded | Self::MemoryLimitExceeded { .. } => 4,
-            Self::ToolMissing | Self::SandboxUnavailable(_) => 5,
+            Self::ToolMissing | Self::DoclingMissing | Self::DoclingToolMissing | Self::SandboxUnavailable(_) => 5,
             Self::DestinationExists => 6,
             Self::Interrupted => 130,
             Self::InputIo
@@ -516,7 +628,7 @@ impl ConvertError {
             Self::DestinationSameAsInput => "destination_same_as_input",
             Self::UnsupportedRoute { .. } => "unsupported_route",
             Self::LimitExceeded | Self::MemoryLimitExceeded { .. } => "limit_exceeded",
-            Self::ToolMissing => "tool_missing",
+            Self::ToolMissing | Self::DoclingMissing | Self::DoclingToolMissing => "tool_missing",
             Self::SandboxUnavailable(_) => "sandbox_unavailable",
             Self::DestinationExists => "destination_exists",
             Self::Interrupted => "interrupted",
@@ -533,7 +645,8 @@ pub fn reachable_targets_detail(from_str: &str, reachable: &[Format]) -> String 
     let mut sorted_targets: Vec<&'static str> = reachable
         .iter()
         .copied()
-        .filter(|&f| f != Format::AriadIrJson)
+        // IR and DoclingDocument JSON are intermediate formats, not conversion targets.
+        .filter(|&f| f != Format::AriadIrJson && f != Format::DoclingJson)
         .map(|f| DocumentFormat::try_from(f).map_or(f.id(), DocumentFormat::as_str))
         .collect();
     sorted_targets.sort_unstable();
@@ -728,7 +841,11 @@ pub fn classify_file(path: &Path) -> Result<FileClassification, std::io::Error> 
     let final_fmt = ariad_core::format::classify(prefix, entry_refs.as_deref(), ext);
 
     let ext_fmt = ext.and_then(Format::from_extension);
+    // DoclingDocument JSON files are plain `.json` files, which the registry reads as IR JSON.
     let extension_mismatch = match (content_fmt, ext) {
+        (Some(Format::DoclingJson), Some(_)) => {
+            !matches!(ext_fmt, Some(Format::DoclingJson | Format::AriadIrJson))
+        }
         (Some(cf), Some(_)) => ext_fmt != Some(cf),
         _ => false,
     };
@@ -989,6 +1106,17 @@ where
             warnings.extend(archive_out.warnings);
             (archive_out.document, None)
         }
+        ReaderEdge::DoclingJson => {
+            let res = read_docling_to_ir(
+                &request.input,
+                route.extract,
+                &limits,
+                cancel.clone(),
+                &mut on_event,
+            )?;
+            warnings.extend(res.warnings);
+            (res.document, None)
+        }
     };
 
     // Step 2: Asset resolution for md and html input
@@ -1112,7 +1240,7 @@ impl WriteFromIrRequest {
 pub fn convert_to_ir<F>(
     request: &ConvertToIrRequest,
     cancel: CancellationToken,
-    _on_event: F,
+    mut on_event: F,
 ) -> Result<ConvertReport, ConvertError>
 where
     F: FnMut(ConvertEvent),
@@ -1172,28 +1300,44 @@ where
         });
     }
 
-    let reader = ReaderEdge::ALL
-        .iter()
-        .copied()
-        .find(|e| {
-            let (from, to, _) = e.capability();
-            from == Format::from(input_format) && to == Format::AriadIrJson
-        })
-        .ok_or_else(|| ConvertError::UnsupportedRoute {
-            detail: Some(format!(
-                "no reachable targets from {}",
-                input_format.as_str()
-            )),
-        })?;
-
-    let (_, _, engine) = reader.capability();
-    let engine_args = [OsString::from("__engine"), OsString::from(engine)];
-    if engine != engines::IN_PROCESS_ENGINE {
-        let avail = engines::availability(&request.engine_program, &engine_args, cancel.clone())
-            .map_err(map_run_error)?;
-        if !avail.is_available(engine) {
-            return Err(ConvertError::ToolMissing);
+    let source = Format::from(input_format);
+    let direct = ReaderEdge::ALL.iter().copied().find(|e| {
+        let (from, to, _) = e.capability();
+        from == source && to == Format::AriadIrJson
+    });
+    let (extract, reader) = match direct {
+        Some(reader) => (None, reader),
+        None => {
+            let extract = ExtractEdge::ALL
+                .iter()
+                .copied()
+                .find(|e| e.capability().0 == source)
+                .ok_or_else(|| ConvertError::UnsupportedRoute {
+                    detail: Some(format!(
+                        "no reachable targets from {}",
+                        input_format.as_str()
+                    )),
+                })?;
+            (Some(extract), ReaderEdge::DoclingJson)
         }
+    };
+
+    let (_, _, engine) = extract.map_or(reader.capability(), ExtractEdge::capability);
+    let engine_args = [OsString::from("__engine"), OsString::from(engine)];
+    if engine != engines::IN_PROCESS_ENGINE
+        && !engines::is_engine_available(
+            engine,
+            &request.engine_program,
+            &engine_args,
+            cancel.clone(),
+        )
+        .map_err(map_run_error)?
+    {
+        return Err(if extract.is_some() {
+            ConvertError::DoclingMissing
+        } else {
+            ConvertError::ToolMissing
+        });
     }
 
     let (mut document, asset_base_dir) = match reader {
@@ -1228,6 +1372,17 @@ where
             let archive_out = res?;
             warnings.extend(archive_out.warnings);
             (archive_out.document, None)
+        }
+        ReaderEdge::DoclingJson => {
+            let res = read_docling_to_ir(
+                &request.input,
+                extract,
+                &limits,
+                cancel.clone(),
+                &mut on_event,
+            )?;
+            warnings.extend(res.warnings);
+            (res.document, None)
         }
     };
 
@@ -1269,18 +1424,19 @@ where
         });
     }
 
+    let route = extract
+        .map(ExtractEdge::capability)
+        .into_iter()
+        .chain([reader.capability()])
+        .map(|(from, to, engine)| ariad_core::planner::PlanStep {
+            from,
+            to,
+            engine: engine.to_owned(),
+        })
+        .collect();
     Ok(ConvertReport {
         output: request.output.clone(),
-        route: vec![ariad_core::planner::PlanStep {
-            from: Format::from(input_format),
-            to: Format::AriadIrJson,
-            engine: match reader {
-                ReaderEdge::NativeMarkdown | ReaderEdge::NativeHtml => {
-                    engines::IN_PROCESS_ENGINE.to_owned()
-                }
-                ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => "pandoc".to_owned(),
-            },
-        }],
+        route,
         warnings,
         elapsed: started.elapsed(),
         output_bytes,
@@ -1550,18 +1706,28 @@ where
     let plan = if is_pure_core {
         initial_plan
     } else {
-        let avail = engines::availability(&request.engine_program, engine_args, cancel.clone())
-            .map_err(map_run_error)?;
-        let available_engine_ids = avail.available_engine_ids();
-
-        let all_needed_available = initial_plan
-            .steps
-            .iter()
-            .all(|s| available_engine_ids.contains(&s.engine));
+        // Ask only the engines this plan uses; query every engine only to find another route.
+        let mut all_needed_available = true;
+        for step in &initial_plan.steps {
+            if !engines::is_engine_available(
+                &step.engine,
+                &request.engine_program,
+                engine_args,
+                cancel.clone(),
+            )
+            .map_err(map_run_error)?
+            {
+                all_needed_available = false;
+                break;
+            }
+        }
 
         if all_needed_available {
             initial_plan
         } else {
+            let avail = engines::availability(&request.engine_program, engine_args, cancel.clone())
+                .map_err(map_run_error)?;
+            let available_engine_ids = avail.available_engine_ids();
             match planner::plan(
                 caps,
                 from_fmt,
@@ -1571,6 +1737,13 @@ where
             ) {
                 Ok(p) => p,
                 Err(PlanError::NoRoute { .. }) => {
+                    let needs_docling = initial_plan
+                        .steps
+                        .iter()
+                        .any(|s| s.engine == engines::docling::ENGINE_ID);
+                    if needs_docling && !avail.is_available(engines::docling::ENGINE_ID) {
+                        return Err(ConvertError::DoclingMissing);
+                    }
                     return Err(ConvertError::ToolMissing);
                 }
                 Err(PlanError::InvalidCapabilities(err)) => {
@@ -1830,9 +2003,9 @@ pub fn copy_and_preflight_input(
     dest.flush().map_err(|_| ConvertError::Failed)?;
     drop(dest);
 
-    let is_archive = input_format.eq_ignore_ascii_case("docx")
-        || input_format.eq_ignore_ascii_case("epub")
-        || input_format.eq_ignore_ascii_case("zip");
+    let is_archive = ["docx", "epub", "pptx", "xlsx", "zip"]
+        .iter()
+        .any(|archive| input_format.eq_ignore_ascii_case(archive));
 
     if is_archive {
         archive::preflight_archive(&dest_path, limits).map_err(|err| {
@@ -1955,6 +2128,145 @@ fn push_sandbox_warning(warnings: &mut Vec<ConvertWarning>, outcome: &runner::Ru
     }
 }
 
+/// Reads an input to IR through Docling.
+///
+/// With an extraction edge, the Docling engine turns a copy of the input into DoclingDocument
+/// JSON out of process; DoclingDocument JSON inputs skip the engine. Either way, the bounded
+/// in-process mapper turns the JSON into IR.
+pub fn read_docling_to_ir<F>(
+    input: &Path,
+    extract: Option<ExtractEdge>,
+    limits: &Limits,
+    cancel: CancellationToken,
+    on_event: &mut F,
+) -> Result<ReadDocumentResult, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let mut warnings = Vec::new();
+    let bytes = match extract {
+        None => {
+            let cap = limits
+                .max_input_bytes
+                .map_or(limits.max_ir_json_bytes, |max| {
+                    max.min(limits.max_ir_json_bytes)
+                });
+            read_bounded_file(input, Some(cap))?
+        }
+        Some(edge) => {
+            let command = engines::docling::resolve().ok_or(ConvertError::DoclingMissing)?;
+            let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+            let result = extract_with_docling(
+                input,
+                edge.capability().0,
+                &command,
+                &workspace,
+                limits,
+                cancel,
+                &mut warnings,
+                on_event,
+            );
+            let _ = workspace.close();
+            result?
+        }
+    };
+    let output = docling::read(&bytes, limits).map_err(|error| match error {
+        docling::ReadError::InvalidLimits(_)
+        | docling::ReadError::InputTooLarge { .. }
+        | docling::ReadError::JsonTooDeep(_)
+        | docling::ReadError::NestingTooDeep { .. }
+        | docling::ReadError::TooManyBlocks { .. }
+        | docling::ReadError::ContentTooLarge { .. } => ConvertError::LimitExceeded,
+        docling::ReadError::InvalidJson { .. }
+        | docling::ReadError::NotDoclingDocument
+        | docling::ReadError::UnsupportedVersion => ConvertError::Failed,
+    })?;
+    warnings.extend(output.warnings.iter().map(safe_warning));
+    Ok(ReadDocumentResult {
+        document: output.document,
+        warnings,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn extract_with_docling<F>(
+    input: &Path,
+    format: Format,
+    command: &engines::docling::EngineCommand,
+    workspace: &Workspace,
+    limits: &Limits,
+    cancel: CancellationToken,
+    warnings: &mut Vec<ConvertWarning>,
+    on_event: &mut F,
+) -> Result<Vec<u8>, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+    // The engine reads a verified workspace copy, never the user's path.
+    let copied = copy_and_preflight_input(input, format.id(), workspace, limits)?;
+    let request = Request::Convert {
+        protocol: PROTOCOL.to_owned(),
+        job: Uuid::new_v4().simple().to_string(),
+        input: Input {
+            path: copied.to_string_lossy().into_owned(),
+            format: format.id().to_owned(),
+        },
+        output: Output {
+            dir: workspace.output_dir().to_string_lossy().into_owned(),
+            format: Format::DoclingJson.id().to_owned(),
+        },
+        work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+        options: command.options.clone(),
+        limits: limits.clone(),
+    };
+    let outcome = runner::run_with_env(
+        &command.program,
+        &command.args,
+        &command.env,
+        &request,
+        cancel.clone(),
+        |event| match event {
+            Event::Progress { stage, .. } => on_event(ConvertEvent::Progress { stage }),
+            Event::Warning { code, message } => warnings.push(sanitize_warning(&code, &message)),
+            Event::Artifact { .. } | Event::Result { .. } | Event::Capabilities { .. } => {}
+        },
+    )
+    .map_err(|error| match error {
+        RunError::EngineFailed {
+            code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
+            ..
+        } => ConvertError::DoclingToolMissing,
+        RunError::Spawn(_) => ConvertError::DoclingMissing,
+        other => map_run_error(other),
+    })?;
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+    let artifact = outcome
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.format == Format::DoclingJson.id())
+        .ok_or(ConvertError::Failed)?;
+    // The runner checks the artifact path lexically; links must not lead out of the workspace.
+    let output_dir = workspace
+        .output_dir()
+        .canonicalize()
+        .map_err(|_| ConvertError::Failed)?;
+    let artifact_path = artifact
+        .path
+        .canonicalize()
+        .ok()
+        .filter(|path| path.starts_with(&output_dir))
+        .ok_or(ConvertError::Failed)?;
+    read_bounded_file(&artifact_path, Some(limits.max_ir_json_bytes)).map_err(|error| match error {
+        ConvertError::LimitExceeded => ConvertError::LimitExceeded,
+        _ => ConvertError::Failed,
+    })
+}
+
 fn map_run_error(error: RunError) -> ConvertError {
     match error {
         RunError::Cancelled => ConvertError::Interrupted,
@@ -2014,6 +2326,11 @@ fn safe_warning_message(code: &str) -> String {
         "footnote_missing" => "A footnote reference could not be resolved.",
         "footnote_unused" => "An unused footnote was omitted.",
         "format_mismatch" => "The input file extension does not match the detected format.",
+        "ocr_fallback" => "OCR was skipped because no suitable OCR engine is installed.",
+        "ocr_language_unsupported" => {
+            "OCR is not available for a requested language; another language was used."
+        }
+        "partial_conversion" => "Some pages or elements could not be converted.",
         _ => "The document could not be converted without a warning.",
     };
     msg.to_owned()
@@ -2059,7 +2376,18 @@ mod tests {
             detect_format_from_path(Path::new("book.epub")),
             Some(DocumentFormat::Epub)
         );
-        assert_eq!(detect_format_from_path(Path::new("file.pdf")), None);
+        assert_eq!(
+            detect_format_from_path(Path::new("file.pdf")),
+            Some(DocumentFormat::Pdf)
+        );
+        assert_eq!(
+            detect_format_from_path(Path::new("scan.JPG")),
+            Some(DocumentFormat::Jpeg)
+        );
+        assert_eq!(detect_format_from_path(Path::new("data.json")), None);
+        assert_eq!(detect_format_from_path(Path::new("file.djvu")), None);
+        assert_eq!(DocumentFormat::parse("pdf"), None, "no writer produces PDF");
+        assert_eq!(DocumentFormat::parse("docx"), Some(DocumentFormat::Docx));
     }
 
     #[test]
@@ -2318,6 +2646,7 @@ mod tests {
         let swapped_route = Route {
             input_format: DocumentFormat::Markdown,
             output_format: DocumentFormat::Html,
+            extract: None,
             reader: ReaderEdge::NativeMarkdown,
             writer: WriterEdge::NativeMarkdown, // Swapped writer edge!
         };
@@ -2356,6 +2685,7 @@ mod tests {
         let same_route = Route {
             input_format: DocumentFormat::Markdown,
             output_format: DocumentFormat::Markdown,
+            extract: None,
             reader: ReaderEdge::NativeMarkdown,
             writer: WriterEdge::NativeMarkdown,
         };
