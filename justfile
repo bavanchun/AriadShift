@@ -52,6 +52,10 @@ deny-advisories:
 js:
     pnpm install --frozen-lockfile
 
+# License check of the JavaScript dependencies that ship in the website.
+js-licenses:
+    node scripts/check-js-licenses.mjs
+
 # Biome lint and format check of the JavaScript workspace.
 web-lint:
     pnpm exec biome check
@@ -142,7 +146,7 @@ licenses-check:
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js web-lint py check-release-workflow licenses-check test-winget-manifest
+static: fmt-check spell lint-workflows deny js js-licenses web-lint py check-release-workflow licenses-check test-winget-manifest
 
 package-check:
     cargo package --workspace --allow-dirty
