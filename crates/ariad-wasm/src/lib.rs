@@ -225,8 +225,7 @@ pub fn convert(
             .ok()
             .and_then(|text| text.as_string())
             .ok_or_else(|| to_js_error(&api::invalid_options("options must be a plain object")))?;
-        serde_json::from_str(&text)
-            .map_err(|error| to_js_error(&api::invalid_options(&error.to_string())))?
+        api::parse_options(&text).map_err(|error| to_js_error(&error))?
     };
     let conversion = api::convert(bytes, from, to, options).map_err(|error| to_js_error(&error))?;
     let result = to_js(&conversion.meta)?;
