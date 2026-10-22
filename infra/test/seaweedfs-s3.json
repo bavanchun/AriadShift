@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "ariadshift-test",
+      "credentials": [
+        { "accessKey": "ariadshift-test", "secretKey": "ariadshift-test-secret" }
+      ],
+      "actions": ["Admin", "Read", "List", "Tagging", "Write"]
+    }
+  ]
+}
