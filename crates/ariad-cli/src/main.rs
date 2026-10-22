@@ -14,6 +14,7 @@ use ariad_host::{
 use clap::{Args, Parser, Subcommand};
 use tokio_util::sync::CancellationToken;
 
+mod batch;
 mod mcp;
 mod render;
 
@@ -97,13 +98,14 @@ impl From<Profile> for CliProfile {
 /// Arguments for converting a document between supported formats.
 #[derive(Args)]
 struct ConvertArgs {
-    /// Input document file path.
-    #[arg(value_name = "INPUT")]
-    input: PathBuf,
+    /// Input document file paths.
+    #[arg(value_name = "INPUT", required = true, num_args = 1..)]
+    inputs: Vec<PathBuf>,
     /// Target output format (md, html, docx, epub).
     #[arg(long = "to", value_name = "FORMAT")]
     target_format: String,
-    /// Output file path (defaults to input stem with target extension).
+    /// Output file path (defaults to input stem with target extension); with several inputs,
+    /// an existing directory for the outputs.
     #[arg(short, long, value_name = "OUTPUT")]
     output: Option<PathBuf>,
     /// Optimization profile for route selection.
@@ -406,6 +408,21 @@ where
     F: FnOnce(CancellationToken) -> Result<T, E> + Send + 'static,
     R: FnOnce(T) -> Result<(), E> + Send + 'static,
 {
+    run_blocking_exit(command_name, f, move |value| match render(value) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => report_error(command_name, &err),
+    })
+}
+
+/// Runs `f` on a blocking thread, cancels it on SIGINT, SIGTERM, SIGHUP, Ctrl-C or Ctrl-Break,
+/// and lets `render` choose the exit code of a completed run.
+fn run_blocking_exit<T, E, F, R>(command_name: &'static str, f: F, render: R) -> ExitCode
+where
+    T: Send + 'static,
+    E: CommandError,
+    F: FnOnce(CancellationToken) -> Result<T, E> + Send + 'static,
+    R: FnOnce(T) -> ExitCode + Send + 'static,
+{
     let cancel = CancellationToken::new();
     let task_cancel = cancel.clone();
     let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -426,10 +443,7 @@ where
         tokio::select! {
             result = &mut task => {
                 match result {
-                    Ok(Ok(val)) => match render(val) {
-                        Ok(()) => ExitCode::SUCCESS,
-                        Err(err) => report_error(command_name, &err),
-                    },
+                    Ok(Ok(val)) => render(val),
                     Ok(Err(err)) => report_error(command_name, &err),
                     Err(_) => {
                         let _ = writeln!(io::stderr(), "ashift: {command_name} failed");
@@ -441,10 +455,7 @@ where
                 cancel.cancel();
                 let task_res = task.await;
                 if let Ok(Ok(val)) = task_res {
-                    match render(val) {
-                        Ok(()) => ExitCode::SUCCESS,
-                        Err(err) => report_error(command_name, &err),
-                    }
+                    render(val)
                 } else {
                     match signal {
                         Ok(()) => {
@@ -462,17 +473,22 @@ where
     })
 }
 
-fn run_convert(args: ConvertArgs) -> ExitCode {
+fn target_extension(target_format: &str) -> &str {
+    match ariad_host::convert::DocumentFormat::parse(target_format) {
+        Some(fmt) => fmt.default_extension(),
+        None => target_format,
+    }
+}
+
+fn run_convert(mut args: ConvertArgs) -> ExitCode {
+    if args.inputs.len() > 1 {
+        return batch::run(args);
+    }
+    let input = args.inputs.remove(0);
     let is_json = args.json;
     let output = match args.output {
         Some(path) => path,
-        None => {
-            let ext = match ariad_host::convert::DocumentFormat::parse(&args.target_format) {
-                Some(fmt) => fmt.default_extension(),
-                None => args.target_format.as_str(),
-            };
-            args.input.with_extension(ext)
-        }
+        None => input.with_extension(target_extension(&args.target_format)),
     };
     let engine_program = match std::env::current_exe() {
         Ok(path) => path,
@@ -483,7 +499,7 @@ fn run_convert(args: ConvertArgs) -> ExitCode {
     };
     let stderr_is_terminal = io::stderr().is_terminal();
     let request = ariad_host::convert::ConvertRequest {
-        input: args.input,
+        input,
         output,
         target_format: args.target_format,
         profile: args.profile.into(),
