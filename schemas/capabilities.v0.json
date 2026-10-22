@@ -171,8 +171,14 @@
         "epub",
         "pdf",
         "png",
+        "pptx",
+        "xlsx",
+        "jpeg",
+        "tiff",
+        "webp",
         "ariad-ir+json",
-        "pandoc+json"
+        "pandoc+json",
+        "docling+json"
       ]
     },
     "Runtime": {
