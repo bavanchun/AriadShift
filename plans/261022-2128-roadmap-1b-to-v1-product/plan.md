@@ -21,7 +21,7 @@ ARCHITECTURE.md stays the design authority. Where this plan changes a design, th
 
 ## Delegated authority (2026-10-22)
 
-The user delegated every decision for this run, asked for no questions, and required Claude Opus 5.5 at `xhigh` effort for every agent. Recorded grants:
+The user delegated every decision for this run, asked for no questions, and required Claude Opus 5.5 at `xhigh` effort for every agent; on 2026-10-22 at 23:13 they switched new workers to OpenAI Codex `gpt-6.1-sol` and Claude Sonnet 5.5, both at `xhigh`. Recorded grants:
 
 - Commits, branch pushes, pull requests into `dev`, and rebase-merges into `dev` once the three OS jobs are green.
 - Promotion of `dev` to `main` and the release tags `v0.2.0` and `v1.0.0` once their acceptance criteria hold.
@@ -85,12 +85,12 @@ Merge order inside a wave follows readiness. The later pull request rebases onto
 ## Execution protocol
 
 - One phase is one branch `<type>/<topic>` from `origin/dev` in its own worktree, and one pull request into `dev`.
-- Workers are Claude Code sessions on Opus 5.5 at `xhigh` effort. Any subagent a worker starts also uses Opus at `xhigh`.
+- Workers are headless Codex `gpt-6.1-sol` or Claude Code Sonnet 5.5 sessions at `xhigh` effort; any subagent a worker starts uses one of the two at `xhigh`. Workers started before the switch ran on Opus 5.5 at `xhigh` and finished their phases.
 - A worker first scouts the code it touches, verifies every new version against its registry (AGENTS.md "Versions"), and appends a short "Design notes" section to its phase file.
 - Commits follow [docs/git-workflow.md](../../docs/git-workflow.md): atomic, green, conventional, staged by explicit path, with no AI, plan or phase references.
 - Before the pull request: rebase onto `origin/dev`, run `just ci` (or the CI-equivalent subset its OS can run), and `just lint-commits origin/dev..HEAD`.
 - The worker watches the pull request's CI and repairs it until all three OS jobs are green.
-- An independent Opus reviewer reviews each pull request; the worker fixes every high and medium finding or records why it does not apply.
+- A reviewer on the other model (Sonnet for Codex work, Codex for Sonnet work) reviews each pull request; the worker fixes every high and medium finding or records why it does not apply.
 - The coordinator rebase-merges. A phase is done when its acceptance criteria hold, its docs match the behaviour, and its row above says Done.
 - Workers never ask the user. A worker that is blocked writes its question to its report and stops; the coordinator answers.
 
