@@ -321,6 +321,20 @@ impl Capabilities {
         engines
     }
 
+    /// Returns a copy that keeps only the edges able to run in `runtime`.
+    #[must_use]
+    pub fn restricted_to(&self, runtime: Runtime) -> Self {
+        Self {
+            edges: self
+                .edges
+                .iter()
+                .filter(|edge| edge.runtime.contains(&runtime))
+                .cloned()
+                .collect(),
+            ..self.clone()
+        }
+    }
+
     /// Validates the structural integrity, version, and metric bounds of the capabilities.
     pub fn validate(&self) -> Result<(), CapabilitiesError> {
         const EXPECTED_VERSION: &str = "ariad-capabilities/0";

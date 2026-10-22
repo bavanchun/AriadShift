@@ -3,11 +3,13 @@
 #![forbid(unsafe_code)]
 
 pub mod format;
+pub mod inspect;
 pub mod ir;
 pub mod json_depth;
 pub mod limits;
 pub mod links;
 pub mod pandoc;
+pub mod pipeline;
 pub mod planner;
 pub mod protocol;
 pub mod reader;

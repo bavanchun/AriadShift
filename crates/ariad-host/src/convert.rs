@@ -682,8 +682,7 @@ where
     )
 }
 
-/// Maximum input bytes allowed for document inspection and structural analysis (32 MiB).
-pub const ANALYSIS_MAX_BYTES: u64 = 32 * 1024 * 1024;
+pub use ariad_core::inspect::ANALYSIS_MAX_BYTES;
 
 /// Maximum input bytes for parsing document body in plan summary (4 MiB).
 pub const PLAN_SUMMARY_MAX_BYTES: u64 = 4 * 1024 * 1024;

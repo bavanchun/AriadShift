@@ -38,6 +38,12 @@ impl Format {
         }
     }
 
+    /// Resolves a registry identifier such as `markdown` or `ariad-ir+json`.
+    #[must_use]
+    pub fn from_id(id: &str) -> Option<Self> {
+        serde_json::from_value(serde_json::Value::String(id.to_owned())).ok()
+    }
+
     /// File extensions associated with this format, without a leading dot.
     #[must_use]
     pub const fn extensions(self) -> &'static [&'static str] {
@@ -214,7 +220,15 @@ mod tests {
             assert_eq!(json, expected, "serialized name for {:?}", variant);
             let round_trip: Format = serde_json::from_str(&json).expect("deserialize format");
             assert_eq!(round_trip, variant, "round trip for {:?}", variant);
+            assert_eq!(Format::from_id(variant.id()), Some(variant));
         }
+    }
+
+    #[test]
+    fn from_id_rejects_extensions_and_unknown_ids() {
+        assert_eq!(Format::from_id("md"), None);
+        assert_eq!(Format::from_id("Markdown"), None);
+        assert_eq!(Format::from_id(""), None);
     }
 
     #[test]
