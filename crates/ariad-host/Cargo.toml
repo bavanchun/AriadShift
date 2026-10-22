@@ -58,6 +58,9 @@ landlock.workspace = true
 nix = { workspace = true, features = ["resource"] }
 seccompiler.workspace = true
 
+[target.'cfg(any(target_os = "macos", windows))'.dependencies]
+sysinfo = { workspace = true, features = ["system"] }
+
 [features]
 test-probe = []
 

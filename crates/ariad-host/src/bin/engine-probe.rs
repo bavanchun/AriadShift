@@ -59,88 +59,39 @@ fn main() -> ExitCode {
             });
             ExitCode::SUCCESS
         }
-        "describe-no-memory-limit" => {
-            emit(&Event::Capabilities {
-                engine: "probe-no-memory".to_owned(),
-                version: "0.1.0".to_owned(),
-                tool: ariad_core::protocol::ToolStatus {
-                    name: "probe".to_owned(),
-                    version: Some("0.1.0".to_owned()),
-                    status: ariad_core::protocol::ToolAvailability::Found,
-                },
-                license: "MIT".to_owned(),
-                routes: vec![],
-                enforces_memory_limit: false,
-                models: None,
-                supports_session: false,
-            });
-            emit(&ok_result());
-            ExitCode::SUCCESS
-        }
+        "describe-no-memory-limit" => describe_and_convert(false),
         "describe-multiple-capabilities" => {
-            let cap = Event::Capabilities {
-                engine: "probe-multi".to_owned(),
-                version: "0.1.0".to_owned(),
-                tool: ariad_core::protocol::ToolStatus {
-                    name: "probe".to_owned(),
-                    version: Some("0.1.0".to_owned()),
-                    status: ariad_core::protocol::ToolAvailability::Found,
-                },
-                license: "MIT".to_owned(),
-                routes: vec![],
-                enforces_memory_limit: false,
-                models: None,
-                supports_session: false,
-            };
+            let cap = capabilities("probe-multi", false, false);
             emit(&cap);
             emit(&cap);
             emit(&ok_result());
             ExitCode::SUCCESS
         }
-        "describe-enforces-memory" => {
-            let mut line = Vec::new();
-            if BufReader::new(io::stdin().lock())
-                .read_until(b'\n', &mut line)
-                .is_err()
-            {
+        "describe-enforces-memory" => describe_and_convert(true),
+        "hog" => {
+            let Some(megabytes) = args.next().and_then(|value| value.parse().ok()) else {
+                return ExitCode::from(2);
+            };
+            hog(megabytes)
+        }
+        "hog-child" => {
+            let Some(megabytes) = args.next() else {
+                return ExitCode::from(2);
+            };
+            let Ok(executable) = env::current_exe() else {
+                return ExitCode::from(1);
+            };
+            let child = Command::new(executable)
+                .arg("hog")
+                .arg(megabytes)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn();
+            if child.is_err() {
                 return ExitCode::from(1);
             }
-            let request: Request = match serde_json::from_slice(&line) {
-                Ok(request) => request,
-                Err(_) => return ExitCode::from(1),
-            };
-            match request {
-                Request::Describe { .. } => {
-                    emit(&Event::Capabilities {
-                        engine: "probe-memory".to_owned(),
-                        version: "0.1.0".to_owned(),
-                        tool: ariad_core::protocol::ToolStatus {
-                            name: "probe".to_owned(),
-                            version: Some("0.1.0".to_owned()),
-                            status: ariad_core::protocol::ToolAvailability::Found,
-                        },
-                        license: "MIT".to_owned(),
-                        routes: vec![],
-                        enforces_memory_limit: true,
-                        models: None,
-                        supports_session: false,
-                    });
-                    emit(&ok_result());
-                    ExitCode::SUCCESS
-                }
-                Request::Convert { output, .. } => {
-                    let artifact = std::path::Path::new(&output.dir).join("document.docx");
-                    if write_minimal_docx(&artifact).is_err() {
-                        return ExitCode::from(1);
-                    }
-                    emit(&Event::Artifact {
-                        path: artifact.to_string_lossy().into_owned(),
-                        format: output.format,
-                    });
-                    emit(&ok_result());
-                    ExitCode::SUCCESS
-                }
-            }
+            hang()
         }
         "sandbox-check" => sandbox_check(),
         "event-after-result" => {
@@ -216,6 +167,72 @@ fn read_request() -> Option<Request> {
         .read_until(b'\n', &mut line)
         .ok()?;
     serde_json::from_slice(&line).ok()
+}
+
+fn capabilities(engine: &str, enforces_memory_limit: bool, supports_session: bool) -> Event {
+    Event::Capabilities {
+        engine: engine.to_owned(),
+        version: "0.1.0".to_owned(),
+        tool: ariad_core::protocol::ToolStatus {
+            name: "probe".to_owned(),
+            version: Some("0.1.0".to_owned()),
+            status: ariad_core::protocol::ToolAvailability::Found,
+        },
+        license: "MIT".to_owned(),
+        routes: vec![],
+        enforces_memory_limit,
+        supports_session,
+        models: None,
+    }
+}
+
+/// Answers `describe` with the given memory capability and `convert` with a minimal DOCX.
+fn describe_and_convert(enforces_memory_limit: bool) -> ExitCode {
+    let Some(request) = read_request() else {
+        return ExitCode::from(1);
+    };
+    match request {
+        Request::Describe { .. } => {
+            let engine = if enforces_memory_limit {
+                "probe-memory"
+            } else {
+                "probe-no-memory"
+            };
+            emit(&capabilities(engine, enforces_memory_limit, false));
+            emit(&ok_result());
+            ExitCode::SUCCESS
+        }
+        Request::Convert { output, .. } => {
+            let artifact = std::path::Path::new(&output.dir).join("document.docx");
+            if write_minimal_docx(&artifact).is_err() {
+                return ExitCode::from(1);
+            }
+            emit(&Event::Artifact {
+                path: artifact.to_string_lossy().into_owned(),
+                format: output.format,
+            });
+            emit(&ok_result());
+            ExitCode::SUCCESS
+        }
+    }
+}
+
+/// Allocates and touches `megabytes` MiB, then waits to be killed.
+fn hog(megabytes: u64) -> ! {
+    let mut blocks = Vec::new();
+    let mut seed = 0x9e37_79b9_u32;
+    for _ in 0..megabytes {
+        let mut block = vec![0_u8; 1024 * 1024];
+        // Varying bytes keep compressed-memory systems from shrinking the resident set.
+        for page in block.chunks_mut(4096) {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            page.fill(seed.to_le_bytes()[0] | 1);
+        }
+        blocks.push(block);
+        thread::sleep(Duration::from_millis(2));
+    }
+    std::hint::black_box(&blocks);
+    hang()
 }
 
 /// Probes what the sandbox allows and reports each attempt as `allowed` or `denied`.
