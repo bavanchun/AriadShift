@@ -74,7 +74,7 @@ fn valid_install_resolves_to_an_engine_command() {
     assert_eq!(report.status, InstallStatus::Installed);
     assert_eq!(report.version, "1.0.0");
     assert_eq!(report.files, 3);
-    let root = data.path().join("packs/sample/1.0.0");
+    let root = data.path().join("packs").join("sample").join("1.0.0");
     assert_eq!(report.root, root);
     assert!(root.join("receipt.toml").is_file());
     assert_eq!(
