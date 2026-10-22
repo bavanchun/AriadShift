@@ -28,6 +28,7 @@ jobs:
     outputs:
       range: ${{ steps.scope.outputs.range }}
       heavy: ${{ steps.scope.outputs.heavy }}
+      web: ${{ steps.scope.outputs.web }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -303,9 +304,87 @@ jobs:
           path: fuzz/artifacts/
           retention-days: 14
 
+  web:
+    name: Web
+    needs: scope
+    if: needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          target: wasm32-unknown-unknown
+          cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: just@1.58.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.9.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install JavaScript dependencies
+        run: just js
+
+      # Builds the wasm module, then typechecks, runs Vitest and builds the site.
+      - name: Typecheck, unit tests and production build
+        run: just web-ci
+
+      - name: Restore Playwright browsers
+        id: restore-playwright
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers and their system packages
+        run: just web-browsers --with-deps
+
+      - name: Save Playwright browsers
+        if: github.event_name == 'push' && steps.restore-playwright.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Run end-to-end tests on Chromium, Firefox and WebKit
+        run: just web-e2e
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-traces
+          path: apps/web/test-results/
+          retention-days: 14
+
   ci-passed:
     name: CI passed
-    needs: [scope, static, lint-windows, verify, fuzz]
+    needs: [scope, static, lint-windows, verify, fuzz, web]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -314,17 +393,24 @@ jobs:
       - name: Check job results
         env:
           HEAVY: ${{ needs.scope.outputs.heavy }}
+          WEB_SCOPE: ${{ needs.scope.outputs.web }}
           SCOPE: ${{ needs.scope.result }}
           STATIC: ${{ needs.static.result }}
           WINDOWS: ${{ needs.lint-windows.result }}
           VERIFY: ${{ needs.verify.result }}
           FUZZ: ${{ needs.fuzz.result }}
+          WEB: ${{ needs.web.result }}
         run: |
-          printf 'scope=%s static=%s lint-windows=%s verify=%s fuzz=%s heavy=%s\n' \
-            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$FUZZ" "$HEAVY"
+          printf 'scope=%s static=%s lint-windows=%s verify=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
+            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
           [ "$SCOPE" = success ] && [ "$STATIC" = success ] || exit 1
           if [ "$HEAVY" = true ]; then
             [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$FUZZ" = success ] || exit 1
           else
             [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
+          fi
+          if [ "$WEB_SCOPE" = true ]; then
+            [ "$WEB" = success ] || exit 1
+          else
+            [ "$WEB" = skipped ] || exit 1
           fi

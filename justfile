@@ -84,9 +84,9 @@ web-start:
 web-export: wasm-build
     pnpm --filter @ariadshift/web export
 
-# Installs the browsers the end-to-end tests use.
-web-browsers:
-    pnpm --filter @ariadshift/web exec playwright install chromium firefox webkit
+# Installs the browsers the end-to-end tests use; CI adds --with-deps for system packages.
+web-browsers *flags:
+    pnpm --filter @ariadshift/web exec playwright install {{flags}} chromium firefox webkit
 
 # Playwright on Chromium, Firefox and WebKit against `next start`; run `just web-build` first.
 web-e2e:
