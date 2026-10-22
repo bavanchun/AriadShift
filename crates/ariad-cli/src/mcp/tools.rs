@@ -9,7 +9,10 @@ use ariad_core::planner::Profile;
 use ariad_host::{
     commands::{active_capabilities, engines, inspect, plan},
     confine::{AllowedDirs, ConfineError, confine_input, confine_output, parse_file_uri},
-    convert::{ANALYSIS_MAX_BYTES, ConvertError, ConvertOutput, ConvertRequest, convert_confined},
+    convert::{
+        ANALYSIS_MAX_BYTES, ConvertError, ConvertOutput, ConvertRequest, convert_confined_in,
+    },
+    session::SessionPool,
 };
 use rmcp::{
     ErrorData,
@@ -87,6 +90,8 @@ pub struct McpServer {
     pub cli_allow_dirs: Vec<PathBuf>,
     pub resources: SessionResources,
     pub engine_program: PathBuf,
+    /// Warm engine sessions shared by every `convert` call of this server.
+    pub pool: SessionPool,
     pub cancel_token: tokio_util::sync::CancellationToken,
     pub in_flight: Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -413,8 +418,10 @@ impl McpServer {
             }
         });
 
+        let pool = self.pool.clone();
         let res = tokio::task::spawn_blocking(move || {
-            convert_confined(
+            convert_confined_in(
+                &pool,
                 &request,
                 &parent_dir,
                 std::path::Path::new(&file_name),

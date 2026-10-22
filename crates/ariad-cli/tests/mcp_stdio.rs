@@ -587,6 +587,57 @@ fn test_convert_and_resources_read() {
 }
 
 #[test]
+fn test_convert_calls_share_the_engine_pool_and_leave_no_sessions_behind() {
+    let temp_dir = TempDir::new().unwrap();
+    let canonical_temp = fs::canonicalize(temp_dir.path()).unwrap();
+    let isolated_tmp = canonical_temp.join("tmp_root");
+    fs::create_dir(&isolated_tmp).unwrap();
+    let mut client = McpTestClient::spawn_with_env(
+        &["--allow-dir", canonical_temp.to_str().unwrap()],
+        Vec::new(),
+        &[
+            ("TMPDIR", isolated_tmp.as_os_str()),
+            ("TMP", isolated_tmp.as_os_str()),
+            ("TEMP", isolated_tmp.as_os_str()),
+        ],
+    );
+    client.initialize();
+
+    for (id, name) in [(20, "first"), (21, "second"), (22, "third")] {
+        let input = canonical_temp.join(format!("{name}.md"));
+        fs::write(&input, format!("# {name}\n\nBody.\n")).unwrap();
+        client.send_request(
+            id,
+            "tools/call",
+            json!({
+                "name": "convert",
+                "arguments": {"input": input.to_str().unwrap(), "to": "docx"}
+            }),
+        );
+        let response = client.read_response(id);
+        assert_eq!(response["result"]["isError"], false, "{response}");
+        assert!(canonical_temp.join(format!("{name}.docx")).is_file());
+    }
+    client.close_and_assert_purity();
+
+    let leftovers: Vec<_> = fs::read_dir(&isolated_tmp)
+        .unwrap()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("ariadshift-")
+        })
+        .map(|entry| entry.path())
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "workspaces and session directories are removed at shutdown: {leftovers:?}"
+    );
+}
+
+#[test]
 fn test_inline_markdown_behavior() {
     let temp_dir = TempDir::new().unwrap();
     let input_path = temp_dir.path().join("small.html");
