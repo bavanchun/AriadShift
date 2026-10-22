@@ -53,6 +53,7 @@ ureq.workspace = true
 jsonschema.workspace = true
 minisign.workspace = true
 rcgen.workspace = true
+
 [target.'cfg(target_os = "linux")'.dependencies]
 landlock.workspace = true
 nix = { workspace = true, features = ["resource"] }

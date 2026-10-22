@@ -121,7 +121,7 @@ pub(crate) fn run(args: ConvertArgs) -> ExitCode {
                 }
             }
             pool.shutdown();
-            Ok(results)
+            Ok::<_, ConvertError>(results)
         },
         move |results| finish(&results, is_json),
     )

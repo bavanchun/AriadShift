@@ -255,13 +255,16 @@ fn serve_session() -> ExitCode {
             .get("probe")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("ok");
-        let metrics = std::collections::BTreeMap::from([
+        let mut metrics = std::collections::BTreeMap::from([
             (
                 "pid".to_owned(),
                 serde_json::Value::from(std::process::id()),
             ),
             ("jobs".to_owned(), serde_json::Value::from(jobs)),
         ]);
+        if let Ok(value) = env::var("HF_HUB_OFFLINE") {
+            metrics.insert("HF_HUB_OFFLINE".to_owned(), value.into());
+        }
         let result = Event::Result {
             ok: true,
             metrics: Some(metrics),

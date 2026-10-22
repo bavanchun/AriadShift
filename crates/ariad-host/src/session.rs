@@ -368,8 +368,10 @@ impl Session {
                 let (program, args, outcome) =
                     runner::prepare_launch(command, std::slice::from_ref(&root))?;
                 let tmp = root.join("tmp");
-                *process =
-                    Some(EngineProcess::spawn(&program, &args, Some(tmp.as_os_str())).await?);
+                *process = Some(
+                    EngineProcess::spawn(&program, &args, &command.env, Some(tmp.as_os_str()))
+                        .await?,
+                );
                 *sandbox = outcome;
             }
             let Some(engine) = process.as_mut() else {

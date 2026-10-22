@@ -124,7 +124,7 @@ An install extracts into `.staging`, checks links, notices and the entrypoint, w
 
 ## Resolution
 
-`ariad_host::packs::resolve(name)` returns the active version's `InstalledPack`: install root, target, program (`entrypoint[0]` under the root), arguments, environment and options with `{root}` substituted. The runner launches it with `runner::run_with_env`, which adds the pack's environment to the cleared engine environment. A pack built for another platform or another `ashift` range does not resolve.
+`ariad_host::packs::resolve(name)` returns the active version's `InstalledPack`: install root, target, program (`entrypoint[0]` under the root), arguments, environment and options with `{root}` substituted. Create `runner::EngineCommand::from_pack(ashift, &pack)` and pass it to `runner::run_command` or `SessionPool::lease`. The command adds the pack's allow-listed environment to the cleared engine environment and grants its install root read and execute access through the Linux sandbox. The explicit environment and root participate in the session-pool key. `runner::run_with_env` and `describe_with_env` remain available for callers supplying their own launch policy. A pack built for another platform or another `ashift` range does not resolve.
 
 `ASHIFT_PACK_<NAME>=<dir>` (name upper-cased, `-` written as `_`) overrides resolution with an unpacked development pack: `<dir>/pack.toml` is read without a signature check and `<dir>` is the root.
 
