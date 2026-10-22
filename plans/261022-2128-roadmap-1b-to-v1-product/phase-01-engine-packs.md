@@ -124,7 +124,7 @@ pub fn resolve(name: &str) -> Option<InstalledPack>;
 pub fn try_resolve(name: &str) -> Result<Option<InstalledPack>, PackError>;
 ```
 
-`ASHIFT_PACK_<NAME>` (upper case, `-` as `_`) points at an unpacked directory holding `pack.toml`; no signature, no receipt. `runner::run_with_env` and `runner::describe_with_env` pass a pack's environment through the cleared engine environment. `ashift engines`, MCP `list_engines` and the planner's availability describe each resolved pack through its entrypoint; `EngineRow` gains an optional `pack` object (additive JSON change, array shape kept).
+`ASHIFT_PACK_<NAME>` (upper case, `-` as `_`) points at an unpacked directory holding `pack.toml`; no signature, no receipt. `runner::run_with_env` and `runner::describe_with_env` pass a pack's environment through the cleared engine environment. `ashift engines` and MCP `list_engines` describe each resolved pack through its entrypoint; `EngineRow` gains an optional `pack` object (additive JSON change, array shape kept). The planner's cached availability is unchanged: conversions query it on every run, and routing to a pack engine belongs to the engine that ships in the pack.
 
 ### CLI
 
@@ -138,4 +138,3 @@ pub fn try_resolve(name: &str) -> Result<Option<InstalledPack>, PackError>;
 - Per-component `unpacked_size`, `entries`, `executable`: needed for the declared-size bound and single-file engines.
 - `--base`, `--entrypoint`, `--url-prefix`, `--dest` on `__pack manifest`: needed to produce a complete manifest and to merge targets built on different runners.
 - `verify --version`: lets a non-active version be checked.
-- Planner availability includes resolved packs; routing a conversion to a pack engine stays with the engine that ships it.
