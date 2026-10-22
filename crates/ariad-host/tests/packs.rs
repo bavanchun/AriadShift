@@ -148,26 +148,62 @@ fn installed_engine_receives_the_pack_environment() {
         work_dir: workspace.work_dir().display().to_string(),
         options: BTreeMap::new(),
         limits: Limits::local(),
+        session_id: None,
     };
-    let outcome = runner::run_with_env(
-        &pack.program,
-        &pack.args,
-        &pack.env,
-        &request,
-        CancellationToken::new(),
-        |_| {},
-    )
-    .expect("run the pack engine");
-    let env = outcome.metrics.expect("dump-env returns the environment");
-    assert_eq!(env["HF_HUB_OFFLINE"], "1");
-    assert_eq!(
-        env["TESSDATA_PREFIX"],
-        format!("{}/tessdata", pack.root.display())
-    );
-    assert!(
-        !env.contains_key("ASHIFT_DATA_DIR") && !env.contains_key("HOME"),
-        "the engine environment stays cleared"
-    );
+    let command =
+        runner::EngineCommand::from_pack(Path::new(env!("CARGO_BIN_EXE_engine-probe")), &pack);
+    let outcomes = [
+        runner::run_with_env(
+            &pack.program,
+            &pack.args,
+            &pack.env,
+            &request,
+            CancellationToken::new(),
+            |_| {},
+        ),
+        runner::run_command(&command, &request, CancellationToken::new(), |_| {}),
+    ];
+    for outcome in outcomes {
+        let outcome = outcome.expect("run the pack engine");
+        let env = outcome.metrics.expect("dump-env returns the environment");
+        assert_eq!(env["HF_HUB_OFFLINE"], "1");
+        assert_eq!(
+            env["TESSDATA_PREFIX"],
+            format!("{}/tessdata", pack.root.display())
+        );
+        assert!(
+            !env.contains_key("ASHIFT_DATA_DIR") && !env.contains_key("HOME"),
+            "the engine environment stays cleared"
+        );
+    }
+
+    // A sibling data file needs the whole pack root grant, beyond the executable itself.
+    let mut check = command.clone();
+    check.args = vec!["sandbox-check".into()];
+    let mut check_request = request.clone();
+    if let Request::Convert { options, .. } = &mut check_request {
+        options.insert(
+            "read".into(),
+            serde_json::json!(pack.root.join("LICENSE.txt")),
+        );
+        options.insert(
+            "outside".into(),
+            serde_json::json!(pack.root.join("escape.txt")),
+        );
+    }
+    let outcome = runner::run_command(&check, &check_request, CancellationToken::new(), |_| {})
+        .expect("check pack sandbox");
+    let metrics = outcome.metrics.unwrap();
+    assert_eq!(metrics["read_install_root"], "allowed");
+    assert_eq!(metrics["exec_self"], "allowed");
+    assert_eq!(metrics["write_workspace"], "allowed");
+    let support = ariad_host::sandbox::support();
+    if support.platform && support.landlock_filesystem {
+        assert_eq!(metrics["write_outside"], "denied");
+        assert!(!pack.root.join("escape.txt").exists());
+    } else {
+        eprintln!("skip pack write denial: Landlock filesystem isolation unavailable");
+    }
 }
 
 #[test]

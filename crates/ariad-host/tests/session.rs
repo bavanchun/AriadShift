@@ -32,6 +32,8 @@ fn session_command() -> EngineCommand {
         engine: "probe".to_owned(),
         program: probe(),
         args: vec![OsString::from("session")],
+        env: Vec::new(),
+        install_root: None,
         launcher: Some(probe()),
         sandbox: Some(SandboxMode::BestEffort),
     }
@@ -187,6 +189,50 @@ fn wait_until_dead(pid: u64, timeout: Duration) -> bool {
         thread::sleep(Duration::from_millis(50));
     }
     !is_alive(pid)
+}
+
+#[test]
+fn sessions_keep_pack_environments_separate() {
+    let root = tempfile::tempdir().unwrap();
+    let pack = ariad_host::packs::InstalledPack {
+        name: "probe".to_owned(),
+        version: "1.0.0".to_owned(),
+        target: "test".to_owned(),
+        root: root.path().to_path_buf(),
+        program: probe(),
+        args: vec!["session".into()],
+        env: vec![("HF_HUB_OFFLINE".into(), "first".into())],
+        options: Default::default(),
+        source: ariad_host::packs::PackSource::Installed,
+    };
+    let first_command = EngineCommand::from_pack(&probe(), &pack);
+    let mut second_command = first_command.clone();
+    second_command.env = vec![("HF_HUB_OFFLINE".into(), "second".into())];
+    let pool = pool(quick_config());
+    let mut first_pid = None;
+    for (command, expected) in [
+        (&first_command, "first"),
+        (&second_command, "second"),
+        (&first_command, "first"),
+    ] {
+        let mut lease = pool.lease(command, CancellationToken::new()).unwrap();
+        let mut workspace = lease.workspace().unwrap();
+        let request = convert_request(&workspace, BTreeMap::new(), Limits::local());
+        let result = lease
+            .run(&request, CancellationToken::new(), |_| {})
+            .unwrap();
+        let metrics = result.metrics.unwrap();
+        assert_eq!(metrics["HF_HUB_OFFLINE"], expected);
+        let pid = metrics["pid"].as_u64().unwrap();
+        match (expected, first_pid) {
+            ("first", Some(first)) => assert_eq!(pid, first),
+            ("first", None) => first_pid = Some(pid),
+            (_, Some(first)) => assert_ne!(pid, first),
+            _ => unreachable!(),
+        }
+        workspace.close().unwrap();
+    }
+    pool.shutdown();
 }
 
 #[test]

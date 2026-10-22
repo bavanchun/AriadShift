@@ -470,13 +470,12 @@ ashift doctor [OPTIONS]
 4. **Engine pack directory** (`data_dir`, not required): the pack data directory exists or can be created and is writable.
 5. **Pack signing keys** (`pack_keys`, not required): lists the ids of the minisign keys built into `ashift`; a build without keys cannot install packs.
 6. **Installed packs** (`pack_<name>`, not required): one check per installed version (receipt present, every recorded file present with its recorded size, built for this platform and `ashift` range) and per `ASHIFT_PACK_<NAME>` override. `ashift engines verify` does the full re-hash.
-
 7. **Sandbox**: Reports effective mode, Landlock ABI and seccomp availability. Missing isolation is an optional failed check in best-effort mode and a required failure in required mode. Required mode needs Linux.
 
 #### Exit Codes
 
 - Returns exit code `0` if all required diagnostic checks pass. Engine pack checks never change the exit code.
-- Returns exit code `5` if an external tool (Pandoc) is missing has an unsupported version, or required sandbox isolation is unavailable.
+- Returns exit code `5` if an external tool (Pandoc) is missing, has an unsupported version, or required sandbox isolation is unavailable.
 - Returns exit code `1` if a non-tool check fails (e.g. temporary directory unwritable).
 
 #### Human Output Example
@@ -534,8 +533,7 @@ No local filesystem paths are exposed in the JSON output. Sandbox values depend 
       "required": false,
       "message": "engine pack signing keys: 1A2B3C4D5E6F7A8B",
       "hint": ""
-    }
-,
+    },
     {
       "id": "sandbox",
       "ok": true,
