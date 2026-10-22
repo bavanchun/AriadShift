@@ -1,0 +1,321 @@
+name: Docling pack
+
+# Builds and checks the docling engine pack. What each job proves and how the pack is built:
+# docs/docling.md and docs/packs.md ("Building a pack"). Signing and publishing the pack are
+# release steps that happen elsewhere.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - engines/docling/**
+      - crates/ariad-core/src/docling/**
+      - crates/ariad-host/src/engines/docling.rs
+      - crates/ariad-cli/tests/docling_engine.rs
+      - uv.lock
+      - justfile
+      - .github/workflows/pack-docling.yml
+  push:
+    tags: ["pack-docling-v*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    name: Scope
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      all-targets: ${{ steps.scope.outputs.all-targets }}
+      matrix: ${{ steps.scope.outputs.matrix }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Tags and manual runs build the pack of every target, and so do pull requests that change
+      # how packs are built. Other pull requests build the Linux x86_64 pack only.
+      - name: Decide which targets to build
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          all=false
+          if [ "$EVENT_NAME" = pull_request ]; then
+            if git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA" |
+              grep -E -q '^(engines/docling/pack/|\.github/workflows/pack-docling\.yml$)'; then
+              all=true
+            fi
+          else
+            all=true
+          fi
+          # Linux x86_64 is built natively and converted offline with Tesseract installed; the
+          # others are converted with a digital PDF, which needs no OCR program. The Linux arm64
+          # pack is built on x86_64, so it is not run.
+          matrix=$(jq -c --arg all "$all" '
+            [
+              {target: "x86_64-unknown-linux-gnu", os: "ubuntu-26.04", exe: "", primary: true,
+               input: "fixtures/scan/vi-garden-300dpi.png", expect: "Khu vườn đọc sách"},
+              {target: "aarch64-unknown-linux-gnu", os: "ubuntu-26.04", exe: "", primary: false,
+               input: "", expect: ""},
+              {target: "aarch64-apple-darwin", os: "macos-26", exe: "", primary: false,
+               input: "fixtures/pdf/en-map-room.pdf", expect: "Notes from the Map Room"},
+              {target: "x86_64-pc-windows-msvc", os: "windows-2025", exe: ".exe", primary: false,
+               input: "fixtures/pdf/en-map-room.pdf", expect: "Notes from the Map Room"}
+            ] | if $all == "true" then . else map(select(.primary)) end
+          ' <<< 'null')
+          echo "all-targets=$all" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "all-targets=$all"
+          echo "$matrix"
+
+  engine:
+    name: Engine tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, windows-2025]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: just@1.58.0
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      # The engine tests run without models; they need only the Docling and PyTorch wheels.
+      - name: Sync the engine environment
+        env:
+          UV_PROJECT_ENVIRONMENT: .tools/docling/python-env
+        run: uv sync --package ariad-docling --frozen
+
+      - name: Lint and test the engine
+        run: just docling-test
+
+  conformance:
+    name: Engine conformance (real engine)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: just@1.58.0,cargo-nextest@0.9.146
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      # The pack ships the OCR data, not the Tesseract program.
+      - name: Install Tesseract
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends tesseract-ocr
+          tesseract --version
+
+      # fetch.py checks the size and SHA-256 of every cached blob before it uses it, so a
+      # poisoned cache entry cannot change what goes into a pack.
+      - name: Cache models and OCR data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ~/.cache/ariadshift/docling
+          key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
+
+      - name: Install Pandoc
+        run: just pandoc
+
+      - name: Set up the docling engine
+        run: just docling-dev
+
+      - name: Run the conformance and acceptance tests against the real engine
+        run: just docling-engine-test
+
+  pack:
+    name: Pack (${{ matrix.target }})
+    needs: [scope, engine]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.scope.outputs.matrix) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      PACK_OUT: ${{ github.workspace }}/pack-out
+      ASHIFT_BIN: ${{ github.workspace }}/target/debug/ashift${{ matrix.exe }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      # fetch.py checks the size and SHA-256 of every cached blob before it uses it, so a
+      # poisoned cache entry cannot change what goes into a pack.
+      - name: Cache models and OCR data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ~/.cache/ariadshift/docling
+          key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
+
+      # The scanned fixture needs the Tesseract program, which the pack does not bundle.
+      - name: Install Tesseract
+        if: matrix.primary
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends tesseract-ocr
+          tesseract --version
+
+      - name: Build ashift
+        run: cargo build -p ariad-cli --bin ashift
+
+      - name: Build the pack
+        env:
+          TARGET: ${{ matrix.target }}
+        run: >-
+          uv run --no-project --python 3.14 python engines/docling/pack/build.py build
+          --target "$TARGET" --out "$PACK_OUT"
+
+      - name: Allow the offline check to create a network namespace
+        if: matrix.primary
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      # The unpacked pack is the development pack ASHIFT_PACK_DOCLING, so the manifest, engine,
+      # models and OCR data all take part. On Linux the conversion has no network.
+      - name: Convert a document with the unpacked pack
+        if: matrix.input != ''
+        env:
+          TARGET: ${{ matrix.target }}
+          INPUT: ${{ matrix.input }}
+          EXPECT: ${{ matrix.expect }}
+          OFFLINE: ${{ matrix.primary && '--offline' || '' }}
+        run: |
+          args=()
+          if [ -n "$OFFLINE" ]; then args+=("$OFFLINE"); fi
+          uv run --no-project --python 3.14 python engines/docling/pack/build.py verify \
+            --target "$TARGET" --out "$PACK_OUT" --input "$INPUT" --expect "$EXPECT" "${args[@]}"
+
+      # The models and OCR data are the same for every target, so only one build uploads them.
+      - name: Upload the shared components
+        if: matrix.primary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docling-pack-shared
+          path: |
+            ${{ env.PACK_OUT }}/*-models.tar.zst
+            ${{ env.PACK_OUT }}/*-tessdata.tar.zst
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
+          if-no-files-found: error
+
+      - name: Upload the runtime
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docling-pack-${{ matrix.target }}
+          path: |
+            ${{ env.PACK_OUT }}/*-runtime.tar.zst
+            ${{ env.PACK_OUT }}/build-*.json
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
+          if-no-files-found: error
+
+  manifest:
+    name: Pack manifest
+    needs: [scope, pack]
+    if: needs.scope.outputs.all-targets == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      PACK_OUT: ${{ github.workspace }}/pack-out
+      ASHIFT_BIN: ${{ github.workspace }}/target/debug/ashift
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      - name: Download the pack components
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: docling-pack-*
+          path: ${{ env.PACK_OUT }}
+          merge-multiple: true
+
+      - name: Build ashift
+        run: cargo build -p ariad-cli --bin ashift
+
+      - name: Write the manifest of every target
+        run: >-
+          uv run --no-project --python 3.14 python engines/docling/pack/build.py manifest
+          --out "$PACK_OUT" x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+          aarch64-apple-darwin x86_64-pc-windows-msvc
+
+      - name: Upload the unsigned manifest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docling-pack-manifest
+          path: ${{ env.PACK_OUT }}/pack.toml
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
+          if-no-files-found: error
