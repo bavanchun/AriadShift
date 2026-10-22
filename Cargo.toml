@@ -21,7 +21,9 @@ base64 = "0.23.1"
 cap-std = "4.0.3"
 clap = { version = "4.6.7", features = ["derive"] }
 comrak = { version = "0.56.0", default-features = false, features = ["shortcodes"] }
+directories = "6.0.0"
 encoding_rs = "0.8.42"
+flate2 = { version = "1.1.10", default-features = false, features = ["zlib-rs"] }
 hex = "0.4.3"
 html5ever = "0.40.1"
 insta = { version = "1.49.0", features = ["json", "glob"] }
@@ -29,19 +31,25 @@ jiff = "0.2"
 jsonwebtoken = "11"
 jsonschema = "0.58.5"
 libc = "0.2"
+minisign = "0.10.0"
+minisign-verify = "0.3.0"
 object_store = "0.14"
 opentelemetry = "0.33"
 pdfium-render = "0.9"
 process-wrap = { version = "10.0.1", features = ["tokio1", "process-group", "job-object"] }
 quick-xml = "0.42.0"
 rmcp = { version = "3.5.1", default-features = false }
+ruzstd = "0.9.1"
+rustls-native-certs = "0.8.5"
 schemars = "1.2.2"
+semver = "1.0.28"
 serde = "1.0.229"
 serde_json = { version = "1.0.151", features = ["unbounded_depth"] }
 serde_stacker = "0.1.14"
 saphyr-parser = "0.2.2"
 sha2 = "0.11.0"
 sqlx = "0.9"
+tar = { version = "0.4.46", default-features = false }
 tauri-specta = "1.0"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
@@ -53,6 +61,7 @@ tower-http = "0.7"
 tracing = "0.1"
 typst = "0.15"
 unicode-normalization = "0.1.25"
+ureq = { version = "3.5.0", default-features = false, features = ["rustls-no-provider", "_ring"] }
 utoipa = "6"
 uuid = "1"
 wasm-bindgen = "0.2"

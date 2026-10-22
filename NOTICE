@@ -19,5 +19,7 @@ This project includes unmodified third-party Rust crates licensed under the
 Mozilla Public License 2.0 (MPL-2.0), obtained from crates.io:
 - cssparser (https://crates.io/crates/cssparser, source: https://github.com/servo/rust-cssparser)
 - dtoa-short (https://crates.io/crates/dtoa-short, source: https://github.com/upsuper/dtoa-short)
-These crates are used as unmodified transitive dependencies of the ammonia HTML sanitizer.
+- option-ext (https://crates.io/crates/option-ext, source: https://github.com/soc/option-ext)
+cssparser and dtoa-short are unmodified transitive dependencies of the ammonia HTML
+sanitizer; option-ext is an unmodified transitive dependency of the directories crate.
 The source code of these crates is available under MPL-2.0 at their respective repositories.
