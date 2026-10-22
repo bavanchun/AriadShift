@@ -68,7 +68,7 @@ web-test: wasm-build
 web-typecheck: wasm-build
     pnpm -r --if-present typecheck
 
-# Development server for the web app on http://localhost:3000.
+# Development server for the web app on http://localhost:3200.
 web-dev: wasm-build
     pnpm --filter @ariadshift/web dev
 

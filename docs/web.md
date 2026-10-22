@@ -18,7 +18,7 @@ Install the JavaScript dependencies once with `just js`; the wasm recipes downlo
 
 | Command | Does |
 |---|---|
-| `just web-dev` | Builds the wasm module and starts the development server on <http://localhost:3000> |
+| `just web-dev` | Builds the wasm module and starts the development server on <http://localhost:3200> |
 | `just wasm-build` | Rebuilds `packages/ariad-wasm/pkg` after a change in `ariad-core` or `ariad-wasm` |
 | `just web-test` | Vitest for `packages/ui`, `packages/ariad-wasm` and `apps/web` |
 | `just web-typecheck` | TypeScript 7 (`tsc`) for every package |

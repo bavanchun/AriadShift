@@ -101,7 +101,7 @@ quality. Run it locally:
 
 ```sh
 just js
-just web-dev   # http://localhost:3000
+just web-dev   # http://localhost:3200
 ```
 
 See [`docs/web.md`](docs/web.md) for building, testing, and deploying it as a
