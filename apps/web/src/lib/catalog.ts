@@ -36,8 +36,13 @@ export interface PairRoute {
   best: Plan;
 }
 
+let pairsCache: PairRoute[] | null = null;
+
 /** Every ordered pair of displayed formats with a route, and where it runs. */
 export function loadPairs(): PairRoute[] {
+  if (pairsCache) {
+    return pairsCache;
+  }
   ready();
   const pairs: PairRoute[] = [];
   for (const from of FORMATS) {
@@ -60,6 +65,7 @@ export function loadPairs(): PairRoute[] {
       pairs.push({ from, to, browser, best });
     }
   }
+  pairsCache = pairs;
   return pairs;
 }
 

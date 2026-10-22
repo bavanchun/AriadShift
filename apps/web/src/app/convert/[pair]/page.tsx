@@ -59,7 +59,9 @@ export default async function PairPage({ params }: PageProps<"/convert/[pair]">)
   const { from, to, browser, best } = pair;
   const appLink = `/app?from=${encodeURIComponent(from.id)}&to=${encodeURIComponent(to.id)}`;
   const related = loadPairs().filter(
-    (other) => other !== pair && (other.from === from || other.to === to),
+    (other) =>
+      !(other.from.id === from.id && other.to.id === to.id) &&
+      (other.from.id === from.id || other.to.id === to.id),
   );
 
   return (

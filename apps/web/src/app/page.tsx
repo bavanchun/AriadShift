@@ -41,7 +41,7 @@ export default function HomePage() {
           <Link href="/app" className={buttonVariants({ size: "lg" })}>
             Open the converter
           </Link>
-          <Link href="/download" className={buttonVariants({ size: "lg", variant: "outline" })}>
+          <Link href="/download" className={buttonVariants({ size: "lg", variant: "secondary" })}>
             Install the CLI
           </Link>
         </div>
