@@ -9,6 +9,9 @@ OER = "OER"
 # EPUB package document (content.opf) and the Python CA bundle package.
 opf = "opf"
 certifi = "certifi"
+# OpenDocument Format and the flate2 compression crate.
+ODF = "ODF"
+flate = "flate"
 
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".
