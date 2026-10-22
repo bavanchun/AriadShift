@@ -7,12 +7,12 @@ let core: Core | null = null;
 /** The real ariad-wasm module, initialized once for Node tests. */
 export function loadCore(): Core {
   if (!core) {
-    ariadWasm.initSync({
+    const { memory } = ariadWasm.initSync({
       module: readFileSync(
         new URL("../../../packages/ariad-wasm/pkg/ariad_wasm_bg.wasm", import.meta.url),
       ),
     });
-    core = coreFrom(ariadWasm);
+    core = coreFrom(ariadWasm, memory);
   }
   return core;
 }

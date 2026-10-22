@@ -20,8 +20,8 @@ export default function PrivacyPage() {
           When you choose a file, the browser copies it into its origin private file system, a
           storage area that only this website can read and that is not part of your regular files.
           The conversion runs in a background worker using WebAssembly. The file is never sent to a
-          server, and the converted file is written to the same private storage until you download
-          it.
+          server, and the converted file is written to the same private storage, from which you
+          download it. Each open tab keeps its files in its own folder there.
         </p>
         <p>
           If your browser cannot provide that storage, the files are held in the worker's memory
@@ -32,7 +32,9 @@ export default function PrivacyPage() {
         <h2 className="text-xl font-semibold">Deleting your files</h2>
         <p>
           “Start over and delete files” removes the input and output from the private storage at
-          once. Clearing this site's data in your browser settings removes them as well.
+          once. Files of a tab you close without starting over stay in that storage until you next
+          open the converter, which deletes them on start. Clearing this site's data in your browser
+          settings removes them as well.
         </p>
       </section>
       <section className="flex flex-col gap-2">

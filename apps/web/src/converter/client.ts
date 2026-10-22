@@ -1,5 +1,4 @@
 // Main-thread side of the converter worker: promise-based requests and downloads.
-import { STORE_DIRECTORY } from "./file-store";
 import type {
   ConverterError,
   OutputLocation,
@@ -11,8 +10,17 @@ import type {
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: ConverterError) => void };
 
+/**
+ * Talks to the converter worker. When it replaces a worker (after a fatal error, or
+ * because the wasm module grew large) it asks the next worker to delete the old
+ * worker's files, so nothing is left behind in the browser's storage.
+ */
 export class ConverterClient {
   #worker: Worker | null = null;
+  /** Storage session of the current worker, known once its init request answered. */
+  #session: string | null = null;
+  #retired: string[] = [];
+  #recycle = false;
   #next = 1;
   #pending = new Map<number, Pending>();
 
@@ -21,7 +29,37 @@ export class ConverterClient {
   request<K extends WorkerRequest["type"]>(
     message: Extract<WorkerRequest, { type: K }>,
   ): Promise<ResultMap[K]> {
+    if (this.#recycle && (message.type === "ingest" || message.type === "reset")) {
+      this.#retire();
+    }
+    const fresh = this.#worker === null;
     const worker = this.#ensure();
+    if (fresh && this.#retired.length > 0) {
+      const sessions = this.#retired;
+      this.#retired = [];
+      void this.#send(worker, { type: "retire", sessions }).catch(() => {
+        this.#retired.push(...sessions);
+      });
+    }
+    return this.#send(worker, message).then((result) => {
+      if (typeof result === "object" && result !== null && "recycle" in result && result.recycle) {
+        this.#recycle = true;
+      }
+      return result;
+    });
+  }
+
+  terminate() {
+    this.#worker?.terminate();
+    this.#worker = null;
+    this.#session = null;
+    this.#failAll({ code: "worker_stopped", message: "The converter was stopped.", fatal: true });
+  }
+
+  #send<K extends WorkerRequest["type"]>(
+    worker: Worker,
+    message: Extract<WorkerRequest, { type: K }>,
+  ): Promise<ResultMap[K]> {
     const id = this.#next++;
     return new Promise<ResultMap[K]>((resolve, reject) => {
       this.#pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
@@ -29,10 +67,15 @@ export class ConverterClient {
     });
   }
 
-  terminate() {
+  /** Replaces the worker and remembers its storage session for cleanup. */
+  #retire() {
     this.#worker?.terminate();
+    if (this.#session) {
+      this.#retired.push(this.#session);
+    }
     this.#worker = null;
-    this.#failAll({ code: "worker_stopped", message: "The converter was stopped.", fatal: true });
+    this.#session = null;
+    this.#recycle = false;
   }
 
   #ensure(): Worker {
@@ -50,17 +93,18 @@ export class ConverterClient {
       if (response.ok) {
         pending.resolve(response.result);
       } else {
-        if (response.error.fatal) {
-          this.#worker?.terminate();
-          this.#worker = null;
-        }
         pending.reject(response.error);
+        if (response.error.fatal && this.#worker === worker) {
+          this.#retire();
+          this.#failAll(response.error);
+        }
       }
     });
     worker.addEventListener("error", (event) => {
       event.preventDefault();
-      this.#worker?.terminate();
-      this.#worker = null;
+      if (this.#worker === worker) {
+        this.#retire();
+      }
       this.#failAll({
         code: "worker_failed",
         message: "The converter could not start in this browser.",
@@ -68,6 +112,14 @@ export class ConverterClient {
       });
     });
     this.#worker = worker;
+    this.#send(worker, { type: "init" }).then(
+      (info) => {
+        if (this.#worker === worker) {
+          this.#session = info.session;
+        }
+      },
+      () => undefined,
+    );
     return worker;
   }
 
@@ -111,5 +163,3 @@ export async function downloadOutput(location: OutputLocation, name: string): Pr
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
-
-export { STORE_DIRECTORY };

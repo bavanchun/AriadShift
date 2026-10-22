@@ -2,9 +2,11 @@ import { groupSteps, runRoute } from "@/converter/engines";
 import { MemoryStore } from "@/converter/file-store";
 import type { ConvertedFile, RequestEnvelope } from "@/converter/protocol";
 import {
+  ANALYSIS_LIMIT_BYTES,
   ConverterSession,
   fileStem,
   handleRequest,
+  serialize,
   toConverterError,
   type WorkerContext,
 } from "@/converter/session";
@@ -33,8 +35,11 @@ describe("ConverterSession", () => {
     const route = session.plan("html", "editable");
     expect(route.steps).toHaveLength(2);
 
+    expect(ingested.recycle).toBe(false);
+
     const output = await session.convert("html", "editable");
     expect(output.name).toBe("notes.html");
+    expect(output.recycle).toBe(false);
     expect(output.mediaType).toBe("text/html");
     const html = await outputText(output);
     expect(html).toContain("<title>notes</title>");
@@ -71,11 +76,47 @@ describe("ConverterSession", () => {
     );
   });
 
-  it("refuses inputs above the memory limit", async () => {
+  it("refuses inputs above the memory store limit", async () => {
     const session = new ConverterSession(loadCore(), new MemoryStore(4));
     await expect(session.ingest(markdownFile("too long"))).rejects.toMatchObject({
       code: "storage_limit",
     });
+  });
+
+  it("refuses inputs above the browser limit before storing them", async () => {
+    const store = new MemoryStore();
+    const session = new ConverterSession(loadCore(), store, 8);
+    await expect(session.ingest(markdownFile("more than eight bytes"))).rejects.toMatchObject({
+      code: "limit_exceeded",
+      limit: "browser_input_bytes",
+    });
+    await expect(store.readInput()).rejects.toMatchObject({ code: "no_input" });
+  });
+
+  it("classifies large inputs from a prefix without reading them", async () => {
+    const session = new ConverterSession(loadCore(), new MemoryStore());
+    const text = `# Big\n\n${"word ".repeat(ANALYSIS_LIMIT_BYTES / 5 + 10)}\n`;
+    const ingested = await session.ingest(markdownFile(text, "big.md"));
+    expect(ingested.size).toBeGreaterThan(ANALYSIS_LIMIT_BYTES);
+    expect(ingested.inspection.format).toBe("markdown");
+    expect(ingested.inspection.counts).toBeNull();
+    expect(ingested.inspection.warnings.map((warning) => warning.code)).toEqual([
+      "document_too_large",
+    ]);
+  });
+
+  it("asks for a new worker once the module memory is large", async () => {
+    const core = { ...loadCore(), memoryBytes: () => 512 * 1024 * 1024 };
+    const session = new ConverterSession(core, new MemoryStore());
+    expect((await session.ingest(markdownFile("# Hi\n"))).recycle).toBe(true);
+  });
+
+  it("passes retired sessions to the store", async () => {
+    const store = new MemoryStore();
+    const retire = vi.spyOn(store, "retire").mockResolvedValue(1);
+    const session = new ConverterSession(loadCore(), store);
+    expect(await session.retire(["old"])).toEqual({ held: 1 });
+    expect(retire).toHaveBeenCalledWith(["old"]);
   });
 });
 
@@ -140,6 +181,7 @@ describe("routes", () => {
 describe("worker requests", () => {
   const context: Promise<WorkerContext> = Promise.resolve({
     session: new ConverterSession(loadCore(), new MemoryStore()),
+    storageSession: "session-1",
     version: "test",
     memoryLimitBytes: 4,
     resources: () => ["https://example.test/worker.js"],
@@ -152,8 +194,10 @@ describe("worker requests", () => {
       ok: true,
       result: {
         version: "test",
+        session: "session-1",
         storage: "memory",
         memoryLimitBytes: 4,
+        inputLimitBytes: 16 * 1024 * 1024,
         resources: ["https://example.test/worker.js"],
       },
     });
@@ -167,6 +211,39 @@ describe("worker requests", () => {
       profile: "editable",
     });
     expect(response).toMatchObject({ id: 2, ok: false, error: { code: "no_input" } });
+  });
+
+  it("runs requests one at a time in arrival order", async () => {
+    const queue = serialize<string>();
+    const order: string[] = [];
+    const slow = queue(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      order.push("slow");
+      return "slow";
+    });
+    const failing = queue(async () => {
+      order.push("failing");
+      throw new Error("boom");
+    });
+    const fast = queue(async () => {
+      order.push("fast");
+      return "fast";
+    });
+    await expect(slow).resolves.toBe("slow");
+    await expect(failing).rejects.toThrow("boom");
+    await expect(fast).resolves.toBe("fast");
+    expect(order).toEqual(["slow", "failing", "fast"]);
+  });
+
+  it("keeps storage failures non-fatal", () => {
+    expect(toConverterError(new DOMException("full", "QuotaExceededError"))).toEqual({
+      code: "storage_full",
+      message: "The browser has no room left to store this file.",
+    });
+    expect(toConverterError(new DOMException("gone", "NotFoundError"))).toMatchObject({
+      code: "storage_error",
+    });
+    expect(toConverterError(new DOMException("gone", "NotFoundError")).fatal).toBeUndefined();
   });
 
   it("marks unexpected failures as fatal", () => {

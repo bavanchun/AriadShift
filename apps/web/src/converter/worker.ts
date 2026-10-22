@@ -3,13 +3,16 @@ import init, * as ariadWasm from "@ariadshift/ariad-wasm";
 import { coreFrom } from "./engines";
 import { MEMORY_LIMIT_BYTES, MemoryStore, OpfsStore } from "./file-store";
 import type { RequestEnvelope, WorkerResponse } from "./protocol";
-import { ConverterSession, handleRequest, type WorkerContext } from "./session";
+import { ConverterSession, handleRequest, serialize, type WorkerContext } from "./session";
+
+const storageSession = crypto.randomUUID();
 
 const context: Promise<WorkerContext> = (async () => {
-  await init();
-  const store = (await OpfsStore.open()) ?? new MemoryStore();
+  const { memory } = await init();
+  const store = (await OpfsStore.open(storageSession)) ?? new MemoryStore();
   return {
-    session: new ConverterSession(coreFrom(ariadWasm), store),
+    session: new ConverterSession(coreFrom(ariadWasm, memory), store),
+    storageSession,
     version: ariadWasm.version(),
     memoryLimitBytes: MEMORY_LIMIT_BYTES,
     resources: () => [
@@ -19,7 +22,10 @@ const context: Promise<WorkerContext> = (async () => {
   };
 })();
 
-self.addEventListener("message", async (event: MessageEvent<RequestEnvelope>) => {
-  const response: WorkerResponse = await handleRequest(context, event.data);
-  self.postMessage(response);
+const queue = serialize<WorkerResponse>();
+
+self.addEventListener("message", (event: MessageEvent<RequestEnvelope>) => {
+  void queue(() => handleRequest(context, event.data)).then((response) => {
+    self.postMessage(response);
+  });
 });
