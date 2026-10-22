@@ -54,3 +54,51 @@ Read first: ARCHITECTURE §2.2, §3, §5, §6.1, §8.1, §19; `crates/ariad-core
 | TypeScript 7 not yet supported by a tool | Record the fallback version in the Decision Log |
 | OPFS sync handles missing in a browser | Feature-detect and fall back to in-memory for small files with a visible notice |
 | wasm size hurts Lighthouse | Lazy-load the wasm only inside the worker on `/app`; nothing on `/` |
+
+## Design notes
+
+### Versions verified on 2026-10-22
+
+npm: `next` 16.4.2 (latest of the 16 LTS line), `react`/`react-dom` 19.3.1, `typescript` 7.0.2 (Next.js 16.3+ type-checks through the project-local `tsc` CLI by default, so no fallback is needed), `tailwindcss`/`@tailwindcss/postcss` 4.3.3, `shadcn` 4.22.1 with the `base-nova` style, `@base-ui/react` 1.9.0, `@biomejs/biome` 2.6.2, `vitest` 5.0.5, `@playwright/test` 1.64.1, `lighthouse` 13.5.0, `lucide-react` 1.61.0, `class-variance-authority` 0.7.1, `clsx` 2.1.1, `tailwind-merge` 3.7.0, `tw-animate-css` 1.4.0, `jsdom` 30.1.3, `@testing-library/react` 16.3.3, `@fontsource-variable/plus-jakarta-sans` 5.3.0 (OFL-1.1). crates.io: `wasm-bindgen` 0.2.129 with the matching `wasm-bindgen-cli` release binary, `serde-wasm-bindgen` 0.6.5.
+
+### Rust
+
+- `ariad-core` gains I/O-free pieces the browser needs, so `ariad-wasm` carries no conversion logic:
+  - `format::Format::from_id` parses a registry id through serde, so new formats need no extra table.
+  - `planner::Capabilities::restricted_to(Runtime)` keeps the edges that can run in one runtime.
+  - `inspect` module: `DocumentCounts`, `count_document` and `ANALYSIS_MAX_BYTES` move here from `ariad-host` (which re-exports them).
+  - `pipeline` module: `read(format, bytes, limits)`, `write(format, document, options)` and `execute(bytes, steps, options)` for the in-process `ariad-core` engine, with a typed `PipelineError`. IR JSON input is bounded like the host reader (byte cap, depth pre-scan, version check, block count). A new reader or writer plugs in as one match arm keyed by `Format`.
+- New crate `crates/ariad-wasm` (`cdylib` + `rlib`, `publish = false`): thin `#[wasm_bindgen]` wrappers over pure functions that return Rust types (native unit tests cover those).
+  - `version()`, `capabilities()`, `inspect(bytes, name)`, `plan(input, to, profile?)`, `convert(bytes, from, to, options?)`.
+  - Formats are registry ids (`markdown`, `html`, `ariad-ir+json`). `plan` and `convert` route over edges whose runtime includes `wasm`; `convert` executes the `ariad-core` steps and fails with `engine_unavailable` for any other engine, so a later JS-side engine (Pandoc WASM, Typst) slots into the worker without an API change.
+  - Errors are thrown as plain objects `{ code, message, ... }` (`unknown_format`, `same_format`, `no_route`, `engine_unavailable`, `invalid_options`, `invalid_input`, `invalid_ir`, `unsupported_ir_version`, `limit_exceeded`). TypeScript declarations for every result and error come from `typescript_custom_section` next to the Rust code, so the generated `.d.ts` is the single source.
+  - Limits default to `Limits::local()`; `options.limits` overrides individual fields and is validated.
+- Build: `cargo build -p ariad-wasm --target wasm32-unknown-unknown --profile wasm-release`, then `wasm-bindgen --target web` into `packages/ariad-wasm/pkg/` (gitignored). `wasm-bindgen-cli` 0.2.129 is installed from its GitHub release into `.tools/bin` with pinned SHA-256 checksums (`scripts/install-wasm-bindgen.sh`), like the lint tools. wasm-pack is not used: it only wraps these two steps and downloads binaryen unpinned.
+
+### JavaScript workspace
+
+- `pnpm-workspace.yaml` lists `brand`, `apps/*`, `packages/*`; every version lives in the catalog.
+- `packages/config` (`@ariadshift/config`): `tsconfig` presets and the Biome preset; the root `biome.json` extends it.
+- `packages/ui` (`@ariadshift/ui`): shadcn components in the Base UI style, the Tailwind 4 theme with light and dark tokens from the brand palette, and `cn`. TypeScript source, consumed through `transpilePackages`; no Next.js imports, so the desktop app can reuse it.
+- `packages/ariad-wasm` (`@ariadshift/ariad-wasm`): `package.json` exporting the generated `pkg/` plus Node-side Vitest tests that run the real module.
+- `apps/web` (`@ariadshift/web`): Next.js App Router. Every route is statically generated. `/convert/[pair]`, `/formats` and `/quality` call the same wasm module at build time for plans and capabilities, so no planner logic is duplicated in TypeScript.
+
+### Browser converter
+
+- A dedicated module worker owns `ariad-wasm` and OPFS. The page posts the `File` handle; the worker streams it into OPFS with `createSyncAccessHandle`, reads it back for inspection and conversion, and writes the output to OPFS. React state holds only names, sizes and summaries. Download uses an object URL of the OPFS file; reset deletes the OPFS directory.
+- Without sync access handles the worker keeps files in its own memory up to 64 MiB and the page shows a notice.
+- The worker runs a plan step by step through an engine table keyed by engine id (`ariad-core` → `ariad-wasm`), grouping consecutive steps of one engine into one call.
+- Offline: a small hand-written service worker scoped to `/app` caches what `/app`, the worker and the wasm module loaded (the page and the worker report their resource URLs), then serves cached assets when the network is gone. No Workbox or PWA plugin.
+- `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` come from one header table used by `next.config.ts` (`next start`) and written to `out/_headers` for a static export.
+
+### Build, test, CI
+
+- `just` recipes: `wasm-build`, `web-dev`, `web-build`, `web-export`, `web-test`, `web-e2e`, `web-lint`, `web-typecheck`, `web-lighthouse`, `web-ci`. `just ci` runs `web-ci` after the Rust checks; `just static` gains Biome and a JavaScript license check of production dependencies.
+- Vitest projects for `packages/ui`, `packages/ariad-wasm` and `apps/web`. Playwright on Chromium, Firefox and WebKit against `next start` on port 3100; the offline test runs on Chromium only.
+- `scripts/ci-scope.sh` adds a `web` output; a new `Web` job on `ubuntu-26.04` runs typecheck, wasm build, unit tests, Next.js build and Playwright when web paths change. A change only under `apps/` or `packages/` no longer starts the three-OS Rust jobs.
+- Lighthouse 13.5.0 runs locally through `just web-lighthouse` against `next start`; scores go into `docs/web.md`. It is not a CI gate because shared runners make scores noisy.
+
+### Deviations
+
+- `/download` lists the CLI install commands; the desktop row says it arrives with the desktop app.
+- DOCX and EPUB are detected by extension in the browser (no ZIP central directory reader in `ariad-core` yet); their routes show as available through the CLI until Pandoc WASM lands.
