@@ -12,6 +12,8 @@ certifi = "certifi"
 # OpenDocument Format and the flate2 compression crate.
 ODF = "ODF"
 flate = "flate"
+# Tesseract's language data name for Thai.
+tha = "tha"
 
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".

@@ -12,4 +12,5 @@ package = false
 members = [
     "fixtures/gen",
     "bench",
+    "engines/docling",
 ]
