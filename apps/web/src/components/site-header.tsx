@@ -1,4 +1,5 @@
 import { ThemeToggle } from "@ariadshift/ui/components/theme-toggle";
+import { Suspense } from "react";
 import { NAVIGATION, SITE_NAME } from "@/lib/site";
 
 // Plain links, not client-side navigation: /app is cross-origin isolated by its response
@@ -26,7 +27,9 @@ export function SiteHeader() {
             ))}
           </ul>
         </nav>
-        <ThemeToggle className="ml-auto" />
+        <Suspense fallback={null}>
+          <ThemeToggle className="ml-auto" />
+        </Suspense>
       </div>
     </header>
   );
