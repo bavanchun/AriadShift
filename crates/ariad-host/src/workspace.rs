@@ -40,9 +40,23 @@ pub struct Workspace {
 
 impl Workspace {
     pub fn new() -> Result<Self, WorkspaceError> {
-        let temp_dir = tempfile::Builder::new()
-            .prefix(WORKSPACE_PREFIX)
-            .tempdir()?;
+        Self::with_temp_dir(
+            tempfile::Builder::new()
+                .prefix(WORKSPACE_PREFIX)
+                .tempdir()?,
+        )
+    }
+
+    /// Creates the workspace inside `parent`, for example a warm engine session's directory.
+    pub fn new_in(parent: &Path) -> Result<Self, WorkspaceError> {
+        Self::with_temp_dir(
+            tempfile::Builder::new()
+                .prefix(WORKSPACE_PREFIX)
+                .tempdir_in(parent)?,
+        )
+    }
+
+    fn with_temp_dir(temp_dir: TempDir) -> Result<Self, WorkspaceError> {
         let root = temp_dir.path().to_path_buf();
         let input_dir = root.join("in");
         let output_dir = root.join("out");
@@ -442,7 +456,7 @@ fn destination_exists(destination: &Path) -> Result<bool, WorkspaceError> {
 }
 
 #[cfg(not(windows))]
-fn remove_workspace(path: &Path) -> io::Result<()> {
+pub(crate) fn remove_workspace(path: &Path) -> io::Result<()> {
     match fs::remove_dir_all(path) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
         result => result,
@@ -450,7 +464,7 @@ fn remove_workspace(path: &Path) -> io::Result<()> {
 }
 
 #[cfg(windows)]
-fn remove_workspace(path: &Path) -> io::Result<()> {
+pub(crate) fn remove_workspace(path: &Path) -> io::Result<()> {
     let started = Instant::now();
     let timeout = Duration::from_secs(5);
     let mut backoff = Duration::from_millis(25);

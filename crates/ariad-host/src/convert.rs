@@ -25,9 +25,32 @@ use uuid::Uuid;
 use crate::{
     archive::{self, ArchiveError},
     assets, engines, package_meta,
-    runner::{self, RunError},
+    runner::{self, EngineCommand, RunError},
+    session::{Lease, SessionPool},
     workspace::{Workspace, WorkspaceError},
 };
+
+/// Where a conversion gets its engine processes from.
+#[derive(Clone, Copy)]
+enum Engines<'pool> {
+    /// A fresh process per engine job.
+    OneShot,
+    /// Warm sessions from a pool for engines that support them.
+    Pool(&'pool SessionPool),
+}
+
+impl<'pool> Engines<'pool> {
+    fn lease(
+        self,
+        command: EngineCommand,
+        cancel: &CancellationToken,
+    ) -> Result<Lease<'pool>, ConvertError> {
+        match self {
+            Self::OneShot => Ok(Lease::one_shot(command)),
+            Self::Pool(pool) => pool.lease(&command, cancel.clone()).map_err(map_run_error),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReaderEdge {
@@ -557,7 +580,15 @@ where
         title_fallback: None,
         asset_base_dir: None,
     };
-    convert_executor(&request, None, engine_args, limits, cancel, on_event)
+    convert_executor(
+        &request,
+        None,
+        engine_args,
+        limits,
+        Engines::OneShot,
+        cancel,
+        on_event,
+    )
 }
 
 /// Converts a supported document into the requested target format through the route executor.
@@ -570,7 +601,38 @@ where
     F: FnMut(ConvertEvent),
 {
     let args = [OsString::from("__engine"), OsString::from("pandoc")];
-    convert_executor(request, None, &args, Limits::local(), cancel, on_event)
+    convert_executor(
+        request,
+        None,
+        &args,
+        Limits::local(),
+        Engines::OneShot,
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts like [`convert`], taking engine processes from `pool` so engines that support
+/// sessions stay warm across calls.
+pub fn convert_in<F>(
+    pool: &SessionPool,
+    request: &ConvertRequest,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let args = [OsString::from("__engine"), OsString::from("pandoc")];
+    convert_executor(
+        request,
+        None,
+        &args,
+        Limits::local(),
+        Engines::Pool(pool),
+        cancel,
+        on_event,
+    )
 }
 
 /// Converts a supported document into the requested target format using capability-based promotion.
@@ -590,6 +652,31 @@ where
         Some((destination_parent, file_name)),
         &args,
         Limits::local(),
+        Engines::OneShot,
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts like [`convert_confined`], taking engine processes from `pool`.
+pub fn convert_confined_in<F>(
+    pool: &SessionPool,
+    request: &ConvertRequest,
+    destination_parent: &cap_std::fs::Dir,
+    file_name: &Path,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let args = [OsString::from("__engine"), OsString::from("pandoc")];
+    convert_executor(
+        request,
+        Some((destination_parent, file_name)),
+        &args,
+        Limits::local(),
+        Engines::Pool(pool),
         cancel,
         on_event,
     )
@@ -818,12 +905,14 @@ pub fn sanitize_identifier(s: &str, max_len: usize) -> String {
 }
 
 /// Converts a supported input document with custom engine args and limits for an explicit Route.
-pub(crate) fn convert_for_route<F>(
+#[allow(clippy::too_many_arguments)]
+fn convert_for_route<F>(
     request: &ConvertRequest,
     destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
     route: &Route,
     engine_args: &[OsString],
     limits: Limits,
+    engines: Engines<'_>,
     cancel: CancellationToken,
     mut on_event: F,
 ) -> Result<ConvertReport, ConvertError>
@@ -882,16 +971,21 @@ where
             } else {
                 "epub"
             };
-            let mut archive_workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
-            let res = read_archive_to_ir(
+            let mut lease = engines.lease(
+                EngineCommand::builtin(&request.engine_program, "pandoc"),
+                &cancel,
+            )?;
+            let mut archive_workspace = lease.workspace().map_err(|_| ConvertError::Failed)?;
+            let res = read_archive_with(
+                &mut lease,
                 &request.input,
                 format_str,
                 &mut archive_workspace,
                 &limits,
-                &request.engine_program,
                 cancel.clone(),
             );
             let _ = archive_workspace.close();
+            drop(lease);
             let archive_out = res?;
             warnings.extend(archive_out.warnings);
             (archive_out.document, None)
@@ -914,20 +1008,32 @@ where
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
-    let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+    let mut lease = match route.writer {
+        WriterEdge::PandocDocx | WriterEdge::PandocEpub => Some(engines.lease(
+            EngineCommand::from_parts(&request.engine_program, engine_args),
+            &cancel,
+        )?),
+        WriterEdge::NativeMarkdown | WriterEdge::NativeHtml => None,
+    };
+    let mut workspace = match &lease {
+        Some(lease) => lease.workspace(),
+        None => Workspace::new(),
+    }
+    .map_err(|_| ConvertError::Failed)?;
     let result = write_in_workspace(
         &mut workspace,
         &document,
         route.writer,
         request,
         destination_parent,
-        engine_args,
+        lease.as_mut(),
         limits,
         cancel,
         &mut warnings,
         &mut on_event,
     );
     let cleanup = workspace.close();
+    drop(lease);
     let (output_bytes, inline_markdown) = result?;
     if cleanup.is_err() {
         warnings.push(ConvertWarning {
@@ -1260,6 +1366,12 @@ where
 
     let mut warnings = Vec::new();
 
+    let mut lease = (engine != engines::IN_PROCESS_ENGINE).then(|| {
+        Lease::one_shot(EngineCommand::from_parts(
+            &request.engine_program,
+            &engine_args,
+        ))
+    });
     let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
     let result = write_in_workspace(
         &mut workspace,
@@ -1267,7 +1379,7 @@ where
         writer,
         &convert_req,
         None,
-        &engine_args,
+        lease.as_mut(),
         limits,
         cancel,
         &mut warnings,
@@ -1306,6 +1418,7 @@ fn convert_executor<F>(
     destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
     engine_args: &[OsString],
     limits: Limits,
+    engines: Engines<'_>,
     cancel: CancellationToken,
     on_event: F,
 ) -> Result<ConvertReport, ConvertError>
@@ -1486,6 +1599,7 @@ where
         &route,
         engine_args,
         limits,
+        engines,
         cancel,
         on_event,
     )?;
@@ -1509,7 +1623,7 @@ fn write_in_workspace<F>(
     writer: WriterEdge,
     request: &ConvertRequest,
     destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
-    engine_args: &[OsString],
+    lease: Option<&mut Lease<'_>>,
     limits: Limits,
     cancel: CancellationToken,
     warnings: &mut Vec<ConvertWarning>,
@@ -1588,20 +1702,16 @@ where
                 session_id: None,
             };
 
-            let outcome = runner::run(
-                &request.engine_program,
-                engine_args,
-                &engine_req,
-                cancel.clone(),
-                |event| match event {
+            let lease = lease.ok_or(ConvertError::Failed)?;
+            let outcome = lease
+                .run(&engine_req, cancel.clone(), |event| match event {
                     Event::Progress { stage, .. } => on_event(ConvertEvent::Progress { stage }),
                     Event::Warning { code, message } => {
                         warnings.push(sanitize_warning(&code, &message));
                     }
                     Event::Artifact { .. } | Event::Result { .. } | Event::Capabilities { .. } => {}
-                },
-            )
-            .map_err(map_run_error)?;
+                })
+                .map_err(map_run_error)?;
             push_sandbox_warning(warnings, &outcome);
 
             if cancel.is_cancelled() {
@@ -1743,6 +1853,19 @@ pub fn read_archive_to_ir(
     engine_program: &Path,
     cancel: CancellationToken,
 ) -> Result<ArchiveToIrOutput, ConvertError> {
+    let mut lease = Lease::one_shot(EngineCommand::builtin(engine_program, "pandoc"));
+    read_archive_with(&mut lease, input, input_format, workspace, limits, cancel)
+}
+
+/// [`read_archive_to_ir`] on a leased Pandoc engine; `workspace` must come from `lease`.
+fn read_archive_with(
+    lease: &mut Lease<'_>,
+    input: &Path,
+    input_format: &str,
+    workspace: &mut Workspace,
+    limits: &Limits,
+    cancel: CancellationToken,
+) -> Result<ArchiveToIrOutput, ConvertError> {
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
@@ -1767,19 +1890,13 @@ pub fn read_archive_to_ir(
     };
 
     let mut warnings = Vec::new();
-    let engine_args = [OsString::from("__engine"), OsString::from("pandoc")];
-    let outcome = runner::run(
-        engine_program,
-        &engine_args,
-        &request,
-        cancel.clone(),
-        |event| {
+    let outcome = lease
+        .run(&request, cancel.clone(), |event| {
             if let Event::Warning { code, message } = event {
                 warnings.push(sanitize_warning(&code, &message));
             }
-        },
-    )
-    .map_err(map_run_error)?;
+        })
+        .map_err(map_run_error)?;
     push_sandbox_warning(&mut warnings, &outcome);
 
     if cancel.is_cancelled() {
@@ -2194,6 +2311,7 @@ mod tests {
             &swapped_route,
             &[],
             ariad_core::limits::Limits::local(),
+            super::Engines::OneShot,
             cancel,
             |_| {},
         )
@@ -2231,6 +2349,7 @@ mod tests {
             &same_route,
             &[],
             ariad_core::limits::Limits::local(),
+            super::Engines::OneShot,
             tokio_util::sync::CancellationToken::new(),
             |_| {},
         );

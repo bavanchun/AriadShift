@@ -68,6 +68,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "describe-enforces-memory" => describe_and_convert(true),
+        "session" => serve_session(),
         "hog" => {
             let Some(megabytes) = args.next().and_then(|value| value.parse().ok()) else {
                 return ExitCode::from(2);
@@ -217,6 +218,120 @@ fn describe_and_convert(enforces_memory_limit: bool) -> ExitCode {
     }
 }
 
+/// A session-capable engine. Each job's behaviour comes from `options.probe`.
+fn serve_session() -> ExitCode {
+    let mut input = BufReader::new(io::stdin().lock());
+    let mut session: Option<String> = None;
+    let mut jobs = 0_u64;
+    loop {
+        let mut line = Vec::new();
+        match input.read_until(b'\n', &mut line) {
+            Ok(0) => return ExitCode::SUCCESS,
+            Ok(_) => {}
+            Err(_) => return ExitCode::from(1),
+        }
+        let Ok(request) = serde_json::from_slice::<Request>(&line) else {
+            return invalid_request();
+        };
+        let (session_id, output, options) = match request {
+            Request::Describe { .. } if session.is_none() => {
+                emit(&capabilities("probe-session", false, true));
+                emit(&ok_result());
+                return ExitCode::SUCCESS;
+            }
+            Request::Describe { .. } => return invalid_request(),
+            Request::Convert {
+                session_id,
+                output,
+                options,
+                ..
+            } => (session_id, output, options),
+        };
+        if session.is_some() && session != session_id {
+            return invalid_request();
+        }
+        jobs += 1;
+        let behaviour = options
+            .get("probe")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("ok");
+        let metrics = std::collections::BTreeMap::from([
+            (
+                "pid".to_owned(),
+                serde_json::Value::from(std::process::id()),
+            ),
+            ("jobs".to_owned(), serde_json::Value::from(jobs)),
+        ]);
+        let result = Event::Result {
+            ok: true,
+            metrics: Some(metrics),
+            error: None,
+        };
+        match behaviour {
+            "ok" | "stray-after" => {
+                let artifact = std::path::Path::new(&output.dir).join("document.docx");
+                if fs::write(&artifact, b"probe session document").is_err() {
+                    return ExitCode::from(1);
+                }
+                emit(&Event::Progress {
+                    stage: "convert".to_owned(),
+                    done: Some(1),
+                    total: Some(1),
+                });
+                emit(&Event::Artifact {
+                    path: artifact.to_string_lossy().into_owned(),
+                    format: output.format,
+                });
+                emit(&result);
+                if behaviour == "stray-after" {
+                    thread::sleep(Duration::from_millis(100));
+                    emit(&Event::Progress {
+                        stage: "late".to_owned(),
+                        done: None,
+                        total: None,
+                    });
+                }
+            }
+            "fail" => {
+                let _ = fail_typed(ExitCode::SUCCESS);
+            }
+            "crash" => return ExitCode::from(9),
+            "hang" => hang(),
+            "hog" => hog(options
+                .get("mb")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(512)),
+            // Both lines leave in one write, so the host sees them together.
+            "second-result" => emit_together(&[&result, &result]),
+            "late-event" => emit_together(&[
+                &result,
+                &Event::Progress {
+                    stage: "late".to_owned(),
+                    done: None,
+                    total: None,
+                },
+            ]),
+            _ => return ExitCode::from(2),
+        }
+        if session_id.is_none() {
+            return ExitCode::SUCCESS;
+        }
+        session = session_id;
+    }
+}
+
+fn invalid_request() -> ExitCode {
+    emit(&Event::Result {
+        ok: false,
+        metrics: None,
+        error: Some(EngineError {
+            code: ErrorCode::InvalidRequest,
+            message: "probe expects one session per process".to_owned(),
+        }),
+    });
+    ExitCode::from(1)
+}
+
 /// Allocates and touches `megabytes` MiB, then waits to be killed.
 fn hog(megabytes: u64) -> ! {
     let mut blocks = Vec::new();
@@ -296,6 +411,17 @@ fn sandbox_check() -> ExitCode {
         error: None,
     });
     ExitCode::SUCCESS
+}
+
+fn emit_together(events: &[&Event]) {
+    let mut buffer = Vec::new();
+    for event in events {
+        serde_json::to_writer(&mut buffer, event).unwrap();
+        buffer.push(b'\n');
+    }
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&buffer).unwrap();
+    stdout.flush().unwrap();
 }
 
 fn echo_request() -> ExitCode {

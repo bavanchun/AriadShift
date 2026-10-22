@@ -14,6 +14,7 @@ pub mod packs;
 pub mod pandoc_bin;
 pub mod runner;
 pub mod sandbox;
+pub mod session;
 pub mod watchdog;
 pub mod workspace;
 

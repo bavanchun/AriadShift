@@ -414,10 +414,11 @@ pub(crate) fn prepare_launch(
     Ok((launcher.clone(), args, outcome))
 }
 
-/// How a job ends: at process exit after its `result`.
+/// Whether a job ends at its `result` (session) or at process exit (one-shot).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum JobMode {
     OneShot,
+    Session,
 }
 
 /// Per-job bounds derived from the request.
@@ -549,7 +550,8 @@ impl EngineProcess {
     /// Sends one request and streams its events to `sink` until the job ends.
     ///
     /// A one-shot job closes stdin after the request and ends when the process has exited and
-    /// stdout reached EOF.
+    /// stdout reached EOF. A session job keeps stdin open and ends at its `result`; any output
+    /// already buffered after that `result` is a protocol violation.
     pub(crate) async fn run_job<S>(
         &mut self,
         request_line: &[u8],
@@ -576,8 +578,9 @@ impl EngineProcess {
             _ = job.cancel.cancelled() => return Err(RunError::Cancelled),
             _ = wait_deadline(job.deadline) => return Err(RunError::Timeout),
         }
-        let JobMode::OneShot = mode;
-        self.stdin = None;
+        if mode == JobMode::OneShot {
+            self.stdin = None;
+        }
 
         let mut watchdog = job
             .memory_limit_mb
@@ -592,8 +595,21 @@ impl EngineProcess {
         let mut result = None;
         let mut artifacts = Vec::new();
         loop {
-            if self.status.is_some() && self.eof {
-                break;
+            match mode {
+                JobMode::OneShot if self.status.is_some() && self.eof => break,
+                JobMode::Session if result.is_some() => break,
+                JobMode::Session if self.eof || self.status.is_some() => {
+                    // The engine stopped before its result. Stop the whole tree so a grandchild
+                    // holding the pipe cannot keep the session alive, then report the exit.
+                    let _ = self.child.start_kill();
+                    let status = self.child.wait().await.map_err(RunError::Io)?;
+                    self.status = Some(status);
+                    return Err(RunError::Crash {
+                        exit: status.code(),
+                        stderr_tail: String::new(),
+                    });
+                }
+                _ => {}
             }
             tokio::select! {
                 _ = job.cancel.cancelled() => return Err(RunError::Cancelled),
@@ -635,6 +651,21 @@ impl EngineProcess {
             }
         }
 
+        if mode == JobMode::Session {
+            if self.lines.has_buffered_bytes() {
+                return Err(RunError::ProtocolViolation("line follows the result event"));
+            }
+            return match result {
+                Some((false, _, Some(EngineError { code, message }))) => {
+                    Err(RunError::EngineFailed { code, message })
+                }
+                Some((true, metrics, None)) => Ok((artifacts, metrics)),
+                _ => Err(RunError::ProtocolViolation(
+                    "result ok and error fields disagree",
+                )),
+            };
+        }
+
         let exit_status = self
             .status
             .expect("loop exits only after observing the process status");
@@ -652,6 +683,33 @@ impl EngineProcess {
                 stderr_tail: String::new(),
             }),
         }
+    }
+
+    /// Reports whether the idle process is unusable: it exited, closed stdout, or wrote output
+    /// that no job asked for.
+    pub(crate) async fn is_stale(&mut self) -> bool {
+        if self.eof || self.lines.has_buffered_bytes() {
+            return true;
+        }
+        if !matches!(self.child.try_wait(), Ok(None)) {
+            return true;
+        }
+        // One short poll lets the reactor deliver output written while the process was idle.
+        time::timeout(Duration::from_millis(1), self.lines.next_line())
+            .await
+            .is_ok()
+    }
+
+    /// Closes stdin, waits up to `grace` for the engine to exit, then stops whatever is left of
+    /// its process tree.
+    pub(crate) async fn close(&mut self, grace: Duration) {
+        self.stdin = None;
+        if self.status.is_none()
+            && let Ok(Ok(status)) = time::timeout(grace, self.child.wait()).await
+        {
+            self.status = Some(status);
+        }
+        self.reap(true).await;
     }
 
     /// Kills the tree when `kill` is set or the engine is still running, waits for it, and
@@ -767,6 +825,10 @@ where
             buffered: Vec::with_capacity(4096),
             eof: false,
         }
+    }
+
+    fn has_buffered_bytes(&self) -> bool {
+        !self.buffered.is_empty()
     }
 
     /// Cancel-safe: a read that completes is appended before the next await point.
