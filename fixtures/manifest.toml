@@ -1186,3 +1186,37 @@ tags = []
 phase = "1a"
 routes = ["epub->md"]
 companions = [{ path = "fixtures/epub/en-epub-minimal.truth.json", sha256 = "90cb516fa80b83cbd22fdff4354d9c8f992fb0bf090c98a45d2143a826c8e75b" }]
+
+[[fixture]]
+id = "vi-garden-slides"
+path = "fixtures/pptx/vi-garden-slides.pptx"
+format = "pptx"
+media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "7e18fe0360c50943b607e7ae4d0563c1729acb3cf753bf2b29a765b1085d4839"
+tags = ["headings", "tables"]
+phase = "1b"
+routes = ["pptx->md"]
+
+[[fixture]]
+id = "en-repair-log"
+path = "fixtures/xlsx/en-repair-log.xlsx"
+format = "xlsx"
+media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+languages = ["en", "vi"]
+title = "Repair café log"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "105b25a7dac7ad192ff301efaccd98622a85fc0d414e3677718a06ade92a0620"
+tags = ["tables", "mixed-script"]
+phase = "1b"
+routes = ["xlsx->md"]
