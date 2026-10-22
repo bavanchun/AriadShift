@@ -85,10 +85,10 @@ npm: `next` 16.4.2 (latest of the 16 LTS line), `react`/`react-dom` 19.3.1, `typ
 
 ### Browser converter
 
-- A dedicated module worker owns `ariad-wasm` and OPFS. The page posts the `File` handle; the worker streams it into OPFS with `createSyncAccessHandle`, reads it back for inspection and conversion, and writes the output to OPFS. React state holds only names, sizes and summaries. Download uses an object URL of the OPFS file; reset deletes the OPFS directory.
+- A dedicated module worker owns `ariad-wasm` and OPFS. The page posts the `File` handle; the worker streams it into its own OPFS folder with `createSyncAccessHandle`, reads it back for inspection and conversion, and writes the output there. React state holds only names, sizes and summaries. Download uses an object URL of the OPFS file; reset deletes the folder. (Review: one folder per worker held by a Web Lock, a 16 MB browser input limit, and worker replacement after large jobs.)
 - Without sync access handles the worker keeps files in its own memory up to 64 MiB and the page shows a notice.
 - The worker runs a plan step by step through an engine table keyed by engine id (`ariad-core` → `ariad-wasm`), grouping consecutive steps of one engine into one call.
-- Offline: a small hand-written service worker scoped to `/app` caches what `/app`, the worker and the wasm module loaded (the page and the worker report their resource URLs), then serves cached assets when the network is gone. No Workbox or PWA plugin.
+- Offline: a small hand-written service worker caches what `/app`, the worker and the wasm module loaded (the page and the worker report their resource URLs), then serves cached assets when the network is gone. It is registered for the origin so the worker script falls under it, answers only `/app` navigations, and serves only hashed assets cache-first. No Workbox or PWA plugin.
 - `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` come from one header table used by `next.config.ts` (`next start`) and written to `out/_headers` for a static export.
 
 ### Build, test, CI

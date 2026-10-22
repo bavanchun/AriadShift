@@ -33,22 +33,24 @@ When adding a shadcn component, run `pnpm exec shadcn add <name>` inside `packag
 
 ## How the converter works
 
-1. The page starts a module Web Worker once it is idle. The worker loads `ariad-wasm` and opens the origin private file system (OPFS).
-2. A dropped or picked `File` goes to the worker, which streams it into OPFS with a synchronous access handle. React state only holds the name, size and inspection summary.
-3. The worker inspects the first 32 MiB (`inspect`), plans the route over the edges whose runtime includes `wasm` (`plan`) and runs it step by step: each run of steps goes to the engine registered for its id. Only `ariad-core` is registered today; a JavaScript engine such as Pandoc WASM plugs into the same table.
-4. The output is written to OPFS. Download reads it back through an object URL; "Start over and delete files" removes the `ariadshift` OPFS directory.
+1. The page starts a module Web Worker once it is idle. The worker loads `ariad-wasm`, picks a random storage session and opens its own OPFS folder, `ariadshift/<session>/`, while holding a Web Lock named after it. Folders whose lock nobody holds belong to closed tabs or replaced workers and are deleted at that point, so two tabs never share files.
+2. A dropped or picked `File` goes to the worker, which streams it into its folder with a synchronous access handle. React state only holds the name, size and inspection summary. Inputs over 16 MB are refused: reading a document expands it in wasm memory by up to about 70 times, so larger files belong to the CLI or the desktop app.
+3. The worker inspects the file (`inspect`): up to 4 MiB it counts the structure, above that it classifies the first 64 KiB only. It plans the route over the edges whose runtime includes `wasm` (`plan`) and runs it step by step: each run of steps goes to the engine registered for its id. Only `ariad-core` is registered today; a JavaScript engine such as Pandoc WASM plugs into the same table. The worker handles one request at a time.
+4. The output is written to the same folder. Download reads it back through an object URL. "Start over and delete files" deletes the folder.
 
-Without OPFS synchronous access handles (some private browsing modes, some WebKit builds), the worker keeps files in its own memory up to 64 MiB and the page says so.
+Without OPFS synchronous access handles or Web Locks (some private browsing modes, some WebKit builds), the worker keeps files in its own memory up to 64 MiB and the page says so.
 
-Errors from the worker are objects with a `code` and a `message`. An unexpected failure (for example the wasm module trapping) is marked `fatal`; the page then replaces the worker.
+Errors from the worker are objects with a `code` and a `message`; storage failures such as a full disk are ordinary errors. An unexpected failure (for example the wasm module trapping) is marked `fatal`: the page replaces the worker, fails every pending request, and the next worker deletes the old worker's folder once its lock is free. wasm memory never shrinks, so after a job that grew it past 256 MiB the page also replaces the worker before the next file.
 
 ### Offline
 
-`/sw.js` is a service worker registered by `/app`. The page and the worker report the URLs they loaded, and the service worker caches exactly those (the page, its chunks, the worker, the wasm module and the font), pruning older entries. Afterwards `/app` loads and converts without a network. Other pages keep their normal network behaviour. The cached worker script is served as a new `Response` so the worker keeps its URL fragment, which carries the bundler's bootstrap parameters.
+`/sw.js` is a service worker registered by `/app`. The page and the worker report the URLs they loaded, and the service worker caches exactly those (the page, its chunks, the worker, the wasm module and the font), pruning older entries. Afterwards `/app` loads and converts without a network.
+
+It is registered for the whole origin, because the converter's worker script lives under `/_next/static/` and must fall under it, but it only answers navigations to `/app`. Content-hashed assets under `/_next/static/` come from the cache first; every other request goes to the network first and falls back to the cache only when offline, so no page sees a stale copy. A cached worker script is served as a new `Response` so the worker keeps its URL fragment, which carries the bundler's bootstrap parameters.
 
 ### Headers
 
-`/app` is cross-origin isolated: `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. Other pages get neither, so embeds and sign-in popups keep working. The script chunks under `/_next/static/chunks/` also send `Cross-Origin-Embedder-Policy: credentialless`, because an isolated page may only start a worker whose script declares a compatible policy; on ordinary scripts the header has no effect. The single source is [`apps/web/route-headers.mjs`](../apps/web/route-headers.mjs).
+`/app` is cross-origin isolated: `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. Other pages get neither, so embeds and sign-in popups keep working. Isolation belongs to a document, not a route, so every link into or out of `/app` (the header, the footer and the calls to action) is a plain link that loads a new document rather than a client-side navigation. Safari does not implement `credentialless`, so `/app` is not isolated there; nothing needs isolation yet because the converter is single-threaded. The script chunks under `/_next/static/chunks/` also send `Cross-Origin-Embedder-Policy: credentialless`, because an isolated page may only start a worker whose script declares a compatible policy; on ordinary scripts the header has no effect. The single source is [`apps/web/route-headers.mjs`](../apps/web/route-headers.mjs).
 
 ## Build and deploy
 
@@ -85,8 +87,8 @@ Without the chunk header the converter worker does not start, and the page repor
 
 ## Tests
 
-- Vitest: the bindings against the built wasm module in Node (`packages/ariad-wasm/test`), the worker session, route runner and file store with the real module (`apps/web/test`), and the UI components with Testing Library in jsdom.
-- Playwright (`apps/web/e2e`): Markdown to HTML, HTML to Markdown, a Markdown → IR JSON → Markdown round trip, target preselection from a pair page, reset deleting the OPFS files, keyboard operation of the picker, headers on `/app` only, no wasm on `/`, sitemap and robots. The offline test runs on Chromium only.
+- Vitest: the bindings against the built wasm module in Node (`packages/ariad-wasm/test`); the worker session, route runner and in-memory file store with the real module, and the client's worker replacement with a fake worker (`apps/web/test`); the UI components with Testing Library in jsdom. The OPFS store needs a browser and is covered by Playwright.
+- Playwright (`apps/web/e2e`): Markdown to HTML, HTML to Markdown, a Markdown → IR JSON → Markdown round trip, target preselection from a pair page, two tabs converting side by side, reset and the start-up sweep deleting OPFS folders, the 16 MB limit, keyboard operation of the picker and the selects, headers on `/app` only, isolation after following a site link, no wasm on `/`, sitemap and robots. The offline test runs on Chromium only.
 
 ## Lighthouse
 
@@ -94,8 +96,8 @@ Measured on 2026-10-22 with Lighthouse 13.5.0 (`just web-lighthouse`) against `n
 
 | Page | Form factor | Performance | Accessibility | Best practices | SEO |
 |---|---|---:|---:|---:|---:|
-| `/` | mobile | 94 | 100 | 100 | 100 |
-| `/app` | mobile | 96 | 100 | 100 | 100 |
+| `/` | mobile | 98 | 100 | 100 | 100 |
+| `/app` | mobile | 98 | 100 | 100 | 100 |
 | `/` | desktop | 100 | 100 | 100 | 100 |
 | `/app` | desktop | 100 | 100 | 100 | 100 |
 
