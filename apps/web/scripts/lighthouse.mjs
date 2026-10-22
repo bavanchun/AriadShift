@@ -81,7 +81,7 @@ try {
         const name = `${formFactor}-${page === "/" ? "home" : page.slice(1)}.json`;
         writeFileSync(path.join(reports, name), result.report);
       } finally {
-        chrome.kill();
+        await chrome.kill();
       }
     }
   }
