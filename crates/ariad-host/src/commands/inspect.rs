@@ -1,10 +1,10 @@
 //! Inspect command: format sniffing, document metrics, counts, and reachable targets.
 
-use std::{collections::BTreeMap, path::Path};
+use std::path::Path;
 
 use ariad_core::{
     format::Format,
-    ir::{Block, Document, Inline, Metadata},
+    ir::Metadata,
     limits::Limits,
     planner::{self, Profile},
 };
@@ -20,18 +20,7 @@ use crate::{
 pub use crate::convert::{
     FileClassification, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_NAME_BYTES, classify_file,
 };
-
-/// Structural block, inline, and word counts for an inspected document.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DocumentCounts {
-    pub headings: BTreeMap<u8, usize>,
-    pub paragraphs: usize,
-    pub tables: usize,
-    pub images: usize,
-    pub links: usize,
-    pub footnotes: usize,
-    pub words: usize,
-}
+pub use ariad_core::inspect::{DocumentCounts, count_document};
 
 /// Result of inspecting a document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -44,99 +33,6 @@ pub struct InspectOutput {
     pub counts: Option<DocumentCounts>,
     pub warnings: Vec<ConvertWarning>,
     pub reachable: Vec<Format>,
-}
-
-/// Recursively computes structural counts across a document's body and furniture.
-#[must_use]
-pub fn count_document(doc: &Document) -> DocumentCounts {
-    let mut counts = DocumentCounts::default();
-    count_blocks(&doc.body, &mut counts);
-    count_blocks(&doc.furniture, &mut counts);
-    counts
-}
-
-fn count_blocks(blocks: &[Block], counts: &mut DocumentCounts) {
-    for block in blocks {
-        match block {
-            Block::Heading { level, content } => {
-                *counts.headings.entry(*level).or_default() += 1;
-                count_inlines(content, counts);
-            }
-            Block::Paragraph { content } => {
-                counts.paragraphs += 1;
-                count_inlines(content, counts);
-            }
-            Block::Code { text, .. } => {
-                counts.words += text.split_whitespace().count();
-            }
-            Block::Math { .. } => {}
-            Block::Quote { blocks } => {
-                count_blocks(blocks, counts);
-            }
-            Block::PageBreak {} => {}
-            Block::List { items, .. } => {
-                for item in items {
-                    count_blocks(&item.blocks, counts);
-                }
-            }
-            Block::Table {
-                caption,
-                head,
-                body,
-                footnotes,
-                ..
-            } => {
-                counts.tables += 1;
-                if let Some(caption) = caption {
-                    count_inlines(caption, counts);
-                }
-                for row in head.iter().chain(body.iter()) {
-                    for cell in row {
-                        count_blocks(&cell.blocks, counts);
-                    }
-                }
-                count_inlines(footnotes, counts);
-            }
-            Block::Figure { caption, .. } => {
-                counts.images += 1;
-                count_inlines(caption, counts);
-            }
-            Block::Footnote { blocks, .. } => {
-                counts.footnotes += 1;
-                count_blocks(blocks, counts);
-            }
-            Block::Raw { .. } => {}
-        }
-    }
-}
-
-fn count_inlines(inlines: &[Inline], counts: &mut DocumentCounts) {
-    for inline in inlines {
-        match inline {
-            Inline::Text { text } | Inline::Code { text } => {
-                counts.words += text.split_whitespace().count();
-            }
-            Inline::Emph { content }
-            | Inline::Strong { content }
-            | Inline::Strikeout { content }
-            | Inline::Superscript { content }
-            | Inline::Subscript { content } => {
-                count_inlines(content, counts);
-            }
-            Inline::Link { content, .. } => {
-                counts.links += 1;
-                count_inlines(content, counts);
-            }
-            Inline::Image { .. } => {
-                counts.images += 1;
-            }
-            Inline::FootnoteRef { .. } => {}
-            Inline::SoftBreak {}
-            | Inline::LineBreak {}
-            | Inline::Math { .. }
-            | Inline::Raw { .. } => {}
-        }
-    }
 }
 
 /// Returns the user-facing format targets reachable from `from`.

@@ -1065,3 +1065,36 @@ fn reachable_formats_does_not_stop_early_at_png() {
     assert!(reachable.contains(&Format::Html));
     assert!(reachable.contains(&Format::Docx));
 }
+
+#[test]
+fn restricted_capabilities_keep_only_edges_of_one_runtime() {
+    let wasm = embedded().restricted_to(Runtime::Wasm);
+    assert!(!wasm.edges.is_empty());
+    assert!(
+        wasm.edges
+            .iter()
+            .all(|e| e.runtime.contains(&Runtime::Wasm))
+    );
+    assert_eq!(wasm.version, embedded().version);
+
+    let engines = wasm.registered_engines();
+    let route = plan(
+        &wasm,
+        Format::Markdown,
+        Format::Html,
+        Profile::Editable,
+        &engines,
+    )
+    .expect("markdown to html runs in the browser");
+    assert!(route.steps.iter().all(|s| s.engine == "ariad-core"));
+    assert!(matches!(
+        plan(
+            &wasm,
+            Format::Markdown,
+            Format::Docx,
+            Profile::Editable,
+            &engines
+        ),
+        Err(PlanError::NoRoute { .. })
+    ));
+}
