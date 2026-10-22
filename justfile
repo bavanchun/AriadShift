@@ -52,6 +52,14 @@ deny-advisories:
 js:
     pnpm install --frozen-lockfile
 
+# Biome lint and format check of the JavaScript workspace.
+web-lint:
+    pnpm exec biome check
+
+# Vitest across the JavaScript packages; the wasm bindings must be built first.
+web-test: wasm-build
+    pnpm exec vitest run
+
 py:
     uv lock --check
 
