@@ -44,6 +44,9 @@ use crate::{
     telemetry::Metrics,
 };
 
+/// Rejected credentials allowed per client address and minute.
+pub const AUTH_FAILURES_PER_MINUTE: u32 = 30;
+
 /// Largest JSON request body.
 pub const JSON_BODY_LIMIT: usize = 1024 * 1024;
 
@@ -89,10 +92,33 @@ impl FromRequestParts<AppState> for Caller {
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
         let peer = peer_addr(parts);
-        let principal = state
+        let client = state.auth.client_hash(&parts.headers, peer);
+        let auth_bucket = format!("auth-failure:{client}");
+        if (parts
+            .headers
+            .contains_key(axum::http::header::AUTHORIZATION)
+            || parts.headers.contains_key(crate::auth::API_KEY_HEADER))
+            && let rate_limit::Decision::Limited { retry_after_s } =
+                rate_limit::check(&state.db, &auth_bucket, AUTH_FAILURES_PER_MINUTE).await?
+        {
+            return Err(ApiError::rate_limited(retry_after_s));
+        }
+        let principal = match state
             .auth
             .authenticate(&state.db, &parts.headers, peer)
-            .await?;
+            .await
+        {
+            Ok(principal) => principal,
+            Err(err) if err.status() == StatusCode::UNAUTHORIZED => {
+                if let rate_limit::Decision::Limited { retry_after_s } =
+                    rate_limit::hit(&state.db, &auth_bucket, AUTH_FAILURES_PER_MINUTE).await?
+                {
+                    return Err(ApiError::rate_limited(retry_after_s));
+                }
+                return Err(err);
+            }
+            Err(err) => return Err(err),
+        };
         let entitlement = entitlements::load(&state.db, &principal.plan)
             .await
             .map_err(|err| ApiError::internal(&err))?;

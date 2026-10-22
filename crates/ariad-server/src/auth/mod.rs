@@ -191,7 +191,7 @@ impl Authenticator {
 
     /// Keyed hash of the client address. IPv6 addresses are grouped by /64,
     /// the smallest block a user commonly controls.
-    fn client_hash(&self, headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
+    pub fn client_hash(&self, headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
         let label = match self.client_ip(headers, peer) {
             Some(IpAddr::V4(v4)) => v4.to_string(),
             Some(IpAddr::V6(v6)) => match v6.to_ipv4_mapped() {
