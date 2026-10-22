@@ -60,6 +60,7 @@ ashift convert notes.md --to docx
 ashift convert notes.md --to html
 ashift convert report.docx --to md
 ashift convert book.epub --to md
+ashift convert draft.md notes.md --to docx -o output/  # existing directory
 ```
 
 The default output is `<input stem>.<target extension>` beside the input. Use `-o` to choose another
@@ -69,6 +70,10 @@ are refused with exit code 3; destinations matching the input path are refused w
 contains the output path; warnings are written to stderr. Press Ctrl-C (or send SIGTERM/SIGHUP) to cancel a running
 conversion and clean up its temporary workspace. Set `ASHIFT_PANDOC` to select
 an existing Pandoc executable instead of installing the repository-pinned one.
+
+With several inputs, conversion continues after individual failures and returns the first
+failure's exit code. `--json` returns a `results` array. Linux engines use a Landlock/seccomp
+sandbox by default; `ashift doctor` reports kernel support and `ASHIFT_SANDBOX` controls the mode.
 
 ## Inspect, Plan, and Diagnose
 

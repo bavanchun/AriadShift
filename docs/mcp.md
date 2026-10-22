@@ -90,7 +90,13 @@ The MCP server enforces strict path confinement and capability-based security:
 6. **Self-Overwrite Refusal**: An output path resolving to the same physical file as the input is rejected even if `--allow-overwrite` is active.
 7. **Destination Conflicts**: Existing destination files are refused unless the server was launched with `--allow-overwrite` and the tool invocation explicitly passed `overwrite: true`. Dangling symlinks at the destination are treated as existing files and refused.
 8. **Capability-Based Promotion**: Output files are staged inside an isolated temporary workspace and promoted into the destination directory using capability handles (`cap_std::fs::Dir`) opened relative to the confined root to mitigate race-condition directory swaps. For `overwrite = false`, publication uses hard link creation to guarantee atomic refusal without clobbering existing files.
-9. **Process Isolation & Lifecycle**: Out-of-process conversion engines run in isolated process groups (or Windows Job Objects with `KillOnDrop`). SIGTERM, SIGHUP, Ctrl-C, and Ctrl-Break promptly cancel in-flight jobs, terminate engine subprocess trees, clean up workspaces, and exit cleanly without hanging on open stdin. Stale workspaces older than 24 hours are swept on server startup.
+9. **Process Isolation & Lifecycle**: Out-of-process conversion engines run in isolated process groups (or Windows Job Objects with `KillOnDrop`). Linux also applies the engine sandbox; `ASHIFT_SANDBOX=off|best-effort|required` controls it as described in the [CLI reference](cli.md#environment-variables). SIGTERM, SIGHUP, Ctrl-C, and Ctrl-Break promptly cancel in-flight jobs, terminate engine subprocess trees, clean up workspaces, and exit cleanly without hanging on open stdin. Stale workspaces older than 24 hours are swept on server startup.
+
+### Warm engine sessions
+
+The server shares a host session pool across `convert` tool calls. Engines advertising `supports_session: true` reuse a warm process, with one job in flight per process. Concurrent jobs receive separate processes. Idle sessions close after five minutes, processes retire after 100 jobs, and at most two idle sessions are retained per engine command. Pandoc advertises no session support and remains one-shot.
+
+Each job has its own temporary workspace under the session directory. Cancellation, timeout, an exceeded limit, a crash or a protocol violation kills that session's process tree; the next job starts a fresh process. Server shutdown closes idle sessions and removes their directories. Pools belong to one trust domain; a service serving separate users must not share one pool between them.
 
 ### Protocol Version Compatibility (2024-11-05, 2025-11-25, 2026-07-28)
 
