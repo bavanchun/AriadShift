@@ -273,6 +273,11 @@ pub fn write(
 /// nesting pre-scan before deserializing, version check and block count.
 pub fn read_ir_json(bytes: &[u8], limits: &Limits) -> Result<Document, PipelineError> {
     limits.validate()?;
+    if let Some(limit) = limits.max_input_bytes
+        && bytes.len() as u64 > limit
+    {
+        return Err(limit_exceeded("max_input_bytes"));
+    }
     if bytes.len() as u64 > limits.max_ir_json_bytes {
         return Err(limit_exceeded("max_ir_json_bytes"));
     }
@@ -584,6 +589,23 @@ mod tests {
         assert!(matches!(error, PipelineError::InvalidIr { .. }));
         let error = read_ir_json(br#"{"version": "ariad-ir/0", "#, &Limits::local()).unwrap_err();
         assert!(matches!(error, PipelineError::InvalidIr { .. }));
+    }
+
+    #[test]
+    fn applies_the_input_cap_to_ir_json_routes() {
+        let limits = Limits {
+            max_input_bytes: Some(10),
+            ..Limits::local()
+        };
+        let ir = serde_json::to_vec(&Document::default()).unwrap();
+        let error = execute(
+            &ir,
+            &[step(Format::AriadIrJson, Format::Html)],
+            &limits,
+            WriteOptions::default(),
+        )
+        .unwrap_err();
+        assert_eq!(error, limit_exceeded("max_input_bytes"));
     }
 
     #[test]
