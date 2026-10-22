@@ -454,6 +454,9 @@ fn sandbox_check() -> (DoctorCheck, DoctorSandbox) {
             } else {
                 "no seccomp".to_owned()
             });
+            if support.landlock_filesystem && !support.landlock_unix_sockets {
+                features.push("pathname UNIX socket isolation needs Landlock ABI 9".to_owned());
+            }
             let mut message = format!("engine sandbox: {mode}; {}", features.join(", "));
             if !gaps.is_empty() {
                 message.push_str("; ");
