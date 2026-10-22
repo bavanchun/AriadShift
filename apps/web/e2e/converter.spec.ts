@@ -138,3 +138,27 @@ test("the file picker is keyboard operable", async ({ page }) => {
   await page.keyboard.press("Enter");
   await chooser;
 });
+
+test("the target and profile selects are keyboard operable", async ({ page }) => {
+  await openConverter(page);
+  await chooseFile(page, "notes.md", "text/markdown", MARKDOWN);
+  const target = page.getByTestId("target-select");
+  await expect(target).toContainText("HTML");
+  await target.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("option", { name: "HTML" })).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Enter");
+  await expect(target).toContainText("AriadShift IR (JSON)");
+  await expect(page.getByRole("listbox")).toBeHidden();
+
+  const profile = page.getByTestId("profile-select");
+  await profile.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("option", { name: "Editable" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("option", { name: "Faithful" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(profile).toContainText("Faithful");
+  await expect(page.getByTestId("route")).toBeVisible();
+});
