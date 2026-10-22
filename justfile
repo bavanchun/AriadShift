@@ -29,7 +29,15 @@ lint-commits range="origin/dev..HEAD": lint-tools
     sh scripts/check-commits.sh {{range}}
 
 wasm:
-    cargo check -p ariad-core --target wasm32-unknown-unknown
+    cargo check -p ariad-core -p ariad-wasm --target wasm32-unknown-unknown
+
+wasm-bindgen-tool:
+    sh scripts/install-wasm-bindgen.sh
+
+# Builds the browser module into packages/ariad-wasm/pkg (not committed).
+wasm-build: wasm-bindgen-tool
+    cargo build -p ariad-wasm --target wasm32-unknown-unknown --profile wasm-release
+    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm
 
 test:
     cargo nextest run --workspace --features ariad-host/test-probe
