@@ -1,6 +1,8 @@
 // Offline support for the in-browser converter. The converter page posts the URLs it
 // and its worker loaded; they are cached here and served when the network is gone.
-// Pages other than /app keep their normal network behaviour.
+// The worker is registered for the whole origin so that the converter's own worker
+// script falls under it, but it only answers /app navigations; content-hashed assets
+// come from the cache first and everything else from the network first.
 const CACHE = "ariadshift-app-v1";
 
 self.addEventListener("install", () => {
@@ -88,21 +90,30 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
-      const cached = await cache.match(request);
-      if (!cached) {
-        return fetch(request);
+      let response;
+      if (url.pathname.startsWith("/_next/static/")) {
+        response = (await cache.match(request)) ?? (await fetch(request));
+      } else {
+        try {
+          return await fetch(request);
+        } catch (error) {
+          response = await cache.match(request);
+          if (!response) {
+            throw error;
+          }
+        }
       }
       // A worker takes its location from the response URL, which for a cached entry has no
       // fragment; the bundler passes the worker's bootstrap parameters in the fragment. A
       // fresh Response has no URL, so the worker keeps the request URL with its fragment.
       if (request.destination === "worker") {
-        return new Response(cached.body, {
-          status: cached.status,
-          statusText: cached.statusText,
-          headers: cached.headers,
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
         });
       }
-      return cached;
+      return response;
     })(),
   );
 });
