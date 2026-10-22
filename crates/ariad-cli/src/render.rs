@@ -286,3 +286,66 @@ pub fn render_convert_json(report: &ariad_host::convert::ConvertReport) -> io::R
     stdout.write_all(b"\n")?;
     stdout.flush()
 }
+
+/// Renders any serializable report as pretty-printed JSON to stdout.
+pub fn render_json<T: serde::Serialize>(value: &T) -> io::Result<()> {
+    let json_bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&json_bytes)?;
+    stdout.write_all(b"\n")?;
+    stdout.flush()
+}
+
+/// Renders a pack install report as human-readable text to stdout.
+pub fn render_pack_install_human(report: &ariad_host::packs::InstallReport) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    let root = escape_control_chars(&report.root.display().to_string());
+    match report.status {
+        ariad_host::packs::InstallStatus::Installed => writeln!(
+            out,
+            "installed {} {} ({}) in {root}",
+            report.name, report.version, report.target
+        )?,
+        ariad_host::packs::InstallStatus::AlreadyInstalled => writeln!(
+            out,
+            "{} {} ({}) is already installed in {root}",
+            report.name, report.version, report.target
+        )?,
+    }
+    out.flush()
+}
+
+/// Renders a pack removal report as human-readable text to stdout.
+pub fn render_pack_remove_human(report: &ariad_host::packs::RemoveReport) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    writeln!(out, "removed {} {}", report.name, report.removed.join(", "))?;
+    if let Some(active) = &report.active {
+        writeln!(out, "active version: {active}")?;
+    }
+    out.flush()
+}
+
+/// Renders a pack verification report as human-readable text to stdout.
+pub fn render_pack_verify_human(report: &ariad_host::packs::VerifyReport) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    let icon = if report.ok { check_mark() } else { fail_icon() };
+    let signer = report
+        .key_id
+        .as_deref()
+        .map_or_else(String::new, |key| format!(", signed by key {key}"));
+    writeln!(
+        out,
+        "{icon} {} {} ({}): {} entries checked{signer}",
+        report.name, report.version, report.target, report.checked
+    )?;
+    for path in &report.modified {
+        writeln!(out, "  modified: {}", escape_control_chars(path))?;
+    }
+    for path in &report.missing {
+        writeln!(out, "  missing: {}", escape_control_chars(path))?;
+    }
+    for problem in &report.problems {
+        writeln!(out, "  problem: {}", escape_control_chars(problem))?;
+    }
+    out.flush()
+}

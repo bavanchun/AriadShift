@@ -21,6 +21,7 @@ rmcp = { workspace = true, features = ["server", "macros", "transport-io"] }
 schemars.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 tokio-util = { workspace = true, features = ["rt"] }
 
