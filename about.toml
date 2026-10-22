@@ -32,3 +32,7 @@ accepted = ["MPL-2.0"]
 
 [dtoa-short]
 accepted = ["MPL-2.0"]
+
+# Transitive dependency of directories (engine pack data directory)
+[option-ext]
+accepted = ["MPL-2.0"]

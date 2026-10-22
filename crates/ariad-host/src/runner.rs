@@ -72,6 +72,7 @@ pub enum RunError {
 fn run_internal<S>(
     program: &Path,
     args: &[OsString],
+    env: &[(OsString, OsString)],
     request: &Request,
     describe_timeout_override: Option<Duration>,
     cancel: CancellationToken,
@@ -90,7 +91,7 @@ where
             .map_err(|_| RunError::ProtocolViolation("request contains invalid limits"))?;
 
         if limits.max_memory_mb.is_some() {
-            check_memory_limit_support(program, args, limits, cancel.clone())?;
+            memory_limit_support(program, args, env, limits, cancel.clone())?;
         }
     }
 
@@ -110,6 +111,7 @@ where
     runtime.block_on(run_async(
         program,
         args,
+        env,
         request,
         request_line,
         describe_timeout_override,
@@ -132,7 +134,22 @@ pub fn run<S>(
 where
     S: FnMut(Event),
 {
-    run_internal(program, args, request, None, cancel, sink)
+    run_internal(program, args, &[], request, None, cancel, sink)
+}
+
+/// Like [`run`], adding `env` to the cleared engine environment (an engine pack's settings).
+pub fn run_with_env<S>(
+    program: &Path,
+    args: &[OsString],
+    env: &[(OsString, OsString)],
+    request: &Request,
+    cancel: CancellationToken,
+    sink: S,
+) -> Result<RunOutcome, RunError>
+where
+    S: FnMut(Event),
+{
+    run_internal(program, args, env, request, None, cancel, sink)
 }
 
 /// Fixed timeout for engine `describe` requests.
@@ -165,18 +182,47 @@ pub fn describe_with_timeout(
     timeout: Duration,
     cancel: CancellationToken,
 ) -> Result<Event, RunError> {
+    describe_internal(program, args, &[], timeout, cancel)
+}
+
+/// Like [`describe`], adding `env` to the cleared engine environment (an engine pack's
+/// settings).
+pub fn describe_with_env(
+    program: &Path,
+    args: &[OsString],
+    env: &[(OsString, OsString)],
+    cancel: CancellationToken,
+) -> Result<Event, RunError> {
+    describe_internal(program, args, env, DESCRIBE_TIMEOUT, cancel)
+}
+
+fn describe_internal(
+    program: &Path,
+    args: &[OsString],
+    env: &[(OsString, OsString)],
+    timeout: Duration,
+    cancel: CancellationToken,
+) -> Result<Event, RunError> {
     let request = Request::Describe {
         protocol: PROTOCOL.to_owned(),
         job: format!("describe-{}", std::process::id()),
     };
     let mut capabilities = None;
     let mut count = 0_usize;
-    run_internal(program, args, &request, Some(timeout), cancel, |event| {
-        if let Event::Capabilities { .. } = &event {
-            count += 1;
-            capabilities = Some(event);
-        }
-    })?;
+    run_internal(
+        program,
+        args,
+        env,
+        &request,
+        Some(timeout),
+        cancel,
+        |event| {
+            if let Event::Capabilities { .. } = &event {
+                count += 1;
+                capabilities = Some(event);
+            }
+        },
+    )?;
     if count != 1 {
         return Err(RunError::ProtocolViolation(
             "engine must emit exactly one capabilities event",
@@ -210,6 +256,16 @@ pub fn check_memory_limit_support(
     limits: &Limits,
     cancel: CancellationToken,
 ) -> Result<(), RunError> {
+    memory_limit_support(program, args, &[], limits, cancel)
+}
+
+fn memory_limit_support(
+    program: &Path,
+    args: &[OsString],
+    env: &[(OsString, OsString)],
+    limits: &Limits,
+    cancel: CancellationToken,
+) -> Result<(), RunError> {
     if limits.max_memory_mb.is_none() {
         return Ok(());
     }
@@ -232,7 +288,7 @@ pub fn check_memory_limit_support(
     let enforces = match cached {
         Some(enforces) => enforces,
         None => {
-            let event = describe(program, args, cancel)?;
+            let event = describe_internal(program, args, env, DESCRIBE_TIMEOUT, cancel)?;
             let Event::Capabilities {
                 enforces_memory_limit,
                 ..
@@ -259,9 +315,11 @@ pub fn check_memory_limit_support(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_async<S>(
     program: &Path,
     args: &[OsString],
+    env: &[(OsString, OsString)],
     request: &Request,
     request_line: Vec<u8>,
     describe_timeout_override: Option<Duration>,
@@ -312,6 +370,7 @@ where
                 command.env("SYSTEMROOT", system_root);
             }
         }
+        command.envs(env.iter().map(|(key, value)| (key, value)));
     });
     #[cfg(unix)]
     command.wrap(ProcessGroup::leader());

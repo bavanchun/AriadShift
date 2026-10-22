@@ -1,0 +1,189 @@
+{
+  "$id": "https://ariadshift.ariadnev.com/schemas/pack.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Engine pack manifest",
+  "description": "A signed engine pack manifest (`ariad-pack/1`).",
+  "type": "object",
+  "properties": {
+    "description": {
+      "description": "One-line description.",
+      "type": "string",
+      "default": ""
+    },
+    "license": {
+      "description": "SPDX licence summary of everything the pack contains.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Pack name: lower-case ASCII letters, digits and `-`, starting with a letter.",
+      "type": "string"
+    },
+    "notices": {
+      "description": "Licence and notice files inside the install root, as relative paths.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requires_ashift": {
+      "description": "SemVer requirement on the `ashift` version that may install and run this pack.",
+      "type": "string"
+    },
+    "schema": {
+      "description": "Manifest schema identifier, always `\"ariad-pack/1\"`.",
+      "type": "string"
+    },
+    "targets": {
+      "description": "Per-platform builds of the pack.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Target"
+      }
+    },
+    "version": {
+      "description": "Pack version (SemVer).",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "name",
+    "version",
+    "license",
+    "requires_ashift",
+    "targets"
+  ],
+  "$defs": {
+    "Component": {
+      "description": "One downloadable file of a pack build.",
+      "type": "object",
+      "properties": {
+        "dest": {
+          "description": "Directory inside the install root that receives the content (`.` for the root).",
+          "type": "string",
+          "default": "."
+        },
+        "entries": {
+          "description": "Number of entries (files, directories and links) inside an archive.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "executable": {
+          "description": "For `unpack = \"file\"`: mark the installed file executable.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Component name, unique within its target.",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "Lower-case hex SHA-256 of the downloaded file.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size of the downloaded file in bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "unpack": {
+          "description": "How the file is unpacked.",
+          "$ref": "#/$defs/Unpack"
+        },
+        "unpacked_size": {
+          "description": "Sum of the regular file sizes inside an archive.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "url": {
+          "description": "`https://` URL, or a path relative to the manifest's location.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "url",
+        "sha256",
+        "size",
+        "unpack"
+      ]
+    },
+    "Target": {
+      "description": "One platform build of a pack.",
+      "type": "object",
+      "properties": {
+        "components": {
+          "description": "Files that make up this build.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Component"
+          }
+        },
+        "entrypoint": {
+          "description": "Engine argv. The first element is a path relative to the install root; later elements\nmay contain `{root}`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "description": "Allow-listed engine environment variables; values may contain `{root}`.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "options": {
+          "description": "Default request options for the engine; string values may contain `{root}`.",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "triple": {
+          "description": "Rust target triple of the pack's binaries, e.g. `x86_64-unknown-linux-gnu`.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "triple",
+        "entrypoint"
+      ]
+    },
+    "Unpack": {
+      "description": "Unpack mode of a component.",
+      "oneOf": [
+        {
+          "description": "Zstandard-compressed tar archive.",
+          "type": "string",
+          "const": "tar.zst"
+        },
+        {
+          "description": "Gzip-compressed tar archive.",
+          "type": "string",
+          "const": "tar.gz"
+        },
+        {
+          "description": "ZIP archive.",
+          "type": "string",
+          "const": "zip"
+        },
+        {
+          "description": "A single file written to `<dest>/<name>`.",
+          "type": "string",
+          "const": "file"
+        }
+      ]
+    }
+  }
+}

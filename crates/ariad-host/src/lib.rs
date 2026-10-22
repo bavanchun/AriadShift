@@ -10,6 +10,7 @@ pub mod engines;
 pub mod ir_io;
 pub(crate) mod media;
 pub mod package_meta;
+pub mod packs;
 pub mod pandoc_bin;
 pub mod runner;
 pub mod workspace;
