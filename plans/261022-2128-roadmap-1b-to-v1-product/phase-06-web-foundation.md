@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "Web foundation and local app"
-status: pending
+status: completed
 priority: P1
 effort: "28h"
 dependencies: []
