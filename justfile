@@ -60,6 +60,41 @@ web-lint:
 web-test: wasm-build
     pnpm exec vitest run
 
+# TypeScript 7 checks of every JavaScript package.
+web-typecheck: wasm-build
+    pnpm -r --if-present typecheck
+
+# Development server for the web app on http://localhost:3000.
+web-dev: wasm-build
+    pnpm --filter @ariadshift/web dev
+
+# Production build; every route is statically generated. Serve it with `just web-start`.
+web-build: wasm-build
+    pnpm --filter @ariadshift/web build
+
+# Serves the production build on http://localhost:3100.
+web-start:
+    pnpm --filter @ariadshift/web start
+
+# Static export into apps/web/out, with out/_headers for the converter's headers.
+web-export: wasm-build
+    pnpm --filter @ariadshift/web export
+
+# Installs the browsers the end-to-end tests use.
+web-browsers:
+    pnpm --filter @ariadshift/web exec playwright install chromium firefox webkit
+
+# Playwright on Chromium, Firefox and WebKit against `next start`; run `just web-build` first.
+web-e2e:
+    pnpm --filter @ariadshift/web e2e
+
+# Lighthouse on / and /app, mobile and desktop, against `next start`; run `just web-build` first.
+web-lighthouse:
+    pnpm --filter @ariadshift/web lighthouse
+
+# The JavaScript checks of `just ci`, apart from Biome in `just static`.
+web-ci: web-typecheck web-test web-build
+
 py:
     uv lock --check
 
@@ -107,12 +142,12 @@ licenses-check:
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js py check-release-workflow licenses-check test-winget-manifest
+static: fmt-check spell lint-workflows deny js web-lint py check-release-workflow licenses-check test-winget-manifest
 
 package-check:
     cargo package --workspace --allow-dirty
 
-ci: static clippy wasm test bench-test bench-check package-check
+ci: static clippy wasm test bench-test bench-check package-check web-ci
 
 pandoc:
     bash scripts/install-pandoc.sh
