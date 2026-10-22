@@ -857,6 +857,38 @@ mod tests {
     }
 
     #[test]
+    fn empty_quotes_in_a_list_obey_the_nesting_limit() {
+        for limit in [1, 2, 64] {
+            let mut limits = Limits::local();
+            limits.max_nesting_depth = limit;
+            let at_limit = format!("- {}\n", "> ".repeat(usize::from(limit - 1)));
+            assert!(read(&at_limit, &limits).is_ok());
+            let too_deep = format!("- {}\n", "> ".repeat(usize::from(limit)));
+            assert_eq!(
+                read(&too_deep, &limits),
+                Err(ReadError::NestingTooDeep { limit })
+            );
+        }
+    }
+
+    #[test]
+    fn tables_inside_quotes_obey_the_nesting_limit() {
+        for limit in [1, 2, 64] {
+            let mut limits = Limits::local();
+            limits.max_nesting_depth = limit;
+            let table = |quotes| {
+                let prefix = "> ".repeat(quotes);
+                format!("{prefix}| a |\n{prefix}| --- |\n{prefix}| b |\n")
+            };
+            assert!(read(&table(usize::from(limit - 1)), &limits).is_ok());
+            assert_eq!(
+                read(&table(usize::from(limit)), &limits),
+                Err(ReadError::NestingTooDeep { limit })
+            );
+        }
+    }
+
+    #[test]
     fn reads_gfm_features_shortcodes_and_raw_html() {
         let output = read(
             "# Title\n\n~~gone~~ https://example.com :smile:\n\n| A | B |\n|---|:---:|\n| 1 | 2 |\n\n- [x] done\n- [ ] later\n\n$e=mc^2$\n\n<div>x</div>\n",
