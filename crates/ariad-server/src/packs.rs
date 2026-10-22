@@ -16,7 +16,7 @@ pub enum Pack {
     Core,
     /// The base install plus LibreOffice.
     Office,
-    /// The base install plus the docling engine pack.
+    /// The Office install plus the docling engine pack.
     Docling,
 }
 

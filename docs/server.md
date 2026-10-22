@@ -21,16 +21,16 @@ Workers convert through `ariad_host`, exactly as `ashift convert` does, under th
 |---|---|---|---|
 | `core` | `jobs_core` | [`infra/docker/server.Dockerfile`](../infra/docker/server.Dockerfile) | `ariad-server`, `ashift`, Pandoc 3.12 |
 | `office` | `jobs_office` | [`infra/docker/worker-office.Dockerfile`](../infra/docker/worker-office.Dockerfile) | the above plus LibreOffice 26.8 |
-| `docling` | `jobs_docling` | [`infra/docker/worker-docling.Dockerfile`](../infra/docker/worker-docling.Dockerfile) | the above plus Tesseract and the docling engine pack |
+| `docling` | `jobs_docling` | [`infra/docker/worker-docling.Dockerfile`](../infra/docker/worker-docling.Dockerfile) | the office image plus Tesseract and the docling engine pack |
 
 The API plans each job over the engines of the packs listed in `ARIAD_PACKS` and queues it for the heaviest pack its route needs. A route through LibreOffice goes to `office`, one through Docling to `docling`, and everything else to `core`.
 
-Build the images from the repository root; the worker images start from the server image:
+Build the images from the repository root in this order. The Docling image includes LibreOffice so it can run routes that use both engines:
 
 ```sh
 docker build -f infra/docker/server.Dockerfile -t ariadshift-server .
 docker build -f infra/docker/worker-office.Dockerfile --build-arg SERVER_IMAGE=ariadshift-server -t ariadshift-worker-office .
-docker build -f infra/docker/worker-docling.Dockerfile --build-arg SERVER_IMAGE=ariadshift-server -t ariadshift-worker-docling .
+docker build -f infra/docker/worker-docling.Dockerfile --build-arg SERVER_IMAGE=ariadshift-worker-office -t ariadshift-worker-docling .
 ```
 
 The images run as user 10001 under `tini`. Give workers a tmpfs at `/tmp` (for example `--tmpfs /tmp:rw,size=4g`). Job files and the host's engine workspaces then stay in memory; a worker logs at startup whether its work directory is on tmpfs.

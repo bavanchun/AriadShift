@@ -65,7 +65,7 @@ Recorded 2026-10-22 before implementation. Versions were checked against crates.
 
 - `object_store` 0.14.2 with `aws-base`, `reqwest` and `ring` (not the `aws` feature, which forces `aws-lc-rs` and its OpenSSL-licensed C code). `ARIAD_STORAGE_URL=s3://bucket` reads the standard `AWS_*` variables (SeaweedFS, R2); `file:///path` uses the local store.
 - Keys: `t/{tenant}/{owner}/{in|out}/{sha256}`, where `owner` is the upload id for inputs (an upload exists before any job and can feed several jobs) and the job id for outputs.
-- Uploads: `POST /v1/uploads {filename, size, sha256}` returns one presigned `PUT` (15 minutes) with `content-length` and `x-amz-checksum-sha256` bound to the signature through `SignedUrlOptions`; `complete` checks the size and re-hashes the object before the upload becomes usable. The local store has no signer, so the API serves HMAC-signed `PUT`/`GET /v1/blobs/{token}` URLs itself (size-capped and hashed while streaming); those routes are not part of the OpenAPI contract because clients only follow returned URLs.
+- Uploads: `POST /v1/uploads {filename, size, sha256}` returns one presigned `PUT` (15 minutes) with `x-amz-checksum-sha256` bound to the signature through `SignedUrlOptions` (the signer cannot bind `content-length`); `complete` checks the size and re-hashes the object before the upload becomes usable. The local store has no signer, so the API serves HMAC-signed `PUT`/`GET /v1/blobs/{token}` URLs itself (size-capped and hashed while streaming); those routes are not part of the OpenAPI contract because clients only follow returned URLs.
 - Downloads: presigned `GET` valid for 5 minutes. A sweeper in the API process (one runner through `pg_try_advisory_lock`) deletes inputs and outputs after the plan's `retention_s` (3600 by default) and marks jobs `expired`.
 
 ### Auth
@@ -104,6 +104,12 @@ Recorded 2026-10-22 before implementation. Versions were checked against crates.
 
 - Integration tests create one database per test from `ARIAD_TEST_DATABASE_URL` and skip with a message when it is unset; the S3 test also needs `ARIAD_TEST_S3_ENDPOINT`. `just test-server` starts `ariadshift-test-pg` (127.0.0.1:55442; 55432 is taken on the shared machine) and `ariadshift-test-s3` (127.0.0.1:58342), runs `cargo nextest run -p ariad-server`, and removes both containers.
 - A `server` CI job on `ubuntu-26.04` runs the same tests with a PostgreSQL service container and SeaweedFS.
+
+### Container images
+
+- Ubuntu 26.04 is pinned by digest. The server image builds `ariad-server` and `ashift` with three Cargo jobs by default, installs the existing checksum-verified Pandoc pin, and runs as uid 10001 under `tini`.
+- The Office image extends server with checksum-verified LibreOffice 26.8.1. The Docling image extends Office with Tesseract and the signed Docling pack, so the heaviest queue's worker can run mixed-engine routes.
+- Rustup 1.29.2 and LibreOffice 26.8.1 checksums were verified against their official download endpoints. Pack installation depends on the engine-pack CLI and published Docling pack from the concurrent implementation.
 
 ### Deviations
 
