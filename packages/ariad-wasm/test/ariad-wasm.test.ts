@@ -53,13 +53,19 @@ describe("ariad-wasm", () => {
   });
 
   it("plans browser routes and explains the alternatives", () => {
-    const route = plan("markdown", "html", undefined);
+    const route = plan("markdown", "html");
     expect(route.steps.map((step) => `${step.from}>${step.to}:${step.engine}`)).toEqual([
       "markdown>ariad-ir+json:ariad-core",
       "ariad-ir+json>html:ariad-core",
     ]);
     expect(route.measured).toBe(true);
     expect(route.score.fidelity).toBeGreaterThan(0.9);
+  });
+
+  it("plans CLI routes when asked for every runtime", () => {
+    const route = plan("docx", "markdown", "editable", "all");
+    expect(route.steps[0]?.engine).toBe("pandoc");
+    expect(thrown(() => plan("docx", "markdown")).code).toBe("no_route");
   });
 
   it("converts Markdown to HTML and back", () => {
@@ -94,9 +100,9 @@ describe("ariad-wasm", () => {
     expect(noRoute.reachable_elsewhere).toEqual(["docx", "epub"]);
     expect(noRoute.message).toContain("CLI");
 
-    expect(thrown(() => plan("md", "html", undefined)).code).toBe("unknown_format");
-    expect(thrown(() => plan("html", "html", undefined)).code).toBe("same_format");
-    const badProfile = thrown(() => plan("markdown", "html", "best" as never));
+    expect(thrown(() => plan("md", "html")).code).toBe("unknown_format");
+    expect(thrown(() => plan("html", "html")).code).toBe("same_format");
+    const badProfile = thrown(() => plan("markdown", "html", "best"));
     expect(badProfile.code).toBe("invalid_options");
     expect(thrown(() => convert(new Uint8Array([0xff]), "markdown", "html", undefined)).code).toBe(
       "invalid_input",

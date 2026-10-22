@@ -130,9 +130,46 @@ fn reachable_split(from: Format) -> (Vec<Format>, Vec<Format>) {
     (here, elsewhere)
 }
 
+/// Which capability edges a plan may use.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PlanScope {
+    /// Only edges that run in the browser; the routes [`convert`] executes.
+    #[default]
+    Browser,
+    /// Every known edge, including CLI, desktop and cloud engines; for explanations.
+    All,
+}
+
+/// Resolves a plan scope name; `None` selects `browser`.
+pub fn parse_scope(scope: Option<&str>) -> Result<PlanScope, ApiError> {
+    match scope {
+        None | Some("browser") => Ok(PlanScope::Browser),
+        Some("all") => Ok(PlanScope::All),
+        Some(other) => Err(ApiError::new(
+            "invalid_options",
+            format!(
+                "unknown plan scope '{}'; valid scopes: browser, all",
+                other
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(32)
+                    .collect::<String>()
+            ),
+        )
+        .with("option", "scope")),
+    }
+}
+
 /// Plans a route over the edges that run in the browser.
 pub fn plan_route(from: Format, to: Format, profile: Profile) -> Result<Plan, ApiError> {
-    let caps = browser_capabilities();
+    plan_in(PlanScope::Browser, from, to, profile)
+}
+
+fn plan_in(scope: PlanScope, from: Format, to: Format, profile: Profile) -> Result<Plan, ApiError> {
+    let caps = match scope {
+        PlanScope::Browser => browser_capabilities(),
+        PlanScope::All => planner::embedded(),
+    };
     let engines = caps.registered_engines();
     planner::plan(caps, from, to, profile, &engines).map_err(|error| match error {
         PlanError::SameFormat { .. } => ApiError::new("same_format", error.to_string())
@@ -161,9 +198,16 @@ pub fn plan_route(from: Format, to: Format, profile: Profile) -> Result<Plan, Ap
     })
 }
 
-/// Plans `input` to `to` by format id.
-pub fn plan(input: &str, to: &str, profile: Option<&str>) -> Result<Plan, ApiError> {
-    plan_route(
+/// Plans `input` to `to` by format id within `scope` (`browser` or `all`).
+pub fn plan(
+    input: &str,
+    to: &str,
+    profile: Option<&str>,
+    scope: Option<&str>,
+) -> Result<Plan, ApiError> {
+    let scope = parse_scope(scope)?;
+    plan_in(
+        scope,
         parse_format(input)?,
         parse_format(to)?,
         parse_profile(profile)?,
@@ -262,7 +306,7 @@ mod tests {
 
     #[test]
     fn typed_errors_carry_codes_and_details() {
-        let error = plan("markdown", "docx", None).unwrap_err();
+        let error = plan("markdown", "docx", None, None).unwrap_err();
         assert_eq!(error.code(), "no_route");
         assert_eq!(
             error.detail("reachable_elsewhere"),
@@ -278,20 +322,38 @@ mod tests {
         );
 
         assert_eq!(
-            plan("markdown", "markdown", None).unwrap_err().code(),
+            plan("markdown", "markdown", None, None).unwrap_err().code(),
             "same_format"
         );
         assert_eq!(
-            plan("md", "html", None).unwrap_err().code(),
+            plan("md", "html", None, None).unwrap_err().code(),
             "unknown_format"
         );
         assert_eq!(
-            plan("markdown", "html", Some("best")).unwrap_err().code(),
+            plan("markdown", "html", Some("best"), None)
+                .unwrap_err()
+                .code(),
             "invalid_options"
         );
 
         let error = convert(b"\xff", "markdown", "html", ConvertOptions::default()).unwrap_err();
         assert_eq!(error.code(), "invalid_input");
+    }
+
+    #[test]
+    fn plans_cli_routes_only_in_the_all_scope() {
+        let route = plan("docx", "markdown", None, Some("all")).unwrap();
+        assert_eq!(route.steps[0].engine, "pandoc");
+        assert_eq!(
+            plan("docx", "markdown", None, None).unwrap_err().code(),
+            "no_route"
+        );
+        assert_eq!(
+            plan("docx", "markdown", None, Some("cloud"))
+                .unwrap_err()
+                .code(),
+            "invalid_options"
+        );
     }
 
     #[test]
