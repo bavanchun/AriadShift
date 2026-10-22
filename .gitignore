@@ -12,6 +12,8 @@ __pycache__/
 .next/
 apps/web/out/
 apps/web/next-env.d.ts
+# Written by `next dev` when it detects a coding agent; repository rules live in AGENTS.md.
+apps/web/AGENTS.md
 apps/web/public/brand/
 apps/web/src/app/icon.svg
 apps/web/src/app/apple-icon.png
