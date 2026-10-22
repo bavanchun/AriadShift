@@ -127,6 +127,12 @@ describe("ariad-wasm", () => {
       convert(encoder.encode("a"), "markdown", "html", { speed: "fast" } as never),
     );
     expect(unknown.code).toBe("invalid_options");
+
+    const typo = thrown(() =>
+      convert(encoder.encode("a"), "markdown", "html", { limits: { max_block: 1 } } as never),
+    );
+    expect(typo.code).toBe("invalid_options");
+    expect(typo.option).toBe("limits");
   });
 
   it("converts IR nested to the local limit without exhausting the stack", () => {

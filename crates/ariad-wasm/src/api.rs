@@ -73,6 +73,21 @@ pub struct ConvertOptions {
     pub limits: Option<Limits>,
 }
 
+/// Parses `convert` options from JSON, rejecting unknown option and limit names so a typo
+/// never silently falls back to a default.
+pub fn parse_options(text: &str) -> Result<ConvertOptions, ApiError> {
+    let value: Value =
+        serde_json::from_str(text).map_err(|error| invalid_options(&error.to_string()))?;
+    if let Some(Value::Object(limits)) = value.get("limits")
+        && let Some(unknown) = limits
+            .keys()
+            .find(|key| !Limits::FIELD_NAMES.contains(&key.as_str()))
+    {
+        return Err(invalid_options(&format!("unknown limit `{unknown}`")).with("option", "limits"));
+    }
+    serde_json::from_value(value).map_err(|error| invalid_options(&error.to_string()))
+}
+
 /// Everything about a conversion except its bytes.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ConversionMeta {
@@ -385,10 +400,11 @@ mod tests {
 
     #[test]
     fn options_reject_unknown_fields() {
-        let error = serde_json::from_str::<ConvertOptions>(r#"{"speed":"fast"}"#).unwrap_err();
-        assert!(error.to_string().contains("unknown field"));
-        let options: ConvertOptions =
-            serde_json::from_str(r#"{"limits":{"max_blocks":5}}"#).unwrap();
+        let error = parse_options(r#"{"speed":"fast"}"#).unwrap_err();
+        assert_eq!(error.code(), "invalid_options");
+        let error = parse_options(r#"{"limits":{"max_block":5}}"#).unwrap_err();
+        assert_eq!(error.detail("option"), Some(&serde_json::json!("limits")));
+        let options = parse_options(r#"{"limits":{"max_blocks":5}}"#).unwrap();
         let limits = options.limits.unwrap();
         assert_eq!(limits.max_blocks, 5);
         assert_eq!(limits.max_nesting_depth, Limits::local().max_nesting_depth);

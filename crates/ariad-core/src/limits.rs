@@ -35,6 +35,21 @@ impl Default for Limits {
 }
 
 impl Limits {
+    /// Serialized names of every field, for callers that must reject unknown names.
+    pub const FIELD_NAMES: &'static [&'static str] = &[
+        "max_input_bytes",
+        "max_pages",
+        "timeout_s",
+        "max_memory_mb",
+        "max_asset_bytes",
+        "max_nesting_depth",
+        "max_blocks",
+        "max_front_matter_bytes",
+        "max_archive_entries",
+        "max_decompressed_bytes",
+        "max_ir_json_bytes",
+    ];
+
     /// Local defaults leave workload-sized limits unlimited.
     #[must_use]
     pub const fn local() -> Self {
@@ -114,6 +129,21 @@ pub enum LimitsError {
 #[cfg(test)]
 mod tests {
     use super::{Limits, LimitsError};
+
+    #[test]
+    fn field_names_match_the_schema() {
+        let schema = serde_json::to_value(schemars::schema_for!(Limits)).unwrap();
+        let mut properties: Vec<&str> = schema["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        let mut names = Limits::FIELD_NAMES.to_vec();
+        properties.sort_unstable();
+        names.sort_unstable();
+        assert_eq!(names, properties);
+    }
 
     #[test]
     fn local_and_cloud_defaults_match_the_contract() {
