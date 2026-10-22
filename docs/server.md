@@ -13,6 +13,8 @@ One binary, four subcommands:
 | `ariad-server worker --packs core[,office,docling]` | Runs conversion jobs from the queues of the given engine packs. |
 | `ariad-server openapi` | Prints the OpenAPI document (hidden; the committed copy is `schemas/openapi.v1.json`). |
 
+Use direct PostgreSQL connections or session pooling: LISTEN and advisory locks need session affinity and cannot use PgBouncer transaction pooling.
+
 `api` and `worker` refuse to start until every migration in the binary is applied, and also when the database has a migration the binary does not know.
 
 Workers convert through `ariad_host`, exactly as `ashift convert` does, under the limits of the job's plan. They start engines through the `ashift` binary (`ashift __engine …`), so a worker image needs `ashift` and the tools of its pack:
@@ -33,7 +35,9 @@ docker build -f infra/docker/worker-office.Dockerfile --build-arg SERVER_IMAGE=a
 docker build -f infra/docker/worker-docling.Dockerfile --build-arg SERVER_IMAGE=ariadshift-worker-office -t ariadshift-worker-docling .
 ```
 
-The images run as user 10001 under `tini`. Give workers a tmpfs at `/tmp` (for example `--tmpfs /tmp:rw,size=4g`). Job files and the host's engine workspaces then stay in memory; a worker logs at startup whether its work directory is on tmpfs.
+The Docling build runs `ashift engines install docling` and needs the signed pack assets referenced by the [pack index](../crates/ariad-host/data/packs.toml). Until those assets are published, this build fails at installation; the server and Office images can be built independently.
+
+The images run as user 10001 under `tini`. Mount a tmpfs at the work directory and set a container memory limit. Size it for input copies, IR and output, then add the per-job process budget and worker overhead to the container budget; tmpfs consumes container memory too. A 4 GiB tmpfs cannot hold the seeded 2 GiB input cap plus its copies and IR. Conversion helpers put host workspaces under `ARIAD_WORK_DIR`; a worker logs whether this directory is on tmpfs.
 
 ## Configuration
 
@@ -49,6 +53,8 @@ Settings come from environment variables. Empty values count as unset.
 | `ARIAD_LOG_FORMAT` | `text` | `text` or `json`, written to stderr. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Turns on OTLP/HTTP export of traces and metrics. The exporter also reads the other standard `OTEL_*` variables. |
 | `OTEL_SERVICE_NAME` | `ariad-server-api` or `ariad-server-worker` | Service name on exported telemetry. |
+
+Workers additionally hold one dedicated PostgreSQL session per active attempt for its advisory lock. Include those sessions in the server's connection budget; they do not occupy the query pool.
 
 ### Object storage (`api` and `worker`)
 
@@ -95,6 +101,7 @@ The server reads Better Auth's `apikey` table and never writes it. It honours `e
 | Variable | Default | Meaning |
 |---|---|---|
 | `--packs` | `core` | Queues to read, comma-separated. |
+| `ARIAD_CONVERSION_PROGRAM` | current `ariad-server` executable | Private conversion helper binary (`__convert`); normally leave unset. |
 | `ARIAD_ENGINE_PROGRAM` | `ashift` next to `ariad-server`, else on `PATH` | The engine host binary. |
 | `ARIAD_WORK_DIR` | the temp directory | Where per-job directories go. |
 | `ARIAD_SANDBOX` | `required` on Linux, `best-effort` elsewhere | Engine isolation: `required` fails closed when isolation is unavailable, `best-effort` applies what the host supports, `off` runs engines without it. |
@@ -102,6 +109,8 @@ The server reads Better Auth's `apikey` table and never writes it. It honours `e
 | `ARIAD_WORKER_MAX_ATTEMPTS` | `3` | Attempts per job before a transient failure becomes final. |
 | `ARIAD_WORKER_POLL_S` | `5` | Long-poll time of a queue read. |
 | `ASHIFT_PANDOC` | | Pandoc path, passed to engines as for the CLI. |
+
+Each conversion runs in a child process through the host API, with its plan deadline and five seconds of cancellation grace. Native Markdown and HTML inputs are capped at `min(16 MiB, max_memory_mb × 1 MiB / 256)` (16 MiB for free, 4 MiB for anonymous). Inner engines retain the full plan limits. The outer helper uses this admission bound until the host's generic RSS watchdog is available; a container memory limit remains necessary.
 
 Until the engine sandbox is part of `ariad_host`, `ARIAD_SANDBOX=required` stops the worker at startup with an explanation; set `best-effort` or `off` to run it without engine isolation.
 
@@ -134,11 +143,12 @@ After 30 rejected credentials from one client address in a minute, further crede
 
 ## Data lifecycle
 
-- An upload URL is valid for 15 minutes; `complete` checks the size and SHA-256 and deletes a file that does not match.
+- An upload URL is valid for 15 minutes; pending uploads expire after 20 minutes. `complete` is the authoritative size and SHA-256 check and deletes a mismatching file. S3 signing cannot bind content-length, and compatible stores may ignore the signed checksum; configure storage quotas and the lifecycle backstop accordingly.
+- Upload count and declared bytes over 24 hours independently consume `jobs_per_day` and `input_bytes_per_day`, even without a job. Pending uploads reserve `concurrent_jobs` slots (64 when unlimited). Subject locks make admission atomic across replicas.
 - Inputs and outputs are deleted after the plan's `retention_s` (one hour by default), and their jobs become `expired`. `DELETE /v1/jobs/{id}` does the same at once.
 - The sweeper runs in the API process; a PostgreSQL advisory lock keeps it to one replica at a time.
 - Add a bucket lifecycle rule that expires `t/` objects after a day as a backstop, and keep encryption at rest on in the store. R2 encrypts by default; SeaweedFS encrypts volume data with `-filer.encryptVolumeData`.
-- Job rows, events and the usage ledger stay in the database. `usage_events` rejects updates and deletes.
+- Upload and job rows, original filenames, events and the usage ledger stay in the database. `usage_events` rejects updates and deletes.
 
 ## Observability
 

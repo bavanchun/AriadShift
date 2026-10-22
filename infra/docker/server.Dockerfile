@@ -6,11 +6,8 @@
 #
 # From the repository root:
 #   docker build -f infra/docker/server.Dockerfile -t ariadshift-server .
-# Run one of:
-#   docker run ariadshift-server api
-#   docker run --tmpfs /tmp:rw,size=4g ariadshift-server worker --packs core
-#   docker run ariadshift-server migrate
-# docs/server.md lists the environment variables.
+# docs/server.md covers the api, worker and migrate commands, required
+# environment, sandbox policy, and tmpfs/container memory sizing.
 
 ARG UBUNTU=ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
 

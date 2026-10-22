@@ -23,6 +23,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(name = "__convert", hide = true)]
+    Convert,
     /// Serve the /v1 HTTP API.
     Api,
     /// Run conversion jobs from the queues of the given engine packs.
@@ -40,6 +42,15 @@ enum Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Command::Convert = cli.command {
+        return match ariad_host::convert::isolated::serve(CancellationToken::new()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("ariad-server: {err}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     if let Command::Openapi = cli.command {
         return match ariad_server::api::openapi().to_pretty_json() {
             Ok(json) => {
@@ -73,7 +84,7 @@ async fn run(command: Command) -> ExitCode {
     let service = match &command {
         Command::Api => "ariad-server-api",
         Command::Worker { .. } => "ariad-server-worker",
-        Command::Migrate | Command::Openapi => "ariad-server",
+        Command::Migrate | Command::Openapi | Command::Convert => "ariad-server",
     };
     let telemetry = match TelemetryConfig::from_env(&env)
         .map_err(|e| e.to_string())
@@ -127,7 +138,7 @@ async fn execute(command: Command, env: &Env) -> Result<(), String> {
                 .await
                 .map_err(|e| e.to_string())
         }
-        Command::Openapi => Ok(()),
+        Command::Openapi | Command::Convert => Ok(()),
     }
 }
 

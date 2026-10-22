@@ -174,13 +174,13 @@ async fn api_keys_are_checked_read_only() {
     let Some(h) = Harness::start("api_keys_are_checked_read_only", Options::default()).await else {
         return;
     };
-    // Without Better Auth's table, a key is simply invalid.
+    // A missing Better Auth schema is an unavailable verifier, not a bad key.
     let early = Auth::ApiKey("x".repeat(64));
     assert_eq!(
         h.get(&early, "/v1/jobs/00000000-0000-4000-8000-000000000001")
             .await
             .status(),
-        401
+        503
     );
 
     create_apikey_table(&h.db.pool).await;
@@ -416,5 +416,36 @@ async fn turnstile_guards_anonymous_uploads() {
     let keyed = h.post(&Auth::ApiKey(raw), "/v1/uploads", &body).await;
     assert_eq!(keyed.status(), 201);
     stop_turnstile.cancel();
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn api_key_lookup_outages_do_not_count_as_rejected_credentials() {
+    let Some(h) = Harness::start(
+        "api_key_lookup_outages_do_not_count_as_rejected_credentials",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    let key = Auth::ApiKey("a".repeat(64));
+    for _ in 0..31 {
+        assert_eq!(
+            error_code(
+                h.post(&key, "/v1/plan", &json!({"from":"md","to":"html"}))
+                    .await
+            )
+            .await,
+            (503, "unavailable".to_owned())
+        );
+    }
+    let failures: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM rate_limit_counters WHERE bucket LIKE 'auth-failure:%'",
+    )
+    .fetch_one(&h.db.pool)
+    .await
+    .unwrap();
+    assert_eq!(failures, 0);
     h.stop().await;
 }

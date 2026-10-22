@@ -1,3 +1,5 @@
+pub mod isolated;
+
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -440,7 +442,7 @@ fn stem_without_ir(path: &Path) -> Option<String> {
     Some(stem.strip_suffix(".ir").unwrap_or(stem).to_owned())
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ConvertRequest {
     pub input: PathBuf,
     pub output: PathBuf,
@@ -479,7 +481,7 @@ pub struct ConvertWarning {
     pub message: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConvertReport {
     pub output: PathBuf,
     pub route: Vec<ariad_core::planner::PlanStep>,
@@ -509,7 +511,7 @@ impl From<&ConvertReport> for ConvertOutput {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ConvertError {
     UnsupportedRoute {
         detail: Option<String>,

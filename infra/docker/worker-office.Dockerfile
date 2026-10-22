@@ -5,7 +5,8 @@
 # SHA-256. Create the server image first, then from the repository root:
 #   docker build -f infra/docker/worker-office.Dockerfile \
 #     --build-arg SERVER_IMAGE=ariadshift-server -t ariadshift-worker-office .
-# Run with a tmpfs at /tmp; the default command reads the office queue.
+# The default command reads the office queue; see docs/server.md for sandbox
+# policy and tmpfs/container memory sizing.
 
 ARG UBUNTU=ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
 ARG SERVER_IMAGE=ariadshift-server

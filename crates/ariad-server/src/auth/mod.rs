@@ -103,7 +103,9 @@ impl Authenticator {
             let token = value
                 .to_str()
                 .ok()
-                .and_then(|v| v.strip_prefix("Bearer "))
+                .and_then(|v| v.split_once(' '))
+                .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("Bearer"))
+                .map(|(_, token)| token)
                 .map(str::trim)
                 .filter(|t| !t.is_empty())
                 .ok_or_else(|| ApiError::unauthorized("expected a Bearer token"))?;
@@ -137,7 +139,7 @@ impl Authenticator {
                 }
                 api_key::ApiKeyError::Exhausted => ApiError::quota_exceeded(err.to_string()),
                 api_key::ApiKeyError::Database => {
-                    ApiError::unauthorized("the API key could not be verified")
+                    ApiError::unavailable("the API key service is unavailable")
                 }
                 other => ApiError::unauthorized(other.to_string()),
             })?;

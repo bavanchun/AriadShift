@@ -174,7 +174,7 @@ pub fn parse_id(raw: &str, what: &str) -> Result<Uuid, ApiError> {
 #[openapi(
     info(
         title = "AriadShift API",
-        version = "1.0.0",
+        version = env!("CARGO_PKG_VERSION"),
         description = "Convert documents in the AriadShift cloud. Upload a file with one \
                        presigned PUT, create a job, follow its events, and download the outputs \
                        through short-lived URLs. Inputs and outputs are deleted after the plan's \

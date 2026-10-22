@@ -199,7 +199,9 @@ pub struct CreateJobRequest {
 /// A warning reported by the conversion.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
 pub struct JobWarning {
+    #[schema(max_length = 64)]
     pub code: String,
+    #[schema(max_length = 512)]
     pub message: String,
 }
 
@@ -214,6 +216,7 @@ pub struct Job {
     pub pack: Pack,
     /// Planned route; replaced by the executed route when the job succeeds.
     pub route: Vec<RouteStep>,
+    #[schema(max_items = 64)]
     pub warnings: Vec<JobWarning>,
     /// Set when the job failed.
     pub error: Option<ErrorDetail>,

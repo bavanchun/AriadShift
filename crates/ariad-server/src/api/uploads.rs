@@ -13,7 +13,7 @@ use crate::{
     db::{self, NewUpload, UploadRow, UploadStatus},
     error::{ApiError, ApiResult, ErrorBody},
     routing,
-    storage::{Direction, Presigned, StorageError},
+    storage::{Direction, Presigned, StorageError, UPLOAD_URL_TTL},
     telemetry::name_hash,
 };
 
@@ -91,7 +91,9 @@ pub(crate) fn upload_dto(row: &UploadRow, presigned: Option<Presigned>) -> Uploa
         (status = 403, description = "Turnstile check failed", body = ErrorBody),
         (status = 413, description = "File exceeds the plan's input limit", body = ErrorBody),
         (status = 422, description = "Invalid request", body = ErrorBody),
-        (status = 429, description = "Rate limited", body = ErrorBody),
+        (status = 429, description = "Rate limited or upload quota exceeded", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
     ),
     security((), ("bearer" = []), ("api_key" = [])),
 )]
@@ -129,9 +131,18 @@ pub async fn create_upload(
         .presign_put(&key, request.size, &sha256)
         .await
         .map_err(|err| ApiError::internal(&err))?;
-    let retention_s = i64::try_from(caller.entitlement.retention.as_secs()).unwrap_or(i64::MAX);
+    let mut tx = state.db.begin().await?;
+    db::lock_subject(&mut tx, &caller.principal.subject).await?;
+    crate::entitlements::admit_upload(
+        &mut tx,
+        &caller.principal.subject,
+        &caller.entitlement,
+        request.size,
+    )
+    .await?;
+    let retention_s = i64::try_from(UPLOAD_URL_TTL.as_secs() + 300).unwrap_or(i64::MAX);
     let row = db::insert_upload(
-        &state.db,
+        &mut tx,
         &NewUpload {
             id,
             workspace_id: caller.principal.workspace_id,
@@ -144,6 +155,7 @@ pub async fn create_upload(
         },
     )
     .await?;
+    tx.commit().await?;
     tracing::info!(upload_id = %id, name = %name_hash(&filename), size, "upload created");
     Ok((StatusCode::CREATED, Json(upload_dto(&row, Some(presigned)))))
 }
@@ -164,6 +176,8 @@ pub async fn create_upload(
         (status = 409, description = "The file is missing, or the upload is no longer live", body = ErrorBody),
         (status = 422, description = "The file does not match the declared size or hash", body = ErrorBody),
         (status = 429, description = "Rate limited", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
     ),
     security((), ("bearer" = []), ("api_key" = [])),
 )]
@@ -177,6 +191,9 @@ pub async fn complete_upload(
         .await?
         .filter(|row| caller.principal.can_access(row.workspace_id))
         .ok_or_else(|| ApiError::not_found("upload"))?;
+    if row.expires_at <= chrono::Utc::now() {
+        return Err(ApiError::conflict("the upload has expired"));
+    }
     match row.status() {
         UploadStatus::Pending => {}
         UploadStatus::Completed => return Ok(Json(upload_dto(&row, None))),
@@ -202,13 +219,15 @@ pub async fn complete_upload(
         return Err(reject(&state, &row, "the file does not match the declared SHA-256").await);
     }
     let format = routing::detect_format(&digested.prefix, &row.filename);
-    let completed = db::complete_upload(&state.db, id, format.map(|f| f.id())).await?;
+    let retention_s = i64::try_from(caller.entitlement.retention.as_secs()).unwrap_or(i64::MAX);
+    let completed = db::complete_upload(&state.db, id, format.map(|f| f.id()), retention_s).await?;
     let row = match completed {
         Some(row) => row,
         // A concurrent call completed it first.
         None => db::get_upload(&state.db, id)
             .await?
-            .ok_or_else(|| ApiError::not_found("upload"))?,
+            .filter(|row| row.status() == UploadStatus::Completed)
+            .ok_or_else(|| ApiError::conflict("the upload is no longer pending"))?,
     };
     tracing::info!(upload_id = %id, format = ?row.format, "upload completed");
     Ok(Json(upload_dto(&row, None)))

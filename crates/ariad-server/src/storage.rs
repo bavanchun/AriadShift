@@ -206,9 +206,9 @@ impl Storage {
         }
     }
 
-    /// A presigned `PUT` for exactly `size` bytes hashing to `sha256`. S3
-    /// stores check the signed `x-amz-checksum-sha256`; local blob URLs check
-    /// size and hash while streaming.
+    /// A presigned `PUT` declaring `size` and `sha256`. S3 signs the checksum
+    /// header but cannot bind content-length; completion verifies both even
+    /// when a compatible store ignores the checksum. Local URLs enforce both.
     pub async fn presign_put(
         &self,
         key: &str,
@@ -221,8 +221,8 @@ impl Storage {
                 let digest = hex::decode(sha256_hex)
                     .map_err(|_| StorageError::Config("sha256 is not hex".to_owned()))?;
                 let checksum = STANDARD.encode(digest);
-                // The signer cannot bind content-length; a matching SHA-256
-                // fixes the exact bytes, and `complete` re-checks both.
+                // This signer omits content-length. Compatible stores may
+                // ignore checksum validation, so completion is authoritative.
                 let options = SignedUrlOptions::default().with_signed_header(
                     HeaderName::from_static(CHECKSUM_HEADER),
                     HeaderValue::from_str(&checksum)

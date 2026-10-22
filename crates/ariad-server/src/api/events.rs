@@ -216,6 +216,8 @@ impl StreamState {
         (status = 401, description = "Credentials rejected", body = ErrorBody),
         (status = 404, description = "No such job", body = ErrorBody),
         (status = 429, description = "Rate limited", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
     ),
     security((), ("bearer" = []), ("api_key" = [])),
 )]

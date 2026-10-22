@@ -81,10 +81,18 @@ impl Failure {
         }
     }
 
-    fn transient(code: &'static str, message: impl Into<String>) -> Self {
+    fn transient(code: &'static str, _cause: impl Into<String>) -> Self {
+        let message = match code {
+            "storage" => "object storage is unavailable",
+            "database" => "job data is unavailable",
+            "output_io" => "the output could not be written",
+            "tool_missing" => "a required engine is missing on the worker",
+            _ => "the conversion could not finish",
+        };
+        tracing::warn!(code, "conversion operation failed");
         Self {
             code,
-            message: message.into(),
+            message: message.to_owned(),
             transient: true,
         }
     }
@@ -216,6 +224,17 @@ impl Worker {
         job_id: Uuid,
         shutdown: &CancellationToken,
     ) -> Result<Disposition, sqlx::Error> {
+        // Own the session outside the pool so lock holders cannot exhaust
+        // bookkeeping connections. Dropping it releases the advisory lock.
+        let mut lock_conn = self.db.acquire().await?.detach();
+        let locked: bool =
+            sqlx::query_scalar("SELECT pg_try_advisory_lock(hashtextextended($1, 0))")
+                .bind(format!("ariad-job:{job_id}"))
+                .fetch_one(&mut lock_conn)
+                .await?;
+        if !locked {
+            return Ok(Disposition::Retry(RETRY_BACKOFF));
+        }
         let Some(job) = db::start_job(&self.db, job_id).await? else {
             tracing::info!("job is no longer runnable; dropping its message");
             return Ok(Disposition::Archive);
@@ -376,6 +395,12 @@ impl Worker {
                     "the input is no longer available",
                 ));
             }
+            Err(storage::StorageError::TooLarge(_)) => {
+                return Err(Outcome::permanent(
+                    "input_io",
+                    "the stored input exceeds its declared size",
+                ));
+            }
             Err(err) => return Err(Outcome::transient("storage", err.to_string())),
         }
 
@@ -396,32 +421,57 @@ impl Worker {
         let progress = tokio::spawn(forward_progress(self.db.clone(), job.id, events_rx));
         let limits = limits.clone();
         let convert_cancel = cancel.clone();
+        let conversion_program = self.config.conversion_program.clone();
+        let span = tracing::Span::current();
         let converted = tokio::task::spawn_blocking(move || {
-            ariad_host::convert::convert_with_limits(&request, limits, convert_cancel, |event| {
-                let ConvertEvent::Progress { stage } = event;
-                let _ = events_tx.send(stage);
-            })
+            let _entered = span.enter();
+            ariad_host::convert::isolated::convert(
+                &conversion_program,
+                &request,
+                limits,
+                convert_cancel,
+                |event| {
+                    let ConvertEvent::Progress { stage } = event;
+                    let _ = events_tx.send(stage);
+                },
+            )
         })
         .await;
         let _ = progress.await;
         let report = match converted {
             Ok(Ok(report)) => report,
-            Ok(Err(ConvertError::Interrupted)) => return Err(Outcome::Canceled),
+            Ok(Err(ariad_host::convert::isolated::Error::Convert(ConvertError::Interrupted))) => {
+                return Err(Outcome::Canceled);
+            }
             Ok(Err(err)) if cancel.is_cancelled() => {
                 tracing::debug!(error = %err, "conversion stopped after cancellation");
                 return Err(Outcome::Canceled);
             }
-            Ok(Err(err)) => return Err(Outcome::Failed(Failure::from_convert(&err), Vec::new())),
+            Ok(Err(ariad_host::convert::isolated::Error::Convert(err))) => {
+                return Err(Outcome::Failed(Failure::from_convert(&err), Vec::new()));
+            }
+            Ok(Err(ariad_host::convert::isolated::Error::Protocol)) => {
+                return Err(Outcome::permanent(
+                    "failed",
+                    "the conversion helper returned invalid protocol data",
+                ));
+            }
+            Ok(Err(ariad_host::convert::isolated::Error::Terminated)) => {
+                return Err(Outcome::permanent(
+                    "failed",
+                    "the conversion helper was terminated",
+                ));
+            }
             Err(join) => return Err(Outcome::transient("failed", join.to_string())),
         };
-        let warnings: Vec<JobWarning> = report
-            .warnings
-            .iter()
-            .map(|w| JobWarning {
-                code: w.code.clone(),
-                message: w.message.clone(),
-            })
-            .collect();
+        let warnings: Vec<JobWarning> =
+            ariad_host::convert::isolated::bounded_warnings(report.warnings)
+                .into_iter()
+                .map(|w| JobWarning {
+                    code: w.code,
+                    message: w.message,
+                })
+                .collect();
 
         let (size, sha) = hash_file(output.clone()).await.map_err(|err| {
             Outcome::Failed(
@@ -489,7 +539,11 @@ impl Worker {
         if !finished {
             // Canceled or deleted meanwhile: keep nothing.
             tx.rollback().await?;
-            if let Err(err) = self.storage.delete(&done.key).await {
+            let referenced = db::live_artifacts(&self.db, job.id)
+                .await?
+                .iter()
+                .any(|artifact| artifact.storage_key == done.key);
+            if !referenced && let Err(err) = self.storage.delete(&done.key).await {
                 tracing::warn!(error = %err, "could not delete the output of a canceled job");
             }
             tracing::info!("job was canceled before it could finish; output discarded");

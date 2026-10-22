@@ -321,3 +321,89 @@ fn storage(h: &Harness) -> ariad_server::storage::Storage {
     )
     .expect("storage")
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn abandoned_uploads_reserve_slots_and_daily_bytes() {
+    let Some(h) = Harness::start(
+        "abandoned_uploads_reserve_slots_and_daily_bytes",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    h.sql_exec("UPDATE plan_entitlements SET concurrent_jobs = 1, jobs_per_day = 2, input_bytes_per_day = 20 WHERE plan = 'anonymous'").await;
+    let body = json!({"filename":"pending.md", "size":10, "sha256":"0".repeat(64)});
+    let (a, b) = tokio::join!(
+        h.post(&Auth::Anonymous, "/v1/uploads", &body),
+        h.post(&Auth::Anonymous, "/v1/uploads", &body)
+    );
+    let mut statuses = [a.status().as_u16(), b.status().as_u16()];
+    statuses.sort_unstable();
+    assert_eq!(statuses, [201, 429]);
+    let ttl: f64 =
+        sqlx::query_scalar("SELECT extract(epoch FROM expires_at-created_at)::float8 FROM uploads")
+            .fetch_one(&h.db.pool)
+            .await
+            .unwrap();
+    assert_eq!(ttl, 1200.0);
+    h.sql_exec("UPDATE uploads SET status = 'deleted'").await;
+    assert_eq!(
+        h.post(&Auth::Anonymous, "/v1/uploads", &body)
+            .await
+            .status(),
+        201
+    );
+    h.sql_exec("UPDATE uploads SET status = 'deleted'").await;
+    assert_eq!(
+        error(h.post(&Auth::Anonymous, "/v1/uploads", &body).await).await,
+        (429, "quota_exceeded".to_owned())
+    );
+    let usage: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs")
+        .fetch_one(&h.db.pool)
+        .await
+        .unwrap();
+    assert_eq!(usage, 0, "upload quota applies without submitting any job");
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn expired_pending_uploads_are_deleted_without_completion() {
+    let Some(h) = Harness::start(
+        "expired_pending_uploads_are_deleted_without_completion",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    let upload = h
+        .create_upload(&Auth::Anonymous, "pending.md", MARKDOWN)
+        .await;
+    let put = &upload["upload"];
+    let response = h
+        .http
+        .put(put["url"].as_str().unwrap())
+        .body(MARKDOWN.to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+    h.sql_exec("UPDATE uploads SET expires_at = now() - interval '1 second'")
+        .await;
+    let id = upload["id"].as_str().unwrap();
+    assert_eq!(
+        h.post(
+            &Auth::Anonymous,
+            &format!("/v1/uploads/{id}/complete"),
+            &json!({})
+        )
+        .await
+        .status(),
+        409
+    );
+    let report = sweeper::sweep_once(&h.db.pool, &storage(&h)).await.unwrap();
+    assert_eq!(report.uploads, 1);
+    assert!(h.stored_files().is_empty());
+    h.stop().await;
+}

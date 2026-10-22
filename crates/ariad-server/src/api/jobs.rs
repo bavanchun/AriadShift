@@ -80,8 +80,11 @@ pub(crate) async fn visible_job(
         (status = 401, description = "Credentials rejected", body = ErrorBody),
         (status = 404, description = "No such upload", body = ErrorBody),
         (status = 409, description = "The upload is not complete or no longer available", body = ErrorBody),
+        (status = 413, description = "Input exceeds the conversion limit", body = ErrorBody),
         (status = 422, description = "Invalid request or unsupported route (`unsupported_route`)", body = ErrorBody),
         (status = 429, description = "Rate limited or quota exceeded", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
     ),
     security((), ("bearer" = []), ("api_key" = [])),
 )]
@@ -132,6 +135,18 @@ pub async fn create_job(
             StatusCode::PAYLOAD_TOO_LARGE,
             "limit_exceeded",
             format!("the plan accepts files up to {max} bytes"),
+        ));
+    }
+    if matches!(
+        source,
+        ariad_core::format::Format::Markdown | ariad_core::format::Format::Html
+    ) && input_bytes
+        > ariad_host::convert::isolated::native_input_cap(&caller.entitlement.limits)
+    {
+        return Err(ApiError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "limit_exceeded",
+            "the native input exceeds the parser memory budget",
         ));
     }
 
@@ -222,6 +237,8 @@ pub async fn create_job(
         (status = 401, description = "Credentials rejected", body = ErrorBody),
         (status = 404, description = "No such job", body = ErrorBody),
         (status = 429, description = "Rate limited", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
     ),
     security((), ("bearer" = []), ("api_key" = [])),
 )]
@@ -249,6 +266,8 @@ pub async fn get_job(
         (status = 401, description = "Credentials rejected", body = ErrorBody),
         (status = 404, description = "No such job", body = ErrorBody),
         (status = 429, description = "Rate limited", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
     ),
     security((), ("bearer" = []), ("api_key" = [])),
 )]
@@ -333,6 +352,8 @@ pub async fn purge_job(
         (status = 409, description = "The job has not succeeded", body = ErrorBody),
         (status = 410, description = "The outputs were deleted", body = ErrorBody),
         (status = 429, description = "Rate limited", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
     ),
     security((), ("bearer" = []), ("api_key" = [])),
 )]
