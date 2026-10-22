@@ -35,6 +35,7 @@ fn request_for(workspace: &Workspace, document: &Document, limits: Limits) -> Re
         work_dir: workspace.work_dir().to_string_lossy().into_owned(),
         options: BTreeMap::new(),
         limits,
+        session_id: None,
     }
 }
 

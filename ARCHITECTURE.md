@@ -408,7 +408,7 @@ Requests are op-tagged single JSON lines sent to stdin:
 Events: multiple JSON lines read from stdout.
 
 ```json
-{"type":"capabilities","engine":"pandoc","version":"0.1.0","tool":{"name":"pandoc","version":"3.12","status":"found"},"license":"GPL-2.0-or-later","routes":[{"input":"ariad-ir+json","output":"docx"}],"enforces_memory_limit":true}
+{"type":"capabilities","engine":"pandoc","version":"0.1.0","tool":{"name":"pandoc","version":"3.12","status":"found"},"license":"GPL-2.0-or-later","routes":[{"input":"ariad-ir+json","output":"docx"}],"enforces_memory_limit":true,"supports_session":false}
 {"type":"progress","stage":"convert","done":12,"total":37}
 {"type":"warning","code":"font_missing","message":"Font 'Cambria Math' substituted with 'STIX Two Math'"}
 {"type":"artifact","path":"/work/out/document.docx","format":"docx"}
@@ -416,11 +416,11 @@ Events: multiple JSON lines read from stdout.
 ```
 
 `Request` is an op-tagged enum:
-- `Request::Convert { protocol, job, input { path, format }, output { dir, format }, work_dir, options, limits }`.
+- `Request::Convert { protocol, job, input { path, format }, output { dir, format }, work_dir, options, limits, session_id? }`.
 - `Request::Describe { protocol, job }`.
 
 The `Event` enum is tagged by `type`:
-- `capabilities { engine, version, tool { name, version, status }, license, routes, enforces_memory_limit, models? }`: reports engine metadata and health without running conversions. `tool.status` is strictly `found`, `missing`, or `wrong_version`; it never exposes file paths to protect privacy. `routes` lists supported `(input, output)` format pairs using registry format IDs.
+- `capabilities { engine, version, tool { name, version, status }, license, routes, enforces_memory_limit, supports_session, models? }`: reports engine metadata and health without running conversions. `supports_session` defaults to `false` when an engine omits it. `tool.status` is strictly `found`, `missing`, or `wrong_version`; it never exposes file paths to protect privacy. `routes` lists supported `(input, output)` format pairs using registry format IDs.
 - `progress { stage, done?, total? }`: progress unit is pages (`done: u64`, `total: u64`), and canonical stage name is `"convert"`.
 - `warning { code, message }`: non-fatal conversion notices.
 - `artifact { path, format }`: produced outputs; paths stay inside `output.dir`.
@@ -441,8 +441,11 @@ Protocol rules:
 - `ariad-engine/1` is a draft until the Docling engine passes conformance (roadmap phase 1b); breaking changes are allowed only before that point.
 - PDFium also runs out-of-process: `ariad-host` re-executes its own binary via `ashift __engine pdfium`.
 
-Decided extensions (implemented in 1b):
-- **Stateful session mode:** wire shape consists of an optional `session_id: Option<String>` field on `Request::Convert` and an advertised boolean `supports_session: bool` in `capabilities`. When `supports_session: true` is reported, a session is opened on the first `convert` request carrying that `session_id`. Subsequent `convert` requests carrying the same `session_id` reuse the warm running engine process without re-initialization (1.56x measured throughput speedup). The session closes when the host closes stdin, on idle timeout, or on host shutdown.
+**Session mode.** An engine that reports `supports_session: true` can serve several jobs in one warm process (1.56x measured throughput for Docling). The wire shape is the optional `session_id` on `convert` and the `supports_session` capability.
+
+- Engine side: a `convert` carrying a `session_id` opens the session; after that job's `result` the engine stays alive and reads the next request line. Every later request in the process must be a `convert` with the same `session_id`; any other request (a different `session_id`, a `describe`) is answered with one `result` carrying `invalid_request`, and the engine exits. A `convert` without `session_id` is one-shot: the engine exits after its `result`. EOF on stdin ends the session: the engine exits with status 0 and writes nothing more. An engine reporting `supports_session: false` ignores `session_id` and exits after the first `result`.
+- Each job carries its own `input`, `output.dir`, `work_dir` and `limits`; the process `TMPDIR` points at the session directory, which also contains every job workspace of the session.
+- Host side: the host sends one request at a time and the job ends at its `result`, not at process exit. Exactly one `result` per job; any line the engine writes after a `result` and before the host sends the next request is a protocol violation, so events from different jobs never interleave. The session closes when the host closes stdin (at shutdown, on idle timeout, or after a maximum number of jobs per process). Cancellation, a timeout, an exceeded limit, a crash or a protocol violation kills that session's process tree; the next job starts a fresh process.
 
 The Pandoc engine is reached through `ashift __engine pandoc`. For `describe`, it reports tool status, version, and supported reader/writer routes (`docx` and `epub` to/from `ariad-ir+json`). For `convert`, the job workspace contains `in/`, `out/`, `tmp/`, and `log/`; the request's `work_dir` is `tmp/`. For writer conversions (`ariad-ir+json` to `docx` or `epub`), the engine reads the IR, maps it to Pandoc AST JSON, and runs:
 

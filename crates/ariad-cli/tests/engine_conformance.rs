@@ -50,6 +50,7 @@ fn request_for(workspace: &ariad_host::workspace::Workspace) -> Request {
         work_dir: workspace.work_dir().to_string_lossy().into_owned(),
         options: BTreeMap::new(),
         limits: Limits::local(),
+        session_id: None,
     }
 }
 
