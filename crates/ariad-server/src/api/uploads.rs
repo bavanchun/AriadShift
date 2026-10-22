@@ -5,7 +5,6 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
-use chrono::Utc;
 use uuid::Uuid;
 
 use super::{ApiJson, AppState, Caller, parse_id};
@@ -130,9 +129,7 @@ pub async fn create_upload(
         .presign_put(&key, request.size, &sha256)
         .await
         .map_err(|err| ApiError::internal(&err))?;
-    let expires_at = Utc::now()
-        + chrono::Duration::from_std(caller.entitlement.retention)
-            .unwrap_or_else(|_| chrono::Duration::hours(1));
+    let retention_s = i64::try_from(caller.entitlement.retention.as_secs()).unwrap_or(i64::MAX);
     let row = db::insert_upload(
         &state.db,
         &NewUpload {
@@ -143,7 +140,7 @@ pub async fn create_upload(
             size_bytes: size,
             sha256: &sha256,
             storage_key: &key,
-            expires_at,
+            retention_s,
         },
     )
     .await?;

@@ -6,7 +6,6 @@ use axum::{
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use chrono::Utc;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -140,9 +139,7 @@ pub async fn create_job(
     let subject = caller.principal.subject.clone();
     let limits =
         serde_json::to_value(&caller.entitlement.limits).map_err(|err| ApiError::internal(&err))?;
-    let expires_at = Utc::now()
-        + chrono::Duration::from_std(caller.entitlement.retention)
-            .unwrap_or_else(|_| chrono::Duration::hours(1));
+    let retention_s = i64::try_from(caller.entitlement.retention.as_secs()).unwrap_or(i64::MAX);
     let steps: Vec<(String, String, String)> = plan
         .steps
         .iter()
@@ -173,7 +170,7 @@ pub async fn create_job(
             profile: request.profile.as_str(),
             pack,
             limits,
-            expires_at,
+            retention_s,
         },
     )
     .await?;
