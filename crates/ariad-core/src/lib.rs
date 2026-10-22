@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod docling;
 pub mod format;
 pub mod inspect;
 pub mod ir;
