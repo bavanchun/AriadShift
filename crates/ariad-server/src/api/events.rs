@@ -43,6 +43,7 @@ pub struct Signal {
 #[derive(Clone)]
 pub struct EventHub {
     tx: broadcast::Sender<Signal>,
+    stop: CancellationToken,
 }
 
 impl Default for EventHub {
@@ -55,7 +56,10 @@ impl EventHub {
     #[must_use]
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(1024);
-        Self { tx }
+        Self {
+            tx,
+            stop: CancellationToken::new(),
+        }
     }
 
     #[must_use]
@@ -65,6 +69,7 @@ impl EventHub {
 
     /// Listens until `shutdown`, reconnecting after errors.
     pub async fn run(self, pool: PgPool, shutdown: CancellationToken) {
+        let _stop = self.stop.clone().drop_guard();
         loop {
             if shutdown.is_cancelled() {
                 return;
@@ -124,12 +129,17 @@ struct StreamState {
     rx: broadcast::Receiver<Signal>,
     pending: VecDeque<JobEvent>,
     done: bool,
+    terminal: bool,
     reload: bool,
+    stop: CancellationToken,
 }
 
 impl StreamState {
     async fn next_event(mut self) -> Option<(Result<Event, Infallible>, Self)> {
         loop {
+            if self.stop.is_cancelled() {
+                return None;
+            }
             if let Some(event) = self.pending.pop_front() {
                 self.last_id = event.id;
                 if FINAL_KINDS.contains(&event.kind.as_str()) {
@@ -144,6 +154,26 @@ impl StreamState {
             if self.reload {
                 self.reload = false;
                 match db::events_after(&self.pool, self.job_id, self.last_id).await {
+                    Ok(rows) if rows.is_empty() => {
+                        if self.terminal {
+                            return None;
+                        }
+                        match db::job_status(&self.pool, self.job_id).await {
+                            Ok(Some(status)) if status.is_final() => {
+                                // Read once more after observing the terminal
+                                // status, so an event committed between these
+                                // queries is still delivered.
+                                self.terminal = true;
+                                self.reload = true;
+                            }
+                            Ok(None) => return None,
+                            Ok(Some(_)) => {}
+                            Err(err) => {
+                                tracing::warn!(error = %err, "event stream status query failed");
+                                return None;
+                            }
+                        }
+                    }
                     Ok(rows) => self.pending.extend(rows.into_iter().map(to_dto)),
                     Err(err) => {
                         tracing::warn!(error = %err, "event stream query failed");
@@ -153,6 +183,7 @@ impl StreamState {
                 continue;
             }
             tokio::select! {
+                () = self.stop.cancelled() => return None,
                 signal = self.rx.recv() => match signal {
                     Ok(signal) if signal.job_id == self.job_id && signal.id > self.last_id => {
                         self.reload = true;
@@ -210,7 +241,9 @@ pub async fn job_events(
         rx,
         pending: VecDeque::new(),
         done: false,
+        terminal: job.status().is_final(),
         reload: true,
+        stop: state.events.stop.clone(),
     };
     let events = stream::unfold(initial, StreamState::next_event);
     Ok(Sse::new(events).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))

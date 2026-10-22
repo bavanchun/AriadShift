@@ -9,6 +9,32 @@ use serde_json::{Value, json};
 
 const MARKDOWN: &[u8] = b"# Quarterly notes\n\nThe *first* paragraph.\n\n- one\n- two\n";
 
+#[tokio::test(flavor = "multi_thread")]
+async fn event_streams_close_when_the_api_stops() {
+    let Some(h) =
+        Harness::start("event_streams_close_when_the_api_stops", Options::default()).await
+    else {
+        return;
+    };
+    let auth = Auth::Anonymous;
+    let upload = h.upload(&auth, "notes.md", MARKDOWN).await;
+    let job: Value = h
+        .create_job(&auth, upload["id"].as_str().expect("upload id"), "html")
+        .await
+        .json()
+        .await
+        .expect("job");
+    let id = job["id"].as_str().expect("job id");
+    let stream = h.get(&auth, &format!("/v1/jobs/{id}/events")).await;
+    assert_eq!(stream.status(), 200);
+    let stopping = tokio::spawn(h.stop());
+    let _ = read_sse(stream, Duration::from_secs(10)).await;
+    tokio::time::timeout(Duration::from_secs(10), stopping)
+        .await
+        .expect("API stopped with an open event stream")
+        .expect("shutdown task");
+}
+
 async fn run_job(h: &Harness, auth: &Auth, to: &str) -> (Value, Vec<(String, Value)>) {
     let upload = h.upload(auth, "notes.md", MARKDOWN).await;
     assert_eq!(upload["status"], "completed");
@@ -110,6 +136,19 @@ async fn markdown_job_runs_end_to_end() {
             .all(|(_, v)| v["id"].as_i64() > Some(last_started))
     );
     assert_eq!(replayed.last().map(|(k, _)| k.as_str()), Some("succeeded"));
+
+    // A reconnect after the final event has no remaining events to follow.
+    let terminal_cursor = replayed.last().expect("final event").1["id"]
+        .as_i64()
+        .expect("event id");
+    let replay = h
+        .http
+        .get(h.url(&format!("/v1/jobs/{id}/events")))
+        .header("last-event-id", terminal_cursor.to_string())
+        .send()
+        .await
+        .expect("replay after final event");
+    assert!(read_sse(replay, Duration::from_secs(10)).await.is_empty());
 
     let usage: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT kind, input_bytes, output_bytes FROM usage_events WHERE job_id = $1::uuid ORDER BY id",
