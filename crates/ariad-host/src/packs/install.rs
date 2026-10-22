@@ -720,8 +720,6 @@ pub(crate) fn resolve_installed(
             name: name.to_owned(),
             detail: format!("the manifest has no target '{}'", receipt.target),
         })?;
-    let root = fs::canonicalize(&root)
-        .map_err(|error| PackError::io("could not resolve", &root, error))?;
     InstalledPack::from_manifest(&manifest, target, root, PackSource::Installed).map(Some)
 }
 

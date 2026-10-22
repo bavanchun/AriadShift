@@ -337,7 +337,8 @@ pub struct InstalledPack {
     pub version: String,
     /// Target triple of the selected build.
     pub target: String,
-    /// Absolute install root. Engines need read access to it and nothing else of the pack.
+    /// Absolute install root (not canonicalized, so Windows paths keep their usual form).
+    /// Engines need read access to it and nothing else of the pack.
     pub root: PathBuf,
     /// Engine program: the entrypoint's first element joined to `root`.
     pub program: PathBuf,
@@ -466,8 +467,8 @@ pub fn resolve_override(
             host: targets.join(", "),
             available: manifest.triples(),
         })?;
-    let root = std::fs::canonicalize(dir)
-        .map_err(|error| PackError::io("could not resolve", dir, error))?;
+    let root =
+        std::path::absolute(dir).map_err(|error| PackError::io("could not resolve", dir, error))?;
     let pack = InstalledPack::from_manifest(&manifest, target, root, PackSource::Override)?;
     if !pack.program.is_file() {
         return Err(PackError::InvalidManifest(format!(
