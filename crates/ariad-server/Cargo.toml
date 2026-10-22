@@ -1,0 +1,55 @@
+[package]
+name = "ariad-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "AriadShift cloud API and conversion workers"
+publish = false
+
+[dependencies]
+ariad-core.workspace = true
+ariad-host.workspace = true
+async-trait.workspace = true
+axum = { workspace = true, features = ["http1", "json", "query", "tokio", "tracing"] }
+base64.workspace = true
+bytes.workspace = true
+chrono = { workspace = true, features = ["clock", "serde", "std"] }
+clap = { workspace = true, features = ["env"] }
+futures-util = { workspace = true, features = ["std"] }
+hex.workspace = true
+hmac.workspace = true
+jsonwebtoken = { workspace = true, features = ["rust_crypto"] }
+object_store = { workspace = true, features = ["aws-base", "fs", "reqwest", "ring"] }
+opentelemetry = { workspace = true, features = ["metrics", "trace"] }
+opentelemetry-otlp = { workspace = true, features = ["http-proto", "metrics", "reqwest-client", "trace"] }
+opentelemetry_sdk = { workspace = true, features = ["metrics", "rt-tokio", "trace"] }
+reqwest = { workspace = true, features = ["form", "json", "rustls-no-provider", "stream"] }
+rustls = { workspace = true, features = ["ring", "std"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+sha2.workspace = true
+sqlx = { workspace = true, features = ["chrono", "json", "macros", "migrate", "postgres", "runtime-tokio", "tls-rustls-ring-native-roots", "uuid"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = { workspace = true, features = ["sync"] }
+tokio-util = { workspace = true, features = ["io", "rt"] }
+tower.workspace = true
+tower-http = { workspace = true, features = ["compression-br", "compression-gzip", "cors", "limit", "request-id", "timeout", "trace", "util"] }
+tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "registry", "std"] }
+url.workspace = true
+utoipa = { workspace = true, features = ["axum_extras", "chrono", "uuid"] }
+utoipa-axum.workspace = true
+uuid = { workspace = true, features = ["serde", "v4"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true

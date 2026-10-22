@@ -9,6 +9,13 @@ targets = [
 [advisories]
 yanked = "deny"
 unmaintained = "workspace"
+ignore = [
+    # The Marvin attack is a timing side channel in RSA private-key
+    # operations. rsa reaches the build only through jsonwebtoken's verifier
+    # in ariad-server, which checks signatures with public keys and never
+    # holds an RSA private key.
+    { id = "RUSTSEC-2023-0071", reason = "ariad-server only verifies RSA signatures with public keys" },
+]
 
 [licenses]
 allow = [
@@ -38,6 +45,11 @@ name = "dtoa-short"
 [[licenses.exceptions]]
 allow = ["MPL-2.0"]
 name = "option-ext"
+# rustls-platform-verifier (through reqwest in ariad-server) selects this
+# certificate bundle only for wasm32, a target ariad-server never builds for.
+[[licenses.exceptions]]
+allow = ["CDLA-Permissive-2.0"]
+name = "webpki-root-certs"
 
 [bans]
 multiple-versions = "warn"
