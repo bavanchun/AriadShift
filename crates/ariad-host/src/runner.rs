@@ -929,24 +929,30 @@ mod tests {
 
     #[test]
     fn a_standard_workspace_is_writable_as_one_root() {
+        let base = std::env::temp_dir();
+        let path = |relative: &str| base.join(relative).display().to_string();
         assert_eq!(
-            writable_paths(&convert_request("/tmp/ws/tmp", "/tmp/ws/out")),
-            vec![PathBuf::from("/tmp/ws")]
+            writable_paths(&convert_request(&path("ws/tmp"), &path("ws/out"))),
+            vec![base.join("ws")]
         );
         assert_eq!(
-            writable_paths(&convert_request("/a/tmp", "/b/out")),
-            vec![PathBuf::from("/a/tmp"), PathBuf::from("/b/out")]
-        );
-        assert_eq!(
-            writable_paths(&convert_request("/tmp", "/out")),
-            vec![PathBuf::from("/tmp"), PathBuf::from("/out")],
-            "the filesystem root is never granted"
+            writable_paths(&convert_request(&path("a/tmp"), &path("b/out"))),
+            vec![base.join("a/tmp"), base.join("b/out")]
         );
         let describe = Request::Describe {
             protocol: PROTOCOL.to_owned(),
             job: "d".to_owned(),
         };
         assert!(writable_paths(&describe).is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_filesystem_root_is_never_writable() {
+        assert_eq!(
+            writable_paths(&convert_request("/tmp", "/out")),
+            vec![PathBuf::from("/tmp"), PathBuf::from("/out")]
+        );
     }
 
     #[test]
