@@ -58,3 +58,84 @@ Read first: ARCHITECTURE.md §7 and §7.1, `crates/ariad-host/src/engines/`, `cr
 | TLS stack needs a C toolchain on musl | Check the release workflow's musl build locally (`cargo build --target x86_64-unknown-linux-musl`) or in the PR run; pick the provider that links |
 | Zip-slip or symlink tricks in a malicious archive | Fuzz-style table tests plus a resolved-path check after every entry |
 | Huge components (about 1 GB) | Streamed hashing, no whole-file buffering, progress on stderr only when it is a TTY |
+
+## Design notes
+
+Recorded 2026-10-22 before implementation. Versions checked against crates.io the same day.
+
+### Crates
+
+| Crate | Version | Licence | Use |
+|---|---|---|---|
+| `ureq` | 3.5.0, `default-features = false`, features `rustls-no-provider`, `_ring`, `platform-verifier` | MIT OR Apache-2.0 | Blocking HTTPS client. `timeout_connect` and `timeout_per_read` give connect and idle-read timeouts; the default config reads `ALL_PROXY`/`HTTPS_PROXY`/`HTTP_PROXY` and `NO_PROXY` |
+| `rustls` (through ureq) | 0.23.46 with `ring` 0.17.14 | Apache-2.0 OR ISC OR MIT / Apache-2.0 AND ISC | TLS. `ring` builds with the musl C toolchain the release workflow already installs for `psm`; `aws-lc-rs` is avoided (CMake, OpenSSL licence) |
+| `rustls-platform-verifier` | 0.7.1 | MIT OR Apache-2.0 | Certificates from the operating system store. `webpki-roots` is avoided: CDLA-Permissive-2.0 is not in `deny.toml` and is not OSI-approved |
+| `minisign-verify` | 0.3.0 | MIT | Detached signature check (prehashed signatures only) |
+| `tar` | 0.4.46, `default-features = false` | MIT OR Apache-2.0 | Tar reader; `xattr` off |
+| `ruzstd` | 0.9.1 | MIT | Pure-Rust zstd decoder |
+| `flate2` | 1.1.10, `default-features = false`, `zlib-rs` | MIT OR Apache-2.0 | gzip; reuses the pure-Rust `zlib-rs` backend that `zip` already pulls in |
+| `directories` | 6.0.0 | MIT OR Apache-2.0 | Platform data directory. Its dependency `option-ext` 0.2.0 is MPL-2.0: unmodified, per-crate `deny.toml` exception, listed in `NOTICE` like `cssparser` (Tauri pulls the same crate later) |
+| `semver` | 1.0.28 | MIT OR Apache-2.0 | `requires_ashift` and pack versions |
+| `minisign` (dev) | 0.10.0 | MIT | Throwaway keys and signatures in tests only |
+
+`toml`, `zip`, `sha2`, `uuid`, `jiff`, `hex`, `base64` are already in the workspace.
+
+### Layout
+
+- `crates/ariad-host/src/packs/`: `mod.rs` (public API, context, errors), `manifest.rs`, `signature.rs`, `index.rs`, `fetch.rs`, `extract.rs`, `install.rs` (install, remove, verify, receipts, locks), `author.rs` (`__pack manifest`).
+- `crates/ariad-host/build.rs` embeds the build target triple and every `data/pack-keys/*.pub` file; `data/pack-keys/` starts empty (production key arrives with the first signed pack).
+- `crates/ariad-host/data/packs.toml`: embedded index (`schema = "ariad-pack-index/1"`, one `[[packs]]` entry per known pack, `manifest` URL template with `{name}` and `{version}`).
+- `schemas/pack.v1.json`: generated from `packs::Manifest`, drift-tested in `crates/ariad-host/tests/pack_schema.rs` with the same `ARIAD_BLESS_SCHEMAS=1` switch.
+
+### Data directory
+
+`ASHIFT_DATA_DIR`, else `ProjectDirs::from("com", "ariadnev", "ariadshift").data_local_dir()` (local, not roaming, AppData on Windows: packs are large).
+
+```text
+<data>/packs/
+  .locks/<name>.lock        # File::try_lock; install and remove of one pack are exclusive
+  .staging/<name>-<uuid>/   # extraction target, renamed into place, swept under the lock
+  .cache/<sha256>           # fully downloaded and hash-verified components (resume); `.part` while downloading
+  <name>/current            # active version
+  <name>/<version>/         # install root: components, plus receipt.toml (reserved name)
+```
+
+### Manifest `ariad-pack/1`
+
+Pack fields as specified. Component additions: `unpacked_size` and `entries` (required for archive modes; the extraction bound is the declared value plus 1 % plus 1 MiB or 16 entries), and `executable` (for `unpack = "file"`, which writes `<dest>/<name>`). A relative `url` resolves against the manifest location, so a release can hold the manifest and its components side by side. Remote URLs must be `https://`; `http://` is accepted only for loopback hosts (integrity comes from the signature and hashes, and the test server needs it). The manifest header (`schema`, `requires_ashift`) is checked before the strict parse so a newer manifest yields a version error instead of a parse error. `env` names come from an allow-list (Hugging Face offline switches, `TESSDATA_PREFIX`, thread counts, Python runtime switches); `{root}` is substituted in `env`, `options` and entrypoint arguments.
+
+Trusted comment: whitespace-separated `key:value` tokens that must include `pack:<name>` and `version:<version>` (sign with `minisign -S -t "pack:docling version:0.2.0"`).
+
+Targets: the pack triple describes the pack's own binaries, not `ashift`'s. Linux hosts accept `<arch>-unknown-linux-gnu` when a glibc loader exists, then `<arch>-unknown-linux-musl`, so the static musl `ashift` installs glibc packs.
+
+### Public API (stable for consumers)
+
+```rust
+pub struct InstalledPack {
+    pub name: String, pub version: String, pub target: String,
+    pub root: PathBuf,                       // install root; grant read-only to the engine
+    pub program: PathBuf,                    // entrypoint[0] joined to root
+    pub args: Vec<OsString>,                 // entrypoint[1..], `{root}` substituted
+    pub env: Vec<(OsString, OsString)>,      // allow-listed, `{root}` substituted
+    pub options: serde_json::Map<String, Value>, // default request options
+    pub source: PackSource,                  // Installed | Override
+}
+pub fn resolve(name: &str) -> Option<InstalledPack>;
+pub fn try_resolve(name: &str) -> Result<Option<InstalledPack>, PackError>;
+```
+
+`ASHIFT_PACK_<NAME>` (upper case, `-` as `_`) points at an unpacked directory holding `pack.toml`; no signature, no receipt. `runner::run_with_env` and `runner::describe_with_env` pass a pack's environment through the cleared engine environment. `ashift engines`, MCP `list_engines` and the planner's availability describe each resolved pack through its entrypoint; `EngineRow` gains an optional `pack` object (additive JSON change, array shape kept).
+
+### CLI
+
+- `ashift engines install <name> [--version V] [--manifest URL|PATH | --from DIR] [--json]`, `remove <name> [--version V] [--json]` (all versions when omitted), `verify <name> [--version V] [--json]` (full re-hash against the receipt plus a signature re-check). Human output prints the install root; JSON output carries no absolute paths.
+- `ashift __pack manifest --name N --version V --target T [--base FILE] [--entrypoint ARG]… [--url-prefix URL] [--dest COMPONENT=DIR]… [-o FILE] [NAME=]FILE…` writes or updates the target's components (size, SHA-256, unpack mode from the extension, unpacked size and entry count from a dry-run of the extractor). With `--base` the other targets are kept, which lets a release merge per-target builds.
+- Exit codes: unknown pack, not installed and unsupported target 3; `requires_ashift` mismatch 5; signature, hash, size, unsafe archive, network and I/O failures 1; extraction beyond the declared bounds 4; interruption 130. Pack commands share `run_blocking` through a small error trait.
+- `doctor`: non-required checks `data_dir` (writable), `pack_keys` (compiled-in key ids) and `pack_<name>` (receipt, signature and file presence and sizes; full hashing stays in `engines verify`).
+
+### Deviations
+
+- Per-component `unpacked_size`, `entries`, `executable`: needed for the declared-size bound and single-file engines.
+- `--base`, `--entrypoint`, `--url-prefix`, `--dest` on `__pack manifest`: needed to produce a complete manifest and to merge targets built on different runners.
+- `verify --version`: lets a non-active version be checked.
+- Planner availability includes resolved packs; routing a conversion to a pack engine stays with the engine that ships it.
