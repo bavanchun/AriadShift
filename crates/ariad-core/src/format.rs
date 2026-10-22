@@ -16,10 +16,22 @@ pub enum Format {
     Pdf,
     #[serde(rename = "png")]
     Png,
+    #[serde(rename = "pptx")]
+    Pptx,
+    #[serde(rename = "xlsx")]
+    Xlsx,
+    #[serde(rename = "jpeg")]
+    Jpeg,
+    #[serde(rename = "tiff")]
+    Tiff,
+    #[serde(rename = "webp")]
+    Webp,
     #[serde(rename = "ariad-ir+json")]
     AriadIrJson,
     #[serde(rename = "pandoc+json")]
     PandocJson,
+    #[serde(rename = "docling+json")]
+    DoclingJson,
 }
 
 impl Format {
@@ -33,8 +45,14 @@ impl Format {
             Self::Epub => "epub",
             Self::Pdf => "pdf",
             Self::Png => "png",
+            Self::Pptx => "pptx",
+            Self::Xlsx => "xlsx",
+            Self::Jpeg => "jpeg",
+            Self::Tiff => "tiff",
+            Self::Webp => "webp",
             Self::AriadIrJson => "ariad-ir+json",
             Self::PandocJson => "pandoc+json",
+            Self::DoclingJson => "docling+json",
         }
     }
 
@@ -54,7 +72,12 @@ impl Format {
             Self::Epub => &["epub"],
             Self::Pdf => &["pdf"],
             Self::Png => &["png"],
-            Self::AriadIrJson | Self::PandocJson => &["json"],
+            Self::Pptx => &["pptx"],
+            Self::Xlsx => &["xlsx"],
+            Self::Jpeg => &["jpg", "jpeg"],
+            Self::Tiff => &["tif", "tiff"],
+            Self::Webp => &["webp"],
+            Self::AriadIrJson | Self::PandocJson | Self::DoclingJson => &["json"],
         }
     }
 
@@ -68,7 +91,14 @@ impl Format {
             Self::Epub => "application/epub+zip",
             Self::Pdf => "application/pdf",
             Self::Png => "image/png",
-            Self::AriadIrJson | Self::PandocJson => "application/json",
+            Self::Pptx => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            }
+            Self::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Self::Jpeg => "image/jpeg",
+            Self::Tiff => "image/tiff",
+            Self::Webp => "image/webp",
+            Self::AriadIrJson | Self::PandocJson | Self::DoclingJson => "application/json",
         }
     }
 
@@ -94,6 +124,16 @@ impl Format {
             Some(Self::Pdf)
         } else if extension.eq_ignore_ascii_case("png") {
             Some(Self::Png)
+        } else if extension.eq_ignore_ascii_case("pptx") {
+            Some(Self::Pptx)
+        } else if extension.eq_ignore_ascii_case("xlsx") {
+            Some(Self::Xlsx)
+        } else if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
+            Some(Self::Jpeg)
+        } else if extension.eq_ignore_ascii_case("tif") || extension.eq_ignore_ascii_case("tiff") {
+            Some(Self::Tiff)
+        } else if extension.eq_ignore_ascii_case("webp") {
+            Some(Self::Webp)
         } else if extension.eq_ignore_ascii_case("json") {
             Some(Self::AriadIrJson)
         } else {
@@ -133,9 +173,14 @@ pub fn classify(
 
         // DOCX rule: a ZIP with `[Content_Types].xml` and `word/document.xml`.
         let has_content_types = entries.contains(&"[Content_Types].xml");
-        let has_word_document = entries.contains(&"word/document.xml");
-        if has_content_types && has_word_document {
+        if has_content_types && entries.contains(&"word/document.xml") {
             return Some(Format::Docx);
+        }
+        if has_content_types && entries.contains(&"ppt/presentation.xml") {
+            return Some(Format::Pptx);
+        }
+        if has_content_types && entries.contains(&"xl/workbook.xml") {
+            return Some(Format::Xlsx);
         }
     }
 
@@ -144,7 +189,17 @@ pub fn classify(
         return Some(Format::Pdf);
     }
 
-    // 3. HTML rule: a leading `<!doctype html` or `<html`, ignoring case and after a BOM or whitespace.
+    // 3. Raster image signatures.
+    if let Some(format) = classify_image(prefix) {
+        return Some(format);
+    }
+
+    // 4. DoclingDocument JSON names its schema in the first key.
+    if is_docling_json(prefix) {
+        return Some(Format::DoclingJson);
+    }
+
+    // 5. HTML rule: a leading `<!doctype html` or `<html`, ignoring case and after a BOM or whitespace.
     let mut rest = prefix;
     if rest.starts_with(b"\xEF\xBB\xBF") {
         rest = &rest[3..];
@@ -160,8 +215,46 @@ pub fn classify(
         return Some(Format::Html);
     }
 
-    // 4. Otherwise the extension decides.
+    // 6. Otherwise the extension decides.
     extension.and_then(Format::from_extension)
+}
+
+fn classify_image(prefix: &[u8]) -> Option<Format> {
+    if prefix.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some(Format::Png)
+    } else if prefix.starts_with(b"\xff\xd8\xff") {
+        Some(Format::Jpeg)
+    } else if prefix.starts_with(b"II*\0") || prefix.starts_with(b"MM\0*") {
+        Some(Format::Tiff)
+    } else if prefix.len() >= 12 && &prefix[..4] == b"RIFF" && &prefix[8..12] == b"WEBP" {
+        Some(Format::Webp)
+    } else {
+        None
+    }
+}
+
+/// Docling writes `schema_name` as the first member of every DoclingDocument.
+fn is_docling_json(prefix: &[u8]) -> bool {
+    let mut rest = prefix.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(prefix);
+    for token in [&b"{"[..], b"\"schema_name\"", b":", b"\"DoclingDocument\""] {
+        rest = skip_json_whitespace(rest);
+        match rest.strip_prefix(token) {
+            Some(remainder) => rest = remainder,
+            None => return false,
+        }
+    }
+    true
+}
+
+fn skip_json_whitespace(mut bytes: &[u8]) -> &[u8] {
+    while let Some((first, remainder)) = bytes.split_first() {
+        if matches!(first, b' ' | b'\t' | b'\n' | b'\r') {
+            bytes = remainder;
+        } else {
+            break;
+        }
+    }
+    bytes
 }
 
 fn is_leading_html(bytes: &[u8]) -> bool {
@@ -199,6 +292,13 @@ mod tests {
         assert_eq!(Format::from_extension("PNG"), Some(Format::Png));
         assert_eq!(Format::from_extension(".png"), Some(Format::Png));
         assert_eq!(Format::from_extension("JSON"), Some(Format::AriadIrJson));
+        assert_eq!(Format::from_extension("PPTX"), Some(Format::Pptx));
+        assert_eq!(Format::from_extension("xlsx"), Some(Format::Xlsx));
+        assert_eq!(Format::from_extension("JPG"), Some(Format::Jpeg));
+        assert_eq!(Format::from_extension(".jpeg"), Some(Format::Jpeg));
+        assert_eq!(Format::from_extension("tif"), Some(Format::Tiff));
+        assert_eq!(Format::from_extension("TIFF"), Some(Format::Tiff));
+        assert_eq!(Format::from_extension("webp"), Some(Format::Webp));
         assert_eq!(Format::from_extension("unknown"), None);
     }
 
@@ -211,8 +311,14 @@ mod tests {
             Format::Epub,
             Format::Pdf,
             Format::Png,
+            Format::Pptx,
+            Format::Xlsx,
+            Format::Jpeg,
+            Format::Tiff,
+            Format::Webp,
             Format::AriadIrJson,
             Format::PandocJson,
+            Format::DoclingJson,
         ];
         for variant in variants {
             let json = serde_json::to_string(&variant).expect("serialize format");
@@ -330,6 +436,70 @@ mod tests {
         assert_eq!(
             classify(prefix, Some(&missing_doc), Some("docx")),
             Some(Format::Docx)
+        );
+    }
+
+    #[test]
+    fn classify_identifies_presentations_and_workbooks_by_zip_parts() {
+        use super::classify;
+        let prefix = b"PK\x03\x04";
+        let pptx = ["[Content_Types].xml", "ppt/presentation.xml"];
+        assert_eq!(
+            classify(prefix, Some(&pptx), Some("zip")),
+            Some(Format::Pptx)
+        );
+        let xlsx = ["[Content_Types].xml", "xl/workbook.xml"];
+        assert_eq!(classify(prefix, Some(&xlsx), None), Some(Format::Xlsx));
+        let neither = ["[Content_Types].xml", "ppt/slides/slide1.xml"];
+        assert_eq!(classify(prefix, Some(&neither), None), None);
+    }
+
+    #[test]
+    fn classify_identifies_raster_images_by_signature() {
+        use super::classify;
+        assert_eq!(
+            classify(b"\x89PNG\r\n\x1a\n\0\0", None, Some("jpg")),
+            Some(Format::Png)
+        );
+        assert_eq!(
+            classify(b"\xff\xd8\xff\xe0", None, None),
+            Some(Format::Jpeg)
+        );
+        assert_eq!(classify(b"II*\0\x08\0", None, None), Some(Format::Tiff));
+        assert_eq!(classify(b"MM\0*\0\0", None, None), Some(Format::Tiff));
+        assert_eq!(
+            classify(b"RIFF\x10\0\0\0WEBPVP8 ", None, None),
+            Some(Format::Webp)
+        );
+        assert_eq!(classify(b"RIFF\x10\0\0\0WAVE", None, None), None);
+    }
+
+    #[test]
+    fn classify_identifies_docling_json_by_its_first_member() {
+        use super::classify;
+        assert_eq!(
+            classify(
+                b"{\n  \"schema_name\": \"DoclingDocument\",\n  \"version\": \"1.10.0\"",
+                None,
+                Some("json")
+            ),
+            Some(Format::DoclingJson)
+        );
+        assert_eq!(
+            classify(
+                b"\xEF\xBB\xBF{\"schema_name\":\"DoclingDocument\"}",
+                None,
+                None
+            ),
+            Some(Format::DoclingJson)
+        );
+        assert_eq!(
+            classify(b"{\"version\":\"ariad-ir/0\"}", None, Some("json")),
+            Some(Format::AriadIrJson)
+        );
+        assert_eq!(
+            classify(b"{\"schema_name\":\"Other\"}", None, Some("json")),
+            Some(Format::AriadIrJson)
         );
     }
 
