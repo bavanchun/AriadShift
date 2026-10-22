@@ -33,6 +33,7 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
+    "chrome-launcher": "catalog:",
     "jsdom": "catalog:",
     "lighthouse": "catalog:",
     "tailwindcss": "catalog:",
