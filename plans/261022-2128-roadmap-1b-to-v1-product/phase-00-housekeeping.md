@@ -1,7 +1,7 @@
 ---
 phase: 0
 title: "Housekeeping"
-status: pending
+status: completed
 priority: P1
 effort: "3h"
 dependencies: []
@@ -41,3 +41,13 @@ Start the run from a clean `dev`: land the v0.1.0 close-out documents and settle
 |---|---|
 | A dependency bump changes snapshot output | Review the `insta` diff; accept only when the change is correct, and say why in the commit body |
 | `comrak` 0.56 changes parsing | Run the Markdown reader tests and fuzz seeds; pin back if behaviour regresses |
+
+## Design notes
+
+- **Commit lint.** committed matches `ignore_author_re` against `Name <email>`, so `^dependabot\[bot\]$` never matched. Every Dependabot pull request with a long body line therefore failed Static checks. #30 anchors the pattern to the address.
+- **Cargo updates on one branch.** #20, #25, #27, #28 and #29 all moved `Cargo.lock` or `fuzz/Cargo.lock`, and none regenerated `THIRD_PARTY_LICENSES`. #28 and #29 also changed the root manifest without the root lock. #31 replaces them with one commit per update (lock groups, comrak, saphyr-parser) and one commit for the ARCHITECTURE.md pins.
+- **Versions.** Every new version was checked on crates.io, PyPI or GitHub Releases and kept to the seven-day Dependabot cooldown. comrak stays at 0.56.0 because 0.57.0 was one day old. saphyr-parser goes to 0.2.2 instead of 0.2.1: it is the latest release, it is past the cooldown, and its one change (raw NUL characters are rejected) is pinned by a unit test.
+- **uv.** #18 moved `uv_build` to 0.13.1 while `required-version` and CI still pin uv 0.12.23. That works, because uv fetches the backend from PyPI, but the two pins have drifted apart. Moving uv itself to 0.13 is left to a later update.
+- **dist pins.** `release.yml` is generated from `[dist.github-action-commits]`, so the `actions/upload-artifact` 7.0.2 pin in #22 is mirrored in `dist-workspace.toml`.
+- **Release secrets.** Both `HOMEBREW_TAP_TOKEN` and `CARGO_REGISTRY_TOKEN` exist in the `release` environment, but neither holds a working token: crates.io answered `401` and GitHub refused the tap push. The close-out records "invalid tokens", not "missing secrets".
+
