@@ -60,7 +60,7 @@ Not covered, because they need the user's own accounts. The pipelines stay ready
 
 | # | Phase | Depends on | Runs on | Status |
 |---|---|---|---|---|
-| 0 | [Housekeeping](./phase-00-housekeeping.md) | none | Mac | Pending |
+| 0 | [Housekeeping](./phase-00-housekeeping.md) | none | Mac | Done |
 | 1 | [Engine packs](./phase-01-engine-packs.md) | none | ASUS | Pending |
 | 2 | [Linux sandbox, memory watchdog, sessions](./phase-02-sandbox-limits-sessions.md) | none | ASUS | Pending |
 | 3 | [PDF reader, Typst writer, LibreOffice engine](./phase-03-pdf-typst-office.md) | none | ASUS | Pending |
