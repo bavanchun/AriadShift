@@ -159,3 +159,26 @@ fn best_effort_on_a_supporting_kernel_converts_without_a_warning() {
     eprintln!("this kernel lacks part of the sandbox: {codes:?}");
     assert_eq!(codes, vec!["sandbox_unavailable"]);
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn required_launcher_itself_fails_closed_without_kernel_support() {
+    let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .env("ARIAD_TEST_SANDBOX_SUPPORT", "none")
+        .args(["__sandbox", "--required", "--"])
+        .arg(env!("CARGO_BIN_EXE_ashift"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(127));
+    let event: ariad_core::protocol::Event = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(matches!(
+        event,
+        ariad_core::protocol::Event::Result {
+            ok: false,
+            error: Some(_),
+            ..
+        }
+    ));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Landlock is unavailable"));
+}
