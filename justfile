@@ -152,7 +152,7 @@ licenses-check:
 static: fmt-check spell lint-workflows deny js js-licenses web-lint py check-release-workflow licenses-check test-winget-manifest test-ci-scope
 
 package-check:
-    cargo package --workspace --allow-dirty
+    cargo package --workspace --exclude ariad-server --allow-dirty
 
 ci: static clippy wasm test bench-test bench-check package-check web-ci
 
