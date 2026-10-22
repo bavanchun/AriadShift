@@ -41,7 +41,7 @@ All CLI commands adhere to a single unified exit-code table:
 | `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. Engine packs: malformed pack name or version, plain HTTP to a non-loopback host. |
 | `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). Engine packs: unknown pack, pack or version not installed, no build for this platform. |
 | `4` | Limit Exceeded | Document size, nesting depth, node count, or engine process-tree memory exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
-| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. Engine packs: the pack requires a different `ashift` version. |
+| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. |
 | `6` | Destination Exists | Destination file already exists and `--overwrite` was not specified. |
 | `130` | Interrupted | Interrupted by signal (SIGINT / Ctrl-C on Unix, Ctrl-C / Ctrl-Break on Windows). Temporary workspaces and partial files are cleaned up. |
 
@@ -64,7 +64,7 @@ All CLI commands adhere to a single unified exit-code table:
 
 ### `ashift convert`
 
-Converts a document between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`).
+Converts a document between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`). With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
 
 ```bash
 ashift convert [OPTIONS] --to <FORMAT> <INPUT>...
@@ -286,7 +286,7 @@ ashift engines <install|remove|verify> ...
 
 - Reports native in-process engine `ariad-core` as `ready`.
 - Probes external engine availability (`pandoc`), checking executable presence and supported version (`>= 3.12, < 4`).
-- Lists `docling` as `not installed` (note `available in v0.2`) until its pack is installed.
+- Lists `docling` as `not installed` (note `available in v0.2`) until its pack is installed. When `ASHIFT_DOCLING_ENGINE` is set, the `docling` row comes from that engine's `describe` (its Docling version, `ready` once it answers) with the note `development override`. A docling engine without Tesseract 5 is still `ready`, with a note that OCR is unavailable, because digital documents convert without it.
 - For every resolved engine pack (installed, or an `ASHIFT_PACK_<NAME>` development directory) runs the engine's `describe` through the pack entrypoint and reports its status. The row carries a `pack` object; routes come from the capabilities registry, or from `describe` for engines the registry does not know. A pack that is installed but cannot be used (damaged receipt, other platform, other `ashift` range) is listed as `missing` with a note pointing at `ashift doctor`.
 
 #### Human Output Example
@@ -471,6 +471,8 @@ ashift doctor [OPTIONS]
 5. **Pack signing keys** (`pack_keys`, not required): lists the ids of the minisign keys built into `ashift`; a build without keys cannot install packs.
 6. **Installed packs** (`pack_<name>`, not required): one check per installed version (receipt present, every recorded file present with its recorded size, built for this platform and `ashift` range) and per `ASHIFT_PACK_<NAME>` override. `ashift engines verify` does the full re-hash.
 7. **Sandbox**: Reports effective mode, Landlock ABI and seccomp availability. Missing isolation is an optional failed check in best-effort mode and a required failure in required mode. Required mode needs Linux.
+8. **Docling engine** (`docling_engine`, not required): the engine from `ASHIFT_DOCLING_ENGINE` or the `docling` pack answers `describe`; the message lists the Docling version and the models found. Without an engine the check fails and the hint says how to install one.
+9. **Tesseract** (`tesseract`, not required; only when the Docling engine answered): Tesseract 5 is on `PATH` for Vietnamese OCR. Otherwise Vietnamese OCR is unavailable and the hint gives the install command.
 
 #### Exit Codes
 
@@ -572,6 +574,7 @@ The `--profile` flag guides route selection when multiple routes connect a forma
 ## Environment Variables
 
 - `ASHIFT_PANDOC`: Specifies the explicit path to the Pandoc executable. When unset, `ashift` searches the system `PATH`.
+- `ASHIFT_DOCLING_ENGINE`: Development override for the Docling engine: a command line that starts it, for example `"$PWD/.tools/docling/python-env/bin/python" -I -m ariad_docling` (double quotes group words). It is tried before any installed pack; see [docling.md](docling.md#running-it-from-a-checkout).
 - `ASHIFT_DATA_DIR`: Data directory for engine packs (packs live under `<dir>/packs`). Defaults to the platform's local data directory for `com.ariadnev.ariadshift`; see [packs.md](packs.md#layout).
 - `ASHIFT_PACK_<NAME>`: Uses an unpacked development pack directory (holding an unsigned `pack.toml`) instead of the installed pack `<name>`; the name is upper-cased with `-` written as `_`.
 - `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`: Proxy settings for pack downloads.
