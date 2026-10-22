@@ -192,14 +192,19 @@ pub fn inspect(bytes: &[u8], name: &str, total_bytes: Option<f64>) -> Result<JsV
     }
 }
 
-/// Plans the route from `input` to `to` over the edges that run in the browser.
+/// Plans the route from `input` to `to`.
+///
+/// `profile` is `editable` (default), `faithful`, `fast` or `private`. `scope` is
+/// `browser` (default; the routes `convert` runs) or `all`, which also uses CLI, desktop
+/// and cloud engines so a page can explain where a conversion runs.
 #[wasm_bindgen(unchecked_return_type = "Plan")]
 pub fn plan(
     #[wasm_bindgen(unchecked_param_type = "FormatId")] input: &str,
     #[wasm_bindgen(unchecked_param_type = "FormatId")] to: &str,
-    #[wasm_bindgen(unchecked_param_type = "ProfileId | undefined")] profile: Option<String>,
+    profile: Option<String>,
+    scope: Option<String>,
 ) -> Result<JsValue, JsValue> {
-    match api::plan(input, to, profile.as_deref()) {
+    match api::plan(input, to, profile.as_deref(), scope.as_deref()) {
         Ok(plan) => to_js(&plan),
         Err(error) => Err(to_js_error(&error)),
     }
