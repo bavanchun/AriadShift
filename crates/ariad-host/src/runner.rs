@@ -1,17 +1,14 @@
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, VecDeque},
     ffi::{OsStr, OsString},
     future, io,
     path::{Component, Path, PathBuf},
     process::{ExitStatus, Stdio},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
-use ariad_core::{
-    limits::Limits,
-    protocol::{EngineError, ErrorCode, Event, PROTOCOL, Request},
-};
+use ariad_core::protocol::{EngineError, ErrorCode, Event, PROTOCOL, Request};
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
@@ -24,11 +21,14 @@ use tokio::{
     process::{ChildStdin, ChildStdout},
     runtime::Builder,
     task::JoinHandle,
-    time::{self, Instant},
+    time::{self, Instant, MissedTickBehavior},
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::sandbox::{self, SandboxMode, SandboxOutcome, SandboxPolicy};
+use crate::{
+    sandbox::{self, SandboxMode, SandboxOutcome, SandboxPolicy},
+    watchdog::{self, MemoryWatchdog},
+};
 
 const MAX_NDJSON_LINE_BYTES: usize = 1 << 20;
 const STDERR_TAIL_BYTES: usize = 64 * 1024;
@@ -58,6 +58,8 @@ pub enum RunError {
     Cancelled,
     #[error("engine reported {code:?}: {message}")]
     EngineFailed { code: ErrorCode, message: String },
+    #[error("engine process tree exceeded max_memory_mb ({limit_mb} MB)")]
+    MemoryLimitExceeded { limit_mb: u32 },
     #[error("engine sandbox is unavailable: {0}")]
     SandboxUnavailable(String),
     #[error("engine crashed with exit {exit:?}: {stderr_tail}")]
@@ -193,14 +195,6 @@ pub fn run_command<S>(
 where
     S: FnMut(Event),
 {
-    if let Request::Convert { limits, .. } = request
-        && limits.max_memory_mb.is_some()
-    {
-        limits
-            .validate()
-            .map_err(|_| RunError::ProtocolViolation("request contains invalid limits"))?;
-        check_memory_limit_support(&command.program, &command.args, limits, cancel.clone())?;
-    }
     run_one_shot(command, request, None, cancel, sink)
 }
 
@@ -227,86 +221,6 @@ pub fn describe(
     cancel: CancellationToken,
 ) -> Result<Event, RunError> {
     describe_with_timeout(program, args, DESCRIBE_TIMEOUT, cancel)
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct CapabilitiesCacheKey {
-    program: PathBuf,
-    args: Vec<OsString>,
-    file_size: Option<u64>,
-    mtime: Option<std::time::SystemTime>,
-}
-
-/// In-memory cache storing whether an external engine enforces memory limits (`enforces_memory_limit`).
-/// Keyed by executable path, invocation args, and file metadata (size, mtime) to ensure cache
-/// invalidation when an engine binary or arguments change.
-type CapabilitiesCache = Mutex<HashMap<CapabilitiesCacheKey, bool>>;
-
-/// Global cache avoiding repeated `describe` process executions when checking memory enforcement.
-static CAPABILITIES_CACHE: OnceLock<CapabilitiesCache> = OnceLock::new();
-
-fn capabilities_cache() -> &'static CapabilitiesCache {
-    CAPABILITIES_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Checks whether an engine enforces memory limits before converting.
-///
-/// If `limits.max_memory_mb` is `Some(_)`, this queries the engine's `describe` op
-/// (caching the result per engine binary path and args within the process).
-/// If the engine reports `enforces_memory_limit: false`, returns a typed `limit_exceeded` error.
-pub fn check_memory_limit_support(
-    program: &Path,
-    args: &[OsString],
-    limits: &Limits,
-    cancel: CancellationToken,
-) -> Result<(), RunError> {
-    if limits.max_memory_mb.is_none() {
-        return Ok(());
-    }
-
-    let (file_size, mtime) = match std::fs::metadata(program) {
-        Ok(meta) => (Some(meta.len()), meta.modified().ok()),
-        Err(_) => (None, None),
-    };
-    let key = CapabilitiesCacheKey {
-        program: program.to_path_buf(),
-        args: args.to_vec(),
-        file_size,
-        mtime,
-    };
-    let cached = {
-        let cache = capabilities_cache().lock().unwrap();
-        cache.get(&key).copied()
-    };
-
-    let enforces = match cached {
-        Some(enforces) => enforces,
-        None => {
-            let event = describe(program, args, cancel)?;
-            let Event::Capabilities {
-                enforces_memory_limit,
-                ..
-            } = event
-            else {
-                return Err(RunError::ProtocolViolation(
-                    "expected capabilities event from describe",
-                ));
-            };
-            let mut cache = capabilities_cache().lock().unwrap();
-            cache.insert(key, enforces_memory_limit);
-            enforces_memory_limit
-        }
-    };
-
-    if !enforces {
-        return Err(RunError::EngineFailed {
-            code: ErrorCode::LimitExceeded,
-            message: "Engine does not enforce memory limits; request cannot specify max_memory_mb."
-                .to_owned(),
-        });
-    }
-
-    Ok(())
 }
 
 /// Like [`describe`], adding explicit settings to the cleared engine environment.
@@ -510,6 +424,7 @@ pub(crate) enum JobMode {
 pub(crate) struct JobSpec {
     pub(crate) output_dir: Option<String>,
     pub(crate) deadline: Option<Instant>,
+    pub(crate) memory_limit_mb: Option<u32>,
     pub(crate) cancel: CancellationToken,
 }
 
@@ -519,16 +434,22 @@ impl JobSpec {
         describe_timeout: Option<Duration>,
         cancel: CancellationToken,
     ) -> Self {
-        let (output_dir, timeout) = match request {
+        let (output_dir, timeout, memory_limit_mb) = match request {
             Request::Convert { output, limits, .. } => (
                 Some(output.dir.clone()),
                 limits.timeout_s.map(Duration::from_secs),
+                limits.max_memory_mb,
             ),
-            Request::Describe { .. } => (None, Some(describe_timeout.unwrap_or(DESCRIBE_TIMEOUT))),
+            Request::Describe { .. } => (
+                None,
+                Some(describe_timeout.unwrap_or(DESCRIBE_TIMEOUT)),
+                None,
+            ),
         };
         Self {
             output_dir,
             deadline: timeout.and_then(|duration| Instant::now().checked_add(duration)),
+            memory_limit_mb,
             cancel,
         }
     }
@@ -620,6 +541,11 @@ impl EngineProcess {
         })
     }
 
+    /// The engine's process id, which leads its process group on Unix.
+    pub(crate) fn id(&self) -> Option<u32> {
+        self.child.id()
+    }
+
     /// Sends one request and streams its events to `sink` until the job ends.
     ///
     /// A one-shot job closes stdin after the request and ends when the process has exited and
@@ -653,6 +579,16 @@ impl EngineProcess {
         let JobMode::OneShot = mode;
         self.stdin = None;
 
+        let mut watchdog = job
+            .memory_limit_mb
+            .zip(self.id())
+            .map(|(limit_mb, pid)| (limit_mb, MemoryWatchdog::new(pid, limit_mb)));
+        let mut sample = time::interval_at(
+            Instant::now() + watchdog::SAMPLE_INTERVAL,
+            watchdog::SAMPLE_INTERVAL,
+        );
+        sample.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
         let mut result = None;
         let mut artifacts = Vec::new();
         loop {
@@ -662,6 +598,13 @@ impl EngineProcess {
             tokio::select! {
                 _ = job.cancel.cancelled() => return Err(RunError::Cancelled),
                 _ = wait_deadline(job.deadline) => return Err(RunError::Timeout),
+                _ = sample.tick(), if watchdog.is_some() => {
+                    if let Some((limit_mb, watchdog)) = watchdog.as_mut()
+                        && watchdog.exceeded().is_some()
+                    {
+                        return Err(RunError::MemoryLimitExceeded { limit_mb: *limit_mb });
+                    }
+                }
                 line = self.lines.next_line(), if !self.eof => {
                     match line {
                         Ok(Some(line)) => {

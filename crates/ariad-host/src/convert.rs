@@ -396,6 +396,10 @@ pub enum ConvertError {
     InputIo,
     OutputIo,
     LimitExceeded,
+    /// The engine process tree exceeded `limits.max_memory_mb`.
+    MemoryLimitExceeded {
+        limit_mb: u32,
+    },
     ToolMissing,
     /// Required sandbox mode could not isolate the engine.
     SandboxUnavailable(String),
@@ -419,6 +423,10 @@ impl std::fmt::Display for ConvertError {
             Self::InputIo => write!(f, "the input file could not be read"),
             Self::OutputIo => write!(f, "could not write to stdout"),
             Self::LimitExceeded => write!(f, "conversion limit exceeded"),
+            Self::MemoryLimitExceeded { limit_mb } => write!(
+                f,
+                "conversion limit exceeded: the engine used more than max_memory_mb ({limit_mb} MB)"
+            ),
             Self::SandboxUnavailable(detail) => {
                 write!(
                     f,
@@ -466,7 +474,7 @@ impl ConvertError {
         match self {
             Self::DestinationSameAsInput => 2,
             Self::UnsupportedRoute { .. } => 3,
-            Self::LimitExceeded => 4,
+            Self::LimitExceeded | Self::MemoryLimitExceeded { .. } => 4,
             Self::ToolMissing | Self::SandboxUnavailable(_) => 5,
             Self::DestinationExists => 6,
             Self::Interrupted => 130,
@@ -484,7 +492,7 @@ impl ConvertError {
         match self {
             Self::DestinationSameAsInput => "destination_same_as_input",
             Self::UnsupportedRoute { .. } => "unsupported_route",
-            Self::LimitExceeded => "limit_exceeded",
+            Self::LimitExceeded | Self::MemoryLimitExceeded { .. } => "limit_exceeded",
             Self::ToolMissing => "tool_missing",
             Self::SandboxUnavailable(_) => "sandbox_unavailable",
             Self::DestinationExists => "destination_exists",
@@ -1816,6 +1824,9 @@ fn push_sandbox_warning(warnings: &mut Vec<ConvertWarning>, outcome: &runner::Ru
 fn map_run_error(error: RunError) -> ConvertError {
     match error {
         RunError::Cancelled => ConvertError::Interrupted,
+        RunError::MemoryLimitExceeded { limit_mb } => {
+            ConvertError::MemoryLimitExceeded { limit_mb }
+        }
         RunError::SandboxUnavailable(detail) => ConvertError::SandboxUnavailable(detail),
         RunError::EngineFailed {
             code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,

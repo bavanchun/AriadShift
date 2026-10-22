@@ -165,10 +165,15 @@ fn eight_megabyte_memory_limit_is_a_typed_limit_exceeded_error() {
     limits.max_memory_mb = Some(8);
     let request = request_for(&workspace, &document, limits);
 
-    let Err(runner::RunError::EngineFailed { code, .. }) = run_engine(&request) else {
-        panic!("the 8 MiB cap should return a typed limit error");
-    };
-    assert_eq!(code, ErrorCode::LimitExceeded);
+    // Pandoc's `+RTS -M` and the host memory watchdog both enforce the cap; whichever fires
+    // first, the outcome is a typed limit error.
+    match run_engine(&request) {
+        Err(runner::RunError::EngineFailed { code, .. }) => {
+            assert_eq!(code, ErrorCode::LimitExceeded);
+        }
+        Err(runner::RunError::MemoryLimitExceeded { limit_mb }) => assert_eq!(limit_mb, 8),
+        other => panic!("the 8 MiB cap should return a typed limit error: {other:?}"),
+    }
     workspace.close().expect("remove engine workspace");
 }
 
