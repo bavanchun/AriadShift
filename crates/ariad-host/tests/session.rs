@@ -337,6 +337,24 @@ fn a_typed_failure_keeps_the_session() {
 }
 
 #[test]
+fn an_engine_reported_limit_kills_the_session() {
+    let pool = pool(quick_config());
+    let warm = run_job(&pool, "ok");
+    let limited = run_job(&pool, "limit");
+    assert!(matches!(
+        limited.result,
+        Err(RunError::EngineFailed {
+            code: ErrorCode::LimitExceeded,
+            ..
+        })
+    ));
+    assert!(wait_until_dead(warm.pid(), Duration::from_secs(5)));
+    let next = run_job(&pool, "ok");
+    assert_ne!(next.pid(), warm.pid());
+    assert_eq!(next.jobs(), 1);
+}
+
+#[test]
 fn processes_retire_after_the_maximum_job_count() {
     let pool = pool(PoolConfig {
         max_jobs_per_process: 2,
