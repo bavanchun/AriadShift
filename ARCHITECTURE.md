@@ -77,17 +77,20 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | Crate | Version | Role |
 |---|---|---|
 | tokio | **~1.53** | **LTS line until 2027-09** (pinned to minor with `~`) |
-| axum / tower / tower-http | 0.8 / 0.5 / 0.7 | HTTP API |
-| sqlx | 0.9 | Postgres, compile-time checked SQL |
-| object_store | 0.14 | Unified API for S3, R2, GCS, Azure, and local disk |
-| utoipa | 6 | OpenAPI 3.1 generation from code |
-| tracing / opentelemetry | 0.1 / 0.33 | Observability |
+| axum / tower / tower-http | **0.8.9** / **0.5.3** / **0.7.1** | HTTP API (`ariad-server`) |
+| sqlx | **0.9.0** (`postgres`, `runtime-tokio`, `tls-rustls-ring-native-roots`, `chrono`, `uuid`, `json`, `migrate`, `macros`) | Postgres pool, embedded migrations; runtime-checked queries covered by integration tests |
+| object_store | **0.14.2** (`aws-base`, `reqwest`, `ring`, `fs`) | Unified API for S3, R2, GCS, Azure, and local disk; presigned URLs. The `aws` feature is not used because it forces `aws-lc-rs` |
+| utoipa / utoipa-axum | **6.0.0** / **0.3.0** | OpenAPI 3.1 generation from code |
+| tracing / opentelemetry | 0.1 / **0.33.1** | Observability |
+| tracing-subscriber / opentelemetry_sdk / opentelemetry-otlp / tracing-opentelemetry | **0.3.23** / **0.33.1** / **0.33.1** (`http-proto`, `reqwest-client`) / **0.34.0** | Server logs and optional OTLP export |
+| reqwest / rustls | **0.13.5** (`rustls-no-provider`) / **0.23.46** (`ring`) | Outbound HTTP from the server (JWKS, Turnstile, S3); ring is installed as the process crypto provider |
+| chrono / hmac / async-trait / tokio-stream / futures-util / bytes / url | **0.4.45** / **0.13.0** / **0.1.92** / **0.1.19** / **0.3.34** / **1.12.1** / **2.5.8** | Server timestamps (sqlx has no `jiff` support), signed local blob URLs, the `JobQueue` trait, SSE streams |
 | serde / thiserror / clap / schemars / jiff / uuid | 1 / 2 / 4.6 / 1.2 / 0.2 / 1 | Common foundational utilities |
 | pdfium-render + PDFium | 0.9 + `chromium/8076` (bblanchon/pdfium-binaries, **non-V8** build) | PDF rendering, text extraction, images, metadata |
 | typst | 0.15 | IR → PDF |
 | rmcp | **3.5.1** (`default-features = false`, `server`, `macros`, `transport-io`) | Official MCP SDK for Rust |
 | wasm-bindgen / wasm-bindgen-cli / js-sys | **0.2.129** / **0.2.129** / **0.3.106** | Build `ariad-wasm`; the CLI comes from its release archive with checksums pinned in `scripts/install-wasm-bindgen.sh` and must equal the crate version |
-| jsonwebtoken | 11 | JWT verification from Better Auth |
+| jsonwebtoken | **11.1.0** (`rust_crypto`) | JWT verification from Better Auth |
 | tauri-specta | 1.0 | TS type generation for Tauri commands |
 | comrak | **0.56.0** (`default-features = false`, `shortcodes`) | CommonMark/GFM Markdown reader in `ariad-core`; BSD-2-Clause |
 | html5ever | **0.40.1** (MIT OR Apache-2.0) | Native HTML reader in `ariad-core` |
@@ -124,9 +127,9 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | Pandoc | **3.12** (official `pandoc.wasm` available) | GPL-2.0+ | Install the official release binary with SHA-256 verification via `scripts/install-pandoc.sh`; the Arch package is 3.11. Hub for DOCX, ODT, EPUB, HTML, LaTeX, and RST |
 | FFmpeg | 9.0, LGPL build | LGPL-2.1+ | Audio/video (later phase) |
 | libvips | 8.x | LGPL-2.1+ | Large images, batch processing |
-| pgmq | 1.13 | PostgreSQL License | In-Postgres job queue |
+| pgmq | 1.13.1 | PostgreSQL License | In-Postgres job queue; tests use `ghcr.io/pgmq/pg18-pgmq:v1.13.1` (PostgreSQL 18.6) |
 | NATS | 2.15 | Apache-2.0 | Queue adapter for high-scale needs |
-| SeaweedFS | 4.x | Apache-2.0 | Self-hosted S3 (MinIO archived 04/2026) |
+| SeaweedFS | 4.x (4.48 in tests) | Apache-2.0 | Self-hosted S3 (MinIO archived 04/2026) |
 | Cloudflare R2 | — | Managed service | Object storage for hosted tier |
 | uv / ruff | 0.12 / 0.16 | MIT | Python environment management and linting |
 | Fixture generator | Exact versions in `uv.lock` | Permissive | python-docx, Pillow, and typst-py are development-only and never distributed |
@@ -269,7 +272,8 @@ ariadshift/
 ├── bench/                     # benchmark harness → capabilities.json
 ├── infra/
 │   ├── compose/               # docker-compose.yml for self-hosting
-│   └── docker/                # Dockerfile for server and workers
+│   ├── docker/                # server, worker-office and worker-docling Dockerfiles
+│   └── test/                  # SeaweedFS identity for the server tests
 ├── brand/                     # code-generated logo and icons
 └── docs/
 ```
@@ -542,10 +546,11 @@ sequenceDiagram
   participant W as ariad-server worker
 
   B->>N: Obtain short-lived JWT (JWT plugin)
-  B->>A: POST /v1/uploads (Bearer JWT)
-  A-->>B: Presigned URLs for each part (multipart)
-  B->>S: Parallel upload via Uppy, resumable
-  B->>A: POST /v1/jobs {upload, to, profile}
+  B->>A: POST /v1/uploads {filename, size, sha256} (Bearer JWT)
+  A-->>B: One presigned PUT, bound to the SHA-256
+  B->>S: PUT the file via Uppy
+  B->>A: POST /v1/uploads/{id}/complete (size and hash checked)
+  B->>A: POST /v1/jobs {upload_id, to, profile}
   A->>Q: INSERT job + pgmq.send(queue by pack)
   A-->>B: 202 {id, status: queued}
   B->>A: GET /v1/jobs/{id}/events (SSE)
@@ -567,9 +572,8 @@ sequenceDiagram
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/v1/uploads` | Create multipart upload |
-| POST | `/v1/uploads/{id}/parts` | Sign URLs for upload parts |
-| POST | `/v1/uploads/{id}/complete` | Complete upload |
+| POST | `/v1/uploads` | Start an upload; returns one presigned `PUT` |
+| POST | `/v1/uploads/{id}/complete` | Verify the stored file's size and SHA-256, detect its format |
 | POST | `/v1/plan` | Dry-run planner, return route and scores |
 | POST | `/v1/jobs` | Create conversion job |
 | GET | `/v1/jobs/{id}` | Job status |
@@ -577,14 +581,16 @@ sequenceDiagram
 | GET | `/v1/jobs/{id}/outputs` | Output download URLs |
 | DELETE | `/v1/jobs/{id}` | Immediately delete input and output |
 | GET | `/v1/capabilities` | Formats, routes, benchmark scores |
+| GET | `/healthz`, `/readyz` | Liveness; readiness of the database and storage |
 
-OpenAPI 3.1 generated via utoipa → `packages/sdk` generates the TypeScript SDK. Clients are never hand-written.
+OpenAPI 3.1 generated via utoipa and committed at `schemas/openapi.v1.json` with a drift test → `packages/sdk` generates the TypeScript SDK. Clients are never hand-written. Uploads are one presigned `PUT` per file (the cloud input cap of 2 GB is below S3's 5 GB single-request limit); S3 multipart is deferred. [docs/api.md](docs/api.md) describes the contract and [docs/server.md](docs/server.md) its operation.
 
 ### 9.2 Data
 
 - **Owned by Better Auth:** `user`, `session`, `account`, `verification`, `apikey`, `jwks`.
-- **Owned by AriadShift:** `uploads`, `jobs`, `job_steps`, `job_events`, `artifacts`, `usage_events`.
-- Job lifecycle: `queued → running → succeeded | failed | canceled → expired`.
+- **Owned by AriadShift:** `uploads`, `jobs`, `job_steps`, `job_events`, `artifacts`, `usage_events`, `workspaces`, `plan_entitlements`, `rate_limit_counters`. No AriadShift table references a Better Auth table; tests create `apikey` only as a fixture.
+- Job lifecycle: `queued → running → succeeded | failed | canceled → expired`, enforced by a `CHECK` constraint and guarded status updates. A trigger on `job_events` sends `pg_notify('ariad_job_events', {job_id, id})`.
+- `api` and `worker` refuse to start unless every embedded migration is applied; `ariad-server migrate` applies them.
 - Migrations managed via `sqlx migrate`. **Back up before every migration** in production environments.
 
 ### 9.3 Queues and Workers
@@ -593,19 +599,25 @@ OpenAPI 3.1 generated via utoipa → `packages/sdk` generates the TypeScript SDK
 - Queues sit behind a `JobQueue` trait. A **NATS JetStream** adapter will be introduced if throughput exceeds PostgreSQL capacity. This decision is strictly metrics-driven, never premature.
 - Workers share a single binary launched with varying arguments: `ariad-server worker --packs docling`. Each pack is containerized into a dedicated image (`worker-core`, `worker-docling`, `worker-office`) and scales based on queue depth.
 - Progress updates are recorded in `job_events` and broadcast via `pg_notify`; the API listens and streams events to clients via SSE. No Redis or dedicated WebSocket servers are required.
+- A job's queue is the heaviest pack its planned route needs: `docling` for the docling engine, `office` for LibreOffice, `core` otherwise. The API plans only over the packs listed in `ARIAD_PACKS`.
+- The message is enqueued in the transaction that creates the job and carries the W3C trace context in its pgmq headers. Its visibility timeout is the job's `timeout_s` plus a margin, and a heartbeat extends it and watches for cancellation. Handled messages are archived. Transient failures (engine crash, missing tool, storage) retry with backoff up to `ARIAD_WORKER_MAX_ATTEMPTS`; failures caused by the document fail at once; a stopping worker hands its job back without spending an attempt.
+- Workers run conversions through `ariad_host::convert::convert_with_limits` with the job's plan limits and use the `ashift` binary as their engine program, so engines added to `ashift __engine` need no server change.
 
 ### 9.4 Object Storage
 
 - Powered by the `object_store` crate: a single unified API across R2, S3, GCS, Azure, and local disk.
 - **Self-hosted:** SeaweedFS (Apache-2.0, single-command deployment). RustFS reached 1.0 on 2026-10-03; worth monitoring, but not yet chosen as default.
 - **Hosted tier:** Cloudflare R2 (zero egress fees).
-- Storage keys follow `t/{tenant}/{job}/{in|out}/{sha256}`, encrypted at rest (server-side encryption), and governed by automatic expiration lifecycle rules.
+- Storage keys follow `t/{tenant}/{owner}/{in|out}/{sha256}`, where the owner is the upload id for inputs (an upload exists before any job and can feed several jobs) and the job id for outputs. Objects are encrypted at rest by the store, and a bucket lifecycle rule backs up the sweeper.
+- Upload URLs bind `x-amz-checksum-sha256` to the signature (`object_store` cannot sign `content-length`), so the store refuses other bytes; `complete` re-checks size and hash anyway. The local store has no signer, so the API signs its own `/v1/blobs/{token}` URLs with HMAC-SHA256 and enforces size and hash while streaming.
+- Download URLs live five minutes. A sweeper in the API process, one replica at a time through an advisory lock, deletes inputs and outputs after the plan's `retention_s` and marks jobs `expired`.
 
 ### 9.5 Tenancy, Entitlements, and Metering
 
 - Every account owns a workspace (tenant) from day one. A personal account starts with a one-member workspace; object storage keys already include `t/{tenant}`.
 - Resolve limits and quotas from a `plan_entitlements` record keyed by plan, starting with `free`. Handlers never hard-code entitlements; `ariad-core::Limits` is the shape the record fills.
-- `usage_events` is an append-only, idempotent ledger with a unique event key. It records pages, bytes, and engine-seconds per tenant.
+- `usage_events` is an append-only, idempotent ledger with a unique event key; a trigger rejects updates, deletes and truncation. It records pages, bytes, and engine time per tenant.
+- The migration seeds `free` (the cloud column of §11.2) and `anonymous` (small files). Anonymous callers share one workspace; their quotas (`jobs_per_day`, `input_bytes_per_day`, `concurrent_jobs`) and `requests_per_minute` apply per client address, a keyed hash grouped by /64 for IPv6, and their uploads and jobs are reachable only through random ids. Rate limits are fixed one-minute windows in PostgreSQL, shared by every API replica.
 - Introduce a `BillingProvider` adapter only when paid plans launch. The provider remains an open question.
 
 ---
@@ -615,10 +627,10 @@ OpenAPI 3.1 generated via utoipa → `packages/sdk` generates the TypeScript SDK
 | Flow | Implementation |
 |---|---|
 | Web | Better Auth 1.7 in Next.js: email/password, GitHub, Google, **passkeys**, 2FA |
-| Web → API | Better Auth JWT plugin issues 15-minute tokens; Axum verifies against cached JWKS (`/api/auth/jwks`) via `jsonwebtoken` |
-| API key | Better Auth API Key plugin; hashed storage; Axum validates against the `apikey` table (read-only access) |
+| Web → API | Better Auth JWT plugin issues 15-minute tokens (EdDSA/Ed25519 by default; `iss` and `aud` are its base URL origin; `sub` is the user id); Axum verifies against cached JWKS (`/api/auth/jwks`) via `jsonwebtoken`, accepting each key only with the algorithm it declares and refetching on an unknown `kid` |
+| API key | Better Auth API Key plugin (`@better-auth/api-key`): `x-api-key`, stored as `base64url_nopad(sha256(key))`; Axum looks it up in the `apikey` table read-only, honouring `enabled`, `expiresAt`, `configId` and a used-up `remaining` or full rate-limit window, and maps `referenceId` to the user. Keys meant for the API are created with the plugin's rate limit off, because the server never moves its counters |
 | Desktop | System browser OAuth + PKCE → `ariadshift://auth/callback`; tokens stored in OS keychain |
-| Anonymous | Small files permitted; rate limited by IP + Cloudflare Turnstile |
+| Anonymous | Small files under the `anonymous` plan; quotas and rate limits per client address; Cloudflare Turnstile on uploads when configured |
 
 Self-hosted deployments do not require external OAuth: email/password authentication is fully self-contained.
 
@@ -667,7 +679,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 - **Linux (CLI, worker):** the runner re-executes `ashift __sandbox`, which applies `RLIMIT_CORE=0`, Landlock filesystem rules and supported network/scoping rights, and a seccomp filter denying non-UNIX socket creation and `io_uring_setup`, then `exec`s the engine. Engines can write the job workspace (or the session directory), read/execute system runtimes and their program, and read system configuration/devices. Extra read-only and executable paths live in the single `ariad_host::engines::sandbox::ENGINE_PATHS` declaration. Pandoc grants its resolved executable; the probe needs no extra paths. `EngineCommand::from_pack` grants the resolved pack install root read and execute access; engines needing paths outside that root add an entry to the declaration.
 - **Modes:** `best-effort` is the CLI/desktop default; missing filesystem or network confinement becomes a `sandbox_unavailable` conversion warning. `required` refuses unavailable isolation before starting the engine (`sandbox_unavailable`, exit 5); workers set it with `sandbox::set_default_mode`. `ASHIFT_SANDBOX=off|best-effort|required` overrides the default, and an invalid value fails closed. Launcher enforcement errors fail the job. `ashift doctor` reports effective mode, Landlock ABI and seccomp availability; only required mode makes missing sandbox support a required diagnostic failure.
 - **Local IPC on older kernels:** `required` guarantees filesystem rules and denial of non-UNIX sockets. `AF_UNIX` remains allowed: pathname UNIX sockets require Landlock ABI 9 for confinement, and abstract sockets and signals require ABI 6 for scoping. On older kernels an engine may still contact local services such as Docker, D-Bus or an SSH agent. `doctor` exposes the ABI and each coverage flag; deployments requiring local IPC isolation must use ABI 9 or stronger container isolation.
-- **Cloud (deployment target):** worker containers layer gVisor, a read-only root filesystem and tmpfs workspaces over the host sandbox.
+- **Cloud (deployment target):** worker containers layer gVisor, a read-only root filesystem and tmpfs workspaces over the host sandbox. `ARIAD_SANDBOX` (`required` by default on Linux workers) selects the host engine sandbox mode; `required` refuses to start a worker that cannot isolate engines.
 - **macOS / Windows:** process groups on macOS and Job Objects with `KillOnDrop` on Windows, cancellation/timeouts and the RSS watchdog. The Linux launcher is not used; `required` mode is unavailable. Seatbelt remains later hardening work.
 - **Limits:** the watchdog samples every 250 ms while a job is active. It is a resource guard, not a strict peak-memory ceiling. `max_memory_mb = null` leaves the watchdog disabled.
 
@@ -687,7 +699,8 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 
 - `tracing` + OpenTelemetry (OTLP) → OpenTelemetry Collector → configurable backends. Self-hosters can deploy Grafana LGTM; hosted deployments can use any OTLP-compatible vendor.
 - Key metrics: `conversion_duration_seconds{route,profile}`, `conversion_success_ratio`, `queue_wait_seconds{pack}`, `pages_processed_total`, `engine_peak_memory_bytes`, `engine_crash_total{engine}`.
-- Tracing propagates across `api → queue → worker → engine`, correlated by `job_id`.
+- Tracing propagates across `api → queue → worker → engine`, correlated by `job_id`; the trace context travels in the pgmq message headers.
+- `conversion_success_ratio` is recorded as a histogram of 1 (succeeded) and 0 (failed), so its mean is the ratio; `pages_processed_total` and `engine_peak_memory_bytes` are recorded when the host reports them.
 - Document content is **never** logged. Filenames are recorded exclusively as hashes.
 
 ---
@@ -794,7 +807,16 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Queue | pgmq on Postgres 18 | NATS JetStream upfront | Eliminates an extra service for self-hosters; SSE leverages LISTEN/NOTIFY; trait abstracts future NATS addition |
 | Self-hosted storage | SeaweedFS | MinIO (archived 04/2026), RustFS (just hit 1.0), Garage (AGPL) | Mature, Apache-2.0, single-command setup |
 | Storage client | `object_store` | `aws-sdk-s3` | Single API across all backends, including local disk in tests |
-| Uploads | Uppy + S3 multipart presigned | tus + tusd | Avoids operating a separate upload server; R2 and S3 natively support multipart |
+| Uploads | Uppy + one presigned S3 `PUT` per file, bound to its SHA-256 through `x-amz-checksum-sha256`, then `complete` re-checks size and hash | tus + tusd; S3 multipart now | Avoids operating a separate upload server; the 2 GB cloud cap fits one `PUT` (5 GB) and `object_store` presigns single requests; multipart is deferred |
+| Server SQL | sqlx runtime-checked queries, each exercised by the PostgreSQL integration tests | Compile-time `query!` macros | The macros need a live database or committed offline metadata on every build, and `ariad-server` builds on macOS and Windows CI without one |
+| Server TLS and S3 client | `object_store` with `aws-base` + `ring`, reqwest with `rustls-no-provider`, ring as the process provider | The `aws` feature (forces `aws-lc-rs`) | aws-lc-sys carries OpenSSL-licensed C code; ring is Apache-2.0 AND ISC |
+| JWT crypto | `jsonwebtoken` 11 `rust_crypto`, with `RUSTSEC-2023-0071` ignored in `deny.toml` | `aws_lc_rs`; a hand-written verifier | The Marvin timing attack needs RSA private-key operations; the server only verifies with public keys |
+| Worker engine program | The `ashift` binary (`ARIAD_ENGINE_PROGRAM`) | Serving `__engine` from `ariad-server` | One engine dispatcher; engines and the sandbox launcher added to `ashift` reach the workers unchanged |
+| API keys | Read-only lookup in Better Auth's `apikey` table; organization keys refused | Replicating Better Auth's counter writes; calling Better Auth per request | Better Auth's verify endpoint is server-only, and copying its write protocol would drift silently on upgrades |
+| Rate limits | Fixed one-minute windows in PostgreSQL | In-memory per-replica buckets; Redis | Shared across API replicas without another service |
+| Anonymous tenancy | One shared anonymous workspace, an `anonymous` entitlement row, per-address quotas, random v4 ids as capabilities | Per-address workspaces | Keeps limits in `plan_entitlements` and needs no anonymous session state |
+| Local object storage | The API signs and serves `/v1/blobs/{token}` URLs (HMAC-SHA256) | No presigned uploads without S3 | Self-hosting and tests work with a local directory and the same client flow |
+| License inventory | `THIRD_PARTY_LICENSES` covers every workspace binary, stored byte for byte (`-text`) | A separate server inventory | Server images ship the same crates; some upstream license texts use CRLF |
 | UI primitives | shadcn + Base UI | Radix, MUI, Ant | Base UI is the new shadcn default; fully customizable |
 | Writing DOCX/ODT/EPUB | IR → Pandoc AST → Pandoc | Custom `docx-rs`, `pdf2docx` | Single adapter targets multiple formats; avoids AGPL dependency chains |
 | PDF export | Typst | LaTeX, headless Chromium | Fast, embeddable (crate + WASM), Apache-2.0 |
