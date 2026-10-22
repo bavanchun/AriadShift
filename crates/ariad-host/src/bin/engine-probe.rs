@@ -295,6 +295,14 @@ fn serve_session() -> ExitCode {
             "fail" => {
                 let _ = fail_typed(ExitCode::SUCCESS);
             }
+            "limit" => emit(&Event::Result {
+                ok: false,
+                metrics: None,
+                error: Some(EngineError {
+                    code: ErrorCode::LimitExceeded,
+                    message: "probe exceeded max_pages".to_owned(),
+                }),
+            }),
             "crash" => return ExitCode::from(9),
             "hang" => hang(),
             "hog" => hog(options

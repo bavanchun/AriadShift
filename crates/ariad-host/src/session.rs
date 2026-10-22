@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ariad_core::protocol::{Event, Request};
+use ariad_core::protocol::{ErrorCode, Event, Request};
 use tempfile::TempDir;
 use tokio::runtime::{Builder, Runtime};
 use tokio_util::sync::CancellationToken;
@@ -508,7 +508,12 @@ impl<'pool> Lease<'pool> {
             return runner::run_command(&self.command, request, cancel, sink);
         };
         let result = session.run(&self.command, request, cancel, sink);
-        if !matches!(&result, Ok(_) | Err(RunError::EngineFailed { .. })) {
+        let reusable = match &result {
+            Ok(_) => true,
+            Err(RunError::EngineFailed { code, .. }) => *code != ErrorCode::LimitExceeded,
+            Err(_) => false,
+        };
+        if !reusable {
             self.healthy = false;
             session.kill();
         }
