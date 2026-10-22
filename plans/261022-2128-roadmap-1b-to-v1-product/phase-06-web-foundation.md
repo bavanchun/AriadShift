@@ -102,3 +102,15 @@ npm: `next` 16.4.2 (latest of the 16 LTS line), `react`/`react-dom` 19.3.1, `typ
 
 - `/download` lists the CLI install commands; the desktop row says it arrives with the desktop app.
 - DOCX and EPUB are detected by extension in the browser (no ZIP central directory reader in `ariad-core` yet); their routes show as available through the CLI until Pandoc WASM lands.
+
+## Completion verification
+
+Revalidated on 2026-10-23 after rebasing onto `origin/dev` at `c24cf97`, including the signed engine-pack integration. The phase status remains `completed` and its plan row remains Done.
+
+- [Independent integration review and resolutions](./reports/web-foundation-integration-review.md): no unresolved High or Medium findings.
+- [Integrated CI on `98d5901`](https://github.com/bavanchun/AriadShift/actions/runs/39849852181): all jobs passed, including Ubuntu 26.04, macOS 26, Windows 2025, fuzzing and the three-browser Web job (49 unit tests; 51 Playwright tests passed, 6 documented skips).
+- Local `just ci` passed: 569 Rust tests, 64 benchmark tests, 49 web unit tests, static checks, WASM, packaging and the production build. The release-workflow mutation suite passed 78 checks with 2 PowerShell-only skips on Linux.
+- Local `just web-export` passed; generated pages and `out/_headers` were checked for converter-only COOP/COEP and worker-chunk COEP. Chromium and Firefox production E2E passed 37 tests with 1 documented skip; WebKit is verified by Ubuntu CI because this Linux distribution lacks its required system libraries.
+- Pinned production Lighthouse 13.5.0 met every threshold: mobile Performance 99 on `/` and 96 on `/app`, desktop Performance 100 on both; all other categories scored 100. Measurements and deployment instructions are in [docs/web.md](../../docs/web.md).
+
+Reader and writer dispatch remains keyed by format id for the later PDF/Typst browser integration. The shared UI and base/React configuration remain independent of Next.js for desktop reuse.
