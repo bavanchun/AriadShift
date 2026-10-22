@@ -117,8 +117,54 @@ fn normalize_engines_json_stdout(output: &Output) -> String {
     res
 }
 
+/// Lines of the sandbox check depend on the OS and kernel; `doctor_reports_the_engine_sandbox`
+/// checks them, so the cross-platform snapshots leave them out.
+fn without_sandbox_lines(raw: &str) -> String {
+    let mut kept = Vec::new();
+    let mut skipping_hint = false;
+    for line in raw.lines() {
+        if line.contains("engine sandbox:") {
+            skipping_hint = true;
+            continue;
+        }
+        if skipping_hint && line.starts_with("  hint:") {
+            continue;
+        }
+        skipping_hint = false;
+        kept.push(line);
+    }
+    let mut res = kept.join("\n");
+    if !res.is_empty() {
+        res.push('\n');
+    }
+    res
+}
+
+fn without_sandbox_json(raw: &str) -> String {
+    use ariad_host::commands::doctor::{DoctorCheck, DoctorReport};
+
+    #[derive(serde::Serialize)]
+    struct Snapshot<'a> {
+        checks: Vec<&'a DoctorCheck>,
+        stale_workspaces: usize,
+    }
+
+    let report: DoctorReport = serde_json::from_str(raw).expect("doctor JSON");
+    let snapshot = Snapshot {
+        checks: report
+            .checks
+            .iter()
+            .filter(|check| check.id != "sandbox")
+            .collect(),
+        stale_workspaces: report.stale_workspaces,
+    };
+    let mut res = serde_json::to_string_pretty(&snapshot).expect("serialize doctor JSON");
+    res.push('\n');
+    res
+}
+
 fn normalize_doctor_human_stdout(output: &Output) -> String {
-    let raw = normalize_stdout(output);
+    let raw = without_sandbox_lines(&normalize_stdout(output));
     let p_path = pandoc_path().display().to_string();
     let data_path = data_dir_path().display().to_string();
     let mut lines = Vec::new();
@@ -143,7 +189,7 @@ fn normalize_doctor_human_stdout(output: &Output) -> String {
 }
 
 fn normalize_doctor_json_stdout(output: &Output) -> String {
-    let raw = normalize_stdout(output);
+    let raw = without_sandbox_json(&normalize_stdout(output));
     let mut lines = Vec::new();
     for line in raw.lines() {
         if line.contains("found in >=") {
@@ -447,6 +493,79 @@ fn doctor_json_output() {
         "doctor json output must never leak absolute tool path"
     );
     insta::assert_snapshot!(normalize_doctor_json_stdout(&output));
+}
+
+#[test]
+fn doctor_reports_the_engine_sandbox() {
+    let output = cli()
+        .args(["doctor", "--json"])
+        .output()
+        .expect("run doctor --json");
+    assert_eq!(output.status.code(), Some(0));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor JSON");
+    let sandbox = &report["sandbox"];
+    assert_eq!(sandbox["mode"], "best-effort");
+    assert_eq!(sandbox["platform"], cfg!(target_os = "linux"));
+    for key in [
+        "landlock_abi",
+        "landlock_filesystem",
+        "landlock_network",
+        "landlock_scopes",
+        "landlock_unix_sockets",
+        "seccomp",
+    ] {
+        assert!(sandbox.get(key).is_some(), "sandbox.{key} is reported");
+    }
+    let check = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["id"] == "sandbox")
+        .expect("sandbox check");
+    assert_eq!(check["required"], false, "best effort never fails doctor");
+    assert!(
+        check["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("engine sandbox: best-effort")
+    );
+
+    let human = cli().args(["doctor"]).output().expect("run doctor");
+    assert!(String::from_utf8_lossy(&human.stdout).contains("engine sandbox: best-effort"));
+}
+
+#[test]
+fn doctor_fails_in_required_mode_without_sandbox_support() {
+    let output = cli()
+        .args(["doctor", "--json"])
+        .env("ASHIFT_SANDBOX", "required")
+        .env("ARIAD_TEST_SANDBOX_SUPPORT", "none")
+        .output()
+        .expect("run doctor --json");
+    assert_eq!(output.status.code(), Some(5));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor JSON");
+    assert_eq!(report["sandbox"]["mode"], "required");
+    assert_eq!(report["sandbox"]["landlock_filesystem"], false);
+    let check = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["id"] == "sandbox")
+        .expect("sandbox check");
+    assert_eq!(check["ok"], false);
+    assert_eq!(check["required"], true);
+}
+
+#[test]
+fn doctor_reports_an_unknown_sandbox_mode() {
+    let output = cli()
+        .args(["doctor", "--json"])
+        .env("ASHIFT_SANDBOX", "strict")
+        .output()
+        .expect("run doctor --json");
+    assert_eq!(output.status.code(), Some(5));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor JSON");
+    assert!(report["sandbox"]["mode"].is_null());
 }
 
 #[test]
