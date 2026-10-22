@@ -1,0 +1,7 @@
+{
+  "extends": "@ariadshift/config/tsconfig/react.json",
+  "compilerOptions": {
+    "types": ["vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx", "vitest.config.ts"]
+}

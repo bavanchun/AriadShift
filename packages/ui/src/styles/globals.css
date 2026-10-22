@@ -1,0 +1,109 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource-variable/plus-jakarta-sans";
+
+/* Scan the shared components for class names wherever this sheet is imported. */
+@source "..";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Brand palette: docs/brand/design-direction.md. Text pairs meet WCAG 2.2 AA. */
+:root {
+  --radius: 0.75rem;
+  --background: #f6f4ee;
+  --foreground: #232821;
+  --card: #fcfbf8;
+  --card-foreground: #232821;
+  --popover: #fcfbf8;
+  --popover-foreground: #232821;
+  --primary: #2f5b43;
+  --primary-foreground: #f6f4ee;
+  --secondary: #e4ebdf;
+  --secondary-foreground: #1e3a2a;
+  --muted: #ebe8df;
+  --muted-foreground: #565d53;
+  --accent: #fff1c4;
+  --accent-foreground: #3d2a08;
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --success: #1f6b3f;
+  --border: #d6d2c6;
+  --input: #c9c4b6;
+  --ring: #2f5b43;
+  --gold: #d8912c;
+  --gold-soft: #f2c063;
+  --sage: #4f8c62;
+}
+
+.dark {
+  --background: #171a16;
+  --foreground: #f6f4ee;
+  --card: #1f231e;
+  --card-foreground: #f6f4ee;
+  --popover: #1f231e;
+  --popover-foreground: #f6f4ee;
+  --primary: #a8ce94;
+  --primary-foreground: #10210f;
+  --secondary: #26302a;
+  --secondary-foreground: #e4ebdf;
+  --muted: #232821;
+  --muted-foreground: #b3bbad;
+  --accent: #3b311c;
+  --accent-foreground: #fff1c4;
+  --destructive: #f97066;
+  --destructive-foreground: #1b0604;
+  --success: #a8ce94;
+  --border: #353c34;
+  --input: #424a40;
+  --ring: #a8ce94;
+  --gold: #f2c063;
+  --gold-soft: #fff1c4;
+  --sage: #a8ce94;
+}
+
+@theme inline {
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Code", "Menlo", monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-sage: var(--sage);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
