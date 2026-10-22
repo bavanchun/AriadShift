@@ -272,6 +272,13 @@ mod tests {
     }
 
     #[test]
+    fn rejects_a_raw_nul_character() {
+        let output = parse_front_matter("title: a\u{0}b\n", 1024);
+        assert_eq!(output.warnings[0].code, WarningCode::FrontMatterInvalid);
+        assert!(output.metadata.title.is_none());
+    }
+
+    #[test]
     fn rejects_front_matter_over_the_cap_before_parsing() {
         let output = parse_front_matter("title: longer than cap\n", 5);
         assert_eq!(output.warnings[0].code, WarningCode::FrontMatterInvalid);
