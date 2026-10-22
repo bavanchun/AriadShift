@@ -506,6 +506,8 @@ mod tests {
                 while !stopping.load(Ordering::SeqCst) {
                     match listener.accept() {
                         Ok((socket, _)) => {
+                            // BSD and Windows can inherit the listener's nonblocking mode.
+                            socket.set_nonblocking(false).unwrap();
                             accepted.fetch_add(1, Ordering::SeqCst);
                             socket
                                 .set_read_timeout(Some(Duration::from_secs(2)))
