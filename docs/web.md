@@ -88,7 +88,7 @@ Without the chunk header the converter worker does not start, and the page repor
 ## Tests
 
 - Vitest: the bindings against the built wasm module in Node (`packages/ariad-wasm/test`); the worker session, route runner and in-memory file store with the real module, and the client's worker replacement with a fake worker (`apps/web/test`); the UI components with Testing Library in jsdom. The OPFS store needs a browser and is covered by Playwright.
-- Playwright (`apps/web/e2e`): Markdown to HTML, HTML to Markdown, a Markdown → IR JSON → Markdown round trip, target preselection from a pair page, two tabs converting side by side, reset and the start-up sweep deleting OPFS folders, the 16 MB limit, keyboard operation of the picker and the selects, headers on `/app` only, isolation after following a site link, no wasm on `/`, sitemap and robots. The offline test runs on Chromium only.
+- Playwright (`apps/web/e2e`): Markdown to HTML, HTML to Markdown, a Markdown → IR JSON → Markdown round trip, target preselection from a pair page, two tabs converting side by side, reset and the start-up sweep deleting OPFS folders, the 16 MB limit, unsupported formats, file drops outside the picker, keyboard operation of the picker and the selects, headers on `/app` only, isolation after following a site link, no wasm on `/`, sitemap and robots. The offline test runs on Chromium only.
 
 ## Lighthouse
 

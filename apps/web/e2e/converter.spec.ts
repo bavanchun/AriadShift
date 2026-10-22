@@ -106,6 +106,41 @@ test("explains formats that need the CLI", async ({ page }) => {
   await expect(page.getByText(/Word \(DOCX\), EPUB need the AriadShift CLI/)).toBeVisible();
 });
 
+test("does not offer the CLI for formats without a route", async ({ page }) => {
+  await openConverter(page);
+  await chooseFile(page, "page.pdf", "application/pdf", "%PDF-1.7\n");
+  await expect(page.getByText("AriadShift cannot convert pdf yet.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "The AriadShift CLI", exact: true })).toHaveCount(0);
+});
+
+test("file drops outside the picker preserve the current document", async ({ page }) => {
+  await openConverter(page);
+  await expect(page.getByTestId("device-indicator")).toContainText(/storage|In memory/);
+  const prevented = () =>
+    page.evaluate(() => {
+      const files = new DataTransfer();
+      files.items.add(new File(["# Another document"], "another.md"));
+      const text = new DataTransfer();
+      text.setData("text/plain", "ordinary text");
+      const dispatch = (type: string, dataTransfer: DataTransfer) => {
+        const event = new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer });
+        document.body.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      return [
+        dispatch("dragover", files),
+        dispatch("drop", files),
+        dispatch("dragover", text),
+        dispatch("drop", text),
+      ];
+    });
+
+  expect(await prevented()).toEqual([true, true, false, false]);
+  await chooseFile(page, "notes.md", "text/markdown", MARKDOWN);
+  expect(await prevented()).toEqual([true, true, false, false]);
+  await expect(page.getByTestId("input-name")).toHaveText("notes.md");
+});
+
 /** Names of the per-tab folders under the converter's OPFS directory. */
 async function sessionFolders(page: Page): Promise<string[]> {
   return page.evaluate(async () => {

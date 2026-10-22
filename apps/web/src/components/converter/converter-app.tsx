@@ -143,6 +143,20 @@ export function ConverterApp() {
     };
   }, [start]);
 
+  useEffect(() => {
+    const preventFileNavigation = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes("Files")) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("dragover", preventFileNavigation);
+    window.addEventListener("drop", preventFileNavigation);
+    return () => {
+      window.removeEventListener("dragover", preventFileNavigation);
+      window.removeEventListener("drop", preventFileNavigation);
+    };
+  }, []);
+
   const handleFiles = useCallback(
     async (files: File[]) => {
       const file = files[0];
@@ -366,11 +380,17 @@ export function ConverterApp() {
             )}
             {inspection && inspection.reachable.length === 0 && (
               <p className="text-sm">
-                {formatLabel(inspection.format)} cannot be converted in the browser yet.{" "}
-                <a className="underline" href="/download">
-                  The AriadShift CLI
-                </a>{" "}
-                converts it on your computer.
+                {(inspection.reachable_elsewhere?.length ?? 0) > 0 ? (
+                  <>
+                    {formatLabel(inspection.format)} cannot be converted in the browser yet.{" "}
+                    <a className="underline" href="/download">
+                      The AriadShift CLI
+                    </a>{" "}
+                    converts it on your computer.
+                  </>
+                ) : (
+                  <>AriadShift cannot convert {formatLabel(inspection.format)} yet.</>
+                )}
               </p>
             )}
           </CardContent>
