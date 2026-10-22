@@ -1,0 +1,1558 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AriadShift API",
+    "description": "Convert documents in the AriadShift cloud. Upload a file with one presigned PUT, create a job, follow its events, and download the outputs through short-lived URLs. Inputs and outputs are deleted after the plan's retention period (one hour by default).",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    },
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "This deployment"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness: the process serves HTTP.",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "description": "The process is alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Readiness: the database and object storage answer.",
+        "operationId": "readyz",
+        "responses": {
+          "200": {
+            "description": "Ready to serve",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "tags": [
+          "planning"
+        ],
+        "summary": "List formats and conversion edges.",
+        "description": "Only edges whose engines run on this deployment's worker packs are listed.",
+        "operationId": "capabilities",
+        "responses": {
+          "200": {
+            "description": "Formats and edges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create a conversion job.",
+        "description": "Plans the route for the upload's format, checks the plan's quotas, and\nqueues the job for the worker pack that runs the route.",
+        "operationId": "create_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Job queued",
+            "headers": {
+              "location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "URL of the job"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The upload is not complete or no longer available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request or unsupported route (`unsupported_route`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited or quota exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/jobs/{id}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get a job.",
+        "operationId": "get_job",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Delete a job's files now.",
+        "description": "Cancels the job if it is still queued or running, and deletes its input\nupload and outputs at once. Other jobs created from the same upload lose\ntheir input.",
+        "operationId": "delete_job",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Files deleted"
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/jobs/{id}/events": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Follow a job's events.",
+        "description": "A Server-Sent Events stream. Each message's `event` is the kind, `id` is the\nevent id, and `data` is a `JobEvent`. Reconnect with `Last-Event-ID` to\nresume. The stream closes after the job's final event.",
+        "operationId": "job_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "description": "Resume after this event id",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEvent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/jobs/{id}/outputs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get download URLs for a job's outputs.",
+        "description": "Each URL is valid for five minutes; call again for fresh URLs.",
+        "operationId": "job_outputs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Output files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outputs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The job has not succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The outputs were deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/plan": {
+      "post": {
+        "tags": [
+          "planning"
+        ],
+        "summary": "Plan a conversion without running it.",
+        "description": "Returns the route the planner picks for the deployment's worker packs, its\nbenchmark scores, and up to two alternatives.",
+        "operationId": "plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The planned route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request or unsupported route (`unsupported_route`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Start an upload.",
+        "description": "Returns one presigned `PUT` request. Send the file body with the returned\nheaders, then call `complete`. Anonymous callers may need a Turnstile token.",
+        "operationId": "create_upload",
+        "parameters": [
+          {
+            "name": "cf-turnstile-response",
+            "in": "header",
+            "description": "Cloudflare Turnstile token; required for anonymous callers when the deployment enables Turnstile",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Upload created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Turnstile check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File exceeds the plan's input limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/uploads/{id}/complete": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Complete an upload.",
+        "description": "Checks that the stored file has the declared size and SHA-256 and detects\nits format. A mismatching file is deleted.",
+        "operationId": "complete_upload",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Upload id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upload verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The file is missing, or the upload is no longer live",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The file does not match the declared size or hash",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Capabilities": {
+        "type": "object",
+        "required": [
+          "version",
+          "generated_at",
+          "packs",
+          "formats",
+          "edges"
+        ],
+        "properties": {
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapabilityEdge"
+            },
+            "description": "Edges the deployment can run."
+          },
+          "formats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormatInfo"
+            }
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "packs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pack"
+            },
+            "description": "Packs with workers on this deployment."
+          },
+          "version": {
+            "type": "string",
+            "description": "Version of the capabilities registry, for example `ariad-capabilities/0`."
+          }
+        }
+      },
+      "CapabilityEdge": {
+        "type": "object",
+        "description": "One conversion edge an engine provides.",
+        "required": [
+          "from",
+          "to",
+          "engine",
+          "pack",
+          "license"
+        ],
+        "properties": {
+          "engine": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "license": {
+            "type": "string"
+          },
+          "metrics": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EdgeMetrics",
+                "description": "`null` until the benchmark measures the edge."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pack": {
+            "$ref": "#/components/schemas/Pack"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateJobRequest": {
+        "type": "object",
+        "description": "Creates a conversion job.",
+        "required": [
+          "upload_id",
+          "to"
+        ],
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "to": {
+            "type": "string",
+            "description": "Target format id or extension.",
+            "example": "docx"
+          },
+          "upload_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A completed upload."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateUploadRequest": {
+        "type": "object",
+        "description": "Starts an upload.",
+        "required": [
+          "filename",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original file name. Used for the output name and title fallback; never logged.",
+            "example": "report.docx",
+            "maxLength": 255
+          },
+          "sha256": {
+            "type": "string",
+            "description": "SHA-256 of the file, lowercase hex.",
+            "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Exact size in bytes.",
+            "example": 48213,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "EdgeMetrics": {
+        "type": "object",
+        "description": "Benchmark measurements of one conversion edge.",
+        "required": [
+          "fidelity",
+          "editability",
+          "p50_ms",
+          "peak_mem_mb",
+          "samples"
+        ],
+        "properties": {
+          "editability": {
+            "type": "number",
+            "format": "double"
+          },
+          "fidelity": {
+            "type": "number",
+            "format": "double"
+          },
+          "p50_ms": {
+            "type": "number",
+            "format": "double"
+          },
+          "peak_mem_mb": {
+            "type": "number",
+            "format": "double"
+          },
+          "samples": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "description": "Body of every error response.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        }
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable code, for example `not_found` or `limit_exceeded`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation. Never contains document content."
+          }
+        }
+      },
+      "FormatInfo": {
+        "type": "object",
+        "description": "A format the service knows.",
+        "required": [
+          "id",
+          "extensions",
+          "media_type"
+        ],
+        "properties": {
+          "extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string",
+            "example": "markdown"
+          },
+          "media_type": {
+            "type": "string"
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          }
+        }
+      },
+      "Job": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "upload_id",
+          "from",
+          "to",
+          "profile",
+          "pack",
+          "route",
+          "warnings",
+          "attempts",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Worker attempts so far.",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail",
+                "description": "Set when the job failed."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When inputs and outputs are deleted."
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "from": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pack": {
+            "$ref": "#/components/schemas/Pack"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "route": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteStep"
+            },
+            "description": "Planned route; replaced by the executed route when the job succeeds."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "to": {
+            "type": "string"
+          },
+          "upload_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobWarning"
+            }
+          }
+        }
+      },
+      "JobEvent": {
+        "type": "object",
+        "description": "One entry of a job's event stream (the `data` of an SSE message).",
+        "required": [
+          "id",
+          "job_id",
+          "kind",
+          "data",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "type": "object",
+            "description": "Kind-specific details, for example `{\"stage\": \"write\"}`."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Monotonic event id; also the SSE `id`, usable as `Last-Event-ID`."
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`queued`, `started`, `progress`, `warning`, `retrying`, `succeeded`, `failed`, `canceled` or `expired`.",
+            "example": "progress"
+          }
+        }
+      },
+      "JobStatus": {
+        "type": "string",
+        "description": "Lifecycle of a job: `queued → running → succeeded | failed | canceled → expired`.",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "canceled",
+          "expired"
+        ]
+      },
+      "JobWarning": {
+        "type": "object",
+        "description": "A warning reported by the conversion.",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "OutputFile": {
+        "type": "object",
+        "description": "A produced file.",
+        "required": [
+          "id",
+          "filename",
+          "format",
+          "media_type",
+          "size",
+          "sha256",
+          "url",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The URL stops working at this time (five minutes after issue)."
+          },
+          "filename": {
+            "type": "string",
+            "example": "report.docx"
+          },
+          "format": {
+            "type": "string",
+            "example": "docx"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string",
+            "description": "Presigned download URL."
+          }
+        }
+      },
+      "Outputs": {
+        "type": "object",
+        "required": [
+          "job_id",
+          "outputs"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutputFile"
+            }
+          }
+        }
+      },
+      "Pack": {
+        "type": "string",
+        "description": "A worker image class. Each pack consumes its own queue.",
+        "enum": [
+          "core",
+          "office",
+          "docling"
+        ]
+      },
+      "PlanAlternative": {
+        "type": "object",
+        "required": [
+          "route",
+          "score",
+          "measured",
+          "pack"
+        ],
+        "properties": {
+          "measured": {
+            "type": "boolean"
+          },
+          "pack": {
+            "$ref": "#/components/schemas/Pack"
+          },
+          "route": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteStep"
+            }
+          },
+          "score": {
+            "$ref": "#/components/schemas/RouteScore"
+          }
+        }
+      },
+      "PlanRequest": {
+        "type": "object",
+        "description": "Plans a route without converting.",
+        "required": [
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Source format id or extension (`markdown`, `md`, `docx`). Required unless `upload_id` is given.",
+            "example": "md"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "to": {
+            "type": "string",
+            "description": "Target format id or extension.",
+            "example": "docx"
+          },
+          "upload_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "A completed upload whose detected format is the source."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlanResponse": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "profile",
+          "pack",
+          "route",
+          "score",
+          "measured",
+          "alternatives"
+        ],
+        "properties": {
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanAlternative"
+            }
+          },
+          "from": {
+            "type": "string"
+          },
+          "measured": {
+            "type": "boolean",
+            "description": "Whether every step has benchmark measurements."
+          },
+          "pack": {
+            "$ref": "#/components/schemas/Pack",
+            "description": "Worker pack that runs the route."
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "route": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteStep"
+            }
+          },
+          "score": {
+            "$ref": "#/components/schemas/RouteScore"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "PresignedRequest": {
+        "type": "object",
+        "description": "The single request that transfers a file to or from storage.",
+        "required": [
+          "method",
+          "url",
+          "headers",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "headers": {
+            "type": "object",
+            "description": "Headers to send unchanged.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "method": {
+            "type": "string",
+            "description": "HTTP method, `PUT` for uploads.",
+            "example": "PUT"
+          },
+          "url": {
+            "type": "string",
+            "description": "Presigned URL."
+          }
+        }
+      },
+      "Profile": {
+        "type": "string",
+        "description": "Route selection priorities.",
+        "enum": [
+          "editable",
+          "faithful",
+          "fast"
+        ]
+      },
+      "RouteScore": {
+        "type": "object",
+        "description": "Benchmark-derived scores of a route; `null` where unmeasured.",
+        "properties": {
+          "editability": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "estimated_duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "fidelity": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "RouteStep": {
+        "type": "object",
+        "description": "One conversion step.",
+        "required": [
+          "from",
+          "to",
+          "engine"
+        ],
+        "properties": {
+          "engine": {
+            "type": "string",
+            "example": "ariad-core"
+          },
+          "from": {
+            "type": "string",
+            "example": "markdown"
+          },
+          "to": {
+            "type": "string",
+            "example": "ariad-ir+json"
+          }
+        }
+      },
+      "Upload": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "filename",
+          "size",
+          "sha256",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the stored file is deleted."
+          },
+          "filename": {
+            "type": "string"
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Detected format registry id, once the upload is complete."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/UploadStatus"
+          },
+          "upload": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PresignedRequest",
+                "description": "Present while the upload is pending."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "UploadStatus": {
+        "type": "string",
+        "description": "Lifecycle of an upload.",
+        "enum": [
+          "pending",
+          "completed",
+          "deleted",
+          "expired"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "api_key": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "A Better Auth API key."
+      },
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "A Better Auth JWT (JWT plugin, 15-minute lifetime)."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "uploads",
+      "description": "Send input files"
+    },
+    {
+      "name": "jobs",
+      "description": "Run and follow conversions"
+    },
+    {
+      "name": "planning",
+      "description": "Routes and capabilities"
+    },
+    {
+      "name": "health",
+      "description": "Liveness and readiness"
+    }
+  ]
+}
