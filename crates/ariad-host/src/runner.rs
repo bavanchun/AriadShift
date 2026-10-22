@@ -562,6 +562,11 @@ impl EngineProcess {
     where
         S: FnMut(Event),
     {
+        if mode == JobMode::Session && self.is_stale().await {
+            return Err(RunError::ProtocolViolation(
+                "output or exit before the next request",
+            ));
+        }
         // Keep one watchdog alive across request delivery and event processing, including
         // backpressure from an engine that has not started reading its request.
         let memory_limit = wait_memory_limit(self.id(), job.memory_limit_mb);
@@ -684,9 +689,10 @@ impl EngineProcess {
             return true;
         }
         // One short poll lets the reactor deliver output written while the process was idle.
-        time::timeout(Duration::from_millis(1), self.lines.next_line())
+        let ready = time::timeout(Duration::from_millis(1), self.lines.next_line())
             .await
-            .is_ok()
+            .is_ok();
+        ready || self.lines.has_buffered_bytes()
     }
 
     /// Closes stdin, waits up to `grace` for the engine to exit, then stops whatever is left of
