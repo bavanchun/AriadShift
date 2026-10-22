@@ -1,0 +1,102 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "vi-garden-300dpi",
+  "origin": {
+    "mimetype": "application/pdf",
+    "binary_hash": 10464820775491158864,
+    "filename": "vi-garden-300dpi.png"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/texts/0"
+      },
+      {
+        "$ref": "#/texts/1"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 224.33333333333334,
+            "t": 780.5883505100344,
+            "r": 369.3333333333333,
+            "b": 764.9216838433678,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            17
+          ]
+        }
+      ],
+      "orig": "Khu v\u01b0\u1eddn \u0111\u1ecdc s\u00e1ch",
+      "text": "Khu v\u01b0\u1eddn \u0111\u1ecdc s\u00e1ch",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 61.666666666666664,
+            "t": 734.9216838433678,
+            "r": 532.0,
+            "b": 708.5883505100344,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            193
+          ]
+        }
+      ],
+      "orig": "Khu v\u01b0\u1eddn \u0111\u1ecdc s\u00e1ch n\u1eb1m sau th\u01b0 vi\u1ec7n ph\u01b0\u1eddng, n\u01a1i tr\u01b0\u1edbc \u0111\u00e2y ch\u1ec9 c\u00f3 m\u1ed9t kho\u1ea3ng s\u00e2n tr\u1ed1ng. C\u00e1c c\u00f4 th\u1ee7 th\u01b0 xin h\u1ea1t gi\u1ed1ng t\u1eeb tr\u01b0\u1eddng ti\u1ec3u h\u1ecdc, c\u00f2n b\u00e1c th\u1ee3 m\u1ed9c \u0111\u00f3ng ba chi\u1ebfc gh\u1ebf d\u00e0i b\u1eb1ng g\u1ed7 t\u00e1i s\u1eed d\u1ee5ng.",
+      "text": "Khu v\u01b0\u1eddn \u0111\u1ecdc s\u00e1ch n\u1eb1m sau th\u01b0 vi\u1ec7n ph\u01b0\u1eddng, n\u01a1i tr\u01b0\u1edbc \u0111\u00e2y ch\u1ec9 c\u00f3 m\u1ed9t kho\u1ea3ng s\u00e2n tr\u1ed1ng. C\u00e1c c\u00f4 th\u1ee7 th\u01b0 xin h\u1ea1t gi\u1ed1ng t\u1eeb tr\u01b0\u1eddng ti\u1ec3u h\u1ecdc, c\u00f2n b\u00e1c th\u1ee3 m\u1ed9c \u0111\u00f3ng ba chi\u1ebfc gh\u1ebf d\u00e0i b\u1eb1ng g\u1ed7 t\u00e1i s\u1eed d\u1ee5ng."
+    }
+  ],
+  "pictures": [],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {
+    "1": {
+      "size": {
+        "width": 595.2011904023808,
+        "height": 841.9216838433678
+      },
+      "page_no": 1
+    }
+  }
+}
