@@ -1,6 +1,7 @@
 {
   "name": "ariadshift",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@12.9.1",
   "engines": {
     "node": ">=24"

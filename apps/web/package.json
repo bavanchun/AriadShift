@@ -1,0 +1,42 @@
+{
+  "name": "@ariadshift/web",
+  "private": true,
+  "type": "module",
+  "description": "AriadShift website and in-browser converter.",
+  "scripts": {
+    "sync-brand": "node scripts/sync-brand.mjs",
+    "dev": "node scripts/sync-brand.mjs && next dev --port 3000",
+    "build": "node scripts/sync-brand.mjs && next build",
+    "export": "node scripts/sync-brand.mjs && node scripts/export.mjs",
+    "start": "next start --port 3100",
+    "typecheck": "node scripts/sync-brand.mjs && next typegen && tsc --noEmit -p .",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "lighthouse": "node scripts/lighthouse.mjs"
+  },
+  "dependencies": {
+    "@ariadshift/ariad-wasm": "workspace:*",
+    "@ariadshift/ui": "workspace:*",
+    "lucide-react": "catalog:",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "devDependencies": {
+    "@ariadshift/config": "workspace:*",
+    "@fontsource/plus-jakarta-sans": "catalog:",
+    "@playwright/test": "catalog:",
+    "@tailwindcss/postcss": "catalog:",
+    "@testing-library/dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "jsdom": "catalog:",
+    "lighthouse": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
