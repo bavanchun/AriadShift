@@ -66,7 +66,7 @@ Formats are named by registry id (`markdown`, `docx`) or extension (`md`, `htm`)
 
 A job moves through `queued → running → succeeded | failed | canceled → expired`. Inputs and outputs are deleted when the plan's retention period ends (one hour by default) or on `DELETE`, and the job becomes `expired`; the job record stays. Transient failures, such as an engine crash or a storage error, are retried before a job fails. Failures caused by the document, such as an unsupported route or an exceeded limit, are final.
 
-The event stream sends `event: <kind>`, `id: <event id>` and `data: <JobEvent JSON>` for each event and closes after the final one:
+The event stream sends `event: <kind>`, `id: <event id>` and `data: <JobEvent JSON>` for each event and closes after the final one. Reconnecting after the final event closes immediately. Streams also close when the API shuts down:
 
 | Kind | Data |
 |---|---|
