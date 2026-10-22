@@ -160,6 +160,10 @@ seaweedfs_image := "chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553df
 test-server:
     #!/usr/bin/env bash
     set -euo pipefail
+    if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+        echo "skipping server integration tests: Docker is unavailable"
+        exit 0
+    fi
     pg=ariadshift-test-pg
     s3=ariadshift-test-s3
     cleanup() { docker rm -f "$pg" "$s3" >/dev/null 2>&1 || true; }
