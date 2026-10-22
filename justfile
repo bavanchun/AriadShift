@@ -151,6 +151,40 @@ licenses-check:
 # Checks that do not depend on the OS; CI runs them once.
 static: fmt-check spell lint-workflows deny js js-licenses web-lint py check-release-workflow licenses-check test-winget-manifest test-ci-scope
 
+# Images for the ariad-server integration tests; ci.yml pins the same digests.
+pgmq_image := "ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7"
+seaweedfs_image := "chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d"
+
+# Run ariad-server's database and S3 tests against throwaway Docker containers.
+[unix]
+test-server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pg=ariadshift-test-pg
+    s3=ariadshift-test-s3
+    cleanup() { docker rm -f "$pg" "$s3" >/dev/null 2>&1 || true; }
+    trap cleanup EXIT
+    cleanup
+    docker run -d --name "$pg" -p 127.0.0.1:55442:5432 -e POSTGRES_PASSWORD=ariad "{{pgmq_image}}" >/dev/null
+    docker run -d --name "$s3" -p 127.0.0.1:58342:8333 \
+        -v "{{justfile_directory()}}/infra/test/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" \
+        "{{seaweedfs_image}}" server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data \
+        -volume.max=32 -master.volumeSizeLimitMB=16 >/dev/null
+    # TCP opens only after the image's init scripts finish.
+    for _ in $(seq 1 60); do
+        docker exec "$pg" psql -h 127.0.0.1 -U postgres -qtc 'select 1' >/dev/null 2>&1 && break
+        sleep 1
+    done
+    for _ in $(seq 1 60); do
+        docker exec "$s3" sh -c 'echo "s3.bucket.create -name ariad-test" | weed shell' 2>/dev/null \
+            | grep -q 'created bucket' && break
+        sleep 1
+    done
+    cargo build -p ariad-cli --bin ashift
+    ARIAD_TEST_DATABASE_URL=postgres://postgres:ariad@127.0.0.1:55442/postgres \
+    ARIAD_TEST_S3_ENDPOINT=http://127.0.0.1:58342 \
+        cargo nextest run -p ariad-server
+
 package-check:
     cargo package --workspace --exclude ariad-server --allow-dirty
 

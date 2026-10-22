@@ -208,7 +208,8 @@ async fn api_keys_are_checked_read_only() {
     assert_eq!(count, Some(0));
     assert!(last.is_none());
 
-    let wrong = Auth::ApiKey(format!("{}x", &raw[..63]));
+    let last = if raw.ends_with('x') { 'y' } else { 'x' };
+    let wrong = Auth::ApiKey(format!("{}{last}", &raw[..63]));
     assert_eq!(
         error_code(h.get(&wrong, "/v1/capabilities").await).await.0,
         200,
