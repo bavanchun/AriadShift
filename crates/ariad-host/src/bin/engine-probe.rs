@@ -10,6 +10,9 @@ use std::{
 use ariad_core::protocol::{EngineError, ErrorCode, Event, Request};
 
 fn main() -> ExitCode {
+    if env::args_os().nth(1).is_some_and(|arg| arg == "__sandbox") {
+        return ariad_host::sandbox::launch(env::args_os().skip(2));
+    }
     let mut args = env::args().skip(1);
     let Some(operation) = args.next() else {
         return ExitCode::from(2);
@@ -139,6 +142,7 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "sandbox-check" => sandbox_check(),
         "event-after-result" => {
             emit(&ok_result());
             emit(&Event::Progress {
@@ -204,6 +208,77 @@ fn main() -> ExitCode {
         }
         _ => ExitCode::from(2),
     }
+}
+
+fn read_request() -> Option<Request> {
+    let mut line = Vec::new();
+    BufReader::new(io::stdin().lock())
+        .read_until(b'\n', &mut line)
+        .ok()?;
+    serde_json::from_slice(&line).ok()
+}
+
+/// Probes what the sandbox allows and reports each attempt as `allowed` or `denied`.
+///
+/// `options`: `outside` (a file path outside the workspace to create), `read` (a file to read),
+/// `port` (a local TCP port to connect to), `unix` (a pathname UNIX socket to connect to).
+fn sandbox_check() -> ExitCode {
+    let Some(Request::Convert {
+        output, options, ..
+    }) = read_request()
+    else {
+        return ExitCode::from(1);
+    };
+    let verdict =
+        |allowed: bool| serde_json::Value::from(if allowed { "allowed" } else { "denied" });
+    let option = |name: &str| options.get(name).and_then(serde_json::Value::as_str);
+    let mut metrics = std::collections::BTreeMap::new();
+    if let Some(path) = option("outside") {
+        metrics.insert(
+            "write_outside".to_owned(),
+            verdict(fs::write(path, b"escape").is_ok()),
+        );
+    }
+    if let Some(path) = option("read") {
+        metrics.insert(
+            "read_install_root".to_owned(),
+            verdict(fs::read(path).is_ok()),
+        );
+    }
+    if let Some(port) = options.get("port").and_then(serde_json::Value::as_u64) {
+        let address =
+            std::net::SocketAddr::from(([127, 0, 0, 1], u16::try_from(port).unwrap_or(0)));
+        let connected =
+            std::net::TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_ok();
+        metrics.insert("tcp_connect".to_owned(), verdict(connected));
+        let udp = std::net::UdpSocket::bind(("127.0.0.1", 0)).is_ok();
+        metrics.insert("udp_socket".to_owned(), verdict(udp));
+    }
+    #[cfg(unix)]
+    if let Some(path) = option("unix") {
+        let connected = std::os::unix::net::UnixStream::connect(path).is_ok();
+        metrics.insert("unix_connect".to_owned(), verdict(connected));
+    }
+    let exec_self = env::current_exe()
+        .and_then(|executable| Command::new(executable).arg("--version").output())
+        .is_ok_and(|output| output.status.success());
+    metrics.insert("exec_self".to_owned(), verdict(exec_self));
+
+    let artifact = std::path::Path::new(&output.dir).join("document.docx");
+    metrics.insert(
+        "write_workspace".to_owned(),
+        verdict(fs::write(&artifact, b"inside").is_ok()),
+    );
+    emit(&Event::Artifact {
+        path: artifact.to_string_lossy().into_owned(),
+        format: output.format,
+    });
+    emit(&Event::Result {
+        ok: true,
+        metrics: Some(metrics),
+        error: None,
+    });
+    ExitCode::SUCCESS
 }
 
 fn echo_request() -> ExitCode {

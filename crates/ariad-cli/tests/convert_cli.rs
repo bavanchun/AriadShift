@@ -1171,6 +1171,10 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
         (ConvertError::UnsupportedRoute { detail: None }, 3),
         (ConvertError::LimitExceeded, 4),
         (ConvertError::ToolMissing, 5),
+        (
+            ConvertError::SandboxUnavailable("no Landlock".to_owned()),
+            5,
+        ),
         (ConvertError::DestinationExists, 6),
         (ConvertError::Interrupted, 130),
     ];
@@ -1193,6 +1197,7 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::UnsupportedRoute { .. } => {}
             ConvertError::LimitExceeded => {}
             ConvertError::ToolMissing => {}
+            ConvertError::SandboxUnavailable(_) => {}
             ConvertError::DestinationExists => {}
             ConvertError::Interrupted => {}
         }

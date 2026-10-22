@@ -100,8 +100,14 @@ pub fn engines(
     }
 
     let default_args: [OsString; 0] = [];
-    let report = engines::availability(engine_program, &default_args, cancel.clone())
-        .map_err(|_| ConvertError::Failed)?;
+    let report =
+        engines::availability(engine_program, &default_args, cancel.clone()).map_err(|error| {
+            match error {
+                RunError::SandboxUnavailable(detail) => ConvertError::SandboxUnavailable(detail),
+                RunError::Cancelled => ConvertError::Interrupted,
+                _ => ConvertError::Failed,
+            }
+        })?;
 
     let mut rows = Vec::new();
 
@@ -188,7 +194,7 @@ pub fn engines(
     });
 
     // 3. Engine packs: docling is always listed; any other installed or overridden pack too.
-    rows.extend(pack_rows(caps, &cancel)?);
+    rows.extend(pack_rows(engine_program, caps, &cancel)?);
 
     Ok(rows)
 }
@@ -206,6 +212,7 @@ fn placeholder_license(name: &str) -> String {
 }
 
 fn pack_rows(
+    engine_program: &Path,
     caps: &ariad_core::planner::Capabilities,
     cancel: &CancellationToken,
 ) -> Result<Vec<EngineRow>, ConvertError> {
@@ -229,7 +236,14 @@ fn pack_rows(
         let routes = registry_routes(caps, &name);
         let license = registry_license(caps, &name);
         match packs::try_resolve(&name) {
-            Ok(Some(pack)) => rows.push(describe_pack(&pack, versions, routes, license, cancel)?),
+            Ok(Some(pack)) => rows.push(describe_pack(
+                engine_program,
+                &pack,
+                versions,
+                routes,
+                license,
+                cancel,
+            )?),
             Ok(None) => rows.push(EngineRow {
                 license: license.unwrap_or_else(|| placeholder_license(&name)),
                 id: name,
@@ -255,6 +269,7 @@ fn pack_rows(
 
 /// Builds an engine row for a resolved pack by running `describe` through its entrypoint.
 fn describe_pack(
+    engine_program: &Path,
     pack: &InstalledPack,
     versions: Vec<String>,
     routes: Vec<String>,
@@ -277,7 +292,11 @@ fn describe_pack(
         routes,
         pack: Some(info),
     };
-    match runner::describe_with_env(&pack.program, &pack.args, &pack.env, cancel.clone()) {
+    match runner::describe_command(
+        &runner::EngineCommand::from_pack(engine_program, pack),
+        runner::DESCRIBE_TIMEOUT,
+        cancel.clone(),
+    ) {
         Ok(Event::Capabilities {
             tool,
             license: engine_license,
@@ -306,6 +325,9 @@ fn describe_pack(
             }
         }
         Err(RunError::Cancelled) => return Err(ConvertError::Interrupted),
+        Err(RunError::SandboxUnavailable(detail)) => {
+            return Err(ConvertError::SandboxUnavailable(detail));
+        }
         Ok(_) | Err(_) => row.note = Some("engine describe failed".to_owned()),
     }
     Ok(row)

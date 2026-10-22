@@ -13,6 +13,7 @@ pub mod package_meta;
 pub mod packs;
 pub mod pandoc_bin;
 pub mod runner;
+pub mod sandbox;
 pub mod workspace;
 
 pub use convert::{ArchiveToIrOutput, read_archive_to_ir};
