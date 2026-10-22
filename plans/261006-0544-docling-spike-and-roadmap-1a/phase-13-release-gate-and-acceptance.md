@@ -1,7 +1,7 @@
 ---
 phase: 13
 title: "Release gate and acceptance"
-status: pending
+status: completed
 priority: P1
 effort: "7h"
 dependencies: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
@@ -62,3 +62,7 @@ This phase starts with a stop. The coordinator presents the following and waits.
 | Homebrew formula audit fails (`brew style`, `brew audit`) | Publish job red | Fix the dist config and re-run the publish job only; the release itself stays |
 | winget validation flags the binary | Bot comments on the PR | Address the manifest or explain; unsigned binaries are allowed but must pass the Defender/SmartScreen scans |
 | Token leak | A token printed in logs | Tokens live only in GitHub secrets set by the user; workflows never echo them; rotate immediately if exposed |
+
+## Outcome (2026-10-22)
+
+Done, with the publishing channels left open. `v0.1.0` was tagged on the promotion merge `3e5f967`. The release run published the GitHub Release with the archives, installers and SBOMs, and the shell and PowerShell installers pass the clean-runner smoke test. The `release` environment's `HOMEBREW_TAP_TOKEN` and `CARGO_REGISTRY_TOKEN` exist but do not hold working tokens: crates.io answered `401 Unauthorized` and the tap push was refused, so the formula and the three crates were not published. No WinGet submission was made. The completion record in [plan.md](./plan.md) lists the run URLs and the steps that finish publishing.
