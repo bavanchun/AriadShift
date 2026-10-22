@@ -124,7 +124,7 @@ describe("ariad-wasm", () => {
     expect(limited.limit).toBe("max_blocks");
 
     const unknown = thrown(() =>
-      convert(encoder.encode("a"), "markdown", "html", { profle: "fast" } as never),
+      convert(encoder.encode("a"), "markdown", "html", { speed: "fast" } as never),
     );
     expect(unknown.code).toBe("invalid_options");
   });

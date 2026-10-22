@@ -385,7 +385,7 @@ mod tests {
 
     #[test]
     fn options_reject_unknown_fields() {
-        let error = serde_json::from_str::<ConvertOptions>(r#"{"profle":"fast"}"#).unwrap_err();
+        let error = serde_json::from_str::<ConvertOptions>(r#"{"speed":"fast"}"#).unwrap_err();
         assert!(error.to_string().contains("unknown field"));
         let options: ConvertOptions =
             serde_json::from_str(r#"{"limits":{"max_blocks":5}}"#).unwrap();
