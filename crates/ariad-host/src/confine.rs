@@ -428,7 +428,8 @@ pub fn open_file_nofollow(root_dir: &cap_std::fs::Dir, relative: &Path) -> io::R
     options.read(true);
     #[cfg(unix)]
     {
-        options.custom_flags(libc::O_NOFOLLOW);
+        // A replaced FIFO must not block before the opened file is validated.
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
 
     #[cfg(unix)]
