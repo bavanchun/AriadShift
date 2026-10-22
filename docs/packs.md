@@ -134,18 +134,31 @@ An install extracts into `.staging`, checks links, notices and the entrypoint, w
 
 ```bash
 ashift __pack manifest --name docling --version 0.2.0 \
-  --target x86_64-unknown-linux-gnu --base engines/docling/pack/pack.template.toml \
-  --dest runtime=runtime --dest models=models --dest tessdata=tessdata \
+  --target x86_64-unknown-linux-gnu --base pack.base.toml \
   -o dist/pack.toml \
-  runtime=dist/docling-runtime-x86_64-unknown-linux-gnu.tar.zst \
-  models=dist/docling-models.tar.zst tessdata=dist/docling-tessdata.tar.zst
+  runtime=dist/docling-0.2.0-x86_64-unknown-linux-gnu-runtime.tar.zst \
+  models=dist/docling-0.2.0-models.tar.zst tessdata=dist/docling-0.2.0-tessdata.tar.zst
 ```
 
-- `--base <file>` supplies the pack fields (`description`, `license`, `requires_ashift`, `notices`) and per-target `entrypoint`, `env` and `options`. Only the `--target` entry's components are replaced; other targets are kept, so per-platform builds merge by passing the previous output as `--base`.
+- `--base <file>` supplies the pack fields (`description`, `license`, `requires_ashift`, `notices`) and per-target `entrypoint`, `env` and `options`. Only the `--target` entry's components are replaced; other targets are kept, so per-platform builds merge by passing the previous output as `--base`. The merged manifest is validated, so every target in it needs components; append a new target's entrypoint and options to the previous output before passing it as `--base`.
 - `--entrypoint <arg>` (repeat per argv element) sets or overrides the target's entrypoint; without a base it is required.
 - `--url-prefix <url>` prefixes component URLs; by default a URL is the bare file name, relative to the manifest.
 - `NAME=FILE` names a component; otherwise the name is the file name without its archive extension.
 - Keep each component under 2 GiB (the GitHub release asset limit) and compress zstd archives without `--long` (the decoder's window limit is 128 MiB).
+
+## The docling pack
+
+`engines/docling/pack/build.py` builds the `docling` pack and calls `ashift __pack manifest` as described above; `just pack-docling` builds it for the host. The pack has three components, all unpacked into the install root (`dest = "."`), so each archive holds top-level directories:
+
+| Component | Holds | Per target |
+|---|---|---|
+| `runtime` | `runtime/` (python-build-standalone CPython 3.14.9 with the locked wheels and the `ariad_docling` engine) and `notices/` (licence files of every bundled distribution, model and data set, plus the AriadShift `LICENSE` and `NOTICE`) | yes |
+| `models` | `models/`: the Docling layout (Heron) and TableFormer models and the RapidOCR PP-OCR models, at pinned revisions | shared |
+| `tessdata` | `tessdata/`: `tessdata_best` `vie`, `eng`, `osd` and `configs/tsv`, at a pinned commit | shared |
+
+On Linux x86_64 the components are about 455 MB, 383 MB and 29 MB (1.9 GB of files in `runtime`). The entrypoint is `runtime/bin/python3 -I -m ariad_docling` (`runtime/python.exe` on Windows) and the default options are `artifacts_path = "{root}/models"` and `tessdata_path = "{root}/tessdata"`. The pack does not bundle the Tesseract program; the engine reports it in `describe` and `ashift doctor` explains how to install it. `requires_ashift` is `>=0.2.0, <0.3.0`, the line whose engine protocol the pack speaks.
+
+To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 
 ## Signing and publishing
 

@@ -29,7 +29,7 @@ The name is derived from Ariadne's thread: AriadShift's planner navigates the fo
 | 8 | License clean | Apache-2.0 project; no AGPL in distribution; CI blocks invalid licenses |
 | 9 | No lock-in | Open standards at every boundary: S3 API, OpenAPI 3.1, JWT/JWKS, OpenTelemetry, MCP |
 
-Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exceptions to Principle 3. These readers are pure Rust with `#![forbid(unsafe_code)]`, typed errors, and finite nesting, node, and block limits; core readers are fuzzed starting in roadmap 1a. Every other parser runs out of process.
+Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exceptions to Principle 3. These readers are pure Rust with `#![forbid(unsafe_code)]`, typed errors, and finite nesting, node, and block limits; core readers are fuzzed starting in roadmap 1a. The DoclingDocument JSON mapper (`ariad_core::docling`) joins them: it reads the JSON that the out-of-process Docling engine wrote, never the user's input file, under the same bounds, typed errors and fuzzing (`docling_to_ir`). Every other parser runs out of process.
 
 ---
 
@@ -116,10 +116,10 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 
 | Component | Version | License | Role |
 |---|---|---|---|
-| Docling | 2.134.0 | MIT (weights: Apache-2.0 / CDLA-Permissive-2.0 / MIT) | Structural document parsing for PDF, images, DOCX/PPTX/XLSX (Heron layout, TableFormer); OCR uses Docling's Tesseract CLI option (`TesseractCliOcrOptions`), not the `tesserocr` binding (no Windows wheel, bundles Tesseract 5.5.1, pulls in LGPL cysignals); Linux pack uses CPU-only PyTorch index |
+| Docling | 2.142.0 (`docling-slim` extras; `docling-core` 2.104.0, DoclingDocument schema 1.10.0) | MIT (weights: Apache-2.0 / CDLA-Permissive-2.0 / MIT) | Structural document parsing for PDF, images, DOCX/PPTX/XLSX (Heron layout, TableFormer); OCR uses Docling's Tesseract CLI option (`TesseractCliOcrOptions`), not the `tesserocr` binding (no Windows wheel, bundles Tesseract 5.5.1, pulls in LGPL cysignals); the pack uses CPU-only PyTorch 2.14.1 on Linux and Windows and runs on CPython 3.14.9 from python-build-standalone |
 | Granite-Docling | 258M | Apache-2.0 | English complex layouts; ja/ar/zh are experimental; not used for Vietnamese |
-| RapidOCR + ONNX Runtime | 3.9.2 + 1.30.0 | Apache-2.0 / MIT | PP-OCRv6 OCR for English, Chinese, Japanese, and most Latin languages; never route Vietnamese here |
-| Tesseract + `tessdata_best` | 5.5.3 + `vie`/`eng`/`osd` | Apache-2.0 | Default OCR for Vietnamese and mixed Vietnamese-English |
+| RapidOCR + ONNX Runtime | 3.10.0 + 1.31.0 | Apache-2.0 / MIT | PP-OCRv6 OCR for English, Chinese, Japanese, and most Latin languages; never route Vietnamese here |
+| Tesseract + `tessdata_best` | 5.5.3 + `vie`/`eng`/`osd` | Apache-2.0 | Default OCR for Vietnamese and mixed Vietnamese-English. The docling pack ships the pinned traineddata and `configs/tsv`; the Tesseract 5 program comes from the system and `ashift doctor` reports it |
 | PaddleOCR-VL | 1.6 (0.96B; via llama.cpp) | Apache-2.0 / MIT | Optional high-accuracy OCR path |
 | Pandoc | **3.12** (official `pandoc.wasm` available) | GPL-2.0+ | Install the official release binary with SHA-256 verification via `scripts/install-pandoc.sh`; the Arch package is 3.11. Hub for DOCX, ODT, EPUB, HTML, LaTeX, and RST |
 | FFmpeg | 9.0, LGPL build | LGPL-2.1+ | Audio/video (later phase) |
@@ -333,7 +333,11 @@ The native HTML reader uses `html5ever` with a custom `TreeSink` arena and chunk
 
 The shared link policy in `ariad_core::links` enforces an allow-list for link schemes (`http`, `https`, `mailto`, and in-document `#` anchors); other links become plain text with a warning. Asset-backed images are embedded as data URLs. An image that remains a URL becomes its alt text with a warning. The mapper may emit its own `openxml` page-break constant, but `RawFormat` never admits `openxml` from IR content.
 
-Layout is optional. The `editable` profile discards it, while the `faithful` profile can use it to preserve positioning. Pandoc AST JSON is the bridge to the writer; Docling mappings arrive with the Docling engine in roadmap 1b.
+Layout is optional. The `editable` profile discards it, while the `faithful` profile can use it to preserve positioning. Pandoc AST JSON is the bridge to the writer.
+
+`ariad_core::docling::read(bytes, &Limits)` maps DoclingDocument JSON (schema major version 1, `schema_name` `DoclingDocument`) to the IR. It caps the input at `max_ir_json_bytes`, pre-scans JSON depth, resolves `$ref` items with a visited set, and enforces the block and nesting budgets and a budget on the text it emits (`max_ir_json_bytes`, error `ContentTooLarge`), so captions that name one large text again and again cannot multiply it. A title becomes a level 1 heading and a section header of level n a heading of level n+1, as in Docling's own Markdown export. Texts, list groups, inline groups, code (with its language), formulas (display math) and checkboxes map to the matching blocks. Tables keep spans, leading column-header rows (`head`, extended over the rows a head cell spans), row headers, captions and footnotes. A title or section header whose text sits in an inline group child keeps its heading level. Pictures become `Figure` blocks whose embedded image goes into the `AssetStore` (media type sniffed, `max_asset_bytes` enforced); their footnotes follow the figure as a paragraph. Page headers, footers and the furniture layer go to `furniture`; key-value and form items are dropped with an `unsupported_node` warning. Hyperlinks pass `ariad_core::links` or become text with `link_dropped`. Text is NFC-normalized, and the file name in the document is not copied into the IR.
+
+Provenance boxes become `LayoutIndex` entries: Docling's bottom-left origin is flipped to the IR's top-left origin, presentation geometry (English Metric Units) is converted to points, spreadsheets get no layout, and every coordinate is rounded to a thousandth of a point so that IR JSON round-trips exactly with any JSON float parser; coordinates that overflow or no page could have are dropped with their layout entry. `meta.source_format` comes from the document's MIME type, corrected by the file extension where Docling reports a converted image as PDF or a deck as a template. A DoclingDocument JSON file converts and inspects without an engine (`ashift convert x.docling.json --to md`).
 
 ### 6.3 Conversion Graph and Planner
 
@@ -475,7 +479,7 @@ The base installation must remain lightweight. Heavy engines are downloaded on d
 | Pack | Contents | Default |
 |---|---|---|
 | `core` | ashift, PDFium, Pandoc, Typst | Included in base install |
-| `docling` | Python 3.14 (python-build-standalone) + uv + Docling + Tesseract 5.5.3 with `tessdata_best` `vie`/`eng`/`osd` + RapidOCR 3.9.2 and PP-OCRv6 models | Download on demand |
+| `docling` | CPython 3.14.9 (python-build-standalone) + the locked Docling, CPU PyTorch and RapidOCR wheels + the engine package + Heron layout, TableFormer and PP-OCRv6 models + `tessdata_best` `vie`/`eng`/`osd` and `configs/tsv` + licence notices. The Tesseract 5 program is not bundled | Download on demand |
 | `office` | Uses existing system LibreOffice 26.8; guides official installation if absent | Auto-detected |
 | `ocr-extra` | Additional Tesseract language packs beyond `vie`/`eng`/`osd` | Download on demand |
 | `ocr-vlm` | llama.cpp + PaddleOCR-VL-1.6 GGUF | Opt-in download |
@@ -488,6 +492,15 @@ Each pack is an `ariad-pack/1` TOML manifest (schema `schemas/pack.v1.json`) wit
 - **Extraction.** Pure-Rust readers (`tar` + `ruzstd`/`flate2`, `zip`). Entries must be relative, without `..`, backslashes, `:` or control characters; only files, directories, symbolic links and hard links (copied) are accepted; nothing is written through a link; links must stay inside the install root lexically and after canonicalization; unpacked bytes and entries stay within the declared values plus a margin.
 - **Layout.** `<data>` is `ASHIFT_DATA_DIR` or the platform's local data directory for `com.ariadnev.ariadshift`. Installs stage under `<data>/packs/.staging`, are renamed to `<data>/packs/<name>/<version>` with a `receipt.toml` that records every file's SHA-256, and become active through `<data>/packs/<name>/current`. A per-pack lock file serializes install and remove. `ashift engines verify` re-hashes against the receipt.
 - **Resolution.** `ariad_host::packs::resolve(name)` returns an `InstalledPack` (install root, program, arguments, allow-listed environment and default request options, with `{root}` substituted) for the build matching this host. A pack triple describes the pack's binaries: the static musl `ashift` runs glibc packs when the system has a glibc loader. `runner::run_with_env` adds the pack environment to the cleared engine environment. `ASHIFT_PACK_<NAME>=<dir>` points at an unpacked development pack without a signature check.
+- **The docling pack.** `engines/docling/pack/build.py` (`just pack-docling`) builds it from hash-pinned inputs: the python-build-standalone release in `pins.toml`, the wheels of `uv.lock` installed with `--require-hashes`, and models and OCR data at pinned revisions with SHA-256 and size. It produces three `tar.zst` components under 2 GiB each (`runtime` with `notices`, per target; `models`; `tessdata`) and an unsigned manifest written by `ashift __pack manifest`. Every bundled distribution passes a licence gate (no AGPL, GPL or non-OSI licences, no OpenRAIL weights) before its notices are written. Pull requests that change the engine build the Linux x86_64 pack and convert a scanned Vietnamese page with it in a network-less namespace; `pack-docling-v*` tags build all four targets (`x86_64` and `aarch64` Linux, `aarch64` macOS, `x86_64` Windows) as workflow artifacts. Signing and publishing stay release steps ([docs/packs.md](docs/packs.md)).
+
+### 7.2 The Docling Engine
+
+The Docling engine (`engines/docling`, uv workspace member `ariad-docling`, package `ariad_docling`) is started as `python -I -m ariad_docling` and turns `pdf`, `docx`, `pptx`, `xlsx`, `png`, `jpeg`, `tiff` and `webp` into `docling+json` (`document.docling.json`, pictures embedded as `data:` URIs). It follows the protocol rules above: it duplicates fd 1 for protocol lines and points fd 1 at fd 2 before any third-party import, reports `enforces_memory_limit: true` only on Linux (soft `RLIMIT_DATA` applied after the models load), and sets `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` and `TESSDATA_PREFIX` itself, with remote services and external plugins disabled. `describe` imports no Docling code; it reports the Docling version, the Tesseract status (`found` for 5.x, `wrong_version` below 5, `missing`) and the model sets found under the configured paths.
+
+Request `options` are `artifacts_path` and `tessdata_path` (a pack supplies both; the development environment defaults to the directories next to its interpreter prefix), `ocr` (`auto`, `tesseract`, `rapidocr`, `off`) and `lang` (ISO 639-1 or 639-3 hints). `auto` runs Tesseract with `vie+eng` unless every hint is a non-Vietnamese language RapidOCR covers, and forces full-page OCR for images and PDFs without a text layer. `limits.max_pages` and `limits.max_input_bytes` map to Docling's own caps and fail as `limit_exceeded`. Progress is Docling's page-completed callback, in pages. Warnings are `ocr_fallback`, `ocr_language_unsupported`, `partial_conversion` and `content_dropped`. A missing Tesseract, or missing models, for a document that needs them is `tool_missing`.
+
+The host resolves the engine in `ariad_host::engines::docling`: the `ASHIFT_DOCLING_ENGINE` development override (a command line; double quotes group words) first, then the `docling` pack through `packs::resolve`, which also honours an unpacked `ASHIFT_PACK_DOCLING` directory. A plan with a Docling edge is `extract → map → write`: the engine reads a workspace copy of the input and writes DoclingDocument JSON, the in-process mapper (§6.2) turns it into IR, and any writer follows. The Docling edges in `capabilities.json` are unmeasured (`metrics: null`) until the benchmarks fill them. Running it from source and building the pack are described in [docs/docling.md](docs/docling.md).
 
 ---
 
@@ -688,7 +701,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 | Golden | `fixtures/` | Route outputs against reference standards |
 | Structural metrics | `bench/` | Text CER, heading tree distance (APTED), TEDS for tables, editability (see [docs/bench.md](docs/bench.md)) |
 | Visual regression | Typst/LibreOffice → PDF → PDFium raster → SSIM | "faithful" profile routes |
-| Conformance | `schemas/engine-protocol.v1.json` | Protocol compliance across all engines |
+| Conformance | `schemas/engine-protocol.v1.json` | Protocol compliance across all engines; the Docling engine runs it, with the scanned-Vietnamese, table and cancellation acceptance checks, through `docling_engine.rs` in the `Docling pack` workflow |
 | Fuzzing | cargo-fuzz 0.13.2 | Core readers, Pandoc AST mapper, IR JSON, limit validation (stable Rust with `-s none` in CI, date-pinned nightly ASan) |
 | E2E | Playwright (web), WebDriver (Tauri) | Primary user journeys |
 
@@ -841,6 +854,11 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Lighthouse | Pinned Lighthouse 13.5.0 behind `just web-lighthouse`, scores recorded in `docs/web.md` | Lighthouse CI as a required job | Scores on shared runners vary too much to gate on |
 | Web hydration | Separate Suspense boundaries around the theme toggle and converter | A single hydration boundary for the page | Splits startup work on slower CPUs while preserving the pre-rendered content; the Linux mobile Lighthouse scores meet the 90-point floor |
 | Inspection and plan caps | 32 MiB cap for deep document structure counting in `inspect`, and 4 MiB cap for `plan` summary parsing; regular-file preflight on all input reads | 256 MiB or unbounded reading and parsing of arbitrary file sizes, FIFOs, and special devices | Bounds peak memory expansion to ~100x input size (~3 GB peak RSS at 32 MiB) and prevents unbounded delays during diagnostic CLI runs without compromising standard document analysis |
+| DoclingDocument mapping | A bounded, fuzzed Rust mapper in `ariad-core` reads the engine's JSON in-process; layout coordinates are rounded to 0.001 pt | Mapping inside the Python engine; a PyO3 binding to `docling-core` | One mapper serves browser, desktop and cloud, the engine stays a thin converter, and short decimals read back exactly without a float-exact JSON parser. |
+| Docling dependency set | `docling-slim` with the PDF, Office, local-model and RapidOCR extras, CPU PyTorch from the PyTorch index, progress from Docling's `progress_callback` | The `docling` meta package; scraping progress from logs | Drops the chunking, e-mail, HTML and CLI stacks the engine never uses and relies on a public progress API. |
+| Tesseract program | The system's Tesseract 5 on `PATH`; the pack ships only the pinned `tessdata_best` data | Bundling a Tesseract build per platform in the pack | A Tesseract build and its Leptonica dependencies are a packaging task of their own; `describe` and `ashift doctor` report a missing or old Tesseract and say how to install it. Revisit when the desktop installer bundles it. |
+| Docling pack build | `build.py` over pinned python-build-standalone, `uv export` wheels with `--require-hashes`, hash-pinned models, reproducible `tar.zst` components and a manifest from `ashift __pack manifest`, behind a licence gate | `pip install` at install time; a container image | The pack installs and runs without network access, and every file and licence in it is auditable. |
+| Docling engine development override | `ASHIFT_DOCLING_ENGINE` (a command line) is tried before packs; `ASHIFT_PACK_DOCLING` runs an unpacked pack | Packs only | Contributors run the engine from `uv` without building a pack, and the pack workflow tests the unpacked pack through the host. |
 
 ---
 
