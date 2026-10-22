@@ -13,6 +13,30 @@ test("isolates only the converter route", async ({ request }) => {
   }
 });
 
+test("site links load /app as a cross-origin isolated document and leave it", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(
+    browserName === "webkit",
+    "WebKit does not implement Cross-Origin-Embedder-Policy: credentialless",
+  );
+  await page.goto("/");
+  expect(await page.evaluate(() => window.crossOriginIsolated)).toBe(false);
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Converter" })
+    .click();
+  await expect(page).toHaveURL(/\/app$/);
+  await expect.poll(() => page.evaluate(() => window.crossOriginIsolated)).toBe(true);
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Formats" })
+    .click();
+  await expect(page).toHaveURL(/\/formats$/);
+  await expect.poll(() => page.evaluate(() => window.crossOriginIsolated)).toBe(false);
+});
+
 test("the landing page loads no conversion engine", async ({ page }) => {
   const wasm: string[] = [];
   page.on("request", (request) => {
