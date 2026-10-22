@@ -44,10 +44,10 @@ The same tree is never built twice without a reason:
 | Promotion pull request into `main`, and the push to `main` after it | Skipped when the tree matches a `dev` commit whose CI push run succeeded | That exact tree was already built and tested on all three OSes |
 | Hotfix pull request into `main`, and the push after it | Run | The tree is new |
 | Change to `docs/`, `plans/`, or the root `README.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` only | Skipped | Static checks still spell-check and lint it |
-| Change confined to the JavaScript workspace (`apps/`, `packages/`, the root pnpm, Biome and Vitest files) and prose | Skipped | No Rust code changed; the web job covers it |
+| Change confined to the JavaScript workspace (`apps/`, `packages/`, `brand/`, `.node-version`, the root pnpm, Biome and Vitest files, or `scripts/check-js-licenses.mjs`) and prose | Skipped | No Rust code changed; the web and static jobs cover it |
 | Manual run, or a push whose previous commit is unknown | Run | Nothing to compare against |
 
-The web job runs when a change touches `apps/`, `packages/`, `crates/ariad-core/`, `crates/ariad-wasm/`, the root pnpm, Biome, Vitest, Cargo or toolchain files, the `justfile`, `ci.yml`, `ci-scope.sh` or `install-wasm-bindgen.sh`, and on manual runs and pushes without a known previous commit. Promotions follow the same tree rule as the other jobs.
+The web job runs when a change touches `apps/`, `packages/`, `brand/`, `.node-version`, `crates/ariad-core/`, `crates/ariad-wasm/`, the root pnpm, Biome, Vitest, Cargo or toolchain files, the `justfile`, `ci.yml`, `ci-scope.sh` or `install-wasm-bindgen.sh`, and on manual runs and pushes without a known previous commit. Promotions follow the same tree rule as the other jobs.
 
 A newer push to the same pull request cancels its older run. Runs on `dev` and `main` are grouped by commit and are never cancelled.
 
