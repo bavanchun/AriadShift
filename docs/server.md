@@ -130,6 +130,8 @@ Until the engine sandbox is part of `ariad_host`, `ARIAD_SANDBOX=required` stops
 
 Every account gets a workspace on its first request, on the `free` plan; move one with `UPDATE workspaces SET plan = '…' WHERE owner_user_id = '…'`. Anonymous callers share one workspace, and their quotas and rate limit apply per client address (a keyed hash, grouped by /64 for IPv6). Quotas count the `usage_events` ledger over the last 24 hours and the jobs still queued or running; rate limits are one-minute windows in PostgreSQL, shared by all API replicas.
 
+After 30 rejected credentials from one client address in a minute, further credential-bearing requests from that address receive `429` with `Retry-After` until the next window. This check runs before JWT verification or API key lookup.
+
 ## Data lifecycle
 
 - An upload URL is valid for 15 minutes; `complete` checks the size and SHA-256 and deletes a file that does not match.

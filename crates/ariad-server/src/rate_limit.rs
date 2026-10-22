@@ -13,6 +13,26 @@ pub enum Decision {
     },
 }
 
+fn limited(remaining_s: f64) -> Decision {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let retry_after_s = remaining_s.ceil().max(1.0) as u64;
+    Decision::Limited { retry_after_s }
+}
+
+/// Checks a window without counting another request.
+pub async fn check(pool: &PgPool, bucket: &str, limit: u32) -> Result<Decision, sqlx::Error> {
+    let remaining_s: Option<f64> = sqlx::query_scalar(
+        "SELECT extract(epoch FROM (window_start + interval '1 minute' - now()))::float8 \
+         FROM rate_limit_counters WHERE bucket = $1 \
+         AND window_start = date_trunc('minute', now()) AND count >= $2",
+    )
+    .bind(bucket)
+    .bind(i64::from(limit))
+    .fetch_optional(pool)
+    .await?;
+    Ok(remaining_s.map_or(Decision::Allowed, limited))
+}
+
 /// Counts one request in `bucket` against `limit` requests per minute.
 pub async fn hit(pool: &PgPool, bucket: &str, limit: u32) -> Result<Decision, sqlx::Error> {
     let (count, remaining_s): (i32, f64) = sqlx::query_as(
@@ -27,9 +47,7 @@ pub async fn hit(pool: &PgPool, bucket: &str, limit: u32) -> Result<Decision, sq
     .fetch_one(pool)
     .await?;
     if u32::try_from(count).unwrap_or(u32::MAX) > limit {
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let retry_after_s = remaining_s.ceil().max(1.0) as u64;
-        Ok(Decision::Limited { retry_after_s })
+        Ok(limited(remaining_s))
     } else {
         Ok(Decision::Allowed)
     }

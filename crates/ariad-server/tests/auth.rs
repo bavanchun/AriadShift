@@ -277,6 +277,39 @@ async fn api_keys_are_checked_read_only() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn rejected_credentials_are_throttled_per_client() {
+    let Some(h) = Harness::start(
+        "rejected_credentials_are_throttled_per_client",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    create_apikey_table(&h.db.pool).await;
+    let body = json!({ "from": "md", "to": "html" });
+    let guess = Auth::ApiKey("g".repeat(64));
+    // Stay inside one minute window, so the count cannot reset midway.
+    let into_minute = chrono::Utc::now().timestamp() % 60;
+    if into_minute > 45 {
+        tokio::time::sleep(std::time::Duration::from_secs((61 - into_minute) as u64)).await;
+    }
+    let limit = ariad_server::api::AUTH_FAILURES_PER_MINUTE;
+    for _ in 0..limit {
+        assert_eq!(h.post(&guess, "/v1/plan", &body).await.status(), 401);
+    }
+    let throttled = h.post(&guess, "/v1/plan", &body).await;
+    assert!(throttled.headers().get("retry-after").is_some());
+    assert_eq!(
+        error_code(throttled).await,
+        (429, "rate_limited".to_owned())
+    );
+    let valid = Auth::ApiKey(insert_api_key(&h.db.pool, "throttled-user").await);
+    assert_eq!(h.post(&valid, "/v1/plan", &body).await.status(), 429);
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn api_keys_can_be_disabled() {
     let Some(h) = Harness::start(
         "api_keys_can_be_disabled",
