@@ -109,13 +109,15 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
                             | NodeValue::MultilineBlockQuote(_)
                             | NodeValue::Alert(_)
                             | NodeValue::List(_)
+                            | NodeValue::Table(_)
                             | NodeValue::FootnoteDefinition(_)
                     );
                     let is_block = value.block()
                         && !matches!(value, NodeValue::Document | NodeValue::FrontMatter(_));
                     (is_container, is_block)
                 };
-                if depth > limits.max_nesting_depth {
+                let child_depth = depth + u16::from(is_container);
+                if child_depth > limits.max_nesting_depth {
                     return Err(ReadError::NestingTooDeep {
                         limit: limits.max_nesting_depth,
                     });
@@ -130,7 +132,6 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
                 }
 
                 stack.push(Visit::Exit(node));
-                let child_depth = depth + u16::from(is_container);
                 let children: Vec<_> = node.children().collect();
                 stack.extend(
                     children
@@ -998,6 +999,30 @@ mod tests {
             read(&input, &Limits::local()),
             Err(ReadError::NestingTooDeep { limit: 64 })
         ));
+    }
+
+    #[test]
+    fn counts_empty_quotes_and_tables_at_the_nesting_boundary() {
+        for depth in [1, 2, 64] {
+            let mut limits = Limits::local();
+            limits.max_nesting_depth = depth;
+            let at_limit = format!("- {}\n", ">".repeat(usize::from(depth - 1)));
+            assert!(read(&at_limit, &limits).is_ok());
+            let above_limit = format!("- {}\n", ">".repeat(usize::from(depth)));
+            assert!(matches!(
+                read(&above_limit, &limits),
+                Err(ReadError::NestingTooDeep { .. })
+            ));
+            for (quotes, accepted) in [(depth - 1, true), (depth, false)] {
+                let prefix = ">".repeat(usize::from(quotes));
+                let table = format!("{prefix} | A |\n{prefix} | - |\n");
+                assert_eq!(
+                    read(&table, &limits).is_ok(),
+                    accepted,
+                    "quotes: {quotes}, limit: {depth}"
+                );
+            }
+        }
     }
 
     #[test]
