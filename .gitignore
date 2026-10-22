@@ -8,3 +8,16 @@ __pycache__/
 *.snap.new
 **/.claude/
 .DS_Store
+# JavaScript workspace build and test output
+.next/
+apps/web/out/
+apps/web/next-env.d.ts
+apps/web/public/brand/
+apps/web/src/app/icon.svg
+apps/web/src/app/apple-icon.png
+packages/ariad-wasm/pkg/
+playwright-report/
+test-results/
+blob-report/
+*.tsbuildinfo
+.lighthouse/

@@ -1,0 +1,12 @@
+{
+  "name": "@ariadshift/config",
+  "private": true,
+  "type": "module",
+  "description": "Shared TypeScript and Biome presets for AriadShift's JavaScript packages.",
+  "exports": {
+    "./biome": "./biome/base.json",
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/react.json": "./tsconfig/react.json",
+    "./tsconfig/nextjs.json": "./tsconfig/nextjs.json"
+  }
+}

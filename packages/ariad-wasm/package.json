@@ -1,0 +1,23 @@
+{
+  "name": "@ariadshift/ariad-wasm",
+  "private": true,
+  "type": "module",
+  "description": "wasm-bindgen output of crates/ariad-wasm. Build it with `just wasm-build`; pkg/ is not committed.",
+  "exports": {
+    ".": {
+      "types": "./pkg/ariad_wasm.d.ts",
+      "default": "./pkg/ariad_wasm.js"
+    },
+    "./ariad_wasm_bg.wasm": "./pkg/ariad_wasm_bg.wasm"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@ariadshift/config": "workspace:*",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
