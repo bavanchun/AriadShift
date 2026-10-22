@@ -132,7 +132,8 @@ pub enum StorageConfig {
 }
 
 impl StorageConfig {
-    fn from_env(env: &Env) -> Result<Self, ConfigError> {
+    /// Reads `ARIAD_STORAGE_URL` and, for S3, the `AWS_*` settings.
+    pub fn from_env(env: &Env) -> Result<Self, ConfigError> {
         const NAME: &str = "ARIAD_STORAGE_URL";
         let raw = env.required(NAME)?;
         let url = Url::parse(raw).map_err(|e| invalid(NAME, e.to_string()))?;
