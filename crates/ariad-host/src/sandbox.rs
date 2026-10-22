@@ -126,8 +126,12 @@ impl SandboxSupport {
         if !self.landlock_filesystem {
             gaps.push("Landlock is unavailable, so the engine is not confined to its workspace");
         }
-        if !self.landlock_network && !self.seccomp {
-            gaps.push("neither Landlock network rules nor seccomp are available, so network access is not blocked");
+        if !self.seccomp {
+            gaps.push(if self.landlock_network {
+                "seccomp is unavailable, so only TCP network access is blocked"
+            } else {
+                "neither Landlock network rules nor seccomp are available, so network access is not blocked"
+            });
         }
         gaps
     }
@@ -486,6 +490,13 @@ mod tests {
             old_kernel.gaps().is_empty(),
             "seccomp still blocks the network when Landlock lacks TCP rules"
         );
+
+        let tcp_only = SandboxSupport {
+            seccomp: false,
+            ..full
+        };
+        assert_eq!(tcp_only.gaps().len(), 1);
+        assert!(tcp_only.gaps()[0].contains("only TCP"));
 
         let nothing = SandboxSupport {
             platform: true,
