@@ -78,7 +78,7 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 | `just bench-check` | Validate capabilities.json against schema and invariants |
 | `just bench-test` | Run unit tests for benchmark harness |
 | `just package-check` | Verify crate packaging for crates.io publishing (`ariad-server` is not published and is excluded) |
-| `just test-server` | The `ariad-server` database and S3 tests in throwaway Docker containers (`ariadshift-test-pg` on 127.0.0.1:55442, `ariadshift-test-s3` on 127.0.0.1:58342), removed afterwards |
+| `just test-server` | The `ariad-server` database and S3 tests in throwaway Docker containers (`ariadshift-test-pg` on 127.0.0.1:55442, `ariadshift-test-s3` on 127.0.0.1:58342), removed afterwards; an ownership label prevents removing another worktree's containers |
 | `just static` | The OS-independent checks (requires `cargo-about 0.9.2`, `uv`, `python3`, and `pwsh` in CI) |
 | `just lint-commits` | Your commits since `origin/dev`; pass a range to check others, for example `just lint-commits main..dev` |
 | `just lint-workflows` | `actionlint` and `zizmor`. Set `GH_TOKEN` (for example `GH_TOKEN=$(gh auth token)`) to enable zizmor's online audits, which CI always runs |
@@ -86,6 +86,8 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 | `just fuzz` | Run fuzz targets locally on stable Rust (`target=""` for all, `seconds="60"`) |
 
 `just lint-tools` installs `actionlint` and `committed` into `.tools/bin`, verified against SHA-256 checksums pinned in [`scripts/install-lint-tools.sh`](../scripts/install-lint-tools.sh). `zizmor` runs through `uvx` at the version pinned in the `justfile`.
+
+`just package-check` builds each generated crate archive with sibling dependencies from this checkout through Cargo configuration patches. [Cargo removes path dependencies when packaging](https://doc.rust-lang.org/cargo/commands/cargo-package.html), so verification would otherwise select the published `0.1.0` siblings while new APIs await the next release. Archive extraction and build verification remain enabled.
 
 ## Maintaining the pipeline
 

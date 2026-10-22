@@ -166,11 +166,20 @@ test-server:
     fi
     pg=ariadshift-test-pg
     s3=ariadshift-test-s3
+    for container in "$pg" "$s3"; do
+        if docker inspect "$container" >/dev/null 2>&1; then
+            owner=$(docker inspect -f '{{'{{'}} index .Config.Labels "ariadshift.test-worktree" {{'}}'}}' "$container")
+            if [ "$owner" != "{{justfile_directory()}}" ]; then
+                echo "refusing to remove $container: it belongs to another worktree" >&2
+                exit 1
+            fi
+        fi
+    done
     cleanup() { docker rm -f "$pg" "$s3" >/dev/null 2>&1 || true; }
     trap cleanup EXIT
     cleanup
-    docker run -d --name "$pg" -p 127.0.0.1:55442:5432 -e POSTGRES_PASSWORD=ariad "{{pgmq_image}}" >/dev/null
-    docker run -d --name "$s3" -p 127.0.0.1:58342:8333 \
+    docker run -d --name "$pg" --label "ariadshift.test-worktree={{justfile_directory()}}" -p 127.0.0.1:55442:5432 -e POSTGRES_PASSWORD=ariad "{{pgmq_image}}" >/dev/null
+    docker run -d --name "$s3" --label "ariadshift.test-worktree={{justfile_directory()}}" -p 127.0.0.1:58342:8333 \
         -v "{{justfile_directory()}}/infra/test/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" \
         "{{seaweedfs_image}}" server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data \
         -volume.max=32 -master.volumeSizeLimitMB=16 >/dev/null
@@ -190,7 +199,7 @@ test-server:
         cargo nextest run -p ariad-server
 
 package-check:
-    cargo package --workspace --exclude ariad-server --allow-dirty
+    cargo package --workspace --exclude ariad-server --allow-dirty --config 'patch.crates-io.ariad-core.path="crates/ariad-core"' --config 'patch.crates-io.ariad-host.path="crates/ariad-host"'
 
 ci: static clippy wasm test bench-test bench-check package-check web-ci
 
