@@ -214,6 +214,89 @@ jobs:
       - name: Check packaging
         run: just package-check
 
+  server:
+    name: Server integration (ubuntu-26.04)
+    needs: scope
+    if: needs.scope.outputs.heavy == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres:
+        # justfile pins the same image for `just test-server`.
+        image: ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7
+        env:
+          POSTGRES_PASSWORD: ariad
+        ports:
+          - 55442:5432
+        # TCP opens only after the image's init scripts finish.
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      ARIAD_TEST_DATABASE_URL: postgres://postgres:ariad@127.0.0.1:55442/postgres
+      ARIAD_TEST_S3_ENDPOINT: http://127.0.0.1:58342
+      SEAWEEDFS_IMAGE: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: just@1.58.0,cargo-nextest@0.9.146
+
+      - name: Cache Pandoc archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/
+          key: pandoc-${{ runner.os }}-${{ hashFiles('scripts/install-pandoc.sh') }}
+
+      - name: Install Pandoc
+        run: just pandoc
+
+      - name: Set native Pandoc path
+        run: printf 'ASHIFT_PANDOC=%s\n' "${GITHUB_WORKSPACE}/.tools/pandoc/bin/pandoc" >> "$GITHUB_ENV"
+
+      # Service containers cannot take a command, so SeaweedFS starts here.
+      - name: Start SeaweedFS
+        run: |
+          docker run -d --name ariadshift-test-s3 -p 127.0.0.1:58342:8333 \
+            -v "${GITHUB_WORKSPACE}/infra/test/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" \
+            "$SEAWEEDFS_IMAGE" server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data \
+            -volume.max=32 -master.volumeSizeLimitMB=16
+          for _ in $(seq 1 60); do
+            if docker exec ariadshift-test-s3 sh -c 'echo "s3.bucket.create -name ariad-test" | weed shell' 2>/dev/null | grep -q 'created bucket'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs --tail 200 ariadshift-test-s3
+          exit 1
+
+      - name: Build the engine program
+        run: cargo build -p ariad-cli --bin ashift
+
+      - name: Run server tests
+        run: cargo nextest run -p ariad-server
+
+      - name: Stop SeaweedFS
+        if: always()
+        run: docker rm -f ariadshift-test-s3 || true
+
   fuzz:
     name: Fuzz
     needs: scope
@@ -392,7 +475,7 @@ jobs:
 
   ci-passed:
     name: CI passed
-    needs: [scope, static, lint-windows, verify, fuzz, web]
+    needs: [scope, static, lint-windows, verify, server, fuzz, web]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -406,16 +489,17 @@ jobs:
           STATIC: ${{ needs.static.result }}
           WINDOWS: ${{ needs.lint-windows.result }}
           VERIFY: ${{ needs.verify.result }}
+          SERVER: ${{ needs.server.result }}
           FUZZ: ${{ needs.fuzz.result }}
           WEB: ${{ needs.web.result }}
         run: |
-          printf 'scope=%s static=%s lint-windows=%s verify=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
-            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
+          printf 'scope=%s static=%s lint-windows=%s verify=%s server=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
+            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$SERVER" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
           [ "$SCOPE" = success ] && [ "$STATIC" = success ] || exit 1
           if [ "$HEAVY" = true ]; then
-            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$FUZZ" = success ] || exit 1
+            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1
           else
-            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
+            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
           fi
           if [ "$WEB_SCOPE" = true ]; then
             [ "$WEB" = success ] || exit 1
