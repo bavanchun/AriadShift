@@ -1,11 +1,17 @@
 // Where the worker keeps the input and output files: the origin private file system
 // (OPFS) through synchronous access handles, or worker memory when OPFS is missing.
+//
+// Every worker owns one folder, `ariadshift/<session>/`, and holds a Web Lock named after
+// it for as long as it lives. Tabs therefore never share files, and a folder whose lock
+// nobody holds belongs to a closed tab or a replaced worker and may be deleted.
 import type { ConverterError, OutputLocation, StorageKind } from "./protocol";
 
 /** Top-level OPFS directory owned by the converter. */
 export const STORE_DIRECTORY = "ariadshift";
 /** Largest input accepted without OPFS. */
 export const MEMORY_LIMIT_BYTES = 64 * 1024 * 1024;
+/** How long cleanup waits for a replaced worker to release its folder. */
+const RETIRE_TIMEOUT_MS = 10_000;
 
 export interface FileStore {
   readonly kind: StorageKind;
@@ -15,13 +21,20 @@ export interface FileStore {
   readInput(maxBytes?: number): Promise<Uint8Array>;
   /** Stores the output, replacing any previous one. */
   putOutput(name: string, bytes: Uint8Array, mediaType: string): Promise<OutputLocation>;
-  /** Deletes every stored file. */
+  /** Deletes every file of this store. */
   clear(): Promise<void>;
+  /**
+   * Deletes the folders of replaced workers once they let go of them. Returns how many
+   * folders are still held and will be removed by a later sweep.
+   */
+  retire(sessions: string[]): Promise<number>;
 }
 
 function storeError(code: string, message: string, details: object = {}): ConverterError {
   return { code, message, ...details };
 }
+
+const noInput = () => storeError("no_input", "Choose a file first.");
 
 export class MemoryStore implements FileStore {
   readonly kind = "memory";
@@ -43,7 +56,7 @@ export class MemoryStore implements FileStore {
 
   async readInput(maxBytes?: number): Promise<Uint8Array> {
     if (!this.#input) {
-      throw storeError("no_input", "Choose a file first.");
+      throw noInput();
     }
     const blob = maxBytes === undefined ? this.#input : this.#input.slice(0, maxBytes);
     return new Uint8Array(await blob.arrayBuffer());
@@ -58,6 +71,10 @@ export class MemoryStore implements FileStore {
 
   async clear(): Promise<void> {
     this.#input = null;
+  }
+
+  async retire(): Promise<number> {
+    return 0;
   }
 }
 
@@ -74,38 +91,78 @@ type SyncFileHandle = FileSystemFileHandle & {
   createSyncAccessHandle(): Promise<SyncAccessHandle>;
 };
 
+type IterableDirectory = FileSystemDirectoryHandle & { keys(): AsyncIterable<string> };
+
 const INPUT_NAME = "input";
+
+export function sessionLockName(session: string): string {
+  return `${STORE_DIRECTORY}:${session}`;
+}
+
+async function removeEntry(directory: FileSystemDirectoryHandle, name: string): Promise<void> {
+  try {
+    await directory.removeEntry(name, { recursive: true });
+  } catch (error) {
+    if ((error as DOMException).name !== "NotFoundError") {
+      throw error;
+    }
+  }
+}
+
+/** Holds the session's lock until the worker ends; resolves once it is held. */
+function holdLock(locks: LockManager, session: string): Promise<void> {
+  return new Promise((held) => {
+    void locks.request(sessionLockName(session), () => {
+      held();
+      return new Promise<never>(() => {});
+    });
+  });
+}
 
 export class OpfsStore implements FileStore {
   readonly kind = "opfs";
 
-  private constructor(private readonly root: FileSystemDirectoryHandle) {}
+  private constructor(
+    private readonly root: FileSystemDirectoryHandle,
+    private readonly session: string,
+    private readonly locks: LockManager,
+  ) {}
 
-  /** Opens OPFS with synchronous access handles, or returns null when unavailable. */
-  static async open(): Promise<OpfsStore | null> {
+  /**
+   * Opens this worker's OPFS folder and deletes folders that no live worker holds, or
+   * returns null when OPFS with synchronous access handles or Web Locks is unavailable.
+   */
+  static async open(session: string): Promise<OpfsStore | null> {
     if (
       typeof navigator === "undefined" ||
       typeof navigator.storage?.getDirectory !== "function" ||
+      navigator.locks === undefined ||
       typeof FileSystemFileHandle === "undefined" ||
       !("createSyncAccessHandle" in FileSystemFileHandle.prototype)
     ) {
       return null;
     }
     try {
-      const store = new OpfsStore(await navigator.storage.getDirectory());
+      await holdLock(navigator.locks, session);
+      const store = new OpfsStore(await navigator.storage.getDirectory(), session, navigator.locks);
       const directory = await store.directory("input");
       const probe = (await directory.getFileHandle(".probe", { create: true })) as SyncFileHandle;
       (await probe.createSyncAccessHandle()).close();
       await directory.removeEntry(".probe");
+      await store.sweep();
       return store;
     } catch {
       return null;
     }
   }
 
+  private async base(): Promise<FileSystemDirectoryHandle> {
+    return this.root.getDirectoryHandle(STORE_DIRECTORY, { create: true });
+  }
+
   private async directory(name: "input" | "output"): Promise<FileSystemDirectoryHandle> {
-    const base = await this.root.getDirectoryHandle(STORE_DIRECTORY, { create: true });
-    return base.getDirectoryHandle(name, { create: true });
+    const own = await (await this.base()).getDirectoryHandle(this.session, { create: true });
+    return own.getDirectoryHandle(name, { create: true });
   }
 
   private async access(
@@ -116,6 +173,21 @@ export class OpfsStore implements FileStore {
     const directory = await this.directory(name);
     const handle = (await directory.getFileHandle(file, { create })) as SyncFileHandle;
     return handle.createSyncAccessHandle();
+  }
+
+  /** Deletes folders whose owners are gone: closed tabs and replaced workers. */
+  private async sweep(): Promise<void> {
+    const base = await this.base();
+    for await (const name of (base as IterableDirectory).keys()) {
+      if (name === this.session) {
+        continue;
+      }
+      await this.locks.request(sessionLockName(name), { ifAvailable: true }, async (lock) => {
+        if (lock) {
+          await removeEntry(base, name);
+        }
+      });
+    }
   }
 
   async putInput(file: Blob): Promise<number> {
@@ -143,7 +215,7 @@ export class OpfsStore implements FileStore {
     try {
       access = await this.access("input", INPUT_NAME, false);
     } catch {
-      throw storeError("no_input", "Choose a file first.");
+      throw noInput();
     }
     try {
       const size = access.getSize();
@@ -157,28 +229,41 @@ export class OpfsStore implements FileStore {
 
   async putOutput(name: string, bytes: Uint8Array): Promise<OutputLocation> {
     const directory = await this.directory("output");
-    for await (const entry of (
-      directory as FileSystemDirectoryHandle & { keys(): AsyncIterable<string> }
-    ).keys()) {
-      await directory.removeEntry(entry);
+    for await (const entry of (directory as IterableDirectory).keys()) {
+      await removeEntry(directory, entry);
     }
     const access = await this.access("output", name, true);
     try {
+      access.truncate(0);
       access.write(bytes, { at: 0 });
       access.flush();
     } finally {
       access.close();
     }
-    return { kind: "opfs", directory: [STORE_DIRECTORY, "output"], name };
+    return { kind: "opfs", directory: [STORE_DIRECTORY, this.session, "output"], name };
   }
 
   async clear(): Promise<void> {
-    try {
-      await this.root.removeEntry(STORE_DIRECTORY, { recursive: true });
-    } catch (error) {
-      if ((error as DOMException).name !== "NotFoundError") {
-        throw error;
+    await removeEntry(await this.base(), this.session);
+  }
+
+  async retire(sessions: string[]): Promise<number> {
+    const base = await this.base();
+    let held = 0;
+    for (const session of sessions) {
+      if (session === this.session) {
+        continue;
+      }
+      try {
+        await this.locks.request(
+          sessionLockName(session),
+          { signal: AbortSignal.timeout(RETIRE_TIMEOUT_MS) },
+          () => removeEntry(base, session),
+        );
+      } catch {
+        held += 1;
       }
     }
+    return held;
   }
 }

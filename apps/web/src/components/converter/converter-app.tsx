@@ -28,7 +28,6 @@ import {
   ShieldCheckIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { RouteSummary } from "@/components/route-summary";
 import { ConverterClient, downloadOutput } from "@/converter/client";
@@ -255,9 +254,8 @@ export function ConverterApp() {
     setError(null);
     setPhase("idle");
     try {
-      if (initRef.current) {
-        await client().request({ type: "reset" });
-      }
+      // Always reach a worker: a fresh one first deletes the files of any worker it replaced.
+      await client().request({ type: "reset" });
       setStatus("Files were removed from this device.");
     } catch (cause) {
       setError(asError(cause));
@@ -325,7 +323,8 @@ export function ConverterApp() {
           <div className="flex flex-col gap-1">
             <p className="text-lg font-semibold">Drop a document here</p>
             <p className="text-sm text-muted-foreground">
-              Markdown, HTML or AriadShift IR JSON. It stays on this device.
+              Markdown, HTML or AriadShift IR JSON up to{" "}
+              {formatBytes(engine?.inputLimitBytes ?? 16 * 1024 * 1024)}. It stays on this device.
             </p>
           </div>
         </FileDropZone>
@@ -368,9 +367,9 @@ export function ConverterApp() {
             {inspection && inspection.reachable.length === 0 && (
               <p className="text-sm">
                 {formatLabel(inspection.format)} cannot be converted in the browser yet.{" "}
-                <Link className="underline" href="/download">
+                <a className="underline" href="/download">
                   The AriadShift CLI
-                </Link>{" "}
+                </a>{" "}
                 converts it on your computer.
               </p>
             )}
@@ -460,9 +459,9 @@ export function ConverterApp() {
               <p className="text-sm text-muted-foreground">
                 {inspection.reachable_elsewhere.map(formatLabel).join(", ")}{" "}
                 {inspection.reachable_elsewhere.length === 1 ? "needs" : "need"} the{" "}
-                <Link className="underline" href="/download">
+                <a className="underline" href="/download">
                   AriadShift CLI
-                </Link>{" "}
+                </a>{" "}
                 for now.
               </p>
             )}

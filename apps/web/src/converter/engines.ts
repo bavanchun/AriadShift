@@ -23,6 +23,8 @@ export interface Engine {
 /** The functions of ariad-wasm the worker uses, plus the engine table. */
 export interface Core {
   version(): string;
+  /** Current size of the wasm module's memory, which never shrinks. */
+  memoryBytes(): number;
   inspect(bytes: Uint8Array, name: string, totalBytes?: number | null): InspectResult;
   plan(input: FormatId, to: FormatId, profile?: string | null, scope?: string | null): Plan;
   engines: ReadonlyMap<string, Engine>;
@@ -40,10 +42,11 @@ export interface CoreModule {
   ): ConvertResult;
 }
 
-/** Wraps an initialized ariad-wasm module. */
-export function coreFrom(module: CoreModule): Core {
+/** Wraps an initialized ariad-wasm module and its memory. */
+export function coreFrom(module: CoreModule, memory: WebAssembly.Memory): Core {
   return {
     version: () => module.version(),
+    memoryBytes: () => memory.buffer.byteLength,
     inspect: (bytes, name, totalBytes) => module.inspect(bytes, name, totalBytes),
     plan: (input, to, profile, scope) => module.plan(input, to, profile, scope),
     engines: new Map<string, Engine>([

@@ -106,27 +106,98 @@ test("explains formats that need the CLI", async ({ page }) => {
   await expect(page.getByText(/Word \(DOCX\), EPUB need the AriadShift CLI/)).toBeVisible();
 });
 
+/** Names of the per-tab folders under the converter's OPFS directory. */
+async function sessionFolders(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    let base: FileSystemDirectoryHandle;
+    try {
+      base = await root.getDirectoryHandle("ariadshift");
+    } catch {
+      return [];
+    }
+    const names: string[] = [];
+    for await (const name of (base as unknown as { keys(): AsyncIterable<string> }).keys()) {
+      names.push(name);
+    }
+    return names;
+  });
+}
+
+async function usesOpfs(page: Page): Promise<boolean> {
+  await expect(page.getByTestId("device-indicator")).toContainText(/storage|In memory/);
+  return (
+    (await page.getByTestId("device-indicator").textContent())?.includes("browser storage") ?? false
+  );
+}
+
 test("reset deletes the stored files", async ({ page, browserName }) => {
   await openConverter(page);
   await chooseFile(page, "notes.md", "text/markdown", MARKDOWN);
   await selectTarget(page, "HTML");
   await convertAndDownload(page);
-  const storage = await page.getByTestId("device-indicator").textContent();
+  const opfs = await usesOpfs(page);
 
   await page.getByRole("button", { name: "Start over and delete files" }).click();
   await expect(page.getByRole("button", { name: "Choose a file" })).toBeVisible();
   await expect(page.getByRole("status")).toHaveText("Files were removed from this device.");
 
-  test.skip(!storage?.includes("Private browser storage"), `${browserName} kept files in memory`);
-  const remaining = await page.evaluate(async () => {
-    const root = await navigator.storage.getDirectory();
-    const names: string[] = [];
-    for await (const name of (root as unknown as { keys(): AsyncIterable<string> }).keys()) {
-      names.push(name);
-    }
-    return names;
+  test.skip(!opfs, `${browserName} kept files in memory`);
+  expect(await sessionFolders(page)).toEqual([]);
+});
+
+test("two tabs keep their files apart", async ({ context, browserName }) => {
+  const first = await context.newPage();
+  const second = await context.newPage();
+  await openConverter(first);
+  await openConverter(second);
+  await chooseFile(first, "first.md", "text/markdown", "# First tab\n");
+  await chooseFile(second, "second.html", "text/html", "<h1>Second tab</h1>");
+
+  await selectTarget(first, "HTML");
+  const fromFirst = await convertAndDownload(first);
+  expect(fromFirst.text).toContain("<h1>First tab</h1>");
+
+  await selectTarget(second, "Markdown");
+  const fromSecond = await convertAndDownload(second);
+  expect(fromSecond.text).toContain("# Second tab");
+
+  await second.getByRole("button", { name: "Start over and delete files" }).click();
+  await expect(second.getByRole("status")).toHaveText("Files were removed from this device.");
+  const again = await convertAndDownload(first);
+  expect(again.text).toContain("<h1>First tab</h1>");
+
+  test.skip(!(await usesOpfs(first)), `${browserName} kept files in memory`);
+  expect(await sessionFolders(first)).toHaveLength(1);
+});
+
+test("files of a closed tab are deleted when the converter starts again", async ({
+  context,
+  browserName,
+}) => {
+  const closing = await context.newPage();
+  await openConverter(closing);
+  await chooseFile(closing, "left-behind.md", "text/markdown", "# Left behind\n");
+  test.skip(!(await usesOpfs(closing)), `${browserName} kept files in memory`);
+  await closing.close();
+
+  const next = await context.newPage();
+  await openConverter(next);
+  await expect(next.getByTestId("device-indicator")).toContainText("browser storage");
+  await expect.poll(() => sessionFolders(next)).toHaveLength(1);
+});
+
+test("refuses files above the browser limit", async ({ page }) => {
+  await openConverter(page);
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Choose a file" }).click();
+  await (await chooser).setFiles({
+    name: "huge.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.alloc(17 * 1024 * 1024, "a"),
   });
-  expect(remaining).not.toContain("ariadshift");
+  await expect(page.getByTestId("converter-error")).toContainText("up to 16 MB");
+  await expect(page.getByRole("button", { name: "Choose a file" })).toBeVisible();
 });
 
 test("the file picker is keyboard operable", async ({ page }) => {

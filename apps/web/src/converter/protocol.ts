@@ -15,13 +15,18 @@ export type WorkerRequest =
   | { type: "ingest"; file: File }
   | { type: "plan"; to: FormatId; profile: ProfileId }
   | { type: "convert"; to: FormatId; profile: ProfileId }
-  | { type: "reset" };
+  | { type: "reset" }
+  | { type: "retire"; sessions: string[] };
 
 export interface InitResult {
   version: string;
+  /** This worker's storage session; its OPFS folder is `ariadshift/<session>`. */
+  session: string;
   storage: StorageKind;
   /** Largest input accepted when files are kept in memory. */
   memoryLimitBytes: number;
+  /** Largest input the browser converter accepts. */
+  inputLimitBytes: number;
   /** URLs the worker loaded, for the offline cache. */
   resources: string[];
 }
@@ -30,6 +35,8 @@ export interface IngestResult {
   name: string;
   size: number;
   inspection: InspectResult;
+  /** The module grew large; replace the worker before the next file. */
+  recycle: boolean;
 }
 
 export type OutputLocation =
@@ -45,6 +52,8 @@ export interface ConvertedFile {
   warnings: Notice[];
   elapsedMs: number;
   location: OutputLocation;
+  /** The module grew large; replace the worker before the next file. */
+  recycle: boolean;
 }
 
 export interface ResultMap {
@@ -53,6 +62,8 @@ export interface ResultMap {
   plan: Plan;
   convert: ConvertedFile;
   reset: null;
+  /** Folders of replaced workers that are still held and left for a later sweep. */
+  retire: { held: number };
 }
 
 /** An error from the wasm module, the file store or the worker itself. */
