@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! <data>/packs/.locks/<name>.lock   exclusive while installing or removing <name>
-//! <data>/packs/.staging/            extraction targets, renamed into place on success
+//! <data>/packs/.staging/<name>.<id> extraction targets, renamed into place on success
 //! <data>/packs/.cache/<sha256>      downloaded, hash-verified components (resume)
 //! <data>/packs/<name>/current       active version
 //! <data>/packs/<name>/<version>/    install root with receipt.toml
@@ -393,7 +393,7 @@ pub fn install(
     create_dir_all(&layout.staging())?;
     let staging = layout
         .staging()
-        .join(format!("{}-{}", manifest.name, new_id()));
+        .join(format!("{}.{}", manifest.name, new_id()));
     fs::create_dir(&staging).map_err(|error| PackError::io("could not create", &staging, error))?;
     let mut staging_cleanup = Cleanup::new(staging.clone());
 
@@ -457,7 +457,7 @@ pub fn install(
     if fs::symlink_metadata(&final_dir).is_ok() {
         let old = layout
             .staging()
-            .join(format!("{}-{}-old", manifest.name, new_id()));
+            .join(format!("{}.{}.old", manifest.name, new_id()));
         fs::rename(&final_dir, &old)
             .map_err(|error| PackError::io("could not replace", &final_dir, error))?;
         previous = Some(Cleanup::new(old));
@@ -593,9 +593,10 @@ fn check_installed_paths(
 }
 
 /// Removes leftovers of interrupted runs: this pack's staging directories, stale partial
-/// downloads and old cached components.
+/// downloads and old cached components. Staging names are `<name>.<id>`; `.` cannot occur in
+/// a pack name, so the prefix never matches another pack.
 fn sweep(layout: &Layout, name: &str) {
-    let prefix = format!("{name}-");
+    let prefix = format!("{name}.");
     if let Ok(entries) = fs::read_dir(layout.staging()) {
         for entry in entries.flatten() {
             if entry
@@ -906,7 +907,7 @@ pub fn remove(
     create_dir_all(&layout.staging())?;
     for version in &targets {
         let dir = layout.version_dir(name, version);
-        let trash = layout.staging().join(format!("{name}-{}-old", new_id()));
+        let trash = layout.staging().join(format!("{name}.{}.old", new_id()));
         fs::rename(&dir, &trash).map_err(|error| PackError::io("could not remove", &dir, error))?;
         let _ = fs::remove_dir_all(&trash);
     }

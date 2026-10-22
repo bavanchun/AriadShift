@@ -94,7 +94,7 @@ Recorded 2026-10-22 before implementation. Versions checked against crates.io th
 ```text
 <data>/packs/
   .locks/<name>.lock        # File::try_lock; install and remove of one pack are exclusive
-  .staging/<name>-<uuid>/   # extraction target, renamed into place, swept under the lock
+  .staging/<name>.<uuid>/   # extraction target, renamed into place, swept under the lock
   .cache/<sha256>           # fully downloaded and hash-verified components (resume); `.part` while downloading
   <name>/current            # active version
   <name>/<version>/         # install root: components, plus receipt.toml (reserved name)
