@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import time
 from io import BytesIO
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import typst
 from PIL import Image, ImageChops, ImageFilter
 
 _MAX_FILE_BYTES = 2 * 1024 * 1024
+_PDF_DATE = time.gmtime(1_700_000_000)
 
 
 def _typst_string(value: str) -> str:
@@ -77,6 +79,22 @@ def _degrade_png(
     return result
 
 
+def _scan_pdf(png: bytes, *, ppi: int) -> bytes:
+    """Wrap a scan in a one-page PDF that has an image and no text layer."""
+    with Image.open(BytesIO(png)) as image:
+        output = BytesIO()
+        image.save(
+            output,
+            format="PDF",
+            resolution=float(ppi),
+            quality=95,
+            title="Scan",
+            creationDate=_PDF_DATE,
+            modDate=_PDF_DATE,
+        )
+    return output.getvalue()
+
+
 def generate(root: Path) -> dict[str, bytes]:
     garden = _source(root, "vietnamese-garden.md")
     river = _source(root, "vietnamese-river.md")
@@ -86,6 +104,7 @@ def generate(root: Path) -> dict[str, bytes]:
         {
             "id": "vi-garden-300dpi",
             "path": "fixtures/scan/vi-garden-300dpi.png",
+            "pdf_path": "fixtures/scan/vi-garden-300dpi.pdf",
             "truth": "fixtures/scan/truth/vi-garden-300dpi.txt",
             "title": "Khu vườn đọc sách",
             "paragraphs": garden[:1],
@@ -132,7 +151,7 @@ def generate(root: Path) -> dict[str, bytes]:
             language=case["language"],
             ppi=case["ppi"],
         )
-        outputs[case["path"]] = _degrade_png(
+        scan = _degrade_png(
             page,
             seed=case["seed"],
             ppi=case["ppi"],
@@ -140,6 +159,9 @@ def generate(root: Path) -> dict[str, bytes]:
             blur_radius=case["blur"],
             jpeg_quality=case["jpeg_quality"],
         )
+        outputs[case["path"]] = scan
+        if "pdf_path" in case:
+            outputs[case["pdf_path"]] = _scan_pdf(scan, ppi=case["ppi"])
         truth = "\n\n".join((case["title"], *case["paragraphs"])) + "\n"
         outputs[case["truth"]] = truth.encode("utf-8")
     return outputs

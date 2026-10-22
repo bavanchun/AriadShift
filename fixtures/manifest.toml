@@ -1020,6 +1020,25 @@ routes = ["png->md"]
 companions = [{ path = "fixtures/scan/truth/vi-garden-300dpi.txt", sha256 = "25ef501a392f2950782ae8d0d29f6552b083f2b5461700ef9f7bf15713fe17a7" }]
 
 [[fixture]]
+id = "generated-vi-garden-300dpi-pdf"
+path = "fixtures/scan/vi-garden-300dpi.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/scan.py"
+license = "Apache-2.0"
+license_basis = "The Vietnamese scan fixture of the same name, wrapped in a one-page PDF with an image and no text layer. Its exact rendered text is the companion of the PNG fixture."
+attribution = "AriadShift contributors"
+sha256 = "893643bdf008f6b7d0754aa57c8792e2d49bb39c2aad290db5fb2b326eadc7c1"
+pages = 1
+tags = ["scan", "skew"]
+phase = "1b"
+routes = ["pdf->md"]
+companions = []
+
+[[fixture]]
 id = "generated-vi-river-200dpi"
 path = "fixtures/scan/vi-river-200dpi.png"
 format = "png"
