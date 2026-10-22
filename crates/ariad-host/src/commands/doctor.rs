@@ -11,6 +11,7 @@ use crate::{
     packs::{self, PackContext, PackHealth},
     pandoc_bin::{self, PANDOC_SUPPORTED, PandocBinaryError},
     runner,
+    sandbox::{self, SandboxMode, SandboxSupport},
     workspace::Workspace,
 };
 
@@ -24,12 +25,23 @@ pub struct DoctorCheck {
     pub hint: String,
 }
 
+/// The engine sandbox as `doctor` sees it.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DoctorSandbox {
+    /// The effective mode, or `null` when `ASHIFT_SANDBOX` holds an unknown value.
+    pub mode: Option<SandboxMode>,
+    #[serde(flatten)]
+    pub support: SandboxSupport,
+}
+
 /// Aggregate doctor diagnostic report.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DoctorReport {
     pub checks: Vec<DoctorCheck>,
     #[serde(default)]
     pub stale_workspaces: usize,
+    /// The engine sandbox mode and what the kernel supports.
+    pub sandbox: DoctorSandbox,
     #[serde(skip)]
     pub tool_path: Option<PathBuf>,
     /// Engine pack data directory; printed by the human output only.
@@ -251,9 +263,15 @@ pub fn doctor(
         }
         Err(e) => {
             if failure_error.is_none() {
-                failure_error = Some(ConvertError::Failed);
+                failure_error = Some(match &e {
+                    runner::RunError::SandboxUnavailable(detail) => {
+                        ConvertError::SandboxUnavailable(detail.clone())
+                    }
+                    _ => ConvertError::Failed,
+                });
             }
             let sanitized_msg = match e {
+                runner::RunError::SandboxUnavailable(_) => "the engine sandbox is unavailable",
                 runner::RunError::Spawn { .. } => "could not spawn engine process",
                 runner::RunError::Io(_) => "engine communication I/O failure",
                 runner::RunError::Timeout => "engine describe timed out",
@@ -274,10 +292,18 @@ pub fn doctor(
 
     // 4. Engine packs: data directory, trusted keys, installed packs. None are required.
     let data_dir = pack_checks(&mut checks);
+    let (sandbox_check, sandbox_report) = sandbox_check();
+    if !sandbox_check.ok && sandbox_check.required && failure_error.is_none() {
+        failure_error = Some(ConvertError::SandboxUnavailable(
+            sandbox_check.message.clone(),
+        ));
+    }
+    checks.push(sandbox_check);
 
     Ok(DoctorReport {
         checks,
         stale_workspaces: stale_found,
+        sandbox: sandbox_report,
         tool_path,
         data_dir,
         failure_error,
@@ -371,6 +397,83 @@ fn pack_checks(checks: &mut Vec<DoctorCheck>) -> Option<PathBuf> {
         ));
     }
     writable.then_some(context.data_dir)
+}
+
+/// Reports the sandbox mode and kernel support. The check is required only in required mode.
+fn sandbox_check() -> (DoctorCheck, DoctorSandbox) {
+    let support = sandbox::support();
+    let mode = sandbox::effective_mode();
+    let check = |ok: bool, required: bool, message: String, hint: &str| DoctorCheck {
+        id: "sandbox".to_owned(),
+        ok,
+        required,
+        message,
+        hint: hint.to_owned(),
+    };
+    let check = match &mode {
+        Err(message) => check(
+            false,
+            true,
+            format!("engine sandbox: {message}"),
+            "unset ASHIFT_SANDBOX or set it to off, best-effort or required",
+        ),
+        Ok(SandboxMode::Off) => check(
+            true,
+            false,
+            "engine sandbox: off (ASHIFT_SANDBOX=off); engines run without isolation".to_owned(),
+            "",
+        ),
+        Ok(mode) if !support.platform => check(
+            *mode != SandboxMode::Required,
+            *mode == SandboxMode::Required,
+            format!(
+                "engine sandbox: {mode}; not used on this platform, engines run in their own process group or Job Object"
+            ),
+            "required mode needs Linux",
+        ),
+        Ok(mode) => {
+            let gaps = support.gaps();
+            let mut features = Vec::new();
+            if let Some(abi) = support.landlock_abi {
+                let mut covered = vec!["filesystem"];
+                if support.landlock_network {
+                    covered.push("TCP");
+                }
+                if support.landlock_scopes {
+                    covered.push("scopes");
+                }
+                if support.landlock_unix_sockets {
+                    covered.push("UNIX sockets");
+                }
+                features.push(format!("Landlock ABI {abi} ({})", covered.join(", ")));
+            } else {
+                features.push("no Landlock".to_owned());
+            }
+            features.push(if support.seccomp {
+                "seccomp available".to_owned()
+            } else {
+                "no seccomp".to_owned()
+            });
+            let mut message = format!("engine sandbox: {mode}; {}", features.join(", "));
+            if !gaps.is_empty() {
+                message.push_str("; ");
+                message.push_str(&gaps.join("; "));
+            }
+            check(
+                gaps.is_empty(),
+                *mode == SandboxMode::Required,
+                message,
+                "use a kernel with Landlock enabled (Linux 5.13 or newer with landlock in the LSM list)",
+            )
+        }
+    };
+    (
+        check,
+        DoctorSandbox {
+            mode: mode.ok(),
+            support,
+        },
+    )
 }
 
 #[cfg(test)]
