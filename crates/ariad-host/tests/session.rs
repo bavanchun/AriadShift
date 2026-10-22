@@ -366,6 +366,34 @@ fn output_written_while_idle_never_reaches_the_next_job() {
 }
 
 #[test]
+fn output_arriving_during_workspace_preparation_never_reaches_the_next_job() {
+    let pool = pool(quick_config());
+    let stray = run_job(&pool, "stray-after");
+    let mut lease = pool
+        .lease(&session_command(), CancellationToken::new())
+        .unwrap();
+    let mut workspace = lease.workspace().unwrap();
+    thread::sleep(Duration::from_millis(400));
+    let request = convert_request(&workspace, BTreeMap::new(), Limits::local());
+    let mut events = Vec::new();
+    let result = lease.run(&request, CancellationToken::new(), |event| {
+        events.push(event)
+    });
+    assert!(
+        matches!(result, Err(RunError::ProtocolViolation(_))),
+        "{result:?}"
+    );
+    assert!(
+        events.is_empty(),
+        "idle output must not be delivered to the next job"
+    );
+    assert!(wait_until_dead(stray.pid(), Duration::from_secs(5)));
+    workspace.close().unwrap();
+    drop(lease);
+    assert_ne!(run_job(&pool, "ok").pid(), stray.pid());
+}
+
+#[test]
 fn a_typed_failure_keeps_the_session() {
     let pool = pool(quick_config());
     let warm = run_job(&pool, "ok");
