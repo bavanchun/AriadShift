@@ -101,7 +101,15 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | serde_json | **1.0.154** (`unbounded_depth` in the host) | IR and protocol JSON |
 | tempfile | **3.27.0** | Isolated conversion workspaces |
 | saphyr-parser | **0.2.2** (MIT OR Apache-2.0) | Pure-Rust YAML 1.2 event parser; its `Alias` events let the reader reject aliases before interpreting front matter; wasm compatibility is checked in phase 4 |
-| Dev-only test crates | insta **1.49.0** (`json`, `glob`), jsonschema **0.58.6**, assert_cmd **2.2.2**, quick-xml **0.42.0**, toml **1.1.8+spec-1.1.0**, hex **0.4.3** | Test and fixture validation only; never distributed |
+| ureq | **3.5.0** (`default-features = false`, `rustls-no-provider`, `_ring`) | Blocking HTTPS client for engine pack downloads: connect and idle-read timeouts, proxy variables; native targets only |
+| rustls + ring | **0.23.46** + **0.17.14** (through ureq) | TLS for pack downloads; ring builds with the musl C toolchain the release already uses for `psm` |
+| rustls-native-certs | **0.8.5** | Trust anchors from the operating system store (`SSL_CERT_FILE`/`SSL_CERT_DIR` on Linux) |
+| minisign-verify | **0.3.0** (MIT) | Engine pack manifest signatures (prehashed minisign) |
+| tar / ruzstd / flate2 | **0.4.46** (`default-features = false`) / **0.9.1** / **1.1.10** (`zlib-rs`) | Pure-Rust pack archive readers (`tar.zst`, `tar.gz`); `zip` covers `.zip` |
+| directories | **6.0.0** | Platform data directory for packs; its `option-ext` 0.2.0 dependency is MPL-2.0 (per-crate exception) |
+| semver | **1.0.28** | Pack versions and `requires_ashift` |
+| toml | **1.1.8+spec-1.1.0** | Pack manifests, receipts and the pack index in `ariad-host`; fixture and test validation |
+| Dev-only test crates | insta **1.49.0** (`json`, `glob`), jsonschema **0.58.6**, assert_cmd **2.2.2**, quick-xml **0.42.0**, hex **0.4.3**, minisign **0.10.0** (throwaway pack signing keys) | Test and fixture validation only; never distributed |
 
 ### 2.4 Engines and Infrastructure
 
@@ -194,7 +202,8 @@ Diagnostic and introspection commands:
 - `ashift inspect <INPUT> [--json]`: detects format through prefix/central-directory sniffing, structural element counts, metadata, and reachable targets. Regular-file verification prevents blocking on FIFOs or device nodes; files over 32 MiB skip deep structural counting (emitting `warning[document_too_large]`). Peak memory usage during AST expansion is bounded to approximately 100x the input document size.
 - `ashift plan <INPUT> --to <FORMAT> [--profile <PROFILE>] [--json]`: renders route and fidelity/editability/latency scores without converting. File summaries are bounded to 4 MiB to keep planning fast.
 - `ashift engines [--json]`: lists registered engines, versions, licenses, and supported routes from the availability provider.
-- `ashift doctor [--json]`: checks Pandoc availability and version, temporary workspace creation/cleanup, reports stale workspace counts without deleting them, and engine describe round trips.
+- `ashift doctor [--json]`: checks Pandoc availability and version, temporary workspace creation/cleanup, reports stale workspace counts without deleting them, and engine describe round trips; non-required checks report the engine pack data directory, the compiled-in pack signing keys and each installed pack.
+- `ashift engines install <NAME> [--version <V>] [--manifest <URL|PATH> | --from <DIR>] [--json]`, `ashift engines remove <NAME> [--version <V>]` and `ashift engines verify <NAME> [--version <V>]` manage signed engine packs (§7.1, [docs/packs.md](docs/packs.md)). `ashift engines` lists installed packs; MCP `list_engines` includes them, but installing stays a CLI and desktop operation.
 
 ### Model Context Protocol (MCP) Server
 
@@ -236,6 +245,7 @@ ariadshift/
 │   ├── ariad-core/            # IR, format registry, planner, limits (I/O-free, WASM-compilable)
 │   │   └── data/capabilities.json # committed bootstrap & bench capabilities
 │   ├── ariad-host/            # engine runner, sandbox, engine packs, native adapters (feature flags)
+│   │   └── data/              # packs.toml (pack index) and pack-keys/*.pub (trusted signing keys)
 │   ├── ariad-cli/             # `ashift` binary (includes `ashift mcp`)
 │   ├── ariad-wasm/            # wasm-bindgen bindings for ariad-core
 │   └── ariad-server/          # `ariad-server api | worker` binary
@@ -249,7 +259,7 @@ ariadshift/
 │   ├── ui/                    # shared React components (shadcn + Base UI)
 │   ├── sdk/                   # TypeScript SDK generated from OpenAPI
 │   └── config/                # tsconfig, Biome presets
-├── schemas/                   # JSON Schema: IR, engine protocol, capabilities.v0.json (generated with schemars)
+├── schemas/                   # JSON Schema: IR, engine protocol, capabilities.v0.json, pack.v1.json (generated with schemars)
 ├── fixtures/
 │   ├── manifest.toml          # source, license and digest for each committed document
 │   ├── gen/                   # dev-only Python fixture generator; uv workspace member
@@ -422,7 +432,7 @@ Protocol rules:
 
 - Engines **read and write only within the designated workspace** and **open no network connections**.
 - **Stdout discipline:** stdout carries NDJSON protocol lines only; all diagnostic logging belongs on stderr. The host runner treats any non-JSON line on stdout as a protocol violation. Adapters redirect native library stdout (fd 1) to stderr (fd 2) and emit protocol events only over a duplicated protocol descriptor.
-- **Engine configuration contract:** engine settings travel in request `options` (e.g. `artifacts_path`, `tessdata_path`). The runner clears the environment (`env_clear()`) and inherits only allow-listed variables: `PATH`, `TMPDIR`/`TMP`/`TEMP` (pointing to `work_dir` on convert), `ASHIFT_PANDOC`, and on Windows `SYSTEMROOT`. Windows profile variables (such as `USERPROFILE` and `APPDATA`) were not measured in the spike and are decided in 1b. Adapters set engine-specific flags (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `TESSDATA_PREFIX`) from request `options`.
+- **Engine configuration contract:** engine settings travel in request `options` (e.g. `artifacts_path`, `tessdata_path`). The runner clears the environment (`env_clear()`) and inherits only allow-listed variables: `PATH`, `TMPDIR`/`TMP`/`TEMP` (pointing to `work_dir` on convert), `ASHIFT_PANDOC`, and on Windows `SYSTEMROOT`. An engine launched from an engine pack also receives the pack's `env` entries, whose names come from a fixed allow-list (§7.1). Windows profile variables (such as `USERPROFILE` and `APPDATA`) were not measured in the spike and are decided in 1b. Adapters set engine-specific flags (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `TESSDATA_PREFIX`) from request `options`.
 - **Memory rule (no host limiter in 1a):** `max_memory_mb` is enforced by the engine (e.g. Pandoc `+RTS -M` or Python adapter `resource.setrlimit(RLIMIT_DATA)`). An engine that cannot enforce it reports `enforces_memory_limit: false` in `describe`. When `limits.max_memory_mb` is specified, the host checks engine capabilities before starting conversion, querying `describe` with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`) and caching the capabilities lookup per engine program and arguments within the process. If `enforces_memory_limit` is false, the host refuses the convert request with a typed `limit_exceeded` error before spawning the conversion process rather than silently ignoring it. Host-side generic limiting is deferred to 1b because Linux `RLIMIT_AS` causes aborts in GHC/PyTorch runtimes and safe in-process `pre_exec` rlimits conflict with `#![forbid(unsafe_code)]`.
 - `describe` runs with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`), preventing hung engines from blocking host discovery commands or MCP tools.
 - `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation.
@@ -465,7 +475,13 @@ The base installation must remain lightweight. Heavy engines are downloaded on d
 | `ocr-vlm` | llama.cpp + PaddleOCR-VL-1.6 GGUF | Opt-in download |
 | `media` | FFmpeg (LGPL), libvips | Later phase |
 
-Each pack includes a manifest specifying version, SHA-256, and a **minisign signature**. `ariad-host` verifies signatures before extracting packages into the application data directory.
+Each pack is an `ariad-pack/1` TOML manifest (schema `schemas/pack.v1.json`) with per-target components (URL, SHA-256, size, unpack mode, destination, declared unpacked size and entry count), plus a detached **minisign signature** `pack.toml.minisig`. Packs are published as GitHub Release assets under `pack-<name>-v<version>` tags; the embedded index `crates/ariad-host/data/packs.toml` maps a name to its recommended version and manifest URL. Full format, layout and publishing procedure: [docs/packs.md](docs/packs.md).
+
+- **Trust.** `ariad-host` verifies the signature with `minisign-verify` against the public keys compiled in from `crates/ariad-host/data/pack-keys/*.pub` (several keys allow rotation). The trusted comment must contain `pack:<name>` and `version:<version>`, so a signature cannot be paired with another version's manifest. `requires_ashift` (SemVer) gates compatibility.
+- **Transport.** HTTPS through `ureq` with rustls (ring) and the operating system's trust store; plain HTTP only for loopback hosts; proxy variables honoured; connect and idle-read timeouts with bounded retries. Every component is streamed to a cache file while hashed and must match its size and SHA-256 before extraction; verified downloads are kept until the install succeeds, so a retry resumes. `--from <dir>` installs offline.
+- **Extraction.** Pure-Rust readers (`tar` + `ruzstd`/`flate2`, `zip`). Entries must be relative, without `..`, backslashes, `:` or control characters; only files, directories, symbolic links and hard links (copied) are accepted; nothing is written through a link; links must stay inside the install root lexically and after canonicalization; unpacked bytes and entries stay within the declared values plus a margin.
+- **Layout.** `<data>` is `ASHIFT_DATA_DIR` or the platform's local data directory for `com.ariadnev.ariadshift`. Installs stage under `<data>/packs/.staging`, are renamed to `<data>/packs/<name>/<version>` with a `receipt.toml` that records every file's SHA-256, and become active through `<data>/packs/<name>/current`. A per-pack lock file serializes install and remove. `ashift engines verify` re-hashes against the receipt.
+- **Resolution.** `ariad_host::packs::resolve(name)` returns an `InstalledPack` (install root, program, arguments, allow-listed environment and default request options, with `{root}` substituted) for the build matching this host. A pack triple describes the pack's binaries: the static musl `ashift` runs glibc packs when the system has a glibc loader. `runner::run_with_env` adds the pack environment to the cleared engine environment. `ASHIFT_PACK_<NAME>=<dir>` points at an unpacked development pack without a signature check.
 
 ---
 
@@ -703,7 +719,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 
 - **Excluded:** AGPL-licensed libraries in distributed artifacts, such as PyMuPDF and its dependents like `pdf2docx`; CC-BY-SA and GPL test-suite fixtures; research-only or non-commercial datasets; and model weights with OpenRAIL-M, custom, non-OSI, or missing licenses.
 - **Automated CI gating:** `cargo-deny` (licenses + security advisories), plus npm and Python license checkers.
-- **Release attribution & SBOM:** Every release archive contains `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES` (generated via `cargo-about` with committed `about.toml` and `about.hbs`). `NOTICE` records Apache-2.0 copyright for AriadShift, states that Pandoc (GPL-2.0-or-later) is invoked out-of-process and never bundled or linked, and provides repository links and source availability notices for unmodified MPL-2.0 transitive dependencies (`cssparser`, `dtoa-short`). Release builds embed dependency graphs via `cargo-auditable` (with `strip = "debuginfo"` preserving the `.dep-v0` section) and publish three CycloneDX SBOMs (one per workspace crate: `ariad-cli.cdx.xml`, `ariad-core.cdx.xml`, `ariad-host.cdx.xml`). Note on musl builds: although all primary crates and pure Rust libraries build without a C toolchain, `psm` (required transitively by stacker → serde_stacker) requires a musl C toolchain (`x86_64-linux-musl-gcc` from `musl-tools`) to link its stack-switching assembly.
+- **Release attribution & SBOM:** Every release archive contains `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES` (generated via `cargo-about` with committed `about.toml` and `about.hbs`). `NOTICE` records Apache-2.0 copyright for AriadShift, states that Pandoc (GPL-2.0-or-later) is invoked out-of-process and never bundled or linked, and provides repository links and source availability notices for unmodified MPL-2.0 transitive dependencies (`cssparser`, `dtoa-short`, `option-ext`). Release builds embed dependency graphs via `cargo-auditable` (with `strip = "debuginfo"` preserving the `.dep-v0` section) and publish three CycloneDX SBOMs (one per workspace crate: `ariad-cli.cdx.xml`, `ariad-core.cdx.xml`, `ariad-host.cdx.xml`). Note on musl builds: although all primary crates and pure Rust libraries build without a C toolchain, `psm` (required transitively by stacker → serde_stacker) and `ring` (TLS for engine pack downloads) require a musl C toolchain (`x86_64-linux-musl-gcc` from `musl-tools`) to build their assembly and C sources.
 
 ---
 
@@ -794,6 +810,10 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | MPL-2.0 dependencies | Ammonia brings MPL-2.0 transitive crates; accepted as unmodified dependencies in native and WASM builds; each new MPL crate needs its own exception | Global MPL-2.0 allow list, hand-rolled HTML sanitizer | Keeps robust ammonia sanitization without opening a global allow-list; complies with OSI-only policy |
 | Capabilities location | `crates/ariad-core/data/capabilities.json` embedded at compile time via `embedded()` | Monorepo root `capabilities.json` | `cargo package` rejects `include_str!` paths outside the crate root; keeps `ariad-core` self-contained for crates.io and WASM |
 | Routing graph & planner | Weighted Dijkstra shortest-path in `ariad-core` over `capabilities.json` with profile weights, hop penalty, unmeasured penalty, and alternatives | Static hardcoded route table | Allows multi-engine routing with empirical benchmarks, explainability, and profile selection (`editable`, `faithful`, `fast`, `private`) |
+| Engine pack format and trust | `ariad-pack/1` TOML manifest with per-target components and a detached minisign signature verified by `minisign-verify` against compiled-in keys; the trusted comment must name pack and version; declared `unpacked_size` and `entries` bound extraction | Signing each archive, TUF metadata, unsigned hashes in the index | One signature covers every component hash; binding name and version in the trusted comment stops pairing a manifest with another version's signature; the declared sizes cap decompression bombs |
+| Pack download stack | `ureq` 3.5 (blocking) with rustls on ring and the OS trust store through `rustls-native-certs`; HTTPS only, loopback HTTP for tests and mirrors | reqwest, aws-lc-rs, OpenSSL/native-tls, `webpki-roots`, `rustls-platform-verifier` | Blocking fits the host's blocking commands; ring links with the musl toolchain the release already installs; `webpki-roots` (and `webpki-root-certs`, which `rustls-platform-verifier` pulls through its wasm32 edge into the licence graph) are CDLA-Permissive-2.0, which is not OSI-approved |
+| Pack data directory | `ASHIFT_DATA_DIR`, else `directories`' local (non-roaming) data directory; staging, cache, locks and receipts under `<data>/packs` | Roaming AppData on Windows, hand-written per-OS paths | Packs reach gigabytes and must not roam; `directories` brings the MPL-2.0 `option-ext` crate under a per-crate exception, the same crate Tauri pulls in later |
+| Pack extraction and targets | Reject `..`, absolute, backslash, `:` and special entries; never write through links; canonical containment check for every link; hard links copied; pack triples describe pack binaries, so musl `ashift` accepts glibc packs when a glibc loader exists | Sanitizing names, trusting archive metadata, matching the pack triple to `ashift`'s own triple | Refusing is safer than rewriting paths; lexical checks alone miss link chains; the docling pack needs glibc wheels while the CLI ships static musl binaries |
 | Inspection and plan caps | 32 MiB cap for deep document structure counting in `inspect`, and 4 MiB cap for `plan` summary parsing; regular-file preflight on all input reads | 256 MiB or unbounded reading and parsing of arbitrary file sizes, FIFOs, and special devices | Bounds peak memory expansion to ~100x input size (~3 GB peak RSS at 32 MiB) and prevents unbounded delays during diagnostic CLI runs without compromising standard document analysis |
 
 ---

@@ -83,6 +83,8 @@ ashift doctor
 
 Add `--json` to any command for structured machine-readable output. See [`docs/cli.md`](docs/cli.md) for the complete reference.
 
+Heavy engines such as Docling ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the first published pack, docling, arrives with v0.2.0. See [`docs/packs.md`](docs/packs.md).
+
 ## Model Context Protocol (MCP)
 
 Run an MCP server over standard I/O for AI assistants (such as Claude Code, Claude Desktop, or Cursor):
