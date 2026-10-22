@@ -81,3 +81,6 @@ inherits = "release"
 lto = "thin"
 strip = "debuginfo"
 
+# Hashing runs over large engine pack components in tests; unoptimized SHA-256 is too slow.
+[profile.dev.package.sha2]
+opt-level = 3
