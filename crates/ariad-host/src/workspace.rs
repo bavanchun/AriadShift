@@ -34,6 +34,7 @@ pub struct Workspace {
     root: PathBuf,
     input_dir: PathBuf,
     output_dir: PathBuf,
+    output_handle: Option<cap_std::fs::Dir>,
     work_dir: PathBuf,
     log_dir: PathBuf,
 }
@@ -67,11 +68,15 @@ impl Workspace {
             fs::create_dir(directory)?;
         }
 
+        let output_handle =
+            cap_std::fs::Dir::open_ambient_dir(&output_dir, cap_std::ambient_authority())?;
+
         Ok(Self {
             temp_dir: Some(temp_dir),
             root,
             input_dir,
             output_dir,
+            output_handle: Some(output_handle),
             work_dir,
             log_dir,
         })
@@ -108,9 +113,34 @@ impl Workspace {
             return Ok(());
         };
 
+        self.output_handle.take();
         remove_workspace(temp_dir.path()).map_err(WorkspaceError::Cleanup)?;
         self.temp_dir.take();
         Ok(())
+    }
+
+    /// Opens an artifact relative to the output handle captured before the engine starts.
+    /// Directory replacements cannot redirect this read outside that original directory.
+    pub fn open_artifact(&self, artifact: &Path) -> Result<fs::File, WorkspaceError> {
+        let relative = artifact
+            .strip_prefix(&self.output_dir)
+            .map_err(|_| WorkspaceError::ArtifactOutsideOutput)?;
+        if relative.as_os_str().is_empty()
+            || !relative
+                .components()
+                .all(|component| matches!(component, Component::Normal(_)))
+        {
+            return Err(WorkspaceError::ArtifactOutsideOutput);
+        }
+        let directory = self
+            .output_handle
+            .as_ref()
+            .ok_or_else(|| io::Error::other("workspace is closed"))?;
+        let file = crate::confine::open_file_nofollow(directory, relative)?;
+        if !file.metadata()?.is_file() {
+            return Err(WorkspaceError::ArtifactNotFile);
+        }
+        Ok(file)
     }
 
     /// Atomically promotes a completed output artifact into the destination directory.
@@ -120,20 +150,7 @@ impl Workspace {
         destination: &Path,
         overwrite: bool,
     ) -> Result<(), WorkspaceError> {
-        let canonical_output = fs::canonicalize(&self.output_dir)?;
-        let canonical_artifact = fs::canonicalize(artifact)?;
-        let relative = canonical_artifact
-            .strip_prefix(&canonical_output)
-            .map_err(|_| WorkspaceError::ArtifactOutsideOutput)?;
-        if !relative
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-        {
-            return Err(WorkspaceError::ArtifactOutsideOutput);
-        }
-        if !fs::metadata(&canonical_artifact)?.is_file() {
-            return Err(WorkspaceError::ArtifactNotFile);
-        }
+        let mut source = self.open_artifact(artifact)?;
 
         if !overwrite && destination_exists(destination)? {
             return Err(WorkspaceError::DestinationExists);
@@ -144,7 +161,6 @@ impl Workspace {
             .filter(|parent| !parent.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
         let mut temporary = NamedTempFile::new_in(destination_parent)?;
-        let mut source = fs::File::open(canonical_artifact)?;
         io::copy(&mut source, temporary.as_file_mut())?;
         temporary.as_file().sync_all()?;
 
@@ -170,20 +186,7 @@ impl Workspace {
         file_name: &Path,
         overwrite: bool,
     ) -> Result<(), WorkspaceError> {
-        let canonical_output = fs::canonicalize(&self.output_dir)?;
-        let canonical_artifact = fs::canonicalize(artifact)?;
-        let relative = canonical_artifact
-            .strip_prefix(&canonical_output)
-            .map_err(|_| WorkspaceError::ArtifactOutsideOutput)?;
-        if !relative
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
-        {
-            return Err(WorkspaceError::ArtifactOutsideOutput);
-        }
-        if !fs::metadata(&canonical_artifact)?.is_file() {
-            return Err(WorkspaceError::ArtifactNotFile);
-        }
+        let mut source = self.open_artifact(artifact)?;
 
         // Validate that file_name is a single normal component
         if file_name.components().count() != 1
@@ -217,7 +220,6 @@ impl Workspace {
         let temp_name = format!(".ariadshift-promote-{}.tmp", uuid::Uuid::new_v4());
         let write_result = (|| -> io::Result<()> {
             let mut temporary = parent_dir.create(&temp_name)?;
-            let mut source = fs::File::open(&canonical_artifact)?;
             io::copy(&mut source, &mut temporary)?;
             temporary.sync_all()?;
             drop(temporary);

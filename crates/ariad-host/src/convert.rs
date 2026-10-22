@@ -1636,6 +1636,7 @@ where
         return Err(ConvertError::Interrupted);
     }
 
+    let mut private_output = None;
     let artifact_path = match writer {
         WriterEdge::NativeMarkdown => {
             let write_output = writer_markdown::write(document);
@@ -1724,7 +1725,20 @@ where
                 .find(|artifact| artifact.format == target_str)
                 .ok_or(ConvertError::Failed)?;
 
-            let artifact_path = PathBuf::from(&artifact.path);
+            // The engine remains alive in session mode. Snapshot through the pre-opened
+            // output handle before editing or publishing files outside its sandbox.
+            let snapshot = Workspace::new().map_err(map_workspace_error)?;
+            let artifact_path = snapshot.output_dir().join(format!("document.{target_str}"));
+            let source = workspace
+                .open_artifact(&artifact.path)
+                .map_err(map_workspace_error)?;
+            let length = source.metadata().map_err(|_| ConvertError::Failed)?.len();
+            let mut destination =
+                fs::File::create(&artifact_path).map_err(|_| ConvertError::Failed)?;
+            std::io::copy(&mut source.take(length), &mut destination)
+                .map_err(|_| ConvertError::Failed)?;
+            drop(destination);
+            private_output = Some(snapshot);
 
             // Step 4: Metadata stamp for docx and epub
             let timestamp = package_meta::conversion_time().map_err(|_| ConvertError::Failed)?;
@@ -1747,13 +1761,15 @@ where
         None
     };
 
+    let promotion_workspace = private_output.as_ref().unwrap_or(workspace);
+
     // Step 5: Promotion (Commit point)
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
     match destination_parent {
         Some((parent_dir, file_name)) => {
-            workspace
+            promotion_workspace
                 .promote_into(&artifact_path, parent_dir, file_name, request.overwrite)
                 .map_err(|error| match error {
                     WorkspaceError::DestinationExists => ConvertError::DestinationExists,
@@ -1761,7 +1777,7 @@ where
                 })?;
         }
         None => {
-            workspace
+            promotion_workspace
                 .promote(&artifact_path, &request.output, request.overwrite)
                 .map_err(|error| match error {
                     WorkspaceError::DestinationExists => ConvertError::DestinationExists,
@@ -1909,7 +1925,9 @@ fn read_archive_with(
         .find(|a| a.format == "ariad-ir+json")
         .ok_or(ConvertError::Failed)?;
 
-    let ir_file = fs::File::open(&artifact.path).map_err(|_| ConvertError::Failed)?;
+    let ir_file = workspace
+        .open_artifact(&artifact.path)
+        .map_err(map_workspace_error)?;
     let buf_reader = std::io::BufReader::new(ir_file);
     let doc = crate::ir_io::read(buf_reader, limits).map_err(|err| match err {
         crate::ir_io::ReadError::ByteLimitExceeded { .. }
