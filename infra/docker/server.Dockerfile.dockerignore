@@ -1,0 +1,11 @@
+# Context for the server image: sources only.
+.git
+target
+.tools
+**/node_modules
+fuzz/target
+fuzz/corpus
+fuzz/artifacts
+**/.venv
+**/.env*
+.run
