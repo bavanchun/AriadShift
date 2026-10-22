@@ -40,8 +40,8 @@ All CLI commands adhere to a single unified exit-code table:
 | `1` | Failure | Conversion or operation failed, input/output I/O error, or generic non-tool check failure. Engine packs: signature, hash, size, download, unsafe-archive or I/O failure, or `engines verify` found differences. |
 | `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. Engine packs: malformed pack name or version, plain HTTP to a non-loopback host. |
 | `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). Engine packs: unknown pack, pack or version not installed, no build for this platform. |
-| `4` | Limit Exceeded | Document size, nesting depth, or node count exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
-| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, or has an unsupported version. Engine packs: the pack requires a different `ashift` version. |
+| `4` | Limit Exceeded | Document size, nesting depth, node count, or engine process-tree memory exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
+| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. Engine packs: the pack requires a different `ashift` version. |
 | `6` | Destination Exists | Destination file already exists and `--overwrite` was not specified. |
 | `130` | Interrupted | Interrupted by signal (SIGINT / Ctrl-C on Unix, Ctrl-C / Ctrl-Break on Windows). Temporary workspaces and partial files are cleaned up. |
 
@@ -50,8 +50,8 @@ All CLI commands adhere to a single unified exit-code table:
 ## Stdout and Stderr Rules
 
 - **Stdout**:
-  - In default human mode, `ashift convert` prints only the final output file path. Other commands print formatted, human-readable text and tables.
-  - When `--json` is supplied, exactly one valid JSON document is printed to stdout on success. On failure, stdout is empty, error diagnostics are written to stderr, and a non-zero exit code is returned.
+  - In default human mode, `ashift convert` prints one output path per successful input. Other commands print formatted, human-readable text and tables.
+  - When `--json` is supplied, exactly one valid JSON document is printed to stdout on success. Single-input failures leave stdout empty and write diagnostics to stderr. Multi-input conversion prints a `results` array even when individual inputs fail; command-level usage errors still leave stdout empty.
 - **Stderr**:
   - Diagnostics and warnings are written to stderr as `warning[<code>]: <message>`. Warning messages never contain confidential document contents.
   - Conversion progress indicators (`progress: <stage>`) are printed to stderr only when stderr is connected to an interactive terminal (TTY).
@@ -67,14 +67,14 @@ All CLI commands adhere to a single unified exit-code table:
 Converts a document between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`).
 
 ```bash
-ashift convert [OPTIONS] --to <FORMAT> <INPUT>
+ashift convert [OPTIONS] --to <FORMAT> <INPUT>...
 ```
 
 #### Arguments and Options
 
-- `<INPUT>`: Path to the input document file.
+- `<INPUT>...`: One or more input document paths, processed in order.
 - `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`).
-- `-o, --output <OUTPUT>`: Explicit output file path. Defaults to `<input stem>.<target extension>` in the same directory as the input.
+- `-o, --output <OUTPUT>`: With one input, an explicit output file path. With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
 - `--json`: Output conversion report as JSON instead of the bare output path.
@@ -90,11 +90,14 @@ ashift convert report.docx --to md -o output/report.md
 
 # Convert with JSON output for scripts or pipelines
 ashift convert draft.md --to docx --json
+
+# Convert a batch into an existing directory
+ashift convert draft.md notes.md --to docx -o output/
 ```
 
 #### JSON Output Shape
 
-When `--json` is passed, `ashift convert` emits:
+For one input, `--json` preserves the existing report shape:
 
 ```json
 {
@@ -120,6 +123,19 @@ When `--json` is passed, `ashift convert` emits:
   "elapsed_ms": 42
 }
 ```
+
+For several inputs, `--json` emits one document with results in input order:
+
+```json
+{
+  "results": [
+    {"input": "draft.md", "ok": true, "output": "draft.html", "route": [], "warnings": [], "elapsed_ms": 2},
+    {"input": "notes.txt", "ok": false, "error": {"code": "unsupported_route", "exit_code": 3, "message": "unsupported conversion route"}}
+  ]
+}
+```
+
+Successful items contain the same report fields as single-input conversion; the route above is abbreviated. A failed input does not stop later inputs. Human mode prints failures as `ashift: <input>: <error>` on stderr. The exit code is the first failed input's code, or 0 if all succeed. Cancellation stops the remaining inputs and returns 130; already completed outputs stay in place. A batch shares a session pool for engines advertising session support. Pandoc continues to use one process per job.
 
 ---
 
@@ -455,10 +471,12 @@ ashift doctor [OPTIONS]
 5. **Pack signing keys** (`pack_keys`, not required): lists the ids of the minisign keys built into `ashift`; a build without keys cannot install packs.
 6. **Installed packs** (`pack_<name>`, not required): one check per installed version (receipt present, every recorded file present with its recorded size, built for this platform and `ashift` range) and per `ASHIFT_PACK_<NAME>` override. `ashift engines verify` does the full re-hash.
 
+7. **Sandbox**: Reports effective mode, Landlock ABI and seccomp availability. Missing isolation is an optional failed check in best-effort mode and a required failure in required mode. Required mode needs Linux.
+
 #### Exit Codes
 
 - Returns exit code `0` if all required diagnostic checks pass. Engine pack checks never change the exit code.
-- Returns exit code `5` if an external tool (Pandoc) is missing or has an unsupported version.
+- Returns exit code `5` if an external tool (Pandoc) is missing has an unsupported version, or required sandbox isolation is unavailable.
 - Returns exit code `1` if a non-tool check fails (e.g. temporary directory unwritable).
 
 #### Human Output Example
@@ -470,13 +488,14 @@ ashift doctor [OPTIONS]
 ✓ engine pack directory is writable at /home/user/.local/share/ariadshift
 ✓ engine pack signing keys: 1A2B3C4D5E6F7A8B
 ✓ engine pack docling 0.2.0 (x86_64-unknown-linux-gnu) is installed and active
+✓ engine sandbox: best-effort; Landlock ABI 9 (filesystem, TCP, scopes, UNIX sockets), seccomp available
 ```
 
 *(On Windows (`cfg!(windows)`), `[ok]` and `[x]` are printed instead of `✓` and `✗`)*
 
 #### JSON Output Shape
 
-No local filesystem paths are exposed in the JSON output:
+No local filesystem paths are exposed in the JSON output. Sandbox values depend on the OS and kernel; this example shows Linux with ABI 9:
 
 ```json
 {
@@ -516,8 +535,26 @@ No local filesystem paths are exposed in the JSON output:
       "message": "engine pack signing keys: 1A2B3C4D5E6F7A8B",
       "hint": ""
     }
+,
+    {
+      "id": "sandbox",
+      "ok": true,
+      "required": false,
+      "message": "engine sandbox: best-effort; Landlock ABI 9 (filesystem, TCP, scopes, UNIX sockets), seccomp available",
+      "hint": "use a kernel with Landlock enabled (Linux 5.13 or newer with landlock in the LSM list)"
+    }
   ],
-  "stale_workspaces": 0
+  "stale_workspaces": 0,
+  "sandbox": {
+    "mode": "best-effort",
+    "platform": true,
+    "landlock_abi": 9,
+    "landlock_filesystem": true,
+    "landlock_network": true,
+    "landlock_scopes": true,
+    "landlock_unix_sockets": true,
+    "seccomp": true
+  }
 }
 ```
 
@@ -541,4 +578,5 @@ The `--profile` flag guides route selection when multiple routes connect a forma
 - `ASHIFT_PACK_<NAME>`: Uses an unpacked development pack directory (holding an unsigned `pack.toml`) instead of the installed pack `<name>`; the name is upper-cased with `-` written as `_`.
 - `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`: Proxy settings for pack downloads.
 - `SSL_CERT_FILE`, `SSL_CERT_DIR`: Trusted CA certificates for pack downloads on Linux, when the system store is not in a standard location.
+- `ASHIFT_SANDBOX`: `off`, `best-effort` (CLI default), or `required`. Linux engines run through Landlock and seccomp with workspace write access and declared runtime read/execute access. Missing confinement produces `warning[sandbox_unavailable]` in best-effort mode; required mode refuses it with exit 5. `off` bypasses the launcher. Unknown values fail closed. macOS/Windows retain process groups or Job Objects; required mode needs Linux.
 - `SOURCE_DATE_EPOCH`: Unix timestamp in seconds used for deterministic, byte-reproducible ZIP archives (DOCX and EPUB).
