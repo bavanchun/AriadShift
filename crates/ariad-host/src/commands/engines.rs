@@ -196,6 +196,15 @@ pub fn engines(
 /// Pack name always listed, installed or not.
 const LISTED_PACK: &str = "docling";
 
+/// License shown for a pack row that has no registry edge and no running engine to ask.
+fn placeholder_license(name: &str) -> String {
+    if name == LISTED_PACK {
+        "Apache-2.0".to_owned()
+    } else {
+        "-".to_owned()
+    }
+}
+
 fn pack_rows(
     caps: &ariad_core::planner::Capabilities,
     cancel: &CancellationToken,
@@ -222,18 +231,18 @@ fn pack_rows(
         match packs::try_resolve(&name) {
             Ok(Some(pack)) => rows.push(describe_pack(&pack, versions, routes, license, cancel)?),
             Ok(None) => rows.push(EngineRow {
+                license: license.unwrap_or_else(|| placeholder_license(&name)),
                 id: name,
                 version: "-".to_owned(),
-                license: license.unwrap_or_else(|| "-".to_owned()),
                 status: EngineStatus::NotInstalled,
                 note: Some("available in v0.2".to_owned()),
                 routes,
                 pack: None,
             }),
             Err(_) => rows.push(EngineRow {
+                license: license.unwrap_or_else(|| placeholder_license(&name)),
                 id: name,
                 version: versions.first().cloned().unwrap_or_else(|| "-".to_owned()),
-                license: license.unwrap_or_else(|| "-".to_owned()),
                 status: EngineStatus::Missing,
                 note: Some("pack is unusable; run 'ashift doctor'".to_owned()),
                 routes,
