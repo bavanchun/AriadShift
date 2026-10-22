@@ -1,7 +1,7 @@
 // Runs the pinned Lighthouse against the production build: / and /app, mobile and
 // desktop. Starts `next start` on port 3100 itself and stops it afterwards. Exits non-zero
 // when any category scores below 90. Run `just web-build` first.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as chromeLauncher from "chrome-launcher";
@@ -30,6 +30,15 @@ async function waitForServer() {
   throw new Error(`next start did not answer on ${BASE}`);
 }
 
+// Never audit a server this script did not start: it may be an old build.
+try {
+  await fetch(BASE);
+  console.error(`Something already answers on ${BASE}; stop it and run again.`);
+  process.exit(1);
+} catch {
+  // The port is free.
+}
+
 const server = spawn("pnpm", ["exec", "next", "start", "--port", String(PORT)], {
   cwd: web,
   stdio: "ignore",
@@ -38,7 +47,12 @@ const server = spawn("pnpm", ["exec", "next", "start", "--port", String(PORT)], 
 });
 const stopServer = () => {
   try {
-    process.platform === "win32" ? server.kill() : process.kill(-server.pid, "SIGTERM");
+    if (process.platform === "win32") {
+      // pnpm runs through a shell on Windows; end the whole tree so next start stops too.
+      spawnSync("taskkill", ["/pid", String(server.pid), "/T", "/F"], { stdio: "ignore" });
+    } else {
+      process.kill(-server.pid, "SIGTERM");
+    }
   } catch {
     // Already stopped.
   }
