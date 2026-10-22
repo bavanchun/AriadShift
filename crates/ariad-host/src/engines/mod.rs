@@ -1,3 +1,4 @@
+pub mod docling;
 pub mod pandoc;
 pub mod sandbox;
 
@@ -67,9 +68,40 @@ fn availability_cache() -> &'static AvailabilityCache {
 /// `ariad-core` is in-process and always available.
 /// `pandoc` runs out-of-process and is queried via `describe`. If `tool.status == Found`,
 /// it is marked available; otherwise unavailable.
+/// `docling` is listed when an engine is installed or configured, and is available when it
+/// answers `describe`.
 ///
 /// Availability is cached per process run for performance.
 pub fn availability(
+    engine_program: &Path,
+    engine_args: &[OsString],
+    cancel: CancellationToken,
+) -> Result<AvailabilityReport, RunError> {
+    let mut report = bundled_availability(engine_program, engine_args, cancel.clone())?;
+    if let Some(docling) = docling::availability(cancel) {
+        report.engines.push(docling);
+    }
+    Ok(report)
+}
+
+/// Whether one engine can run, querying only that engine.
+pub fn is_engine_available(
+    engine: &str,
+    engine_program: &Path,
+    engine_args: &[OsString],
+    cancel: CancellationToken,
+) -> Result<bool, RunError> {
+    if engine == IN_PROCESS_ENGINE {
+        return Ok(true);
+    }
+    if engine == docling::ENGINE_ID {
+        return Ok(docling::availability(cancel).is_some_and(|docling| docling.available));
+    }
+    Ok(bundled_availability(engine_program, engine_args, cancel)?.is_available(engine))
+}
+
+/// Availability of the in-process core and the engines that ship with `ashift`.
+fn bundled_availability(
     engine_program: &Path,
     engine_args: &[OsString],
     cancel: CancellationToken,

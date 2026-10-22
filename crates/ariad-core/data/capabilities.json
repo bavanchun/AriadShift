@@ -74,6 +74,17 @@
       }
     },
     {
+      "from": "docling+json",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
       "from": "docx",
       "to": "ariad-ir+json",
       "engine": "pandoc",
@@ -88,6 +99,16 @@
         "peak_mem_mb": 145.0,
         "samples": 5
       }
+    },
+    {
+      "from": "docx",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
     },
     {
       "from": "epub",
@@ -123,6 +144,16 @@
       }
     },
     {
+      "from": "jpeg",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
+    },
+    {
       "from": "markdown",
       "to": "ariad-ir+json",
       "engine": "ariad-core",
@@ -138,6 +169,66 @@
         "peak_mem_mb": 9.0,
         "samples": 28
       }
+    },
+    {
+      "from": "pdf",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
+    },
+    {
+      "from": "png",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
+    },
+    {
+      "from": "pptx",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
+    },
+    {
+      "from": "tiff",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
+    },
+    {
+      "from": "webp",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
+    },
+    {
+      "from": "xlsx",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
     }
   ]
 }

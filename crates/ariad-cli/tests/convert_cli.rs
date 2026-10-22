@@ -151,14 +151,14 @@ fn maps_usage_route_limit_tool_and_input_errors_to_documented_exit_codes() {
 
     let unsupported = cli()
         .args(["convert"])
-        .arg(directory.path().join("note.pdf"))
+        .arg(directory.path().join("note.djvu"))
         .args(["--to", "docx"])
         .output()
         .expect("start ashift");
     assert_eq!(unsupported.status.code(), Some(3));
     let stderr = String::from_utf8_lossy(&unsupported.stderr);
     assert!(stderr.contains("unsupported conversion route"));
-    assert!(stderr.contains("no reachable targets from pdf"));
+    assert!(stderr.contains("no reachable targets from djvu"));
 
     let limited = run_convert(&source, &output);
     assert_eq!(limited.status.code(), Some(4));
@@ -1176,6 +1176,8 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::SandboxUnavailable("no Landlock".to_owned()),
             5,
         ),
+        (ConvertError::DoclingMissing, 5),
+        (ConvertError::DoclingToolMissing, 5),
         (ConvertError::DestinationExists, 6),
         (ConvertError::Interrupted, 130),
     ];
@@ -1200,6 +1202,8 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::MemoryLimitExceeded { .. } => {}
             ConvertError::ToolMissing => {}
             ConvertError::SandboxUnavailable(_) => {}
+            ConvertError::DoclingMissing => {}
+            ConvertError::DoclingToolMissing => {}
             ConvertError::DestinationExists => {}
             ConvertError::Interrupted => {}
         }

@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     convert::ConvertError,
-    engines::{self, IN_PROCESS_ENGINE},
+    engines::{self, IN_PROCESS_ENGINE, docling},
     packs::{self, InstalledPack, PackContext},
     runner::{self, RunError},
 };
@@ -235,6 +235,10 @@ fn pack_rows(
             .collect();
         let routes = registry_routes(caps, &name);
         let license = registry_license(caps, &name);
+        if name == LISTED_PACK && std::env::var_os(docling::OVERRIDE_ENV).is_some() {
+            rows.push(describe_override(routes, license, cancel)?);
+            continue;
+        }
         match packs::try_resolve(&name) {
             Ok(Some(pack)) => rows.push(describe_pack(
                 engine_program,
@@ -267,6 +271,48 @@ fn pack_rows(
     Ok(rows)
 }
 
+/// Builds the docling row for the `ASHIFT_DOCLING_ENGINE` development override, which no pack
+/// backs.
+fn describe_override(
+    routes: Vec<String>,
+    license: Option<String>,
+    cancel: &CancellationToken,
+) -> Result<EngineRow, ConvertError> {
+    let mut row = EngineRow {
+        id: LISTED_PACK.to_owned(),
+        version: "-".to_owned(),
+        license: license
+            .clone()
+            .unwrap_or_else(|| placeholder_license(LISTED_PACK)),
+        status: EngineStatus::Missing,
+        note: Some(format!(
+            "{} is not a usable command line",
+            docling::OVERRIDE_ENV
+        )),
+        routes,
+        pack: None,
+    };
+    if let Some(command) = docling::resolve() {
+        row.note = None;
+        apply_describe(
+            &mut row,
+            runner::describe_with_env(
+                &command.program,
+                &command.args,
+                &command.env,
+                cancel.clone(),
+            ),
+            license.is_some(),
+        )?;
+        let note = row.note.take();
+        row.note = Some(match note {
+            Some(note) => format!("development override; {note}"),
+            None => "development override".to_owned(),
+        });
+    }
+    Ok(row)
+}
+
 /// Builds an engine row for a resolved pack by running `describe` through its entrypoint.
 fn describe_pack(
     engine_program: &Path,
@@ -292,26 +338,49 @@ fn describe_pack(
         routes,
         pack: Some(info),
     };
-    match runner::describe_command(
-        &runner::EngineCommand::from_pack(engine_program, pack),
-        runner::DESCRIBE_TIMEOUT,
-        cancel.clone(),
-    ) {
+    apply_describe(
+        &mut row,
+        runner::describe_command(&runner::EngineCommand::from_pack(engine_program, pack), runner::DESCRIBE_TIMEOUT, cancel.clone()),
+        license.is_some(),
+    )?;
+    Ok(row)
+}
+
+/// Fills `row` from the outcome of an engine's `describe`; `registry_license` says whether the
+/// registry already supplied the license.
+fn apply_describe(
+    row: &mut EngineRow,
+    described: Result<Event, RunError>,
+    registry_license: bool,
+) -> Result<(), ConvertError> {
+    match described {
         Ok(Event::Capabilities {
+            version,
             tool,
             license: engine_license,
             routes: engine_routes,
             ..
         }) => {
+            // Docling converts digital documents without Tesseract; the program only enables
+            // OCR, so a missing one is a note, not a missing engine.
+            let tool_optional = row.id == LISTED_PACK;
             row.status = match tool.status {
                 ToolAvailability::Found => EngineStatus::Ready,
+                _ if tool_optional => EngineStatus::Ready,
                 ToolAvailability::Missing => EngineStatus::Missing,
                 ToolAvailability::WrongVersion => EngineStatus::WrongVersion,
             };
             if tool.status != ToolAvailability::Found {
-                row.note = Some(format!("{} is not ready", tool.name));
+                row.note = Some(if tool_optional {
+                    format!("{} is not ready; OCR is unavailable", tool.name)
+                } else {
+                    format!("{} is not ready", tool.name)
+                });
             }
-            if license.is_none() {
+            if row.version == "-" {
+                row.version = version;
+            }
+            if !registry_license {
                 row.license = engine_license;
             }
             if row.routes.is_empty() {
@@ -330,5 +399,5 @@ fn describe_pack(
         }
         Ok(_) | Err(_) => row.note = Some("engine describe failed".to_owned()),
     }
-    Ok(row)
+    Ok(())
 }
