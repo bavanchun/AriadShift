@@ -21,16 +21,17 @@ GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, on
 
 ## The CI gate
 
-`ci.yml` has six jobs:
+`ci.yml` has seven jobs:
 
-1. **Scope** (Linux, seconds) runs [`scripts/ci-scope.sh`](../scripts/ci-scope.sh). It picks the commit range to lint and decides whether the build, test and fuzz jobs must run.
+1. **Scope** (Linux, seconds) runs [`scripts/ci-scope.sh`](../scripts/ci-scope.sh). It picks the commit range to lint and decides whether the build, test and fuzz jobs must run, and separately whether the web job must run.
 2. **Static checks** (Linux) run once for every event:
    - each new commit against the commit rules (`just lint-commits`);
-   - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), and WinGet manifest generator test (`test-winget-manifest`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
+   - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, the license check of production JavaScript dependencies (`js-licenses`), Biome (`web-lint`), release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), and WinGet manifest generator test (`test-winget-manifest`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
 3. **Lint (windows-2025)** runs Clippy on Windows, for early feedback on Windows-only code.
 4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc, sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test`, `just bench-test`, `just bench-check`, and `just package-check`.
 5. **Fuzz** (Linux, `ubuntu-26.04`) runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `ir_json`, `limits_validate`), with cached corpus and crash artifact upload on failure or cancellation.
-6. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, and jobs 3, 4 and 5 either passed or were skipped by the scope decision.
+6. **Web** (Linux, `ubuntu-26.04`) builds the wasm module, typechecks every JavaScript package, runs Vitest, builds the site (`just web-ci`) and runs Playwright on Chromium, Firefox and WebKit (`just web-e2e`), uploading traces on failure. See [web.md](web.md).
+7. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, jobs 3, 4 and 5 either passed or were skipped by the scope decision, and job 6 passed when the scope asked for it and was skipped otherwise.
 
 ### When the build, test and fuzz jobs are skipped
 
@@ -43,13 +44,16 @@ The same tree is never built twice without a reason:
 | Promotion pull request into `main`, and the push to `main` after it | Skipped when the tree matches a `dev` commit whose CI push run succeeded | That exact tree was already built and tested on all three OSes |
 | Hotfix pull request into `main`, and the push after it | Run | The tree is new |
 | Change to `docs/`, `plans/`, or the root `README.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` only | Skipped | Static checks still spell-check and lint it |
+| Change confined to the JavaScript workspace (`apps/`, `packages/`, the root pnpm, Biome and Vitest files) and prose | Skipped | No Rust code changed; the web job covers it |
 | Manual run, or a push whose previous commit is unknown | Run | Nothing to compare against |
+
+The web job runs when a change touches `apps/`, `packages/`, `crates/ariad-core/`, `crates/ariad-wasm/`, the root pnpm, Biome, Vitest, Cargo or toolchain files, the `justfile`, `ci.yml`, `ci-scope.sh` or `install-wasm-bindgen.sh`, and on manual runs and pushes without a known previous commit. Promotions follow the same tree rule as the other jobs.
 
 A newer push to the same pull request cancels its older run. Runs on `dev` and `main` are grouped by commit and are never cancelled.
 
 CodeQL is the one deliberate repeat: GitHub computes pull request alerts against the base branch's analysis, so `dev` and `main` are analysed on push too.
 
-The Rust cache is written only by pushes to `dev` and `main`; pull requests read it but never save their own, so they cannot evict the base branch's cache. The fuzz caches (cargo-fuzz binary, `fuzz/target`, and corpus) follow the same policy: saved on pushes to `dev` and `main`, while pull requests restore caches without saving. The nightly workflow (`fuzz-nightly.yml`) saves caches on schedule, dispatch and its own pull request runs (PR-scoped entries are not visible to `dev` or `main`); crash artifacts upload on failure or cancellation.
+The Rust cache is written only by pushes to `dev` and `main` (the web job shares this rule, and saves the Playwright browser cache on pushes only); pull requests read it but never save their own, so they cannot evict the base branch's cache. The fuzz caches (cargo-fuzz binary, `fuzz/target`, and corpus) follow the same policy: saved on pushes to `dev` and `main`, while pull requests restore caches without saving. The nightly workflow (`fuzz-nightly.yml`) saves caches on schedule, dispatch and its own pull request runs (PR-scoped entries are not visible to `dev` or `main`); crash artifacts upload on failure or cancellation.
 
 ## Commit rules
 
@@ -64,7 +68,8 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 
 | Command | Runs |
 |---|---|
-| `just ci` | Everything CI runs on your OS: `just static`, Clippy, the WASM check, tests, `bench-test`, `bench-check`, and `package-check` |
+| `just ci` | Everything CI runs on your OS except the browser tests: `just static`, Clippy, the WASM check, tests, `bench-test`, `bench-check`, `package-check`, and `web-ci` (wasm build, typecheck, Vitest, site build) |
+| `just web-e2e` | The web job's Playwright tests; needs `just web-build` and `just web-browsers` first |
 | `just bench` | Run benchmark harness on fixture suite |
 | `just bench-check` | Validate capabilities.json against schema and invariants |
 | `just bench-test` | Run unit tests for benchmark harness |

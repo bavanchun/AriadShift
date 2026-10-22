@@ -7,6 +7,8 @@ early development. Its goal is to turn documents into clean Markdown and
 structured data through a shared engine used by local and hosted interfaces.
 
 The repository provides local conversion across Markdown, HTML, DOCX, and EPUB.
+The website converts Markdown, HTML, and AriadShift IR JSON entirely in the
+browser; files never leave the device.
 
 ## Installation
 
@@ -90,6 +92,21 @@ Add `--json` to any command for structured machine-readable output. See [`docs/c
 
 Heavy engines such as Docling ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the first published pack, docling, arrives with v0.2.0. See [`docs/packs.md`](docs/packs.md).
 
+## Convert in the Browser
+
+The web app in [`apps/web`](apps/web) runs the same core compiled to
+WebAssembly. Files stay in the browser's private storage, the converter keeps
+working offline after the first visit, and every route shows its measured
+quality. Run it locally:
+
+```sh
+just js
+just web-dev   # http://localhost:3000
+```
+
+See [`docs/web.md`](docs/web.md) for building, testing, and deploying it as a
+static site or a Node.js server.
+
 ## Model Context Protocol (MCP)
 
 Run an MCP server over standard I/O for AI assistants (such as Claude Code, Claude Desktop, or Cursor):
@@ -146,12 +163,15 @@ before working on tasks that use Pandoc.
 
 Install JavaScript workspace dependencies with `just js`; then build the brand
 with `pnpm --dir brand build`. The root `package.json`,
-`pnpm-workspace.yaml`, and `pnpm-lock.yaml` own the JavaScript workspace.
+`pnpm-workspace.yaml`, and `pnpm-lock.yaml` own the JavaScript workspace
+(`apps/*`, `packages/*`, and `brand`). `just ci` also builds the wasm module
+and the web app; `just web-browsers` and `just web-e2e` run its browser tests.
 
 ## Project documents
 
 - [CLI reference](docs/cli.md)
 - [MCP server reference](docs/mcp.md)
+- [Web app](docs/web.md)
 - [System architecture](ARCHITECTURE.md)
 - [Security reporting](docs/SECURITY.md)
 - [Git workflow](docs/git-workflow.md)

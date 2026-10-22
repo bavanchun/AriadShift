@@ -1,7 +1,7 @@
 # AriadShift — System Architecture
 
-> **Status:** Proposal v1 · **Updated:** 2026-10-06
-> Version selections are based on registry and release checks recorded on 2026-10-06; lockfiles pin exact resolved versions.
+> **Status:** Proposal v1 · **Updated:** 2026-10-22
+> Version selections are based on registry and release checks recorded on 2026-10-06; the web rows in §2.2 and the wasm rows in §2.3 were re-verified on 2026-10-22. Lockfiles pin exact resolved versions.
 
 AriadShift is an open-source, local-first document transformation platform. A single core engine powers five surfaces: **CLI, Desktop, Web, REST API/SDK, and MCP server**.
 
@@ -56,20 +56,21 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 
 | Component | Version | Notes |
 |---|---|---|
-| Next.js | **16.3.x** | Current LTS line; Next 15 reaches end of support on 2026-10-21 |
-| React | 19.3 | |
-| TypeScript | **7.0** (native Go compiler) | 8–12x faster. Next 16.3 uses it via `experimental.useTypeScriptCli`; JS API available from 7.1 |
+| Next.js | **16.4.2** | Newest release of the 16 LTS line (verified 2026-10-22); Next 15 reached end of support on 2026-10-21 |
+| React | 19.3.1 | |
+| TypeScript | **7.0.2** (native Go compiler) | 8–12x faster. Next 16.3+ type-checks through the project-local `tsc` CLI by default (`experimental.useTypeScriptCli`), so no fallback is needed; JS API available from 7.1 |
 | Vite | 8.3 (Rolldown bundler) | Used for desktop |
-| Tailwind CSS | 4.3 | |
-| shadcn/ui | CLI 4.x, **Base UI** style (`@base-ui/react` 1.8) | Base UI has been the shadcn default since 07/2026 |
+| Tailwind CSS | 4.3.3 | Through `@tailwindcss/postcss` |
+| shadcn/ui | CLI 4.22.1, **Base UI** style `base-nova` (`@base-ui/react` 1.9.0) | Base UI has been the shadcn default since 07/2026 |
 | Tauri | **2.12** | Tauri 3 is in alpha → not yet adopted |
 | TanStack Query / Zustand / Zod | 5 / 5 / 4 | Server state / UI state / schema |
 | React Hook Form / Motion / lucide-react | 7 / 14 / 1.x | |
 | Uppy | 6 (+ `@uppy/aws-s3`) | Resumable multipart uploads |
 | Better Auth | 1.7 | Includes JWT, API Key, and Passkey plugins |
 | pnpm | 12 | Workspace + catalog |
-| Biome | 2.5 | Single-binary linter + formatter; independent of TypeScript JS APIs |
-| Vitest / Playwright | 5 / 1.63 | |
+| Biome | 2.6.2 | Single-binary linter + formatter; independent of TypeScript JS APIs |
+| Vitest / Playwright | 5.0.5 / 1.64.1 | Playwright runs Chromium, Firefox and WebKit |
+| Lighthouse | 13.5.0 | Local `just web-lighthouse`; scores in [docs/web.md](docs/web.md) |
 
 ### 2.3 Rust Crates
 
@@ -85,7 +86,7 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | pdfium-render + PDFium | 0.9 + `chromium/8076` (bblanchon/pdfium-binaries, **non-V8** build) | PDF rendering, text extraction, images, metadata |
 | typst | 0.15 | IR → PDF |
 | rmcp | **3.5.1** (`default-features = false`, `server`, `macros`, `transport-io`) | Official MCP SDK for Rust |
-| wasm-bindgen / wasm-pack | 0.2 / 0.15 | Build `ariad-wasm` |
+| wasm-bindgen / wasm-bindgen-cli / js-sys | **0.2.129** / **0.2.129** / **0.3.106** | Build `ariad-wasm`; the CLI comes from its release archive with checksums pinned in `scripts/install-wasm-bindgen.sh` and must equal the crate version |
 | jsonwebtoken | 11 | JWT verification from Better Auth |
 | tauri-specta | 1.0 | TS type generation for Tauri commands |
 | comrak | **0.56.0** (`default-features = false`, `shortcodes`) | CommonMark/GFM Markdown reader in `ariad-core`; BSD-2-Clause |
@@ -237,7 +238,7 @@ ariadshift/
 ├── rust-toolchain.toml        # Rust 1.99
 ├── pnpm-workspace.yaml        # pnpm workspace + shared version catalog
 ├── pyproject.toml             # uv workspace
-├── justfile                   # root entry point: fmt, lint, test, wasm, deny, js, py, pandoc, ci
+├── justfile                   # root entry point: fmt, lint, test, wasm, deny, js, py, pandoc, ci, web-*
 ├── .node-version              # 24
 ├── scripts/                   # pinned tool installers
 ├── .tools/                    # gitignored local tools
@@ -247,16 +248,17 @@ ariadshift/
 │   ├── ariad-host/            # engine runner, sandbox, engine packs, native adapters (feature flags)
 │   │   └── data/              # packs.toml (pack index) and pack-keys/*.pub (trusted signing keys)
 │   ├── ariad-cli/             # `ashift` binary (includes `ashift mcp`)
-│   ├── ariad-wasm/            # wasm-bindgen bindings for ariad-core
+│   ├── ariad-wasm/            # wasm-bindgen bindings for ariad-core (browser JS API)
 │   └── ariad-server/          # `ariad-server api | worker` binary
 ├── engines/
 │   └── docling/               # Python engine (uv project) implementing the engine protocol
 ├── apps/
-│   ├── web/                   # Next.js 16
+│   ├── web/                   # Next.js 16: website + in-browser converter (docs/web.md)
 │   └── desktop/               # Vite 8 + React 19
 │       └── src-tauri/         # Tauri 2, depends on ariad-host
 ├── packages/
-│   ├── ui/                    # shared React components (shadcn + Base UI)
+│   ├── ui/                    # shared React components (shadcn + Base UI), brand theme
+│   ├── ariad-wasm/            # generated ariad-wasm bindings (built by `just wasm-build`, not committed)
 │   ├── sdk/                   # TypeScript SDK generated from OpenAPI
 │   └── config/                # tsconfig, Biome presets
 ├── schemas/                   # JSON Schema: IR, engine protocol, capabilities.v0.json, pack.v1.json (generated with schemars)
@@ -272,7 +274,7 @@ ariadshift/
 └── docs/
 ```
 
-The `justfile` provides `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, `ci`, `bench`, `bench-check`, `bench-test`, and `fixtures`. `dev` arrives with `apps/`.
+The `justfile` provides `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, `ci`, `bench`, `bench-check`, `bench-test`, and `fixtures`, plus `wasm-build` and the `web-*` recipes for the web app (`web-dev`, `web-build`, `web-export`, `web-test`, `web-e2e`, `web-lighthouse`; see [docs/web.md](docs/web.md)).
 
 Only 5 crates exist initially. Further crate splits occur only when distinct boundaries emerge, such as an adapter requiring an independent release cycle.
 
@@ -284,10 +286,10 @@ Only 5 crates exist initially. Further crate splits occur only when distinct bou
 
 | Crate | Responsibility | WASM | Key Dependencies |
 |---|---|---|---|
-| `ariad-core` | IR types, format registry, planner, limit enforcement, pure-data engine-protocol message types shared with host, browser, and server, native Markdown and HTML readers/writers | ✓ | serde, schemars |
+| `ariad-core` | IR types, format registry, planner, limit enforcement, pure-data engine-protocol message types shared with host, browser, and server, native Markdown and HTML readers/writers, the in-memory pipeline (`pipeline`: read, write and run in-process routes by format id, with bounded IR JSON input) and in-memory inspection (`inspect`) | ✓ | serde, schemars |
 | `ariad-host` | Asset resolution, engine process execution, workspaces, engine pack management, PDFium/Pandoc/LibreOffice/Docling/Typst adapters, and DOCX metadata rewrite | ✗ | tokio, pdfium-render, typst |
 | `ariad-cli` | Command-line interface, MCP server | ✗ | clap, rmcp |
-| `ariad-wasm` | Browser JS API: plan, convert lightweight routes | ✓ | wasm-bindgen |
+| `ariad-wasm` | Browser JS API: `version`, `capabilities`, `inspect`, `plan`, `convert` over format ids and the `wasm` capability edges; typed error objects; no conversion logic of its own | ✓ | wasm-bindgen, js-sys |
 | `ariad-server` | `api`: Axum + OpenAPI; `worker`: consumes jobs from pgmq and calls ariad-host | ✗ | axum, sqlx, object_store |
 
 ### 6.2 Document IR
@@ -497,9 +499,10 @@ Each pack is an `ariad-pack/1` TOML manifest (schema `schemas/pack.v1.json`) wit
 File ─stream→ OPFS ─→ Web Worker ─→ ariad-wasm / pandoc.wasm / PDFium WASM / Typst ─→ OPFS ─→ download
 ```
 
-- Files **never enter React state**. Workers read and write via OPFS (`createSyncAccessHandle`).
-- WASM modules are **lazy-loaded per route** and cached using Cache Storage. The home page loads zero engines.
-- Multithreaded WASM requires `SharedArrayBuffer`, necessitating COOP/COEP headers. `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` are enabled exclusively on `/app/*` routes, preventing OAuth popups and embedded content on other pages from breaking.
+- Files **never enter React state**. A module worker owns `ariad-wasm`, streams the input into OPFS and reads and writes through `createSyncAccessHandle`. Without sync access handles it keeps files in worker memory up to 64 MiB and the page says so.
+- The worker runs a planned route by engine id: consecutive steps of one engine go to that engine in one call. `ariad-core` maps to `ariad-wasm`; JavaScript-side engines (Pandoc WASM, Typst) register in the same table.
+- WASM modules are **lazy-loaded per route** and cached using Cache Storage. The home page loads zero engines. A service worker caches what `/app`, its worker and the wasm module loaded, so the converter works offline after the first visit.
+- Multithreaded WASM requires `SharedArrayBuffer`, necessitating COOP/COEP headers. `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` are enabled exclusively on `/app/*` routes, preventing OAuth popups and embedded content on other pages from breaking. Script chunks also send the COEP header, because an isolated page may only start a worker whose script declares one.
 - When file inspection detects that OCR, legacy Office formats, or oversized files are involved, the UI presents two choices: **"Open in Desktop"** or **"Process in Cloud"**. Users always have complete visibility into where their data travels.
 
 ### 8.2 Desktop
@@ -733,7 +736,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 ## 16. Tooling, CI/CD, and Distribution
 
 - **Repository:** Use the personal account `bavanchun` for the public repository `bavanchun/AriadShift`; no GitHub organization.
-- **Task runner:** `just` is the sole root entry point. Phase 0 recipes are `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, and `ci`, wrapping pnpm, cargo, and uv. `dev` and `bench` arrive with `apps/` and `bench/`.
+- **Task runner:** `just` is the sole root entry point. Phase 0 recipes are `fmt`, `lint`, `test`, `wasm`, `deny`, `js`, `py`, `pandoc`, and `ci`, wrapping pnpm, cargo, and uv. `bench` arrived with `bench/`; `wasm-build` and the `web-*` recipes arrived with `apps/web`.
 - **CI (GitHub Actions):** Run the Linux / macOS / Windows matrix on every push and pull request using `ubuntu-26.04`, `macos-26`, and `windows-2025`. Pin every action to a full commit SHA. CI runs formatting, linting, tests, conformance suites, and license audits; benchmarks run on labeled PRs and nightly schedules.
 - **Dependency updates:** Renovate, grouped by ecosystem, strictly adhering to the LTS policies defined in Section 2.
 - **Release channels:**
@@ -825,6 +828,14 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Pack data directory | `ASHIFT_DATA_DIR`, else `directories`' local (non-roaming) data directory; staging, cache, locks and receipts under `<data>/packs` | Roaming AppData on Windows, hand-written per-OS paths | Packs reach gigabytes and must not roam; `directories` brings the MPL-2.0 `option-ext` crate under a per-crate exception, the same crate Tauri pulls in later |
 | Pack completeness | Join all zstd data frames and require extracted entry and byte counts to equal the signed manifest | Upper limits alone | A decoder or short archive can end at a valid tar header boundary; exact counts prevent accepting and receipting an incomplete pack |
 | Pack extraction and targets | Reject `..`, absolute, backslash, `:` and special entries; never write through links; canonical containment check for every link; hard links copied; pack triples describe pack binaries, so musl `ashift` accepts glibc packs when a glibc loader exists | Sanitizing names, trusting archive metadata, matching the pack triple to `ashift`'s own triple | Refusing is safer than rewriting paths; lexical checks alone miss link chains; the docling pack needs glibc wheels while the CLI ships static musl binaries |
+| Browser binding | `ariad-wasm` exports `version`, `capabilities`, `inspect`, `plan` and `convert` over format ids, routes over the `wasm` capability edges, crosses the boundary as JSON and throws `{ code, message, ... }` objects; the in-memory pipeline and inspection live in `ariad-core` | One export per format pair; conversion code in the binding crate; `serde-wasm-bindgen` | New in-process readers and writers (PDF, Typst) become available without an API change; the CLI and browser report the same shapes; `serde-wasm-bindgen` ignores unknown option fields, so typos would pass silently |
+| Browser build tooling | `wasm-bindgen-cli` 0.2.129 from its release archive with pinned checksums, a `wasm-release` profile (`opt-level = "s"`, fat LTO) and an 8 MiB wasm stack | wasm-pack 0.15 | wasm-pack only wraps the same two steps and downloads binaryen unpinned; `opt-level = "z"` saved under 4%; the default 1 MiB stack overflows on IR at the local nesting limit |
+| Browser file storage | OPFS through synchronous access handles inside the worker; worker memory up to 64 MiB as a visible fallback | `createWritable` on the main thread; IndexedDB | Sync handles work in Chromium, Firefox and Safari workers and keep file bytes out of the page |
+| Web offline mode | A hand-written service worker that caches the URLs `/app` and its worker report and serves them offline | Workbox, a PWA plugin, precaching every asset | No extra dependency; caches exactly what the converter needs; keeps other pages on the network |
+| Web hosting shape | All routes statically generated; `next start` sends the headers; `just web-export` writes a static site with `out/_headers` from the same header table | Static export only; Node only | Local mode needs no server, while the cloud features add server routes later |
+| Shared UI packaging | `packages/ui` ships TypeScript source compiled by the consumer (`transpilePackages`; Vite compiles it natively) | A prebuilt component library | No extra build step, and the desktop app reuses it unchanged |
+| JavaScript licenses | `just static` checks production JavaScript dependencies against a permissive allow list (`scripts/check-js-licenses.mjs`) | No check; an npm license checker dependency | The site bundles them, so AGENTS.md licensing rules apply as they do to crates |
+| Lighthouse | Pinned Lighthouse 13.5.0 behind `just web-lighthouse`, scores recorded in `docs/web.md` | Lighthouse CI as a required job | Scores on shared runners vary too much to gate on |
 | Inspection and plan caps | 32 MiB cap for deep document structure counting in `inspect`, and 4 MiB cap for `plan` summary parsing; regular-file preflight on all input reads | 256 MiB or unbounded reading and parsing of arbitrary file sizes, FIFOs, and special devices | Bounds peak memory expansion to ~100x input size (~3 GB peak RSS at 32 MiB) and prevents unbounded delays during diagnostic CLI runs without compromising standard document analysis |
 
 ---
