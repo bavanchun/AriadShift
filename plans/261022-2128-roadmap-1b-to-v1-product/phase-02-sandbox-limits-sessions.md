@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Linux sandbox, memory watchdog, sessions"
-status: pending
+status: completed
 priority: P1
 effort: "14h"
 dependencies: []
@@ -116,3 +116,9 @@ Registry checks on 2026-10-22 (crates.io): `landlock` 0.4.7 (MIT OR Apache-2.0, 
 - Hold an output directory capability from workspace creation. Open artifacts through it without following leaf symlinks, verify the opened file is regular, and snapshot writer artifacts outside the engine sandbox before host metadata edits and promotion.
 - Retain explicit skip notices on unsupported kernels as assigned. Do not require Landlock on every GitHub runner: real enforcement is verified on this machine and feature assertions fail whenever reported support does not enforce the rule. Add a direct required-launcher failure test so host preflight is not the only fail-closed coverage. Seccomp rules were independently reviewed; direct io_uring and abstract socket probes remain additional coverage.
 - Required mode covers filesystem and non-UNIX network isolation. Document residual local IPC access below ABI 9 instead of changing the accepted AF_UNIX policy.
+
+### Completion verification
+
+- CI run [39845242490](https://github.com/bavanchun/AriadShift/actions/runs/39845242490) passed on Ubuntu 26.04, macOS 26 and Windows 2025, with static checks, Windows lint and fuzz green. The fresh macOS success supersedes the earlier stuck check.
+- Local verification after the final code changes: 599 workspace tests, doctests, 64 benchmark tests, capabilities validation, Clippy and clean verification of all three crate packages passed. The two security/correctness regressions failed before repair and passed afterward.
+- The required read-only Sonnet 5.5 review at xhigh completed. High and medium findings are fixed or disposed of above; nonblocking observations and integration cautions are recorded in the handoff report.
