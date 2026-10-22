@@ -27,5 +27,7 @@ extend-exclude = [
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
     "fixtures/golden/*.snap",
     "fixtures/**/*.truth.json",
+    # Engine output with JSON-escaped non-ASCII text, which the checker splits into fragments.
+    "fixtures/docling/*.docling.json",
     "fuzz/seeds/**",
 ]

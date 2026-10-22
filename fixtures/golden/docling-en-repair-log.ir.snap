@@ -1,0 +1,467 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "document": {
+    "assets": {},
+    "body": [
+      {
+        "body": [
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Desk lamp",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Loose switch",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "15",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "yes",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Toaster",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Broken lever",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "40",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "yes",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Radio",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "No sound",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "55",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "no",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Bicycle light",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Corroded battery contacts",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "10",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "yes",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ]
+        ],
+        "caption": null,
+        "columns": [
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          }
+        ],
+        "head": [
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Item",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Fault",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Minutes",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Fixed",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ]
+        ],
+        "type": "table"
+      },
+      {
+        "body": [
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Mai",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Sáng thứ bảy",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Hùng",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Chiều chủ nhật",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ]
+        ],
+        "caption": null,
+        "columns": [
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          }
+        ],
+        "head": [
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Tên",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Ca trực",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ]
+        ],
+        "type": "table"
+      }
+    ],
+    "layout": null,
+    "meta": {
+      "authors": [],
+      "date": null,
+      "keywords": [],
+      "language": null,
+      "source_format": "xlsx",
+      "subject": null,
+      "title": null
+    },
+    "provenance": null,
+    "version": "ariad-ir/0"
+  },
+  "warnings": []
+}

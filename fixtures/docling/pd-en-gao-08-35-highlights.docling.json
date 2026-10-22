@@ -1,0 +1,569 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.10.0",
+  "name": "pd-en-gao-08-35-highlights",
+  "origin": {
+    "mimetype": "application/pdf",
+    "binary_hash": 14674737971105188241,
+    "filename": "pd-en-gao-08-35-highlights.pdf"
+  },
+  "furniture": {
+    "self_ref": "#/furniture",
+    "children": [],
+    "content_layer": "furniture",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "body": {
+    "self_ref": "#/body",
+    "children": [
+      {
+        "$ref": "#/pictures/0"
+      },
+      {
+        "$ref": "#/texts/3"
+      },
+      {
+        "$ref": "#/texts/4"
+      },
+      {
+        "$ref": "#/texts/5"
+      },
+      {
+        "$ref": "#/texts/6"
+      },
+      {
+        "$ref": "#/texts/7"
+      },
+      {
+        "$ref": "#/texts/8"
+      },
+      {
+        "$ref": "#/texts/9"
+      },
+      {
+        "$ref": "#/texts/10"
+      },
+      {
+        "$ref": "#/texts/11"
+      },
+      {
+        "$ref": "#/texts/12"
+      },
+      {
+        "$ref": "#/texts/13"
+      },
+      {
+        "$ref": "#/texts/14"
+      },
+      {
+        "$ref": "#/texts/15"
+      }
+    ],
+    "content_layer": "body",
+    "name": "_root_",
+    "label": "unspecified"
+  },
+  "groups": [],
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "parent": {
+        "$ref": "#/pictures/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 43.29517938715529,
+            "t": 717.636249553219,
+            "r": 194.04012531745238,
+            "b": 685.3357811714794,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            10
+          ]
+        }
+      ],
+      "orig": "Highlights",
+      "text": "Highlights"
+    },
+    {
+      "self_ref": "#/texts/1",
+      "parent": {
+        "$ref": "#/pictures/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 94.35211015785656,
+            "t": 723.0142165453716,
+            "r": 190.7550531129088,
+            "b": 717.4757843190705,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            36
+          ]
+        }
+      ],
+      "orig": "Accountability Integrity Reliability",
+      "text": "Accountability Integrity Reliability"
+    },
+    {
+      "self_ref": "#/texts/2",
+      "parent": {
+        "$ref": "#/pictures/0"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 45.35919680894196,
+            "t": 678.9890834661333,
+            "r": 173.40011637629132,
+            "b": 662.6675290075284,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            61
+          ]
+        }
+      ],
+      "orig": "Highlights of GAO-08-35, a report to congressional committees",
+      "text": "Highlights of GAO-08-35, a report to congressional committees"
+    },
+    {
+      "self_ref": "#/texts/3",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 43.9964890532616,
+            "t": 613.3811115891137,
+            "r": 185.2378279082282,
+            "b": 602.2666961306895,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            22
+          ]
+        }
+      ],
+      "orig": "Why GAO Did This Study",
+      "text": "Why GAO Did This Study",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/4",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 45.35995680821829,
+            "t": 595.6731627996096,
+            "r": 201.56510159057322,
+            "b": 388.9568996349758,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            579
+          ]
+        }
+      ],
+      "orig": "In general, a fusion center is a collaborative effort to detect, prevent, investigate, and respond to criminal and terrorist activity. Recognizing that fusion centers are a mechanism for information sharing, the federal governmentincluding the Department of Homeland Security (DHS), the Department of Justice (DOJ), and the Program Manager for the Information Sharing Environment (PM-ISE), which has primary responsibility for governmentwide information sharing and is located in the Office of the Director of National Intelligence-is taking steps to partner with fusion centers.",
+      "text": "In general, a fusion center is a collaborative effort to detect, prevent, investigate, and respond to criminal and terrorist activity. Recognizing that fusion centers are a mechanism for information sharing, the federal governmentincluding the Department of Homeland Security (DHS), the Department of Justice (DOJ), and the Program Manager for the Information Sharing Environment (PM-ISE), which has primary responsibility for governmentwide information sharing and is located in the Office of the Director of National Intelligence-is taking steps to partner with fusion centers."
+    },
+    {
+      "self_ref": "#/texts/5",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 45.35995680821829,
+            "t": 375.6543423016799,
+            "r": 199.78066476871518,
+            "b": 201.9378977145965,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            509
+          ]
+        }
+      ],
+      "orig": "In response to your request, GAO examined (1) the status and characteristics of fusion centers and (2) to what extent federal efforts help alleviate challenges the centers identified. GAO reviewed center-related documents and conducted interviews with officials from DHS, DOJ, and the PM-ISE, and conducted semistructured interviews with 58 state and local fusion centers. The results are not generalizable to the universe of fusion centers. Data are not available on the total number of local fusion centers.",
+      "text": "In response to your request, GAO examined (1) the status and characteristics of fusion centers and (2) to what extent federal efforts help alleviate challenges the centers identified. GAO reviewed center-related documents and conducted interviews with officials from DHS, DOJ, and the PM-ISE, and conducted semistructured interviews with 58 state and local fusion centers. The results are not generalizable to the universe of fusion centers. Data are not available on the total number of local fusion centers."
+    },
+    {
+      "self_ref": "#/texts/6",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 46.067456134536954,
+            "t": 190.2706188241874,
+            "r": 187.907904075966,
+            "b": 179.17062939360494,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            19
+          ]
+        }
+      ],
+      "orig": "What GAO Recommends",
+      "text": "What GAO Recommends",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/7",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 45.360276807913586,
+            "t": 168.65401940752804,
+            "r": 200.03267227395344,
+            "b": 83.01724095092675,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            260
+          ]
+        }
+      ],
+      "orig": "GAO is recommending that the federal government determine and articulate its long-term fusion center role and whether it expects to provide resources to help ensure their sustainability. DHS and PMISE reviewed a report draft and agreed with our recommendation.",
+      "text": "GAO is recommending that the federal government determine and articulate its long-term fusion center role and whether it expects to provide resources to help ensure their sustainability. DHS and PMISE reviewed a report draft and agreed with our recommendation."
+    },
+    {
+      "self_ref": "#/texts/8",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 45.35919680894196,
+            "t": 70.52957284169281,
+            "r": 205.29663459640497,
+            "b": 36.208215522512546,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            166
+          ]
+        }
+      ],
+      "orig": "To view the full product, including the scope and methodology, click on GAO-08-35. For more information, contact Eileen Larence at (202) 512-8777 or larencee@gao.gov.",
+      "text": "To view the full product, including the scope and methodology, click on GAO-08-35. For more information, contact Eileen Larence at (202) 512-8777 or larencee@gao.gov."
+    },
+    {
+      "self_ref": "#/texts/9",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 228.18051272636066,
+            "t": 759.8685764526251,
+            "r": 278.8347865413267,
+            "b": 752.4870834812876,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            12
+          ]
+        }
+      ],
+      "orig": "October 2007",
+      "text": "October 2007"
+    },
+    {
+      "self_ref": "#/texts/10",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 226.79978404109147,
+            "t": 739.6616256936973,
+            "r": 402.8384429169608,
+            "b": 724.8431398038696,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            17
+          ]
+        }
+      ],
+      "orig": "HOMELAND SECURITY",
+      "text": "HOMELAND SECURITY",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/11",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 226.79978404109147,
+            "t": 711.3769326264012,
+            "r": 528.5955060947997,
+            "b": 670.4854715632782,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            114
+          ]
+        }
+      ],
+      "orig": "Federal Efforts Are Helping to Alleviate Some Challenges Encountered by State and Local Information Fusion Centers",
+      "text": "Federal Efforts Are Helping to Alleviate Some Challenges Encountered by State and Local Information Fusion Centers",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/12",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "section_header",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 225.61719,
+            "t": 613.3814036199999,
+            "r": 325.12572629999994,
+            "b": 602.26698287,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            14
+          ]
+        }
+      ],
+      "orig": "What GAO Found",
+      "text": "What GAO Found",
+      "level": 1
+    },
+    {
+      "self_ref": "#/texts/13",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 226.79882404200555,
+            "t": 595.0434433992287,
+            "r": 586.5861814522392,
+            "b": 453.9037977924952,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            878
+          ]
+        }
+      ],
+      "orig": "Most states and many local governments have established fusion centers to address gaps in information sharing. Fusion centers across the country vary in their stages of development-from operational to early in the planning stages. Officials in 43 of the centers GAO contacted described their centers as operational, and 34 of these centers had opened since January 2004. Law enforcement entities, such as state police or state bureaus of investigation, are the lead or managing agencies in the majority of the operational centers GAO contacted; however, the centers varied in their staff sizes and partnerships with other agencies. Nearly all of the operational fusion centers GAO contacted had federal personnel assigned to them. For example, DHS has assigned personnel to 17, and the FBI has assigned personnel to about three quarters of the operational centers GAO contacted.",
+      "text": "Most states and many local governments have established fusion centers to address gaps in information sharing. Fusion centers across the country vary in their stages of development-from operational to early in the planning stages. Officials in 43 of the centers GAO contacted described their centers as operational, and 34 of these centers had opened since January 2004. Law enforcement entities, such as state police or state bureaus of investigation, are the lead or managing agencies in the majority of the operational centers GAO contacted; however, the centers varied in their staff sizes and partnerships with other agencies. Nearly all of the operational fusion centers GAO contacted had federal personnel assigned to them. For example, DHS has assigned personnel to 17, and the FBI has assigned personnel to about three quarters of the operational centers GAO contacted."
+    },
+    {
+      "self_ref": "#/texts/14",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "body",
+      "label": "text",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 226.79882404200555,
+            "t": 439.0379419477733,
+            "r": 585.5787022415618,
+            "b": 69.47016385046277,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            2335
+          ]
+        }
+      ],
+      "orig": "DHS and DOJ have several efforts under way that begin to address challenges fusion center officials identified. DHS and DOJ have provided many fusion centers access to their information systems, but fusion center officials cited challenges accessing and managing multiple information systems. Both DHS and the FBI have provided security clearances for state and local personnel and set timeliness goals. However, officials cited challenges obtaining and using security clearances. Officials in 43 of the 58 fusion centers contacted reported facing challenges related to obtaining personnel, and officials in 54 fusion centers reported challenges with funding, some of which affected these centers' sustainability. The officials said that these issues made it difficult to plan for the future and created concerns about the fusion centers' ability to sustain their capability for the long-term. To support fusion centers, both DHS and the FBI have assigned personnel to the centers. To help address funding issues, DHS has made several changes to address restrictions on the use of federal grants funds. These individual agency efforts help address some of the challenges with personnel and funding. However, the federal government has not clearly articulated the long-term role it expects to play in sustaining fusion centers. It is critical for center management to know whether to expect continued federal resources, such as personnel and grant funding, since the federal government, through the information sharing environment, expects to rely on a nationwide network of centers to facilitate information sharing with state and local governments. Finally, DHS, DOJ, and the PM-ISE have taken steps to develop guidance and provide technical assistance to fusion centers, for instance, by issuing guidelines for establishing and operating centers. However, officials at 31 of the 58 centers said they had challenges training their personnel, and officials at 11 centers expressed a need for the federal government to establish standards for training fusion center analysts to help ensure that analysts have similar skills. DHS and DOJ have initiated a technical assistance program for fusion centers. They have also developed a set of baseline capabilities, but the document was still in draft as of September and had not been issued.",
+      "text": "DHS and DOJ have several efforts under way that begin to address challenges fusion center officials identified. DHS and DOJ have provided many fusion centers access to their information systems, but fusion center officials cited challenges accessing and managing multiple information systems. Both DHS and the FBI have provided security clearances for state and local personnel and set timeliness goals. However, officials cited challenges obtaining and using security clearances. Officials in 43 of the 58 fusion centers contacted reported facing challenges related to obtaining personnel, and officials in 54 fusion centers reported challenges with funding, some of which affected these centers' sustainability. The officials said that these issues made it difficult to plan for the future and created concerns about the fusion centers' ability to sustain their capability for the long-term. To support fusion centers, both DHS and the FBI have assigned personnel to the centers. To help address funding issues, DHS has made several changes to address restrictions on the use of federal grants funds. These individual agency efforts help address some of the challenges with personnel and funding. However, the federal government has not clearly articulated the long-term role it expects to play in sustaining fusion centers. It is critical for center management to know whether to expect continued federal resources, such as personnel and grant funding, since the federal government, through the information sharing environment, expects to rely on a nationwide network of centers to facilitate information sharing with state and local governments. Finally, DHS, DOJ, and the PM-ISE have taken steps to develop guidance and provide technical assistance to fusion centers, for instance, by issuing guidelines for establishing and operating centers. However, officials at 31 of the 58 centers said they had challenges training their personnel, and officials at 11 centers expressed a need for the federal government to establish standards for training fusion center analysts to help ensure that analysts have similar skills. DHS and DOJ have initiated a technical assistance program for fusion centers. They have also developed a set of baseline capabilities, but the document was still in draft as of September and had not been issued."
+    },
+    {
+      "self_ref": "#/texts/15",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [],
+      "content_layer": "furniture",
+      "label": "page_footer",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 405.7652,
+            "t": 31.818974379999986,
+            "r": 588.2955092,
+            "b": 24.40934513000002,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            46
+          ]
+        }
+      ],
+      "orig": "United States Government Accountability Office",
+      "text": "United States Government Accountability Office"
+    }
+  ],
+  "pictures": [
+    {
+      "self_ref": "#/pictures/0",
+      "parent": {
+        "$ref": "#/body"
+      },
+      "children": [
+        {
+          "$ref": "#/texts/0"
+        },
+        {
+          "$ref": "#/texts/1"
+        },
+        {
+          "$ref": "#/texts/2"
+        }
+      ],
+      "content_layer": "body",
+      "label": "picture",
+      "prov": [
+        {
+          "page_no": 1,
+          "bbox": {
+            "l": 35.2562370300293,
+            "t": 762.5876178741455,
+            "r": 209.81954956054688,
+            "b": 659.7695465087891,
+            "coord_origin": "BOTTOMLEFT"
+          },
+          "charspan": [
+            0,
+            0
+          ]
+        }
+      ],
+      "captions": [],
+      "references": [],
+      "footnotes": [],
+      "image": {
+        "mimetype": "image/png",
+        "dpi": 144,
+        "size": {
+          "width": 349.0,
+          "height": 205.0
+        },
+        "uri": "data:image/png;base64,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"
+      },
+      "annotations": []
+    }
+  ],
+  "tables": [],
+  "key_value_items": [],
+  "form_items": [],
+  "pages": {
+    "1": {
+      "size": {
+        "width": 612.0,
+        "height": 792.0
+      },
+      "page_no": 1
+    }
+  }
+}

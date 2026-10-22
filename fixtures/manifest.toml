@@ -1220,3 +1220,109 @@ sha256 = "105b25a7dac7ad192ff301efaccd98622a85fc0d414e3677718a06ade92a0620"
 tags = ["tables", "mixed-script"]
 phase = "1b"
 routes = ["xlsx->md"]
+
+[[fixture]]
+id = "docling-en-map-room"
+path = "fixtures/docling/en-map-room.docling.json"
+format = "docling+json"
+media_type = "application/json"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "engines/docling/tests/regenerate_fixtures.py"
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine from fixtures/pdf/en-map-room.pdf, which is original text authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "9e3936eb3386b3c576ac7ac628fd37d3eb12076a404f16ec0b0f015451fead1d"
+pages = 1
+tags = ["tables", "digital-pdf"]
+phase = "1b"
+routes = ["docling->ir"]
+
+[[fixture]]
+id = "docling-pd-en-gao-08-35-highlights"
+path = "fixtures/docling/pd-en-gao-08-35-highlights.docling.json"
+format = "docling+json"
+media_type = "application/json"
+languages = ["en"]
+title = "GAO-08-35 Homeland Security report highlights"
+origin = "generated"
+generated_by = "engines/docling/tests/regenerate_fixtures.py"
+license = "CC-PDM-1.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine from fixtures/pdf/pd-en-gao-08-35-highlights.pdf, a U.S. Government work not subject to copyright under 17 U.S.C. §105."
+attribution = "U.S. Government Accountability Office"
+sha256 = "b7355d24a0a3fd4c8b04c0c796e342ba2bf1b5ed4f01e58ff81ffa9f549a9734"
+pages = 1
+tags = ["headings", "images", "digital-pdf"]
+phase = "1b"
+routes = ["docling->ir"]
+
+[[fixture]]
+id = "docling-vi-garden-300dpi"
+path = "fixtures/docling/vi-garden-300dpi.docling.json"
+format = "docling+json"
+media_type = "application/json"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "engines/docling/tests/regenerate_fixtures.py"
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine with Tesseract OCR from fixtures/scan/vi-garden-300dpi.png, which renders original text authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "ca9daaab64d2da26f271ec812dc98e325f495fb1d03bee4651f258a44f988fb2"
+pages = 1
+tags = ["scan"]
+phase = "1b"
+routes = ["docling->ir"]
+
+[[fixture]]
+id = "docling-vi-route-table"
+path = "fixtures/docling/vi-route-table.docling.json"
+format = "docling+json"
+media_type = "application/json"
+languages = ["vi"]
+title = "Bảng hành trình ven sông"
+origin = "generated"
+generated_by = "engines/docling/tests/regenerate_fixtures.py"
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine from fixtures/docx/vi-route-table.docx, which is original text authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2549a64310416c1be84f4c9327012c49ad722c2201dd0a8280e62e74d2cd7eb9"
+tags = ["tables", "headings"]
+phase = "1b"
+routes = ["docling->ir"]
+
+[[fixture]]
+id = "docling-vi-garden-slides"
+path = "fixtures/docling/vi-garden-slides.docling.json"
+format = "docling+json"
+media_type = "application/json"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "engines/docling/tests/regenerate_fixtures.py"
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine from fixtures/pptx/vi-garden-slides.pptx, which is original text authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "73f00026ccfb7fb687329fd4522227037ada80fae951fde6d990c5ada3e03db1"
+pages = 4
+tags = ["headings", "tables"]
+phase = "1b"
+routes = ["docling->ir"]
+
+[[fixture]]
+id = "docling-en-repair-log"
+path = "fixtures/docling/en-repair-log.docling.json"
+format = "docling+json"
+media_type = "application/json"
+languages = ["en", "vi"]
+title = "Repair café log"
+origin = "generated"
+generated_by = "engines/docling/tests/regenerate_fixtures.py"
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine from fixtures/xlsx/en-repair-log.xlsx, which is original text authored for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "08f334fcf188f03bbab899a68e299e05ed59025e3c1c5f1d26622273c4750735"
+tags = ["tables", "mixed-script"]
+phase = "1b"
+routes = ["docling->ir"]
