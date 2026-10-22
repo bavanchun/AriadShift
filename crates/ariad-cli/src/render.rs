@@ -235,6 +235,37 @@ pub fn render_engines_human(rows: &[ariad_host::commands::engines::EngineRow]) -
             row.id, row.version, row.license, status_str, routes_str
         )?;
     }
+    writeln!(out)?;
+    let packs: Vec<&ariad_host::commands::engines::EnginePack> =
+        rows.iter().filter_map(|row| row.pack.as_ref()).collect();
+    if packs.is_empty() {
+        writeln!(out, "no engine packs installed")?;
+        return out.flush();
+    }
+    writeln!(
+        out,
+        "{:<12} {:<9} {:<26} STATE",
+        "PACK", "VERSION", "TARGET"
+    )?;
+    for pack in packs {
+        let state = if pack.source == "override" {
+            "development override"
+        } else {
+            "active"
+        };
+        writeln!(
+            out,
+            "{:<12} {:<9} {:<26} {state}",
+            pack.name, pack.version, pack.target
+        )?;
+        for version in pack.versions.iter().filter(|v| **v != pack.version) {
+            writeln!(
+                out,
+                "{:<12} {:<9} {:<26} installed",
+                pack.name, version, "-"
+            )?;
+        }
+    }
     out.flush()
 }
 
@@ -257,9 +288,13 @@ pub fn render_doctor_human(report: &ariad_host::commands::doctor::DoctorReport) 
     let mut out = io::stdout().lock();
     for check in &report.checks {
         let icon = if check.ok { check_mark() } else { fail_icon() };
-        if check.id == "pandoc_version"
-            && check.ok
-            && let Some(ref path) = report.tool_path
+        let path = match check.id.as_str() {
+            "pandoc_version" => report.tool_path.as_ref(),
+            "data_dir" => report.data_dir.as_ref(),
+            _ => None,
+        };
+        if check.ok
+            && let Some(path) = path
         {
             writeln!(
                 out,

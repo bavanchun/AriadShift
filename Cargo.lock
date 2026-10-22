@@ -129,6 +129,7 @@ dependencies = [
  "hex",
  "insta",
  "jsonschema",
+ "minisign",
  "quick-xml",
  "rmcp",
  "schemars",
