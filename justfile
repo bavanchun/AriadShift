@@ -167,7 +167,7 @@ fuzz target="" seconds="60":
     if [ -n "{{target}}" ]; then
         targets=("{{target}}")
     else
-        targets=("markdown_reader" "front_matter" "html_reader" "pandoc_ast_to_ir" "ir_json" "limits_validate")
+        targets=("markdown_reader" "front_matter" "html_reader" "pandoc_ast_to_ir" "docling_to_ir" "ir_json" "limits_validate")
     fi
     for t in "${targets[@]}"; do
         echo "=== Running fuzz target: $t ({{seconds}}s) ==="

@@ -66,3 +66,10 @@ path = "fuzz_targets/limits_validate.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "docling_to_ir"
+path = "fuzz_targets/docling_to_ir.rs"
+test = false
+doc = false
+bench = false
