@@ -155,9 +155,10 @@ pub fn reachable_targets(caps: &Capabilities, from: Format) -> Vec<Format> {
 /// Inspects a document held in memory.
 ///
 /// `runtime_caps` are the capabilities the caller can execute, `all_caps` every known
-/// capability. `name` is the file name; only its extension is used. Inputs larger than
-/// [`ANALYSIS_MAX_BYTES`] are classified but not read, and carry a `document_too_large`
-/// notice; a caller may pass only a prefix of such a file together with `total_bytes`.
+/// capability. `name` is the file name; only its extension is used. A caller may pass only
+/// a prefix of the file together with its `total_bytes`; a prefix, or an input larger than
+/// [`ANALYSIS_MAX_BYTES`], is classified but not read and carries a `document_too_large`
+/// notice. This lets a memory-constrained caller choose a lower analysis threshold.
 pub fn inspect_bytes(
     bytes: &[u8],
     name: &str,
@@ -203,7 +204,8 @@ pub fn inspect_bytes(
         ));
         return Ok(inspection);
     }
-    if size > ANALYSIS_MAX_BYTES || bytes.len() as u64 > ANALYSIS_MAX_BYTES {
+    let complete = bytes.len() as u64 == size;
+    if !complete || size > ANALYSIS_MAX_BYTES {
         inspection.warnings.push(Notice::new(
             "document_too_large",
             "The document is too large to analyse.",
@@ -313,6 +315,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(inspection.bytes, ANALYSIS_MAX_BYTES + 1);
+        assert!(inspection.counts.is_none());
+        assert_eq!(inspection.warnings[0].code, "document_too_large");
+    }
+
+    #[test]
+    fn classifies_a_prefix_without_reading_it() {
+        let inspection = inspect_bytes(
+            b"# Title\n\nThe rest is not here",
+            "long.md",
+            Some(4 * 1024 * 1024),
+            &browser_caps(),
+            embedded(),
+            &Limits::local(),
+        )
+        .unwrap();
+        assert_eq!(inspection.format, Format::Markdown);
         assert!(inspection.counts.is_none());
         assert_eq!(inspection.warnings[0].code, "document_too_large");
     }
