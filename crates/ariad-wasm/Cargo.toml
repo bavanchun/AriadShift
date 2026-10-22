@@ -1,0 +1,25 @@
+[package]
+name = "ariad-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WebAssembly bindings that run AriadShift's in-process conversions in the browser"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ariad-core.workspace = true
+js-sys.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true
