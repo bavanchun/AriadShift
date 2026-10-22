@@ -31,6 +31,8 @@ pub struct DoclingDocument {
 #[serde(default)]
 pub struct Origin {
     pub mimetype: String,
+    /// The source file name; only its extension is used.
+    pub filename: String,
 }
 
 /// A JSON pointer to another item, such as `#/texts/3`.

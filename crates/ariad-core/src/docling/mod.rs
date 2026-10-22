@@ -3,8 +3,9 @@
 //! The Docling engine writes DoclingDocument JSON; this module turns it into IR inside the
 //! host, so IR normalization and the link policy live in one fuzzed Rust place. The reader is
 //! bounded like the IR JSON reader: a byte cap, a JSON depth pre-scan, a nesting budget for the
-//! item tree and a block budget. Each item is emitted at most once, which also breaks `$ref`
-//! cycles.
+//! item tree, a block budget and a budget for the text it emits. Each item is emitted at most
+//! once, which also breaks `$ref` cycles; captions and footnotes may name an item again, so the
+//! text budget stops a few large items from being copied thousands of times.
 
 pub mod model;
 
@@ -35,6 +36,12 @@ use model::{
 /// The DoclingDocument schema major version this mapper understands.
 pub const SUPPORTED_MAJOR_VERSION: &str = "1";
 
+/// Docling reports presentation geometry in English Metric Units.
+const EMU_PER_POINT: f64 = 12_700.0;
+
+/// No page coordinate in points comes near this; larger values are corrupt.
+const MAX_POINTS: f64 = 1.0e12;
+
 /// Errors that stop a DoclingDocument from being mapped.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ReadError {
@@ -54,6 +61,8 @@ pub enum ReadError {
     NestingTooDeep { limit: u16 },
     #[error("DoclingDocument contains more than the configured {limit} block limit")]
     TooManyBlocks { limit: u32 },
+    #[error("DoclingDocument text expands beyond the configured limit of {limit} bytes")]
+    ContentTooLarge { limit: u64 },
 }
 
 /// Reads DoclingDocument JSON bytes and maps them to IR.
@@ -95,13 +104,13 @@ pub fn to_ir(document: &DoclingDocument, limits: &Limits) -> Result<ReadOutput, 
 
     let mut ir = Document::default();
     ir.meta.title = mapper.title.take();
-    ir.meta.source_format = document
-        .origin
-        .as_ref()
-        .and_then(|origin| source_format(&origin.mimetype));
+    ir.meta.source_format = document.origin.as_ref().and_then(source_format);
 
     let mut layout = LayoutIndex {
-        pages: page_geometry(document),
+        pages: mapper
+            .units_per_point
+            .map(|units| page_geometry(document, units))
+            .unwrap_or_default(),
         blocks: BTreeMap::new(),
     };
     ir.body = place(body, "body", &mut layout.blocks);
@@ -216,9 +225,13 @@ fn parse_ref(target: &str) -> NodeRef {
 struct Mapper<'a> {
     document: &'a DoclingDocument,
     limits: &'a Limits,
+    /// Divides Docling coordinates into points; `None` when they are not page geometry.
+    units_per_point: Option<f64>,
     visited: HashSet<NodeRef>,
     consumed: HashSet<NodeRef>,
     block_count: u32,
+    /// Bytes of text emitted so far.
+    emitted_bytes: u64,
     title: Option<String>,
     furniture: Vec<Mapped>,
     assets: crate::ir::AssetStore,
@@ -241,12 +254,20 @@ impl<'a> Mapper<'a> {
             )
             .map(|reference| parse_ref(&reference.target))
             .collect();
+        // Presentations use English Metric Units; spreadsheets count cells, not points.
+        let units_per_point = match document.origin.as_ref().and_then(source_format) {
+            Some(Format::Pptx) => Some(EMU_PER_POINT),
+            Some(Format::Xlsx) => None,
+            _ => Some(1.0),
+        };
         Self {
             document,
             limits,
+            units_per_point,
             visited: HashSet::new(),
             consumed,
             block_count: 0,
+            emitted_bytes: 0,
             title: None,
             furniture: Vec::new(),
             assets: crate::ir::AssetStore::new(),
@@ -267,6 +288,18 @@ impl<'a> Mapper<'a> {
         if self.block_count > self.limits.max_blocks {
             return Err(ReadError::TooManyBlocks {
                 limit: self.limits.max_blocks,
+            });
+        }
+        Ok(())
+    }
+
+    /// Counts text that is about to be emitted. Well-formed documents emit each text once, so
+    /// the total stays within the input size; repeated references cannot exceed it either.
+    fn charge(&mut self, bytes: usize) -> Result<(), ReadError> {
+        self.emitted_bytes = self.emitted_bytes.saturating_add(bytes as u64);
+        if self.emitted_bytes > self.limits.max_ir_json_bytes {
+            return Err(ReadError::ContentTooLarge {
+                limit: self.limits.max_ir_json_bytes,
             });
         }
         Ok(())
@@ -619,17 +652,17 @@ impl<'a> Mapper<'a> {
         let position = self.position(&text.prov);
         let block = match text.label.as_str() {
             "title" => {
-                let content = self.inlines(text)?;
+                let content = self.heading_content(text, depth)?;
                 if content.is_empty() {
                     return Ok(None);
                 }
                 if self.title.is_none() {
-                    self.title = Some(nfc(text.text.trim()));
+                    self.title = Some(nfc(plain_text(&content).trim()));
                 }
                 Block::Heading { level: 1, content }
             }
             "section_header" => {
-                let content = self.inlines(text)?;
+                let content = self.heading_content(text, depth)?;
                 if content.is_empty() {
                     return Ok(None);
                 }
@@ -699,12 +732,33 @@ impl<'a> Mapper<'a> {
         Ok(Some(Mapped::new(block, position)))
     }
 
+    /// The content of a title or section header: its own text or, when Docling kept the text in
+    /// an inline group child to describe mixed formatting, that group's content.
+    fn heading_content(&mut self, text: &TextItem, depth: u16) -> Result<Vec<Inline>, ReadError> {
+        let content = self.inlines(text)?;
+        if !content.is_empty() {
+            return Ok(content);
+        }
+        for child in &text.children {
+            let node = parse_ref(&child.target);
+            if let NodeRef::Group(index) = node
+                && let Some(group) = self.document.groups.get(index)
+                && group.label == "inline"
+                && self.claim(node)
+            {
+                return self.inline_group(group, depth);
+            }
+        }
+        Ok(Vec::new())
+    }
+
     /// Maps a text item's text, formatting and hyperlink to inline content.
     fn inlines(&mut self, text: &TextItem) -> Result<Vec<Inline>, ReadError> {
         let value = nfc(&text.text);
         if value.trim().is_empty() {
             return Ok(Vec::new());
         }
+        self.charge(value.len())?;
         let mut inline = Inline::Text { text: value };
         if let Some(formatting) = &text.formatting {
             if formatting.underline && !(formatting.bold || formatting.italic) {
@@ -819,12 +873,27 @@ impl<'a> Mapper<'a> {
             grid[row].push((cell.start_col_offset_idx, cell));
         }
 
+        // The head is the leading rows with column-header cells, plus the rows that a head
+        // cell spans, so a rowspan never crosses from the head into the body.
+        let mut head_rows = grid
+            .iter()
+            .take_while(|row| row.iter().any(|(_, cell)| cell.column_header))
+            .count();
+        let mut row = 0;
+        while row < head_rows {
+            for (_, cell) in &grid[row] {
+                let end = row + span(&rows, cell.start_row_offset_idx, cell.row_span) as usize;
+                head_rows = head_rows.max(end.min(grid.len()));
+            }
+            row += 1;
+        }
+
         let mut head = Vec::new();
         let mut body = Vec::new();
         let mut positions = Vec::new();
-        for mut row_cells in grid {
+        for (row_index, mut row_cells) in grid.into_iter().enumerate() {
             row_cells.sort_by_key(|(column, _)| *column);
-            let is_head = body.is_empty() && row_cells.iter().any(|(_, cell)| cell.column_header);
+            let is_head = row_index < head_rows;
             let section = if is_head { "head" } else { "body" };
             let target_row = if is_head { head.len() } else { body.len() };
             let mut ir_cells = Vec::with_capacity(row_cells.len());
@@ -884,6 +953,7 @@ impl<'a> Mapper<'a> {
         if value.trim().is_empty() {
             return Ok(Vec::new());
         }
+        self.charge(value.len())?;
         self.count_block()?;
         Ok(vec![Mapped::new(
             Block::Paragraph {
@@ -893,39 +963,43 @@ impl<'a> Mapper<'a> {
         )])
     }
 
-    fn map_picture(&mut self, picture: &PictureItem) -> Result<Option<Mapped>, ReadError> {
+    fn map_picture(&mut self, picture: &PictureItem) -> Result<Vec<Mapped>, ReadError> {
         let caption = self.text_of(&picture.captions)?;
+        let footnotes = self.text_of(&picture.footnotes)?;
         let position = self.position(&picture.prov);
         let asset = picture
             .image
             .as_ref()
             .and_then(|image| self.embedded_image(&image.uri));
+        let mut blocks = Vec::new();
         match asset {
             Some(id) => {
                 self.count_block()?;
-                Ok(Some(Mapped::new(
+                blocks.push(Mapped::new(
                     Block::Figure {
                         asset: AssetRef::Asset { id },
                         caption,
                     },
                     position,
-                )))
+                ));
             }
             None => {
                 self.warn(
                     WarningCode::ImageNotEmbedded,
                     "a picture without embedded image data was omitted",
                 );
-                if caption.is_empty() {
-                    return Ok(None);
+                if !caption.is_empty() {
+                    self.count_block()?;
+                    blocks.push(Mapped::new(Block::Paragraph { content: caption }, position));
                 }
-                self.count_block()?;
-                Ok(Some(Mapped::new(
-                    Block::Paragraph { content: caption },
-                    position,
-                )))
             }
         }
+        // The IR figure has no footnotes, so they follow it as a paragraph.
+        if !footnotes.is_empty() {
+            self.count_block()?;
+            blocks.push(Mapped::new(Block::Paragraph { content: footnotes }, None));
+        }
+        Ok(blocks)
     }
 
     /// Decodes a base64 `data:` URI into the asset store and returns its id.
@@ -974,6 +1048,7 @@ impl<'a> Mapper<'a> {
 
     /// Converts the first provenance entry to a top-left page position in points.
     fn position(&self, provenance: &[ProvenanceItem]) -> Option<BlockPosition> {
+        let scale = self.units_per_point?;
         let first = provenance.first()?;
         let page_no = u32::try_from(first.page_no).ok().filter(|&page| page > 0)?;
         let bbox = first.bbox.as_ref()?;
@@ -997,10 +1072,10 @@ impl<'a> Mapper<'a> {
         Some(BlockPosition {
             page_no,
             bbox: BoundingBox {
-                left: bbox.l.min(bbox.r),
-                top: top.min(bottom),
-                right: bbox.l.max(bbox.r),
-                bottom: top.max(bottom),
+                left: points(bbox.l.min(bbox.r) / scale)?,
+                top: points(top.min(bottom) / scale)?,
+                right: points(bbox.l.max(bbox.r) / scale)?,
+                bottom: points(top.max(bottom) / scale)?,
             },
         })
     }
@@ -1026,6 +1101,32 @@ fn merge_layer(parent: Layer, item: Layer) -> Layer {
     } else {
         item
     }
+}
+
+/// Rounds to a thousandth of a point. Short decimals also read back from JSON exactly, which
+/// long ones do not with serde_json's default float parser. Values no page can have, including
+/// ones that overflow while converting, give `None`.
+fn points(value: f64) -> Option<f64> {
+    (value.is_finite() && value.abs() < MAX_POINTS).then(|| (value * 1000.0).round() / 1000.0)
+}
+
+/// Plain text of inline content, without formatting.
+fn plain_text(content: &[Inline]) -> String {
+    let mut text = String::new();
+    for inline in content {
+        match inline {
+            Inline::Text { text: value } | Inline::Code { text: value } => text.push_str(value),
+            Inline::Emph { content }
+            | Inline::Strong { content }
+            | Inline::Strikeout { content }
+            | Inline::Superscript { content }
+            | Inline::Subscript { content }
+            | Inline::Link { content, .. } => text.push_str(&plain_text(content)),
+            Inline::SoftBreak {} | Inline::LineBreak {} => text.push(' '),
+            _ => {}
+        }
+    }
+    text
 }
 
 /// Counts how many compressed rows or columns a span covers, at least one.
@@ -1058,24 +1159,35 @@ fn code_language(language: Option<&str>) -> Option<String> {
     Some(language.to_ascii_lowercase())
 }
 
-fn source_format(mimetype: &str) -> Option<Format> {
-    [
-        Format::Pdf,
-        Format::Docx,
-        Format::Pptx,
-        Format::Xlsx,
-        Format::Png,
-        Format::Jpeg,
-        Format::Tiff,
-        Format::Webp,
-        Format::Html,
-        Format::Markdown,
-    ]
-    .into_iter()
-    .find(|format| format.media_type().eq_ignore_ascii_case(mimetype))
+/// Formats Docling reads. Docling reports images as PDF and some presentations as templates,
+/// so the file extension decides first and the media type second.
+const SOURCE_FORMATS: [Format; 10] = [
+    Format::Pdf,
+    Format::Docx,
+    Format::Pptx,
+    Format::Xlsx,
+    Format::Png,
+    Format::Jpeg,
+    Format::Tiff,
+    Format::Webp,
+    Format::Html,
+    Format::Markdown,
+];
+
+fn source_format(origin: &model::Origin) -> Option<Format> {
+    origin
+        .filename
+        .rsplit_once('.')
+        .and_then(|(_, extension)| Format::from_extension(extension))
+        .filter(|format| SOURCE_FORMATS.contains(format))
+        .or_else(|| {
+            SOURCE_FORMATS
+                .into_iter()
+                .find(|format| format.media_type().eq_ignore_ascii_case(&origin.mimetype))
+        })
 }
 
-fn page_geometry(document: &DoclingDocument) -> Vec<PageGeometry> {
+fn page_geometry(document: &DoclingDocument, units_per_point: f64) -> Vec<PageGeometry> {
     let mut pages: Vec<PageGeometry> = document
         .pages
         .iter()
@@ -1085,15 +1197,14 @@ fn page_geometry(document: &DoclingDocument) -> Vec<PageGeometry> {
                 .filter(|&page| page > 0)
                 .or_else(|| key.parse().ok())?;
             let size = page.size;
-            (size.width.is_finite()
-                && size.height.is_finite()
-                && size.width > 0.0
-                && size.height > 0.0)
-                .then_some(PageGeometry {
-                    page_no,
-                    width: size.width,
-                    height: size.height,
-                })
+            if !(size.width > 0.0 && size.height > 0.0) {
+                return None;
+            }
+            Some(PageGeometry {
+                page_no,
+                width: points(size.width / units_per_point)?,
+                height: points(size.height / units_per_point)?,
+            })
         })
         .collect();
     pages.sort_by_key(|page| page.page_no);

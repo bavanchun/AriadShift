@@ -392,3 +392,178 @@ fn enforces_block_and_nesting_budgets() {
         ReadError::NestingTooDeep { limit: 64 }
     );
 }
+
+#[test]
+fn presentation_geometry_becomes_points_and_spreadsheets_have_no_layout() {
+    let mut title = text("title", "Slide");
+    title["prov"] = json!([{"page_no": 1, "bbox": {"l": 127000.0, "t": 254000.0, "r": 1270000.0, "b": 508000.0, "coord_origin": "TOPLEFT"}}]);
+    let mut slides = document(&["#/texts/0"], json!({"texts": [title.clone()]}));
+    // Docling labels some decks as templates; the file extension still says PPTX.
+    slides["origin"] = json!({"mimetype": "application/vnd.openxmlformats-officedocument.presentationml.template", "binary_hash": 1, "filename": "deck.pptx"});
+    slides["pages"] =
+        json!({"1": {"size": {"width": 9144000.0, "height": 6858000.0}, "page_no": 1}});
+    let ir = map(&slides).document;
+    assert_eq!(ir.meta.source_format, Some(Format::Pptx));
+    let layout = ir.layout.expect("slide layout");
+    assert_eq!(layout.pages[0].width, 720.0);
+    assert_eq!(layout.pages[0].height, 540.0);
+    let position = &layout.blocks["body/0"];
+    assert_eq!(position.bbox.left, 10.0);
+    assert_eq!(position.bbox.top, 20.0);
+    assert_eq!(position.bbox.right, 100.0);
+    assert_eq!(position.bbox.bottom, 40.0);
+
+    let mut sheet = document(&["#/texts/0"], json!({"texts": [title]}));
+    sheet["origin"] = json!({"mimetype": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "binary_hash": 1, "filename": "log.xlsx"});
+    let ir = map(&sheet).document;
+    assert_eq!(ir.meta.source_format, Some(Format::Xlsx));
+    assert!(ir.layout.is_none());
+
+    // Docling reports converted images as PDF.
+    let mut scan = document(&[], json!({}));
+    scan["origin"] =
+        json!({"mimetype": "application/pdf", "binary_hash": 1, "filename": "scan.png"});
+    assert_eq!(map(&scan).document.meta.source_format, Some(Format::Png));
+}
+
+#[test]
+fn layout_coordinates_are_rounded_to_a_thousandth_of_a_point() {
+    // Unit conversions produce long decimals, which a JSON reader without exact float parsing
+    // does not always read back to the same value.
+    let mut title = text("title", "Slide");
+    title["prov"] = json!([{"page_no": 1, "bbox": {"l": 127123.0, "t": 254321.0, "r": 1270001.0, "b": 508777.0, "coord_origin": "TOPLEFT"}}]);
+    let mut slides = document(&["#/texts/0"], json!({"texts": [title]}));
+    slides["origin"] = json!({"mimetype": "application/vnd.openxmlformats-officedocument.presentationml.presentation", "binary_hash": 1, "filename": "deck.pptx"});
+    slides["pages"] =
+        json!({"1": {"size": {"width": 9144001.0, "height": 6858003.0}, "page_no": 1}});
+    let layout = map(&slides).document.layout.expect("slide layout");
+    let rounded = |value: f64| (value * 1000.0).round() / 1000.0;
+    let page = &layout.pages[0];
+    assert_eq!(page.width, 720.0);
+    assert_eq!(page.height, 540.0);
+    let bbox = &layout.blocks["body/0"].bbox;
+    for value in [bbox.left, bbox.top, bbox.right, bbox.bottom] {
+        assert_eq!(value, rounded(value));
+    }
+    assert_eq!(bbox.left, 10.01);
+}
+
+#[test]
+fn captions_naming_one_large_text_cannot_multiply_it() {
+    let tables: Vec<Value> = (0..60)
+        .map(|index| {
+            json!({
+                "label": "table", "content_layer": "body", "captions": [{"$ref": "#/texts/0"}],
+                "data": {"num_rows": 1, "num_cols": 1, "table_cells": [
+                    {"row_span": 1, "col_span": 1, "start_row_offset_idx": 0, "end_row_offset_idx": 1,
+                     "start_col_offset_idx": 0, "end_col_offset_idx": 1, "text": format!("c{index}"),
+                     "column_header": false, "row_header": false, "row_section": false}
+                ]}
+            })
+        })
+        .collect();
+    let targets: Vec<String> = (0..60).map(|index| format!("#/tables/{index}")).collect();
+    let targets: Vec<&str> = targets.iter().map(String::as_str).collect();
+    let doc = document(
+        &targets,
+        json!({"texts": [text("caption", &"a".repeat(4000))], "tables": tables}),
+    );
+    let bytes = serde_json::to_vec(&doc).unwrap();
+    let limits = Limits {
+        max_ir_json_bytes: 65_536,
+        ..Limits::local()
+    };
+    assert!((bytes.len() as u64) < limits.max_ir_json_bytes);
+    assert_eq!(
+        read(&bytes, &limits).unwrap_err(),
+        ReadError::ContentTooLarge { limit: 65_536 }
+    );
+}
+
+#[test]
+fn a_header_rowspan_keeps_the_rows_it_covers_in_the_head() {
+    let cell = |row: i64, col: i64, row_span: i64, header: bool, value: &str| {
+        json!({"row_span": row_span, "col_span": 1, "start_row_offset_idx": row, "end_row_offset_idx": row + row_span,
+               "start_col_offset_idx": col, "end_col_offset_idx": col + 1, "text": value,
+               "column_header": header, "row_header": false, "row_section": false})
+    };
+    let doc = document(
+        &["#/tables/0"],
+        json!({"tables": [{
+            "label": "table", "content_layer": "body",
+            "data": {"num_rows": 3, "num_cols": 2, "table_cells": [
+                cell(0, 0, 2, true, "A"), cell(0, 1, 1, true, "B"),
+                cell(1, 1, 1, false, "C"), cell(2, 0, 1, false, "D"), cell(2, 1, 1, false, "E")
+            ]}
+        }]}),
+    );
+    let ir = map(&doc).document;
+    let Block::Table { head, body, .. } = &ir.body[0] else {
+        panic!("expected table");
+    };
+    assert_eq!(head.len(), 2, "the row below B is covered by A's rowspan");
+    assert_eq!(head[0][0].rowspan, 2);
+    assert_eq!(body.len(), 1);
+    assert_eq!(body[0].len(), 2);
+}
+
+#[test]
+fn a_title_whose_text_sits_in_an_inline_group_is_still_a_heading() {
+    let mut title = text("title", "");
+    title["children"] = json!([{"$ref": "#/groups/0"}]);
+    let mut bold = text("text", "Tiêu");
+    bold["formatting"] = json!({"bold": true, "italic": false, "underline": false, "strikethrough": false, "script": "baseline"});
+    let mut section = text("section_header", "");
+    section["level"] = json!(1);
+    section["children"] = json!([{"$ref": "#/groups/1"}]);
+    let doc = document(
+        &["#/texts/0", "#/texts/3"],
+        json!({
+            "groups": [
+                {"children": [{"$ref": "#/texts/1"}, {"$ref": "#/texts/2"}], "label": "inline", "content_layer": "body"},
+                {"children": [{"$ref": "#/texts/4"}], "label": "inline", "content_layer": "body"}
+            ],
+            "texts": [title, bold, text("text", "đề"), section, text("text", "Mục")]
+        }),
+    );
+    let ir = map(&doc).document;
+    assert_eq!(ir.body.len(), 2, "the groups must not repeat as paragraphs");
+    assert!(
+        matches!(&ir.body[0], Block::Heading { level: 1, content } if plain(content) == "Tiêu đề")
+    );
+    assert!(matches!(&ir.body[1], Block::Heading { level: 2, content } if plain(content) == "Mục"));
+    assert_eq!(ir.meta.title.as_deref(), Some("Tiêu đề"));
+}
+
+#[test]
+fn picture_footnotes_follow_the_figure() {
+    let doc = document(
+        &["#/pictures/0"],
+        json!({
+            "texts": [text("caption", "Hình 2"), text("footnote", "Nguồn: tác giả")],
+            "pictures": [{
+                "label": "picture", "content_layer": "body",
+                "captions": [{"$ref": "#/texts/0"}], "footnotes": [{"$ref": "#/texts/1"}],
+                "image": {"mimetype": "image/png", "dpi": 144, "size": {"width": 1, "height": 1},
+                          "uri": format!("data:image/png;base64,{PNG_1X1}")}
+            }]
+        }),
+    );
+    let ir = map(&doc).document;
+    assert_eq!(ir.body.len(), 2);
+    assert!(matches!(&ir.body[0], Block::Figure { caption, .. } if plain(caption) == "Hình 2"));
+    assert!(
+        matches!(&ir.body[1], Block::Paragraph { content } if plain(content) == "Nguồn: tác giả")
+    );
+}
+
+#[test]
+fn coordinates_that_overflow_are_dropped_instead_of_poisoning_the_layout() {
+    let mut title = text("title", "Lớn");
+    title["prov"] = json!([{"page_no": 1, "bbox": {"l": 1.0e308, "t": 1.7e308, "r": 1.5e308, "b": -1.0e308, "coord_origin": "BOTTOMLEFT"}}]);
+    let mut doc = document(&["#/texts/0"], json!({"texts": [title]}));
+    doc["pages"] = json!({"1": {"size": {"width": 1.0e308, "height": 1.0e308}, "page_no": 1}});
+    let ir = map(&doc).document;
+    assert!(matches!(&ir.body[0], Block::Heading { .. }));
+    assert!(ir.layout.is_none(), "{:?}", ir.layout);
+}
