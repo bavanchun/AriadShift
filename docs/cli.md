@@ -14,6 +14,9 @@ All conversion and transformation logic lives in `ariad-host` and `ariad-core`; 
   - [`ashift inspect`](#ashift-inspect)
   - [`ashift plan`](#ashift-plan)
   - [`ashift engines`](#ashift-engines)
+  - [`ashift engines install`](#ashift-engines-install)
+  - [`ashift engines remove`](#ashift-engines-remove)
+  - [`ashift engines verify`](#ashift-engines-verify)
   - [`ashift doctor`](#ashift-doctor)
 - [Profiles](#profiles)
 - [Environment Variables](#environment-variables)
@@ -34,11 +37,11 @@ All CLI commands adhere to a single unified exit-code table:
 | Exit Code | Name | Meaning |
 |---|---|---|
 | `0` | Success | Command completed successfully. All required checks passed for `doctor`. |
-| `1` | Failure | Conversion or operation failed, input/output I/O error, or generic non-tool check failure. |
-| `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. |
-| `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). |
-| `4` | Limit Exceeded | Document size, nesting depth, or node count exceeded configured security limits. |
-| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, or has an unsupported version. |
+| `1` | Failure | Conversion or operation failed, input/output I/O error, or generic non-tool check failure. Engine packs: signature, hash, size, download, unsafe-archive or I/O failure, or `engines verify` found differences. |
+| `2` | Usage | Invalid command-line arguments, unknown flags, unsupported profile value, or destination canonicalizing to input path. Engine packs: malformed pack name or version, plain HTTP to a non-loopback host. |
+| `3` | Unsupported Route | Unsupported conversion route, unknown target format, unknown input format in `inspect`, or refusal to convert to the same format (e.g. `md -> md`). Engine packs: unknown pack, pack or version not installed, no build for this platform. |
+| `4` | Limit Exceeded | Document size, nesting depth, or node count exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
+| `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, or has an unsupported version. Engine packs: the pack requires a different `ashift` version. |
 | `6` | Destination Exists | Destination file already exists and `--overwrite` was not specified. |
 | `130` | Interrupted | Interrupted by signal (SIGINT / Ctrl-C on Unix, Ctrl-C / Ctrl-Break on Windows). Temporary workspaces and partial files are cleaned up. |
 
@@ -252,10 +255,11 @@ score   fidelity 0.94 · editability 0.88 · estimated 130ms · runs locally ✓
 
 ### `ashift engines`
 
-Lists installed and known engines, versions, licenses, readiness status, and the conversion routes they serve.
+Lists installed and known engines, versions, licenses, readiness status, and the conversion routes they serve, followed by the installed engine packs.
 
 ```bash
 ashift engines [OPTIONS]
+ashift engines <install|remove|verify> ...
 ```
 
 #### Options
@@ -266,24 +270,33 @@ ashift engines [OPTIONS]
 
 - Reports native in-process engine `ariad-core` as `ready`.
 - Probes external engine availability (`pandoc`), checking executable presence and supported version (`>= 3.12, < 4`).
-- Shows `docling` roadmap status as `not installed` with note `available in v0.2`.
+- Lists `docling` as `not installed` (note `available in v0.2`) until its pack is installed.
+- For every resolved engine pack (installed, or an `ASHIFT_PACK_<NAME>` development directory) runs the engine's `describe` through the pack entrypoint and reports its status. The row carries a `pack` object; routes come from the capabilities registry, or from `describe` for engines the registry does not know. A pack that is installed but cannot be used (damaged receipt, other platform, other `ashift` range) is listed as `missing` with a note pointing at `ashift doctor`.
 
 #### Human Output Example
 
 ```text
-ENGINE       VERSION   LICENSE            STATUS         ROUTES
-ariad-core   0.0.0     Apache-2.0         ready          ariad-ir+json -> html, ariad-ir+json -> markdown, html -> ariad-ir+json, markdown -> ariad-ir+json
-pandoc       3.12      GPL-2.0-or-later   ready          ariad-ir+json -> docx, ariad-ir+json -> epub, docx -> ariad-ir+json, epub -> ariad-ir+json
-docling      -         Apache-2.0         not installed  (none)
+ENGINE       VERSION   LICENSE            STATUS                             ROUTES
+ariad-core   0.2.0     Apache-2.0         ready                              ariad-ir+json -> html, ariad-ir+json -> markdown, html -> ariad-ir+json, markdown -> ariad-ir+json
+pandoc       3.12      GPL-2.0-or-later   ready                              ariad-ir+json -> docx, ariad-ir+json -> epub, docx -> ariad-ir+json, epub -> ariad-ir+json
+docling      0.2.0     MIT                ready                              docx -> ariad-ir+json
+
+PACK         VERSION   TARGET                     STATE
+docling      0.2.0     x86_64-unknown-linux-gnu   active
+docling      0.1.0     -                          installed
 ```
 
+Without packs the second section reads `no engine packs installed`.
+
 #### JSON Output Shape
+
+An array of engine rows. `pack` appears only on rows backed by an engine pack:
 
 ```json
 [
   {
     "id": "ariad-core",
-    "version": "0.0.0",
+    "version": "0.2.0",
     "license": "Apache-2.0",
     "status": "ready",
     "routes": [
@@ -307,13 +320,116 @@ docling      -         Apache-2.0         not installed  (none)
   },
   {
     "id": "docling",
-    "version": "-",
-    "license": "Apache-2.0",
-    "status": "not installed",
-    "note": "available in v0.2",
-    "routes": []
+    "version": "0.2.0",
+    "license": "MIT",
+    "status": "ready",
+    "routes": ["docx -> ariad-ir+json"],
+    "pack": {
+      "name": "docling",
+      "version": "0.2.0",
+      "target": "x86_64-unknown-linux-gnu",
+      "source": "installed",
+      "versions": ["0.2.0", "0.1.0"]
+    }
   }
 ]
+```
+
+`status` is one of `ready`, `missing`, `wrong version`, `not installed`; `pack.source` is `installed` or `override`.
+
+---
+
+### `ashift engines install`
+
+Downloads, verifies and installs a signed engine pack. Format, layout and the signing procedure: [packs.md](packs.md).
+
+```bash
+ashift engines install <NAME> [--version <VERSION>] [--manifest <URL_OR_PATH> | --from <DIR>] [--json]
+```
+
+#### Arguments and Options
+
+- `<NAME>`: Pack name, for example `docling`.
+- `--version <VERSION>`: Version to install. Defaults to the built-in index's recommended version; with `--manifest` or `--from`, the manifest's version is accepted unless this is given.
+- `--manifest <URL_OR_PATH>`: Manifest to install instead of the index entry (`https://`, loopback `http://`, or a local path). The signature is read from the same location with `.minisig` appended; relative component URLs resolve beside the manifest.
+- `--from <DIR>`: Install offline from a directory holding `pack.toml`, `pack.toml.minisig` and the component files.
+- `--json`: Output the install report as JSON.
+
+#### Behavior
+
+1. Fetches the manifest and its minisign signature, verifies the signature against the keys built into `ashift`, and checks that the trusted comment names the pack and version.
+2. Checks the requested name and version, `requires_ashift`, and selects the build for this platform.
+3. Downloads each component (resuming from verified downloads of an earlier attempt), checking its size and SHA-256.
+4. Extracts under the rules in [packs.md](packs.md#extraction-rules) into a staging directory, writes `receipt.toml`, renames the result into `<data>/packs/<name>/<version>` and makes it the active version.
+
+Reinstalling an identical, intact version reports `already_installed` without downloading. Another `ashift` installing or removing the same pack makes the command fail with exit code 1. Progress goes to stderr when it is a terminal.
+
+#### Human Output Example
+
+```text
+installed docling 0.2.0 (x86_64-unknown-linux-gnu) in /home/user/.local/share/ariadshift/packs/docling/0.2.0
+```
+
+#### JSON Output Shape
+
+No local paths are included:
+
+```json
+{
+  "name": "docling",
+  "version": "0.2.0",
+  "target": "x86_64-unknown-linux-gnu",
+  "status": "installed",
+  "key_id": "1A2B3C4D5E6F7A8B",
+  "files": 23456,
+  "bytes": 1234567890
+}
+```
+
+`status` is `installed` or `already_installed`.
+
+---
+
+### `ashift engines remove`
+
+Removes an installed engine pack.
+
+```bash
+ashift engines remove <NAME> [--version <VERSION>] [--json]
+```
+
+- Without `--version`, removes every installed version. Removing the active version activates the highest remaining one.
+- A pack or version that is not installed is exit code 3.
+
+```json
+{ "name": "docling", "removed": ["0.2.0"], "active": "0.1.0" }
+```
+
+---
+
+### `ashift engines verify`
+
+Re-hashes every installed file and link of a pack against its install receipt and re-checks the manifest signature with the keys of the running `ashift`.
+
+```bash
+ashift engines verify <NAME> [--version <VERSION>] [--json]
+```
+
+- Verifies the active version unless `--version` is given.
+- Exit code 0 when everything matches, 1 when a file is modified or missing or the signature no longer verifies, 3 when the pack is not installed. Files the receipt does not list (for example caches an engine wrote) are ignored.
+
+```json
+{
+  "name": "docling",
+  "version": "0.2.0",
+  "target": "x86_64-unknown-linux-gnu",
+  "ok": false,
+  "key_id": "1A2B3C4D5E6F7A8B",
+  "checked": 23460,
+  "modified": ["runtime/lib/python3.14/os.py"],
+  "missing": [],
+  "problems": []
+}
 ```
 
 ---
@@ -335,10 +451,13 @@ ashift doctor [OPTIONS]
 1. **Pandoc**: Verifies Pandoc executable is found and satisfies `>= 3.12, < 4`.
 2. **Workspace**: Verifies temporary directory is writable, workspaces can be created and cleaned up, and reports count of stale workspaces older than 24 hours without deleting them.
 3. **Engine Describe**: Verifies the out-of-process engine runner can exchange protocol messages with the Pandoc engine.
+4. **Engine pack directory** (`data_dir`, not required): the pack data directory exists or can be created and is writable.
+5. **Pack signing keys** (`pack_keys`, not required): lists the ids of the minisign keys built into `ashift`; a build without keys cannot install packs.
+6. **Installed packs** (`pack_<name>`, not required): one check per installed version (receipt present, every recorded file present with its recorded size, built for this platform and `ashift` range) and per `ASHIFT_PACK_<NAME>` override. `ashift engines verify` does the full re-hash.
 
 #### Exit Codes
 
-- Returns exit code `0` if all required diagnostic checks pass.
+- Returns exit code `0` if all required diagnostic checks pass. Engine pack checks never change the exit code.
 - Returns exit code `5` if an external tool (Pandoc) is missing or has an unsupported version.
 - Returns exit code `1` if a non-tool check fails (e.g. temporary directory unwritable).
 
@@ -348,6 +467,9 @@ ashift doctor [OPTIONS]
 ✓ Pandoc 3.12 found in >= 3.12, < 4 at /usr/local/bin/pandoc
 ✓ temp directory is writable and workspace can be created and removed
 ✓ engine 'pandoc' passes describe round trip
+✓ engine pack directory is writable at /home/user/.local/share/ariadshift
+✓ engine pack signing keys: 1A2B3C4D5E6F7A8B
+✓ engine pack docling 0.2.0 (x86_64-unknown-linux-gnu) is installed and active
 ```
 
 *(On Windows (`cfg!(windows)`), `[ok]` and `[x]` are printed instead of `✓` and `✗`)*
@@ -379,8 +501,23 @@ No local filesystem paths are exposed in the JSON output:
       "required": true,
       "message": "engine 'pandoc' passes describe round trip",
       "hint": ""
+    },
+    {
+      "id": "data_dir",
+      "ok": true,
+      "required": false,
+      "message": "engine pack directory is writable",
+      "hint": ""
+    },
+    {
+      "id": "pack_keys",
+      "ok": true,
+      "required": false,
+      "message": "engine pack signing keys: 1A2B3C4D5E6F7A8B",
+      "hint": ""
     }
-  ]
+  ],
+  "stale_workspaces": 0
 }
 ```
 
@@ -400,4 +537,8 @@ The `--profile` flag guides route selection when multiple routes connect a forma
 ## Environment Variables
 
 - `ASHIFT_PANDOC`: Specifies the explicit path to the Pandoc executable. When unset, `ashift` searches the system `PATH`.
+- `ASHIFT_DATA_DIR`: Data directory for engine packs (packs live under `<dir>/packs`). Defaults to the platform's local data directory for `com.ariadnev.ariadshift`; see [packs.md](packs.md#layout).
+- `ASHIFT_PACK_<NAME>`: Uses an unpacked development pack directory (holding an unsigned `pack.toml`) instead of the installed pack `<name>`; the name is upper-cased with `-` written as `_`.
+- `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`: Proxy settings for pack downloads.
+- `SSL_CERT_FILE`, `SSL_CERT_DIR`: Trusted CA certificates for pack downloads on Linux, when the system store is not in a standard location.
 - `SOURCE_DATE_EPOCH`: Unix timestamp in seconds used for deterministic, byte-reproducible ZIP archives (DOCX and EPUB).

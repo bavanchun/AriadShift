@@ -107,7 +107,7 @@ The server exposes 4 tools:
 Lists installed and registered engines, supported routes, licenses, and availability status. The structured output matches `ashift engines --json`.
 
 - **Parameters**: None.
-- **Returns**: Array of engine descriptors with `id`, `version`, `license`, `status`, and `routes`.
+- **Returns**: Array of engine descriptors with `id`, `version`, `license`, `status`, and `routes`. Engines provided by an installed engine pack also carry a `pack` object (`name`, `version`, `target`, `source`, `versions`). Installing, removing and verifying packs is not exposed over MCP; use `ashift engines install` ([packs.md](packs.md)).
 
 ### 2. `inspect`
 
