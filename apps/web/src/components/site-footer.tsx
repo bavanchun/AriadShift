@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { REPOSITORY_URL } from "@/lib/site";
 
 export function SiteFooter() {
@@ -8,14 +7,14 @@ export function SiteFooter() {
         <p>AriadShift is open source under the Apache-2.0 license.</p>
         <ul className="flex flex-wrap gap-4">
           <li>
-            <Link className="hover:text-foreground" href="/privacy">
+            <a className="hover:text-foreground" href="/privacy">
               Privacy
-            </Link>
+            </a>
           </li>
           <li>
-            <Link className="hover:text-foreground" href="/quality">
+            <a className="hover:text-foreground" href="/quality">
               Quality
-            </Link>
+            </a>
           </li>
           <li>
             <a className="hover:text-foreground" href={REPOSITORY_URL}>

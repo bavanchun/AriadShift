@@ -38,9 +38,9 @@ export default function HomePage() {
           measured planner, no uploads.
         </p>
         <div className="flex flex-wrap gap-3">
-          <Link href="/app" className={buttonVariants({ size: "lg" })}>
+          <a href="/app" className={buttonVariants({ size: "lg" })}>
             Open the converter
-          </Link>
+          </a>
           <Link href="/download" className={buttonVariants({ size: "lg", variant: "secondary" })}>
             Install the CLI
           </Link>

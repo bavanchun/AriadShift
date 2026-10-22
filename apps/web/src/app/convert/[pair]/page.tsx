@@ -21,17 +21,6 @@ const CLI_FORMAT: Record<string, string> = {
   epub: "epub",
 };
 
-/** The equivalent `ashift` command for a pair. */
-function cliCommand(from: string, to: string, extension: string): string {
-  if (from === "ariad-ir+json") {
-    return `ashift __write input.ir.json --to ${CLI_FORMAT[to]} -o output.${CLI_FORMAT[to]}`;
-  }
-  if (to === "ariad-ir+json") {
-    return `ashift __ir input.${extension} -o output.ir.json`;
-  }
-  return `ashift convert input.${extension} --to ${CLI_FORMAT[to]}`;
-}
-
 function findPair(slug: string): PairRoute | undefined {
   return loadPairs().find(({ from, to }) => pairSlug(from.id, to.id) === slug);
 }
@@ -80,9 +69,9 @@ export default async function PairPage({ params }: PageProps<"/convert/[pair]">)
         </p>
         <div className="flex flex-wrap gap-3">
           {browser ? (
-            <Link href={appLink} className={buttonVariants({ size: "lg" })}>
+            <a href={appLink} className={buttonVariants({ size: "lg" })}>
               Convert {from.label} to {to.label} now
-            </Link>
+            </a>
           ) : (
             <Link href="/download" className={buttonVariants({ size: "lg" })}>
               Install the CLI
@@ -115,13 +104,14 @@ export default async function PairPage({ params }: PageProps<"/convert/[pair]">)
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">From the command line</h2>
-        <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
-          <code>{cliCommand(from.id, to.id, from.extensions[0] ?? "txt")}</code>
-        </pre>
-        {(from.id === "ariad-ir+json" || to.id === "ariad-ir+json") && (
+        {from.id in CLI_FORMAT && to.id in CLI_FORMAT ? (
+          <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
+            <code>{`ashift convert input.${from.extensions[0]} --to ${CLI_FORMAT[to.id]}`}</code>
+          </pre>
+        ) : (
           <p className="text-sm text-muted-foreground">
-            IR JSON goes through the CLI's pipeline commands, which read or write one step of a
-            route.
+            The command-line tool does not offer IR JSON as an input or output format yet; the
+            browser converter does.
           </p>
         )}
       </section>
