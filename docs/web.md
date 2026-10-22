@@ -33,6 +33,8 @@ When adding a shadcn component, run `pnpm exec shadcn add <name>` inside `packag
 
 ## How the converter works
 
+The theme toggle and converter hydrate in separate React Suspense boundaries to split startup work while keeping the page pre-rendered.
+
 1. The page starts a module Web Worker once it is idle. The worker loads `ariad-wasm`, picks a random storage session and opens its own OPFS folder, `ariadshift/<session>/`, while holding a Web Lock named after it. Folders whose lock nobody holds belong to closed tabs or replaced workers and are deleted at that point, so two tabs never share files.
 2. A dropped or picked `File` goes to the worker, which streams it into its folder with a synchronous access handle. React state only holds the name, size and inspection summary. Inputs over 16 MB are refused: reading a document expands it in wasm memory by up to about 70 times, so larger files belong to the CLI or the desktop app.
 3. The worker inspects the file (`inspect`): up to 4 MiB it counts the structure, above that it classifies the first 64 KiB only. It plans the route over the edges whose runtime includes `wasm` (`plan`) and runs it step by step: each run of steps goes to the engine registered for its id. Only `ariad-core` is registered today; a JavaScript engine such as Pandoc WASM plugs into the same table. The worker handles one request at a time.
@@ -92,12 +94,12 @@ Without the chunk header the converter worker does not start, and the page repor
 
 ## Lighthouse
 
-Measured on 2026-10-22 with Lighthouse 13.5.0 (`just web-lighthouse`) against `next start` on an Apple M5 MacBook, headless Chrome, default mobile (simulated throttling) and desktop presets:
+Measured on 2026-10-23 with Lighthouse 13.5.0 (`just web-lighthouse`) against `next start` on the shared ASUS Linux x86_64 host, headless Chromium, default mobile (simulated throttling) and desktop presets:
 
 | Page | Form factor | Performance | Accessibility | Best practices | SEO |
 |---|---|---:|---:|---:|---:|
-| `/` | mobile | 98 | 100 | 100 | 100 |
-| `/app` | mobile | 98 | 100 | 100 | 100 |
+| `/` | mobile | 99 | 100 | 100 | 100 |
+| `/app` | mobile | 96 | 100 | 100 | 100 |
 | `/` | desktop | 100 | 100 | 100 | 100 |
 | `/app` | desktop | 100 | 100 | 100 | 100 |
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { ConverterApp } from "@/components/converter/converter-app";
 
 export const metadata: Metadata = {
@@ -17,7 +18,9 @@ export default function ConverterPage() {
           Choose a file, pick a target and download the result. Everything happens in this tab.
         </p>
       </div>
-      <ConverterApp />
+      <Suspense fallback={null}>
+        <ConverterApp />
+      </Suspense>
     </div>
   );
 }
