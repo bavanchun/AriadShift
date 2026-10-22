@@ -5,7 +5,7 @@
   "description": "AriadShift website and in-browser converter.",
   "scripts": {
     "sync-brand": "node scripts/sync-brand.mjs",
-    "dev": "node scripts/sync-brand.mjs && next dev --port 3000",
+    "dev": "node scripts/sync-brand.mjs && next dev --port 3200",
     "build": "node scripts/sync-brand.mjs && next build",
     "export": "node scripts/sync-brand.mjs && node scripts/export.mjs",
     "start": "next start --port 3100",
