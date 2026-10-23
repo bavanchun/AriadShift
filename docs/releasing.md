@@ -206,6 +206,17 @@ scripts/winget-manifest.sh <version> [archive_path] [output_dir]
 
 ## Failure responses
 
+The desktop workflow verifies the merged `latest.json` after all three release
+jobs finish: Linux x86-64, Apple silicon and Windows x86-64 must reference
+attached assets whose signatures match the committed updater public key.
+Its verification job fails on missing entries, concurrent upload loss or a key
+mismatch. Repair the desktop assets before announcing the release.
+
+The app uses GitHub's `releases/latest/download/latest.json` endpoint. A newer
+CLI-only release without desktop assets makes this endpoint return 404; in-app
+updates pause until the next release containing desktop metadata. Local
+conversion remains available.
+
 | Failure mode | Signal | Response |
 |---|---|---|
 | `release.yml` fails mid-publish | Some artifacts uploaded or GitHub Release created, but formula push or crate publish did not complete | Do not delete the tag silently. Report the failure. Because `publish-homebrew-formula` and `publish-crates.yml` are idempotent, re-run the failed publish job if `host` already succeeded. If any artifact or crate was published with a defect that requires code changes, fix forward with the next patch version (for example `v0.1.1`) and ask the maintainer before deleting a GitHub Release. |
