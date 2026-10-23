@@ -218,7 +218,7 @@ jobs:
           tesseract --version
 
       - name: Build ashift
-        run: cargo build -p ariad-cli --bin ashift --features test-probe
+        run: cargo build -p ariad-cli --bin ashift
 
       - name: Build the pack
         env:

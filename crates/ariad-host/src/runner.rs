@@ -518,9 +518,6 @@ impl EngineProcess {
         command.wrap(JobObject).wrap(KillOnDrop);
 
         let mut child = command.spawn().map_err(RunError::Spawn)?;
-        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
-            eprintln!("trace: spawned {} {:?}", program.display(), child.id());
-        }
         let (Some(stdout), Some(stderr), Some(stdin)) = (
             child.stdout().take(),
             child.stderr().take(),
@@ -601,9 +598,6 @@ impl EngineProcess {
         if mode == JobMode::OneShot {
             self.stdin = None;
         }
-        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
-            eprintln!("trace: delivered request {:?}", self.id());
-        }
 
         let mut result = None;
         let mut artifacts = Vec::new();
@@ -615,7 +609,10 @@ impl EngineProcess {
                     // The engine stopped before its result. Stop the whole tree so a grandchild
                     // holding the pipe cannot keep the session alive, then report the exit.
                     let _ = self.child.start_kill();
-                    let status = self.child.wait().await.map_err(RunError::Io)?;
+                    let status = match self.status {
+                        Some(status) => status,
+                        None => self.child.wait().await.map_err(RunError::Io)?,
+                    };
                     self.status = Some(status);
                     return Err(RunError::Crash {
                         exit: status.code(),
@@ -635,9 +632,6 @@ impl EngineProcess {
                                 return Err(RunError::ProtocolViolation("line follows the result event"));
                             }
                             let event = parse_event(&line, job.output_dir.as_deref(), &mut artifacts)?;
-                            if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
-                                eprintln!("trace: event {event:?}");
-                            }
                             if let Event::Result { ok, metrics, error } = &event {
                                 result = Some((*ok, metrics.clone(), error.clone()));
                             }
@@ -701,8 +695,13 @@ impl EngineProcess {
         if self.eof || self.lines.has_buffered_bytes() {
             return true;
         }
-        if !matches!(self.child.try_wait(), Ok(None)) {
-            return true;
+        match self.child.try_wait() {
+            Ok(Some(status)) => {
+                self.status = Some(status);
+                return true;
+            }
+            Err(_) => return true,
+            Ok(None) => {}
         }
         // One short poll lets the reactor deliver output written while the process was idle.
         let ready = time::timeout(Duration::from_millis(1), self.lines.next_line())
@@ -726,17 +725,15 @@ impl EngineProcess {
     /// Kills the tree when `kill` is set or the engine is still running, waits for it, and
     /// collects the stderr drain.
     pub(crate) async fn reap(&mut self, kill: bool) {
-        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
-            eprintln!("trace: reaping {:?} kill={kill}", self.id());
-        }
         if kill || self.status.is_none() {
             let _ = self.child.start_kill();
         }
-        if let Ok(status) = self.child.wait().await {
+        // Windows JobObject::try_wait drains completion-port notifications. Waiting on the
+        // wrapper again can block forever after it consumed the final job notification.
+        if self.status.is_none()
+            && let Ok(status) = self.child.wait().await
+        {
             self.status = Some(status);
-        }
-        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
-            eprintln!("trace: child waited");
         }
         if let Some(task) = self.stderr_task.take() {
             self.stderr_result = Some(match task.await {
@@ -915,9 +912,6 @@ where
         if count == 0 {
             return Ok(());
         }
-        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
-            eprint!("{}", String::from_utf8_lossy(&chunk[..count]));
-        }
         let mut tail = tail.lock().expect("stderr tail mutex is not poisoned");
         let excess = tail
             .len()
@@ -943,6 +937,54 @@ mod tests {
     };
 
     use super::{EngineCommand, writable_paths};
+
+    #[cfg(windows)]
+    #[test]
+    fn reaping_an_observed_exit_is_bounded() {
+        use super::{Duration, EngineProcess, Instant, time};
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let reaped = runtime.block_on(async {
+            let program =
+                PathBuf::from(std::env::var_os("SYSTEMROOT").unwrap()).join("System32/cmd.exe");
+            let mut process = EngineProcess::spawn(
+                &program,
+                &["/C".into(), "exit".into(), "0".into()],
+                &[],
+                None,
+            )
+            .await
+            .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                process.status = process.child.try_wait().unwrap();
+                if process.status.is_some() {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "the child did not exit");
+                time::sleep(Duration::from_millis(10)).await;
+            }
+            // Drain the job's remaining completion notifications after observing leader exit.
+            // The wrapper's next wait must not depend on one of those notifications remaining.
+            let drain_until = Instant::now() + Duration::from_millis(250);
+            while Instant::now() < drain_until {
+                assert!(process.child.try_wait().unwrap().is_some());
+                time::sleep(Duration::from_millis(10)).await;
+            }
+            time::timeout(Duration::from_secs(2), process.reap(false))
+                .await
+                .is_ok()
+        });
+        // A regression must fail the test without waiting for a blocked job-port waiter.
+        runtime.shutdown_background();
+        assert!(
+            reaped,
+            "reaping an exit already observed by try_wait blocked"
+        );
+    }
 
     fn convert_request(work_dir: &str, output_dir: &str) -> Request {
         Request::Convert {
