@@ -17,7 +17,11 @@ pub fn resolve_format(name: &str) -> Option<Format> {
     let format = serde_json::from_value::<Format>(serde_json::Value::String(name.to_owned()))
         .ok()
         .or_else(|| Format::from_extension(name))?;
-    (!matches!(format, Format::AriadIrJson | Format::PandocJson)).then_some(format)
+    (!matches!(
+        format,
+        Format::AriadIrJson | Format::PandocJson | Format::DoclingJson
+    ))
+    .then_some(format)
 }
 
 /// Detects an upload's format from its first bytes and file name.
@@ -26,8 +30,12 @@ pub fn detect_format(prefix: &[u8], filename: &str) -> Option<Format> {
     let extension = std::path::Path::new(filename)
         .extension()
         .and_then(|e| e.to_str());
-    ariad_core::format::classify(prefix, None, extension)
-        .filter(|f| !matches!(f, Format::AriadIrJson | Format::PandocJson))
+    ariad_core::format::classify(prefix, None, extension).filter(|f| {
+        !matches!(
+            f,
+            Format::AriadIrJson | Format::PandocJson | Format::DoclingJson
+        )
+    })
 }
 
 /// The `--to` argument the host converter accepts for a format.
@@ -62,7 +70,12 @@ pub fn plan(from: Format, to: Format, profile: Profile, packs: &[Pack]) -> Resul
         PlanError::NoRoute { reachable, .. } => {
             let mut targets: Vec<&str> = reachable
                 .iter()
-                .filter(|f| !matches!(f, Format::AriadIrJson | Format::PandocJson))
+                .filter(|f| {
+                    !matches!(
+                        f,
+                        Format::AriadIrJson | Format::PandocJson | Format::DoclingJson
+                    )
+                })
                 .map(|f| f.id())
                 .collect();
             targets.sort_unstable();
@@ -118,6 +131,30 @@ mod tests {
         assert_eq!(Pack::for_route(&plan.steps), Pack::Core);
         assert_eq!(plan.steps.first().map(|s| s.from), Some(Format::Markdown));
         assert_eq!(plan.steps.last().map(|s| s.to), Some(Format::Docx));
+    }
+
+    #[test]
+    fn docling_json_is_not_a_public_format() {
+        assert_eq!(resolve_format("docling+json"), None);
+    }
+
+    #[test]
+    fn docling_json_uploads_are_not_accepted() {
+        let prefix = br#"{"schema_name":"DoclingDocument"}"#;
+        for filename in ["input.json", "input.md", "input"] {
+            assert_eq!(detect_format(prefix, filename), None, "{filename}");
+        }
+    }
+
+    #[test]
+    fn unreachable_targets_exclude_internal_formats() {
+        let err =
+            plan(Format::Pdf, Format::Png, Profile::Editable, &Pack::ALL).expect_err("no route");
+        assert!(err.contains("reachable targets:"), "{err}");
+        assert!(err.contains("markdown"), "{err}");
+        for internal in ["ariad-ir+json", "pandoc+json", "docling+json"] {
+            assert!(!err.contains(internal), "{err}");
+        }
     }
 
     #[test]
