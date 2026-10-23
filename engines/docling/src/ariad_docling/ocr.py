@@ -100,11 +100,10 @@ def plan_ocr(
         return _rapidocr(hints)
 
     vietnamese = "vi" in hints
-    tesseract_covers = all(_LANGUAGES.get(hint, ("",))[0] in tessdata_languages for hint in hints)
-    if tesseract and (vietnamese or tesseract_covers):
+    if tesseract and vietnamese:
         return _tesseract(hints, tessdata_languages)
-    first = hints[0]
-    if rapidocr and not vietnamese and _LANGUAGES.get(first, ("", None))[1] is not None:
+    rapidocr_covers = all(_LANGUAGES.get(hint, ("", None))[1] is not None for hint in hints)
+    if rapidocr and not vietnamese and rapidocr_covers:
         return _rapidocr(hints)
     if tesseract:
         return _tesseract(hints, tessdata_languages)
