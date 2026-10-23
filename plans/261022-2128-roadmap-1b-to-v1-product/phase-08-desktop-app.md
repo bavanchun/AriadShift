@@ -24,7 +24,7 @@ Read first: ARCHITECTURE §2.2, §4, §8.2, §16, §19; `packages/ui`, `apps/web
 - Features:
   - Convert: pick or drop files, inspect summary, target and profile, plan explanation, progress and cancellation, output location, open in Finder or Explorer.
   - Batch queue with concurrency control, warm engine sessions, per-item status, retry and cancel.
-  - Folder watching (`notify`): watch a folder, convert new or changed files with a saved route and profile into an output folder, with debouncing and a pause switch.
+  - Folder watching (built-in polling watcher): watch a folder, convert new or changed files with a saved route and profile into an output folder, with a configurable polling interval (default 2 seconds), stability across two scans, a pause switch, optional recursion, partial-file exclusions and a bounded file count.
   - Engine packs: list available and installed packs, install with progress, verify, remove; the base install excludes the docling pack.
   - Diagnostics view backed by `doctor`.
   - Settings: default profile, output folder policy, overwrite policy, telemetry off (opt-in only, nothing implemented beyond the switch).
@@ -111,3 +111,37 @@ recipe regenerate them and require `git diff --exit-code` on that directory.
 The earlier blocker above is historical evidence, not an outstanding question.
 Continue the complete app, draft PR, signed updater metadata, installer and manual
 Mac acceptance work under the existing authorization.
+
+### Watch dependency license blocker (2026-10-23)
+
+The stable binding replacement is accepted and implemented in the working tree.
+A separate license gate now prevents completing the selected dependency graph:
+`notify` 8.2.0 is CC0-1.0 only (`LICENSE-CC0` in its published crate), which is
+outside the project's OSI-only distribution policy and is rejected by both
+`cargo deny check licenses` and `cargo about generate about.hbs`. The prescribed
+`tauri-plugin-deep-link` also brings CC0-1.0 `tiny-keccak` 2.0.2 through
+`rust-ini → ordered-multimap → dlv-list → const-random → const-random-macro`;
+that use is at compile time. Tauri's `selectors` and `cssparser-macros` additionally
+need the per-crate MPL-2.0 exceptions already allowed by AGENTS.md.
+
+No license gate was weakened and no prohibited license was accepted. The
+coordinator must choose whether to replace the specified watcher/dependency path
+with OSI-compatible implementations or explicitly amend the license policy for
+these CC0 crates. Implementation remains incomplete; the current app code and
+workflow changes are uncommitted, and no PR has been opened. The updater key
+was generated at the requested external paths with mode 600, and `actool`
+successfully produced the layered macOS icon and fallback `.icns`.
+
+### Accepted watch and compile-time license design (2026-10-23)
+
+The coordinator replaced runtime notify with std::fs polling. The scanner uses
+(size, mtime) fingerprints, requires two stable scans, ignores dot files, Office
+lock files and .tmp/.part/.crdownload files, defaults to nonrecursive 2-second
+scans and caps traversal at 10,000 entries and 32 directory levels. Paused changes
+are ignored. Optional recursive routes preserve relative output directories.
+
+The requested cargo tree proof shows tiny-keccak only beneath const-random-macro
+(proc-macro). A per-crate compile-time-only exception is authorized; the global
+license list stays unchanged. Unmodified selectors and cssparser-macros receive
+the MPL exceptions already permitted by the repository. Both earlier blockers
+are resolved; application acceptance work continues.
