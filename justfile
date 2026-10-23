@@ -62,7 +62,7 @@ web-lint:
 
 # Vitest across the JavaScript packages; the wasm bindings must be built first.
 web-test: wasm-build
-    pnpm exec vitest run
+    pnpm exec vitest run --maxWorkers=1
 
 # TypeScript 7 checks of every JavaScript package.
 web-typecheck: wasm-build
@@ -128,6 +128,9 @@ check-release-workflow:
 test-winget-manifest:
     sh scripts/test-winget-manifest.sh
 
+test-ci-scope:
+    sh scripts/test-ci-scope.sh
+
 licenses-check:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -146,7 +149,7 @@ licenses-check:
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses web-lint py check-release-workflow licenses-check test-winget-manifest
+static: fmt-check spell lint-workflows deny js js-licenses web-lint py check-release-workflow licenses-check test-winget-manifest test-ci-scope
 
 package-check:
     cargo package --workspace --allow-dirty

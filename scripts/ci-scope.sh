@@ -5,6 +5,7 @@
 #
 # Input (environment): EVENT_NAME, PR_BASE_SHA, PR_HEAD_SHA, PR_BASE_REF,
 # PUSH_BEFORE, REF_NAME, GITHUB_REPOSITORY, GH_TOKEN.
+# Arguments: --classify <path>... or --classify with paths on stdin.
 # Output (GITHUB_OUTPUT): range, heavy, web, reason.
 set -eu
 
@@ -12,21 +13,6 @@ zero='0000000000000000000000000000000000000000'
 range=''
 target_ref=''
 changed=''
-
-case "$EVENT_NAME" in
-    pull_request)
-        range="$PR_BASE_SHA..$PR_HEAD_SHA"
-        changed=$(git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA")
-        target_ref=$PR_BASE_REF
-        ;;
-    push)
-        if [ "$PUSH_BEFORE" != "$zero" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
-            range="$PUSH_BEFORE..HEAD"
-            changed=$(git diff --name-only "$PUSH_BEFORE" HEAD)
-        fi
-        target_ref=$REF_NAME
-        ;;
-esac
 
 # Prose the static job already spell-checks.
 docs_paths='^(docs|plans)/|^(README|ARCHITECTURE|AGENTS|CLAUDE)\.md$'
@@ -38,7 +24,7 @@ web_paths='^(apps|packages|brand)/|^crates/ariad-(core|wasm)/|^(package\.json|pn
 # Prints heavy|web|reason.
 decide() {
     # Manual runs and pushes without a known previous commit always run everything.
-    if [ "$EVENT_NAME" = workflow_dispatch ] || [ -z "$changed" ]; then
+    if [ "${EVENT_NAME:-}" = workflow_dispatch ] || [ -z "$changed" ]; then
         echo "true|true|full run"
         return
     fi
@@ -82,24 +68,56 @@ decide() {
     fi
 }
 
+if [ "${1:-}" = "--classify" ]; then
+    shift
+    if [ "$#" -gt 0 ]; then
+        changed=$(printf '%s\n' "$@")
+    else
+        changed=$(cat)
+    fi
+    EVENT_NAME="pull_request"
+    target_ref="dev"
+    decide
+    exit 0
+fi
+
+case "${EVENT_NAME:-}" in
+    pull_request)
+        range="${PR_BASE_SHA:-}..${PR_HEAD_SHA:-}"
+        changed=$(git diff --name-only "${PR_BASE_SHA:?}"..."${PR_HEAD_SHA:?}")
+        target_ref=${PR_BASE_REF:-}
+        ;;
+    push)
+        if [ "${PUSH_BEFORE:-$zero}" != "$zero" ] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            range="$PUSH_BEFORE..HEAD"
+            changed=$(git diff --name-only "$PUSH_BEFORE" HEAD)
+        fi
+        target_ref=${REF_NAME:-}
+        ;;
+esac
+
 decision=$(decide)
 heavy=${decision%%|*}
 rest=${decision#*|}
 web=${rest%%|*}
 reason=${rest#*|}
 
-{
-    printf 'range=%s\n' "$range"
-    printf 'heavy=%s\n' "$heavy"
-    printf 'web=%s\n' "$web"
-    printf 'reason=%s\n' "$reason"
-} >> "$GITHUB_OUTPUT"
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    {
+        printf 'range=%s\n' "$range"
+        printf 'heavy=%s\n' "$heavy"
+        printf 'web=%s\n' "$web"
+        printf 'reason=%s\n' "$reason"
+    } >> "$GITHUB_OUTPUT"
+fi
 
-{
-    printf '### CI scope\n\n'
-    printf -- '- Commits checked: `%s`\n' "${range:-none}"
-    printf -- '- Build and test on three OSes: **%s** (%s)\n' "$heavy" "$reason"
-    printf -- '- Web checks: **%s**\n' "$web"
-} >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+        printf '### CI scope\n\n'
+        printf -- '- Commits checked: `%s`\n' "${range:-none}"
+        printf -- '- Build and test on three OSes: **%s** (%s)\n' "$heavy" "$reason"
+        printf -- '- Web checks: **%s**\n' "$web"
+    } >> "$GITHUB_STEP_SUMMARY"
+fi
 
 printf 'heavy=%s web=%s (%s), range=%s\n' "$heavy" "$web" "$reason" "${range:-none}"
