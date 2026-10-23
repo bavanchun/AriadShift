@@ -19,7 +19,7 @@ Read first: ARCHITECTURE §2.2, §4, §8.2, §16, §19; `packages/ui`, `apps/web
 
 ## Requirements
 
-- `apps/desktop`: Vite, React 19, TypeScript, Tailwind CSS 4, components from `packages/ui`. `apps/desktop/src-tauri` depends on `ariad-host` directly (no sidecar). Tauri at the latest stable 2.x; commands typed with `tauri-specta` (generated TypeScript, never written by hand). Versions registry-verified.
+- `apps/desktop`: Vite, React 19, TypeScript, Tailwind CSS 4, components from `packages/ui`. `apps/desktop/src-tauri` depends on `ariad-host` directly (no sidecar). Tauri at the latest stable 2.x; commands typed with stable `ts-rs` and wrappers generated from a single Rust command table (generated TypeScript in `src/bindings/`, never written by hand). Versions registry-verified.
 - Plugins: `dialog`, `deep-link`, `single-instance`, `updater`, plus what the features need (opener, notification).
 - Features:
   - Convert: pick or drop files, inspect summary, target and profile, plan explanation, progress and cancellation, output location, open in Finder or Explorer.
@@ -43,7 +43,7 @@ Read first: ARCHITECTURE §2.2, §4, §8.2, §16, §19; `packages/ui`, `apps/web
 ## Design notes
 
 Scouted on 2026-10-23 in `feat/desktop-app`, based on `origin/dev` at
-`3a2d5ea`. Implementation is blocked on the binding dependency policy below;
+`3a2d5ea`. The initial binding blocker was resolved by the coordinator on 2026-10-23;
 the acceptance criteria are not completed.
 
 - Keep conversion in `ariad-host`. The desktop command layer can call
@@ -96,3 +96,18 @@ binding toolchain or a change to the mandated binding generator before
 implementation. No exception is inferred from the phase's existing
 `tauri-specta` requirement. The updater key, app skeleton, draft PR, installers
 and manual acceptance checks have not been created or run.
+
+### Accepted binding design (2026-10-23)
+
+The coordinator kept the stable-only policy and replaced `tauri-specta` with
+`ts-rs` plus a generated Rust command table. Verified `ts-rs` 12.0.1 against
+crates.io, including its feature map: default `serde-compat` supports serde field
+names; no optional prerelease generator or formatter is needed. IPC DTOs derive
+`ts_rs::TS`. A small exporter writes the type declarations and one typed async
+`invoke` wrapper per command into `apps/desktop/src/bindings/`, with generated
+headers. Both are committed. The desktop workflow and a desktop-scoped `just ci`
+recipe regenerate them and require `git diff --exit-code` on that directory.
+
+The earlier blocker above is historical evidence, not an outstanding question.
+Continue the complete app, draft PR, signed updater metadata, installer and manual
+Mac acceptance work under the existing authorization.
