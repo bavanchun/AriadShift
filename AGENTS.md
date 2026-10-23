@@ -24,11 +24,11 @@ Roadmap 1a (`v0.1.0`) is shipped. `ashift` converts across all 12 directional ro
 ## Licensing
 
 - Distributed artifacts must not contain AGPL or non-OSI code. This rules out PyMuPDF, `pdf2docx` and MinerU.
-- MPL-2.0 dependencies are allowed only unmodified and through per-crate cargo-deny exceptions.
+- MPL-2.0 Rust dependencies are allowed only unmodified and through per-crate cargo-deny exceptions. The Docling Python pack allows unmodified `certifi` and `tqdm` through per-distribution exceptions in `engines/docling/pack/licenses.py`.
 - JavaScript dependencies allow CC-BY-4.0 for `caniuse-lite` (data) and OFL-1.1 for the Plus Jakarta Sans packages through per-package exceptions.
 - GPL tools such as Pandoc are invoked as separate processes, never linked.
 - Fixtures exclude CC-BY-SA documents, GPL test suites, and research-only or non-commercial datasets. Record each fixture's source and license in `fixtures/manifest.toml`.
-- Model weights follow the same licensing rules as code; exclude OpenRAIL-M, custom or missing licenses.
+- Model weights follow the same licensing rules as code, with CDLA-Permissive-2.0 accepted specifically for the Docling TableFormer weights (a permissive data licence, not an OSI code licence); exclude OpenRAIL-M, custom or missing licenses.
 - Never commit a user's or private document.
 
 ## Brand assets
