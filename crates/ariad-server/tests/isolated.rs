@@ -279,7 +279,9 @@ while True:
     .unwrap();
     std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o755)).unwrap();
     request.engine_program = engine;
-    std::fs::write(&request.input, "x".repeat(17 << 20)).unwrap();
+    // Reach the engine before the deadline even when other parser tests run.
+    // The engine's allocation and helper RSS together exceed the memory limit.
+    std::fs::write(&request.input, "x".repeat(2 << 20)).unwrap();
     let mut limits = Limits::cloud();
     limits.max_memory_mb = Some(256);
     limits.timeout_s = Some(20);
@@ -291,7 +293,8 @@ while True:
         CancellationToken::new(),
         |_| {},
     );
-    let pid = std::fs::read_to_string(&pid_file).expect("engine started before RSS sampling");
+    let pid = std::fs::read_to_string(&pid_file)
+        .unwrap_or_else(|error| panic!("engine did not start: {error}; conversion: {result:?}"));
     let before = std::fs::metadata(&heartbeat).unwrap().len();
     std::thread::sleep(Duration::from_millis(200));
     let after = std::fs::metadata(&heartbeat).unwrap().len();
