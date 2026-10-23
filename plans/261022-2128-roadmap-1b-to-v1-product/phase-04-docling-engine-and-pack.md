@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Docling engine, mapper and pack build"
-status: pending
+status: completed
 priority: P1
 effort: "26h"
 dependencies: []
@@ -82,7 +82,7 @@ Registry checks on 2026-10-22: `docling` 2.142.0 is now a meta package over `doc
 
 ### Mapper (`ariad_core::docling`)
 
-- `docling::read(bytes, &Limits) -> Result<ToIrOutput, DoclingError>`: byte cap `max_ir_json_bytes`, `json_depth` pre-scan, serde model of the schema-1.x subset the mapper needs (unknown fields ignored, `schema_name` must be `DoclingDocument`, major version 1), `$ref` resolution with a visited set, nesting and block budgets.
+- `docling::read(bytes, &Limits) -> Result<ReadOutput, ReadError>`: byte cap `max_ir_json_bytes`, `json_depth` pre-scan, serde model of the schema-1.x subset the mapper needs (unknown fields ignored, `schema_name` must be `DoclingDocument`, major version 1), `$ref` resolution with a visited set, nesting and block budgets.
 - Mapping: title → heading 1, section header level n → heading n+1 (as Docling's own Markdown export), text/paragraph/reference/footnote/checkbox → paragraph, list groups → lists (ordered from `enumerated`), inline groups → one paragraph, code → `Code` (language from `code_language`), formula → display `Math`, tables → `Table` (spans, leading column-header rows → `head`, `row_header` → `header: true`, captions, footnotes), pictures → `Figure` with the embedded image in `AssetStore` (sniffed media type, `max_asset_bytes`), page headers/footers and the furniture layer → `furniture`, key-value and form items dropped with `unsupported_node`. Text is NFC-normalized; hyperlinks pass `links::allowed_link` or become text with `link_dropped`.
 - Layout: `LayoutIndex.pages` from `pages[n].size`; each mapped block with provenance gets `{page_no, bbox}` under its block path, converted from Docling's bottom-left origin to top-left points.
 - Metadata: title from the first title item, `source_format` from `origin.mimetype`; the file name in `name`/`origin` is not copied into the IR.
@@ -93,7 +93,7 @@ Registry checks on 2026-10-22: `docling` 2.142.0 is now a meta package over `doc
 - `Format` gains `pptx`, `xlsx`, `jpeg`, `tiff`, `webp` (same ids as the general registry work) and `docling+json`; `classify` sniffs PNG, JPEG, TIFF and WebP magic, PPTX/XLSX ZIP parts, and a JSON object whose first key is `schema_name: "DoclingDocument"`.
 - `capabilities.json`: `X ─docling→ docling+json` for the eight inputs and `docling+json ─ariad-core→ ariad-ir+json`, all `metrics: null`.
 - Host: `ExtractEdge::Docling*` (input → `docling+json`, out of process) and `ReaderEdge::DoclingJson` (in-process mapper); `route_from_plan` accepts a three-step plan `extract → map → write`. The engine input is copied into the workspace first (same TOCTOU rule as archives).
-- Engine resolution in `ariad_host::engines::docling::resolve()`: the development override `ASHIFT_DOCLING_ENGINE` (a command line; double quotes group words) first, then `packs::resolve("docling")` (an installed pack or an unpacked `ASHIFT_PACK_DOCLING` directory), whose program, arguments, environment and options reach the engine through `runner::run_with_env` and `describe_with_env`. The override passes no options: the engine finds its models and OCR data next to its interpreter prefix.
+- Engine resolution in `ariad_host::engines::docling::resolve()`: the development override `ASHIFT_DOCLING_ENGINE` (a command line; double quotes group words) first, then `packs::resolve("docling")` (an installed pack or an unpacked `ASHIFT_PACK_DOCLING` directory), whose program, arguments, environment, options and install root reach `runner::EngineCommand`. Discovery uses `describe_command`; conversion leases the engine through the shared host session pool (or a one-shot lease), so sandbox policy and process-tree memory limits apply to both paths. Artifacts are opened through the workspace capability and read under the JSON byte cap. The override passes no options: the engine finds its models and OCR data next to its interpreter prefix.
 - `ashift engines` reports docling from `describe`; `ashift doctor` adds a non-required docling check with the Tesseract install hint. A missing engine is exit 5 with a docling-specific hint.
 
 ### Pack build (`engines/docling/pack/`)
@@ -112,3 +112,13 @@ Registry checks on 2026-10-22: `docling` 2.142.0 is now a meta package over `doc
 - The Tesseract program is not bundled in the pack; the pack ships the pinned `tessdata_best` data only (decision recorded in ARCHITECTURE).
 - Layout coordinates are rounded to 0.001 pt in the mapper: the fuzz round-trip assertion failed for long decimals when `serde_json` lacks `float_roundtrip`, as in the separate fuzz workspace.
 - `ashift __pack manifest` validates every target of its base manifest, so the builder appends each target's entrypoint and options to the previous output instead of keeping a template with empty targets.
+
+### Integration and verification (2026-10-24)
+
+- Rebased onto `dev` after engine packs, sandbox/sessions and the web foundation landed. The in-memory pipeline now invokes the bounded Docling JSON mapper, and browser inspection offers the CLI for PDF routes. Internal engine formats stay out of suggested output targets.
+- Two complete Linux x86_64 builds in separate directories produced byte-identical runtime, models and tessdata archives, plus `pack.toml`. Bytecode uses a fixed hash seed, a single ordered compiler process and relative source names; installer location/time records and their `RECORD` entries are removed.
+- A fresh pack converted the scanned Vietnamese fixture to Markdown under `unshare -rn`. An ephemerally signed manifest installed through `ashift engines install docling --from`; the installed pack converted a PDF, reused one sandboxed process for two Office jobs and rejected a 64 MiB job limit. Native pack CI runs the same installation/session check.
+- The source host remains 0.1.0 until release preparation. The signed integration test changes only its temporary manifest's compatibility range; distributed packs still require the 0.2 host. Production trust and compatibility checks remain enabled.
+- Linux validation: 51 Python tests and Ruff; 665 Rust tests, Clippy, WASM checks, static checks, 64 bench tests, 49 web tests, typecheck, production build and all four crate packages. Packaging used a fresh target directory because the default local cache contained an older package with the same 0.1.0 version. The mapper fuzz target completed 229,695 runs in 31 seconds without a failure.
+- Windows validation identified the original 30-minute conversion stall: Docling emitted an artifact and a successful result in 12.297 seconds, but host cleanup called `wait()` after `try_wait()` had already drained the Windows Job Object's final completion notification. Cleanup and stale-session checks now retain and reuse the observed exit status. The Windows regression passed in 0.315 seconds; all 628 Windows Rust tests passed, and the real pack's CLI conversion completed. Conversion timeouts were not increased.
+- CI on [the integrated implementation](https://github.com/bavanchun/AriadShift/actions/runs/40011157526) passed all four Pack jobs and Pack manifest, including Windows signed installation/session verification. The standard CI, Web, CodeQL and release build checks passed as well.
