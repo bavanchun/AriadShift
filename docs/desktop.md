@@ -138,6 +138,8 @@ just desktop-build     # platform installers under target/release/bundle
 just desktop-bindings-check
 pnpm --filter @ariadshift/desktop test
 cargo nextest run -p ariad-desktop
+# Linux, after building the desktop app:
+xvfb-run -a dbus-run-session -- just desktop-smoke
 ```
 
 IPC DTOs derive `ts_rs::TS`. One Rust command table both registers handlers and
@@ -162,4 +164,5 @@ the release environment, sign update artifacts and attach bundles to the GitHub
 release created by the CLI workflow. Desktop jobs wait for that release and
 attach assets by release ID, avoiding competing release creation.
 The desktop app is not a crates.io package; root `package-check` verifies the
-publishable Rust crates, while this workflow verifies the desktop installers.
+other Rust workspace packages, including internal WASM, while this workflow
+verifies the desktop installers.

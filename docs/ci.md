@@ -15,6 +15,7 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | [`links.yml`](../.github/workflows/links.yml) | Weekly, manual, and pull requests that change it | lychee checks every Markdown link on `dev`, configured by [`lychee.toml`](../lychee.toml) |
 | [`dependabot.yml`](../.github/dependabot.yml) | Weekly (Monday, Asia/Saigon) | Update pull requests into `dev` for GitHub Actions, Cargo, pnpm and uv |
 | [`release.yml`](../.github/workflows/release.yml) | Tag push `'**[0-9]+.[0-9]+.[0-9]+*'`, pull requests touching release paths (build-only rehearsal) | Builds 5 targets on 3 OSes, one CycloneDX SBOM per crate, Homebrew formula, and invokes `publish-crates.yml` (pull requests scoped via `paths:` filter) |
+| [`desktop.yml`](../.github/workflows/desktop.yml) | Desktop/shared/Rust changes in pull requests, `v*` tags, manual | Builds installers on three OSes, checks generated bindings and runs the real Linux WebDriver conversion; tag jobs attach signed updates to the CLI-owned release (see [desktop.md](desktop.md)) |
 | [`release-smoke.yml`](../.github/workflows/release-smoke.yml) | Manual dispatch (`workflow_dispatch`) | Multi-channel smoke test verifying binary installation across Homebrew, shell, PowerShell, and cargo-binstall |
 | [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | Called by `release.yml` | Publishes crates (`ariad-core`, `ariad-host`, `ariad-cli`) to crates.io with API version polling and idempotence |
 
@@ -46,12 +47,13 @@ The same tree is never built twice without a reason:
 | Promotion pull request into `main`, and the push to `main` after it | Skipped when the tree matches a `dev` commit whose CI push run succeeded | That exact tree was already built and tested on all three OSes |
 | Hotfix pull request into `main`, and the push after it | Run | The tree is new |
 | Change to `docs/`, `plans/`, or the root `README.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` only | Skipped | Static checks still spell-check and lint it |
-| Change confined to the JavaScript workspace (`apps/`, `packages/`, `brand/`, `.node-version`, the root pnpm, Biome and Vitest files, or `scripts/check-js-licenses.mjs`) and prose | Skipped | No Rust code changed; the web and static jobs cover it |
+| Change confined to the JavaScript workspace (`apps/` except `apps/desktop/src-tauri/`, `packages/`, `brand/`, `.node-version`, the root pnpm, Biome and Vitest files, or `scripts/check-js-licenses.mjs`) and prose | Skipped | No Rust code changed; the web and static jobs cover it |
+| Change under `apps/desktop/src-tauri/` | Run | Native desktop Rust needs the same three-OS checks as the other crates |
 | Manual run, or a push whose previous commit is unknown | Run | Nothing to compare against |
 
 The web job runs when a change touches `apps/`, `packages/`, `brand/`, `.node-version`, `crates/ariad-core/`, `crates/ariad-wasm/`, the root pnpm, Biome, Vitest, Cargo or toolchain files, the `justfile`, `ci.yml`, `ci-scope.sh` or `install-wasm-bindgen.sh`, and on manual runs and pushes without a known previous commit. Promotions follow the same tree rule as the other jobs.
 
-The web job downloads browser system libraries from Ubuntu's primary archive over HTTPS, replacing Azure entries in direct sources and indirect APT mirror lists. Browser binaries come from the pinned Playwright release. Ubuntu's package signatures and the browser cache policy remain in effect.
+The web and native Linux jobs download system libraries from Ubuntu's primary archive over HTTPS, replacing Azure entries in direct sources and indirect APT mirror lists. Browser binaries come from the pinned Playwright release. Ubuntu's package signatures and the browser cache policy remain in effect.
 
 A newer push to the same pull request cancels its older run. Runs on `dev` and `main` are grouped by commit and are never cancelled.
 
@@ -72,12 +74,13 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 
 | Command | Runs |
 |---|---|
-| `just ci` | Everything CI runs on your OS except the browser tests: `just static`, Clippy, the WASM check, tests, `bench-test`, `bench-check`, `package-check`, and `web-ci` (wasm build, typecheck, Vitest, site build) |
+| `just ci` | Shared local quality gate: `just static`, Clippy, the WASM check, tests, `bench-test`, `bench-check`, `package-check`, `web-ci` (wasm build, typecheck, Vitest, site build), and desktop-scoped `desktop-ci`; browser E2E and installer packaging run separately |
+| `just desktop-ci` | On desktop/shared dependency changes: regenerate bindings and reject drift, build the frontend and run native tests; see [desktop.md](desktop.md) for installer and Linux smoke commands |
 | `just web-e2e` | The web job's Playwright tests; needs `just web-build` and `just web-browsers` first |
 | `just bench` | Run benchmark harness on fixture suite |
 | `just bench-check` | Validate capabilities.json against schema and invariants |
 | `just bench-test` | Run unit tests for benchmark harness |
-| `just package-check` | Verify crate packaging for crates.io publishing (`ariad-server` is not published and is excluded) |
+| `just package-check` | Verify core, host, CLI and internal WASM packaging; server and desktop are excluded, and desktop installers have their own workflow |
 | `just test-server-container` | Linux container build/check and required-mode worker smoke; needs a dedicated `ARIAD_TEST_DATABASE_URL`. Set `ARIAD_TEST_CONTAINER_SMOKE=1` with `just test-server` to reuse its throwaway service and clean everything up |
 | `just test-server` | The `ariad-server` database and S3 tests in throwaway Docker containers (`ariadshift-test-pg` on 127.0.0.1:55442, `ariadshift-test-s3` on 127.0.0.1:58342), removed afterwards; an ownership label prevents removing another worktree's containers |
 | `just static` | The OS-independent checks (requires `cargo-about 0.9.2`, `uv`, `python3`, and `pwsh` in CI) |
