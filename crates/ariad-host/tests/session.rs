@@ -452,6 +452,25 @@ fn a_timeout_kills_the_session() {
 }
 
 #[test]
+fn a_lower_memory_limit_rejects_an_already_warm_process() {
+    let pool = pool(quick_config());
+    let warm = run_job(&pool, "ok");
+    let mut limits = Limits::local();
+    limits.max_memory_mb = Some(1);
+    limits.timeout_s = Some(10);
+    let limited = run_job_with(&pool, "ok", &[], limits, CancellationToken::new());
+    assert!(
+        matches!(
+            limited.result,
+            Err(RunError::MemoryLimitExceeded { limit_mb: 1 })
+        ),
+        "{:?}",
+        limited.result
+    );
+    assert_ne!(run_job(&pool, "ok").pid(), warm.pid());
+}
+
+#[test]
 fn the_memory_watchdog_applies_to_session_jobs() {
     let pool = pool(quick_config());
     let warm = run_job(&pool, "ok");

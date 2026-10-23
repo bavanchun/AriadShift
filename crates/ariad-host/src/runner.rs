@@ -567,6 +567,13 @@ impl EngineProcess {
                 "output or exit before the next request",
             ));
         }
+        // A warm session can already exceed a new job's lower limit and finish before
+        // the first periodic sample. Reject it before delivering that request.
+        if let Some((pid, limit_mb)) = self.id().zip(job.memory_limit_mb)
+            && MemoryWatchdog::new(pid, limit_mb).exceeded().is_some()
+        {
+            return Err(RunError::MemoryLimitExceeded { limit_mb });
+        }
         // Keep one watchdog alive across request delivery and event processing, including
         // backpressure from an engine that has not started reading its request.
         let memory_limit = wait_memory_limit(self.id(), job.memory_limit_mb);
