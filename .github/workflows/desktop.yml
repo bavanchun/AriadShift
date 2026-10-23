@@ -47,7 +47,7 @@ jobs:
           tool: just@1.58.0,cargo-nextest@0.9.149
       - name: Linux desktop prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf webkit2gtk-driver xvfb
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf webkitgtk-webdriver xvfb
       - run: pnpm install --frozen-lockfile
       - run: just pandoc
       - run: just desktop-bindings-check
