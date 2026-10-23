@@ -58,6 +58,13 @@ const stopServer = () => {
   }
 };
 
+const handleSignal = () => {
+  stopServer();
+  process.exit(1);
+};
+process.on("SIGINT", handleSignal);
+process.on("SIGTERM", handleSignal);
+
 let failed = false;
 const rows = [];
 try {
