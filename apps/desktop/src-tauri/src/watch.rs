@@ -141,10 +141,10 @@ impl Backend {
         paused: bool,
     ) -> Result<WatchView, String> {
         validate_route(&request.target)?;
-        if ariad_host::convert::DocumentFormat::parse(&request.from).is_none() {
-            return Err("Unsupported watch input format".into());
-        }
-        if request.from == request.target {
+        let from = crate::deep_link::input_format(&request.from)
+            .ok_or("Unsupported watch input format")?;
+        request.from = from.as_str().into();
+        if ariad_host::convert::DocumentFormat::parse(&request.target) == Some(from) {
             return Err("Watch input and output formats must differ".into());
         }
         if !(1..=3600).contains(&request.interval_seconds) {

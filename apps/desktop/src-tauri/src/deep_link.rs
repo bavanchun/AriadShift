@@ -1,4 +1,11 @@
 use crate::types::{DeepLink, Profile};
+
+pub(crate) fn input_format(value: &str) -> Option<ariad_host::convert::DocumentFormat> {
+    ariad_host::convert::DocumentFormat::from_extension(value).or_else(|| {
+        ariad_core::format::Format::from_id(value).and_then(|format| format.try_into().ok())
+    })
+}
+
 /// Parses only routing preferences. Deep links never carry filesystem paths or credentials.
 pub fn parse(value: &str) -> Result<Option<DeepLink>, String> {
     let u = url::Url::parse(value).map_err(|_| "Invalid desktop link")?;
@@ -27,14 +34,11 @@ pub fn parse(value: &str) -> Result<Option<DeepLink>, String> {
     }
     let route = route.ok_or("Missing route")?;
     let (from, target) = route.split_once('-').ok_or("Invalid route")?;
-    if ![
-        "md", "html", "docx", "epub", "pdf", "odt", "pptx", "xlsx", "png", "jpg",
-    ]
-    .contains(&from)
-        || !["md", "html", "docx", "epub", "pdf"].contains(&target)
-        || from == target
-    {
-        return Err("Unsupported route".into());
+    let from = input_format(from).ok_or("Unsupported input format")?;
+    let target =
+        ariad_host::convert::DocumentFormat::parse(target).ok_or("Unsupported target format")?;
+    if from == target {
+        return Err("Input and output formats must differ".into());
     }
     let profile = match profile.as_deref().unwrap_or("editable") {
         "editable" => Profile::Editable,
@@ -44,8 +48,8 @@ pub fn parse(value: &str) -> Result<Option<DeepLink>, String> {
         _ => return Err("Invalid profile".into()),
     };
     Ok(Some(DeepLink {
-        from: from.into(),
-        target: target.into(),
+        from: from.as_str().into(),
+        target: target.as_str().into(),
         profile,
     }))
 }
@@ -59,6 +63,20 @@ mod tests {
             .unwrap();
         assert_eq!(link.from, "pdf");
         assert_eq!(link.profile, Profile::Private);
+        for (route, expected) in [
+            ("jpg-html", "jpeg"),
+            ("tif-docx", "tiff"),
+            ("webp-md", "webp"),
+            ("docling%2Bjson-html", "docling+json"),
+        ] {
+            assert_eq!(
+                parse(&format!("ariadshift://open?route={route}"))
+                    .unwrap()
+                    .unwrap()
+                    .from,
+                expected
+            );
+        }
         assert!(
             parse("ariadshift://auth/callback?code=reserved")
                 .unwrap()
@@ -66,6 +84,8 @@ mod tests {
         );
         for bad in [
             "https://open?route=md-html",
+            "ariadshift://open?route=md-png",
+            "ariadshift://open?route=unknown-html",
             "ariadshift://open?route=md-html&path=/private",
             "ariadshift://open?route=md-html&route=md-docx",
             "ariadshift://open?route=md-html&profile=invalid",

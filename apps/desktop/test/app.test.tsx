@@ -99,6 +99,7 @@ describe("desktop workflow", () => {
     fireEvent.change(screen.getByLabelText("Output folder"), {
       target: { value: "/tmp/converted" },
     });
+    fireEvent.change(screen.getByLabelText("Input format"), { target: { value: "pdf" } });
     fireEvent.change(screen.getByLabelText("Output format"), { target: { value: "docx" } });
     fireEvent.change(screen.getByLabelText("Profile"), { target: { value: "faithful" } });
     fireEvent.change(screen.getByLabelText("Polling interval (seconds)"), {
@@ -112,7 +113,7 @@ describe("desktop workflow", () => {
         request: {
           input: "/tmp/incoming",
           output: "/tmp/converted",
-          from: "md",
+          from: "pdf",
           target: "docx",
           profile: "faithful",
           overwrite: true,
