@@ -445,3 +445,45 @@ mod cancellation {
         assert!(!directory.path().join("never.md").exists());
     }
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "needs the docling engine from `just docling-dev`"]
+fn doctor_can_run_tesseract_with_data_in_a_custom_install_prefix() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = tempdir().unwrap();
+    let bin = directory.path().join("prefix/bin");
+    let share = directory.path().join("prefix/share");
+    fs::create_dir_all(&bin).unwrap();
+    fs::create_dir_all(&share).unwrap();
+    fs::write(share.join("version"), "tesseract 5.5.3\n").unwrap();
+    let program = bin.join("tesseract");
+    // Like a relocated installation, the helper must read data outside the job workspace.
+    fs::write(
+        &program,
+        "#!/bin/sh\ncat \"${0%/bin/tesseract}/share/version\"\n",
+    )
+    .unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let result = cli(&directory.path().join("data"))
+        .args(["doctor", "--json"])
+        .env("PATH", path)
+        .output()
+        .unwrap();
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let checks = report["checks"].as_array().expect("doctor checks");
+    let docling = checks
+        .iter()
+        .find(|check| check["id"] == "tesseract")
+        .expect("Tesseract check");
+    assert_eq!(docling["ok"], true, "{report}");
+    assert!(
+        docling["message"].as_str().unwrap().contains("Tesseract"),
+        "{report}"
+    );
+}

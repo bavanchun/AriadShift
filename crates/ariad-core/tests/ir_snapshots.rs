@@ -138,7 +138,7 @@ fn docling_fixture_irs_are_snapshotted_and_validate_against_the_schema() {
         .canonicalize()
         .expect("canonicalize repository root");
     let fixtures = support::fixtures::fixtures_for("docling->ir", "1b")
-        .expect("load DoclingDocument phase 1b fixtures");
+        .expect("load DoclingDocument fixtures");
     assert!(
         fixtures.len() >= 6,
         "expected the six DoclingDocument fixtures, found {}",

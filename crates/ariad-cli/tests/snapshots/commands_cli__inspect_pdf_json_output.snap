@@ -10,7 +10,7 @@ expression: normalize_stdout(&output)
   "warnings": [
     {
       "code": "engine_missing",
-      "message": "requires the docling engine (roadmap 1b)"
+      "message": "requires the docling engine; install it with `ashift engines install docling`"
     }
   ],
   "reachable": []
