@@ -57,7 +57,7 @@ impl Backend {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Persisted::default(),
             Err(e) => return Err(e.to_string()),
         };
-        validate_settings(&saved.settings)?;
+        validate_setting_values(&saved.settings)?;
         let backend = Arc::new(Self {
             model: Mutex::new(Model {
                 jobs: vec![],
@@ -528,14 +528,18 @@ fn output_path(input: &Path, folder: Option<&Path>, target: &str) -> Result<Path
     Ok(folder.unwrap_or_else(|| input.parent().unwrap()).join(name))
 }
 fn validate_settings(s: &Settings) -> Result<(), String> {
+    validate_setting_values(s)?;
+    if let Some(folder) = &s.output_folder {
+        directory(folder)?;
+    }
+    Ok(())
+}
+fn validate_setting_values(s: &Settings) -> Result<(), String> {
     if !(1..=4).contains(&s.concurrency) {
         return Err("Concurrency must be between 1 and 4".into());
     }
     if s.output_policy == OutputPolicy::Folder && s.output_folder.is_none() {
         return Err("Choose a default output folder".into());
-    }
-    if let Some(folder) = &s.output_folder {
-        directory(folder)?;
     }
     Ok(())
 }
@@ -668,6 +672,27 @@ mod tests {
                 .is_err()
         );
         assert!(!app.backend.snapshot(Empty {}).unwrap().pack_busy);
+    }
+    #[test]
+    fn missing_saved_output_folder_can_be_repaired_after_restart() {
+        let app = TestApp::new();
+        let folder = app._dir.path().join("output");
+        std::fs::create_dir(&folder).unwrap();
+        app.backend
+            .settings(Settings {
+                output_policy: OutputPolicy::Folder,
+                output_folder: Some(folder.to_string_lossy().into_owned()),
+                ..Settings::default()
+            })
+            .unwrap();
+        app.backend.shutdown();
+        std::fs::remove_dir(&folder).unwrap();
+        let restored = Backend::new(app._dir.path(), std::env::current_exe().unwrap()).unwrap();
+        let saved = restored.snapshot(Empty {}).unwrap().settings;
+        assert_eq!(saved.output_policy, OutputPolicy::Folder);
+        assert!(restored.settings(saved).is_err());
+        assert!(restored.settings(Settings::default()).is_ok());
+        restored.shutdown();
     }
     #[test]
     fn queued_jobs_cancel_without_creating_output() {
