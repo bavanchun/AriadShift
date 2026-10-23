@@ -165,10 +165,11 @@ can be removed when a stable upstream plugin release carries the fix.
   preferences-only deep links and signed updates. Generated IPC bindings and
   dependency notices are committed and checked for drift. The base app contains
   no Docling runtime or models.
-- [Desktop CI](https://github.com/bavanchun/AriadShift/actions/runs/40021530728)
-  passed on ubuntu-26.04, macos-26 and windows-2025: 10 native tests and 4 UI tests
+- [Desktop CI](https://github.com/bavanchun/AriadShift/actions/runs/40035072667)
+  passed on ubuntu-26.04, macos-26 and windows-2025: 11 native tests and 4 UI tests
   per platform, binding regeneration and all installer builds. Linux WebDriver
-  converted an actual Markdown file through the UI and checked the HTML content.
+  converted actual Markdown and Pandoc DOCX files through the packaged AppImage
+  UI and checked both HTML outputs.
 - [Common CI](https://github.com/bavanchun/AriadShift/actions/runs/40021530780)
   passed on all three OSes, including the full Rust suites, benchmarks, packaging,
   Web, fuzzing and static gates. The five CLI distribution targets and CodeQL
@@ -178,19 +179,26 @@ can be removed when a stable upstream plugin release carries the fix.
   inputs, pause/resume, native deep-link picker routing and signed local
   --from pack install/verify/remove. Independent minisign verification of the
   final updater archive passed. DMG SHA-256:
-  `9ebec4d986e013a4300f2de24375d2a42ab542a85538e929c77fede98c9dddf6`.
+  `05ed00526000ae065933babcdd753579492fd8994a46cf9b85a3ce8816bef3ed`.
 - Rebased onto Docling-enabled dev at 00eee93, preserving its reader and engine
   changes. The picker, watch inputs and deep links now expose the host's reader
   formats, including canonical image aliases and Docling JSON; output validation
-  uses the host writer registry. Local verification passed 258 host tests and
+  uses the host writer registry. Local verification passed 261 host tests and
   11 desktop tests, 4 UI tests, Clippy, production build, generated binding drift,
   license policy/inventory, workflow checks and all 28 CI scope cases.
 - Rebuilt the signed updater archive and DMG after that integration, installed
   the DMG and repeated every manual acceptance flow, including real Pandoc,
   watch pause/resume/restart and signed local pack install/verify/remove.
-  Ignored local evidence is in .tools/desktop-acceptance/current, including
+  Ignored final local evidence is in .tools/desktop-acceptance/cloud, including
   artifact-evidence.json, manual-checks.json and the pack receipt before removal.
   The installed app is closed and retained in the user's Applications directory.
+- Integrated cloud-enabled dev at be5e305, retaining its host resource-limit and
+  nested-engine cleanup changes, server integration workflow and packaging path
+  patches. Cargo regenerated the combined lockfile and license inventory. The
+  272 host/desktop tests, four-crate package verification and binding/Clippy/UI/
+  license/scope gates passed. The rebuilt DMG repeated all manual acceptance,
+  additionally converting Docling JSON through the core and Pandoc in a batch.
+  Final PR checks rerun against this base before delivery.
 - Linux deep-link registration needs desktop-file-utils and xdg-utils; DEB/RPM
   declare these dependencies and AppImage setup documents them. Headless tests
   start Xvfb before their isolated D-Bus session. Native prerequisite downloads
