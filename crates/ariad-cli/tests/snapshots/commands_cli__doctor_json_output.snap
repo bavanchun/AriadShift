@@ -34,10 +34,10 @@ expression: normalize_doctor_json_stdout(&output)
     },
     {
       "id": "pack_keys",
-      "ok": false,
+      "ok": true,
       "required": false,
-      "message": "no engine pack signing keys are built into this ashift",
-      "hint": "this build cannot install engine packs; use an official release build"
+      "message": "engine pack signing keys: D87B0E33F55EA02B",
+      "hint": ""
     },
     {
       "id": "docling_engine",
