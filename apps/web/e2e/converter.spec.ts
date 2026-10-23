@@ -123,11 +123,14 @@ test("explains formats that need the CLI", async ({ page }) => {
   await expect(page.getByText(/Word \(DOCX\), EPUB need the AriadShift CLI/)).toBeVisible();
 });
 
-test("does not offer the CLI for formats without a route", async ({ page }) => {
+test("offers the CLI for PDF routes provided by Docling", async ({ page }) => {
   await openConverter(page);
   await chooseFile(page, "page.pdf", "application/pdf", "%PDF-1.7\n");
-  await expect(page.getByText("AriadShift cannot convert pdf yet.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "The AriadShift CLI", exact: true })).toHaveCount(0);
+  await expect(page.getByText("pdf cannot be converted in the browser yet.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "The AriadShift CLI", exact: true })).toHaveAttribute(
+    "href",
+    "/download",
+  );
 });
 
 test("file drops outside the picker preserve the current document", async ({ page }) => {
