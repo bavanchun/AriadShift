@@ -93,7 +93,7 @@ export class ConverterSession {
     });
     const elapsedMs = performance.now() - started;
     const name = `${stem}.${output.extension}`;
-    const location = await this.store.putOutput(name, output.bytes, output.mediaType);
+    const location = await this.store.putOutput(output.bytes, output.mediaType);
     return {
       name,
       size: output.bytes.byteLength,

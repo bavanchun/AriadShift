@@ -20,7 +20,7 @@ export interface FileStore {
   /** Reads the input, or its first `maxBytes` bytes. */
   readInput(maxBytes?: number): Promise<Uint8Array>;
   /** Stores the output, replacing any previous one. */
-  putOutput(name: string, bytes: Uint8Array, mediaType: string): Promise<OutputLocation>;
+  putOutput(bytes: Uint8Array, mediaType: string): Promise<OutputLocation>;
   /** Deletes every file of this store. */
   clear(): Promise<void>;
   /**
@@ -62,7 +62,7 @@ export class MemoryStore implements FileStore {
     return new Uint8Array(await blob.arrayBuffer());
   }
 
-  async putOutput(_name: string, bytes: Uint8Array, mediaType: string): Promise<OutputLocation> {
+  async putOutput(bytes: Uint8Array, mediaType: string): Promise<OutputLocation> {
     return {
       kind: "memory",
       blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mediaType }),
@@ -94,6 +94,30 @@ type SyncFileHandle = FileSystemFileHandle & {
 type IterableDirectory = FileSystemDirectoryHandle & { keys(): AsyncIterable<string> };
 
 const INPUT_NAME = "input";
+const OUTPUT_NAME = "output";
+
+/**
+ * Generates a random session ID.
+ *
+ * Uses `crypto.randomUUID()` when available in secure contexts, or derives an RFC 4122
+ * version 4 UUID from `crypto.getRandomValues()` so workers can start on non-secure
+ * origins (such as plain HTTP on a LAN) and fall back to memory storage.
+ */
+export function randomSessionId(cryptoInstance: Crypto = crypto): string {
+  if (typeof cryptoInstance !== "undefined" && typeof cryptoInstance.randomUUID === "function") {
+    return cryptoInstance.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  cryptoInstance.getRandomValues(bytes);
+  const b6 = bytes[6];
+  const b8 = bytes[8];
+  if (b6 !== undefined && b8 !== undefined) {
+    bytes[6] = (b6 & 0x0f) | 0x40;
+    bytes[8] = (b8 & 0x3f) | 0x80;
+  }
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export function sessionLockName(session: string): string {
   return `${STORE_DIRECTORY}:${session}`;
@@ -110,12 +134,14 @@ async function removeEntry(directory: FileSystemDirectoryHandle, name: string): 
 }
 
 /** Holds the session's lock until the worker ends; resolves once it is held. */
-function holdLock(locks: LockManager, session: string): Promise<void> {
-  return new Promise((held) => {
-    void locks.request(sessionLockName(session), () => {
-      held();
-      return new Promise<never>(() => {});
-    });
+export function holdLock(locks: LockManager, session: string): Promise<void> {
+  return new Promise((held, reject) => {
+    locks
+      .request(sessionLockName(session), () => {
+        held();
+        return new Promise<never>(() => {});
+      })
+      .catch(reject);
   });
 }
 
@@ -227,12 +253,12 @@ export class OpfsStore implements FileStore {
     }
   }
 
-  async putOutput(name: string, bytes: Uint8Array): Promise<OutputLocation> {
+  async putOutput(bytes: Uint8Array): Promise<OutputLocation> {
     const directory = await this.directory("output");
     for await (const entry of (directory as IterableDirectory).keys()) {
       await removeEntry(directory, entry);
     }
-    const access = await this.access("output", name, true);
+    const access = await this.access("output", OUTPUT_NAME, true);
     try {
       access.truncate(0);
       access.write(bytes, { at: 0 });
@@ -240,7 +266,11 @@ export class OpfsStore implements FileStore {
     } finally {
       access.close();
     }
-    return { kind: "opfs", directory: [STORE_DIRECTORY, this.session, "output"], name };
+    return {
+      kind: "opfs",
+      directory: [STORE_DIRECTORY, this.session, "output"],
+      name: OUTPUT_NAME,
+    };
   }
 
   async clear(): Promise<void> {

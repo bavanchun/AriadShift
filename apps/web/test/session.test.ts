@@ -58,6 +58,14 @@ describe("ConverterSession", () => {
     expect(await outputText(markdown)).toContain("# A");
   });
 
+  it("converts files with backslashes or long names and retains the download name", async () => {
+    const session = new ConverterSession(loadCore(), new MemoryStore());
+    await session.ingest(markdownFile("# Hello\n", "path\\with\\backslash\\report.md"));
+    const output = await session.convert("html", "editable");
+    expect(output.name).toBe("path\\with\\backslash\\report.html");
+    expect(await outputText(output)).toContain("Hello");
+  });
+
   it("requires an input and forgets it on reset", async () => {
     const store = new MemoryStore();
     const session = new ConverterSession(loadCore(), store);
