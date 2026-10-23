@@ -111,9 +111,12 @@ closed. Backups on the maintainer's Mac are at
 `~/.config/ariadshift/keys/desktop-updater.key` and the adjacent
 `desktop-updater.key.password`, both mode 600. Never commit them.
 
-Apple signing/notarization is optional through `APPLE_CERTIFICATE`,
-`APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`,
-`APPLE_PASSWORD` and `APPLE_TEAM_ID`. Windows signing is optional through
+Apple signing requires `APPLE_CERTIFICATE` (base64 PKCS#12),
+`APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` together. Optional
+notarization additionally requires all three of `APPLE_ID`, `APPLE_PASSWORD` and
+`APPLE_TEAM_ID`. Empty Apple variables are removed before invoking Tauri; when
+the certificate is absent, macOS builds explicitly use `--no-sign`. This leaves
+the separate minisign updater signature enabled. Windows signing is optional through
 `WINDOWS_CERTIFICATE` (base64 PFX) and `WINDOWS_CERTIFICATE_PASSWORD`. Without
 platform signing material, bundles are unsigned; updater signatures are still
 mandatory for release updates. Only Tauri 2 updater artifacts are supported; the
