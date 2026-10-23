@@ -155,7 +155,8 @@ behavioral change is the parser initializer.
 Pull requests build installers on `ubuntu-26.04`, `macos-26` and `windows-2025`
 without publishing artifacts. Linux also runs `just desktop-smoke` under Xvfb
 using `tauri-driver` and the real UI to convert Markdown to HTML. Tag builds use
-the release environment, sign update artifacts and attach bundles to the draft
-release. The coordinator publishes after the wider release gates pass.
+the release environment, sign update artifacts and attach bundles to the GitHub
+release created by the CLI workflow. Desktop jobs wait for that release and
+attach assets by release ID, avoiding competing release creation.
 The desktop app is not a crates.io package; root `package-check` verifies the
 publishable Rust crates, while this workflow verifies the desktop installers.
