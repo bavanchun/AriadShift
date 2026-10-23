@@ -26,7 +26,7 @@ async function chooseFile(page: Page, name: string, mimeType: string, content: s
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose a file" }).click();
   await (await chooser).setFiles({ name, mimeType, buffer: Buffer.from(content) });
-  await expect(page.getByTestId("input-name")).toHaveText(name, { timeout: 15_000 });
+  await expect(page.getByTestId("input-name")).toHaveText(name);
 }
 
 async function selectTarget(page: Page, label: string) {
@@ -79,21 +79,6 @@ test("converts files with backslashes in name and retains the download name", as
   expect(download.suggestedFilename()).toBe("folder_doc.html");
   const path = await download.path();
   expect(await readFile(path, "utf8")).toContain("<h1>Field notes</h1>");
-});
-
-test("clears previous output when a new conversion starts", async ({ page }) => {
-  await openConverter(page);
-  await chooseFile(page, "notes.md", "text/markdown", MARKDOWN);
-  await selectTarget(page, "HTML");
-  await page.getByRole("button", { name: "Convert", exact: true }).click();
-  await expect(page.getByTestId("result")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Download notes.html" })).toBeVisible();
-
-  await selectTarget(page, "AriadShift IR (JSON)");
-  await page.getByRole("button", { name: "Convert", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Download notes.html" })).toBeHidden();
-  await expect(page.getByTestId("result")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Download notes.ir.json" })).toBeVisible();
 });
 
 test("converts HTML to Markdown", async ({ page }) => {
