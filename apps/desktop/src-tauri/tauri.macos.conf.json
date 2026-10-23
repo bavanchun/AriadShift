@@ -1,6 +1,8 @@
 {
   "bundle": {
-    "resources": { "icons/macos/Assets.car": "Assets.car" },
-    "macOS": { "infoPlist": "Info.plist" }
+    "macOS": {
+      "infoPlist": "Info.plist",
+      "files": { "Resources/Assets.car": "icons/macos/Assets.car" }
+    }
   }
 }
