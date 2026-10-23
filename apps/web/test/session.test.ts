@@ -58,7 +58,7 @@ describe("ConverterSession", () => {
     expect(await outputText(markdown)).toContain("# A");
   });
 
-  it("converts files with backslashes or long names and retains the download name", async () => {
+  it("retains the download name through conversion regardless of filename characters", async () => {
     const session = new ConverterSession(loadCore(), new MemoryStore());
     await session.ingest(markdownFile("# Hello\n", "path\\with\\backslash\\report.md"));
     const output = await session.convert("html", "editable");
