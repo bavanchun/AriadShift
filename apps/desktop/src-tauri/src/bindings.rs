@@ -2,26 +2,7 @@
 use crate::types::*;
 use ts_rs::TS;
 
-macro_rules! command_table {
-    ($consumer:ident) => {
-        $consumer! {
-            (snapshot, Empty, Snapshot),
-            (parse_link, LinkRequest, Option<DeepLink>),
-            (enqueue, QueueRequest, Vec<JobView>),
-            (cancel, IdRequest, ()),
-            (retry, IdRequest, Vec<JobView>),
-            (inspect, InspectRequest, Inspection),
-            (settings, Settings, Settings),
-            (watch, WatchRequest, WatchView),
-            (watch_control, WatchControl, ()),
-            (packs, Empty, Vec<PackRow>),
-            (pack, PackRequest, String),
-            (pack_cancel, Empty, ()),
-            (doctor, Empty, Vec<Diagnostic>),
-        }
-    };
-}
-pub(crate) use command_table;
+pub(crate) use crate::command_table::command_table;
 
 fn namespace_type(type_name: &str, dto_names: &[String]) -> String {
     let is_identifier =
@@ -88,7 +69,15 @@ pub fn export(directory: &std::path::Path) -> std::io::Result<()> {
     }
     command_table!(wrappers);
     std::fs::write(directory.join("types.ts"), types)?;
-    std::fs::write(directory.join("commands.ts"), commands)
+    std::fs::write(directory.join("commands.ts"), commands)?;
+    let mut permissions = "# Generated from Rust. Do not edit. Run just desktop-bindings.\n[[set]]\nidentifier = \"desktop-commands\"\ndescription = \"Local document workspace commands\"\npermissions = [\n".to_owned();
+    for command in crate::command_table::NAMES {
+        permissions.push_str(&format!("  \"allow-{}\",\n", command.replace('_', "-")));
+    }
+    permissions.push_str("]\n");
+    let permission_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("permissions");
+    std::fs::create_dir_all(&permission_dir)?;
+    std::fs::write(permission_dir.join("desktop-commands.toml"), permissions)
 }
 
 #[cfg(test)]

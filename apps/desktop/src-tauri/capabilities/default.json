@@ -7,7 +7,9 @@
     "core:default",
     "dialog:allow-open",
     "deep-link:default",
-    "updater:default",
+    "desktop-commands",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
     "opener:allow-reveal-item-in-dir"
   ]
 }

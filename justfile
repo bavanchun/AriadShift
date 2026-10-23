@@ -279,7 +279,7 @@ desktop-bindings:
     pnpm exec biome format --write apps/desktop/src/bindings
 
 desktop-bindings-check: desktop-bindings
-    git diff --exit-code -- apps/desktop/src/bindings
+    git diff --exit-code -- apps/desktop/src/bindings apps/desktop/src-tauri/permissions/desktop-commands.toml
 
 desktop-dev:
     pnpm --filter @ariadshift/desktop tauri dev
