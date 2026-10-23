@@ -26,3 +26,7 @@ Risk/rollback: Runtime pruning and sandbox grants can affect engine startup. Rea
 - Editable source access follows the override environment; the sandboxed doctor regression reads Tesseract prefix data. Install guidance, licensing exceptions and the nightly mapper target are updated.
 - Rebased onto `be5e305`. `just ci` passed: 750 Rust tests, 64 benchmark tests, 59 web tests, Clippy, WASM, package checks and production build. Python tests passed (59), with affected licensing/pruning tests rerun (28). The focused inspect tests (11) and custom-prefix doctor regression (1) passed.
 - Self-review found no remaining implementation issue. Original upstream licence text whitespace is preserved deliberately. Publication is gated on successful remote checks before `gh pr ready`.
+
+## Native Windows verification
+
+The first Windows pack smoke test exposed a case-insensitive path collision: scanning `runtime/lib` also scanned the stdlib `runtime/Lib` and removed `threading.py`. Native-library scans now exclude that directory on Windows. The pruning test models the alias on Unix, failed against the original implementation, and passed after the fix. All 59 Python tests and the complete local `just ci` gate passed again before publishing the repair.
