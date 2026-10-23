@@ -84,13 +84,27 @@ pub struct EngineCommand {
     pub args: Vec<OsString>,
     /// Explicit engine settings added after clearing the inherited environment.
     pub env: Vec<(OsString, OsString)>,
-    /// Pack files the engine may read and execute, without write access.
+    /// Pack or application runtime files the engine may read and execute, without write access.
     pub install_root: Option<PathBuf>,
     /// Executable implementing `__sandbox` (normally `ashift`). Without one the engine runs
     /// unsandboxed; best-effort mode reports that and required mode refuses to start it.
     pub launcher: Option<PathBuf>,
     /// Sandbox mode; `None` resolves [`sandbox::effective_mode`] when the engine starts.
     pub sandbox: Option<SandboxMode>,
+}
+
+// AppImage helpers re-exec this binary after confinement, so the loader needs the
+// bundle's libraries as executable code. The bundle never receives write access.
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn appimage_install_root(program: &Path, app_dir: Option<&OsStr>) -> Option<PathBuf> {
+    let root = std::fs::canonicalize(app_dir?).ok()?;
+    let program = std::fs::canonicalize(program).ok()?;
+    (root.parent().is_some()
+        && root.is_dir()
+        && root.join("AppRun").is_file()
+        && program.is_file()
+        && program.starts_with(&root))
+    .then_some(root)
 }
 
 impl EngineCommand {
@@ -102,6 +116,9 @@ impl EngineCommand {
             program: ashift.to_path_buf(),
             args: vec![OsString::from("__engine"), OsString::from(engine)],
             env: Vec::new(),
+            #[cfg(target_os = "linux")]
+            install_root: appimage_install_root(ashift, std::env::var_os("APPDIR").as_deref()),
+            #[cfg(not(target_os = "linux"))]
             install_root: None,
             launcher: Some(ashift.to_path_buf()),
             sandbox: None,
@@ -1036,6 +1053,47 @@ mod tests {
         assert_eq!(
             writable_paths(&convert_request("/tmp", "/out")),
             vec![PathBuf::from("/tmp"), PathBuf::from("/out")]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn appimage_runtime_root_requires_a_real_bundle_containing_the_program() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("AppDir");
+        std::fs::create_dir_all(root.join("usr/bin")).unwrap();
+        let program = root.join("usr/bin/engine");
+        std::fs::write(&program, b"program location").unwrap();
+        let derive = |value: &std::path::Path| {
+            super::appimage_install_root(&program, Some(value.as_os_str()))
+        };
+        assert_eq!(derive(&root), None);
+        std::fs::write(root.join("AppRun"), b"bundle entry point").unwrap();
+        assert_eq!(derive(&root), Some(root.canonicalize().unwrap()));
+        assert_eq!(derive(std::path::Path::new("/")), None);
+        assert_eq!(super::appimage_install_root(&program, None), None);
+        let outside = temp.path().join("engine");
+        std::fs::write(&outside, b"outside program").unwrap();
+        assert_eq!(
+            super::appimage_install_root(&outside, Some(root.as_os_str())),
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn appimage_runtime_root_rejects_program_symlinks_leaving_the_bundle() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("AppDir");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("AppRun"), b"bundle entry point").unwrap();
+        let outside = temp.path().join("engine");
+        std::fs::write(&outside, b"outside program").unwrap();
+        let link = root.join("engine");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        assert_eq!(
+            super::appimage_install_root(&link, Some(root.as_os_str())),
+            None
         );
     }
 
