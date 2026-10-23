@@ -62,6 +62,9 @@ jobs:
       - run: pnpm --filter @ariadshift/desktop test
       - run: pnpm --filter @ariadshift/desktop test:tools
       - run: cargo nextest run -p ariad-desktop
+      - name: Verify cached Linux bundler tools
+        if: runner.os == 'Linux'
+        run: node apps/desktop/scripts/linux-tools.mjs
       - name: Build platform installers without publishing
         run: just desktop-build
       - name: Install WebDriver
@@ -119,6 +122,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils
       - run: pnpm install --frozen-lockfile
+      - name: Verify cached Linux bundler tools
+        if: runner.os == 'Linux'
+        run: node apps/desktop/scripts/linux-tools.mjs
       - name: Configure release version
         env:
           RELEASE_TAG: ${{ github.ref_name }}
