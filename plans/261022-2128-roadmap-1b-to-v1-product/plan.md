@@ -69,7 +69,7 @@ Not covered, because they need the user's own accounts. The pipelines stay ready
 | 6 | [Web foundation and local app](./phase-06-web-foundation.md) | none | Mac | Done |
 | 7 | [Web heavy local routes and hand-offs](./phase-07-web-heavy-routes.md) | 3, 6 | Mac | Pending |
 | 8 | [Desktop app](./phase-08-desktop-app.md) | 1, 6 | Mac | Pending |
-| 9 | [Cloud backend](./phase-09-cloud-backend.md) | 2, 3 | ASUS | Pending |
+| 9 | [Cloud backend](./phase-09-cloud-backend.md) | 2, 3 | ASUS | Done |
 | 10 | [Cloud web, auth, SDK, self-host](./phase-10-cloud-web-sdk-selfhost.md) | 7, 9 | ASUS | Pending |
 | 11 | [v1.0: remote MCP, OS integration, audit, release](./phase-11-v1-release.md) | all | ASUS, Mac | Pending |
 

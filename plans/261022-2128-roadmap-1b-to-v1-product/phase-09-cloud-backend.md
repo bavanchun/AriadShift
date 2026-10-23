@@ -1,7 +1,7 @@
 ---
 phase: 9
 title: "Cloud backend"
-status: pending
+status: completed
 priority: P1
 effort: "34h"
 dependencies: [2, 3]
@@ -33,9 +33,9 @@ Read first: ARCHITECTURE §2.3, §8.3, §9, §10, §11, §12, §13; `crates/aria
 
 ## Acceptance criteria
 
-- `cargo nextest run -p ariad-server` passes with the database available, and skips cleanly without it.
-- The OpenAPI document is committed and stable under the drift test.
-- ARCHITECTURE §9, §10, §13, the Decision Log, and `docs/api.md` are updated.
+- [x] `cargo nextest run -p ariad-server` passes with the database available, and skips cleanly without it.
+- [x] The OpenAPI document is committed and stable under the drift test.
+- [x] ARCHITECTURE §9, §10, §13, the Decision Log, and `docs/api.md` are updated.
 
 ## Design notes
 
@@ -45,7 +45,7 @@ Recorded 2026-10-22 before implementation. Versions were checked against crates.
 
 - `crates/ariad-server` (library plus binary `ariad-server`, `publish = false`, `dist = false`). Subcommands: `api`, `worker --packs core,office,docling`, `migrate`, and a hidden `openapi` that prints the document.
 - Modules: `config` (environment parsing from a map, so tests need no process environment), `db` (pool, embedded `sqlx::migrate!`, typed rows), `queue` (`JobQueue` trait, `PgmqQueue`), `storage` (`object_store` plus presigning), `auth` (JWKS cache, API keys, Turnstile), `entitlements`, `rate_limit`, `api` (router, handlers, OpenAPI), `worker`, `sweeper`, `sandbox`, `packs`, `telemetry`.
-- Conversions run through `ariad_host::convert` exactly as in the CLI. One small host addition, `convert_with_limits`, passes the plan's `Limits` (the existing `convert` always uses `Limits::local()`). The worker's engine program is the `ashift` binary (`ARIAD_ENGINE_PROGRAM`, default: `ashift` next to `ariad-server`, then `PATH`), so the engines that later land in `ashift __engine …` and the `ashift __sandbox` launcher need no server change.
+- Conversions run through `ariad_host::convert::isolated` in the private `ariad-server __convert` helper, which calls `convert_with_limits` with the plan's `Limits` (the existing `convert` uses `Limits::local()`). The worker's engine program is the `ashift` binary (`ARIAD_ENGINE_PROGRAM`, default: `ashift` next to `ariad-server`, then `PATH`), so engines and the `ashift __sandbox` launcher use the same host implementation as the CLI.
 
 ### Data (sqlx migrations, runtime-checked queries)
 
@@ -124,10 +124,20 @@ Recorded 2026-10-22 before implementation. Versions were checked against crates.
 - Keep the private orchestration helper outside the engine sandbox: it must create host workspaces and launch engines, while native readers retain the architecture's native-reader exemption. Run it through an explicit `EngineCommand` with sandbox off and the full job memory limit, so the host RSS watchdog bounds the helper and its descendants. Preserve the existing deadline and cancellation grace. RSS and sandbox failures retain typed host error codes and do not retry document memory failures.
 - Replace memory-budget/256 admission with a fixed 64 MiB native text ceiling, further bounded by `max_input_bytes`. This limits allocation bursts between 250 ms RSS samples while allowing larger legitimate text inputs. Keep container memory limits as the hard deployment boundary.
 - Retain per-job helper lifetime. A persistent `SessionPool` across helpers would change cancellation and tenant isolation; warm-worker reuse is outside this integration.
-- Verify native RSS termination, larger native admission, strict sandbox propagation/failure, and a real required-mode Pandoc job on supported Linux CI. macOS has no Linux launcher and Docker is unavailable here; real-service verification runs in CI.
+- Verify native RSS termination, larger native admission, strict sandbox propagation/failure, and a real required-mode Pandoc job on supported Linux. The Mac integration had no Docker; the Linux continuation runs the real-service suite locally with Docker as well as in CI.
 
 ### Nested engine cleanup regression
 
 The aggregate RSS integration exposed a real process-tree boundary: the helper's inner host runner gives each engine a separate Unix process group. Killing only the helper's group left an engine alive. A real-process regression reproduced this before the repair: its heartbeat grew from 30 to 84 bytes after the helper returned a typed memory-limit error.
 
 On Unix error reaping, the host now snapshots descendants while their parent is alive and kills them before reaping the root group. This reuses the watchdog's process-tree enumeration; Windows retains Job Object cleanup. The existing workspace-pinned `nix` dependency provides safe signals on macOS as well as Linux, without introducing another crate or version. The regression uses a generated Python protocol fixture (the repository already requires Python), touches its allocated pages, and always stops the process it starts.
+
+## Completion evidence (2026-10-24)
+
+- Rebased onto `origin/dev@7f05fde`, preserving the web foundation and both the Web and Server integration CI jobs. The duplicate Markdown nesting change is absent from the cloud diff. Cargo and cargo-about regenerated the combined lockfile and license inventory.
+- All fresh heavy verification ran under the shared `.run/build.lock`, with `CARGO_BUILD_JOBS=3` and `NEXTEST_TEST_THREADS=3`, after the coordinator stopped the overloaded October 23 run. Interrupted output was not accepted as success evidence.
+- `ARIAD_TEST_REQUIRE_SANDBOX=1 just test-server` passed 78/78 tests against PostgreSQL/pgmq and SeaweedFS, including a real required-mode Pandoc worker job. The unavailable-confinement helper test passed with ambient `ASHIFT_SANDBOX=off`. The recipe removed both owned containers.
+- `just ci` passed: static checks, workspace Clippy, WASM, 712 workspace test entries, doctests, 64 benchmark tests, capabilities validation, four crate archives, TypeScript checks, 57 JavaScript tests and the production web build. Database cases skip internally without configured services in the workspace run; the separate Docker suite exercises them. Two PowerShell mutation checks skip locally because `pwsh` is unavailable.
+- The cleanup regression now reaches its nested engine with a 2 MiB input while retaining the 230 MiB engine allocation, 256 MiB RSS budget, deadline and heartbeat assertions. A negative check without descendant cleanup still reproduced the surviving engine. The unrelated HTML timing test passed under the shared lock without changing its 20-second bound.
+- The Docling image was retried through the real signed installer using the existing Office image. Its manifest still returned HTTP 404 while [PR #38](https://github.com/bavanchun/AriadShift/pull/38) was open. The build fails closed with an explicit signed-pack requirement and no substitute pack. Publishing that pack and validating heavy routes remain with their owning work; this verification does not claim a rebuilt current server/Office image or a working Docling image.
+- [PR #37](https://github.com/bavanchun/AriadShift/pull/37) carries the delivery. The [verification journal](../journals/2026-10-23-restore-reliable-cloud-backend-verification.md) records recovery, review history and the serialized rerun.
