@@ -35,7 +35,7 @@ docker build -f infra/docker/worker-office.Dockerfile --build-arg SERVER_IMAGE=a
 docker build -f infra/docker/worker-docling.Dockerfile --build-arg SERVER_IMAGE=ariadshift-worker-office -t ariadshift-worker-docling .
 ```
 
-The Docling build runs `ashift engines install docling` and needs the signed pack assets referenced by the [pack index](../crates/ariad-host/data/packs.toml). Until those assets are published, this build fails at installation; the server and Office images can be built independently.
+The Docling build runs `ashift engines install docling` and needs the signed pack assets referenced by the [pack index](../crates/ariad-host/data/packs.toml). Until those assets are published, this build fails at installation with an explicit signed-pack requirement; it never installs a substitute pack. The server and Office images can be built independently.
 
 The images run as user 10001 under `tini`. Mount a tmpfs at the work directory and set a container memory limit. Size it for input copies, IR and output, then add the per-job process budget and worker overhead to the container budget; tmpfs consumes container memory too. A 4 GiB tmpfs cannot hold the seeded 2 GiB input cap plus its copies and IR. Conversion helpers put host workspaces under `ARIAD_WORK_DIR`; a worker logs whether this directory is on tmpfs.
 
