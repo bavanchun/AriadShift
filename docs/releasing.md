@@ -25,7 +25,7 @@ Every step that touches `main`, GitHub environments, tags, or external package r
 3. Refresh [`Cargo.lock`](../Cargo.lock) and regenerate [`THIRD_PARTY_LICENSES`](../THIRD_PARTY_LICENSES) (which embeds the workspace crate versions checked by `just licenses-check`). `cargo-about` must be exact version `0.9.2` as pinned in [`justfile`](../justfile) (`cargo_about_version := "0.9.2"`; install with `cargo install --locked cargo-about --version 0.9.2` if needed):
    ```bash
    cargo check --workspace
-   cargo about generate about.hbs > THIRD_PARTY_LICENSES
+   just licenses
    ```
 4. Run the local quality gate:
    ```bash
@@ -112,6 +112,11 @@ grep -rn TBD-AFTER-RELEASE README.md AGENTS.md docs
 ## Workflows
 
 The workflow table and supply-chain pinning rules live in [ci.md](ci.md). Exact runner labels, action SHAs, and pinned tool versions are owned by [`.github/workflows/release.yml`](../.github/workflows/release.yml), [`.github/workflows/publish-crates.yml`](../.github/workflows/publish-crates.yml), [`.github/workflows/release-smoke.yml`](../.github/workflows/release-smoke.yml), [`dist-workspace.toml`](../dist-workspace.toml), and [`scripts/check-release-workflow.sh`](../scripts/check-release-workflow.sh) (`just check-release-workflow`).
+
+CLI archives use precise package builds so the desktop WebView dependencies are
+excluded from musl targets. Desktop installers and updater metadata are built by
+[the desktop workflow](../.github/workflows/desktop.yml); see
+[desktop release configuration](desktop.md#updates-and-release-configuration).
 
 ### `release.yml` — what runs and what to do on failure
 
