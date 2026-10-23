@@ -51,6 +51,12 @@ and is configurable from 1 to 3,600 seconds per watch. Only new or modified file
 whose `(size, mtime)` fingerprint stays unchanged across two scans enter the
 queue; files already present when watching begins are treated as a baseline.
 Watches run only while the app is open. Routes and pause state are persisted.
+Saved watches establish their initial baseline on background threads, so their
+directory scans do not delay the window. Files removed during scanning and
+unreadable nested folders are skipped; an unreadable input root reports an error.
+For large trees (over 1,000 entries) or network drives, use at least 10 seconds
+between scans and avoid overlapping recursive watches. The 1-second setting is
+intended for small local folders.
 
 Pause ignores changes made while paused; Resume establishes a fresh baseline.
 Subfolders are excluded unless Include subfolders is checked. Recursive watches
@@ -162,6 +168,9 @@ generated and committed; edit Rust and regenerate instead of editing TypeScript
 bindings. The desktop workflow and desktop-scoped `just desktop-ci` recipe
 regenerate and fail on a binding diff. Root `just ci` includes this recipe when
 desktop or shared dependency paths changed from `origin/dev`.
+The same table declares the application command manifest and generates the
+`desktop-commands` permission set, granted only to the local main window. Its
+permissions are regenerated and checked alongside the TypeScript bindings.
 
 `vendor/tauri-plugin-deep-link` preserves the published stable 2.6.2 crate with
 one Linux compatibility change: its `ini::ParseOption` initializer fills added
