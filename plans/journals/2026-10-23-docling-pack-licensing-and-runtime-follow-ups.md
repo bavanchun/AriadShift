@@ -13,3 +13,5 @@ The host now discovers editable sources through the override environment and gra
 Rebased onto the integrated cloud backend and completed local just ci: 750 Rust tests, 64 benchmark tests, 59 web tests, Clippy, WASM, package checks and production build. Python verification passed 59 tests, with the affected 28 licensing and pruning tests rerun after inventory refinements. Publication readiness remains gated by remote checks and is recorded in the requested handoff report. No dependency pins changed.
 
 > Historical work record — not durable authority. Prefer docs/specs/ADRs for current decisions.
+
+The first native Windows pack failed during engine startup with `ModuleNotFoundError: No module named threading`. Windows treats `runtime/lib` and `runtime/Lib` as the same directory, so the native-library prefix scan had removed a required stdlib module. The scan now excludes that directory on Windows, and the pruning fixture models the alias when running on Unix. The regression failed before the repair; all 59 Python tests and the full local just ci gate passed afterward. The repaired head must pass the native Pack checks before PR readiness.
