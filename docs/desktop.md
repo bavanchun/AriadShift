@@ -114,8 +114,10 @@ Composer layers using `actool` into `Assets.car`, with an `.icns` fallback.
 
 Use the root toolchains and `pnpm install`. Linux also needs WebKitGTK 4.1,
 Ayatana AppIndicator development libraries, OpenSSL, librsvg and patchelf.
-Regenerate bundled dependency notices with `just licenses`; the shared generator
-normalizes line endings and trailing spaces for reproducible checks.
+Regenerate bundled Rust and JavaScript dependency notices with `just licenses`;
+the generators normalize line endings and trailing spaces for reproducible
+checks. JavaScript notices traverse the desktop production graph, including
+shared UI dependencies and fonts; `just desktop-licenses` updates them alone.
 See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for
 platform setup. macOS needs Xcode for
 `actool`; Windows needs the standard Tauri build prerequisites and WebView2.
