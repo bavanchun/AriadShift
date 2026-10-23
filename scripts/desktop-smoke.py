@@ -80,7 +80,7 @@ def main():
                 click("//button[normalize-space()='Add file']")
                 click("//button[@aria-label='Start conversion']")
                 until(lambda: element(
-                    f"//*[@data-status='succeeded'][contains(., '{input_path.name}')]"))
+                    f"//div[strong[normalize-space()='{input_path.name}']]//*[@data-status='succeeded']"))
                 output = input_path.with_suffix(".html")
                 assert "Desktop smoke" in output.read_text(encoding="utf-8")
                 assert "A real local conversion." in output.read_text(encoding="utf-8")
