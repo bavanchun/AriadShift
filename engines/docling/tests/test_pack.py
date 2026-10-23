@@ -46,3 +46,33 @@ def test_removed_console_script_records_do_not_retain_build_paths(tmp_path, inst
         records.append(record.read_text())
     assert records[0] == records[1]
     assert records[0] == f"{module}\ndemo-1.0.dist-info/RECORD,,\n"
+
+
+@pytest.mark.parametrize(
+    "target", ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
+)
+def test_runtime_pruning_keeps_engine_requirements_and_removes_gui_and_tests(tmp_path, target):
+    runtime = tmp_path / "runtime"
+    library = build.library_root(runtime, target)
+    removed = [
+        library / "tkinter/__init__.py",
+        library / "idlelib/idle.py",
+        library / "test/test_math.py",
+        library / "sqlite3/test/test_db.py",
+        library / "lib-dynload/_tkinter.so",
+        runtime / "lib/libtcl9.0.so",
+        runtime / "lib/libtcl9tk9.0.dylib",
+        runtime / "lib/tcl9.0/init.tcl",
+        runtime / "lib/itcl4.3.8/itcl.tcl",
+        runtime / "tcl/tk9.0/tk.tcl",
+        runtime / "DLLs/_tkinter.pyd",
+        runtime / "DLLs/tcl90t.dll",
+        runtime / "bin/idle3",
+    ]
+    kept = [library / "ssl.py", library / "ctypes/__init__.py", runtime / "lib/libpython.so"]
+    for path in removed + kept:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"content")
+    build.prune_runtime(runtime, target)
+    assert all(not path.exists() for path in removed)
+    assert all(path.exists() for path in kept)

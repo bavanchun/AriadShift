@@ -13,9 +13,11 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import shutil
 import sys
+import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import metadata
@@ -226,6 +228,65 @@ def write_notices(distributions: Iterable[metadata.Distribution], notices: Path)
                 shutil.copyfile(source, destination)
     notices.mkdir(parents=True, exist_ok=True)
     (notices / "python-distributions.txt").write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
+def combined_expression(expressions: Iterable[str]) -> str:
+    """Conjoin the gate-approved expressions without changing OR/WITH precedence."""
+    return " AND ".join(f"({item})" for item in sorted(set(expressions)))
+
+
+def pack_expression(distributions: Iterable[metadata.Distribution], extra: Iterable[str]) -> str:
+    """Refuse failing distributions before including their actual licences in the manifest."""
+    distributions = list(distributions)
+    findings = check(distributions)
+    if findings:
+        details = "\n".join(f"  {f.distribution}: {f.license}: {f.reason}" for f in findings)
+        raise SystemExit(f"licence gate failed:\n{details}")
+    # Metadata expressions have already passed the gate; retain their alternatives and exceptions.
+    return combined_expression([*(license_of(item) for item in distributions), *extra])
+
+
+def runtime_libraries(release: str, target: str) -> list[dict]:
+    """The reviewed runtime-library inventory, tied to the pinned standalone Python release."""
+    with Path(__file__).with_name("runtime-libraries.toml").open("rb") as handle:
+        inventory = tomllib.load(handle)
+    if inventory["python_release"] != release:
+        raise SystemExit("review runtime-library licences for the new Python release")
+    platform = (
+        "windows"
+        if target.endswith("windows-msvc")
+        else "macos"
+        if target.endswith("apple-darwin")
+        else "linux"
+    )
+    return [
+        item
+        for item in inventory["libraries"]
+        if item.get("platform", platform) == platform
+        or (item.get("platform") == "unix" and platform != "windows")
+    ]
+
+
+def write_runtime_notices(notices: Path, libraries: list[dict]) -> None:
+    """Copy the upstream release texts, verifying their recorded digests, and list their sources."""
+    destination = notices / "runtime"
+    destination.mkdir(parents=True, exist_ok=True)
+    lines = ["C libraries in the standalone Python runtime (Tk/Tcl removed):", ""]
+    for item in libraries:
+        source = Path(__file__).with_name("licenses") / item["text"]
+        if hashlib.sha256(source.read_bytes()).hexdigest() != item["sha256"]:
+            raise SystemExit(f"runtime licence text digest mismatch: {source}")
+        shutil.copyfile(source, destination / item["text"])
+        lines.extend(
+            [
+                f"{item['name']} {item['version']}: {item['license']}",
+                f"  Source: {item['source']}",
+                f"  Text: notices/runtime/{item['text']}",
+            ]
+        )
+        if "archive_member" in item:
+            lines.append(f"  Release archive member: {item['archive_member']}")
+    (notices / "runtime-libraries.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _is_licence_name(name: str) -> bool:
