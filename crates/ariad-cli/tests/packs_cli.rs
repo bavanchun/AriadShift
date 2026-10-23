@@ -278,7 +278,7 @@ fn tampered_manifest_exits_1_with_a_signature_error() {
 }
 
 #[test]
-fn builds_without_trusted_keys_refuse_packs() {
+fn packs_without_a_trusted_signer_are_refused() {
     let fixture = Fixture::new();
     let output = fixture
         .ashift()
@@ -289,10 +289,12 @@ fn builds_without_trusted_keys_refuse_packs() {
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        stderr(&output).contains("no trusted pack signing keys"),
+        stderr(&output).contains("no trusted pack signing keys")
+            || stderr(&output).contains("which this build does not trust"),
         "{}",
         stderr(&output)
     );
+    assert!(!fixture.data.path().join("packs").join("probe").exists());
 }
 
 #[test]
