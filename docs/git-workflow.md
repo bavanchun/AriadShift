@@ -60,7 +60,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
 | `ci` | GitHub Actions workflows |
 | `chore` | Repository housekeeping that fits nothing else |
 
-Scopes follow the code layout: `core`, `ir`, `host`, `engine`, `cli`, `fixtures`, `schemas`, `brand`, `deps`. Leave the scope out when a change spans the whole repository.
+Scopes follow the code layout: `core`, `ir`, `host`, `engine`, `cli`, `web`, `wasm`, `ui`, `fixtures`, `schemas`, `brand`, `deps`. Leave the scope out when a change spans the whole repository.
 
 Examples:
 
