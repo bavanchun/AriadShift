@@ -86,7 +86,9 @@ pub fn inspect(
         if !docling_ready {
             warnings.push(ConvertWarning {
                 code: "engine_missing".to_owned(),
-                message: "requires the docling engine (roadmap 1b)".to_owned(),
+                message:
+                    "requires the docling engine; install it with `ashift engines install docling`"
+                        .to_owned(),
             });
         }
         return Ok(InspectOutput {

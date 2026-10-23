@@ -245,7 +245,11 @@ fn inspect_pdf_human_output() {
         .expect("run inspect");
     assert_eq!(output.status.code(), Some(0));
     insta::assert_snapshot!(normalize_stdout(&output));
-    assert!(normalize_stderr(&output).contains("requires the docling engine (roadmap 1b)"));
+    assert!(
+        normalize_stderr(&output).contains(
+            "requires the docling engine; install it with `ashift engines install docling`"
+        )
+    );
 }
 
 #[test]

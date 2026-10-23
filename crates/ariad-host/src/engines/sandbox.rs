@@ -4,7 +4,7 @@
 //! read-write access to its job workspace (see [`crate::sandbox::SandboxPolicy::for_engine`]).
 //! An engine that needs more, such as an install root or a helper binary, declares it here.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::pandoc_bin;
 
@@ -58,7 +58,7 @@ fn docling_paths() -> EnginePaths {
             .map(|dir| dir.join("tesseract"))
             .find_map(|file| file.canonicalize().ok())
     }) {
-        paths.exec.push(path);
+        grant_tesseract(&mut paths, &path);
     }
     if std::env::var_os(super::docling::OVERRIDE_ENV).is_some()
         && let Some(command) = super::docling::resolve()
@@ -77,11 +77,43 @@ fn docling_paths() -> EnginePaths {
         {
             paths.exec.push(prefix.to_path_buf());
         }
-        // uv's editable wheel points at the source package in this checkout.
-        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../engines/docling/src");
-        paths.read_only.extend(source.canonicalize().ok());
+        grant_editable_source(&mut paths, &command.program);
     }
     paths
+}
+
+/// Libraries and data may live beside a non-system Tesseract binary. Keep execution limited
+/// to the binary itself and only grant read access to its canonical installation prefix.
+fn grant_tesseract(paths: &mut EnginePaths, program: &Path) {
+    paths.exec.push(program.to_path_buf());
+    if let Some(bin) = program.parent()
+        && bin.file_name().is_some_and(|name| name == "bin")
+        && let Some(prefix) = bin.parent()
+    {
+        paths.read_only.push(prefix.to_path_buf());
+    }
+}
+
+/// uv writes the editable package's source directory into ariad_docling.pth. Resolve it from
+/// the override's environment so release binaries carry no builder checkout path.
+fn grant_editable_source(paths: &mut EnginePaths, program: &Path) {
+    let Some(prefix) = program.parent().and_then(Path::parent) else {
+        return;
+    };
+    for relative in ["lib/python3.14/site-packages", "Lib/site-packages"] {
+        let site = prefix.join(relative);
+        if let Ok(contents) = std::fs::read_to_string(site.join("ariad_docling.pth")) {
+            for line in contents.lines().map(str::trim) {
+                if !line.is_empty()
+                    && !line.starts_with('#')
+                    && !line.starts_with("import ")
+                    && !line.starts_with("import\t")
+                {
+                    paths.read_only.extend(site.join(line).canonicalize().ok());
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -97,5 +129,20 @@ mod tests {
         assert_eq!(ids.len(), count, "duplicate engine id in ENGINE_PATHS");
         assert_eq!(paths_for("no-such-engine"), super::EnginePaths::default());
         assert_eq!(paths_for("probe"), super::EnginePaths::default());
+    }
+
+    #[test]
+    fn editable_source_follows_the_override_environment() {
+        let root = tempfile::tempdir().expect("relocated checkout");
+        let prefix = root.path().join("python-env");
+        let site = prefix.join("lib/python3.14/site-packages");
+        std::fs::create_dir_all(&site).expect("site packages");
+        let source = root.path().join("engine source");
+        std::fs::create_dir(&source).expect("editable source");
+        std::fs::write(site.join("ariad_docling.pth"), source.to_str().unwrap()).unwrap();
+        let mut paths = super::EnginePaths::default();
+        super::grant_editable_source(&mut paths, &prefix.join("bin/python"));
+        assert_eq!(paths.read_only, vec![source.canonicalize().unwrap()]);
+        assert!(paths.exec.is_empty());
     }
 }
