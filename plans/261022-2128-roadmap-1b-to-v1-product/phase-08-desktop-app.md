@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "Desktop app"
-status: pending
+status: completed
 priority: P1
 effort: "30h"
 dependencies: [1, 6]
@@ -29,7 +29,7 @@ Read first: ARCHITECTURE §2.2, §4, §8.2, §16, §19; `packages/ui`, `apps/web
   - Diagnostics view backed by `doctor`.
   - Settings: default profile, output folder policy, overwrite policy, telemetry off (opt-in only, nothing implemented beyond the switch).
 - Deep links: `ariadshift://open?route=<from>-<to>&profile=<profile>` opens the file picker with the route preselected (ARCHITECTURE §8.2). Reserve `ariadshift://auth/callback` for phase 10.
-- Updater: the worker generates the updater key pair outside the repository; the public key goes into the Tauri config and the private key into the `release` environment; update metadata is published with GitHub Releases.
+- Updater: the worker generates the updater key pair outside the repository; the public key goes into the Tauri config. The coordinator stores the private key and its password as `release` environment secrets using the paths in the worker report; the worker does not set secrets. Update metadata is published with GitHub Releases.
 - Icons: `tauri icon` from `brand/png/ariadshift-app-icon-1024.png`; the macOS Liquid Glass icon compiled with `actool` from `brand/icon-composer/` on macOS, `.icns` fallback.
 - Workflow `.github/workflows/desktop.yml`: pull requests build on the three OSes without uploading; `v*` tags build and attach bundles (`.dmg`, `.msi`, NSIS `.exe`, AppImage, `.deb`, `.rpm`) and the updater metadata to the release. Signing and notarization run only when their secrets exist.
 - Tests: Rust tests for the command layer; Vitest for the UI; a WebDriver (`tauri-driver`) smoke test on Linux CI that converts a Markdown file to HTML.
@@ -43,8 +43,8 @@ Read first: ARCHITECTURE §2.2, §4, §8.2, §16, §19; `packages/ui`, `apps/web
 ## Design notes
 
 Scouted on 2026-10-23 in `feat/desktop-app`, based on `origin/dev` at
-`3a2d5ea`. The initial binding blocker was resolved by the coordinator on 2026-10-23;
-the acceptance criteria are not completed.
+`3a2d5ea`. The dated binding and license blockers below are historical; both were resolved
+by the coordinator. Implementation and acceptance are completed as recorded below.
 
 - Keep conversion in `ariad-host`. The desktop command layer can call
   `convert_in` with a shared `SessionPool`, cancellation tokens and progress
@@ -81,7 +81,7 @@ the acceptance criteria are not completed.
 | npm | `react` / `typescript` | 19.3.1 / 7.0.2 |
 | npm | `tailwindcss` / `@tailwindcss/vite` | 4.3.3 / 4.3.3 |
 
-### Binding dependency blocker
+### Binding dependency blocker (resolved)
 
 `AGENTS.md` prohibits alpha, beta and RC dependencies, while this phase and
 ARCHITECTURE §8.2 require Tauri 2 commands generated with `tauri-specta`.
@@ -112,7 +112,7 @@ The earlier blocker above is historical evidence, not an outstanding question.
 Continue the complete app, draft PR, signed updater metadata, installer and manual
 Mac acceptance work under the existing authorization.
 
-### Watch dependency license blocker (2026-10-23)
+### Watch dependency license blocker (resolved, 2026-10-23)
 
 The stable binding replacement is accepted and implemented in the working tree.
 A separate license gate now prevents completing the selected dependency graph:
@@ -155,3 +155,43 @@ as the latest stable releases. The published plugin is vendored with one source
 line added, `..Default::default()`, preserving its explicit quote/escape flags.
 The workspace patch keeps the latest stable versions and upstream licenses; it
 can be removed when a stable upstream plugin release carries the fix.
+
+
+## Completion and acceptance (2026-10-24)
+
+- Implemented all desktop surfaces against ariad-host: conversion and planner
+  explanation, bounded concurrent queue with warm sessions/cancellation/retry,
+  persisted polling watches, signed pack operations, diagnostics, settings,
+  preferences-only deep links and signed updates. Generated IPC bindings and
+  dependency notices are committed and checked for drift. The base app contains
+  no Docling runtime or models.
+- [Desktop CI](https://github.com/bavanchun/AriadShift/actions/runs/40021530728)
+  passed on ubuntu-26.04, macos-26 and windows-2025: 10 native tests and 4 UI tests
+  per platform, binding regeneration and all installer builds. Linux WebDriver
+  converted an actual Markdown file through the UI and checked the HTML content.
+- [Common CI](https://github.com/bavanchun/AriadShift/actions/runs/40021530780)
+  passed on all three OSes, including the full Rust suites, benchmarks, packaging,
+  Web, fuzzing and static gates. The five CLI distribution targets and CodeQL
+  also passed. Rebased onto dev without changing the macOS app code or config.
+- Built and installed AriadShift_0.1.0_aarch64.dmg locally. Manual acceptance
+  passed MD-to-HTML and real Pandoc DOCX conversion, batches, new/modified watch
+  inputs, pause/resume, native deep-link picker routing and signed local
+  --from pack install/verify/remove. Independent minisign verification of the
+  final updater archive passed. DMG SHA-256:
+  `e648c685eb405059377afe8ca4afa99694662f9c32ffb0f379f5b13e4fa2b930`.
+- Linux deep-link registration needs desktop-file-utils and xdg-utils; DEB/RPM
+  declare these dependencies and AppImage setup documents them. Headless tests
+  start Xvfb before their isolated D-Bus session. Native prerequisite downloads
+  use Ubuntu's primary HTTPS archive, including indirect APT mirror lists.
+- The updater private key and random password remain outside the repository,
+  both mode 600, at the requested ~/.config/ariadshift/keys paths. The coordinator
+  must populate the release environment secrets. Apple Developer ID/notarization
+  and Windows certificate signing remain conditional on the user's certificates;
+  live tag publication/update installation was not exercised.
+- Own application/watch/engine processes were stopped, the test watch removed and
+  the DMG unmounted. The installed app and ignored local acceptance artifacts are
+  retained for the coordinator. The English worker report contains exact paths,
+  hashes, command results, the compile-time dependency proof and secret handoff.
+
+PR: [Desktop document workspace](https://github.com/bavanchun/AriadShift/pull/40).
+The final documentation commit is checked again before marking the PR ready.
