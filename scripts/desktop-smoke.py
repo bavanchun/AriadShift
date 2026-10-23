@@ -65,6 +65,23 @@ def main():
             ident = until(ready)
             request("POST", prefix + f"/element/{ident}/click", {})
 
+        def type_path(path):
+            # A lost response may follow a successful key event. Read back the
+            # value before retrying so a transport retry cannot duplicate it.
+            def entered():
+                ident = element("//details[@open]//input[@id='file-path']")
+                if not ident:
+                    return False
+                endpoint = prefix + f"/element/{ident}"
+                value = request("GET", endpoint + "/property/value")
+                if value == str(path):
+                    return True
+                if value:
+                    request("POST", endpoint + "/clear", {})
+                request("POST", endpoint + "/value", {"text": str(path)})
+                return request("GET", endpoint + "/property/value") == str(path)
+            until(entered)
+
         with tempfile.TemporaryDirectory(prefix="ariadshift-desktop-smoke-") as directory:
             source = pathlib.Path(directory) / "smoke.md"
             source.write_text("# Desktop smoke\n\nA real local conversion.\n", encoding="utf-8")
@@ -75,8 +92,7 @@ def main():
                 if input_path == docx:
                     click("//button[normalize-space()='Convert']")
                 click("//summary[normalize-space()='Add a local file by path']")
-                ident = until(lambda: element("//details[@open]//input[@id='file-path']"))
-                request("POST", prefix + f"/element/{ident}/value", {"text": str(input_path)})
+                type_path(input_path)
                 click("//button[normalize-space()='Add file']")
                 click("//button[@aria-label='Start conversion']")
                 until(lambda: element(
