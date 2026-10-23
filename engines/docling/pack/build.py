@@ -217,15 +217,16 @@ def drop_build_records(site: Path) -> None:
     """Removes the installer's records of where and when each wheel was installed.
 
     ``direct_url.json`` holds the absolute path of the wheel and ``uv_cache.json`` the time of
-    the install, so the same inputs would give different archives on every build.
+    the install. Removed console scripts have interpreter-dependent shebangs, so their RECORD
+    entries must go too, even though the scripts themselves are no longer in the pack.
     """
     for info in site.glob("*.dist-info"):
         dropped = [name for name in ("direct_url.json", "uv_cache.json") if (info / name).is_file()]
         for name in dropped:
             (info / name).unlink()
         record = info / "RECORD"
-        if dropped and record.is_file():
-            entries = tuple(f"{info.name}/{name}," for name in dropped)
+        if record.is_file():
+            entries = ("bin/", *(f"{info.name}/{name}," for name in dropped))
             lines = record.read_text(encoding="utf-8").splitlines()
             kept = [line for line in lines if not line.startswith(entries)]
             record.write_text("\n".join(kept) + "\n", encoding="utf-8")
