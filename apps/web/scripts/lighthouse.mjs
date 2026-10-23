@@ -59,15 +59,22 @@ const stopServer = () => {
 };
 
 let activeChrome = null;
+let launchPromise = null;
 
-const handleSignal = async () => {
+const handleSignal = () => {
   if (activeChrome) {
     try {
-      await activeChrome.kill();
+      activeChrome.kill();
     } catch {
       // Chrome already terminated.
     }
     activeChrome = null;
+  } else {
+    try {
+      chromeLauncher.killAll();
+    } catch {
+      // Launcher already cleaned up.
+    }
   }
   stopServer();
   process.exit(1);
@@ -82,7 +89,14 @@ try {
   mkdirSync(reports, { recursive: true });
   for (const formFactor of ["mobile", "desktop"]) {
     for (const page of PAGES) {
-      activeChrome = await chromeLauncher.launch({ chromeFlags: ["--headless=new"] });
+      launchPromise = chromeLauncher.launch({ chromeFlags: ["--headless=new"] });
+      launchPromise
+        .then((chrome) => {
+          activeChrome = chrome;
+        })
+        .catch(() => {});
+      activeChrome = await launchPromise;
+      launchPromise = null;
       try {
         const result = await lighthouse(
           `${BASE}${page}`,
