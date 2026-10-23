@@ -34,8 +34,9 @@ assert_classification() {
 
 echo "=== Table tests: scripts/ci-scope.sh classification ==="
 
-# 1. core
+# 1. core and wasm
 assert_classification "core (ariad-core)" "crates/ariad-core/src/lib.rs" "true" "true" "code change"
+assert_classification "wasm (ariad-wasm)" "crates/ariad-wasm/src/lib.rs" "true" "true" "code change"
 
 # 2. host
 assert_classification "host (ariad-host)" "crates/ariad-host/src/main.rs" "true" "false" "code change"
@@ -49,15 +50,20 @@ assert_classification "packages/ (ui package)" "packages/ui/src/button.tsx" "fal
 # 5. brand/
 assert_classification "brand/ (brand assets)" "brand/src/logo.mjs" "false" "true" "JavaScript-only change"
 
-# 6. root manifests (JS and Rust)
+# 6. root manifests and tool configs (JS and Rust)
 assert_classification "root manifest (package.json)" "package.json" "false" "true" "JavaScript-only change"
 assert_classification "root manifest (pnpm-lock)" "pnpm-lock.yaml" "false" "true" "JavaScript-only change"
 assert_classification "root manifest (biome.json)" "biome.json" "false" "true" "JavaScript-only change"
+assert_classification "root config (.node-version)" ".node-version" "false" "true" "JavaScript-only change"
+assert_classification "root config (vitest.config.ts)" "vitest.config.ts" "false" "true" "JavaScript-only change"
 assert_classification "root manifest (Cargo.toml)" "Cargo.toml" "true" "true" "code change"
 assert_classification "root manifest (Cargo.lock)" "Cargo.lock" "true" "true" "code change"
+assert_classification "root config (rust-toolchain.toml)" "rust-toolchain.toml" "true" "true" "code change"
 assert_classification "root manifest (justfile)" "justfile" "true" "true" "code change"
 
-# 7. ci.yml
+# 7. scripts and workflows
+assert_classification "script (check-js-licenses.mjs)" "scripts/check-js-licenses.mjs" "false" "false" "JavaScript-only change"
+assert_classification "script (install-wasm-bindgen.sh)" "scripts/install-wasm-bindgen.sh" "true" "true" "code change"
 assert_classification "workflow (.github ci.yml)" ".github/workflows/ci.yml" "true" "true" "code change"
 
 # 8. docs-only
