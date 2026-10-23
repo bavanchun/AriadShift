@@ -299,6 +299,8 @@ desktop-ci:
     if git diff --name-only origin/dev HEAD -- apps/desktop packages Cargo.toml Cargo.lock pnpm-lock.yaml justfile .github/workflows/desktop.yml | grep -q .; then
         just desktop-bindings-check
         pnpm --filter @ariadshift/desktop build
+        pnpm --filter @ariadshift/desktop test
+        pnpm --filter @ariadshift/desktop test:tools
         cargo nextest run -p ariad-desktop
     fi
 

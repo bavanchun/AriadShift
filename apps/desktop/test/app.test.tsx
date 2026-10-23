@@ -1,22 +1,32 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/app";
 
-const { ipc, links } = vi.hoisted(() => ({
+const { ipc, links, picker, updateCheck } = vi.hoisted(() => ({
   ipc: vi.fn(),
-  links: { current: null as string[] | null },
+  links: {
+    current: null as string[] | null,
+    handler: undefined as ((urls: string[]) => void) | undefined,
+  },
+  picker: vi.fn(),
+  updateCheck: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: ipc }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: picker }));
 vi.mock("@tauri-apps/plugin-deep-link", () => ({
   getCurrent: async () => links.current,
-  onOpenUrl: async () => () => {},
+  onOpenUrl: async (handler: (urls: string[]) => void) => {
+    links.handler = handler;
+    return () => {
+      links.handler = undefined;
+    };
+  },
 }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir: vi.fn() }));
-vi.mock("@tauri-apps/plugin-updater", () => ({ check: vi.fn() }));
+vi.mock("@tauri-apps/plugin-updater", () => ({ check: updateCheck }));
 vi.mock("@ariadshift/ui/components/theme-toggle", () => ({ ThemeToggle: () => null }));
 const settings = {
   profile: "private",
@@ -29,6 +39,9 @@ const settings = {
 beforeEach(() => {
   ipc.mockReset();
   links.current = null;
+  links.handler = undefined;
+  picker.mockReset().mockResolvedValue(null);
+  updateCheck.mockReset().mockResolvedValue(null);
   ipc.mockImplementation(async (name, args) => {
     if (name === "snapshot")
       return { jobs: [], watches: [], settings, pack_progress: "", pack_busy: false };
@@ -43,8 +56,82 @@ beforeEach(() => {
     return [];
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 describe("desktop workflow", () => {
+  it("preselects a deep-link route and profile, opens the picker and debounces delivery", async () => {
+    const url = "ariadshift://open?route=md-html&profile=faithful";
+    links.current = [url];
+    picker.mockResolvedValue(["/tmp/linked.md"]);
+    const original = ipc.getMockImplementation();
+    ipc.mockImplementation(async (name, args) =>
+      name === "parse_link"
+        ? { from: "md", target: "html", profile: "faithful" }
+        : original?.(name, args),
+    );
+    vi.spyOn(Date, "now").mockReturnValue(5000);
+    render(<App />);
+    await screen.findByText("linked.md");
+    expect(picker).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: [{ name: "Documents", extensions: ["md", "markdown", "mdown"] }],
+      }),
+    );
+    await act(async () => links.handler?.([url]));
+    expect(picker).toHaveBeenCalledTimes(1);
+    vi.mocked(Date.now).mockReturnValue(6001);
+    await act(async () => links.handler?.([url]));
+    expect(picker).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Start conversion" }));
+    await waitFor(() =>
+      expect(ipc).toHaveBeenCalledWith("enqueue", {
+        request: {
+          paths: ["/tmp/linked.md"],
+          target: "html",
+          profile: "faithful",
+          output_folder: null,
+          overwrite: false,
+        },
+      }),
+    );
+  });
+  it("offers an update at startup and installs only after an explicit click", async () => {
+    const install = vi.fn(async (progress: (event: { event: string }) => void) => {
+      progress({ event: "Progress" });
+    });
+    updateCheck.mockResolvedValue({ version: "1.2.3", downloadAndInstall: install });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings$/ }));
+    const button = await screen.findByRole("button", { name: "Install update 1.2.3" });
+    expect(install).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    await screen.findByText("Update installed. Close and reopen AriadShift.");
+    expect(install).toHaveBeenCalledTimes(1);
+  });
+  it("keeps conversion available offline and reports a manual update check error", async () => {
+    updateCheck.mockRejectedValue(new Error("Update server is offline"));
+    render(<App />);
+    await waitFor(() => expect(updateCheck).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText("File path")).toBeTruthy();
+    expect(screen.queryByText("Update server is offline")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Settings$/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Check for updates" }));
+    await screen.findByText("Update server is offline");
+  });
+  it("reports signature refusal without claiming installation succeeded", async () => {
+    updateCheck.mockResolvedValue({
+      version: "1.2.3",
+      downloadAndInstall: vi.fn().mockRejectedValue(new Error("Signature verification failed")),
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Settings$/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Install update 1.2.3" }));
+    await screen.findByText("Signature verification failed");
+    expect(screen.queryByText("Update installed. Close and reopen AriadShift.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Install update 1.2.3" })).toBeTruthy();
+  });
   it("queues the selected file with saved defaults and clears selection", async () => {
     render(<App />);
     await waitFor(() => expect(ipc).toHaveBeenCalledWith("snapshot", { request: {} }));
