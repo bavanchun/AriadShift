@@ -8,6 +8,9 @@ The base installer excludes the optional Docling engine pack.
 
 Download a desktop installer from the project's GitHub Release: `.dmg` for macOS,
 `.msi` or NSIS `.exe` for Windows, or AppImage, `.deb` or `.rpm` for Linux.
+Linux URL registration requires `desktop-file-utils` and `xdg-utils`. The DEB
+and RPM declare these package dependencies; install them separately for AppImage.
+
 Unsigned builds are available until the maintainer configures platform signing
 certificates. On macOS, open the disk image and copy AriadShift to Applications.
 

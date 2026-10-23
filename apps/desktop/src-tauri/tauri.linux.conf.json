@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "linux": {
+      "deb": { "depends": ["desktop-file-utils", "xdg-utils"] },
+      "rpm": { "depends": ["desktop-file-utils", "xdg-utils"] }
+    }
+  }
+}
