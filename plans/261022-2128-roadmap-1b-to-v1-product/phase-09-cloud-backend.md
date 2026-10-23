@@ -86,7 +86,7 @@ Recorded 2026-10-22 before implementation. Versions were checked against crates.
 
 ### Worker
 
-- Reads its packs' queues with a concurrency semaphore (`ARIAD_WORKER_CONCURRENCY`, default 1), downloads the input into a per-job directory under `ARIAD_WORK_DIR` (default: the temp directory; the log line says whether it is tmpfs), verifies its hash, runs `convert_with_limits` on a blocking thread with a cancellation token, uploads the output, records `artifacts`, `job_steps`, events and a `job_completed` usage event, and removes the directory on every path.
+- Reads its packs' queues with a concurrency semaphore (`ARIAD_WORKER_CONCURRENCY`, default 1), downloads the input into a per-job directory under `ARIAD_WORK_DIR` (default: the temp directory; the log line says whether it is tmpfs), verifies its hash, runs the shared converter in a killable `__convert` helper from a blocking thread with a cancellation token, uploads the output, records `artifacts`, `job_steps`, events and a `job_completed` usage event, and removes the directory on every path.
 - Sandbox: `ARIAD_SANDBOX=required|best-effort|off` (default `required` on Linux). The `sandbox` module probes the host sandbox and refuses `required` only when the platform lacks its required confinement. The selected mode is explicitly forwarded to the helper and its engines.
 
 ### Observability
@@ -125,3 +125,9 @@ Recorded 2026-10-22 before implementation. Versions were checked against crates.
 - Replace memory-budget/256 admission with a fixed 64 MiB native text ceiling, further bounded by `max_input_bytes`. This limits allocation bursts between 250 ms RSS samples while allowing larger legitimate text inputs. Keep container memory limits as the hard deployment boundary.
 - Retain per-job helper lifetime. A persistent `SessionPool` across helpers would change cancellation and tenant isolation; warm-worker reuse is outside this integration.
 - Verify native RSS termination, larger native admission, strict sandbox propagation/failure, and a real required-mode Pandoc job on supported Linux CI. macOS has no Linux launcher and Docker is unavailable here; real-service verification runs in CI.
+
+### Nested engine cleanup regression
+
+The aggregate RSS integration exposed a real process-tree boundary: the helper's inner host runner gives each engine a separate Unix process group. Killing only the helper's group left an engine alive. A real-process regression reproduced this before the repair: its heartbeat grew from 30 to 84 bytes after the helper returned a typed memory-limit error.
+
+On Unix error reaping, the host now snapshots descendants while their parent is alive and kills them before reaping the root group. This reuses the watchdog's process-tree enumeration; Windows retains Job Object cleanup. The existing workspace-pinned `nix` dependency provides safe signals on macOS as well as Linux, without introducing another crate or version. The regression uses a generated Python protocol fixture (the repository already requires Python), touches its allocated pages, and always stops the process it starts.

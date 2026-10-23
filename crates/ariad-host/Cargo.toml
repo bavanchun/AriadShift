@@ -42,6 +42,7 @@ zip.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
+nix = { workspace = true, features = ["signal"] }
 
 # The host never targets wasm32; the HTTP client is native-only.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
