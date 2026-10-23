@@ -40,6 +40,9 @@ in Settings. All conversions share a warm engine session pool. The queue holds
 at most 1,000 jobs and clears finished history when room is needed; it is not
 persisted across app restarts.
 
+macOS installers and in-app updates currently support Apple silicon (aarch64)
+only. Intel macOS is not built and has no updater metadata entry.
+
 ## Watch folders
 
 Choose an input folder and a separate output folder, then a saved input format,
@@ -107,9 +110,12 @@ Updater artifacts and `latest.json` are attached to GitHub Releases by
 
 The release environment must contain `TAURI_SIGNING_PRIVATE_KEY` and
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; missing updater signing material fails
-closed. Backups on the maintainer's Mac are at
-`~/.config/ariadshift/keys/desktop-updater.key` and the adjacent
-`desktop-updater.key.password`, both mode 600. Never commit them.
+closed. Keep an offline backup of the private key and password; never commit
+them. Rotating the updater key requires an update signed by the old key that
+ships the new public key; losing the old key requires users to reinstall
+manually. Rotating the pack key requires shipping its new public key in a
+desktop/CLI release before publishing packs signed only by that key; losing a
+pack key leaves existing signatures valid but prevents signing new packs.
 
 Apple signing requires `APPLE_CERTIFICATE` (base64 PKCS#12),
 `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` together. Optional
