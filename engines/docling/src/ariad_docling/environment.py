@@ -128,7 +128,11 @@ def apply_memory_limit(max_memory_mb: int | None) -> None:
         resource.setrlimit(resource.RLIMIT_DATA, (hard, hard))
         return
     used = data_usage_mb()
-    if used is not None and max_memory_mb < used + MEMORY_HEADROOM_MB:
+    if used is None:
+        # Landlock can deny /proc/self/status. Keep the headroom guard in that sandbox
+        # using the resident peak; RLIMIT_DATA still enforces the allocation bound below.
+        used = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024
+    if max_memory_mb < used + MEMORY_HEADROOM_MB:
         raise EngineError(
             "limit_exceeded",
             f"the memory limit of {max_memory_mb} MB is below the {used} MB the engine needs",

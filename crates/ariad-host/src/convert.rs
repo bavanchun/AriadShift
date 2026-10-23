@@ -610,7 +610,10 @@ impl ConvertError {
             Self::DestinationSameAsInput => 2,
             Self::UnsupportedRoute { .. } => 3,
             Self::LimitExceeded | Self::MemoryLimitExceeded { .. } => 4,
-            Self::ToolMissing | Self::DoclingMissing | Self::DoclingToolMissing | Self::SandboxUnavailable(_) => 5,
+            Self::ToolMissing
+            | Self::DoclingMissing
+            | Self::DoclingToolMissing
+            | Self::SandboxUnavailable(_) => 5,
             Self::DestinationExists => 6,
             Self::Interrupted => 130,
             Self::InputIo
@@ -1107,7 +1110,9 @@ where
             (archive_out.document, None)
         }
         ReaderEdge::DoclingJson => {
-            let res = read_docling_to_ir(
+            let res = read_docling_with(
+                engines,
+                &request.engine_program,
                 &request.input,
                 route.extract,
                 &limits,
@@ -1374,7 +1379,9 @@ where
             (archive_out.document, None)
         }
         ReaderEdge::DoclingJson => {
-            let res = read_docling_to_ir(
+            let res = read_docling_with(
+                Engines::OneShot,
+                &request.engine_program,
                 &request.input,
                 extract,
                 &limits,
@@ -2143,6 +2150,31 @@ pub fn read_docling_to_ir<F>(
 where
     F: FnMut(ConvertEvent),
 {
+    let ashift = std::env::current_exe().map_err(|_| ConvertError::Failed)?;
+    read_docling_with(
+        Engines::OneShot,
+        &ashift,
+        input,
+        extract,
+        limits,
+        cancel,
+        on_event,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn read_docling_with<F>(
+    engines: Engines<'_>,
+    ashift: &Path,
+    input: &Path,
+    extract: Option<ExtractEdge>,
+    limits: &Limits,
+    cancel: CancellationToken,
+    on_event: &mut F,
+) -> Result<ReadDocumentResult, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
     let mut warnings = Vec::new();
     let bytes = match extract {
         None => {
@@ -2155,8 +2187,10 @@ where
         }
         Some(edge) => {
             let command = engines::docling::resolve().ok_or(ConvertError::DoclingMissing)?;
-            let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+            let mut lease = engines.lease(command.runner_command(ashift), &cancel)?;
+            let mut workspace = lease.workspace().map_err(|_| ConvertError::Failed)?;
             let result = extract_with_docling(
+                &mut lease,
                 input,
                 edge.capability().0,
                 &command,
@@ -2190,6 +2224,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 fn extract_with_docling<F>(
+    lease: &mut Lease<'_>,
     input: &Path,
     format: Format,
     command: &engines::docling::EngineCommand,
@@ -2221,27 +2256,23 @@ where
         work_dir: workspace.work_dir().to_string_lossy().into_owned(),
         options: command.options.clone(),
         limits: limits.clone(),
+        session_id: None,
     };
-    let outcome = runner::run_with_env(
-        &command.program,
-        &command.args,
-        &command.env,
-        &request,
-        cancel.clone(),
-        |event| match event {
+    let outcome = lease
+        .run(&request, cancel.clone(), |event| match event {
             Event::Progress { stage, .. } => on_event(ConvertEvent::Progress { stage }),
             Event::Warning { code, message } => warnings.push(sanitize_warning(&code, &message)),
             Event::Artifact { .. } | Event::Result { .. } | Event::Capabilities { .. } => {}
-        },
-    )
-    .map_err(|error| match error {
-        RunError::EngineFailed {
-            code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
-            ..
-        } => ConvertError::DoclingToolMissing,
-        RunError::Spawn(_) => ConvertError::DoclingMissing,
-        other => map_run_error(other),
-    })?;
+        })
+        .map_err(|error| match error {
+            RunError::EngineFailed {
+                code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
+                ..
+            } => ConvertError::DoclingToolMissing,
+            RunError::Spawn(_) => ConvertError::DoclingMissing,
+            other => map_run_error(other),
+        })?;
+    push_sandbox_warning(warnings, &outcome);
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
@@ -2250,24 +2281,20 @@ where
         .iter()
         .find(|artifact| artifact.format == Format::DoclingJson.id())
         .ok_or(ConvertError::Failed)?;
-    // The runner checks the artifact path lexically; links must not lead out of the workspace.
-    let output_dir = workspace
-        .output_dir()
-        .canonicalize()
+    let file = workspace
+        .open_artifact(&artifact.path)
+        .map_err(map_workspace_error)?;
+    let mut bytes = Vec::new();
+    file.take(limits.max_ir_json_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)
         .map_err(|_| ConvertError::Failed)?;
-    let artifact_path = artifact
-        .path
-        .canonicalize()
-        .ok()
-        .filter(|path| path.starts_with(&output_dir))
-        .ok_or(ConvertError::Failed)?;
-    read_bounded_file(&artifact_path, Some(limits.max_ir_json_bytes)).map_err(|error| match error {
-        ConvertError::LimitExceeded => ConvertError::LimitExceeded,
-        _ => ConvertError::Failed,
-    })
+    if bytes.len() as u64 > limits.max_ir_json_bytes {
+        return Err(ConvertError::LimitExceeded);
+    }
+    Ok(bytes)
 }
 
-fn map_run_error(error: RunError) -> ConvertError {
+pub(crate) fn map_run_error(error: RunError) -> ConvertError {
     match error {
         RunError::Cancelled => ConvertError::Interrupted,
         RunError::MemoryLimitExceeded { limit_mb } => {

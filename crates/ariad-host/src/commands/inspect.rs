@@ -40,7 +40,9 @@ pub struct InspectOutput {
 pub fn reachable_from(from: Format, caps: &planner::Capabilities) -> Vec<Format> {
     let registered = caps.registered_engines();
     let mut targets = planner::reachable_formats(caps, from, Profile::Editable, &registered);
-    targets.retain(|&f| f != Format::AriadIrJson && f != Format::PandocJson && f != from);
+    targets.retain(|&f| {
+        f != Format::AriadIrJson && f != Format::PandocJson && f != Format::DoclingJson && f != from
+    });
     targets.sort_by_key(|f| f.id());
     targets.dedup();
     targets
@@ -76,7 +78,10 @@ pub fn inspect(
     let reachable = reachable_from(format, caps);
 
     if format == Format::Pdf {
-        let docling_ready = crate::engines::docling::availability(cancel.clone())
+        let default_exe = std::env::current_exe().map_err(|_| ConvertError::Failed)?;
+        let program = engine_program.unwrap_or(&default_exe);
+        let docling_ready = crate::engines::docling::availability(program, cancel.clone())
+            .map_err(crate::convert::map_run_error)?
             .is_some_and(|docling| docling.available);
         if !docling_ready {
             warnings.push(ConvertWarning {
