@@ -40,7 +40,7 @@ The theme toggle and converter hydrate in separate React Suspense boundaries to 
 3. The worker inspects the file (`inspect`): up to 4 MiB it counts the structure, above that it classifies the first 64 KiB only. It plans the route over the edges whose runtime includes `wasm` (`plan`) and runs it step by step: each run of steps goes to the engine registered for its id. Only `ariad-core` is registered today; a JavaScript engine such as Pandoc WASM plugs into the same table. The worker handles one request at a time.
 4. The output is written to the same folder. Download reads it back through an object URL. "Start over and delete files" deletes the folder.
 
-Without OPFS synchronous access handles or Web Locks (some private browsing modes, some WebKit builds), the worker keeps files in its own memory up to 64 MiB and the page says so.
+Without OPFS synchronous access handles or Web Locks (non-secure origins, some private browsing modes, some WebKit builds), the worker keeps files in its own memory up to 64 MiB and the page says so.
 
 Errors from the worker are objects with a `code` and a `message`; storage failures such as a full disk are ordinary errors. An unexpected failure (for example the wasm module trapping) is marked `fatal`: the page replaces the worker, fails every pending request, and the next worker deletes the old worker's folder once its lock is free. wasm memory never shrinks, so after a job that grew it past 256 MiB the page also replaces the worker before the next file.
 
