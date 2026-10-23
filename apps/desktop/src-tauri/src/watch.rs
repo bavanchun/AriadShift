@@ -21,6 +21,18 @@ struct Fingerprint {
     modified: SystemTime,
 }
 type Files = HashMap<PathBuf, Fingerprint>;
+fn scan_result<T>(result: std::io::Result<T>, skip_unreadable: bool) -> Result<Option<T>, String> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                || (skip_unreadable && error.kind() == std::io::ErrorKind::PermissionDenied) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error.to_string()),
+    }
+}
 fn temporary(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     name.starts_with('.')
@@ -37,10 +49,15 @@ fn scan_bounded(root: &Path, recursive: bool, limit: usize) -> Result<Files, Str
     let mut stack = vec![(root.to_path_buf(), 0)];
     let mut count = 0;
     while let Some((folder, depth)) = stack.pop() {
-        for entry in std::fs::read_dir(&folder)
-            .map_err(|e| format!("Cannot scan {}: {e}", folder.display()))?
-        {
-            let entry = entry.map_err(|e| e.to_string())?;
+        let Some(entries) = scan_result(std::fs::read_dir(&folder), depth > 0)
+            .map_err(|error| format!("Cannot scan {}: {error}", folder.display()))?
+        else {
+            continue;
+        };
+        for entry in entries {
+            let Some(entry) = scan_result(entry, true)? else {
+                continue;
+            };
             count += 1;
             if count > limit {
                 return Err(format!(
@@ -50,7 +67,9 @@ fn scan_bounded(root: &Path, recursive: bool, limit: usize) -> Result<Files, Str
             if temporary(&entry.file_name().to_string_lossy()) {
                 continue;
             }
-            let kind = entry.file_type().map_err(|e| e.to_string())?;
+            let Some(kind) = scan_result(entry.file_type(), true)? else {
+                continue;
+            };
             if kind.is_symlink() {
                 continue;
             }
@@ -61,7 +80,9 @@ fn scan_bounded(root: &Path, recursive: bool, limit: usize) -> Result<Files, Str
                 stack.push((entry.path(), depth + 1));
             }
             if kind.is_file() {
-                let meta = entry.metadata().map_err(|e| e.to_string())?;
+                let Some(meta) = scan_result(entry.metadata(), true)? else {
+                    continue;
+                };
                 files.insert(
                     entry.path(),
                     Fingerprint {
@@ -124,7 +145,7 @@ impl Drop for RunningWatch {
 }
 impl Backend {
     pub fn watch(self: &Arc<Self>, request: WatchRequest) -> Result<WatchView, String> {
-        let view = self.start_watch(request, false)?;
+        let view = self.start_watch(request, false, true)?;
         if let Err(e) = self.persist() {
             let _ = self.watch_control(WatchControl {
                 id: view.id.clone(),
@@ -139,6 +160,7 @@ impl Backend {
         self: &Arc<Self>,
         mut request: WatchRequest,
         paused: bool,
+        wait_initial: bool,
     ) -> Result<WatchView, String> {
         validate_route(&request.target)?;
         let from = crate::deep_link::input_format(&request.from)
@@ -157,7 +179,6 @@ impl Backend {
         }
         request.input = input.to_string_lossy().into_owned();
         request.output = output.to_string_lossy().into_owned();
-        let initial = scan(&input, request.recursive)?;
         let view = WatchView {
             id: self.id(),
             route: request.clone(),
@@ -183,8 +204,14 @@ impl Backend {
             reset: AtomicBool::new(false),
         });
         let control = signal.clone();
+        let (initial_send, initial_recv) = std::sync::mpsc::channel();
         let thread = thread::spawn(move || {
-            let mut poller = Poller::new(initial);
+            let initial = scan(&input, request.recursive);
+            if let Some(b) = weak.upgrade() {
+                set_error(&b, &id, initial.as_ref().err().cloned());
+            }
+            let _ = initial_send.send(initial.as_ref().map(|_| ()).map_err(Clone::clone));
+            let mut poller = initial.ok().map(Poller::new);
             loop {
                 let stop = control.stop.lock().unwrap();
                 let (stop, _) = control
@@ -220,10 +247,12 @@ impl Backend {
                         continue;
                     }
                 };
-                if control.reset.swap(false, Ordering::AcqRel) {
-                    poller = Poller::new(current);
+                if control.reset.swap(false, Ordering::AcqRel) || poller.is_none() {
+                    poller = Some(Poller::new(current));
+                    set_error(&b, &id, None);
                     continue;
                 }
+                let poller = poller.as_mut().unwrap();
                 let ready = poller.observe(current, paused);
                 let mut error = None;
                 for (path, fp) in ready {
@@ -275,6 +304,20 @@ impl Backend {
                 thread: Some(thread),
             },
         );
+        drop(watches);
+        // New watches acknowledge their baseline before the caller writes inputs.
+        // Saved watches initialize on their thread without blocking application setup.
+        if wait_initial {
+            if let Err(error) = initial_recv.recv().unwrap_or_else(|e| Err(e.to_string())) {
+                self.model
+                    .lock()
+                    .unwrap()
+                    .watches
+                    .retain(|w| w.id != view.id);
+                self.watches.lock().unwrap().remove(&view.id);
+                return Err(error);
+            }
+        }
         Ok(view)
     }
     pub fn watch_control(&self, request: WatchControl) -> Result<(), String> {
@@ -316,6 +359,39 @@ fn set_error(b: &Backend, id: &str, error: Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn removed_entries_and_unreadable_subfolders_do_not_discard_scan() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("deleted.md");
+        std::fs::write(&path, "removed during scan").unwrap();
+        let entry = std::fs::read_dir(dir.path())
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(scan_result(entry.metadata(), true).unwrap().is_none());
+        assert!(
+            scan_result::<()>(Err(std::io::ErrorKind::PermissionDenied.into()), true)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            scan_result::<()>(Err(std::io::ErrorKind::PermissionDenied.into()), false).is_err()
+        );
+        std::fs::write(dir.path().join("good.md"), "readable").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let nested = dir.path().join("unreadable");
+            std::fs::create_dir(&nested).unwrap();
+            std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o000)).unwrap();
+            let result = scan(dir.path(), true);
+            std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o700)).unwrap();
+            assert_eq!(result.unwrap().len(), 1);
+        }
+        assert_eq!(scan(dir.path(), false).unwrap().len(), 1);
+    }
     #[test]
     fn scans_are_bounded_nonrecursive_and_ignore_partial_files() {
         let dir = tempfile::tempdir().unwrap();

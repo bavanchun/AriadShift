@@ -88,7 +88,7 @@ impl Backend {
             backend.threads.lock().unwrap().push(handle);
         }
         for watch in saved.watches {
-            match backend.start_watch(watch.route.clone(), watch.paused) {
+            match backend.start_watch(watch.route.clone(), watch.paused, false) {
                 Ok(_) => (),
                 Err(error) => backend.model.lock().unwrap().watches.push(WatchView {
                     id: backend.id(),
