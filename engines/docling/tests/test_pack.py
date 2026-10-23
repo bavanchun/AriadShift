@@ -54,22 +54,31 @@ def test_removed_console_script_records_do_not_retain_build_paths(tmp_path, inst
 def test_runtime_pruning_keeps_engine_requirements_and_removes_gui_and_tests(tmp_path, target):
     runtime = tmp_path / "runtime"
     library = build.library_root(runtime, target)
+    library.mkdir(parents=True)
+    # Model Windows' case-insensitive Lib alias when this fixture runs on Unix.
+    if build.is_windows(target) and not (runtime / "lib").exists():
+        (runtime / "lib").symlink_to(library.resolve(), target_is_directory=True)
     removed = [
         library / "tkinter/__init__.py",
         library / "idlelib/idle.py",
         library / "test/test_math.py",
         library / "sqlite3/test/test_db.py",
         library / "lib-dynload/_tkinter.so",
-        runtime / "lib/libtcl9.0.so",
-        runtime / "lib/libtcl9tk9.0.dylib",
-        runtime / "lib/tcl9.0/init.tcl",
-        runtime / "lib/itcl4.3.8/itcl.tcl",
         runtime / "tcl/tk9.0/tk.tcl",
         runtime / "DLLs/_tkinter.pyd",
         runtime / "DLLs/tcl90t.dll",
         runtime / "bin/idle3",
     ]
-    kept = [library / "ssl.py", library / "ctypes/__init__.py", runtime / "lib/libpython.so"]
+    if not build.is_windows(target):
+        removed.extend(
+            [
+                runtime / "lib/libtcl9.0.so",
+                runtime / "lib/libtcl9tk9.0.dylib",
+                runtime / "lib/tcl9.0/init.tcl",
+                runtime / "lib/itcl4.3.8/itcl.tcl",
+            ]
+        )
+    kept = [library / "ssl.py", library / "ctypes/__init__.py", library / "threading.py"]
     for path in removed + kept:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"content")

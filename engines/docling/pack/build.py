@@ -143,7 +143,11 @@ def prune_runtime(runtime: Path, target: str) -> None:
     library = library_root(runtime, target)
     directories = [runtime / "tcl", library / "tkinter", library / "idlelib"]
     directories.extend(path for path in library.rglob("*") if path.name in {"test", "tests"})
-    for directory in (runtime / "lib", runtime / "DLLs", runtime, runtime / "bin"):
+    native_directories = [runtime / "DLLs", runtime, runtime / "bin"]
+    # Windows aliases lib to the stdlib's Lib; scanning it would also remove threading.py.
+    if not is_windows(target):
+        native_directories.append(runtime / "lib")
+    for directory in native_directories:
         if directory.is_dir():
             directories.extend(
                 path
