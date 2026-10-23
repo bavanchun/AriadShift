@@ -58,7 +58,17 @@ const stopServer = () => {
   }
 };
 
-const handleSignal = () => {
+let activeChrome = null;
+
+const handleSignal = async () => {
+  if (activeChrome) {
+    try {
+      await activeChrome.kill();
+    } catch {
+      // Chrome already terminated.
+    }
+    activeChrome = null;
+  }
   stopServer();
   process.exit(1);
 };
@@ -72,11 +82,16 @@ try {
   mkdirSync(reports, { recursive: true });
   for (const formFactor of ["mobile", "desktop"]) {
     for (const page of PAGES) {
-      const chrome = await chromeLauncher.launch({ chromeFlags: ["--headless=new"] });
+      activeChrome = await chromeLauncher.launch({ chromeFlags: ["--headless=new"] });
       try {
         const result = await lighthouse(
           `${BASE}${page}`,
-          { port: chrome.port, output: "json", logLevel: "error", onlyCategories: CATEGORIES },
+          {
+            port: activeChrome.port,
+            output: "json",
+            logLevel: "error",
+            onlyCategories: CATEGORIES,
+          },
           formFactor === "desktop" ? desktopConfig : undefined,
         );
         const lhr = result.lhr;
@@ -88,7 +103,8 @@ try {
         const name = `${formFactor}-${page === "/" ? "home" : page.slice(1)}.json`;
         writeFileSync(path.join(reports, name), result.report);
       } finally {
-        await chrome.kill();
+        await activeChrome.kill();
+        activeChrome = null;
       }
     }
   }
