@@ -49,13 +49,13 @@ REPOSITORY = ENGINE_DIR.parents[1]
 PYTORCH_INDEX = "https://download.pytorch.org/whl/cpu"
 PACK_NAME = "docling"
 REQUIRES_ASHIFT = ">=0.2.0, <0.3.0"
-LICENSE = "MIT AND Apache-2.0 AND BSD-3-Clause AND CDLA-Permissive-2.0 AND PSF-2.0"
 DESCRIPTION = "Docling: PDF, scanned documents, Office files and images, with OCR"
 NOTICES = (
     "notices/AriadShift-LICENSE",
     "notices/AriadShift-NOTICE",
     "notices/python-distributions.txt",
     "notices/models-and-data.txt",
+    "notices/runtime-libraries.txt",
 )
 MAX_COMPONENT_BYTES = 2 * 1024**3
 PYTHON_VERSION = "3.14"
@@ -80,6 +80,7 @@ class TargetBuild:
     runtime: str
     models: str
     tessdata: str
+    license: str
 
     @property
     def files(self) -> dict[str, str]:
@@ -135,6 +136,28 @@ def unpack_runtime(archive: Path, root: Path) -> Path:
         runtime = root / "runtime"
         shutil.move(Path(scratch) / "python", runtime)
     return runtime
+
+
+def prune_runtime(runtime: Path, target: str) -> None:
+    """Remove unused GUI components and standard-library tests before installing wheels."""
+    library = library_root(runtime, target)
+    directories = [runtime / "tcl", library / "tkinter", library / "idlelib"]
+    directories.extend(path for path in library.rglob("*") if path.name in {"test", "tests"})
+    for directory in (runtime / "lib", runtime / "DLLs", runtime, runtime / "bin"):
+        if directory.is_dir():
+            directories.extend(
+                path
+                for path in directory.iterdir()
+                if path.name.lower().startswith(
+                    ("tcl", "tk", "itcl", "tix", "thread", "libtcl", "libtk", "_tkinter", "idle")
+                )
+            )
+    directories.extend((library / "lib-dynload").glob("_tkinter*"))
+    for path in sorted(set(directories), key=lambda item: len(item.parts), reverse=True):
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
 
 
 def install_wheels(work: Path, runtime: Path, target: str) -> None:
@@ -270,15 +293,23 @@ def compile_bytecode(runtime: Path, target: str) -> None:
     )
 
 
-def write_notices(root: Path, runtime: Path, target: str, pins: dict) -> None:
+def write_notices(root: Path, runtime: Path, target: str, pins: dict) -> str:
     site = site_packages(runtime, target)
     distributions = list(metadata.distributions(path=[str(site)]))
-    findings = licenses.check(distributions)
-    if findings:
-        details = "\n".join(f"  {f.distribution}: {f.license}: {f.reason}" for f in findings)
-        raise SystemExit(f"licence gate failed:\n{details}")
+    libraries = licenses.runtime_libraries(pins["python"]["release"], target)
+    expression = licenses.pack_expression(
+        distributions,
+        [
+            "Apache-2.0",
+            pins["python"]["license"],
+            pins["tessdata"]["license"],
+            *(model["license"] for model in pins["models"]),
+            *(item["license"] for item in libraries),
+        ],
+    )
     notices = root / "notices"
     licenses.write_notices(distributions, notices)
+    licenses.write_runtime_notices(notices, libraries)
 
     for name in ("LICENSE", "NOTICE"):
         shutil.copyfile(REPOSITORY / name, notices / f"AriadShift-{name}")
@@ -309,6 +340,7 @@ def write_notices(root: Path, runtime: Path, target: str, pins: dict) -> None:
         f"{pins['python']['license']}, {pins['python']['source']} {pins['python']['release']}"
     )
     (notices / "models-and-data.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return expression
 
 
 def smoke(runtime: Path, target: str) -> None:
@@ -419,11 +451,12 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
     root.mkdir(parents=True)
 
     runtime = unpack_runtime(fetch.fetch(fetch.python_archive(pins, target), cache), root)
+    prune_runtime(runtime, target)
     install_wheels(work, runtime, target)
     native = host_target() == target
     if native:
         compile_bytecode(runtime, target)
-    write_notices(root, runtime, target, pins)
+    expression = write_notices(root, runtime, target, pins)
     fetch.install_assets(pins, root, cache, copy=True)
     if native:
         smoke(runtime, target)
@@ -431,6 +464,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
     out.mkdir(parents=True, exist_ok=True)
     record = TargetBuild(
         triple=target,
+        license=expression,
         version=version,
         runtime=archive(
             root, ["runtime", "notices"], out / f"docling-{version}-{target}-runtime.tar.zst"
@@ -452,7 +486,7 @@ def _toml(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
-def pack_fields(version: str) -> str:
+def pack_fields(version: str, expression: str) -> str:
     notices = ", ".join(_toml(notice) for notice in NOTICES)
     return "\n".join(
         [
@@ -460,7 +494,7 @@ def pack_fields(version: str) -> str:
             f"name = {_toml(PACK_NAME)}",
             f"version = {_toml(version)}",
             f"description = {_toml(DESCRIPTION)}",
-            f"license = {_toml(LICENSE)}",
+            f"license = {_toml(expression)}",
             f"requires_ashift = {_toml(REQUIRES_ASHIFT)}",
             f"notices = [{notices}]",
             "",
@@ -495,7 +529,9 @@ def write_manifest(ashift: str, out: Path, builds: list[TargetBuild]) -> None:
         raise SystemExit(f"targets come from different pack versions: {sorted(versions)}")
     version = versions.pop()
     manifest = out / "pack.toml"
-    base_text = pack_fields(version)
+    base_text = pack_fields(
+        version, licenses.combined_expression(build.license for build in builds)
+    )
     for build in sorted(builds, key=lambda item: item.triple):
         base = out / "pack.base.toml"
         base.write_text(base_text + target_block(build.triple), encoding="utf-8")
