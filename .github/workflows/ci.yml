@@ -192,6 +192,10 @@ jobs:
       - name: Verify Pandoc installation
         run: '"$ASHIFT_PANDOC" --version'
 
+      - name: Install Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
       # The Windows lint job already runs Clippy there.
       - name: Run Clippy
         if: runner.os != 'Windows'
