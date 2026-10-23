@@ -550,6 +550,20 @@ def verify(ashift: str, out: Path, target: str, source: Path, expect: str, offli
             env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", r"C:\Windows")
             env["USERPROFILE"] = directory
         prefix = ["unshare", "-rn"] if offline else []
+        # Exercise discovery and planning separately so a stalled host round-trip identifies
+        # its stage rather than consuming the conversion timeout without diagnostics.
+        for args in (["engines", "--json"], ["plan", str(source), "--to", "md", "--json"]):
+            command = [*prefix, ashift, *args]
+            print("+", " ".join(command), flush=True)
+            try:
+                checked = subprocess.run(
+                    command, capture_output=True, env=env, check=False, timeout=120
+                )
+            except subprocess.TimeoutExpired as error:
+                raise SystemExit(f"pack host check timed out: {args[0]}") from error
+            print(checked.stdout.decode(errors="replace"), flush=True)
+            if checked.returncode:
+                raise SystemExit(checked.stderr.decode(errors="replace")[-4000:])
         command = [*prefix, ashift, "convert", source, "--to", "md", "-o", result]
         print("+", " ".join(str(part) for part in command), flush=True)
         completed = subprocess.run(
