@@ -72,7 +72,7 @@ jobs:
       matrix:
         os: [ubuntu-26.04, macos-26, windows-2025]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
@@ -126,15 +126,29 @@ jobs:
             $config.bundle.windows = @{certificateThumbprint=$cert.Thumbprint;digestAlgorithm='sha256';timestampUrl='http://timestamp.digicert.com'}
             $config | ConvertTo-Json -Depth 10 | Set-Content $path
           } finally { Remove-Item $pfx -Force }
+      - name: Wait for the CLI workflow to create the release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          for ((attempt = 0; attempt < 270; attempt++)); do
+            if release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.id' 2>/dev/null); then
+              [[ "$release_id" =~ ^[0-9]+$ ]] || exit 1
+              printf 'id=%s\n' "$release_id" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'The CLI release was not created; desktop assets will not be published.' >&2
+          exit 1
       - name: Build and attach installers and signed updater metadata
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: AriadShift ${{ github.ref_name }}
-          releaseDraft: true
+          releaseId: ${{ steps.release.outputs.id }}
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: --config src-tauri/tauri.release.local.json
