@@ -518,6 +518,9 @@ impl EngineProcess {
         command.wrap(JobObject).wrap(KillOnDrop);
 
         let mut child = command.spawn().map_err(RunError::Spawn)?;
+        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
+            eprintln!("trace: spawned {} {:?}", program.display(), child.id());
+        }
         let (Some(stdout), Some(stderr), Some(stdin)) = (
             child.stdout().take(),
             child.stderr().take(),
@@ -598,6 +601,9 @@ impl EngineProcess {
         if mode == JobMode::OneShot {
             self.stdin = None;
         }
+        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
+            eprintln!("trace: delivered request {:?}", self.id());
+        }
 
         let mut result = None;
         let mut artifacts = Vec::new();
@@ -629,6 +635,9 @@ impl EngineProcess {
                                 return Err(RunError::ProtocolViolation("line follows the result event"));
                             }
                             let event = parse_event(&line, job.output_dir.as_deref(), &mut artifacts)?;
+                            if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
+                                eprintln!("trace: event {event:?}");
+                            }
                             if let Event::Result { ok, metrics, error } = &event {
                                 result = Some((*ok, metrics.clone(), error.clone()));
                             }
@@ -717,11 +726,17 @@ impl EngineProcess {
     /// Kills the tree when `kill` is set or the engine is still running, waits for it, and
     /// collects the stderr drain.
     pub(crate) async fn reap(&mut self, kill: bool) {
+        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
+            eprintln!("trace: reaping {:?} kill={kill}", self.id());
+        }
         if kill || self.status.is_none() {
             let _ = self.child.start_kill();
         }
         if let Ok(status) = self.child.wait().await {
             self.status = Some(status);
+        }
+        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
+            eprintln!("trace: child waited");
         }
         if let Some(task) = self.stderr_task.take() {
             self.stderr_result = Some(match task.await {
@@ -899,6 +914,9 @@ where
         let count = stderr.read(&mut chunk).await?;
         if count == 0 {
             return Ok(());
+        }
+        if cfg!(feature = "test-probe") && std::env::var_os("ASHIFT_TEST_TRACE_ENGINE").is_some() {
+            eprint!("{}", String::from_utf8_lossy(&chunk[..count]));
         }
         let mut tail = tail.lock().expect("stderr tail mutex is not poisoned");
         let excess = tail

@@ -549,6 +549,11 @@ def verify(ashift: str, out: Path, target: str, source: Path, expect: str, offli
         if is_windows(target):
             env["SYSTEMROOT"] = os.environ.get("SYSTEMROOT", r"C:\Windows")
             env["USERPROFILE"] = directory
+            env["ASHIFT_TEST_TRACE_ENGINE"] = "1"
+            (site_packages(root / "runtime", target) / "sitecustomize.py").write_text(
+                "import faulthandler\nfaulthandler.dump_traceback_later(60, repeat=True)\n",
+                encoding="utf-8",
+            )
         prefix = ["unshare", "-rn"] if offline else []
         # Exercise discovery and planning separately so a stalled host round-trip identifies
         # its stage rather than consuming the conversion timeout without diagnostics.
@@ -566,13 +571,39 @@ def verify(ashift: str, out: Path, target: str, source: Path, expect: str, offli
                 raise SystemExit(checked.stderr.decode(errors="replace")[-4000:])
         command = [*prefix, ashift, "convert", source, "--to", "md", "-o", result]
         print("+", " ".join(str(part) for part in command), flush=True)
-        completed = subprocess.run(
-            [str(part) for part in command],
-            capture_output=True,
-            env=env,
-            check=False,
-            timeout=1800,
-        )
+        if is_windows(target):
+            with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+                process = subprocess.Popen(
+                    [str(part) for part in command], stdout=stdout, stderr=stderr, env=env
+                )
+                timed_out = False
+                try:
+                    process.wait(timeout=180)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                        check=False,
+                        timeout=30,
+                    )
+                    process.wait(timeout=30)
+                stdout.seek(0)
+                stderr.seek(0)
+                completed = subprocess.CompletedProcess(
+                    command, process.returncode, stdout.read(), stderr.read()
+                )
+            print(completed.stdout.decode(errors="replace"), flush=True)
+            print(completed.stderr.decode(errors="replace"), flush=True)
+            if timed_out:
+                raise SystemExit("Windows host conversion diagnostic timed out")
+        else:
+            completed = subprocess.run(
+                [str(part) for part in command],
+                capture_output=True,
+                env=env,
+                check=False,
+                timeout=1800,
+            )
         if completed.returncode != 0 or not result.is_file():
             stderr = completed.stderr.decode(errors="replace")[-4000:]
             raise SystemExit(f"pack conversion failed ({completed.returncode}):\n{stderr}")
