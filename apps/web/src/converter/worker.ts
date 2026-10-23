@@ -1,11 +1,11 @@
 // Web Worker that owns ariad-wasm and the converter's files.
 import init, * as ariadWasm from "@ariadshift/ariad-wasm";
 import { coreFrom } from "./engines";
-import { MEMORY_LIMIT_BYTES, MemoryStore, OpfsStore } from "./file-store";
+import { MEMORY_LIMIT_BYTES, MemoryStore, OpfsStore, randomSessionId } from "./file-store";
 import type { RequestEnvelope, WorkerResponse } from "./protocol";
 import { ConverterSession, handleRequest, serialize, type WorkerContext } from "./session";
 
-const storageSession = crypto.randomUUID();
+const storageSession = randomSessionId();
 
 const context: Promise<WorkerContext> = (async () => {
   const { memory } = await init();
