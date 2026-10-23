@@ -19,7 +19,10 @@ RUN apt-get update \
 # Packs install under ASHIFT_DATA_DIR; workers only read them.
 ENV ASHIFT_DATA_DIR=/opt/ariadshift
 RUN mkdir -p "${ASHIFT_DATA_DIR}" \
-    && ashift engines install docling \
+    && { ashift engines install docling || { \
+        echo 'Docling worker image requires the published signed Docling pack; installation failed. No substitute pack is permitted.' >&2; \
+        exit 1; \
+    }; } \
     && chmod -R a+rX,go-w "${ASHIFT_DATA_DIR}"
 USER 10001
 CMD ["worker", "--packs", "docling"]
