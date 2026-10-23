@@ -625,9 +625,9 @@ async fn interchange_formats_are_rejected_before_submission() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn native_inputs_respect_the_parser_memory_budget() {
+async fn native_admission_is_independent_of_the_rss_budget() {
     let Some(h) = Harness::start(
-        "native_inputs_respect_the_parser_memory_budget",
+        "native_admission_is_independent_of_the_rss_budget",
         Options::default(),
     )
     .await
@@ -641,12 +641,12 @@ async fn native_inputs_respect_the_parser_memory_budget() {
     let response = h
         .create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "html")
         .await;
-    assert_eq!(response.status(), 413);
+    assert_eq!(response.status(), 202);
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs")
         .fetch_one(&h.db.pool)
         .await
         .unwrap();
-    assert_eq!(count, 0);
+    assert_eq!(count, 1);
     h.stop().await;
 }
 
@@ -801,6 +801,32 @@ async fn oversized_verified_inputs_fail_without_retry() {
         .await;
     assert_eq!(job["status"], "failed");
     assert_eq!(job["error"]["code"], "input_io");
+    assert_eq!(job["attempts"], 1);
+    h.stop().await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread")]
+async fn required_worker_runs_a_sandboxed_pandoc_job() {
+    if !ariad_host::sandbox::support().gaps().is_empty() {
+        assert!(
+            std::env::var_os("ARIAD_TEST_REQUIRE_SANDBOX").is_none(),
+            "CI requires real kernel confinement for the worker integration test"
+        );
+        eprintln!("skipping required sandbox job: kernel confinement is unavailable");
+        return;
+    }
+    let Some(mut h) = Harness::start(
+        "required_worker_runs_a_sandboxed_pandoc_job",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    h.start_worker_with(&[("ARIAD_SANDBOX", "required")]);
+    let (job, _) = run_job(&h, &Auth::Anonymous, "docx").await;
+    assert_eq!(job["status"], "succeeded", "{job}");
     assert_eq!(job["attempts"], 1);
     h.stop().await;
 }

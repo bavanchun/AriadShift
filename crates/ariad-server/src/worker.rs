@@ -106,7 +106,7 @@ impl Failure {
             ConvertError::OutputIo => {
                 Self::transient("output_io", "the output could not be written")
             }
-            ConvertError::LimitExceeded => {
+            ConvertError::LimitExceeded | ConvertError::MemoryLimitExceeded { .. } => {
                 Self::permanent("limit_exceeded", "the document exceeds the plan's limits")
             }
             ConvertError::InputIo => Self::permanent("input_io", "the input could not be read"),
@@ -422,6 +422,7 @@ impl Worker {
         let limits = limits.clone();
         let convert_cancel = cancel.clone();
         let conversion_program = self.config.conversion_program.clone();
+        let sandbox_mode = self.config.sandbox.host_mode();
         let span = tracing::Span::current();
         let converted = tokio::task::spawn_blocking(move || {
             let _entered = span.enter();
@@ -429,6 +430,7 @@ impl Worker {
                 &conversion_program,
                 &request,
                 limits,
+                sandbox_mode,
                 convert_cancel,
                 |event| {
                     let ConvertEvent::Progress { stage } = event;
@@ -805,6 +807,13 @@ mod tests {
         assert!(Failure::from_convert(&ConvertError::Failed).transient);
         assert!(Failure::from_convert(&ConvertError::ToolMissing).transient);
         assert!(!Failure::from_convert(&ConvertError::LimitExceeded).transient);
+        let rss = Failure::from_convert(&ConvertError::MemoryLimitExceeded { limit_mb: 1 });
+        assert!(!rss.transient);
+        assert_eq!(rss.code, "limit_exceeded");
+        let sandbox =
+            Failure::from_convert(&ConvertError::SandboxUnavailable("unavailable".to_owned()));
+        assert!(!sandbox.transient);
+        assert_eq!(sandbox.code, "sandbox_unavailable");
         assert!(!Failure::from_convert(&ConvertError::UnsupportedRoute { detail: None }).transient);
         assert!(!Failure::from_convert(&ConvertError::InputIo).transient);
         assert_eq!(
