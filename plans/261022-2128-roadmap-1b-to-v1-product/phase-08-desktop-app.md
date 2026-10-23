@@ -172,13 +172,25 @@ can be removed when a stable upstream plugin release carries the fix.
 - [Common CI](https://github.com/bavanchun/AriadShift/actions/runs/40021530780)
   passed on all three OSes, including the full Rust suites, benchmarks, packaging,
   Web, fuzzing and static gates. The five CLI distribution targets and CodeQL
-  also passed. Rebased onto dev without changing the macOS app code or config.
+  also passed. Later integration checks against the Docling-enabled dev are recorded below.
 - Built and installed AriadShift_0.1.0_aarch64.dmg locally. Manual acceptance
   passed MD-to-HTML and real Pandoc DOCX conversion, batches, new/modified watch
   inputs, pause/resume, native deep-link picker routing and signed local
   --from pack install/verify/remove. Independent minisign verification of the
   final updater archive passed. DMG SHA-256:
-  `e648c685eb405059377afe8ca4afa99694662f9c32ffb0f379f5b13e4fa2b930`.
+  `9ebec4d986e013a4300f2de24375d2a42ab542a85538e929c77fede98c9dddf6`.
+- Rebased onto Docling-enabled dev at 00eee93, preserving its reader and engine
+  changes. The picker, watch inputs and deep links now expose the host's reader
+  formats, including canonical image aliases and Docling JSON; output validation
+  uses the host writer registry. Local verification passed 258 host tests and
+  11 desktop tests, 4 UI tests, Clippy, production build, generated binding drift,
+  license policy/inventory, workflow checks and all 28 CI scope cases.
+- Rebuilt the signed updater archive and DMG after that integration, installed
+  the DMG and repeated every manual acceptance flow, including real Pandoc,
+  watch pause/resume/restart and signed local pack install/verify/remove.
+  Ignored local evidence is in .tools/desktop-acceptance/current, including
+  artifact-evidence.json, manual-checks.json and the pack receipt before removal.
+  The installed app is closed and retained in the user's Applications directory.
 - Linux deep-link registration needs desktop-file-utils and xdg-utils; DEB/RPM
   declare these dependencies and AppImage setup documents them. Headless tests
   start Xvfb before their isolated D-Bus session. Native prerequisite downloads
