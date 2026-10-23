@@ -70,8 +70,7 @@ impl fmt::Display for SandboxMode {
 
 static DEFAULT_MODE: OnceLock<SandboxMode> = OnceLock::new();
 
-/// Sets the mode used when `ASHIFT_SANDBOX` is unset. Server workers call this with
-/// [`SandboxMode::Required`] at startup; the first call wins.
+/// Sets the mode used when `ASHIFT_SANDBOX` is unset; the first call wins.
 pub fn set_default_mode(mode: SandboxMode) {
     let _ = DEFAULT_MODE.set(mode);
 }
