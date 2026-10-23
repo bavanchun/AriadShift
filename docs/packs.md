@@ -158,6 +158,8 @@ ashift __pack manifest --name docling --version 0.2.0 \
 
 On Linux x86_64 the components are about 455 MB, 383 MB and 29 MB (1.9 GB of files in `runtime`). The entrypoint is `runtime/bin/python3 -I -m ariad_docling` (`runtime/python.exe` on Windows) and the default options are `artifacts_path = "{root}/models"` and `tessdata_path = "{root}/tessdata"`. The pack does not bundle the Tesseract program; the engine reports it in `describe` and `ashift doctor` explains how to install it. `requires_ashift` is `>=0.2.0, <0.3.0`, the line whose engine protocol the pack speaks.
 
+For byte-identical builds, run `build.py` with the same uv-managed python-build-standalone CPython 3.14 patch release on both builds, as the Pack CI jobs do through `setup-uv`. The builder uses that interpreter's `tarfile` and bundled zstd; a system Python linked to another zstd version can produce different archive bytes. Keep `SOURCE_DATE_EPOCH` and all pinned inputs identical. The Linux x86_64 Pack job builds again in a separate directory and checks SHA-256 for all three components and `pack.toml`.
+
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 
 ## Signing and publishing
