@@ -124,3 +124,10 @@ Registry checks on 2026-10-22: `docling` 2.142.0 is now a meta package over `doc
 - CI on [the integrated implementation](https://github.com/bavanchun/AriadShift/actions/runs/40011157526) passed all four Pack jobs and Pack manifest, including Windows signed installation/session verification. The standard CI, Web, CodeQL and release build checks passed as well.
 - Cross-environment archive comparison found 26 `RECORD` files still listing deleted console scripts whose hashes depended on installer-interpreter shebangs. Those entries are now removed as well. Regression cases cover both fresh installer records and previously cleaned metadata, using different interpreter paths.
 - Fresh builds with different output directories and installer interpreters (`.venv/bin/python` and `.tools/docling/python-env/bin/python`) produced byte-identical archives and manifests after the console-script cleanup.
+
+
+### Pack review follow-ups (2026-10-24)
+
+Runtime C-library licence texts now include upstream release sources and digest checks, while unused Tk/Tcl, idlelib and standard-library tests are removed. The manifest licence derives from the distribution gate and component inventory; Linux CI rebuilds the pack in another directory and compares component and manifest hashes. The licensing exceptions are explicit in AGENTS.md and the Decision Log. Sandbox development sources follow the override environment, Tesseract prefixes have read access with a doctor regression, installation hints are current, and the mapper runs in nightly ASan fuzzing.
+
+Local verification after rebasing onto the cloud integration passed `just ci` (750 Rust tests, 64 benchmark tests, 59 web tests, Clippy, WASM, package checks and production build), Python tests (59, with the affected 28 rerun after inventory refinements), inspect regressions (11) and the sandboxed custom-prefix doctor test (1). Remote checks and readiness are recorded in the follow-up pull request and coordinator handoff report; dependency upgrades remain release preparation.
