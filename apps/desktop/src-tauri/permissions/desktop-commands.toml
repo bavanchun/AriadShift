@@ -1,0 +1,19 @@
+# Generated from Rust. Do not edit. Run just desktop-bindings.
+[[set]]
+identifier = "desktop-commands"
+description = "Local document workspace commands"
+permissions = [
+  "allow-snapshot",
+  "allow-parse-link",
+  "allow-enqueue",
+  "allow-cancel",
+  "allow-retry",
+  "allow-inspect",
+  "allow-settings",
+  "allow-watch",
+  "allow-watch-control",
+  "allow-packs",
+  "allow-pack",
+  "allow-pack-cancel",
+  "allow-doctor",
+]

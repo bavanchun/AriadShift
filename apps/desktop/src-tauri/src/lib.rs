@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod bindings;
+mod command_table;
 pub mod deep_link;
 pub mod types;
 mod watch;
