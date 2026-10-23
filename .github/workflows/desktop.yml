@@ -47,7 +47,14 @@ jobs:
           tool: just@1.58.0,cargo-nextest@0.9.149
       - name: Linux desktop prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf webkitgtk-webdriver xvfb dbus-daemon at-spi2-core
+        run: |
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [[ -f "$source" ]]; then
+              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+            fi
+          done
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf webkitgtk-webdriver xvfb dbus-daemon at-spi2-core
       - run: pnpm install --frozen-lockfile
       - run: just pandoc
       - run: just desktop-bindings-check
