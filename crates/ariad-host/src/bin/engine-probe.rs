@@ -24,6 +24,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "echo" => echo_request(),
+        "docling" => docling(args.next()),
         "fail-typed" => fail_typed(ExitCode::from(1)),
         "fail-typed-zero" => fail_typed(ExitCode::SUCCESS),
         "ok-but-nonzero" => {

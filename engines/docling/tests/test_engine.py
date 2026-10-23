@@ -106,9 +106,8 @@ def test_session_reuses_one_process_and_rejects_foreign_jobs(workspace):
     completed = run_engine(first, second, foreign, DESCRIBE)
     assert completed.returncode == 0
     results = [event for event in events(completed) if event["type"] == "result"]
-    assert [result["ok"] for result in results] == [True, True, False, False]
+    assert [result["ok"] for result in results] == [True, True, False]
     assert results[2]["error"]["code"] == "invalid_request"
-    assert results[3]["error"]["code"] == "invalid_request"
 
 
 def test_one_shot_requests_ignore_later_lines(workspace):

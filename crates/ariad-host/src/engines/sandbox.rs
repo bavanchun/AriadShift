@@ -21,8 +21,11 @@ pub struct EnginePaths {
 pub type EnginePathsFn = fn() -> EnginePaths;
 
 /// The per-engine declaration, keyed by engine id. Add one entry per new engine.
-pub const ENGINE_PATHS: &[(&str, EnginePathsFn)] =
-    &[("pandoc", pandoc_paths), ("probe", EnginePaths::default)];
+pub const ENGINE_PATHS: &[(&str, EnginePathsFn)] = &[
+    ("pandoc", pandoc_paths),
+    ("docling", docling_paths),
+    ("probe", EnginePaths::default),
+];
 
 /// Extra paths for `engine`; an engine without an entry gets none.
 #[must_use]
@@ -45,6 +48,40 @@ fn pandoc_paths() -> EnginePaths {
             .into_iter()
             .collect(),
     }
+}
+
+/// Docling executes system Tesseract and, in development, reads an editable Python environment.
+fn docling_paths() -> EnginePaths {
+    let mut paths = EnginePaths::default();
+    if let Some(path) = std::env::var_os("PATH").and_then(|value| {
+        std::env::split_paths(&value)
+            .map(|dir| dir.join("tesseract"))
+            .find_map(|file| file.canonicalize().ok())
+    }) {
+        paths.exec.push(path);
+    }
+    if std::env::var_os(super::docling::OVERRIDE_ENV).is_some()
+        && let Some(command) = super::docling::resolve()
+    {
+        // Grant the venv, its base interpreter, and the adjacent model/data directories.
+        if let Some(prefix) = command.program.parent().and_then(std::path::Path::parent) {
+            paths.exec.extend(prefix.canonicalize().ok());
+            if let Some(root) = prefix.parent() {
+                for name in ["models", "tessdata"] {
+                    paths.read_only.extend(root.join(name).canonicalize().ok());
+                }
+            }
+        }
+        if let Ok(program) = command.program.canonicalize()
+            && let Some(prefix) = program.parent().and_then(std::path::Path::parent)
+        {
+            paths.exec.push(prefix.to_path_buf());
+        }
+        // uv's editable wheel points at the source package in this checkout.
+        let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../engines/docling/src");
+        paths.read_only.extend(source.canonicalize().ok());
+    }
+    paths
 }
 
 #[cfg(test)]

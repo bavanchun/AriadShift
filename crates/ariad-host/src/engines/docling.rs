@@ -8,7 +8,7 @@
 use std::{
     collections::BTreeMap,
     ffi::OsString,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
 
@@ -33,6 +33,23 @@ pub struct EngineCommand {
     pub env: Vec<(OsString, OsString)>,
     /// Request options such as `artifacts_path` and `tessdata_path`.
     pub options: BTreeMap<String, Value>,
+    pub install_root: Option<PathBuf>,
+}
+
+impl EngineCommand {
+    /// Carries pack identity and sandbox access into the common runner and session pool.
+    #[must_use]
+    pub fn runner_command(&self, ashift: &Path) -> runner::EngineCommand {
+        runner::EngineCommand {
+            engine: ENGINE_ID.to_owned(),
+            program: self.program.clone(),
+            args: self.args.clone(),
+            env: self.env.clone(),
+            install_root: self.install_root.clone(),
+            launcher: Some(ashift.to_path_buf()),
+            sandbox: None,
+        }
+    }
 }
 
 /// Finds the engine: the development override first, then an installed pack.
@@ -50,6 +67,7 @@ pub fn resolve() -> Option<EngineCommand> {
 fn installed_pack() -> Option<EngineCommand> {
     let pack = packs::resolve(ENGINE_ID)?;
     Some(EngineCommand {
+        install_root: Some(pack.root),
         program: pack.program,
         args: pack.args,
         env: pack.env,
@@ -61,6 +79,7 @@ fn from_override(value: &std::ffi::OsStr) -> Option<EngineCommand> {
     let words = split_command_line(value.to_str()?)?;
     let (program, args) = words.split_first()?;
     Some(EngineCommand {
+        install_root: None,
         program: PathBuf::from(program),
         args: args.iter().map(OsString::from).collect(),
         env: Vec::new(),
@@ -116,72 +135,95 @@ pub struct Description {
     pub models: Vec<String>,
 }
 
-type DescribeCache = Mutex<Option<(EngineCommand, Result<Description, String>)>>;
+type DescribeCache = Mutex<Option<(EngineCommand, PathBuf, Description)>>;
 
 static DESCRIBE_CACHE: OnceLock<DescribeCache> = OnceLock::new();
 
 /// Queries the engine once per process and command.
 ///
 /// `Ok` means the engine answered `describe`; `Err` carries a short, path-free reason.
-pub fn describe(command: &EngineCommand, cancel: CancellationToken) -> Result<Description, String> {
+pub fn describe(
+    command: &EngineCommand,
+    ashift: &Path,
+    cancel: CancellationToken,
+) -> Result<Description, String> {
+    query(command, ashift, cancel).map_err(|error| match error {
+        runner::RunError::Spawn(_) => "the engine could not be started".to_owned(),
+        runner::RunError::Timeout => "the engine did not answer describe in time".to_owned(),
+        runner::RunError::Cancelled => "describe was cancelled".to_owned(),
+        runner::RunError::SandboxUnavailable(_) => "the engine sandbox is unavailable".to_owned(),
+        _ => "the engine failed its describe round trip".to_owned(),
+    })
+}
+
+fn query(
+    command: &EngineCommand,
+    ashift: &Path,
+    cancel: CancellationToken,
+) -> Result<Description, runner::RunError> {
     let cache = DESCRIBE_CACHE.get_or_init(|| Mutex::new(None));
     {
         let guard = cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some((cached, result)) = guard.as_ref()
+        if let Some((cached, launcher, description)) = guard.as_ref()
             && cached == command
+            && launcher == ashift
         {
-            return result.clone();
+            return Ok(description.clone());
         }
     }
-    let result = match runner::describe_with_env(
-        &command.program,
-        &command.args,
-        &command.env,
+    let description = match runner::describe_command(
+        &command.runner_command(ashift),
+        runner::DESCRIBE_TIMEOUT,
         cancel.clone(),
-    ) {
-        Ok(Event::Capabilities {
+    )? {
+        Event::Capabilities {
             version,
             tool,
             models,
             ..
-        }) => Ok(Description {
+        } => Description {
             version,
             tesseract: tool,
             models: models.unwrap_or_default(),
-        }),
-        Ok(_) => Err("the engine answered describe with an unexpected event".to_owned()),
-        Err(runner::RunError::Spawn(_)) => Err("the engine could not be started".to_owned()),
-        Err(runner::RunError::Timeout) => {
-            Err("the engine did not answer describe in time".to_owned())
+        },
+        _ => {
+            return Err(runner::RunError::ProtocolViolation(
+                "expected capabilities from describe",
+            ));
         }
-        Err(runner::RunError::Cancelled) => return Err("describe was cancelled".to_owned()),
-        Err(_) => Err("the engine failed its describe round trip".to_owned()),
     };
     if !cancel.is_cancelled() {
         let mut guard = cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        *guard = Some((command.clone(), result.clone()));
+        *guard = Some((command.clone(), ashift.to_path_buf(), description.clone()));
     }
-    result
+    Ok(description)
 }
 
 /// Availability of the Docling engine; `None` when no engine is installed or configured.
 ///
 /// The engine is available when it answers `describe`. Tesseract is reported as its tool, but a
 /// missing Tesseract only disables Vietnamese OCR, so it does not make the engine unavailable.
-#[must_use]
-pub fn availability(cancel: CancellationToken) -> Option<EngineAvailability> {
-    let command = resolve()?;
-    Some(match describe(&command, cancel) {
+pub fn availability(
+    ashift: &Path,
+    cancel: CancellationToken,
+) -> Result<Option<EngineAvailability>, runner::RunError> {
+    let Some(command) = resolve() else {
+        return Ok(None);
+    };
+    Ok(Some(match query(&command, ashift, cancel) {
         Ok(description) => EngineAvailability {
             engine: ENGINE_ID.to_owned(),
             available: true,
             tool_status: Some(description.tesseract),
             version: Some(description.version),
         },
+        Err(error @ (runner::RunError::Cancelled | runner::RunError::SandboxUnavailable(_))) => {
+            return Err(error);
+        }
         Err(_) => EngineAvailability {
             engine: ENGINE_ID.to_owned(),
             available: false,
@@ -192,7 +234,7 @@ pub fn availability(cancel: CancellationToken) -> Option<EngineAvailability> {
             }),
             version: None,
         },
-    })
+    }))
 }
 
 #[cfg(test)]

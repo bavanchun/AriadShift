@@ -236,7 +236,7 @@ fn pack_rows(
         let routes = registry_routes(caps, &name);
         let license = registry_license(caps, &name);
         if name == LISTED_PACK && std::env::var_os(docling::OVERRIDE_ENV).is_some() {
-            rows.push(describe_override(routes, license, cancel)?);
+            rows.push(describe_override(engine_program, routes, license, cancel)?);
             continue;
         }
         match packs::try_resolve(&name) {
@@ -274,6 +274,7 @@ fn pack_rows(
 /// Builds the docling row for the `ASHIFT_DOCLING_ENGINE` development override, which no pack
 /// backs.
 fn describe_override(
+    engine_program: &Path,
     routes: Vec<String>,
     license: Option<String>,
     cancel: &CancellationToken,
@@ -296,10 +297,9 @@ fn describe_override(
         row.note = None;
         apply_describe(
             &mut row,
-            runner::describe_with_env(
-                &command.program,
-                &command.args,
-                &command.env,
+            runner::describe_command(
+                &command.runner_command(engine_program),
+                runner::DESCRIBE_TIMEOUT,
                 cancel.clone(),
             ),
             license.is_some(),
@@ -340,7 +340,11 @@ fn describe_pack(
     };
     apply_describe(
         &mut row,
-        runner::describe_command(&runner::EngineCommand::from_pack(engine_program, pack), runner::DESCRIBE_TIMEOUT, cancel.clone()),
+        runner::describe_command(
+            &runner::EngineCommand::from_pack(engine_program, pack),
+            runner::DESCRIBE_TIMEOUT,
+            cancel.clone(),
+        ),
         license.is_some(),
     )?;
     Ok(row)

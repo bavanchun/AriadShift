@@ -307,7 +307,7 @@ pub fn doctor(
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
-    checks.extend(docling_checks(cancel));
+    checks.extend(docling_checks(engine_program, cancel));
 
     Ok(DoctorReport {
         checks,
@@ -489,7 +489,7 @@ fn sandbox_check() -> (DoctorCheck, DoctorSandbox) {
 }
 
 /// Optional checks for the Docling engine and the Tesseract it runs for Vietnamese OCR.
-fn docling_checks(cancel: CancellationToken) -> Vec<DoctorCheck> {
+fn docling_checks(engine_program: &Path, cancel: CancellationToken) -> Vec<DoctorCheck> {
     let Some(command) = docling::resolve() else {
         return vec![DoctorCheck {
             id: "docling_engine".to_owned(),
@@ -503,7 +503,7 @@ fn docling_checks(cancel: CancellationToken) -> Vec<DoctorCheck> {
             ),
         }];
     };
-    match docling::describe(&command, cancel) {
+    match docling::describe(&command, engine_program, cancel) {
         Ok(description) => {
             let models = if description.models.is_empty() {
                 "no models found".to_owned()

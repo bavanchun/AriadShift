@@ -52,6 +52,9 @@ fn data_dir_path() -> PathBuf {
 /// A CLI whose Docling engine is the probe, answering with `fixture` (or `-` for a missing tool).
 fn cli_with_engine(fixture: &str) -> Command {
     let mut command = cli();
+    // This fixture-replay probe reads repository files outside a job workspace.
+    // Real-engine and pack tests exercise the sandbox policy.
+    command.env("ASHIFT_SANDBOX", "off");
     command.env(
         "ASHIFT_DOCLING_ENGINE",
         format!(

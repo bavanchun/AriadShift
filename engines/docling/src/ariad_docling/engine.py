@@ -41,15 +41,13 @@ def main(protocol_fd: int, stdin: IO[bytes]) -> int:
             request = parse_request(line)
         except EngineError as error:
             writer.error(error)
-            if session is None:
-                return 0
-            continue
+            return 0
 
         if session is not None and (
             not isinstance(request, ConvertRequest) or request.session_id != session
         ):
             writer.error(EngineError("invalid_request", "request does not belong to this session"))
-            continue
+            return 0
 
         handle(request, writer, converters)
         if isinstance(request, DescribeRequest) or request.session_id is None:

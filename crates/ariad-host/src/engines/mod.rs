@@ -78,7 +78,7 @@ pub fn availability(
     cancel: CancellationToken,
 ) -> Result<AvailabilityReport, RunError> {
     let mut report = bundled_availability(engine_program, engine_args, cancel.clone())?;
-    if let Some(docling) = docling::availability(cancel) {
+    if let Some(docling) = docling::availability(engine_program, cancel)? {
         report.engines.push(docling);
     }
     Ok(report)
@@ -95,7 +95,9 @@ pub fn is_engine_available(
         return Ok(true);
     }
     if engine == docling::ENGINE_ID {
-        return Ok(docling::availability(cancel).is_some_and(|docling| docling.available));
+        return Ok(
+            docling::availability(engine_program, cancel)?.is_some_and(|docling| docling.available)
+        );
     }
     Ok(bundled_availability(engine_program, engine_args, cancel)?.is_available(engine))
 }

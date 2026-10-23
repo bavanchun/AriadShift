@@ -347,6 +347,12 @@ pub fn render_pack_install_human(report: &ariad_host::packs::InstallReport) -> i
             report.name, report.version, report.target
         )?,
     }
+    if report.name == "docling" {
+        writeln!(
+            out,
+            "Vietnamese OCR requires Tesseract 5 on PATH; run 'ashift doctor' for installation guidance."
+        )?;
+    }
     out.flush()
 }
 
