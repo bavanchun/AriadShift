@@ -173,7 +173,7 @@ pub struct WriteOptions<'a> {
 pub const fn can_read(format: Format) -> bool {
     matches!(
         format,
-        Format::Markdown | Format::Html | Format::AriadIrJson
+        Format::Markdown | Format::Html | Format::AriadIrJson | Format::DoclingJson
     )
 }
 
@@ -220,6 +220,23 @@ pub fn read(format: Format, bytes: &[u8], limits: &Limits) -> Result<Read, Pipel
             reader_html::ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
             reader_html::ReadError::TooManyNodes { .. } => limit_exceeded("max_dom_nodes"),
         })?,
+        Format::DoclingJson => {
+            crate::docling::read(bytes, limits).map_err(|error| match error {
+                crate::docling::ReadError::InvalidLimits(error) => error.into(),
+                crate::docling::ReadError::InputTooLarge { .. }
+                | crate::docling::ReadError::ContentTooLarge { .. } => {
+                    limit_exceeded("max_ir_json_bytes")
+                }
+                crate::docling::ReadError::JsonTooDeep(_)
+                | crate::docling::ReadError::NestingTooDeep { .. } => {
+                    limit_exceeded("max_nesting_depth")
+                }
+                crate::docling::ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
+                other => PipelineError::InvalidInput {
+                    reason: other.to_string(),
+                },
+            })?
+        }
         Format::AriadIrJson => {
             return Ok(Read {
                 document: read_ir_json(bytes, limits)?,
@@ -533,6 +550,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(markdown.bytes, direct.bytes);
+    }
+
+    #[test]
+    fn docling_json_runs_through_the_in_memory_pipeline() {
+        let source = include_bytes!("../../../fixtures/docling/en-map-room.docling.json");
+        assert!(can_read(Format::DoclingJson));
+        let result = execute(
+            source,
+            &[
+                step(Format::DoclingJson, Format::AriadIrJson),
+                step(Format::AriadIrJson, Format::Markdown),
+            ],
+            &Limits::local(),
+            WriteOptions::default(),
+        )
+        .unwrap();
+        assert!(
+            String::from_utf8(result.bytes)
+                .unwrap()
+                .contains("Notes from the Map Room")
+        );
+        let limits = Limits {
+            max_blocks: 1,
+            ..Limits::local()
+        };
+        assert_eq!(
+            read(Format::DoclingJson, source, &limits).unwrap_err(),
+            limit_exceeded("max_blocks")
+        );
     }
 
     #[test]
