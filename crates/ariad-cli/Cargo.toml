@@ -61,6 +61,11 @@ path = "tests/packs_cli.rs"
 required-features = ["ariad-host/test-probe"]
 
 [[test]]
+name = "docling_pack"
+path = "tests/docling_pack.rs"
+required-features = ["ariad-host/test-probe"]
+
+[[test]]
 name = "termination"
 path = "tests/termination.rs"
 

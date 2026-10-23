@@ -334,6 +334,47 @@ def smoke(runtime: Path, target: str) -> None:
         raise SystemExit(f"engine smoke test: missing assets {sorted(missing)}")
     print(f"engine describes itself as Docling {capabilities['version']}")
 
+    # describe imports no third-party code. Run a real request too; a timed traceback
+    # makes native library, model and OCR initialization hangs visible in CI.
+    probe = """
+import faulthandler, runpy
+faulthandler.dump_traceback_later(60, repeat=True)
+runpy.run_module('ariad_docling', run_name='__main__')
+"""
+    with tempfile.TemporaryDirectory(prefix="docling-smoke-") as directory:
+        work = Path(directory)
+        (work / "out").mkdir()
+        (work / "tmp").mkdir()
+        request = {
+            "protocol": "ariad-engine/1",
+            "job": "pack-pdf-smoke",
+            "op": "convert",
+            "input": {"path": str(REPOSITORY / "fixtures/pdf/en-map-room.pdf"), "format": "pdf"},
+            "output": {"dir": str(work / "out"), "format": "docling+json"},
+            "work_dir": str(work / "tmp"),
+            "options": {},
+            "limits": {"max_nesting_depth": 64},
+        }
+        try:
+            converted = subprocess.run(
+                [str(python_executable(runtime, target)), "-I", "-B", "-c", probe],
+                input=json.dumps(request).encode() + b"\n",
+                capture_output=True,
+                env=env,
+                check=False,
+                timeout=180,
+            )
+        except subprocess.TimeoutExpired as error:
+            detail = (error.stderr or b"").decode(errors="replace")
+            raise SystemExit(f"PDF runtime conversion timed out:\n{detail}") from error
+        events = [json.loads(line) for line in converted.stdout.splitlines()]
+        if converted.returncode or not events or not events[-1].get("ok"):
+            raise SystemExit(
+                f"PDF runtime conversion failed:\n{converted.stderr.decode(errors='replace')}"
+                f"\n{events[-1:]!r}"
+            )
+    print("PDF runtime converted the smoke fixture", flush=True)
+
 
 def archive(root: Path, members: list[str], destination: Path) -> str:
     """Writes a reproducible tar.zst of ``members`` and returns its file name."""
