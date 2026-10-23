@@ -146,7 +146,9 @@ pub struct MemoryInspection {
 pub fn reachable_targets(caps: &Capabilities, from: Format) -> Vec<Format> {
     let engines = caps.registered_engines();
     let mut targets = planner::reachable_formats(caps, from, Profile::Editable, &engines);
-    targets.retain(|&target| target != from && target != Format::PandocJson);
+    targets.retain(|&target| {
+        target != from && !matches!(target, Format::PandocJson | Format::DoclingJson)
+    });
     targets.sort_by_key(|target| target.id());
     targets.dedup();
     targets
