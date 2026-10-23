@@ -77,6 +77,9 @@ assert_classification "mixed (docs + apps)" "$(printf 'docs/web.md\napps/web/src
 assert_classification "mixed (apps + host)" "$(printf 'apps/web/src/index.ts\ncrates/ariad-host/src/main.rs')" "true" "true" "code change"
 assert_classification "mixed (core + docs)" "$(printf 'crates/ariad-core/src/lib.rs\nREADME.md')" "true" "true" "code change"
 
+# 10. fallback
+assert_classification "full-run fallback (empty list)" "" "true" "true" "full run"
+
 echo "=== Summary ==="
 echo "Passed: $passed_count, Failed: $failed_count"
 if [ "$failed_count" -gt 0 ]; then
