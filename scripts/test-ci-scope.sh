@@ -43,6 +43,8 @@ assert_classification "host (ariad-host)" "crates/ariad-host/src/main.rs" "true"
 
 # 3. apps/
 assert_classification "apps/ (web app)" "apps/web/src/converter/worker.ts" "false" "true" "JavaScript-only change"
+assert_classification "desktop (native command)" "apps/desktop/src-tauri/src/lib.rs" "true" "true" "code change"
+assert_classification "desktop (React UI)" "apps/desktop/src/app.tsx" "false" "true" "JavaScript-only change"
 
 # 4. packages/
 assert_classification "packages/ (ui package)" "packages/ui/src/button.tsx" "false" "true" "JavaScript-only change"
