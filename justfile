@@ -133,6 +133,7 @@ test-ci-scope:
 
 licenses:
     node scripts/generate-licenses.mjs > THIRD_PARTY_LICENSES
+    just desktop-licenses
 
 licenses-check:
     #!/usr/bin/env bash
@@ -148,6 +149,11 @@ licenses-check:
     if ! cmp -s "$tmp" THIRD_PARTY_LICENSES; then
         echo "ERROR: THIRD_PARTY_LICENSES is out of date. Run 'just licenses' to update." >&2
         diff -u THIRD_PARTY_LICENSES "$tmp" | head -n 30 || true
+        exit 1
+    fi
+    node scripts/generate-desktop-licenses.mjs > "$tmp"
+    if ! cmp -s "$tmp" apps/desktop/THIRD_PARTY_JS_LICENSES; then
+        echo "ERROR: desktop JavaScript notices are out of date. Run 'just desktop-licenses'." >&2
         exit 1
     fi
 
@@ -265,6 +271,9 @@ fuzz target="" seconds="60":
     @echo "fuzzing runs on Linux only" && exit 1
 
 # Generated IPC types and wrappers come only from Rust.
+desktop-licenses:
+    node scripts/generate-desktop-licenses.mjs > apps/desktop/THIRD_PARTY_JS_LICENSES
+
 desktop-bindings:
     cargo run -p ariad-desktop --bin export-bindings
     pnpm exec biome format --write apps/desktop/src/bindings

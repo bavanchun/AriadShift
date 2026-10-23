@@ -38,6 +38,7 @@
     },
     "resources": {
       "../../../THIRD_PARTY_LICENSES": "THIRD_PARTY_LICENSES",
+      "../THIRD_PARTY_JS_LICENSES": "THIRD_PARTY_JS_LICENSES",
       "../../../LICENSE": "LICENSE",
       "../../../NOTICE": "NOTICE"
     }

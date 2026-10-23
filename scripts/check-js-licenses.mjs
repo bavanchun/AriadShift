@@ -85,6 +85,11 @@ export function satisfies(expression, accepts) {
   }
 }
 
+export function isAllowedLicense(name, license) {
+  const extra = EXCEPTIONS.get(name);
+  return satisfies(license, (id) => ALLOWED.has(id) || (extra?.has(id) ?? false));
+}
+
 function check() {
   const output = execFileSync("pnpm", ["-r", "licenses", "list", "--prod", "--json"], {
     encoding: "utf8",
@@ -98,9 +103,7 @@ function check() {
   for (const [license, packages] of Object.entries(byLicense)) {
     for (const entry of packages) {
       count += 1;
-      const extra = EXCEPTIONS.get(entry.name);
-      const accepts = (id) => ALLOWED.has(id) || (extra?.has(id) ?? false);
-      if (!satisfies(license, accepts)) {
+      if (!isAllowedLicense(entry.name, license)) {
         rejected.push(`${entry.name}@${entry.versions.join(", ")}: ${license}`);
       }
     }
