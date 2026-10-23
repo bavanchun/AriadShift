@@ -24,6 +24,8 @@ CapInh = "CapInh"
 [files]
 extend-exclude = [
     "THIRD_PARTY_LICENSES",
+    "apps/desktop/THIRD_PARTY_JS_LICENSES",
+    "vendor/**",
     "fixtures/md/vi-*.md",
     "fixtures/md/mixed-*.md",
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
