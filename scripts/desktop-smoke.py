@@ -68,22 +68,29 @@ def main():
         with tempfile.TemporaryDirectory(prefix="ariadshift-desktop-smoke-") as directory:
             source = pathlib.Path(directory) / "smoke.md"
             source.write_text("# Desktop smoke\n\nA real local conversion.\n", encoding="utf-8")
-            click("//summary[normalize-space()='Add a local file by path']")
-            ident = until(lambda: element("//details[@open]//input[@id='file-path']"))
-            request("POST", prefix + f"/element/{ident}/value", {"text": str(source)})
-            click("//button[normalize-space()='Add file']")
-            click("//button[@aria-label='Start conversion']")
-            until(lambda: element("//*[@data-status='succeeded']"))
-            output = source.with_suffix(".html")
-            assert "Desktop smoke" in output.read_text(encoding="utf-8")
-            assert "A real local conversion." in output.read_text(encoding="utf-8")
-            print("Desktop WebDriver smoke passed: Markdown to HTML through the real UI.")
+            docx = pathlib.Path(directory) / "roundtrip.docx"
+            subprocess.run([os.environ.get("ASHIFT_PANDOC", "pandoc"), str(source),
+                            "--to", "docx", "--output", str(docx)], check=True)
+            for input_path in (source, docx):
+                if input_path == docx:
+                    click("//button[normalize-space()='Convert']")
+                click("//summary[normalize-space()='Add a local file by path']")
+                ident = until(lambda: element("//details[@open]//input[@id='file-path']"))
+                request("POST", prefix + f"/element/{ident}/value", {"text": str(input_path)})
+                click("//button[normalize-space()='Add file']")
+                click("//button[@aria-label='Start conversion']")
+                until(lambda: element(
+                    f"//*[@data-status='succeeded'][contains(., '{input_path.name}')]"))
+                output = input_path.with_suffix(".html")
+                assert "Desktop smoke" in output.read_text(encoding="utf-8")
+                assert "A real local conversion." in output.read_text(encoding="utf-8")
+            print("Desktop WebDriver smoke passed: Markdown and Pandoc DOCX to HTML through the packaged app.")
     except Exception:
         if session:
             try:
                 details = request("POST", prefix + "/execute/sync", {
-                    "script": "return document.querySelector('details')?.outerHTML", "args": []})
-                print(f"Path input state: {details}", flush=True)
+                    "script": "return document.body.innerText.slice(0, 12000)", "args": []})
+                print(f"Desktop UI state: {details}", flush=True)
             except OSError:
                 pass
         # Preserve process/socket evidence when WebKit cannot establish automation.

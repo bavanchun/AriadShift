@@ -290,7 +290,7 @@ desktop-build:
 # Run after a desktop build on Linux, where WebKitGTK supports WebDriver.
 [linux]
 desktop-smoke:
-    python3 scripts/desktop-smoke.py target/release/ariad-desktop
+    APPIMAGE_EXTRACT_AND_RUN=1 python3 scripts/desktop-smoke.py target/release/bundle/appimage/*.AppImage
 
 # Shared dependency changes also trigger desktop checks locally.
 desktop-ci:
