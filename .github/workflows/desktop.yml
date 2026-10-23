@@ -54,7 +54,8 @@ jobs:
             fi
           done
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf webkitgtk-webdriver xvfb dbus-daemon at-spi2-core
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils webkitgtk-webdriver xvfb dbus-daemon at-spi2-core
+          command -v update-desktop-database && command -v xdg-mime
       - run: pnpm install --frozen-lockfile
       - run: just pandoc
       - run: just desktop-bindings-check
@@ -67,7 +68,7 @@ jobs:
         run: cargo install tauri-driver --version 2.1.0 --locked
       - name: Convert Markdown through the real app
         if: runner.os == 'Linux'
-        run: dbus-run-session -- xvfb-run -a just desktop-smoke
+        run: xvfb-run -a dbus-run-session -- just desktop-smoke
   release:
     name: Desktop release (${{ matrix.os }})
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -120,7 +121,7 @@ jobs:
             fi
           done
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils
       - run: pnpm install --frozen-lockfile
       - name: Configure release version
         env:
