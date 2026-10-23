@@ -87,7 +87,7 @@ Recorded 2026-10-22 before implementation. Versions were checked against crates.
 ### Worker
 
 - Reads its packs' queues with a concurrency semaphore (`ARIAD_WORKER_CONCURRENCY`, default 1), downloads the input into a per-job directory under `ARIAD_WORK_DIR` (default: the temp directory; the log line says whether it is tmpfs), verifies its hash, runs `convert_with_limits` on a blocking thread with a cancellation token, uploads the output, records `artifacts`, `job_steps`, events and a `job_completed` usage event, and removes the directory on every path.
-- Sandbox: `ARIAD_SANDBOX=required|best-effort|off` (default `required` on Linux). The `sandbox` module is the seam to the host's engine sandbox; until the host exposes one, `required` refuses to start.
+- Sandbox: `ARIAD_SANDBOX=required|best-effort|off` (default `required` on Linux). The `sandbox` module probes the host sandbox and refuses `required` only when the platform lacks its required confinement. The selected mode is explicitly forwarded to the helper and its engines.
 
 ### Observability
 
@@ -116,3 +116,12 @@ Recorded 2026-10-22 before implementation. Versions were checked against crates.
 - §9.1's multipart upload endpoints become one presigned `PUT` (plan decision); `/v1/uploads/{id}/parts` is not built.
 - The storage key's second segment is the owning upload or job id (see Storage).
 - `plan_entitlements` also holds an `anonymous` row so anonymous limits come from the same table as plan limits.
+
+### Host isolation integration (2026-10-23)
+
+- Rebase onto the merged engine isolation work without changing its sandbox, session or nesting contracts. Regenerate the combined Cargo lockfile and licence inventory with Cargo and cargo-about.
+- Use `ariad_host::sandbox::support().gaps()` for worker preflight. Forward the worker's selected mode explicitly as `ASHIFT_SANDBOX` in the cleared helper environment, so ambient host settings cannot weaken `ARIAD_SANDBOX=required`. Real engines use the host launcher and its policy.
+- Keep the private orchestration helper outside the engine sandbox: it must create host workspaces and launch engines, while native readers retain the architecture's native-reader exemption. Run it through an explicit `EngineCommand` with sandbox off and the full job memory limit, so the host RSS watchdog bounds the helper and its descendants. Preserve the existing deadline and cancellation grace. RSS and sandbox failures retain typed host error codes and do not retry document memory failures.
+- Replace memory-budget/256 admission with a fixed 64 MiB native text ceiling, further bounded by `max_input_bytes`. This limits allocation bursts between 250 ms RSS samples while allowing larger legitimate text inputs. Keep container memory limits as the hard deployment boundary.
+- Retain per-job helper lifetime. A persistent `SessionPool` across helpers would change cancellation and tenant isolation; warm-worker reuse is outside this integration.
+- Verify native RSS termination, larger native admission, strict sandbox propagation/failure, and a real required-mode Pandoc job on supported Linux CI. macOS has no Linux launcher and Docker is unavailable here; real-service verification runs in CI.
