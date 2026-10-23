@@ -62,7 +62,7 @@ web-lint:
 
 # Vitest across the JavaScript packages; the wasm bindings must be built first.
 web-test: wasm-build
-    pnpm exec vitest run --maxWorkers=1
+    pnpm exec vitest run
 
 # TypeScript 7 checks of every JavaScript package.
 web-typecheck: wasm-build
