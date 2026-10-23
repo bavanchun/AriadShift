@@ -722,6 +722,62 @@ mod tests {
         assert!(!Path::new(&last.output).exists());
     }
     #[test]
+    fn watches_accept_reader_only_inputs_and_normalize_aliases() {
+        let app = TestApp::new();
+        let input = app._dir.path().join("incoming");
+        let output = app._dir.path().join("out");
+        std::fs::create_dir(&input).unwrap();
+        std::fs::create_dir(&output).unwrap();
+        let route = WatchRequest {
+            interval_seconds: 2,
+            recursive: false,
+            input: input.to_string_lossy().into_owned(),
+            output: output.to_string_lossy().into_owned(),
+            from: "pdf".into(),
+            target: "html".into(),
+            profile: Profile::Editable,
+            overwrite: false,
+        };
+        for (from, expected) in [
+            ("pdf", "pdf"),
+            ("jpg", "jpeg"),
+            ("docling+json", "docling+json"),
+        ] {
+            let watch = app
+                .backend
+                .watch(WatchRequest {
+                    from: from.into(),
+                    ..route.clone()
+                })
+                .unwrap();
+            assert_eq!(watch.route.from, expected);
+            app.backend
+                .watch_control(WatchControl {
+                    id: watch.id,
+                    paused: true,
+                    remove: true,
+                })
+                .unwrap();
+        }
+        assert!(
+            app.backend
+                .watch(WatchRequest {
+                    target: "png".into(),
+                    ..route.clone()
+                })
+                .is_err()
+        );
+        assert!(
+            app.backend
+                .watch(WatchRequest {
+                    from: "markdown".into(),
+                    target: "md".into(),
+                    ..route
+                })
+                .is_err()
+        );
+    }
+    #[test]
     fn watch_debounces_changes_pauses_and_rejects_output_loops() {
         let app = TestApp::new();
         let input = app._dir.path().join("incoming");

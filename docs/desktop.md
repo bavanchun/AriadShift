@@ -17,7 +17,10 @@ certificates. On macOS, open the disk image and copy AriadShift to Applications.
 Markdown and HTML conversion needs no external engine. DOCX and EPUB routes need
 Pandoc `>=3.12,<4` on PATH or selected through the `ASHIFT_PANDOC` environment
 variable when launching the app. Open Diagnostics to check dependencies and the
-host sandbox. Engine packs use the same installation directory and signature
+host sandbox. PDF, PPTX, XLSX and image inputs use the optional Docling pack;
+DoclingDocument JSON inputs are mapped by the core. The picker and watch routes
+include these host input formats, while output choices follow supported writers.
+Engine packs use the same installation directory and signature
 policy as the CLI; see [Engine packs](packs.md).
 
 ## Convert and queue

@@ -20,10 +20,18 @@ import type {
 
 const formats = ["md", "html", "docx", "epub"];
 const inputExtensions: Record<string, string[]> = {
-  md: ["md", "markdown"],
+  md: ["md", "markdown", "mdown"],
   html: ["html", "htm"],
   docx: ["docx"],
   epub: ["epub"],
+  pdf: ["pdf"],
+  pptx: ["pptx"],
+  xlsx: ["xlsx"],
+  png: ["png"],
+  jpeg: ["jpg", "jpeg"],
+  tiff: ["tif", "tiff"],
+  webp: ["webp"],
+  "docling+json": ["json"],
 };
 const profiles: Profile[] = ["editable", "faithful", "fast", "private"];
 const tabs = [
@@ -549,7 +557,7 @@ export function App() {
                     value={watchFrom}
                     onChange={(e) => setWatchFrom(e.target.value)}
                   >
-                    {formats.map((f) => (
+                    {Object.keys(inputExtensions).map((f) => (
                       <option key={f}>{f}</option>
                     ))}
                   </select>
