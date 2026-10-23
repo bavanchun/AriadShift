@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/*", "apps/desktop/src-tauri"]
-exclude = ["fuzz"]
+exclude = ["fuzz", "vendor/tauri-plugin-deep-link"]
 resolver = "3"
 
 [workspace.package]
@@ -110,3 +110,6 @@ inherits = "release"
 opt-level = "s"
 lto = true
 codegen-units = 1
+
+[patch.crates-io]
+tauri-plugin-deep-link = { path = "vendor/tauri-plugin-deep-link" }

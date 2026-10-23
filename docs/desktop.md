@@ -63,6 +63,8 @@ signed manifest, detached signature and component archives. Arbitrary signing
 keys are never trusted by the desktop UI. Installation reports stages and byte
 progress and supports cancellation. Verify rechecks signatures and file hashes;
 Remove deletes the selected installed version. Pack operations are serialized.
+The existing maintainer pack key `D87B0E33F55EA02B` is compiled through the host's
+shared [public-key directory](../crates/ariad-host/data/pack-keys/).
 
 Diagnostics runs the host's `doctor`, including dependency, workspace and sandbox
 checks. The desktop executable also serves the engine protocol in child
@@ -73,7 +75,9 @@ intermediate sidecar.
 
 Settings saves the default profile, output folder policy, overwrite preference,
 concurrency and telemetry preference to `desktop.json` in the shared platform
-data directory (`ASHIFT_DATA_DIR` overrides it). Telemetry defaults off. There is
+data directory (`ASHIFT_DATA_DIR` overrides it). If a saved output folder was
+removed, the app still opens so you can choose another folder before converting.
+Telemetry defaults off. There is
 no telemetry collection or network call behind this switch. Theme follows the
 shared UI preference.
 
@@ -140,8 +144,18 @@ bindings. The desktop workflow and desktop-scoped `just desktop-ci` recipe
 regenerate and fail on a binding diff. Root `just ci` includes this recipe when
 desktop or shared dependency paths changed from `origin/dev`.
 
+`vendor/tauri-plugin-deep-link` preserves the published stable 2.6.2 crate with
+one Linux compatibility change: its `ini::ParseOption` initializer fills added
+rust-ini 0.21.3 fields from `Default`, retaining the explicit quote/escape flags.
+Both versions were rechecked against crates.io. Remove this patch when a stable
+upstream release includes the fix; keep the upstream license files intact.
+Upstream trailing whitespace is normalized to the repository style; the only
+behavioral change is the parser initializer.
+
 Pull requests build installers on `ubuntu-26.04`, `macos-26` and `windows-2025`
 without publishing artifacts. Linux also runs `just desktop-smoke` under Xvfb
 using `tauri-driver` and the real UI to convert Markdown to HTML. Tag builds use
 the release environment, sign update artifacts and attach bundles to the draft
 release. The coordinator publishes after the wider release gates pass.
+The desktop app is not a crates.io package; root `package-check` verifies the
+publishable Rust crates, while this workflow verifies the desktop installers.

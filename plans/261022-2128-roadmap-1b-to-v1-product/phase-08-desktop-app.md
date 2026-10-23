@@ -29,7 +29,7 @@ Read first: ARCHITECTURE §2.2, §4, §8.2, §16, §19; `packages/ui`, `apps/web
   - Diagnostics view backed by `doctor`.
   - Settings: default profile, output folder policy, overwrite policy, telemetry off (opt-in only, nothing implemented beyond the switch).
 - Deep links: `ariadshift://open?route=<from>-<to>&profile=<profile>` opens the file picker with the route preselected (ARCHITECTURE §8.2). Reserve `ariadshift://auth/callback` for phase 10.
-- Updater: the coordinator generates the updater key pair; the public key goes into the Tauri config and the private key into the `release` environment; update metadata is published with GitHub Releases.
+- Updater: the worker generates the updater key pair outside the repository; the public key goes into the Tauri config and the private key into the `release` environment; update metadata is published with GitHub Releases.
 - Icons: `tauri icon` from `brand/png/ariadshift-app-icon-1024.png`; the macOS Liquid Glass icon compiled with `actool` from `brand/icon-composer/` on macOS, `.icns` fallback.
 - Workflow `.github/workflows/desktop.yml`: pull requests build on the three OSes without uploading; `v*` tags build and attach bundles (`.dmg`, `.msi`, NSIS `.exe`, AppImage, `.deb`, `.rpm`) and the updater metadata to the release. Signing and notarization run only when their secrets exist.
 - Tests: Rust tests for the command layer; Vitest for the UI; a WebDriver (`tauri-driver`) smoke test on Linux CI that converts a Markdown file to HTML.
@@ -145,3 +145,13 @@ The requested cargo tree proof shows tiny-keccak only beneath const-random-macro
 license list stays unchanged. Unmodified selectors and cssparser-macros receive
 the MPL exceptions already permitted by the repository. Both earlier blockers
 are resolved; application acceptance work continues.
+
+### Linux stable dependency compatibility (2026-10-24)
+
+Three-platform CI exposed a Linux-only compile error in stable
+`tauri-plugin-deep-link` 2.6.2: its `ini::ParseOption` literal omits two fields
+added by stable `rust-ini` 0.21.3. Both versions were reverified against crates.io
+as the latest stable releases. The published plugin is vendored with one source
+line added, `..Default::default()`, preserving its explicit quote/escape flags.
+The workspace patch keeps the latest stable versions and upstream licenses; it
+can be removed when a stable upstream plugin release carries the fix.
