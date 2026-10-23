@@ -55,6 +55,27 @@ impl MemoryWatchdog {
     }
 }
 
+/// Stops descendants before their parent is reaped, including nested engines
+/// that lead separate process groups. The root is stopped by process-wrap.
+#[cfg(unix)]
+pub(crate) fn kill_descendants(root: u32) {
+    use nix::{
+        sys::signal::{Signal, kill},
+        unistd::Pid,
+    };
+    #[cfg(target_os = "linux")]
+    let members = linux::tree_processes(root);
+    #[cfg(target_os = "macos")]
+    let members = portable::tree_processes(&mut sysinfo::System::new(), root);
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let members = vec![root];
+    for pid in members.into_iter().rev().filter(|&pid| pid != root) {
+        if let Ok(pid) = i32::try_from(pid) {
+            let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
+        }
+    }
+}
+
 /// Collects `root` and its descendants from `(pid, parent)` pairs.
 fn descendants_of(root: u32, processes: &[(u32, u32)]) -> Vec<u32> {
     let mut members = vec![root];
@@ -79,8 +100,12 @@ mod linux {
     /// parent PID, so a child that left the group or was reparented still counts while a
     /// member remains its ancestor.
     pub(super) fn tree_resident_bytes(root: u32) -> u64 {
+        tree_processes(root).into_iter().map(resident_bytes).sum()
+    }
+
+    pub(super) fn tree_processes(root: u32) -> Vec<u32> {
         let Ok(entries) = fs::read_dir("/proc") else {
-            return 0;
+            return Vec::new();
         };
         let mut processes = Vec::new();
         let mut group = Vec::new();
@@ -108,7 +133,7 @@ mod linux {
         }
         members.sort_unstable();
         members.dedup();
-        members.into_iter().map(resident_bytes).sum()
+        members
     }
 
     /// Reads the parent PID and process group from `/proc/<pid>/stat`.
@@ -142,6 +167,14 @@ mod portable {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
     pub(super) fn tree_resident_bytes(system: &mut System, root: u32) -> u64 {
+        tree_processes(system, root)
+            .into_iter()
+            .filter_map(|pid| system.process(Pid::from_u32(pid)))
+            .map(sysinfo::Process::memory)
+            .sum()
+    }
+
+    pub(super) fn tree_processes(system: &mut System, root: u32) -> Vec<u32> {
         system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
@@ -154,10 +187,6 @@ mod portable {
             .filter_map(|(pid, process)| Some((pid.as_u32(), process.parent()?.as_u32())))
             .collect();
         super::descendants_of(root, &processes)
-            .into_iter()
-            .filter_map(|pid| system.process(Pid::from_u32(pid)))
-            .map(sysinfo::Process::memory)
-            .sum()
     }
 }
 

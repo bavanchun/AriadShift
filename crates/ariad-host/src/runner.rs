@@ -726,6 +726,12 @@ impl EngineProcess {
     /// collects the stderr drain.
     pub(crate) async fn reap(&mut self, kill: bool) {
         if kill || self.status.is_none() {
+            #[cfg(unix)]
+            if kill && let Some(pid) = self.id() {
+                // Snapshot descendants while the root still owns them: nested
+                // host runners can put child engines in their own groups.
+                watchdog::kill_descendants(pid);
+            }
             let _ = self.child.start_kill();
         }
         // Windows JobObject::try_wait drains completion-port notifications. Waiting on the

@@ -683,7 +683,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 - **Local IPC on older kernels:** `required` guarantees filesystem rules and denial of non-UNIX sockets. `AF_UNIX` remains allowed: pathname UNIX sockets require Landlock ABI 9 for confinement, and abstract sockets and signals require ABI 6 for scoping. On older kernels an engine may still contact local services such as Docker, D-Bus or an SSH agent. `doctor` exposes the ABI and each coverage flag; deployments requiring local IPC isolation must use ABI 9 or stronger container isolation.
 - **Cloud (deployment target):** worker containers layer gVisor, a read-only root filesystem and tmpfs workspaces over the host sandbox. `ARIAD_SANDBOX` (`required` by default on Linux workers) selects the host engine sandbox mode; `required` refuses to start a worker that cannot isolate engines.
 - **macOS / Windows:** process groups on macOS and Job Objects with `KillOnDrop` on Windows, cancellation/timeouts and the RSS watchdog. The Linux launcher is not used; `required` mode is unavailable. Seatbelt remains later hardening work.
-- **Limits:** the watchdog samples every 250 ms while a job is active. It is a resource guard, not a strict peak-memory ceiling. `max_memory_mb = null` leaves the watchdog disabled.
+- **Limits:** Unix error cleanup snapshots and kills descendants before reaping the parent group, including engine groups nested below a cloud conversion helper. Windows uses Job Objects. The watchdog samples every 250 ms while a job is active. It is a resource guard, not a strict peak-memory ceiling. `max_memory_mb = null` leaves the watchdog disabled.
 
 ---
 

@@ -243,3 +243,71 @@ fn native_input_above_the_former_cap_is_admitted_but_large_bursts_are_rejected()
         Err(isolated::Error::Convert(ConvertError::LimitExceeded))
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn rss_termination_stops_nested_engine_process_groups() {
+    use std::{os::unix::fs::PermissionsExt, process::Command};
+    let dir = tempfile::tempdir().unwrap();
+    let mut request = request(dir.path(), false);
+    request.target_format = "docx".to_owned();
+    request.output = dir.path().join("out/result.docx");
+    let pid_file = dir.path().join("engine.pid");
+    let heartbeat = dir.path().join("heartbeat");
+    let engine = dir.path().join("engine");
+    let script = r#"#!/usr/bin/env python3
+import os, sys, time, json
+request = json.loads(sys.stdin.readline())
+if request['op'] == 'describe':
+    print(json.dumps({'type': 'capabilities', 'engine': 'probe', 'version': '0.1.0', 'license': 'MIT', 'tool': {'name': 'probe', 'status': 'found'}, 'routes': [], 'enforces_memory_limit': False}), flush=True)
+    print(json.dumps({'type': 'result', 'ok': True}), flush=True)
+    sys.exit(0)
+open('HEARTBEAT_FILE', 'w').close()
+open('PID_FILE', 'w').write(str(os.getpid()))
+data = bytearray(230 << 20)
+for i in range(0, len(data), 4096): data[i] = i % 251 + 1
+while True:
+    with open('HEARTBEAT_FILE', 'a') as f: f.write('alive\n')
+    time.sleep(0.02)
+"#;
+    std::fs::write(
+        &engine,
+        script
+            .replace("PID_FILE", &pid_file.to_string_lossy())
+            .replace("HEARTBEAT_FILE", &heartbeat.to_string_lossy()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o755)).unwrap();
+    request.engine_program = engine;
+    std::fs::write(&request.input, "x".repeat(17 << 20)).unwrap();
+    let mut limits = Limits::cloud();
+    limits.max_memory_mb = Some(256);
+    limits.timeout_s = Some(20);
+    let result = isolated::convert(
+        Path::new(env!("CARGO_BIN_EXE_ariad-server")),
+        &request,
+        limits,
+        SandboxMode::Off,
+        CancellationToken::new(),
+        |_| {},
+    );
+    let pid = std::fs::read_to_string(&pid_file).expect("engine started before RSS sampling");
+    let before = std::fs::metadata(&heartbeat).unwrap().len();
+    std::thread::sleep(Duration::from_millis(200));
+    let after = std::fs::metadata(&heartbeat).unwrap().len();
+    // Always stop the process created by this regression, including on failure.
+    let _ = Command::new("kill").args(["-TERM", pid.trim()]).status();
+    assert!(
+        matches!(
+            result,
+            Err(isolated::Error::Convert(
+                ConvertError::MemoryLimitExceeded { .. }
+            ))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(
+        before, after,
+        "the engine outlived its RSS-terminated helper"
+    );
+}
