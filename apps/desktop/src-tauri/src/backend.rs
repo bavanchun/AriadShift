@@ -196,7 +196,13 @@ impl Backend {
         for view in &result {
             m.jobs.push(Job {
                 view: view.clone(),
-                request: request.clone(),
+                request: QueueRequest {
+                    paths: vec![view.input.clone()],
+                    target: request.target.clone(),
+                    profile: request.profile,
+                    output_folder: request.output_folder.clone(),
+                    overwrite: request.overwrite,
+                },
                 cancel: CancellationToken::new(),
             });
         }
@@ -596,6 +602,13 @@ mod tests {
                 b.to_string_lossy().into_owned(),
             ]))
             .unwrap();
+        {
+            let model = app.backend.model.lock().unwrap();
+            for job in &model.jobs {
+                assert_eq!(job.request.paths.len(), 1);
+                assert_eq!(job.request.paths[0], job.view.input);
+            }
+        }
         let done = wait(&app.backend, 2);
         assert_eq!(done[0].status, JobStatus::Succeeded);
         assert_eq!(done[1].status, JobStatus::Failed);
