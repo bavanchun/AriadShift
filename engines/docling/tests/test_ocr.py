@@ -27,14 +27,16 @@ def test_normalizes_language_hints():
         normalize_hints([1])
 
 
-def test_auto_sends_vietnamese_and_english_to_tesseract():
+def test_auto_sends_vietnamese_and_mixed_english_to_tesseract():
     result = plan("auto")
     assert result.engine == "tesseract"
     assert result.languages == ("vie", "eng")
-    assert plan("auto", ("en",)).languages == ("eng",)
 
 
 def test_auto_sends_other_languages_to_rapidocr():
+    english = plan("auto", ("en",))
+    assert english.engine == "rapidocr"
+    assert english.languages == ("iso:en",)
     result = plan("auto", ("fr",))
     assert result.engine == "rapidocr"
     assert result.languages == ("iso:fr",)
