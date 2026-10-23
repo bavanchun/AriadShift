@@ -72,8 +72,12 @@ const COUNT_LABELS: Array<[keyof NonNullable<IngestResult["inspection"]["counts"
   ["words", "Words"],
 ];
 
-export function ConverterApp() {
-  const clientRef = useRef<ConverterClient | null>(null);
+export interface ConverterAppProps {
+  client?: ConverterClient;
+}
+
+export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
+  const clientRef = useRef<ConverterClient | null>(customClient ?? null);
   const outputRef = useRef<OutputLocation | null>(null);
   const initRef = useRef<Promise<InitResult> | null>(null);
   const planRequest = useRef(0);
@@ -97,9 +101,12 @@ export function ConverterApp() {
   const profileLabelId = useId();
 
   const client = useCallback(() => {
+    if (customClient) {
+      return customClient;
+    }
     clientRef.current ??= new ConverterClient();
     return clientRef.current;
-  }, []);
+  }, [customClient]);
 
   const start = useCallback(() => {
     initRef.current ??= client()
@@ -137,11 +144,13 @@ export function ConverterApp() {
     return () => {
       window.removeEventListener("load", schedule);
       cancel?.();
-      clientRef.current?.terminate();
+      if (!customClient) {
+        clientRef.current?.terminate();
+      }
       clientRef.current = null;
       initRef.current = null;
     };
-  }, [start]);
+  }, [customClient, start]);
 
   useEffect(() => {
     const preventFileNavigation = (event: DragEvent) => {
