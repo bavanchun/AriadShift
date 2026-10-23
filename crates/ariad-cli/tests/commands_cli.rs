@@ -754,9 +754,13 @@ fn cli_interrupt_signal_handling() {
     let dir = tempfile::tempdir().expect("tempdir");
     let input_md = dir.path().join("input.md");
     std::fs::write(&input_md, b"# Document Title\n\nSome body paragraphs.\n").unwrap();
-    let docx_fixture =
+    let docx_source =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/docx/vi-styled-report.docx");
-    assert!(docx_fixture.is_file(), "fixture must exist");
+    assert!(docx_source.is_file(), "fixture must exist");
+    // Keep input I/O on the temporary filesystem so a busy workspace volume cannot
+    // consume the process-start deadline before the interrupt probe runs.
+    let docx_fixture = dir.path().join("input.docx");
+    std::fs::copy(&docx_source, &docx_fixture).expect("copy interrupt fixture");
 
     let out_docx = dir.path().join("out.docx");
 
