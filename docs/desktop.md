@@ -72,7 +72,9 @@ shared [public-key directory](../crates/ariad-host/data/pack-keys/).
 Diagnostics runs the host's `doctor`, including dependency, workspace and sandbox
 checks. The desktop executable also serves the engine protocol in child
 processes, preserving the CLI's isolation and cancellation behavior without an
-intermediate sidecar.
+intermediate sidecar. AppImage helpers declare their validated bundle directory
+as an engine installation root so the Linux sandbox can read and execute the
+bundled libraries.
 
 ## Preferences and deep links
 
