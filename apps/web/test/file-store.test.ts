@@ -49,6 +49,58 @@ describe("holdLock", () => {
 });
 
 describe("OpfsStore.open", () => {
+  it("returns null when Web Locks are not supported", async () => {
+    const originalNavigator = globalThis.navigator;
+    const originalFileSystemFileHandle = globalThis.FileSystemFileHandle;
+
+    class FakeFileSystemFileHandle {
+      createSyncAccessHandle() {}
+    }
+
+    const mockStorage = {
+      getDirectory: vi.fn(),
+    } as unknown as StorageManager;
+
+    try {
+      Object.defineProperty(globalThis, "navigator", {
+        value: {
+          locks: undefined,
+          storage: mockStorage,
+        },
+        configurable: true,
+        writable: true,
+      });
+      Object.defineProperty(globalThis, "FileSystemFileHandle", {
+        value: FakeFileSystemFileHandle,
+        configurable: true,
+        writable: true,
+      });
+
+      const store = await OpfsStore.open("test-session");
+      expect(store).toBeNull();
+      expect(mockStorage.getDirectory).not.toHaveBeenCalled();
+    } finally {
+      if (originalNavigator !== undefined) {
+        Object.defineProperty(globalThis, "navigator", {
+          value: originalNavigator,
+          configurable: true,
+          writable: true,
+        });
+      } else {
+        delete (globalThis as Record<string, unknown>).navigator;
+      }
+      if (originalFileSystemFileHandle !== undefined) {
+        Object.defineProperty(globalThis, "FileSystemFileHandle", {
+          value: originalFileSystemFileHandle,
+          configurable: true,
+          writable: true,
+        });
+      } else {
+        delete (globalThis as Record<string, unknown>).FileSystemFileHandle;
+      }
+    }
+  });
+
   it("returns null when acquiring the session lock rejects", async () => {
     const originalNavigator = globalThis.navigator;
     const originalFileSystemFileHandle = globalThis.FileSystemFileHandle;
