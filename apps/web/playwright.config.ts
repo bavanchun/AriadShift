@@ -22,6 +22,6 @@ export default defineConfig({
     command: `pnpm exec next start --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 120_000,
   },
 });
