@@ -36,3 +36,14 @@ accepted = ["MPL-2.0"]
 # Transitive dependency of directories (engine pack data directory)
 [option-ext]
 accepted = ["MPL-2.0"]
+
+# compile-time only (proc-macro dependency of const-random-macro); not present in distributed binaries
+[tiny-keccak]
+accepted = ["CC0-1.0"]
+
+# Unmodified Tauri HTML processing dependencies.
+[selectors]
+accepted = ["MPL-2.0"]
+
+[cssparser-macros]
+accepted = ["MPL-2.0"]

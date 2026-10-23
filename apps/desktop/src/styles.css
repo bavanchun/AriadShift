@@ -1,0 +1,279 @@
+@import "@ariadshift/ui/globals.css";
+@source "../../../packages/ui/src";
+:root {
+  font-synthesis: none;
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+}
+p {
+  line-height: 1.65;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.desktop-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+aside {
+  padding: 28px 18px;
+  border-right: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 750;
+  font-size: 19px;
+  margin-bottom: 40px;
+}
+.brand small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  margin-top: 3px;
+}
+nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+nav button {
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  cursor: pointer;
+}
+nav button:hover {
+  background: var(--muted);
+}
+nav button[aria-current] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 650;
+}
+.local-note {
+  margin-top: auto;
+  padding: 20px 8px 0;
+}
+.local-note p {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin: 12px 0;
+}
+main {
+  width: 100%;
+  max-width: 1120px;
+  margin: auto;
+  padding: 36px 40px;
+  min-width: 0;
+}
+header {
+  margin-bottom: 28px;
+}
+h1 {
+  font-size: 32px;
+  font-weight: 750;
+  letter-spacing: -1px;
+  margin: 6px 0 10px;
+}
+h2 {
+  font-size: 17px;
+  font-weight: 650;
+  margin-bottom: 12px;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--primary);
+  font-weight: 700;
+}
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  margin: 18px 0;
+}
+.drop-panel {
+  border: 1px dashed var(--primary);
+  background: color-mix(in oklch, var(--primary) 3%, var(--background));
+  border-radius: 18px;
+  text-align: center;
+  padding: 38px 24px;
+}
+.drop-panel p {
+  margin-bottom: 20px;
+}
+.drop-symbol {
+  font-size: 36px;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+.drop-panel details {
+  margin: 20px auto 0;
+  max-width: 500px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+summary {
+  cursor: pointer;
+}
+.row {
+  display: flex;
+  gap: 14px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.row > label {
+  flex: 1;
+  min-width: 160px;
+}
+input:not([type="checkbox"]),
+select {
+  display: block;
+  width: 100%;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 7px;
+  font: inherit;
+  color: var(--foreground);
+}
+select {
+  max-width: 330px;
+}
+input:focus,
+select:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-weight: 400;
+}
+.check input {
+  accent-color: var(--primary);
+}
+.path {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.route-note {
+  border-left: 3px solid var(--primary);
+  background: var(--muted);
+  padding: 14px 18px;
+  margin: 20px 0;
+  font-size: 12px;
+}
+.route-note p {
+  margin: 8px 0;
+}
+.notice {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.notice button {
+  cursor: pointer;
+}
+.file-list li,
+.jobs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 15px 0;
+  font-size: 13px;
+}
+.jobs li > div:first-child {
+  min-width: 0;
+}
+.jobs small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.watch {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.watch p {
+  margin: 8px 0;
+}
+.diagnostic {
+  display: flex;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.error {
+  color: var(--destructive);
+}
+[data-status="succeeded"] {
+  color: var(--primary);
+  font-weight: 650;
+}
+footer {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  margin: 32px 0 0;
+}
+@media (max-width: 900px) {
+  .desktop-shell {
+    grid-template-columns: 180px 1fr;
+  }
+  main {
+    padding: 24px;
+  }
+  aside {
+    padding: 24px 12px;
+  }
+  .brand {
+    font-size: 16px;
+  }
+  .jobs li {
+    align-items: start;
+    flex-direction: column;
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "@ariadshift/desktop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/prepare-icons.mjs && vite --host 127.0.0.1 --port 3210 --strictPort",
+    "build": "node scripts/prepare-icons.mjs && tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "tauri": "tauri",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ariadshift/ui": "workspace:*",
+    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/plugin-dialog": "2.8.3",
+    "@tauri-apps/plugin-deep-link": "2.6.2",
+    "@tauri-apps/plugin-updater": "2.14.0",
+    "@tauri-apps/plugin-opener": "2.7.2",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "lucide-react": "catalog:"
+  },
+  "devDependencies": {
+    "@ariadshift/config": "workspace:*",
+    "@tauri-apps/cli": "2.12.4",
+    "@vitejs/plugin-react": "catalog:",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@testing-library/dom": "catalog:",
+    "jsdom": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "8.3.5",
+    "vitest": "catalog:"
+  }
+}
