@@ -768,7 +768,15 @@ where
         return Err(ConvertError::LimitExceeded);
     }
     let args = [OsString::from("__engine"), OsString::from("pandoc")];
-    convert_executor(request, None, &args, limits, cancel, on_event)
+    convert_executor(
+        request,
+        None,
+        &args,
+        limits,
+        Engines::OneShot,
+        cancel,
+        on_event,
+    )
 }
 
 /// Converts a supported document into the requested target format using capability-based promotion.

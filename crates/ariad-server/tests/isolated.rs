@@ -1,7 +1,12 @@
-//! Exercise the real conversion helper, including native parsing, without a database.
+mod common;
+
+// Exercise the real conversion helper, including native parsing, without a database.
 
 use ariad_core::limits::Limits;
-use ariad_host::convert::{ConvertError, ConvertRequest, isolated};
+use ariad_host::{
+    convert::{ConvertError, ConvertRequest, isolated},
+    sandbox::SandboxMode,
+};
 use std::{
     fmt::Write,
     path::Path,
@@ -37,6 +42,7 @@ fn native_conversion_uses_the_shared_host_in_a_child() {
         Path::new(env!("CARGO_BIN_EXE_ariad-server")),
         &request,
         Limits::cloud(),
+        SandboxMode::Off,
         CancellationToken::new(),
         |_| {},
     )
@@ -65,6 +71,7 @@ fn native_parser_obeys_the_conversion_deadline() {
         Path::new(env!("CARGO_BIN_EXE_ariad-server")),
         &request,
         limits,
+        SandboxMode::Off,
         CancellationToken::new(),
         |_| {},
     );
@@ -100,6 +107,7 @@ fn cancellation_stops_a_native_conversion_process() {
         Path::new(env!("CARGO_BIN_EXE_ariad-server")),
         &request,
         limits,
+        SandboxMode::Off,
         cancel,
         |_| {},
     );
@@ -121,6 +129,7 @@ fn many_document_warnings_fit_the_helper_protocol() {
         Path::new(env!("CARGO_BIN_EXE_ariad-server")),
         &request,
         Limits::cloud(),
+        SandboxMode::Off,
         CancellationToken::new(),
         |_| {},
     )
@@ -137,5 +146,100 @@ fn many_document_warnings_fit_the_helper_protocol() {
         std::fs::read_to_string(report.output)
             .unwrap()
             .contains("Warnings")
+    );
+}
+
+#[test]
+fn native_parser_is_stopped_by_the_process_tree_rss_watchdog() {
+    let dir = tempfile::tempdir().unwrap();
+    let request = request(dir.path(), true);
+    std::fs::write(&request.input, table()).unwrap();
+    let mut limits = Limits::cloud();
+    limits.max_memory_mb = Some(1);
+    limits.max_blocks = 10_000_000;
+    let started = Instant::now();
+    assert_eq!(
+        isolated::convert(
+            Path::new(env!("CARGO_BIN_EXE_ariad-server")),
+            &request,
+            limits,
+            SandboxMode::Off,
+            CancellationToken::new(),
+            |_| {},
+        ),
+        Err(isolated::Error::Convert(
+            ConvertError::MemoryLimitExceeded { limit_mb: 1 }
+        ))
+    );
+    assert!(started.elapsed() < Duration::from_secs(20));
+    assert!(!request.output.exists());
+}
+
+#[test]
+fn required_mode_reaches_the_engine_through_the_helper() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut request = request(dir.path(), false);
+    request.target_format = "docx".to_owned();
+    request.output = dir.path().join("out/result.docx");
+    request.engine_program = common::ashift();
+    std::fs::write(&request.input, "# Sandboxed\n\nBody.\n").unwrap();
+    let result = isolated::convert(
+        Path::new(env!("CARGO_BIN_EXE_ariad-server")),
+        &request,
+        Limits::cloud(),
+        SandboxMode::Required,
+        CancellationToken::new(),
+        |_| {},
+    );
+    if ariad_host::sandbox::support().gaps().is_empty() {
+        let report = result.expect("required engine conversion");
+        assert!(report.output.is_file());
+        assert!(
+            !report
+                .warnings
+                .iter()
+                .any(|warning| warning.code == "sandbox_unavailable")
+        );
+    } else {
+        assert!(
+            matches!(
+                result,
+                Err(isolated::Error::Convert(ConvertError::SandboxUnavailable(
+                    _
+                )))
+            ),
+            "{result:?}"
+        );
+        assert!(!request.output.exists());
+    }
+}
+
+#[test]
+fn native_input_above_the_former_cap_is_admitted_but_large_bursts_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let request = request(dir.path(), false);
+    // One plain paragraph needs little AST overhead despite its input size.
+    std::fs::write(&request.input, "x".repeat(17 << 20)).unwrap();
+    isolated::convert(
+        Path::new(env!("CARGO_BIN_EXE_ariad-server")),
+        &request,
+        Limits::cloud(),
+        SandboxMode::Off,
+        CancellationToken::new(),
+        |_| {},
+    )
+    .expect("native text above 16 MiB is admitted under the RSS budget");
+    let file = std::fs::File::create(&request.input).unwrap();
+    file.set_len((64 << 20) + 1).unwrap();
+    assert_eq!(
+        isolated::convert(
+            Path::new(env!("CARGO_BIN_EXE_ariad-server")),
+            &request,
+            Limits::cloud(),
+            SandboxMode::Off,
+            CancellationToken::new(),
+            |_| {},
+        ),
+        Err(isolated::Error::Convert(ConvertError::LimitExceeded))
     );
 }

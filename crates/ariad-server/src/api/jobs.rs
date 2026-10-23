@@ -146,7 +146,7 @@ pub async fn create_job(
         return Err(ApiError::new(
             StatusCode::PAYLOAD_TOO_LARGE,
             "limit_exceeded",
-            "the native input exceeds the parser memory budget",
+            "the native input exceeds the text size limit",
         ));
     }
 

@@ -22,11 +22,14 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::{ConvertError, ConvertEvent, ConvertReport, ConvertRequest};
-use crate::runner::{self, RunError};
+use crate::{
+    runner::{self, EngineCommand, RunError},
+    sandbox::{self, SandboxMode},
+};
 
 const DEADLINE_GRACE_S: u64 = 5;
 const MAX_REQUEST_BYTES: u64 = 1 << 20;
-const MAX_NATIVE_INPUT: u64 = 16 << 20;
+const MAX_NATIVE_INPUT: u64 = 64 << 20;
 
 const MAX_WARNINGS: usize = 64;
 const MAX_WARNING_CODE_BYTES: usize = 64;
@@ -104,14 +107,14 @@ fn truncate(mut text: String, max: usize) -> String {
     text
 }
 
-/// Native AST expansion needs headroom for the parser, IR and output. The
-/// generic process-tree RSS watchdog can replace this conservative admission
-/// bound once it is available to the host runner.
+/// Admission bounds allocation bursts between RSS samples. The process-tree
+/// watchdog enforces the independent memory budget throughout conversion.
 #[must_use]
 pub fn native_input_cap(limits: &Limits) -> u64 {
-    limits.max_memory_mb.map_or(MAX_NATIVE_INPUT, |mb| {
-        (u64::from(mb) * 1024 * 1024 / 256).min(MAX_NATIVE_INPUT)
-    })
+    limits
+        .max_input_bytes
+        .unwrap_or(MAX_NATIVE_INPUT)
+        .min(MAX_NATIVE_INPUT)
 }
 
 /// Runs the shared converter in a helper served by `ariad-server __convert`.
@@ -120,6 +123,7 @@ pub fn convert<F>(
     program: &Path,
     request: &ConvertRequest,
     limits: Limits,
+    sandbox_mode: SandboxMode,
     cancel: CancellationToken,
     mut on_event: F,
 ) -> Result<ConvertReport, Error>
@@ -143,13 +147,11 @@ where
         .ok_or(ConvertError::OutputIo)?;
     let cancel_path = work_dir.join(format!(".conversion-cancel-{}", uuid::Uuid::new_v4()));
     let mut outer_limits = limits.clone();
-    // Until the host process-tree watchdog lands, the native admission bound
-    // above protects parser memory; inner engines retain their exact limits.
-    outer_limits.max_memory_mb = None;
     outer_limits.timeout_s = outer_limits
         .timeout_s
         .map(|s| s.saturating_add(DEADLINE_GRACE_S));
     let message = Request::Convert {
+        session_id: None,
         protocol: PROTOCOL.to_owned(),
         job: "conversion".to_owned(),
         input: Input {
@@ -184,7 +186,7 @@ where
         ]),
         limits: outer_limits,
     };
-    let env: Vec<_> = std::env::vars_os()
+    let mut env: Vec<_> = std::env::vars_os()
         .filter(|(key, _)| {
             key == "ASHIFT_DATA_DIR"
                 || key
@@ -192,6 +194,14 @@ where
                     .is_some_and(|key| key.starts_with("ASHIFT_PACK_"))
         })
         .collect();
+    env.push((sandbox::MODE_ENV.into(), sandbox_mode.as_str().into()));
+    // This is host orchestration, not an engine. Its child engines receive the
+    // selected sandbox mode; its entire process tree receives the RSS budget.
+    let command = EngineCommand {
+        env,
+        sandbox: Some(SandboxMode::Off),
+        ..EngineCommand::from_parts(program, &[OsString::from("__convert")])
+    };
     let outer_cancel = CancellationToken::new();
     let watcher_cancel = outer_cancel.clone();
     let requested_cancel = cancel.clone();
@@ -216,25 +226,18 @@ where
         }
     });
     let mut reported = None;
-    let result = runner::run_with_env(
-        program,
-        &[OsString::from("__convert")],
-        &env,
-        &message,
-        outer_cancel,
-        |event| match event {
-            Event::Progress { stage, .. } => on_event(ConvertEvent::Progress { stage }),
-            Event::Result {
-                metrics: Some(mut metrics),
-                ..
-            } => {
-                reported = metrics.remove("conversion").and_then(|value| {
-                    serde_json::from_value::<Result<ConvertReport, ConvertError>>(value).ok()
-                });
-            }
-            _ => {}
-        },
-    );
+    let result = runner::run_command(&command, &message, outer_cancel, |event| match event {
+        Event::Progress { stage, .. } => on_event(ConvertEvent::Progress { stage }),
+        Event::Result {
+            metrics: Some(mut metrics),
+            ..
+        } => {
+            reported = metrics.remove("conversion").and_then(|value| {
+                serde_json::from_value::<Result<ConvertReport, ConvertError>>(value).ok()
+            });
+        }
+        _ => {}
+    });
     stopped.store(true, Ordering::Relaxed);
     let _ = watcher.join();
     let _ = std::fs::remove_file(cancel_path);
@@ -245,6 +248,12 @@ where
         (Ok(_), Some(Ok(report))) => Ok(report),
         (Err(RunError::EngineFailed { .. }), Some(Err(error))) => Err(Error::Convert(error)),
         (Err(RunError::Timeout), _) => Err(ConvertError::LimitExceeded.into()),
+        (Err(RunError::MemoryLimitExceeded { limit_mb }), _) => {
+            Err(ConvertError::MemoryLimitExceeded { limit_mb }.into())
+        }
+        (Err(RunError::SandboxUnavailable(detail)), _) => {
+            Err(ConvertError::SandboxUnavailable(detail).into())
+        }
         (Err(RunError::Cancelled), _) => Err(ConvertError::Interrupted.into()),
         (Err(RunError::Spawn(_)), _) => Err(ConvertError::ToolMissing.into()),
         (Err(RunError::Crash { exit: None, .. }), _) => Err(Error::Terminated),
@@ -319,7 +328,10 @@ pub fn serve(cancel: CancellationToken) -> io::Result<()> {
     }
     let error = result.as_ref().err().map(|error| EngineError {
         code: match error {
-            ConvertError::LimitExceeded => ErrorCode::LimitExceeded,
+            ConvertError::LimitExceeded | ConvertError::MemoryLimitExceeded { .. } => {
+                ErrorCode::LimitExceeded
+            }
+            ConvertError::SandboxUnavailable(_) => ErrorCode::EngineFailure,
             ConvertError::ToolMissing => ErrorCode::ToolMissing,
             ConvertError::UnsupportedRoute { .. } => ErrorCode::UnsupportedRoute,
             ConvertError::InputIo | ConvertError::OutputIo => ErrorCode::Io,
@@ -347,11 +359,16 @@ fn emit(output: &mut impl Write, event: &Event) -> io::Result<()> {
 mod tests {
     use super::*;
     #[test]
-    fn native_admission_reserves_memory_for_ast_expansion() {
-        assert_eq!(native_input_cap(&Limits::cloud()), 16 << 20);
+    fn native_admission_bounds_input_independently_of_rss_budget() {
+        assert_eq!(native_input_cap(&Limits::cloud()), 64 << 20);
         let mut limits = Limits::cloud();
         limits.max_memory_mb = Some(1024);
-        assert_eq!(native_input_cap(&limits), 4 << 20);
+        assert_eq!(native_input_cap(&limits), 64 << 20);
+        limits.max_input_bytes = Some(1024);
+        assert_eq!(native_input_cap(&limits), 1024);
+        limits.max_input_bytes = None;
+        limits.max_memory_mb = None;
+        assert_eq!(native_input_cap(&limits), 64 << 20);
     }
     #[test]
     fn warning_metadata_is_bounded_without_losing_counts_or_utf8() {

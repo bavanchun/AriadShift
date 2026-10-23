@@ -31,6 +31,15 @@ impl SandboxMode {
     }
 
     #[must_use]
+    pub const fn host_mode(self) -> ariad_host::sandbox::SandboxMode {
+        match self {
+            Self::Required => ariad_host::sandbox::SandboxMode::Required,
+            Self::BestEffort => ariad_host::sandbox::SandboxMode::BestEffort,
+            Self::Off => ariad_host::sandbox::SandboxMode::Off,
+        }
+    }
+
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Required => "required",
@@ -71,29 +80,20 @@ pub struct SandboxStatus {
 
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum SandboxError {
-    #[error(
-        "ARIAD_SANDBOX=required, but this build cannot isolate engines ({0}); \
-         use a build with the engine sandbox or set ARIAD_SANDBOX=best-effort"
-    )]
+    #[error("ARIAD_SANDBOX=required, but this host cannot isolate engines ({0})")]
     Unavailable(String),
 }
 
-/// Isolation features that `ariad_host` applies to engine processes in this
-/// build.
-fn host_features() -> Vec<&'static str> {
-    Vec::new()
+/// Checks the configured mode against the host's actual isolation contract.
+pub fn preflight(mode: SandboxMode) -> Result<SandboxStatus, SandboxError> {
+    preflight_with_support(mode, &ariad_host::sandbox::support())
 }
 
-/// Isolation features a worker needs for `required`.
-const REQUIRED_FEATURES: [&str; 3] = ["landlock", "seccomp", "rlimits"];
-
-/// Checks the configured mode against what this build provides.
-pub fn preflight(mode: SandboxMode) -> Result<SandboxStatus, SandboxError> {
-    let available = host_features();
-    let missing: Vec<&'static str> = REQUIRED_FEATURES
-        .into_iter()
-        .filter(|feature| !available.contains(feature))
-        .collect();
+fn preflight_with_support(
+    mode: SandboxMode,
+    support: &ariad_host::sandbox::SandboxSupport,
+) -> Result<SandboxStatus, SandboxError> {
+    let missing = support.gaps();
     match mode {
         SandboxMode::Required if !missing.is_empty() => {
             Err(SandboxError::Unavailable(missing.join(", ")))
@@ -123,17 +123,39 @@ mod tests {
     }
 
     #[test]
-    fn required_fails_closed_without_host_isolation() {
-        if host_features().len() == REQUIRED_FEATURES.len() {
-            assert!(preflight(SandboxMode::Required).is_ok());
-        } else {
-            assert!(matches!(
-                preflight(SandboxMode::Required),
-                Err(SandboxError::Unavailable(_))
-            ));
+    fn required_uses_the_host_confinement_contract() {
+        use ariad_host::sandbox::SandboxSupport;
+        let unsupported = SandboxSupport::default();
+        assert!(matches!(
+            preflight_with_support(SandboxMode::Required, &unsupported),
+            Err(SandboxError::Unavailable(_))
+        ));
+        let best = preflight_with_support(SandboxMode::BestEffort, &unsupported).unwrap();
+        assert_eq!(best.missing, unsupported.gaps());
+        assert!(
+            preflight_with_support(SandboxMode::Off, &unsupported)
+                .unwrap()
+                .missing
+                .is_empty()
+        );
+        let supported = SandboxSupport {
+            platform: true,
+            landlock_filesystem: true,
+            seccomp: true,
+            ..SandboxSupport::default()
+        };
+        assert!(
+            preflight_with_support(SandboxMode::Required, &supported)
+                .unwrap()
+                .missing
+                .is_empty()
+        );
+        for mode in [
+            SandboxMode::Required,
+            SandboxMode::BestEffort,
+            SandboxMode::Off,
+        ] {
+            assert_eq!(mode.as_str(), mode.host_mode().as_str());
         }
-        let best = preflight(SandboxMode::BestEffort).expect("best effort");
-        assert_eq!(best.mode, SandboxMode::BestEffort);
-        assert!(preflight(SandboxMode::Off).expect("off").missing.is_empty());
     }
 }
