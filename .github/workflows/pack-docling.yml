@@ -227,6 +227,18 @@ jobs:
           uv run --no-project --python 3.14 python engines/docling/pack/build.py build
           --target "$TARGET" --out "$PACK_OUT"
 
+      - name: Rebuild and compare component hashes
+        if: matrix.primary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          second="$RUNNER_TEMP/pack-rebuild"
+          uv run --no-project --python 3.14 python engines/docling/pack/build.py build \
+            --target "$TARGET" --out "$second"
+          (cd "$PACK_OUT" && sha256sum ./*.tar.zst pack.toml) > "$RUNNER_TEMP/pack-hashes"
+          (cd "$second" && sha256sum --check "$RUNNER_TEMP/pack-hashes")
+          rm -rf "$second"
+
       - name: Allow the offline check to create a network namespace
         if: matrix.primary
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
