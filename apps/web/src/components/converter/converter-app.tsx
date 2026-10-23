@@ -221,6 +221,8 @@ export function ConverterApp() {
       return;
     }
     setError(null);
+    setOutput(null);
+    outputRef.current = null;
     setPhase("converting");
     setStatus(`Converting to ${formatLabel(target)} on this device.`);
     try {
@@ -310,8 +312,9 @@ export function ConverterApp() {
           <TriangleAlertIcon aria-hidden="true" />
           <AlertTitle>On-device file storage is not available in this browser</AlertTitle>
           <AlertDescription>
-            Files are kept in memory instead, so inputs up to {formatBytes(engine.memoryLimitBytes)}{" "}
-            are supported. Nothing is uploaded either way.
+            Files are kept in memory instead, so inputs up to{" "}
+            {formatBytes(Math.min(engine.memoryLimitBytes, engine.inputLimitBytes))} are supported.
+            Nothing is uploaded either way.
           </AlertDescription>
         </Alert>
       )}
