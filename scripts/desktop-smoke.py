@@ -67,6 +67,11 @@ def main():
             assert "Desktop smoke" in output.read_text(encoding="utf-8")
             assert "A real local conversion." in output.read_text(encoding="utf-8")
             print("Desktop WebDriver smoke passed: Markdown to HTML through the real UI.")
+    except Exception:
+        # Preserve process/socket evidence when WebKit cannot establish automation.
+        subprocess.run(["ps", "-eo", "pid,ppid,stat,comm,wchan:32"], check=False)
+        subprocess.run(["ss", "-ltnp"], check=False)
+        raise
     finally:
         if session:
             try:
