@@ -23,3 +23,11 @@ test-results/
 blob-report/
 *.tsbuildinfo
 .lighthouse/
+# Desktop frontend and Tauri generated build output
+apps/desktop/dist/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/tauri.release.local.json
+apps/desktop/src-tauri/icons/macos/
+apps/desktop/public/icon.png
+apps/desktop/src-tauri/icons/android/
+apps/desktop/src-tauri/icons/ios/

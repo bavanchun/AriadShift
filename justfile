@@ -131,6 +131,9 @@ test-winget-manifest:
 test-ci-scope:
     sh scripts/test-ci-scope.sh
 
+licenses:
+    node scripts/generate-licenses.mjs > THIRD_PARTY_LICENSES
+
 licenses-check:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -141,9 +144,9 @@ licenses-check:
     fi
     tmp=$(mktemp)
     trap 'rm -f "$tmp"' EXIT
-    cargo about generate about.hbs > "$tmp"
+    node scripts/generate-licenses.mjs > "$tmp"
     if ! cmp -s "$tmp" THIRD_PARTY_LICENSES; then
-        echo "ERROR: THIRD_PARTY_LICENSES is out of date. Run 'cargo about generate about.hbs > THIRD_PARTY_LICENSES' to update." >&2
+        echo "ERROR: THIRD_PARTY_LICENSES is out of date. Run 'just licenses' to update." >&2
         diff -u THIRD_PARTY_LICENSES "$tmp" | head -n 30 || true
         exit 1
     fi
@@ -207,7 +210,7 @@ test-server-container:
 package-check:
     cargo package --workspace --exclude ariad-server --allow-dirty --config 'patch.crates-io.ariad-core.path="crates/ariad-core"' --config 'patch.crates-io.ariad-host.path="crates/ariad-host"'
 
-ci: static clippy wasm test bench-test bench-check package-check web-ci
+ci: static clippy wasm test bench-test bench-check package-check web-ci desktop-ci
 
 pandoc:
     bash scripts/install-pandoc.sh
@@ -260,3 +263,36 @@ fuzz target="" seconds="60":
 [windows]
 fuzz target="" seconds="60":
     @echo "fuzzing runs on Linux only" && exit 1
+
+# Generated IPC types and wrappers come only from Rust.
+desktop-bindings:
+    cargo run -p ariad-desktop --bin export-bindings
+    pnpm exec biome format --write apps/desktop/src/bindings
+
+desktop-bindings-check: desktop-bindings
+    git diff --exit-code -- apps/desktop/src/bindings
+
+desktop-dev:
+    pnpm --filter @ariadshift/desktop tauri dev
+
+desktop-build:
+    pnpm --filter @ariadshift/desktop tauri build
+
+# Run after a desktop build on Linux, where WebKitGTK supports WebDriver.
+[linux]
+desktop-smoke:
+    python3 scripts/desktop-smoke.py target/release/ariad-desktop
+
+# Shared dependency changes also trigger desktop checks locally.
+desktop-ci:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if git diff --name-only origin/dev HEAD -- apps/desktop packages Cargo.toml Cargo.lock pnpm-lock.yaml justfile .github/workflows/desktop.yml | grep -q .; then
+        just desktop-bindings-check
+        pnpm --filter @ariadshift/desktop build
+        cargo nextest run -p ariad-desktop
+    fi
+
+# Regenerate the committed desktop icons after changing brand sources.
+desktop-icons:
+    pnpm --filter @ariadshift/desktop tauri icon ../../brand/png/ariadshift-app-icon-1024.png --output src-tauri/icons

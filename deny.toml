@@ -51,6 +51,20 @@ name = "option-ext"
 allow = ["CDLA-Permissive-2.0"]
 name = "webpki-root-certs"
 
+# compile-time only (proc-macro dependency of const-random-macro); not present in distributed binaries
+[[licenses.exceptions]]
+allow = ["CC0-1.0"]
+name = "tiny-keccak"
+
+# Unmodified Tauri HTML processing dependencies.
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "selectors"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "cssparser-macros"
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
