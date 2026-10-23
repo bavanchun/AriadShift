@@ -1464,32 +1464,33 @@ fn test_real_request_cancellation_preserves_server_and_cleans_engine() {
         }),
     );
 
-    // Assert engine process is terminated (poll up to 3s)
-    let engine_dead_start = std::time::Instant::now();
-    let mut engine_alive = true;
-    while engine_dead_start.elapsed() < std::time::Duration::from_secs(3) {
-        if !is_process_alive(engine_pid) {
-            engine_alive = false;
-            break;
+    // Engine exit precedes host reaping and workspace removal. Wait for both
+    // cancellation effects within one deadline, without closing the server.
+    let cleanup_start = std::time::Instant::now();
+    let (engine_alive, entries) = loop {
+        let engine_alive = is_process_alive(engine_pid);
+        let entries: Vec<_> = fs::read_dir(&isolated_tmp)
+            .expect("read isolated_tmp")
+            .map(|entry| entry.expect("read workspace entry"))
+            .filter(|e| e.file_name().to_string_lossy().starts_with("ariadshift-"))
+            .map(|entry| entry.path())
+            .collect();
+        if (!engine_alive && entries.is_empty())
+            || cleanup_start.elapsed() >= std::time::Duration::from_secs(3)
+        {
+            break (engine_alive, entries);
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
-    }
+    };
     assert!(
         !engine_alive,
         "engine process {engine_pid} must be dead after cancellation"
     );
     _engine_guard.0 = None;
 
-    // Assert no ariadshift-* workspace directories remain in isolated_tmp
-    let entries: Vec<_> = fs::read_dir(&isolated_tmp)
-        .expect("read isolated_tmp")
-        .flatten()
-        .filter(|e| e.file_name().to_string_lossy().starts_with("ariadshift-"))
-        .collect();
     assert!(
         entries.is_empty(),
-        "workspace directories remained after cancellation: {:?}",
-        entries.iter().map(|e| e.path()).collect::<Vec<_>>()
+        "workspace directories remained after cancellation: {entries:?}"
     );
 
     // Verify server remains alive and responds to subsequent requests
