@@ -54,6 +54,9 @@ decide() {
     fi
 
     heavy=false
+    if printf '%s\n' "$changed" | grep -E '^apps/desktop/src-tauri/' >/dev/null; then
+        heavy=true
+    fi
     if printf '%s\n' "$changed" | grep -v -E "$docs_paths|$js_paths" >/dev/null; then
         heavy=true
     fi
