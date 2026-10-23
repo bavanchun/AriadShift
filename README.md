@@ -117,6 +117,13 @@ ashift mcp --allow-dir ~/Documents
 
 The server exposes 4 tools (`list_engines`, `inspect`, `plan`, and `convert`) with strict path confinement, capability-based directory access, dynamic roots synchronization, and `resources/read` support. See [`docs/mcp.md`](docs/mcp.md) for configuration and tool details.
 
+## Desktop app
+
+The Tauri app in `apps/desktop` converts local files and batches, watches folders,
+manages signed engine packs and opens `ariadshift://` links. Run `just desktop-dev`
+for development or `just desktop-build` for installers. See
+[the desktop guide](docs/desktop.md) for setup, dependencies and updates.
+
 ## Development
 
 Install Rust 1.99.0 with the `rustfmt`, `clippy`, and
@@ -176,6 +183,7 @@ and the web app; `just web-browsers` and `just web-e2e` run its browser tests.
 - [MCP server reference](docs/mcp.md)
 - [Web app](docs/web.md)
 - [Cloud API reference](docs/api.md) and [cloud server operation](docs/server.md)
+- [Desktop app](docs/desktop.md)
 - [System architecture](ARCHITECTURE.md)
 - [Security reporting](docs/SECURITY.md)
 - [Git workflow](docs/git-workflow.md)
