@@ -62,7 +62,7 @@ jobs:
 
       - name: Run AddressSanitizer fuzzing
         run: |
-          targets="markdown_reader html_reader pandoc_ast_to_ir ir_json"
+          targets="markdown_reader html_reader pandoc_ast_to_ir docling_to_ir ir_json"
           for t in $targets; do
             echo "=== Running ASan fuzz target: $t (600s) ==="
             mkdir -p "fuzz/corpus/$t"
