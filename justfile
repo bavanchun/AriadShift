@@ -197,6 +197,12 @@ test-server:
     ARIAD_TEST_DATABASE_URL=postgres://postgres:ariad@127.0.0.1:55442/postgres \
     ARIAD_TEST_S3_ENDPOINT=http://127.0.0.1:58342 \
         cargo nextest run -p ariad-server
+    if [ "${ARIAD_TEST_CONTAINER_SMOKE:-0}" = 1 ]; then ARIAD_TEST_DATABASE_URL=postgres://postgres:ariad@127.0.0.1:55442/postgres just test-server-container; fi
+
+# Build/check the Dockerfiles and run a required-mode worker on the test database.
+[linux]
+test-server-container:
+    bash scripts/test-server-container.sh
 
 package-check:
     cargo package --workspace --exclude ariad-server --allow-dirty --config 'patch.crates-io.ariad-core.path="crates/ariad-core"' --config 'patch.crates-io.ariad-host.path="crates/ariad-host"'
