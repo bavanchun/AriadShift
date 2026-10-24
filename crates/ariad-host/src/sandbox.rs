@@ -27,6 +27,12 @@ pub const MODE_ENV: &str = "ASHIFT_SANDBOX";
 /// Exit status of a launcher that could not apply its restrictions or start the engine.
 pub const LAUNCH_FAILURE_EXIT: u8 = 127;
 
+/// Fixed prefix identifying a failure reported by the sandbox launcher itself.
+pub const LAUNCH_FAILURE_PREFIX: &str = "The engine sandbox could not start the engine: ";
+
+/// Remedy for Linux engines whose private temporary directory needs namespaces.
+pub const NAMESPACE_HINT: &str = "allow user and mount namespaces for ashift; on Ubuntu use sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 or an AppArmor profile allowing userns; default container seccomp profiles also block this setup; ASHIFT_SANDBOX=off explicitly disables isolation";
+
 /// How strictly the host isolates engine processes.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -196,6 +202,8 @@ impl SandboxOutcome {
 /// Filesystem paths and limits the launcher applies to one engine process.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SandboxPolicy {
+    /// Workspace backing a private `/tmp` for engines with hard-coded IPC paths.
+    pub private_tmp: Option<PathBuf>,
     /// Paths the engine may read.
     pub read_only: Vec<PathBuf>,
     /// Paths the engine may read and execute.
@@ -247,6 +255,11 @@ impl SandboxPolicy {
         let mut read_write: Vec<PathBuf> = BASE_READ_WRITE.iter().map(PathBuf::from).collect();
         read_write.extend(writable.iter().cloned());
         Self {
+            private_tmp: if extra.private_tmp {
+                writable.first().cloned()
+            } else {
+                None
+            },
             read_only,
             exec,
             read_write,
@@ -264,6 +277,10 @@ impl SandboxPolicy {
         args: &[OsString],
     ) -> Vec<OsString> {
         let mut out = vec![OsString::from("__sandbox")];
+        if let Some(root) = &self.private_tmp {
+            out.push("--private-tmp".into());
+            out.push(root.clone().into_os_string());
+        }
         if required {
             out.push("--required".into());
         }
@@ -318,12 +335,13 @@ impl LaunchSpec {
             match flag {
                 "--required" => spec.required = true,
                 "--deny-net" => spec.policy.deny_network = true,
-                "--ro" | "--exec" | "--rw" => {
+                "--ro" | "--exec" | "--rw" | "--private-tmp" => {
                     let path = args
                         .next()
                         .map(PathBuf::from)
                         .ok_or_else(|| format!("{flag} needs a path"))?;
                     match flag {
+                        "--private-tmp" => spec.policy.private_tmp = Some(path),
                         "--ro" => spec.policy.read_only.push(path),
                         "--exec" => spec.policy.exec.push(path),
                         _ => spec.policy.read_write.push(path),
@@ -371,6 +389,15 @@ pub fn launch(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         Ok(spec) => spec,
         Err(message) => return launch_failure(&format!("invalid sandbox arguments: {message}")),
     };
+    #[cfg(debug_assertions)]
+    if spec.policy.private_tmp.is_some()
+        && std::env::var_os("ARIAD_TEST_SANDBOX_SUPPORT")
+            .is_some_and(|value| value == "namespace-denied")
+    {
+        return launch_failure(
+            "private /tmp requires user and mount namespaces: Permission denied",
+        );
+    }
     #[cfg(target_os = "linux")]
     {
         let error = linux::apply_and_exec(&spec);
@@ -390,7 +417,7 @@ fn launch_failure(message: &str) -> ExitCode {
         metrics: None,
         error: Some(EngineError {
             code: ErrorCode::EngineFailure,
-            message: format!("The engine sandbox could not start the engine: {message}"),
+            message: format!("{LAUNCH_FAILURE_PREFIX}{message}"),
         }),
     };
     if let Ok(mut line) = serde_json::to_vec(&event) {
@@ -430,6 +457,7 @@ mod tests {
     #[test]
     fn launcher_arguments_round_trip_through_the_parser() {
         let policy = SandboxPolicy {
+            private_tmp: Some(PathBuf::from("/tmp/ariadshift-x")),
             read_only: vec![PathBuf::from("/etc")],
             exec: vec![PathBuf::from("/usr"), PathBuf::from("/opt/engine")],
             read_write: vec![PathBuf::from("/tmp/ariadshift-x")],

@@ -57,12 +57,15 @@ impl SessionResources {
 /// Determines MIME type from file extension.
 #[must_use]
 pub fn mime_type_for_path(path: &Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("md" | "markdown") => "text/markdown; charset=utf-8",
-        Some("html" | "htm") => "text/html; charset=utf-8",
-        Some("docx") => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        Some("epub") => "application/epub+zip",
-        _ => "application/octet-stream",
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(ariad_core::format::Format::from_extension)
+    {
+        Some(ariad_core::format::Format::Markdown) => "text/markdown; charset=utf-8",
+        Some(ariad_core::format::Format::Html) => "text/html; charset=utf-8",
+        Some(format) => format.media_type(),
+        None => "application/octet-stream",
     }
 }
 

@@ -92,6 +92,7 @@ pub(crate) fn run(args: ConvertArgs) -> ExitCode {
             engine_program: engine_program.clone(),
             title_fallback: None,
             asset_base_dir: None,
+            reader_engine: args.engine.clone(),
         })
         .collect();
     let is_json = args.json;

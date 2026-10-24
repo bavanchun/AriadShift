@@ -28,6 +28,7 @@ expression: normalize_stdout(&output)
   },
   "warnings": [],
   "reachable": [
+    "ariad-ir+json",
     "epub",
     "html",
     "markdown"

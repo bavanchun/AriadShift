@@ -132,7 +132,7 @@ where
 {
     if matches!(
         super::detect_format_from_path(&request.input),
-        Some(super::DocumentFormat::Markdown | super::DocumentFormat::Html)
+        Some(Format::Markdown | Format::Html)
     ) && std::fs::metadata(&request.input)
         .map_err(|_| ConvertError::InputIo)?
         .len()
@@ -189,6 +189,7 @@ where
     let mut env: Vec<_> = std::env::vars_os()
         .filter(|(key, _)| {
             key == "ASHIFT_DATA_DIR"
+                || key == "ASHIFT_SOFFICE"
                 || key
                     .to_str()
                     .is_some_and(|key| key.starts_with("ASHIFT_PACK_"))
@@ -251,7 +252,7 @@ where
         (Err(RunError::MemoryLimitExceeded { limit_mb }), _) => {
             Err(ConvertError::MemoryLimitExceeded { limit_mb }.into())
         }
-        (Err(RunError::SandboxUnavailable(detail)), _) => {
+        (Err(RunError::SandboxUnavailable(detail) | RunError::SandboxLaunchFailed(detail)), _) => {
             Err(ConvertError::SandboxUnavailable(detail).into())
         }
         (Err(RunError::Cancelled), _) => Err(ConvertError::Interrupted.into()),

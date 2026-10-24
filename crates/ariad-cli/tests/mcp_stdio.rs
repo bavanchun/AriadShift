@@ -1005,7 +1005,7 @@ fn test_tool_input_validation_enums() {
         "expected CLI profile error message, got: {err_msg1}"
     );
 
-    // 2. Invalid target format "pdf" in convert
+    // 2. Invalid target format "rst" in convert
     client.send_request(
         22,
         "tools/call",
@@ -1013,7 +1013,7 @@ fn test_tool_input_validation_enums() {
             "name": "convert",
             "arguments": {
                 "input": input_path.to_str().unwrap(),
-                "to": "pdf",
+                "to": "rst",
                 "output": output_path.to_str().unwrap()
             }
         }),
@@ -1025,15 +1025,15 @@ fn test_tool_input_validation_enums() {
     assert_eq!(structured2["code"], "unsupported_route");
     let err_msg2 = resp2["result"]["content"][0]["text"].as_str().unwrap();
     assert!(
-        err_msg2.contains("unsupported conversion route; unknown target format 'pdf'"),
+        err_msg2.contains("unsupported conversion route; unknown target format 'rst'"),
         "expected CLI unknown target format error message, got: {err_msg2}"
     );
     assert!(
-        err_msg2.contains("reachable targets from md: docx, epub, html"),
+        err_msg2.contains("reachable targets from md: docx, epub, html, json"),
         "expected reachable targets list, got: {err_msg2}"
     );
 
-    // 3. Invalid target format "pdf" in plan
+    // 3. Invalid target format "rst" in plan
     client.send_request(
         23,
         "tools/call",
@@ -1041,7 +1041,7 @@ fn test_tool_input_validation_enums() {
             "name": "plan",
             "arguments": {
                 "input": input_path.to_str().unwrap(),
-                "to": "pdf"
+                "to": "rst"
             }
         }),
     );
@@ -1052,7 +1052,7 @@ fn test_tool_input_validation_enums() {
     assert_eq!(structured3["code"], "unsupported_route");
     let err_msg3 = resp3["result"]["content"][0]["text"].as_str().unwrap();
     assert!(
-        err_msg3.contains("unsupported conversion route; unknown target format 'pdf'"),
+        err_msg3.contains("unsupported conversion route; unknown target format 'rst'"),
         "expected CLI plan unknown target format error message, got: {err_msg3}"
     );
 

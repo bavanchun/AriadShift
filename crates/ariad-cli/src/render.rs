@@ -93,6 +93,23 @@ pub fn render_inspect_human(output: &InspectOutput) -> io::Result<()> {
             "counts:    {total_headings} {heading_label}{heading_detail}, {p_str}, {t_str}, {img_str}, {lk_str}, {fn_str}, {w_str}",
         )?;
     }
+    if let Some(ref pdf) = output.pdf {
+        let mut parts = vec![
+            plural(pdf.pages as usize, "page", "pages"),
+            format!("{} with text", pdf.text_pages),
+            format!("{} image-only", pdf.image_only_pages),
+        ];
+        if pdf.needs_ocr {
+            parts.push("needs OCR".to_owned());
+        }
+        if pdf.encrypted {
+            parts.push("encrypted".to_owned());
+        }
+        writeln!(out, "pdf:       {}", parts.join(", "))?;
+        if let Some(ref producer) = pdf.producer {
+            writeln!(out, "producer:  {}", escape_control_chars(producer))?;
+        }
+    }
     if output.reachable.is_empty() {
         writeln!(out, "reachable: (none)")?;
     } else {
@@ -135,10 +152,17 @@ fn format_score(
     measured: bool,
     runs_locally: bool,
     missing_engine: Option<&str>,
+    startup_failure: Option<&str>,
 ) -> String {
     let check = check_mark();
     let local_suffix = if runs_locally {
         format!("runs locally {check}")
+    } else if let Some(detail) = startup_failure {
+        format!(
+            "startup_failure ({}): {}",
+            escape_control_chars(missing_engine.unwrap_or("engine")),
+            escape_control_chars(detail)
+        )
     } else if let Some(engine) = missing_engine {
         format!("engine missing ({})", escape_control_chars(engine))
     } else {
@@ -183,7 +207,8 @@ pub fn render_plan_human(output: &ariad_host::commands::plan::PlanOutput) -> io:
             &output.score,
             output.measured,
             output.runs_locally,
-            output.missing_engine.as_deref()
+            output.missing_engine.as_deref(),
+            output.startup_failure.as_deref()
         )
     )?;
     for alt in &output.alternatives {
@@ -195,7 +220,8 @@ pub fn render_plan_human(output: &ariad_host::commands::plan::PlanOutput) -> io:
                 &alt.score,
                 alt.measured,
                 alt.runs_locally,
-                alt.missing_engine.as_deref()
+                alt.missing_engine.as_deref(),
+                alt.startup_failure.as_deref()
             )
         )?;
     }

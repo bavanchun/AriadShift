@@ -361,3 +361,62 @@ fn helper_children_cannot_connect_to_tcp_while_pandoc_converts() {
     );
     assert!(report.output.is_file());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn office_namespace_failure_survives_the_worker_helper() {
+    use std::os::unix::fs::PermissionsExt;
+    const CHILD: &str = "ARIAD_TEST_OFFICE_HELPER";
+    if std::env::var_os(CHILD).is_none() {
+        let directory = tempfile::tempdir().unwrap();
+        let soffice = directory.path().join("soffice");
+        std::fs::write(&soffice, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&soffice, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "office_namespace_failure_survives_the_worker_helper",
+            ])
+            .env(CHILD, "1")
+            .env("ASHIFT_SOFFICE", &soffice)
+            .env("ARIAD_TEST_SANDBOX_SUPPORT", "namespace-denied")
+            .env("ASHIFT_SANDBOX", "off")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut request = request(directory.path(), false);
+    request.input = root.join("fixtures/office/en-map-room-slides.pptx");
+    request.output = directory.path().join("out/office.pdf");
+    request.target_format = "pdf".to_owned();
+    request.engine_program = common::ashift();
+    for mode in [SandboxMode::BestEffort, SandboxMode::Required] {
+        if mode == SandboxMode::Required && !ariad_host::sandbox::support().gaps().is_empty() {
+            assert!(
+                std::env::var_os("ARIAD_TEST_REQUIRE_SANDBOX").is_none(),
+                "CI requires a supported sandbox"
+            );
+            continue;
+        }
+        let error = isolated::convert(
+            Path::new(env!("CARGO_BIN_EXE_ariad-server")),
+            &request,
+            Limits::cloud(),
+            mode,
+            CancellationToken::new(),
+            |_| {},
+        )
+        .unwrap_err();
+        let isolated::Error::Convert(ConvertError::SandboxUnavailable(detail)) = error else {
+            panic!("worker lost the sandbox diagnostic: {error:?}");
+        };
+        assert!(
+            detail.contains("private /tmp requires user and mount namespaces"),
+            "{detail}"
+        );
+        assert!(!request.output.exists());
+    }
+}

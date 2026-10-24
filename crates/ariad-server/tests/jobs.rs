@@ -440,10 +440,13 @@ async fn plan_and_capabilities_describe_the_deployment() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn pdf_uploads_plan_only_when_docling_is_deployed() {
-    for (packs, status) in [("core", 422), ("core,docling", 200)] {
+async fn pdf_uploads_use_deployed_readers_and_respect_pack_memory() {
+    for (packs, expected_pack, reader) in [
+        ("core", "core", "pdf"),
+        ("core,docling", "docling", "docling"),
+    ] {
         let Some(h) = Harness::start(
-            "pdf_uploads_plan_only_when_docling_is_deployed",
+            "pdf_uploads_use_deployed_readers_and_respect_pack_memory",
             Options {
                 env: vec![("ARIAD_PACKS".into(), packs.into())],
                 ..Options::default()
@@ -481,9 +484,11 @@ async fn pdf_uploads_plan_only_when_docling_is_deployed() {
                 .await
                 .unwrap();
             assert_eq!(count, 0, "an inadmissible pack never reaches a queue");
-        }
-        h.sql_exec("UPDATE plan_entitlements SET max_memory_mb = 2048 WHERE plan = 'anonymous'")
+            h.sql_exec(
+                "UPDATE plan_entitlements SET max_memory_mb = 2048 WHERE plan = 'anonymous'",
+            )
             .await;
+        }
         let response = h
             .post(
                 &Auth::Anonymous,
@@ -491,29 +496,21 @@ async fn pdf_uploads_plan_only_when_docling_is_deployed() {
                 &json!({"upload_id": upload["id"], "to":"md"}),
             )
             .await;
-        assert_eq!(response.status(), status, "{}", text(response).await);
-        if status == 200 {
-            let planned: Value = response.json().await.unwrap();
-            assert_eq!(planned["pack"], "docling");
-            assert!(
-                planned["route"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|step| step["engine"] == "docling")
-            );
-            let job = h
-                .create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "md")
-                .await;
-            assert_eq!(job.status(), 202);
-            let job: Value = job.json().await.unwrap();
-            let pack: String = sqlx::query_scalar("SELECT pack FROM jobs WHERE id = $1::uuid")
-                .bind(job["id"].as_str().unwrap())
-                .fetch_one(&h.db.pool)
-                .await
-                .unwrap();
-            assert_eq!(pack, "docling");
-        }
+        assert_eq!(response.status(), 200, "{}", text(response).await);
+        let planned: Value = response.json().await.unwrap();
+        assert_eq!(planned["pack"], expected_pack);
+        assert_eq!(planned["route"][0]["engine"], reader);
+        let job = h
+            .create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "md")
+            .await;
+        assert_eq!(job.status(), 202);
+        let job: Value = job.json().await.unwrap();
+        let pack: String = sqlx::query_scalar("SELECT pack FROM jobs WHERE id = $1::uuid")
+            .bind(job["id"].as_str().unwrap())
+            .fetch_one(&h.db.pool)
+            .await
+            .unwrap();
+        assert_eq!(pack, expected_pack);
         h.stop().await;
     }
 }

@@ -17,6 +17,11 @@ fn cli() -> Command {
         .env("ASHIFT_DATA_DIR", data_dir_path())
         // Snapshots describe a machine without the optional Docling engine.
         .env_remove("ASHIFT_DOCLING_ENGINE")
+        // Snapshots must not depend on whether this machine has LibreOffice.
+        .env(
+            "ASHIFT_SOFFICE",
+            repository_root().join(".tools/no-soffice"),
+        )
         .env_remove("ASHIFT_TEST_PACK_KEYS");
     for (key, _) in std::env::vars_os() {
         if key.to_string_lossy().starts_with("ASHIFT_PACK_") {
@@ -24,6 +29,233 @@ fn cli() -> Command {
         }
     }
     command
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn namespace_denial_reports_installed_engine_and_preserves_the_planned_route() {
+    use std::os::unix::fs::PermissionsExt;
+    let installation = tempfile::tempdir().unwrap();
+    let soffice = installation.path().join("soffice");
+    std::fs::write(&soffice, "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(&soffice, std::fs::Permissions::from_mode(0o755)).unwrap();
+    for mode in ["best-effort", "required"] {
+        if mode == "required" && !ariad_host::sandbox::support().gaps().is_empty() {
+            continue;
+        }
+        let run = |args: &[&str]| {
+            cli()
+                .env("ASHIFT_SANDBOX", mode)
+                .env("ASHIFT_SOFFICE", &soffice)
+                .env("ARIAD_TEST_SANDBOX_SUPPORT", "namespace-denied")
+                .env_remove("ASHIFT_TEST_CAPABILITIES")
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        let doctor = run(&["doctor", "--json"]);
+        let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+        let check = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|check| check["id"] == "engine_libreoffice")
+            .unwrap();
+        assert_eq!(check["ok"], false);
+        assert!(
+            check["message"]
+                .as_str()
+                .unwrap()
+                .contains("installed but cannot start")
+        );
+        assert!(
+            check["message"]
+                .as_str()
+                .unwrap()
+                .contains("private /tmp requires user and mount namespaces")
+        );
+        assert!(
+            check["hint"]
+                .as_str()
+                .unwrap()
+                .contains("kernel.apparmor_restrict_unprivileged_userns=0")
+        );
+        assert!(
+            !check["hint"]
+                .as_str()
+                .unwrap()
+                .contains("install LibreOffice")
+        );
+
+        let engines = run(&["engines", "--json"]);
+        assert!(engines.status.success());
+        let rows: serde_json::Value = serde_json::from_slice(&engines.stdout).unwrap();
+        let office = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "libreoffice")
+            .unwrap();
+        assert_eq!(office["status"], "cannot start");
+        assert!(
+            office["note"]
+                .as_str()
+                .unwrap()
+                .contains("installed, cannot start")
+        );
+        assert!(
+            office["note"]
+                .as_str()
+                .unwrap()
+                .contains("Permission denied")
+        );
+        let human = run(&["engines"]);
+        assert!(
+            String::from_utf8_lossy(&human.stdout)
+                .contains("private /tmp requires user and mount namespaces")
+        );
+
+        let input = repository_root().join("fixtures/office/en-map-room-slides.pptx");
+        let plan = run(&["plan", input.to_str().unwrap(), "--to", "pdf"]);
+        assert!(plan.status.success(), "{plan:?}");
+        let human = String::from_utf8_lossy(&plan.stdout);
+        let primary_score = human
+            .lines()
+            .find(|line| line.starts_with("score "))
+            .expect("primary route score");
+        assert!(
+            primary_score.contains("startup_failure (libreoffice)"),
+            "{human}"
+        );
+        assert!(primary_score.contains("Permission denied"), "{human}");
+        assert!(!primary_score.contains("engine missing"), "{human}");
+        let json = run(&["plan", input.to_str().unwrap(), "--to", "pdf", "--json"]);
+        let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+        assert!(json.get("startup_failure").is_none());
+
+        let directory = tempfile::tempdir().unwrap();
+        // PPTX needs LibreOffice; DOCX also has a working Pandoc/Typst alternative.
+        for fixture in [
+            "office/en-map-room-slides.pptx",
+            "docx/vi-styled-report.docx",
+        ] {
+            let input = repository_root().join("fixtures").join(fixture);
+            let output = directory
+                .path()
+                .join(input.file_name().unwrap())
+                .with_extension("pdf");
+            let converted = run(&[
+                "convert",
+                input.to_str().unwrap(),
+                "--to",
+                "pdf",
+                "--json",
+                "-o",
+                output.to_str().unwrap(),
+            ]);
+            assert_eq!(converted.status.code(), Some(5), "{converted:?}");
+            let stderr = String::from_utf8_lossy(&converted.stderr);
+            assert!(stderr.contains("sandbox_unavailable"), "{stderr}");
+            assert!(
+                stderr.contains("private /tmp requires user and mount namespaces"),
+                "{stderr}"
+            );
+            assert!(!stderr.contains("install LibreOffice"), "{stderr}");
+            assert!(!output.exists());
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn namespace_denial_keeps_missing_office_optional_and_allows_fallback() {
+    for mode in ["best-effort", "required"] {
+        if mode == "required" && !ariad_host::sandbox::support().gaps().is_empty() {
+            continue;
+        }
+        let run = |args: &[&str]| {
+            cli()
+                .env("ASHIFT_SANDBOX", mode)
+                .env("ARIAD_TEST_SANDBOX_SUPPORT", "namespace-denied")
+                .env_remove("ASHIFT_TEST_CAPABILITIES")
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        let doctor = run(&["doctor", "--json"]);
+        assert!(doctor.status.success(), "{doctor:?}");
+        let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+        let check = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|check| check["id"] == "engine_libreoffice")
+            .unwrap();
+        assert_eq!(check["ok"], false);
+        assert_eq!(check["required"], false);
+        assert!(
+            check["hint"]
+                .as_str()
+                .unwrap()
+                .contains("install LibreOffice")
+        );
+        assert!(
+            check["message"]
+                .as_str()
+                .unwrap()
+                .contains("could not find soffice")
+        );
+        let engines = run(&["engines", "--json"]);
+        assert!(engines.status.success());
+        let rows: serde_json::Value = serde_json::from_slice(&engines.stdout).unwrap();
+        let office = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "libreoffice")
+            .unwrap();
+        assert_eq!(office["status"], "missing");
+        assert!(office["note"].as_str().unwrap().contains("optional"));
+
+        let directory = tempfile::tempdir().unwrap();
+        for (fixture, succeeds) in [
+            ("docx/vi-styled-report.docx", true),
+            ("office/en-map-room-slides.pptx", false),
+        ] {
+            let input = repository_root().join("fixtures").join(fixture);
+            let output = directory
+                .path()
+                .join(input.file_name().unwrap())
+                .with_extension("pdf");
+            let converted = run(&[
+                "convert",
+                input.to_str().unwrap(),
+                "--to",
+                "pdf",
+                "--json",
+                "-o",
+                output.to_str().unwrap(),
+            ]);
+            if succeeds {
+                assert!(converted.status.success(), "{converted:?}");
+                let report: serde_json::Value = serde_json::from_slice(&converted.stdout).unwrap();
+                let engines: Vec<_> = report["route"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|step| step["engine"].as_str().unwrap())
+                    .collect();
+                assert_eq!(engines, ["pandoc", "typst"]);
+                assert!(output.exists());
+            } else {
+                assert_eq!(converted.status.code(), Some(5), "{converted:?}");
+                let stderr = String::from_utf8_lossy(&converted.stderr);
+                assert!(stderr.contains("install LibreOffice"), "{stderr}");
+                assert!(!stderr.contains("sandbox_unavailable"), "{stderr}");
+                assert!(!output.exists());
+            }
+        }
+    }
 }
 
 /// An engine pack data directory with no packs, so engine and doctor output is stable.
@@ -86,7 +318,8 @@ fn normalize_engines_human_stdout(output: &Output) -> String {
     let raw = normalize_stdout(output);
     let mut lines = Vec::new();
     for line in raw.lines() {
-        if (line.starts_with("pandoc ") || line.starts_with("ariad-core ")) && line.len() > 21 {
+        let versioned = ["pandoc ", "ariad-core ", "pdf ", "typst ", "libreoffice "];
+        if versioned.iter().any(|prefix| line.starts_with(prefix)) && line.len() > 21 {
             let col0 = &line[..12];
             let rest = &line[21..];
             lines.push(format!("{col0}{:<9}{rest}", "[VERSION]"));
@@ -245,11 +478,7 @@ fn inspect_pdf_human_output() {
         .expect("run inspect");
     assert_eq!(output.status.code(), Some(0));
     insta::assert_snapshot!(normalize_stdout(&output));
-    assert!(
-        normalize_stderr(&output).contains(
-            "requires the docling engine; install it with `ashift engines install docling`"
-        )
-    );
+    assert!(!normalize_stderr(&output).contains("engine_missing"));
 }
 
 #[test]

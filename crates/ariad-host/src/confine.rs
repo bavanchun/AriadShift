@@ -15,7 +15,7 @@ use std::{
 #[cfg(unix)]
 use cap_std::fs::OpenOptionsExt;
 
-use crate::convert::DocumentFormat;
+use ariad_core::format::Format;
 
 /// Errors arising from path confinement violations.
 #[derive(Debug, thiserror::Error)]
@@ -487,7 +487,7 @@ pub fn confine_output(
     }
 
     let expected_fmt =
-        DocumentFormat::parse(target_format).ok_or_else(|| ConfineError::InvalidPath {
+        Format::from_user_name(target_format).ok_or_else(|| ConfineError::InvalidPath {
             message: format!("unrecognized target format: {target_format}"),
         })?;
 
@@ -504,18 +504,18 @@ pub fn confine_output(
             }
             path.to_path_buf()
         }
-        None => input_path.with_extension(expected_fmt.default_extension()),
+        None => input_path.with_extension(expected_fmt.user_name()),
     };
 
     let display_str = output.display().to_string();
 
     // Check extension matches target format
     let ext = output.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let actual_fmt = DocumentFormat::from_extension(ext);
+    let actual_fmt = Format::from_extension(ext);
     if actual_fmt != Some(expected_fmt) {
         return Err(ConfineError::ExtensionMismatch {
             path: display_str.clone(),
-            expected: expected_fmt.as_str().to_string(),
+            expected: expected_fmt.user_name().to_string(),
         });
     }
 

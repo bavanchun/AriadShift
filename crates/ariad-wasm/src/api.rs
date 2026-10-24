@@ -325,7 +325,7 @@ mod tests {
         assert_eq!(error.code(), "no_route");
         assert_eq!(
             error.detail("reachable_elsewhere"),
-            Some(&serde_json::json!(["docx", "epub"]))
+            Some(&serde_json::json!(["docx", "epub", "pdf"]))
         );
         assert!(
             error

@@ -664,7 +664,10 @@ def verify(ashift: str, out: Path, target: str, source: Path, expect: str, offli
         prefix = ["unshare", "-rn"] if offline else []
         # Exercise discovery and planning separately so a stalled host round-trip identifies
         # its stage rather than consuming the conversion timeout without diagnostics.
-        for args in (["engines", "--json"], ["plan", str(source), "--to", "md", "--json"]):
+        for args in (
+            ["engines", "--json"],
+            ["plan", str(source), "--to", "md", "--engine", "docling", "--json"],
+        ):
             command = [*prefix, ashift, *args]
             print("+", " ".join(command), flush=True)
             try:
@@ -676,7 +679,18 @@ def verify(ashift: str, out: Path, target: str, source: Path, expect: str, offli
             print(checked.stdout.decode(errors="replace"), flush=True)
             if checked.returncode:
                 raise SystemExit(checked.stderr.decode(errors="replace")[-4000:])
-        command = [*prefix, ashift, "convert", source, "--to", "md", "-o", result]
+        command = [
+            *prefix,
+            ashift,
+            "convert",
+            source,
+            "--to",
+            "md",
+            "--engine",
+            "docling",
+            "-o",
+            result,
+        ]
         print("+", " ".join(str(part) for part in command), flush=True)
         completed = subprocess.run(
             [str(part) for part in command],

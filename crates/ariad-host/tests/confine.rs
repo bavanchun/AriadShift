@@ -857,6 +857,7 @@ fn test_convert_confined_parent_swap_race() {
                 engine_program: std::env::current_exe().unwrap(),
                 title_fallback: None,
                 asset_base_dir: None,
+                reader_engine: None,
             };
             let cancel = tokio_util::sync::CancellationToken::new();
             if let Ok(report) = ariad_host::convert::convert_confined(

@@ -5,7 +5,11 @@ expression: normalize_doctor_human_stdout(&output)
 ✓ Pandoc [VERSION] found in >= 3.12, < 4 at [PANDOC_PATH]
 ✓ temp directory is writable and workspace can be created and removed
 ✓ engine 'pandoc' passes describe round trip
+✓ engine 'pdf' is ready
+✓ engine 'typst' is ready
+✗ engine 'libreoffice' could not find soffice
+  hint: install LibreOffice 24.2 or newer from libreoffice.org or set ASHIFT_SOFFICE
 ✓ engine pack directory is writable at [DATA_DIR]
 ✓ engine pack signing keys: D87B0E33F55EA02B
-✗ docling engine is not installed; PDF, PPTX, XLSX and image routes need it
+✗ docling engine is not installed; OCR, layout extraction and image routes need it
   hint: run 'ashift engines install docling', or set ASHIFT_DOCLING_ENGINE to a development engine

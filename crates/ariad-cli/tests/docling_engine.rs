@@ -100,7 +100,7 @@ fn convert(input: &Path, to: &str) -> (tempfile::TempDir, PathBuf, Value) {
     let directory = tempdir().unwrap();
     let output = directory.path().join(format!("converted.{to}"));
     let result = cli(&directory.path().join("data"))
-        .arg("convert")
+        .args(["convert", "--engine", "docling"])
         .arg(input)
         .args(["--to", to, "--json", "-o"])
         .arg(&output)

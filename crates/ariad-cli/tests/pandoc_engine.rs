@@ -178,12 +178,14 @@ fn eight_megabyte_memory_limit_is_a_typed_limit_exceeded_error() {
 }
 
 #[test]
-fn unknown_hidden_engine_command_uses_the_usage_exit_code() {
+fn unknown_hidden_engine_returns_no_protocol_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
         .args(["__engine", "unrecognized"])
         .output()
         .expect("start ashift");
     assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unknown built-in engine"));
 }
 
 #[test]

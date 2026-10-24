@@ -42,7 +42,7 @@ describe("ariad-wasm", () => {
     expect(result.counts?.words).toBe(4);
     expect(result.meta?.title).toBeNull();
     expect(result.reachable).toEqual(["ariad-ir+json", "html"]);
-    expect(result.reachable_elsewhere).toEqual(["docx", "epub"]);
+    expect(result.reachable_elsewhere).toEqual(["docx", "epub", "pdf"]);
   });
 
   it("uses the total size for a prefix of a large file", () => {
@@ -97,7 +97,7 @@ describe("ariad-wasm", () => {
   it("throws typed error objects", () => {
     const noRoute = thrown(() => convert(encoder.encode("x"), "markdown", "docx", undefined));
     expect(noRoute.code).toBe("no_route");
-    expect(noRoute.reachable_elsewhere).toEqual(["docx", "epub"]);
+    expect(noRoute.reachable_elsewhere).toEqual(["docx", "epub", "pdf"]);
     expect(noRoute.message).toContain("CLI");
 
     expect(thrown(() => plan("md", "html")).code).toBe("unknown_format");

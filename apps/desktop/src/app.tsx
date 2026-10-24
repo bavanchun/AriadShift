@@ -18,7 +18,7 @@ import type {
   Snapshot,
 } from "./bindings/types";
 
-const formats = ["md", "html", "docx", "epub"];
+const formats = ["md", "html", "docx", "epub", "pdf", "json", "xlsx", "pptx"];
 const inputExtensions: Record<string, string[]> = {
   md: ["md", "markdown", "mdown"],
   html: ["html", "htm"],
@@ -27,6 +27,14 @@ const inputExtensions: Record<string, string[]> = {
   pdf: ["pdf"],
   pptx: ["pptx"],
   xlsx: ["xlsx"],
+  odt: ["odt"],
+  ods: ["ods"],
+  odp: ["odp"],
+  doc: ["doc"],
+  xls: ["xls"],
+  ppt: ["ppt"],
+  rtf: ["rtf"],
+  json: ["json"],
   png: ["png"],
   jpeg: ["jpg", "jpeg"],
   tiff: ["tif", "tiff"],

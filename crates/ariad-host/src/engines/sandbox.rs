@@ -15,6 +15,8 @@ pub struct EnginePaths {
     pub read_only: Vec<PathBuf>,
     /// Paths the engine may read and execute (install roots, helper programs).
     pub exec: Vec<PathBuf>,
+    /// Whether hard-coded `/tmp` IPC must stay inside a private mount namespace.
+    pub private_tmp: bool,
 }
 
 /// Returns the extra paths of one engine.
@@ -24,6 +26,9 @@ pub type EnginePathsFn = fn() -> EnginePaths;
 pub const ENGINE_PATHS: &[(&str, EnginePathsFn)] = &[
     ("pandoc", pandoc_paths),
     ("docling", docling_paths),
+    ("pdf", EnginePaths::default),
+    ("typst", EnginePaths::default),
+    ("libreoffice", libreoffice_paths),
     ("probe", EnginePaths::default),
 ];
 
@@ -47,6 +52,31 @@ fn pandoc_paths() -> EnginePaths {
             .and_then(|path| std::fs::canonicalize(path).ok())
             .into_iter()
             .collect(),
+        private_tmp: false,
+    }
+}
+
+/// LibreOffice launches sibling helpers and reads data beneath its installation root.
+/// System installs under `/usr` are already covered by the base policy.
+fn libreoffice_paths() -> EnginePaths {
+    let candidates = crate::engines::libreoffice::candidate_paths();
+    let mut exec: Vec<_> = candidates
+        .iter()
+        .filter_map(|path| std::fs::canonicalize(path).ok())
+        .map(|path| match path.parent() {
+            Some(program) if program.file_name().is_some_and(|name| name == "program") => {
+                program.parent().map(PathBuf::from).unwrap_or(path)
+            }
+            _ => path,
+        })
+        .collect();
+    // Keep executable aliases too: a private /tmp must preserve a configured symlink.
+    exec.extend(candidates.into_iter().filter(|path| path.is_file()));
+    EnginePaths {
+        // Standard Linux installs may live under /opt/libreoffice<version>.
+        read_only: vec![PathBuf::from("/opt")],
+        private_tmp: !exec.is_empty(),
+        exec,
     }
 }
 
@@ -176,5 +206,36 @@ mod tests {
                     || path == &home.path().join(".local/share")
             }));
         }
+    }
+
+    #[test]
+    fn absent_libreoffice_needs_no_private_tmp() {
+        const CHILD: &str = "ARIAD_TEST_ABSENT_LIBREOFFICE";
+        if std::env::var_os(CHILD).is_some() {
+            let paths = paths_for("libreoffice");
+            assert!(paths.exec.is_empty());
+            assert!(!paths.private_tmp);
+            return;
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "engines::sandbox::tests::absent_libreoffice_needs_no_private_tmp",
+            ])
+            .env(CHILD, "1")
+            .env("ASHIFT_SOFFICE", directory.path().join("no-soffice"))
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
+    #[test]
+    fn every_registered_engine_declares_its_sandbox_paths() {
+        for engine in crate::engines::REGISTRY {
+            assert!(ENGINE_PATHS.iter().any(|(id, _)| *id == engine.id));
+        }
+        assert_eq!(paths_for("pdf"), super::EnginePaths::default());
+        assert_eq!(paths_for("typst"), super::EnginePaths::default());
     }
 }

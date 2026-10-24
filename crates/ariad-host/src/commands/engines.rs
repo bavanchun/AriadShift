@@ -40,6 +40,8 @@ pub enum EngineStatus {
     WrongVersion,
     #[serde(rename = "not installed")]
     NotInstalled,
+    #[serde(rename = "cannot start")]
+    CannotStart,
 }
 
 impl EngineStatus {
@@ -50,6 +52,7 @@ impl EngineStatus {
             Self::Missing => "missing",
             Self::WrongVersion => "wrong version",
             Self::NotInstalled => "not installed",
+            Self::CannotStart => "cannot start",
         }
     }
 }
@@ -112,35 +115,29 @@ pub fn engines(
     let mut rows = Vec::new();
 
     // 1. ariad-core (native)
-    let mut core_routes: Vec<String> = caps
-        .edges
-        .iter()
-        .filter(|e| e.engine == IN_PROCESS_ENGINE)
-        .map(|e| format!("{} -> {}", e.from.id(), e.to.id()))
-        .collect();
-    core_routes.sort_unstable();
-    core_routes.dedup();
-    let core_license = caps
-        .edges
-        .iter()
-        .find(|e| e.engine == IN_PROCESS_ENGINE)
-        .map(|e| e.license.clone())
-        .unwrap_or_else(|| "Apache-2.0".to_owned());
-
     rows.push(EngineRow {
         id: IN_PROCESS_ENGINE.to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
-        license: core_license,
+        license: registry_license(caps, IN_PROCESS_ENGINE)
+            .unwrap_or_else(|| "Apache-2.0".to_owned()),
         status: EngineStatus::Ready,
         note: None,
-        routes: core_routes,
+        routes: registry_routes(caps, IN_PROCESS_ENGINE),
         pack: None,
     });
 
-    // 2. pandoc
-    let pandoc_avail = report.engines.iter().find(|e| e.engine == "pandoc");
-    let (pandoc_status, pandoc_version) = match pandoc_avail {
-        Some(avail) => match &avail.tool_status {
+    // 2. Out-of-process engines from the registry
+    for spec in engines::REGISTRY
+        .iter()
+        .filter(|spec| spec.id != docling::ENGINE_ID)
+    {
+        let startup_failure = report
+            .get(spec.id)
+            .and_then(|entry| entry.startup_failure.as_ref());
+        let tool = report
+            .get(spec.id)
+            .and_then(|avail| avail.tool_status.as_ref());
+        let (status, version) = match tool {
             Some(tool) => match tool.status {
                 ToolAvailability::Found => (
                     EngineStatus::Ready,
@@ -152,46 +149,27 @@ pub fn engines(
                 ),
                 ToolAvailability::Missing => (EngineStatus::Missing, "-".to_owned()),
             },
-            None => {
-                if avail.available {
-                    (EngineStatus::Ready, "-".to_owned())
-                } else {
-                    (EngineStatus::Missing, "-".to_owned())
-                }
+            None if startup_failure.is_some() => (EngineStatus::CannotStart, "-".to_owned()),
+            None => (EngineStatus::Missing, "-".to_owned()),
+        };
+        let note = match status {
+            EngineStatus::CannotStart => {
+                startup_failure.map(|detail| format!("installed, cannot start: {detail}"))
             }
-        },
-        None => (EngineStatus::Missing, "-".to_owned()),
-    };
-
-    let mut pandoc_routes: Vec<String> = caps
-        .edges
-        .iter()
-        .filter(|e| e.engine == "pandoc")
-        .map(|e| format!("{} -> {}", e.from.id(), e.to.id()))
-        .collect();
-    pandoc_routes.sort_unstable();
-    pandoc_routes.dedup();
-    let pandoc_license = caps
-        .edges
-        .iter()
-        .find(|e| e.engine == "pandoc")
-        .map(|e| e.license.clone())
-        .unwrap_or_else(|| "GPL-2.0-or-later".to_owned());
-
-    let pandoc_note = match pandoc_status {
-        EngineStatus::WrongVersion => Some("supported: >=3.12, <4".to_owned()),
-        _ => None,
-    };
-
-    rows.push(EngineRow {
-        id: "pandoc".to_owned(),
-        version: pandoc_version,
-        license: pandoc_license,
-        status: pandoc_status,
-        note: pandoc_note,
-        routes: pandoc_routes,
-        pack: None,
-    });
+            EngineStatus::WrongVersion => spec.supported.map(|range| format!("supported: {range}")),
+            EngineStatus::Missing if !spec.required => Some("optional".to_owned()),
+            _ => None,
+        };
+        rows.push(EngineRow {
+            id: spec.id.to_owned(),
+            version,
+            license: registry_license(caps, spec.id).unwrap_or_else(|| spec.license.to_owned()),
+            status,
+            note,
+            routes: registry_routes(caps, spec.id),
+            pack: None,
+        });
+    }
 
     // 3. Engine packs: docling is always listed; any other installed or overridden pack too.
     rows.extend(pack_rows(engine_program, caps, &cancel)?);
@@ -400,6 +378,10 @@ fn apply_describe(
         Err(RunError::Cancelled) => return Err(ConvertError::Interrupted),
         Err(RunError::SandboxUnavailable(detail)) => {
             return Err(ConvertError::SandboxUnavailable(detail));
+        }
+        Err(RunError::SandboxLaunchFailed(detail)) => {
+            row.status = EngineStatus::CannotStart;
+            row.note = Some(format!("installed, cannot start: {detail}"));
         }
         Ok(_) | Err(_) => row.note = Some("engine describe failed".to_owned()),
     }

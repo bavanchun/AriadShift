@@ -120,10 +120,10 @@ test("preselects the target from a format-pair link", async ({ page }) => {
 test("explains formats that need the CLI", async ({ page }) => {
   await openConverter(page);
   await chooseFile(page, "notes.md", "text/markdown", MARKDOWN);
-  await expect(page.getByText(/Word \(DOCX\), EPUB need the AriadShift CLI/)).toBeVisible();
+  await expect(page.getByText(/Word \(DOCX\), EPUB, pdf need the AriadShift CLI/)).toBeVisible();
 });
 
-test("offers the CLI for PDF routes provided by Docling", async ({ page }) => {
+test("offers the CLI for PDF input", async ({ page }) => {
   await openConverter(page);
   await chooseFile(page, "page.pdf", "application/pdf", "%PDF-1.7\n");
   await expect(page.getByText("pdf cannot be converted in the browser yet.")).toBeVisible();

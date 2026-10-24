@@ -229,6 +229,196 @@
       ],
       "license": "MIT",
       "metrics": null
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "pdf",
+      "engine": "typst",
+      "runtime": [
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "doc",
+      "to": "docx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "doc",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "docx",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "odp",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "odp",
+      "to": "pptx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "ods",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "ods",
+      "to": "xlsx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "odt",
+      "to": "docx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "odt",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "pdf",
+      "to": "ariad-ir+json",
+      "engine": "pdf",
+      "runtime": [
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": null
+    },
+    {
+      "from": "ppt",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "ppt",
+      "to": "pptx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "pptx",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "rtf",
+      "to": "docx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "rtf",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "xls",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "xls",
+      "to": "xlsx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "xlsx",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
     }
   ]
 }

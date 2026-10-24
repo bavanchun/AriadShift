@@ -86,7 +86,7 @@ fn installed_pack_converts_and_reuses_bounded_sessions() {
     let markdown = directory.path().join("converted.md");
     eprintln!("Converting a PDF through installed-pack resolution");
     let converted = cli()
-        .arg("convert")
+        .args(["convert", "--engine", "docling"])
         .arg(&fixture)
         .args(["--to", "md", "-o"])
         .arg(&markdown)

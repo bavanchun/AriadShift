@@ -170,7 +170,8 @@ fn describe_failure(error: runner::RunError) -> String {
         runner::RunError::Spawn(_) => "the engine could not be started".to_owned(),
         runner::RunError::Timeout => "the engine did not answer describe in time".to_owned(),
         runner::RunError::Cancelled => "describe was cancelled".to_owned(),
-        runner::RunError::SandboxUnavailable(_) => "the engine sandbox is unavailable".to_owned(),
+        runner::RunError::SandboxUnavailable(detail)
+        | runner::RunError::SandboxLaunchFailed(detail) => detail,
         _ => "the engine failed its describe round trip".to_owned(),
     }
 }
@@ -239,10 +240,18 @@ pub fn availability(
             available: true,
             tool_status: Some(description.tesseract),
             version: Some(description.version),
+            startup_failure: None,
         },
         Err(error @ (runner::RunError::Cancelled | runner::RunError::SandboxUnavailable(_))) => {
             return Err(error);
         }
+        Err(runner::RunError::SandboxLaunchFailed(detail)) => EngineAvailability {
+            engine: ENGINE_ID.to_owned(),
+            available: false,
+            tool_status: None,
+            version: None,
+            startup_failure: Some(detail),
+        },
         Err(_) => EngineAvailability {
             engine: ENGINE_ID.to_owned(),
             available: false,
@@ -252,6 +261,7 @@ pub fn availability(
                 status: ToolAvailability::Missing,
             }),
             version: None,
+            startup_failure: None,
         },
     }))
 }

@@ -399,7 +399,7 @@ fn same_format_routes_are_refused_with_exit_code_3() {
         .expect("start ashift");
     assert_eq!(result_md.status.code(), Some(3));
     let stderr_md = String::from_utf8_lossy(&result_md.stderr);
-    assert!(stderr_md.contains("reachable targets from md: docx, epub, html"));
+    assert!(stderr_md.contains("reachable targets from md: docx, epub, html, json, pdf"));
 
     let result_docx = cli()
         .args(["convert"])
@@ -409,7 +409,7 @@ fn same_format_routes_are_refused_with_exit_code_3() {
         .expect("start ashift");
     assert_eq!(result_docx.status.code(), Some(3));
     let stderr_docx = String::from_utf8_lossy(&result_docx.stderr);
-    assert!(stderr_docx.contains("reachable targets from docx: epub, html, md"));
+    assert!(stderr_docx.contains("reachable targets from docx: epub, html, json, md, pdf"));
 }
 
 #[test]
@@ -1176,6 +1176,13 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::SandboxUnavailable("no Landlock".to_owned()),
             5,
         ),
+        (
+            ConvertError::EngineMissing {
+                engine: "libreoffice".to_owned(),
+                hint: "install LibreOffice".to_owned(),
+            },
+            5,
+        ),
         (ConvertError::DoclingMissing, 5),
         (ConvertError::DoclingToolMissing, 5),
         (ConvertError::DestinationExists, 6),
@@ -1204,6 +1211,7 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::SandboxUnavailable(_) => {}
             ConvertError::DoclingMissing => {}
             ConvertError::DoclingToolMissing => {}
+            ConvertError::EngineMissing { .. } => {}
             ConvertError::DestinationExists => {}
             ConvertError::Interrupted => {}
         }

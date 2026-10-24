@@ -165,8 +165,8 @@ impl Backend {
         validate_route(&request.target)?;
         let from = crate::deep_link::input_format(&request.from)
             .ok_or("Unsupported watch input format")?;
-        request.from = from.as_str().into();
-        if ariad_host::convert::DocumentFormat::parse(&request.target) == Some(from) {
+        request.from = crate::deep_link::format_name(from).into();
+        if crate::deep_link::output_format(&request.target) == Some(from) {
             return Err("Watch input and output formats must differ".into());
         }
         if !(1..=3600).contains(&request.interval_seconds) {
@@ -257,7 +257,7 @@ impl Backend {
                 let mut error = None;
                 for (path, fp) in ready {
                     if !ariad_host::convert::detect_format_from_path(&path)
-                        .is_some_and(|f| f.as_str() == request.from)
+                        .is_some_and(|f| crate::deep_link::format_name(f) == request.from)
                     {
                         poller.acknowledge(path, fp);
                         continue;

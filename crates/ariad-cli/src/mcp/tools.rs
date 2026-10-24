@@ -61,7 +61,7 @@ pub struct InspectArgs {
 pub struct PlanArgs {
     /// Input document filesystem path or file:// URI.
     pub input: String,
-    /// Target format identifier (md, html, docx, epub).
+    /// Target format identifier (md, html, docx, epub, pdf, json, xlsx, pptx).
     pub to: String,
     /// Routing optimization profile (editable, faithful, fast, private).
     pub profile: Option<String>,
@@ -72,7 +72,7 @@ pub struct PlanArgs {
 pub struct ConvertArgs {
     /// Input document filesystem path or file:// URI.
     pub input: String,
-    /// Target format identifier (md, html, docx, epub).
+    /// Target format identifier (md, html, docx, epub, pdf, json, xlsx, pptx).
     pub to: String,
     /// Optional output file path or file:// URI (defaults to input stem with target extension).
     pub output: Option<String>,
@@ -292,9 +292,9 @@ impl McpServer {
         }
     }
 
-    /// Convert a document between supported formats (Markdown, HTML, DOCX, EPUB).
+    /// Convert a document between supported formats (Markdown, HTML, DOCX, EPUB, PDF, Office, IR JSON).
     #[tool(
-        description = "Convert a document between supported formats (Markdown, HTML, DOCX, EPUB)",
+        description = "Convert a document between supported formats (Markdown, HTML, DOCX, EPUB, PDF, Office, IR JSON)",
         output_schema = rmcp::handler::server::tool::schema_for_output::<ariad_host::convert::ConvertOutput>()
     )]
     pub async fn convert(
@@ -323,11 +323,10 @@ impl McpServer {
             Err(e) => return Ok(tool_confine_error(&e)),
         };
 
-        if ariad_host::convert::DocumentFormat::parse(&args.to).is_none() {
+        if ariad_core::format::Format::from_user_name(&args.to).is_none() {
             let clean_target = ariad_host::convert::sanitize_identifier(&args.to, 64);
             let detail = match ariad_host::convert::detect_format_from_path(&input_path) {
-                Some(in_doc_fmt) => {
-                    let in_fmt = ariad_core::format::Format::from(in_doc_fmt);
+                Some(in_fmt) => {
                     let caps = ariad_host::commands::active_capabilities().ok();
                     let reachable = caps.as_ref().map(|c| {
                         let engines = c.registered_engines();
@@ -335,7 +334,7 @@ impl McpServer {
                     });
                     if let Some(r) = reachable {
                         let targets_detail =
-                            ariad_host::convert::reachable_targets_detail(in_doc_fmt.as_str(), &r);
+                            ariad_host::convert::reachable_targets_detail(in_fmt.user_name(), &r);
                         format!("unknown target format '{clean_target}'; {targets_detail}")
                     } else {
                         format!("unknown target format '{clean_target}'")
@@ -403,6 +402,7 @@ impl McpServer {
             engine_program: self.engine_program.clone(),
             title_fallback: None,
             asset_base_dir: original_parent,
+            reader_engine: None,
         };
 
         let parent_dir = validated_output.parent_dir;
