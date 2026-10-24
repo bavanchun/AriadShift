@@ -9,6 +9,15 @@ use std::{fmt, str::FromStr};
 
 use thiserror::Error;
 
+/// Denies same-user procfs/ptrace access to worker memory, environment and
+/// descriptors. Unlike namespaces or remounting procfs, this needs no container
+/// capabilities. Apply before starting any conversion helpers.
+pub fn protect_worker_credentials() -> std::io::Result<()> {
+    #[cfg(target_os = "linux")]
+    nix::sys::prctl::set_dumpable(false).map_err(std::io::Error::from)?;
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SandboxMode {
     /// A missing isolation feature is an error. The default for Linux workers.

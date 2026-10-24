@@ -42,6 +42,12 @@ enum Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if matches!(cli.command, Command::Worker { .. })
+        && let Err(err) = ariad_server::sandbox::protect_worker_credentials()
+    {
+        eprintln!("ariad-server: cannot protect worker credentials: {err}");
+        return ExitCode::FAILURE;
+    }
     if let Command::Convert = cli.command {
         return match ariad_host::convert::isolated::serve(CancellationToken::new()) {
             Ok(()) => ExitCode::SUCCESS,

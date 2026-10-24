@@ -42,5 +42,5 @@ RUN --mount=type=bind,from=libreoffice,source=/debs,target=/debs \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /opt/libreoffice*/program/soffice /usr/local/bin/soffice
 ENV ASHIFT_SOFFICE=/usr/local/bin/soffice
-USER 10001
+USER 0
 CMD ["worker", "--packs", "office"]

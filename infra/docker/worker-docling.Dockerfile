@@ -24,5 +24,5 @@ RUN mkdir -p "${ASHIFT_DATA_DIR}" \
         exit 1; \
     }; } \
     && chmod -R a+rX,go-w "${ASHIFT_DATA_DIR}"
-USER 10001
+USER 0
 CMD ["worker", "--packs", "docling"]
