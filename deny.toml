@@ -15,6 +15,12 @@ ignore = [
     # in ariad-server, which checks signatures with public keys and never
     # holds an RSA private key.
     { id = "RUSTSEC-2023-0071", reason = "ariad-server only verifies RSA signatures with public keys" },
+    # crypto-bigint reaches production only through jsonwebtoken's public-key
+    # verifier (p256/p384). JwtVerifier uses DecodingKey::from_jwk and decode;
+    # no private integers or signing keys enter this arithmetic. Remove when
+    # a stable jsonwebtoken release adopts the patched RustCrypto dependency.
+    # Reassess if the server adds JWT signing.
+    { id = "RUSTSEC-2026-0387", reason = "ariad-server only verifies JWT signatures with public JWKS keys; no secret integer operations" },
 ]
 
 [licenses]
