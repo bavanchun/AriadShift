@@ -8,6 +8,8 @@ cache-builds = false
 precise-builds = true
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.33.0"
+# Keep the standalone Windows CLI independent of the system Visual C++ runtime.
+msvc-crt-static = true
 # CI backends to support
 ci = "github"
 # Allow generated CI scripts to be out of date / manually edited
