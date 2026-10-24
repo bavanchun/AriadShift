@@ -12,7 +12,7 @@ use crate::{
     api::jobs::{Purge, purge_job},
     db::{self, UploadStatus},
     rate_limit,
-    storage::Storage,
+    storage::{Storage, UPLOAD_URL_TTL},
 };
 
 /// Advisory lock key shared by every API replica.
@@ -135,25 +135,28 @@ async fn sweep_with_batch(
 
 /// Checks stored bytes without trusting the client's completion request. A
 /// signed PUT remains usable until URL expiry. Completed and retired inputs
-/// are checked during that window; retention cleanup removes them once more.
+/// are checked during that window and once successfully after it closes;
+/// retention cleanup removes them once more.
 async fn check_upload_sizes(
     pool: &PgPool,
     storage: &Storage,
     batch: i64,
 ) -> Result<(), sqlx::Error> {
-    let uploads: Vec<(Uuid, String, i64, String)> = sqlx::query_as(
-        "UPDATE uploads SET size_checked_at = now() WHERE id IN (\
-           SELECT id FROM uploads WHERE status IN ('pending', 'completed', 'deleted') \
+    let uploads: Vec<(Uuid, String, i64, String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT id, storage_key, size_bytes, status, now() FROM uploads \
+           WHERE status IN ('pending', 'completed', 'deleted') \
            AND ((status = 'pending' AND expires_at > now()) OR \
-                (status IN ('completed', 'deleted') AND created_at + interval '15 minutes' > now())) \
+                (status IN ('completed', 'deleted') AND \
+                 (created_at + $2 * interval '1 second' > now() OR size_checked_at IS NULL OR \
+                  size_checked_at < created_at + $2 * interval '1 second'))) \
            AND created_at <= now() - interval '2 minutes' \
-           ORDER BY size_checked_at NULLS FIRST, created_at LIMIT $1\
-         ) RETURNING id, storage_key, size_bytes, status",
+           ORDER BY size_checked_at NULLS FIRST, created_at LIMIT $1",
     )
     .bind(batch)
+    .bind(UPLOAD_URL_TTL.as_secs_f64())
     .fetch_all(pool)
     .await?;
-    for (id, key, declared, status) in uploads {
+    for (id, key, declared, status, checked_at) in uploads {
         match storage.size(&key).await {
             Ok(Some(size))
                 if status == "deleted" || size != u64::try_from(declared).unwrap_or(0) =>
@@ -167,9 +170,18 @@ async fn check_upload_sizes(
             }
             Ok(_) => {}
             Err(err) => {
-                tracing::warn!(upload_id = %id, error = %err, "upload size check failed")
+                tracing::warn!(upload_id = %id, error = %err, "upload size check failed");
+                continue;
             }
         }
+        // Failed HEAD/deletion attempts must remain eligible for the final
+        // post-expiry check. Timestamp before HEAD so a check straddling URL
+        // expiry cannot hide a last-second replay. The API lock serializes passes.
+        sqlx::query("UPDATE uploads SET size_checked_at = $2 WHERE id = $1")
+            .bind(id)
+            .bind(checked_at)
+            .execute(pool)
+            .await?;
     }
     Ok(())
 }
