@@ -20,6 +20,7 @@ import sys
 import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from importlib import metadata
 from pathlib import Path
 
@@ -231,8 +232,54 @@ def write_notices(distributions: Iterable[metadata.Distribution], notices: Path)
 
 
 def combined_expression(expressions: Iterable[str]) -> str:
-    """Conjoin the gate-approved expressions without changing OR/WITH precedence."""
-    return " AND ".join(f"({item})" for item in sorted(set(expressions)))
+    """Merge conjunctions across targets, retaining nonredundant OR/WITH clauses."""
+    terms = set()
+    for expression in expressions:
+        terms.update(_conjuncts(expression))
+    # A separately required licence already satisfies an OR alternative. Likewise, its
+    # unqualified obligations subsume the same licence with an optional exception.
+    redundant = {
+        term
+        for term in terms
+        if (
+            len(alternatives := _split_expression(term, "OR")) > 1
+            and any(alternative in terms for alternative in alternatives)
+        )
+        or (" WITH " in term and term.split(" WITH ", 1)[0] in terms)
+    }
+    return " AND ".join(f"({item})" for item in sorted(terms - redundant))
+
+
+def _split_expression(expression: str, operator: str) -> list[str]:
+    tokens = re.findall(r"\(|\)|[^\s()]+", expression)
+    while tokens and tokens[0] == "(":
+        depth = 0
+        for _end, word in enumerate(tokens):
+            depth += (word == "(") - (word == ")")
+            if depth == 0:
+                break
+        if _end != len(tokens) - 1:
+            break
+        tokens = tokens[1:-1]
+    parts = []
+    start = depth = 0
+    for index, word in enumerate(tokens):
+        depth += (word == "(") - (word == ")")
+        if depth == 0 and word == operator:
+            parts.append(" ".join(tokens[start:index]))
+            start = index + 1
+    parts.append(" ".join(tokens[start:]))
+    return parts
+
+
+def _conjuncts(expression: str) -> list[str]:
+    alternatives = _split_expression(expression, "OR")
+    if len(alternatives) > 1:
+        return [" OR ".join(alternatives)]
+    terms = _split_expression(expression, "AND")
+    if len(terms) == 1:
+        return terms
+    return [term for part in terms for term in _conjuncts(part)]
 
 
 def pack_expression(distributions: Iterable[metadata.Distribution], extra: Iterable[str]) -> str:
@@ -267,21 +314,58 @@ def runtime_libraries(release: str, target: str) -> list[dict]:
     ]
 
 
+def check_runtime_files(runtime: Path, libraries: list[dict], target: str) -> None:
+    """Require attribution for every native runtime file, excluding separately gated wheels.
+
+    Patterns name shared libraries and extensions, including libraries statically linked into
+    libpython or a .pyd. Every selected inventory entry must describe at least one native file.
+    """
+    platform = (
+        "windows"
+        if target.endswith("windows-msvc")
+        else ("macos" if target.endswith("apple-darwin") else "linux")
+    )
+    files = {
+        path.relative_to(runtime).as_posix()
+        for path in runtime.rglob("*")
+        if path.is_file()
+        and "site-packages" not in path.relative_to(runtime).parts
+        and any(
+            fnmatchcase(path.name.lower(), pattern)
+            for pattern in ("*.so*", "*.dylib", "*.pyd", "*.dll")
+        )
+    }
+    covered = set()
+    errors = []
+    for library in libraries:
+        patterns = library.get("native_files", {}).get(platform, [])
+        matches = {name for name in files if any(fnmatchcase(name, p) for p in patterns)}
+        if not matches:
+            errors.append(f"{library['name']}: inventory patterns match no native files")
+        covered.update(matches)
+    errors.extend(f"unlisted native runtime file: {name}" for name in sorted(files - covered))
+    if errors:
+        raise SystemExit("runtime inventory check failed:\n" + "\n".join(errors))
+
+
 def write_runtime_notices(notices: Path, libraries: list[dict]) -> None:
     """Copy the upstream release texts, verifying their recorded digests, and list their sources."""
     destination = notices / "runtime"
     destination.mkdir(parents=True, exist_ok=True)
     lines = ["C libraries in the standalone Python runtime (Tk/Tcl removed):", ""]
     for item in libraries:
-        source = Path(__file__).with_name("licenses") / item["text"]
-        if hashlib.sha256(source.read_bytes()).hexdigest() != item["sha256"]:
-            raise SystemExit(f"runtime licence text digest mismatch: {source}")
-        shutil.copyfile(source, destination / item["text"])
+        notice = item.get("notice")
+        if notice is None:
+            source = Path(__file__).with_name("licenses") / item["text"]
+            if hashlib.sha256(source.read_bytes()).hexdigest() != item["sha256"]:
+                raise SystemExit(f"runtime licence text digest mismatch: {source}")
+            shutil.copyfile(source, destination / item["text"])
+            notice = f"notices/runtime/{item['text']}"
         lines.extend(
             [
                 f"{item['name']} {item['version']}: {item['license']}",
                 f"  Source: {item['source']}",
-                f"  Text: notices/runtime/{item['text']}",
+                f"  Text: {notice}",
             ]
         )
         if "archive_member" in item:
