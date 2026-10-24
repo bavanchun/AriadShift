@@ -370,7 +370,12 @@ mod tests {
             .unwrap()
             .unwrap();
         std::fs::remove_file(&path).unwrap();
-        assert!(scan_result(entry.metadata(), true).unwrap().is_none());
+        // Windows DirEntry metadata is cached; a fresh lookup exercises disappearance.
+        assert!(
+            scan_result(std::fs::symlink_metadata(entry.path()), true)
+                .unwrap()
+                .is_none()
+        );
         assert!(
             scan_result::<()>(Err(std::io::ErrorKind::PermissionDenied.into()), true)
                 .unwrap()
