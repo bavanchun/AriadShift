@@ -120,15 +120,21 @@ impl JobQueue for PgmqQueue {
         visibility: Duration,
         wait: Duration,
     ) -> Result<Option<Delivery>, sqlx::Error> {
-        let row: Option<MessageRow> = sqlx::query_as(
-            "SELECT msg_id, read_ct, enqueued_at, message, headers \
-             FROM pgmq.read_with_poll($1, $2, 1, $3, 250)",
-        )
-        .bind(pack.queue())
-        .bind(secs(visibility).max(1))
-        .bind(secs(wait).max(1))
-        .fetch_optional(&self.pool)
-        .await?;
+        let row: Option<MessageRow> = if wait.is_zero() {
+            sqlx::query_as(
+                "SELECT msg_id, read_ct, enqueued_at, message, headers FROM pgmq.read($1, $2, 1)",
+            )
+            .bind(pack.queue())
+            .bind(secs(visibility).max(1))
+            .fetch_optional(&self.pool)
+            .await?
+        } else {
+            sqlx::query_as("SELECT msg_id, read_ct, enqueued_at, message, headers FROM pgmq.read_with_poll($1, $2, 1, $3, 250)")
+                .bind(pack.queue())
+                .bind(secs(visibility).max(1))
+                .bind(secs(wait).max(1))
+                .fetch_optional(&self.pool).await?
+        };
         Ok(row.map(|row| Delivery {
             pack,
             msg_id: row.msg_id,

@@ -43,7 +43,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 
 FROM ${UBUNTU} AS server
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && apt-get install -y --no-install-recommends ca-certificates tini util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin ariad
 COPY --from=compile /artifacts/ariad-server /artifacts/ashift /usr/local/bin/
@@ -61,8 +61,11 @@ RUN printf '%s\n' \
 ENV ARIAD_BIND=0.0.0.0:8080 \
     ARIAD_ENGINE_PROGRAM=/usr/local/bin/ashift \
     ASHIFT_PANDOC=/opt/pandoc/bin/pandoc
-USER 10001
 EXPOSE 8080
-# tini reaps engine processes whose parents exit first.
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/ariad-server"]
+# The root supervisor's original environment is inaccessible to UID 10001.
+# Drop application privileges before reading configuration; the worker also
+# disables dumpability to protect its own credentials from same-user helpers.
+# Do not move USER 10001 above this: tini would retain readable credentials.
+USER 0
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/bin/setpriv", "--reuid=10001", "--regid=10001", "--clear-groups", "--no-new-privs", "/usr/local/bin/ariad-server"]
 CMD ["api"]

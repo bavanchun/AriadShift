@@ -96,6 +96,7 @@ pub async fn run_worker(
     pool: PgPool,
     shutdown: CancellationToken,
 ) -> Result<(), StartError> {
+    sandbox::protect_worker_credentials()?;
     let status = sandbox::preflight(config.sandbox)?;
     if !status.missing.is_empty() {
         tracing::warn!(
@@ -105,6 +106,7 @@ pub async fn run_worker(
         );
     }
     std::fs::create_dir_all(&config.work_dir)?;
+    let _work_dir = crate::worker::prepare_work_dir(&config.work_dir)?;
     let storage = Storage::from_config(&config.storage, None, None)?;
     let queue: Arc<dyn JobQueue> = Arc::new(PgmqQueue::new(pool.clone()));
     tracing::info!(

@@ -99,7 +99,9 @@ impl Failure {
 
     fn from_convert(err: &ConvertError) -> Self {
         match err {
-            ConvertError::ToolMissing => {
+            ConvertError::ToolMissing
+            | ConvertError::DoclingMissing
+            | ConvertError::DoclingToolMissing => {
                 Self::transient("tool_missing", "a required engine is missing on the worker")
             }
             ConvertError::Failed => Self::transient("failed", "the conversion engine failed"),
@@ -110,7 +112,7 @@ impl Failure {
                 Self::permanent("limit_exceeded", "the document exceeds the plan's limits")
             }
             ConvertError::InputIo => Self::permanent("input_io", "the input could not be read"),
-            other => Self::permanent(other.code(), other.to_string()),
+            other => Self::permanent(other.code(), "the conversion could not finish"),
         }
     }
 }
@@ -147,7 +149,9 @@ impl Worker {
             };
             let delivery = tokio::select! {
                 () = shutdown.cancelled() => break,
-                read = self.queue.read(pack, CLAIM_VISIBILITY, self.config.poll) => read,
+                // A permit must never be held while long-polling an empty
+                // queue: another pack may have work ready for this slot.
+                read = self.queue.read(pack, CLAIM_VISIBILITY, Duration::ZERO) => read,
             };
             match delivery {
                 Ok(Some(delivery)) => {
@@ -158,8 +162,15 @@ impl Worker {
                         drop(permit);
                     });
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    drop(permit);
+                    tokio::select! {
+                        () = shutdown.cancelled() => break,
+                        () = tokio::time::sleep(self.config.poll) => {}
+                    }
+                }
                 Err(err) => {
+                    drop(permit);
                     tracing::warn!(error = %err, queue = pack.queue(), "queue read failed");
                     tokio::select! {
                         () = shutdown.cancelled() => break,
@@ -754,6 +765,30 @@ fn engine_label(job: &JobRow) -> String {
     }
 }
 
+/// Locks a worker-specific directory for its lifetime before reclaiming
+/// abandoned job directories. Never follows a directory symlink.
+pub fn prepare_work_dir(dir: &FsPath) -> std::io::Result<std::fs::File> {
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.join(".ariad-worker.lock"))?;
+    lock.try_lock().map_err(std::io::Error::other)?;
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name
+            .to_str()
+            .and_then(|name| name.strip_prefix("ariad-job-"))
+            .is_some_and(|id| Uuid::parse_str(id).is_ok())
+            && entry.file_type()?.is_dir()
+        {
+            std::fs::remove_dir_all(entry.path())?;
+        }
+    }
+    Ok(lock)
+}
+
 /// Logs whether the work directory is on tmpfs, as recommended for workers.
 fn log_work_dir(dir: &FsPath) {
     match on_tmpfs(dir) {
@@ -806,6 +841,18 @@ mod tests {
     fn convert_errors_split_into_transient_and_permanent() {
         assert!(Failure::from_convert(&ConvertError::Failed).transient);
         assert!(Failure::from_convert(&ConvertError::ToolMissing).transient);
+        for error in [
+            ConvertError::DoclingMissing,
+            ConvertError::DoclingToolMissing,
+        ] {
+            let failure = Failure::from_convert(&error);
+            assert!(failure.transient);
+            assert_eq!(failure.code, "tool_missing");
+            assert_eq!(
+                failure.message,
+                "a required engine is missing on the worker"
+            );
+        }
         assert!(!Failure::from_convert(&ConvertError::LimitExceeded).transient);
         let rss = Failure::from_convert(&ConvertError::MemoryLimitExceeded { limit_mb: 1 });
         assert!(!rss.transient);
@@ -814,6 +861,7 @@ mod tests {
             Failure::from_convert(&ConvertError::SandboxUnavailable("unavailable".to_owned()));
         assert!(!sandbox.transient);
         assert_eq!(sandbox.code, "sandbox_unavailable");
+        assert_eq!(sandbox.message, "the conversion could not finish");
         assert!(!Failure::from_convert(&ConvertError::UnsupportedRoute { detail: None }).transient);
         assert!(!Failure::from_convert(&ConvertError::InputIo).transient);
         assert_eq!(
@@ -830,5 +878,25 @@ mod tests {
         } else {
             assert!(answer.is_none());
         }
+    }
+
+    #[test]
+    fn startup_reclaims_only_job_directories_with_exclusive_ownership() {
+        let dir = tempfile::tempdir().unwrap();
+        let stale = dir.path().join(format!("ariad-job-{}", Uuid::new_v4()));
+        std::fs::create_dir(&stale).unwrap();
+        std::fs::write(stale.join("input.md"), "abandoned").unwrap();
+        let unrelated = dir.path().join("ariad-job-other-data");
+        std::fs::create_dir(&unrelated).unwrap();
+        let lock = prepare_work_dir(dir.path()).unwrap();
+        assert!(!stale.exists());
+        assert!(unrelated.exists());
+        let active = dir.path().join(format!("ariad-job-{}", Uuid::new_v4()));
+        std::fs::create_dir(&active).unwrap();
+        assert!(prepare_work_dir(dir.path()).is_err());
+        assert!(active.exists());
+        drop(lock);
+        let _lock = prepare_work_dir(dir.path()).unwrap();
+        assert!(!active.exists());
     }
 }

@@ -30,7 +30,7 @@ fn invalid(name: &'static str, reason: impl Into<String>) -> ConfigError {
 }
 
 /// A snapshot of environment variables.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct Env(BTreeMap<String, String>);
 
 impl Env {
@@ -114,7 +114,7 @@ impl Env {
 }
 
 /// Where objects live.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub enum StorageConfig {
     /// An S3-compatible bucket (SeaweedFS, R2, AWS). Credentials and the
     /// endpoint come from the standard `AWS_*` variables.
@@ -179,7 +179,7 @@ pub enum LogFormat {
 }
 
 /// Settings shared by every subcommand.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct CommonConfig {
     pub database_url: String,
     pub database_max_connections: u32,
@@ -246,7 +246,7 @@ pub struct JwtConfig {
     pub audience: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TurnstileConfig {
     pub secret: String,
     pub verify_url: Url,
@@ -303,7 +303,7 @@ impl AuthConfig {
 }
 
 /// Settings for `ariad-server api`.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ApiConfig {
     pub bind: SocketAddr,
     /// Public base URL of this API; local-store object URLs point here.
@@ -450,6 +450,18 @@ pub fn default_engine_program() -> Option<PathBuf> {
     })
 }
 
+macro_rules! redacted_debug {
+    ($($ty:ty),+ $(,)?) => {$ (
+        impl std::fmt::Debug for $ty {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct(stringify!($ty)).finish_non_exhaustive()
+            }
+        }
+    )+ };
+}
+
+redacted_debug!(Env, StorageConfig, CommonConfig, TurnstileConfig, ApiConfig);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -558,5 +570,35 @@ mod tests {
     fn boolean_values_are_strict() {
         let pairs = with(base(), "ARIAD_ANONYMOUS", "maybe");
         assert!(ApiConfig::from_env(&Env::from_pairs(pairs)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod debug_tests {
+    use super::*;
+
+    #[test]
+    fn configuration_debug_never_includes_secrets() {
+        let sentinel = "credential-that-must-never-appear-in-debug";
+        let env = Env::from_pairs([
+            ("DATABASE_URL", sentinel),
+            ("ARIAD_SECRET", sentinel),
+            ("ARIAD_STORAGE_URL", "s3://bucket"),
+            ("AWS_SECRET_ACCESS_KEY", sentinel),
+            ("ARIAD_TURNSTILE_SECRET", sentinel),
+            ("UNRELATED_SECRET", sentinel),
+            ("ARIAD_ENGINE_PROGRAM", "ashift"),
+        ]);
+        let api = ApiConfig::from_env(&env).unwrap();
+        for debug in [
+            format!("{env:?}"),
+            format!("{:?}", CommonConfig::from_env(&env).unwrap()),
+            format!("{api:?}"),
+            format!("{:?}", api.auth),
+            format!("{:?}", api.storage),
+            format!("{:?}", WorkerConfig::from_env(&env, &[]).unwrap()),
+        ] {
+            assert!(!debug.contains(sentinel), "{debug}");
+        }
     }
 }
