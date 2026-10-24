@@ -142,36 +142,72 @@ fn typst_memory_is_bounded_by_the_host_watchdog() {
 
 #[cfg(target_os = "linux")]
 #[test]
-#[ignore = "requires a mounted AppImage, APPDIR and ARIAD_TEST_APPIMAGE_BINARY"]
+#[ignore = "requires an extracted or mounted AppImage, APPDIR and ARIAD_TEST_APPIMAGE_BINARY"]
 fn appimage_office_conversion_preserves_the_bundle_in_private_tmp() {
     let program = std::path::PathBuf::from(
         std::env::var_os("ARIAD_TEST_APPIMAGE_BINARY").expect("set ARIAD_TEST_APPIMAGE_BINARY"),
     );
     let bundle = std::fs::canonicalize(std::env::var_os("APPDIR").expect("set APPDIR")).unwrap();
-    for engine in ["pdf", "typst", "libreoffice"] {
+    let command = |engine: &str| {
         let mut command = EngineCommand::builtin(&program, engine);
         assert_eq!(command.install_root.as_ref(), Some(&bundle));
         command.sandbox = Some(SandboxMode::Required);
-        let capabilities =
-            runner::describe_command(&command, runner::DESCRIBE_TIMEOUT, CancellationToken::new())
-                .unwrap();
-        assert!(matches!(
-            capabilities,
-            Event::Capabilities { tool, .. } if tool.status == ariad_core::protocol::ToolAvailability::Found
-        ));
+        command
+    };
+    let run = |engine: &str, request: &Request| {
+        let outcome =
+            runner::run_command(&command(engine), request, CancellationToken::new(), |_| {})
+                .unwrap_or_else(|error| panic!("{engine}: {error}"));
+        assert_eq!(outcome.sandbox, SandboxOutcome::Applied);
+        assert_eq!(outcome.artifacts.len(), 1);
+        outcome.artifacts[0].path.clone()
+    };
+    let mut office_available = false;
+    for engine in ["pdf", "typst", "libreoffice"] {
+        let capabilities = runner::describe_command(
+            &command(engine),
+            runner::DESCRIBE_TIMEOUT,
+            CancellationToken::new(),
+        )
+        .unwrap();
+        let Event::Capabilities { tool, .. } = capabilities else {
+            panic!("{engine}: expected capabilities");
+        };
+        if engine == "libreoffice" {
+            office_available = tool.status == ariad_core::protocol::ToolAvailability::Found;
+            if !office_available {
+                eprintln!(
+                    "skipping AppImage Office conversion: LibreOffice >=24.2 is not installed ({tool:?})"
+                );
+            }
+        } else {
+            assert_eq!(tool.status, ariad_core::protocol::ToolAvailability::Found);
+        }
+    }
+    let root = support::fixtures::repository_root();
+    let pdf_workspace = Workspace::new().unwrap();
+    let pdf_request = request(
+        &pdf_workspace,
+        &root.join("fixtures/pdf/vi-garden-route.pdf"),
+        "pdf",
+        "ariad-ir+json",
+    );
+    let ir = run("pdf", &pdf_request);
+    let typst_workspace = Workspace::new().unwrap();
+    let typst_request = request(&typst_workspace, &ir, "ariad-ir+json", "pdf");
+    let pdf = run("typst", &typst_request);
+    assert!(fs::read(pdf).unwrap().starts_with(b"%PDF-"));
+    eprintln!("AppImage PDF and Typst conversions passed with required isolation");
+    if !office_available {
+        return;
     }
     let workspace = Workspace::new().unwrap();
     let input =
         support::fixtures::repository_root().join("fixtures/office/en-map-room-slides.pptx");
     let request = request(&workspace, &input, "pptx", "pdf");
-    let mut command = EngineCommand::builtin(&program, "libreoffice");
-    command.sandbox = Some(SandboxMode::Required);
-    let outcome =
-        runner::run_command(&command, &request, CancellationToken::new(), |_| {}).unwrap();
-    assert_eq!(outcome.sandbox, SandboxOutcome::Applied);
-    assert_eq!(outcome.artifacts.len(), 1);
-    let pdf = fs::read(&outcome.artifacts[0].path).unwrap();
+    let pdf = fs::read(run("libreoffice", &request)).unwrap();
     assert!(pdf.starts_with(b"%PDF-"));
+    eprintln!("AppImage LibreOffice conversion passed with required isolation");
     let parsed = ariad_core::reader::pdf::read(&pdf, &Limits::local()).unwrap();
     assert!(parsed.document.block_count() > 0);
 }

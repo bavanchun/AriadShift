@@ -299,6 +299,11 @@ desktop-build:
 desktop-smoke:
     APPIMAGE_EXTRACT_AND_RUN=1 python3 scripts/desktop-smoke.py target/release/bundle/appimage/*.AppImage
 
+# Run built-in engines from the extracted Linux bundle without FUSE.
+[linux]
+desktop-engine-smoke:
+    APPIMAGE_EXTRACT_AND_RUN=1 bash scripts/desktop-engine-smoke.sh
+
 # Shared dependency changes also trigger desktop checks locally.
 desktop-ci:
     #!/usr/bin/env bash
