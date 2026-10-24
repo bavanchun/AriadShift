@@ -46,6 +46,116 @@ fn s3_env(test: &str) -> Option<Vec<(String, String)>> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn completed_upload_size_checks_and_retired_url_expiry_bound_storage() {
+    async fn put_changed_input(
+        h: &Harness,
+        storage: &Storage,
+        upload: &Value,
+        key: &str,
+        replacement: &[u8],
+    ) {
+        let replay = h.put_presigned(upload, replacement).await;
+        if !replay.status().is_success() {
+            assert!(
+                replay.status().is_client_error(),
+                "stored input PUT: {}",
+                text(replay).await
+            );
+            // SeaweedFS rejects changed bytes under the checksum-bound URL.
+            // Change the real stored object through the authenticated storage
+            // API to verify server-side bounds independently of store checks.
+            let changed = h.objects.path().join("changed-input");
+            std::fs::write(&changed, replacement).unwrap();
+            storage.upload_file(key, &changed).await.unwrap();
+        }
+    }
+
+    let Some(env) = s3_env("completed_upload_size_checks_and_retired_url_expiry_bound_storage")
+    else {
+        return;
+    };
+    ariad_server::install_crypto_provider();
+    let config = StorageConfig::from_env(&Env::from_pairs(env.clone())).unwrap();
+    let storage = Storage::from_config(&config, None, None).unwrap();
+    let Some(mut h) = Harness::start(
+        "completed_upload_size_checks_and_retired_url_expiry_bound_storage",
+        Options {
+            env,
+            ..Options::default()
+        },
+    )
+    .await
+    else {
+        return;
+    };
+    let auth = Auth::Anonymous;
+    let bytes = b"# Valid small input";
+    for (index, replacement) in [
+        b"oversized replayed input body".as_slice(),
+        b"wrong hash same len".as_slice(),
+        b"oversized replayed input body".as_slice(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let upload = h.create_upload(&auth, "replay.md", bytes).await;
+        assert!(h.put_presigned(&upload, bytes).await.status().is_success());
+        let id = upload["id"].as_str().unwrap();
+        assert_eq!(
+            h.post(&auth, &format!("/v1/uploads/{id}/complete"), &json!({}))
+                .await
+                .status(),
+            200
+        );
+        let job: Value = h.create_job(&auth, id, "html").await.json().await.unwrap();
+        let key: String = sqlx::query_scalar("SELECT storage_key FROM uploads WHERE id = $1::uuid")
+            .bind(id)
+            .fetch_one(&h.db.pool)
+            .await
+            .unwrap();
+        put_changed_input(&h, &storage, &upload, &key, replacement).await;
+        if index == 0 {
+            h.sql_exec("UPDATE uploads SET created_at = now() - interval '3 minutes'")
+                .await;
+            ariad_server::sweeper::sweep_once(&h.db.pool, &storage)
+                .await
+                .unwrap();
+            assert_eq!(storage.size(&key).await.unwrap(), None);
+        }
+        h.start_worker();
+        let job = h
+            .wait_final(&auth, job["id"].as_str().unwrap(), Duration::from_secs(30))
+            .await;
+        assert_eq!(job["status"], "failed", "{job}");
+        assert_eq!(job["attempts"], 1, "invalid inputs must not retry: {job}");
+        assert_eq!(storage.size(&key).await.unwrap(), None);
+        h.stop_workers().await;
+        // The signed URL was issued moments ago; age only the database row to
+        // prove a retired row is no longer selected once its URL window ends.
+        sqlx::query("UPDATE uploads SET status = 'deleted', created_at = now() - interval '16 minutes', size_checked_at = NULL WHERE id = $1::uuid")
+            .bind(id).execute(&h.db.pool).await.unwrap();
+        put_changed_input(&h, &storage, &upload, &key, replacement).await;
+        ariad_server::sweeper::sweep_once(&h.db.pool, &storage)
+            .await
+            .unwrap();
+        let checked: bool = sqlx::query_scalar(
+            "SELECT size_checked_at IS NOT NULL FROM uploads WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_one(&h.db.pool)
+        .await
+        .unwrap();
+        assert!(!checked);
+        assert_eq!(
+            storage.size(&key).await.unwrap(),
+            Some(replacement.len() as u64)
+        );
+        storage.delete(&key).await.unwrap();
+    }
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn pending_s3_uploads_are_size_checked_without_completion_and_after_replay() {
     let Some(env) =
         s3_env("pending_s3_uploads_are_size_checked_without_completion_and_after_replay")

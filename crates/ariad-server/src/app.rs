@@ -68,6 +68,7 @@ pub async fn serve_api(
         pool,
         state.storage.clone(),
         config.sweep_interval,
+        config.sweep_batch,
         shutdown.clone(),
     ));
     let router = api::router(
