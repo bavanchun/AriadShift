@@ -27,12 +27,12 @@ fn protected_worker_procfs_probe() {
     let pid = std::process::id().to_string();
     let read = |blocked: bool| {
         let code = if blocked {
-            "import sys\nfor name in ('environ', 'mem'):\n try:\n  open('/proc/' + sys.argv[1] + '/' + name, 'rb')\n except PermissionError:\n  continue\n raise SystemExit('protected procfs file was readable: ' + name)"
+            "for name in environ mem; do if cat /proc/$1/$name >/dev/null 2>&1; then exit 1; fi; done"
         } else {
-            "import sys; assert b'procfs-credential-sentinel' in open('/proc/' + sys.argv[1] + '/environ', 'rb').read()"
+            "cat /proc/$1/environ | tr '\\000' '\\n' | grep -qx 'DATABASE_URL=procfs-credential-sentinel'"
         };
-        let output = Command::new("python3")
-            .args(["-c", code, &pid])
+        let output = Command::new("/bin/sh")
+            .args(["-c", code, "procfs-probe", &pid])
             .env_clear()
             .output()
             .unwrap();

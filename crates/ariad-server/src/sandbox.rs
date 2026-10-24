@@ -18,6 +18,54 @@ pub fn protect_worker_credentials() -> std::io::Result<()> {
     Ok(())
 }
 
+/// Blocks network socket creation in the single-threaded helper before it
+/// starts the host runtime. Children inherit the filter across exec; UNIX
+/// sockets remain available for local runtime IPC. Filesystem and procfs
+/// access remain unchanged so engine launch and RSS monitoring still work.
+pub fn deny_helper_network() -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use nix::libc;
+        use seccompiler::{
+            BpfProgram, SeccompAction, SeccompCmpArgLen, SeccompCmpOp, SeccompCondition,
+            SeccompFilter, SeccompRule,
+        };
+        let condition = SeccompCondition::new(
+            0,
+            SeccompCmpArgLen::Dword,
+            SeccompCmpOp::Ne,
+            libc::AF_UNIX as u64,
+        )
+        .map_err(|e| e.to_string())?;
+        let rule = SeccompRule::new(vec![condition]).map_err(|e| e.to_string())?;
+        #[allow(unused_mut)]
+        let mut rules = std::collections::BTreeMap::from([
+            (libc::SYS_socket, vec![rule.clone()]),
+            (libc::SYS_io_uring_setup, Vec::new()),
+        ]);
+        #[cfg(target_arch = "x86_64")]
+        {
+            // Cover the x32 syscall encoding as well as native x86_64.
+            const X32: i64 = 0x4000_0000;
+            rules.insert(X32 + libc::SYS_socket, vec![rule]);
+            rules.insert(X32 + libc::SYS_io_uring_setup, Vec::new());
+        }
+        let program: BpfProgram = SeccompFilter::new(
+            rules,
+            SeccompAction::Allow,
+            SeccompAction::Errno(libc::EPERM as u32),
+            std::env::consts::ARCH
+                .try_into()
+                .map_err(|e: seccompiler::BackendError| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?
+        .try_into()
+        .map_err(|e: seccompiler::BackendError| e.to_string())?;
+        seccompiler::apply_filter(&program).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SandboxMode {
     /// A missing isolation feature is an error. The default for Linux workers.
