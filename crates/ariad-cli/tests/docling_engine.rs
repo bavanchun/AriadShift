@@ -458,11 +458,16 @@ fn doctor_can_run_tesseract_with_data_in_a_custom_install_prefix() {
     fs::create_dir_all(&bin).unwrap();
     fs::create_dir_all(&share).unwrap();
     fs::write(share.join("version"), "tesseract 5.5.3\n").unwrap();
+    fs::write(
+        directory.path().join("prefix/private"),
+        "must stay unreadable",
+    )
+    .unwrap();
     let program = bin.join("tesseract");
     // Like a relocated installation, the helper must read data outside the job workspace.
     fs::write(
         &program,
-        "#!/bin/sh\ncat \"${0%/bin/tesseract}/share/version\"\n",
+        "#!/bin/sh\nif cat \"${0%/bin/tesseract}/private\" >/dev/null 2>&1; then exit 1; fi\ncat \"${0%/bin/tesseract}/share/version\"\n",
     )
     .unwrap();
     fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
@@ -470,7 +475,9 @@ fn doctor_can_run_tesseract_with_data_in_a_custom_install_prefix() {
         std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
     )
     .unwrap();
-    let result = cli(&directory.path().join("data"))
+    let mut command = cli(&directory.path().join("data"));
+    Command::env(&mut command, "ASHIFT_SANDBOX", "required");
+    let result = command
         .args(["doctor", "--json"])
         .env("PATH", path)
         .output()
