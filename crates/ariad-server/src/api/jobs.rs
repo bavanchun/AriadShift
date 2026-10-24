@@ -127,6 +127,7 @@ pub async fn create_job(
             )
         })?;
     let pack = Pack::for_route(&plan.steps);
+    super::check_pack_memory(pack, &caller.entitlement.limits)?;
     let input_bytes = u64::try_from(upload.size_bytes).unwrap_or(0);
     if let Some(max) = caller.entitlement.limits.max_input_bytes
         && input_bytes > max
@@ -330,6 +331,10 @@ pub async fn purge_job(
     }
     let mut tx = pool.begin().await?;
     db::mark_artifacts_deleted(&mut tx, job_id).await?;
+    sqlx::query("DELETE FROM job_events WHERE job_id = $1")
+        .bind(job_id)
+        .execute(&mut *tx)
+        .await?;
     if db::expire_job(&mut tx, job_id).await? {
         db::add_event(&mut tx, job_id, "expired", json!({ "reason": reason })).await?;
     }

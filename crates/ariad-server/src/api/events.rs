@@ -6,7 +6,11 @@
 //! a missed notification only delays an event). The stream ends after a final
 //! event (`succeeded`, `failed`, `canceled` or `expired`).
 
-use std::{collections::VecDeque, convert::Infallible, time::Duration};
+use std::{
+    collections::VecDeque,
+    convert::Infallible,
+    time::{Duration, Instant},
+};
 
 use axum::{
     extract::{Path, State},
@@ -24,7 +28,7 @@ use super::{AppState, Caller, jobs::visible_job};
 use crate::{
     api::dto::JobEvent,
     db::{self, EventRow, JOB_EVENTS_CHANNEL},
-    error::{ApiResult, ErrorBody},
+    error::{ApiError, ApiResult, ErrorBody},
 };
 
 /// How often a stream re-reads events without a notification.
@@ -32,6 +36,74 @@ const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Event kinds after which nothing else happens to a job until it expires.
 const FINAL_KINDS: [&str; 4] = ["succeeded", "failed", "canceled", "expired"];
+
+/// Shared across all API replicas; one caller cannot accumulate unbounded
+/// polling streams, including streams for shared anonymous jobs.
+const STREAMS_PER_SUBJECT: i64 = 8;
+const STREAMS_PER_JOB: i64 = 2;
+
+struct StreamLease {
+    pool: PgPool,
+    id: Uuid,
+    renewed: Instant,
+}
+
+impl StreamLease {
+    async fn acquire(pool: &PgPool, subject: &str, job_id: Uuid) -> ApiResult<Self> {
+        let mut tx = pool.begin().await?;
+        db::lock_subject(&mut tx, &format!("event-job:{job_id}")).await?;
+        db::lock_subject(&mut tx, &format!("event-subject:{subject}")).await?;
+        let (subject_count, job_count): (i64, i64) = sqlx::query_as(
+            "SELECT count(*) FILTER (WHERE subject = $1), count(*) FILTER (WHERE job_id = $2) \
+             FROM event_stream_leases WHERE expires_at > now() AND (subject = $1 OR job_id = $2)",
+        )
+        .bind(subject)
+        .bind(job_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if subject_count >= STREAMS_PER_SUBJECT || job_count >= STREAMS_PER_JOB {
+            return Err(ApiError::rate_limited(5));
+        }
+        let id = Uuid::new_v4();
+        sqlx::query("INSERT INTO event_stream_leases (id, subject, job_id, expires_at) VALUES ($1, $2, $3, now() + interval '90 seconds')")
+            .bind(id).bind(subject).bind(job_id).execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(Self {
+            pool: pool.clone(),
+            id,
+            renewed: Instant::now(),
+        })
+    }
+
+    async fn live(&mut self) -> bool {
+        if self.renewed.elapsed() < Duration::from_secs(30) {
+            return true;
+        }
+        match sqlx::query("UPDATE event_stream_leases SET expires_at = now() + interval '90 seconds' WHERE id = $1 AND expires_at > now()")
+            .bind(self.id).execute(&self.pool).await {
+            Ok(result) if result.rows_affected() == 1 => {
+                self.renewed = Instant::now();
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Drop for StreamLease {
+    fn drop(&mut self) {
+        let pool = self.pool.clone();
+        let id = self.id;
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let _ = sqlx::query("DELETE FROM event_stream_leases WHERE id = $1")
+                    .bind(id)
+                    .execute(&pool)
+                    .await;
+            });
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct Signal {
@@ -123,6 +195,7 @@ fn to_sse(event: &JobEvent) -> Event {
 }
 
 struct StreamState {
+    lease: StreamLease,
     pool: PgPool,
     job_id: Uuid,
     last_id: i64,
@@ -137,7 +210,7 @@ struct StreamState {
 impl StreamState {
     async fn next_event(mut self) -> Option<(Result<Event, Infallible>, Self)> {
         loop {
-            if self.stop.is_cancelled() {
+            if self.stop.is_cancelled() || !self.lease.live().await {
                 return None;
             }
             if let Some(event) = self.pending.pop_front() {
@@ -228,6 +301,7 @@ pub async fn job_events(
     headers: HeaderMap,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     let job = visible_job(&state, &caller, &id).await?;
+    let lease = StreamLease::acquire(&state.db, &caller.principal.subject, job.id).await?;
     let last_id = headers
         .get("last-event-id")
         .and_then(|v| v.to_str().ok())
@@ -237,6 +311,7 @@ pub async fn job_events(
     // Subscribe before the first read so no notification falls in between.
     let rx = state.events.subscribe();
     let initial = StreamState {
+        lease,
         pool: state.db.clone(),
         job_id: job.id,
         last_id,

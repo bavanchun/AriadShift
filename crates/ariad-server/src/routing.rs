@@ -134,6 +134,27 @@ mod tests {
     }
 
     #[test]
+    fn pdf_routes_require_the_docling_pack() {
+        assert!(
+            plan(
+                Format::Pdf,
+                Format::Markdown,
+                Profile::Editable,
+                &[Pack::Core]
+            )
+            .is_err()
+        );
+        let planned = plan(
+            Format::Pdf,
+            Format::Markdown,
+            Profile::Editable,
+            &[Pack::Core, Pack::Docling],
+        )
+        .unwrap();
+        assert_eq!(Pack::for_route(&planned.steps), Pack::Docling);
+    }
+
+    #[test]
     fn docling_json_is_not_a_public_format() {
         assert_eq!(resolve_format("docling+json"), None);
     }

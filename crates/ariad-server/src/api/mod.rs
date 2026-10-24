@@ -50,6 +50,25 @@ pub const AUTH_FAILURES_PER_MINUTE: u32 = 30;
 /// Largest JSON request body.
 pub const JSON_BODY_LIMIT: usize = 1024 * 1024;
 
+/// Refuse a heavy route before it consumes queue/quota capacity. This is an
+/// admission floor, not a guarantee that every document fits the budget.
+pub fn check_pack_memory(pack: Pack, limits: &ariad_core::limits::Limits) -> Result<(), ApiError> {
+    if limits
+        .max_memory_mb
+        .is_some_and(|limit| limit < pack.minimum_memory_mb())
+    {
+        return Err(ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "limit_exceeded",
+            format!(
+                "the {pack} pack requires a plan memory limit of at least {} MB",
+                pack.minimum_memory_mb()
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Shared state of the API.
 #[derive(Clone)]
 pub struct AppState(Arc<Inner>);

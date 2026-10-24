@@ -7,6 +7,129 @@ use ariad_server::{db, entitlements};
 use common::TestDb;
 
 #[tokio::test(flavor = "multi_thread")]
+async fn an_empty_nonblocking_queue_read_does_not_long_poll() {
+    use ariad_server::{
+        packs::Pack,
+        queue::{JobQueue, PgmqQueue},
+    };
+    let Some(test_db) = TestDb::create("an_empty_nonblocking_queue_read_does_not_long_poll").await
+    else {
+        return;
+    };
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(1)
+        .after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SET statement_timeout = '500ms'")
+                    .execute(conn)
+                    .await?;
+                Ok(())
+            })
+        })
+        .connect(&test_db.url)
+        .await
+        .unwrap();
+    let queue = PgmqQueue::new(pool.clone());
+    // A long poll's one-second minimum would hit the database deadline;
+    // nonblocking selection must return without reserving an idle worker slot.
+    assert!(
+        queue
+            .read(
+                Pack::Docling,
+                std::time::Duration::from_secs(30),
+                std::time::Duration::ZERO
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    pool.close().await;
+    test_db.drop_database().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn runtime_database_roles_cannot_read_identity_secrets_or_migrate() {
+    let Some(test_db) =
+        TestDb::create("runtime_database_roles_cannot_read_identity_secrets_or_migrate").await
+    else {
+        return;
+    };
+    common::create_apikey_table(&test_db.pool).await;
+    sqlx::raw_sql("CREATE TABLE jwks (private_key text); CREATE TABLE \"user\" (email text); CREATE TABLE session (token text); CREATE TABLE account (password text)")
+        .execute(&test_db.pool).await.unwrap();
+    sqlx::raw_sql(include_str!("../../../infra/server-roles.sql"))
+        .execute(&test_db.pool)
+        .await
+        .unwrap();
+    for role in ["ariad_api", "ariad_worker"] {
+        let mut conn = test_db.pool.acquire().await.unwrap();
+        sqlx::raw_sql(if role == "ariad_api" {
+            "SET ROLE ariad_api"
+        } else {
+            "SET ROLE ariad_worker"
+        })
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+        sqlx::query("SELECT * FROM jobs")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("SELECT * FROM _sqlx_migrations")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        for query in [
+            "SELECT * FROM jwks",
+            "SELECT * FROM \"user\"",
+            "SELECT * FROM session",
+            "SELECT * FROM account",
+            "CREATE TABLE forbidden (id int)",
+            "SELECT pgmq.create('forbidden')",
+            "UPDATE plan_entitlements SET max_memory_mb = 1",
+        ] {
+            assert!(
+                sqlx::raw_sql(query).execute(&mut *conn).await.is_err(),
+                "{role}: {query}"
+            );
+        }
+        let apikey = sqlx::query("SELECT * FROM apikey")
+            .execute(&mut *conn)
+            .await;
+        assert_eq!(apikey.is_ok(), role == "ariad_api");
+        let id: i64 = sqlx::query_scalar(
+            "SELECT pgmq.send('jobs_core', '{\"job_id\": null}'::jsonb, '{}'::jsonb)",
+        )
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+        sqlx::query("SELECT * FROM pgmq.read('jobs_core', 30, 1)")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("SELECT pgmq.set_vt('jobs_core', $1, 30)")
+            .bind(id)
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("SELECT pgmq.archive('jobs_core', $1)")
+            .bind(id)
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("SELECT * FROM pgmq.metrics('jobs_core')")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::raw_sql("RESET ROLE")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+    }
+    test_db.drop_database().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn services_refuse_an_unmigrated_database() {
     let Some(test_db) = TestDb::create_empty("services_refuse_an_unmigrated_database").await else {
         return;

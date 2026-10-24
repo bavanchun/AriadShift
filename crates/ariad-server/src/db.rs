@@ -282,7 +282,7 @@ pub async fn retire_upload(
     status: UploadStatus,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE uploads SET status = $2 WHERE id = $1 AND status IN ('pending', 'completed')",
+        "UPDATE uploads SET status = $2, filename = '' WHERE id = $1 AND status IN ('pending', 'completed', 'deleted')",
     )
     .bind(id)
     .bind(status.as_str())
@@ -463,7 +463,8 @@ pub async fn cancel_job(conn: &mut PgConnection, id: Uuid) -> Result<bool, sqlx:
 /// Marks a final job expired after its objects are gone.
 pub async fn expire_job(conn: &mut PgConnection, id: Uuid) -> Result<bool, sqlx::Error> {
     let done = sqlx::query(
-        "UPDATE jobs SET status = 'expired' \
+        "UPDATE jobs SET status = 'expired', expires_at = LEAST(expires_at, now()), \
+         warnings = '[]', error_message = NULL \
          WHERE id = $1 AND status IN ('succeeded', 'failed', 'canceled')",
     )
     .bind(id)
@@ -616,7 +617,7 @@ pub async fn mark_artifacts_deleted(
     conn: &mut PgConnection,
     job_id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE artifacts SET deleted_at = now() WHERE job_id = $1 AND deleted_at IS NULL")
+    sqlx::query("UPDATE artifacts SET deleted_at = now(), filename = '' WHERE job_id = $1 AND deleted_at IS NULL")
         .bind(job_id)
         .execute(conn)
         .await?;

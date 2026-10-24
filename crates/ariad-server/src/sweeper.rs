@@ -54,25 +54,24 @@ pub async fn sweep_locked(
     pool: &PgPool,
     storage: &Storage,
 ) -> Result<Option<SweepReport>, sqlx::Error> {
-    let mut lock_conn = pool.acquire().await?;
+    // Closing a detached session releases the lock even when an unlock query
+    // fails or this future is canceled. Never return a locked session to a pool.
+    let mut lock_conn = pool.acquire().await?.detach();
     let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
         .bind(SWEEP_LOCK)
-        .fetch_one(&mut *lock_conn)
+        .fetch_one(&mut lock_conn)
         .await?;
     if !locked {
         return Ok(None);
     }
     let result = sweep_once(pool, storage).await;
-    sqlx::query("SELECT pg_advisory_unlock($1)")
-        .bind(SWEEP_LOCK)
-        .execute(&mut *lock_conn)
-        .await?;
     result.map(Some)
 }
 
 /// One pass: expired jobs, then expired uploads, then old rate-limit windows.
 pub async fn sweep_once(pool: &PgPool, storage: &Storage) -> Result<SweepReport, sqlx::Error> {
     let mut report = SweepReport::default();
+    check_pending_sizes(pool, storage).await?;
     let jobs: Vec<Uuid> = sqlx::query_scalar(
         "SELECT id FROM jobs WHERE status <> 'expired' AND expires_at <= now() \
          ORDER BY expires_at LIMIT $1",
@@ -91,7 +90,7 @@ pub async fn sweep_once(pool: &PgPool, storage: &Storage) -> Result<SweepReport,
 
     let uploads: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT id, storage_key FROM uploads \
-         WHERE status IN ('pending', 'completed') AND expires_at <= now() \
+         WHERE status IN ('pending', 'completed', 'deleted') AND expires_at <= now() \
          ORDER BY expires_at LIMIT $1",
     )
     .bind(BATCH)
@@ -108,5 +107,83 @@ pub async fn sweep_once(pool: &PgPool, storage: &Storage) -> Result<SweepReport,
     }
 
     rate_limit::prune(pool).await?;
+    prune_metadata(pool).await?;
     Ok(report)
+}
+
+/// Checks stored bytes without trusting the client's completion request. A
+/// revoked URL can still be replayed until expiry, so retired inputs are
+/// checked again and removed on every pass, then once more after URL expiry.
+async fn check_pending_sizes(pool: &PgPool, storage: &Storage) -> Result<(), sqlx::Error> {
+    let uploads: Vec<(Uuid, String, i64, String)> = sqlx::query_as(
+        "UPDATE uploads SET size_checked_at = now() WHERE id IN (\
+           SELECT id FROM uploads WHERE status IN ('pending', 'deleted') \
+           AND created_at <= now() - interval '2 minutes' AND expires_at > now() \
+           ORDER BY size_checked_at NULLS FIRST, created_at LIMIT $1\
+         ) RETURNING id, storage_key, size_bytes, status",
+    )
+    .bind(BATCH)
+    .fetch_all(pool)
+    .await?;
+    for (id, key, declared, status) in uploads {
+        match storage.size(&key).await {
+            Ok(Some(size))
+                if status == "deleted" || size != u64::try_from(declared).unwrap_or(0) =>
+            {
+                if let Err(err) = storage.delete(&key).await {
+                    tracing::warn!(upload_id = %id, error = %err, "could not remove an invalid pending upload");
+                    continue;
+                }
+                let mut conn = pool.acquire().await?;
+                db::retire_upload(&mut conn, id, UploadStatus::Deleted).await?;
+            }
+            Ok(_) => {}
+            Err(err) => {
+                tracing::warn!(upload_id = %id, error = %err, "pending upload size check failed")
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Keep quota admission rows for at least a day and diagnostic metadata for
+/// thirty days. The immutable, filename-free usage ledger remains untouched.
+async fn prune_metadata(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM event_stream_leases WHERE id IN (SELECT id FROM event_stream_leases WHERE expires_at <= now() ORDER BY expires_at LIMIT $1)")
+        .bind(BATCH)
+        .execute(&mut *tx)
+        .await?;
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM jobs WHERE status = 'expired' AND expires_at < now() - interval '30 days' \
+         ORDER BY expires_at LIMIT $1 FOR UPDATE",
+    )
+    .bind(BATCH)
+    .fetch_all(&mut *tx)
+    .await?;
+    for query in [
+        "DELETE FROM job_events WHERE job_id = ANY($1)",
+        "DELETE FROM job_steps WHERE job_id = ANY($1)",
+        "DELETE FROM artifacts WHERE job_id = ANY($1)",
+    ] {
+        sqlx::query(query).bind(&ids).execute(&mut *tx).await?;
+    }
+    sqlx::query("DELETE FROM jobs WHERE id = ANY($1)")
+        .bind(&ids)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "DELETE FROM uploads WHERE id IN (SELECT id FROM uploads u \
+         WHERE status IN ('deleted', 'expired') AND expires_at < now() - interval '30 days' \
+         AND NOT EXISTS (SELECT 1 FROM jobs WHERE upload_id = u.id) ORDER BY expires_at LIMIT $1)",
+    )
+    .bind(BATCH)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM job_events WHERE id IN (SELECT e.id FROM job_events e JOIN jobs j ON j.id = e.job_id \
+         WHERE j.status IN ('succeeded', 'failed', 'canceled', 'expired') \
+         AND e.created_at < now() - interval '30 days' ORDER BY e.id LIMIT $1)",
+    ).bind(BATCH).execute(&mut *tx).await?;
+    tx.commit().await
 }
