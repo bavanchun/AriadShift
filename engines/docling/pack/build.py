@@ -139,7 +139,7 @@ def unpack_runtime(archive: Path, root: Path) -> Path:
 
 
 def prune_runtime(runtime: Path, target: str) -> None:
-    """Remove unused GUI components and standard-library tests before installing wheels."""
+    """Remove unused GUI, DBM and test components before installing wheels."""
     library = library_root(runtime, target)
     directories = [runtime / "tcl", library / "tkinter", library / "idlelib"]
     directories.extend(path for path in library.rglob("*") if path.name in {"test", "tests"})
@@ -153,10 +153,22 @@ def prune_runtime(runtime: Path, target: str) -> None:
                 path
                 for path in directory.iterdir()
                 if path.name.lower().startswith(
-                    ("tcl", "tk", "itcl", "tix", "thread", "libtcl", "libtk", "_tkinter", "idle")
+                    (
+                        "tcl",
+                        "tk",
+                        "itcl",
+                        "tix",
+                        "thread",
+                        "libtcl",
+                        "libtk",
+                        "libtommath",
+                        "_tkinter",
+                        "idle",
+                    )
                 )
             )
     directories.extend((library / "lib-dynload").glob("_tkinter*"))
+    directories.extend((library / "lib-dynload").glob("_dbm*"))
     for path in sorted(set(directories), key=lambda item: len(item.parts), reverse=True):
         if path.is_symlink() or path.is_file():
             path.unlink()
@@ -456,6 +468,9 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
 
     runtime = unpack_runtime(fetch.fetch(fetch.python_archive(pins, target), cache), root)
     prune_runtime(runtime, target)
+    licenses.check_runtime_files(
+        runtime, licenses.runtime_libraries(pins["python"]["release"], target), target
+    )
     install_wheels(work, runtime, target)
     native = host_target() == target
     if native:

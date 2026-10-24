@@ -114,6 +114,7 @@ def test_runtime_library_notices_cover_each_target_and_are_declared(tmp_path):
             "sqlite",
         }
         assert not {item["name"] for item in libraries} & {"tcl", "tk"}
+        assert ("libuuid" in {item["name"] for item in libraries}) == ("linux" in target)
         notices = tmp_path / target / "notices"
         licenses.write_runtime_notices(notices, libraries)
         summary = (notices / "runtime-libraries.txt").read_text()
@@ -121,12 +122,35 @@ def test_runtime_library_notices_cover_each_target_and_are_declared(tmp_path):
             assert f"{item['name']} {item['version']}: {item['license']}" in summary
             assert item["source"].startswith("https://")
             assert item["source"] in summary
-            assert len((notices / "runtime" / item["text"]).read_bytes()) > 500
+            if "notice" in item:
+                assert item["notice"] == "notices/Python-LICENSE.txt"
+                assert item["notice"] in summary
+            else:
+                assert len((notices / "runtime" / item["text"]).read_bytes()) > 500
 
 
 def test_runtime_release_change_requires_licence_review():
     with pytest.raises(SystemExit, match="review runtime-library licences"):
         licenses.runtime_libraries("unreviewed-release", "x86_64-unknown-linux-gnu")
+
+
+def test_native_runtime_files_require_matching_licence_inventory(tmp_path):
+    library = {"name": "demo", "native_files": {"linux": ["lib/libdemo.so*"]}}
+    native = tmp_path / "lib/libdemo.so.1"
+    native.parent.mkdir()
+    native.touch()
+    wheel = tmp_path / "lib/python3.14/site-packages/wheel/extension.so"
+    wheel.parent.mkdir(parents=True)
+    wheel.touch()
+    licenses.check_runtime_files(tmp_path, [library], "x86_64-unknown-linux-gnu")
+    unknown = tmp_path / "lib/unknown.so"
+    unknown.touch()
+    with pytest.raises(SystemExit, match=r"unlisted native runtime file: lib/unknown\.so"):
+        licenses.check_runtime_files(tmp_path, [library], "x86_64-unknown-linux-gnu")
+    unknown.unlink()
+    native.unlink()
+    with pytest.raises(SystemExit, match="demo: inventory patterns match no native files"):
+        licenses.check_runtime_files(tmp_path, [library], "x86_64-unknown-linux-gnu")
 
 
 def test_manifest_licence_preserves_distribution_expressions_and_runtime_licences():
@@ -142,10 +166,18 @@ def test_manifest_licence_preserves_distribution_expressions_and_runtime_licence
     ]
     expression = licenses.pack_expression(distributions, ["CDLA-Permissive-2.0", "bzip2-1.0.6"])
     assert expression == (
-        "(Apache-2.0 WITH LLVM-exception) AND (CDLA-Permissive-2.0) AND (ISC AND HPND) "
+        "(Apache-2.0 WITH LLVM-exception) AND (CDLA-Permissive-2.0) AND (HPND) AND (ISC) "
         "AND (MIT OR Apache-2.0) AND (MPL-2.0) AND (bzip2-1.0.6)"
     )
     manifest = tomllib.loads(build.pack_fields("0.2.0", expression))
     assert manifest["license"] == expression
     with pytest.raises(SystemExit, match="licence gate failed"):
         licenses.pack_expression([FakeDistribution("bad", License_Expression="GPL-3.0-only")], [])
+
+
+def test_merged_manifest_licences_deduplicate_identifiers_across_targets():
+    common = licenses.combined_expression(
+        ["MIT", "Apache-2.0", "MIT OR Apache-2.0", "Apache-2.0 WITH LLVM-exception"]
+    )
+    targets = [licenses.combined_expression([common, extra]) for extra in ["X11", "Zlib", "MIT"]]
+    assert licenses.combined_expression(targets) == "(Apache-2.0) AND (MIT) AND (X11) AND (Zlib)"

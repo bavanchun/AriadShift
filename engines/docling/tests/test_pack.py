@@ -64,9 +64,11 @@ def test_runtime_pruning_keeps_engine_requirements_and_removes_gui_and_tests(tmp
         library / "test/test_math.py",
         library / "sqlite3/test/test_db.py",
         library / "lib-dynload/_tkinter.so",
+        library / "lib-dynload/_dbm.cpython-314-linux-gnu.so",
         runtime / "tcl/tk9.0/tk.tcl",
         runtime / "DLLs/_tkinter.pyd",
         runtime / "DLLs/tcl90t.dll",
+        runtime / "DLLs/libtommath.dll",
         runtime / "bin/idle3",
     ]
     if not build.is_windows(target):

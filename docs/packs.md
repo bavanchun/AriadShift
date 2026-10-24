@@ -160,6 +160,8 @@ On Linux x86_64 the components are about 455 MB, 383 MB and 29 MB (1.9 GB of fil
 
 For byte-identical builds, run `build.py` with the same uv-managed python-build-standalone CPython 3.14 patch release on both builds, as the Pack CI jobs do through `setup-uv`. The builder uses that interpreter's `tarfile` and bundled zstd; a system Python linked to another zstd version can produce different archive bytes. Keep `SOURCE_DATE_EPOCH` and all pinned inputs identical. The Linux x86_64 Pack job builds again in a separate directory and checks SHA-256 for all three components and `pack.toml`.
 
+The build prunes unused runtime modules and requires every remaining native file outside `site-packages` to match the platform's licence inventory before installing the locked wheels. Unlisted native files and inventory entries with no matching file fail the build. The merged manifest deduplicates licence obligations across targets while retaining nonredundant alternatives and exceptions.
+
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 
 ## Signing and publishing
