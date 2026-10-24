@@ -14,6 +14,8 @@ ODF = "ODF"
 flate = "flate"
 # Tesseract's language data name for Thai.
 tha = "tha"
+# XML Formatting Objects namespace used by OpenDocument styles.
+fo = "fo"
 
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".

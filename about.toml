@@ -47,3 +47,7 @@ accepted = ["MPL-2.0"]
 
 [cssparser-macros]
 accepted = ["MPL-2.0"]
+
+# Typst's roman-numeral helper (0BSD OR CC0-1.0)
+[roman-numerals-rs]
+accepted = ["0BSD"]

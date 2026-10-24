@@ -21,6 +21,12 @@ ignore = [
     # a stable jsonwebtoken release adopts the patched RustCrypto dependency.
     # Reassess if the server adds JWT signing.
     { id = "RUSTSEC-2026-0387", reason = "ariad-server only verifies JWT signatures with public JWKS keys; no secret integer operations" },
+    # quick-xml 0.38 reaches the binary only through typst-library -> hayagriva ->
+    # citationberg, which parses CSL styles and locales for bibliographies. The Typst
+    # markup ashift generates never loads a bibliography or a CSL file, so these XML
+    # parsing paths never run. Drop both entries once citationberg moves to >= 0.41.
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml via citationberg; CSL parsing unreachable from generated Typst markup" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml via citationberg; CSL parsing unreachable from generated Typst markup" },
 ]
 
 [licenses]
@@ -70,6 +76,11 @@ name = "selectors"
 [[licenses.exceptions]]
 allow = ["MPL-2.0"]
 name = "cssparser-macros"
+
+# Typst's roman-numeral helper is dual-licensed 0BSD OR CC0-1.0; we take 0BSD.
+[[licenses.exceptions]]
+allow = ["0BSD"]
+name = "roman-numerals-rs"
 
 [bans]
 multiple-versions = "warn"
