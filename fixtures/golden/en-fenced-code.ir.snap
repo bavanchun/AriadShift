@@ -41,5 +41,5 @@ input_file: fixtures/md/en-fenced-code.md
     "title": null
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

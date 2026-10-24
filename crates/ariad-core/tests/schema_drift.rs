@@ -226,3 +226,26 @@ fn capabilities_serde_rejects_missing_metrics_key() {
         serde_json::from_str(json_null_metrics);
     assert!(res_null.is_ok(), "serde must accept 'metrics': null");
 }
+
+#[test]
+fn frozen_ir_schema_requires_the_current_version_and_retains_the_legacy_schema() {
+    let schema: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(support::ir_schema_path()).unwrap()).unwrap();
+    assert_eq!(schema["x-status"], "final");
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let mut document = serde_json::to_value(ariad_core::ir::Document::default()).unwrap();
+    assert!(validator.is_valid(&document));
+    document["version"] = serde_json::json!("ariad-ir/0");
+    assert!(!validator.is_valid(&document));
+    let legacy: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(support::repository_root().join("schemas/ir.v0.json")).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        jsonschema::validator_for(&legacy)
+            .unwrap()
+            .is_valid(&document)
+    );
+    document.as_object_mut().unwrap().remove("version");
+    assert!(!validator.is_valid(&document));
+}

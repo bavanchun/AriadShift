@@ -461,7 +461,7 @@ source: crates/ariad-core/tests/ir_snapshots.rs
       "title": null
     },
     "provenance": null,
-    "version": "ariad-ir/0"
+    "version": "ariad-ir/1"
   },
   "warnings": []
 }

@@ -88,13 +88,15 @@ fn the_planner_chains_office_pdf_and_ir_routes() {
         route(Format::Markdown, Format::Pdf),
         [
             "markdown-ariad-core->ariad-ir+json",
-            "ariad-ir+json-typst->pdf"
+            "ariad-ir+json-pandoc->docx",
+            "docx-libreoffice->pdf"
         ]
     );
     assert_eq!(
         route(Format::Pdf, Format::Markdown),
         [
-            "pdf-pdf->ariad-ir+json",
+            "pdf-docling->docling+json",
+            "docling+json-ariad-core->ariad-ir+json",
             "ariad-ir+json-ariad-core->markdown"
         ]
     );
@@ -193,6 +195,6 @@ fn docling_inputs_plan_through_extraction_mapping_and_a_writer() {
     .expect("DOCX still converts");
     assert_eq!(
         docx.steps[0].engine, "pandoc",
-        "measured Pandoc edges win over the unmeasured Docling route"
+        "Pandoc preserves more DOCX structure in the measured corpus"
     );
 }

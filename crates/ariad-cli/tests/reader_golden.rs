@@ -81,7 +81,7 @@ fn every_phase_1a_docx_and_epub_fixture_has_a_reviewable_ir_golden() {
         .expect("canonicalize repository root");
 
     let schema_text =
-        fs::read_to_string(root.join("schemas/ir.v0.json")).expect("read schemas/ir.v0.json");
+        fs::read_to_string(root.join("schemas/ir.v1.json")).expect("read schemas/ir.v1.json");
     let schema: Value = serde_json::from_str(&schema_text).expect("parse schema");
     let validator = jsonschema::validator_for(&schema).expect("compile IR schema validator");
 

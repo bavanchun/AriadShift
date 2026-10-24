@@ -11,7 +11,7 @@
       "$ref": "#/$defs/Event"
     }
   ],
-  "x-status": "draft",
+  "x-status": "final",
   "$defs": {
     "EngineError": {
       "type": "object",

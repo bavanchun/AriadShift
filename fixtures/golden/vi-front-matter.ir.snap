@@ -46,5 +46,5 @@ input_file: fixtures/md/vi-front-matter.md
     "title": "Vườn đọc bên hiên"
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

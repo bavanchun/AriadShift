@@ -1,4 +1,4 @@
-//! Typed messages for the draft AriadShift engine protocol.
+//! Typed messages for the frozen AriadShift engine protocol.
 
 use std::collections::BTreeMap;
 
