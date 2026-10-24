@@ -147,13 +147,26 @@ pub fn describe(
     ashift: &Path,
     cancel: CancellationToken,
 ) -> Result<Description, String> {
-    query(command, ashift, cancel).map_err(|error| match error {
+    query(command, ashift, cancel).map_err(describe_failure)
+}
+
+fn describe_failure(error: runner::RunError) -> String {
+    const STATUS_DLL_NOT_FOUND: i32 = -1_073_741_515;
+    let missing_dll = match &error {
+        runner::RunError::Crash { exit, .. } => *exit == Some(STATUS_DLL_NOT_FOUND),
+        runner::RunError::Spawn(error) => error.raw_os_error() == Some(126),
+        _ => false,
+    };
+    if cfg!(windows) && missing_dll {
+        return "Windows could not load a required DLL; install the latest Microsoft Visual C++ Redistributable (x64, 2015-2022 family) and retry".to_owned();
+    }
+    match error {
         runner::RunError::Spawn(_) => "the engine could not be started".to_owned(),
         runner::RunError::Timeout => "the engine did not answer describe in time".to_owned(),
         runner::RunError::Cancelled => "describe was cancelled".to_owned(),
         runner::RunError::SandboxUnavailable(_) => "the engine sandbox is unavailable".to_owned(),
         _ => "the engine failed its describe round trip".to_owned(),
-    })
+    }
 }
 
 fn query(
@@ -240,6 +253,27 @@ pub fn availability(
 #[cfg(test)]
 mod tests {
     use super::split_command_line;
+
+    #[test]
+    fn dll_load_failures_name_the_windows_redistributable_prerequisite() {
+        use crate::runner::RunError;
+
+        for error in [
+            RunError::Crash {
+                exit: Some(-1_073_741_515),
+                stderr_tail: String::new(),
+            },
+            RunError::Spawn(std::io::Error::from_raw_os_error(126)),
+        ] {
+            let message = super::describe_failure(error);
+            assert_eq!(
+                message.contains("Visual C++ Redistributable (x64"),
+                cfg!(windows)
+            );
+        }
+        let error = RunError::Spawn(std::io::Error::from_raw_os_error(2));
+        assert!(!super::describe_failure(error).contains("Redistributable"));
+    }
 
     #[test]
     fn splits_command_lines_with_quoted_words() {

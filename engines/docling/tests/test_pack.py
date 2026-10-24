@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import struct
 import sys
 from base64 import urlsafe_b64encode
 
@@ -12,6 +13,7 @@ from conftest import REPOSITORY
 sys.path.insert(0, str(REPOSITORY / "engines" / "docling" / "pack"))
 
 import build
+import windows_imports
 
 
 @pytest.mark.parametrize("installer_records", [False, True])
@@ -80,6 +82,8 @@ def test_runtime_pruning_keeps_engine_requirements_and_removes_gui_and_tests(tmp
                 runtime / "lib/itcl4.3.8/itcl.tcl",
             ]
         )
+    else:
+        removed.extend([runtime / "vcruntime140.dll", runtime / "vcruntime140_1.dll"])
     kept = [library / "ssl.py", library / "ctypes/__init__.py", library / "threading.py"]
     for path in removed + kept:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -87,3 +91,61 @@ def test_runtime_pruning_keeps_engine_requirements_and_removes_gui_and_tests(tmp
     build.prune_runtime(runtime, target)
     assert all(not path.exists() for path in removed)
     assert all(path.exists() for path in kept)
+
+
+@pytest.mark.parametrize("name", ["vcruntime140.dll", "VCRUNTIME140_1.DLL", "msvcp140.dll"])
+def test_archive_rejects_microsoft_runtime_dlls_including_wheel_copies(tmp_path, name):
+    root = tmp_path / "runtime"
+    vendor = root / "Lib/site-packages/vendor"
+    vendor.mkdir(parents=True)
+    forbidden = vendor / name
+    forbidden.touch()
+    record = root / "Lib/site-packages/vendor-1.dist-info/RECORD"
+    record.parent.mkdir()
+    record.write_text(f"vendor/{name},sha256=old,0\nvendor-1.dist-info/RECORD,,\n")
+    with pytest.raises(SystemExit, match="Microsoft runtime DLL must not be bundled"):
+        build.archive(tmp_path, ["runtime"], tmp_path / "runtime.tar.zst")
+    build.prune_microsoft_runtime(root)
+    assert not forbidden.exists()
+    assert record.read_text() == "vendor-1.dist-info/RECORD,,\n"
+    assert build.archive(tmp_path, ["runtime"], tmp_path / "runtime.tar.zst") == "runtime.tar.zst"
+
+
+@pytest.mark.parametrize("directory", [1, 13])
+def test_wheel_imports_use_system_runtime_names_without_relocating_image_data(tmp_path, directory):
+    image = bytearray(1024)
+    image[:2] = b"MZ"
+    struct.pack_into("<I", image, 0x3C, 64)
+    image[64:68] = b"PE\0\0"
+    struct.pack_into("<H", image, 70, 1)
+    struct.pack_into("<H", image, 84, 240)
+    struct.pack_into("<H", image, 88, 0x20B)
+    struct.pack_into("<I", image, 88 + 64, 123)
+    struct.pack_into("<II", image, 88 + 112 + 8 * directory, 0x1000, 64)
+    struct.pack_into("<IIII", image, 328 + 8, 512, 0x1000, 512, 512)
+    if directory == 13:
+        struct.pack_into("<II", image, 512, 1, 0x1080)
+    else:
+        struct.pack_into("<I", image, 512 + 12, 0x1080)
+    alias = b"msvcp140-0123456789abcdef.dll"
+    image[640 : 640 + len(alias) + 1] = alias + b"\0"
+    root = tmp_path / "runtime"
+    site = root / "Lib/site-packages"
+    site.mkdir(parents=True)
+    path = site / "module.pyd"
+    path.write_bytes(image)
+    dll = site / alias.decode()
+    dll.touch()
+    record = site / "module-1.dist-info/RECORD"
+    record.parent.mkdir()
+    record.write_text(f"module.pyd,sha256=old,1024\n{dll.name},sha256=old,0\n")
+    build.prune_microsoft_runtime(root)
+    result = path.read_bytes()
+    assert len(result) == len(image)
+    assert result[640 : 640 + len(alias)] == b"msvcp140.dll".ljust(len(alias), b"\0")
+    assert struct.unpack_from("<I", result, 88 + 64)[0] == 0
+    digest = urlsafe_b64encode(hashlib.sha256(result).digest()).decode().rstrip("=")
+    assert record.read_text() == f"module.pyd,sha256={digest},1024\n"
+    path.write_bytes(b"MZ")
+    with pytest.raises(SystemExit, match="cannot retarget Microsoft runtime imports"):
+        windows_imports.retarget(path, {alias: b"msvcp140.dll"})
