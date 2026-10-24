@@ -14,6 +14,22 @@ use tokio_util::sync::CancellationToken;
 
 use crate::runner::{self, RunError};
 
+/// Serve a built-in engine protocol, shared by every native surface.
+/// Add engines here so re-executing either surface uses the same dispatch.
+pub fn serve_builtin(
+    engine: &str,
+    input: impl std::io::BufRead,
+    output: impl std::io::Write,
+) -> std::process::ExitCode {
+    match engine {
+        "pandoc" => pandoc::serve(input, output),
+        _ => {
+            eprintln!("Unknown built-in engine: {engine}");
+            std::process::ExitCode::from(2)
+        }
+    }
+}
+
 /// Availability status for an engine.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EngineAvailability {
@@ -205,4 +221,17 @@ pub fn query_availability(
     }
 
     Ok(AvailabilityReport { engines })
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    #[test]
+    fn unknown_engine_fails_without_writing_protocol_output() {
+        let mut output = Vec::new();
+        assert_eq!(
+            super::serve_builtin("unknown", std::io::Cursor::new([]), &mut output),
+            std::process::ExitCode::from(2),
+        );
+        assert!(output.is_empty());
+    }
 }
