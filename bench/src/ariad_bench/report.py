@@ -163,10 +163,11 @@ def main(argv: list[str]) -> int:
     build_parser(parser)
     args = parser.parse_args(argv)
     report = render(
-        json.loads(args.capabilities.read_text()), json.loads(args.evidence.read_text())
+        json.loads(args.capabilities.read_text(encoding="utf-8")),
+        json.loads(args.evidence.read_text(encoding="utf-8")),
     )
     if args.check:
-        if args.out.read_text() != report:
+        if args.out.read_text(encoding="utf-8") != report:
             parser.exit(1, "Benchmark report is stale; run just bench-report\n")
     else:
         args.out.write_text(report, encoding="utf-8")

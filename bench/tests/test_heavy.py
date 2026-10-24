@@ -1,5 +1,7 @@
 """Independent heavy-fixture truth, visual degradation and public-report checks."""
 
+import hashlib
+from io import BytesIO
 import json
 from pathlib import Path
 import tomllib
@@ -8,6 +10,7 @@ from zipfile import ZipFile
 from lxml import etree
 import numpy as np
 from openpyxl import load_workbook
+from PIL import Image
 import pytest
 
 from ariad_bench.canonical import normalize
@@ -23,7 +26,9 @@ def test_heavy_fixture_generation_is_reproducible_and_manifested():
     first = generate(ROOT) | generate_office(ROOT)
     second = generate(ROOT) | generate_office(ROOT)
     assert first == second
-    records = tomllib.loads((ROOT / "fixtures/manifest.toml").read_text())["fixture"]
+    records = tomllib.loads(
+        (ROOT / "fixtures/manifest.toml").read_text(encoding="utf-8")
+    )["fixture"]
     declared = {
         path
         for f in records
@@ -32,7 +37,22 @@ def test_heavy_fixture_generation_is_reproducible_and_manifested():
     }
     assert set(first) == declared
     for path, content in first.items():
-        assert (ROOT / path).read_bytes() == content, path
+        if path.endswith(".png"):
+            # Pillow's platform compression differs; require identical authored pixels.
+            with (
+                Image.open(ROOT / path) as stored,
+                Image.open(BytesIO(content)) as generated,
+            ):
+                assert (stored.mode, stored.size) == (generated.mode, generated.size), (
+                    path
+                )
+                assert stored.info == generated.info, path
+                assert (
+                    hashlib.sha256(stored.tobytes()).digest()
+                    == hashlib.sha256(generated.tobytes()).digest()
+                ), path
+        else:
+            assert (ROOT / path).read_bytes() == content, path
 
 
 @pytest.mark.parametrize("stem", ["en-map", "vi-garden"])
@@ -87,17 +107,19 @@ def test_pdf_ssim_penalizes_missing_pages(tmp_path):
 def test_generated_report_matches_committed_measurements():
     evidence = ROOT / "bench/results/heavy-routes.json"
     capabilities = json.loads(
-        (ROOT / "crates/ariad-core/data/capabilities.json").read_text()
+        (ROOT / "crates/ariad-core/data/capabilities.json").read_text(encoding="utf-8")
     )
-    report = render(capabilities, json.loads(evidence.read_text()))
-    assert (ROOT / "docs/bench-report.md").read_text() == report
+    report = render(capabilities, json.loads(evidence.read_text(encoding="utf-8")))
+    assert (ROOT / "docs/bench-report.md").read_text(encoding="utf-8") == report
 
 
 def test_heavy_evidence_covers_required_routes_and_matches_inputs():
-    import hashlib
-
-    evidence = json.loads((ROOT / "bench/results/heavy-routes.json").read_text())
-    manifest = tomllib.loads((ROOT / "fixtures/manifest.toml").read_text())["fixture"]
+    evidence = json.loads(
+        (ROOT / "bench/results/heavy-routes.json").read_text(encoding="utf-8")
+    )
+    manifest = tomllib.loads(
+        (ROOT / "fixtures/manifest.toml").read_text(encoding="utf-8")
+    )["fixture"]
     fixtures = {f["id"]: f for f in manifest if "heavy-bench" in f.get("tags", [])}
     assert {f["id"] for f in evidence["fixtures"]} == set(fixtures)
     for record in evidence["fixtures"]:
@@ -177,9 +199,11 @@ def test_heavy_evidence_covers_required_routes_and_matches_inputs():
 
 def test_report_rejects_mixed_measurement_runs():
     capabilities = json.loads(
-        (ROOT / "crates/ariad-core/data/capabilities.json").read_text()
+        (ROOT / "crates/ariad-core/data/capabilities.json").read_text(encoding="utf-8")
     )
-    evidence = json.loads((ROOT / "bench/results/heavy-routes.json").read_text())
+    evidence = json.loads(
+        (ROOT / "bench/results/heavy-routes.json").read_text(encoding="utf-8")
+    )
     evidence["generated_at"] = "2000-01-01T00:00:00Z"
     with pytest.raises(ValueError, match="different runs"):
         render(capabilities, evidence)
@@ -195,9 +219,11 @@ def test_native_benchmark_workspace_supports_pandoc_roundtrip(tmp_path):
         [ROOT / "target" / "release" / "ashift", ROOT / "target" / "debug" / "ashift"],
     )
     pandoc = find_binary("pandoc", None, [ROOT / ".tools/pandoc/bin/pandoc"])
-    truth = json.loads((ROOT / "fixtures/heavy/en-map.docx.truth.json").read_text())
+    truth = json.loads(
+        (ROOT / "fixtures/heavy/en-map.docx.truth.json").read_text(encoding="utf-8")
+    )
     source = tmp_path / "source.json"
-    source.write_text(json.dumps(truth["ir"]))
+    source.write_text(json.dumps(truth["ir"]), encoding="utf-8")
     bench = Bench(ROOT, ashift, pandoc, tmp_path, 1)
     docx, _, _ = bench.engine("pandoc", source, IR, "docx")
     restored, _, _ = bench.engine("pandoc", docx, "docx", IR)
