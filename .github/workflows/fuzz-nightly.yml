@@ -23,7 +23,7 @@ jobs:
   fuzz-nightly:
     name: Fuzz (ASan)
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: read
     defaults:
@@ -62,11 +62,13 @@ jobs:
 
       - name: Run AddressSanitizer fuzzing
         run: |
-          targets="markdown_reader html_reader pandoc_ast_to_ir docling_to_ir ir_json"
+          targets="markdown_reader html_reader pandoc_ast_to_ir docling_to_ir ir_json pdf_reader"
           for t in $targets; do
             echo "=== Running ASan fuzz target: $t (600s) ==="
             mkdir -p "fuzz/corpus/$t"
-            cargo +nightly-2026-10-05 fuzz run "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=600 -timeout=25 -rss_limit_mb=2048
+            build_options=()
+            if [[ "$t" == pdf_reader ]]; then build_options=(--dev --features pdf-reader); fi
+            cargo +nightly-2026-10-05 fuzz run "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=600 -timeout=25 -rss_limit_mb=2048
           done
 
       - name: Upload crash artifacts on failure
