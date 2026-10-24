@@ -766,14 +766,38 @@ fn engine_label(job: &JobRow) -> String {
 }
 
 /// Locks a worker-specific directory for its lifetime before reclaiming
-/// abandoned job directories. Never follows a directory symlink.
+/// abandoned job directories. Never follows job-directory or lock-file symlinks.
 pub fn prepare_work_dir(dir: &FsPath) -> std::io::Result<std::fs::File> {
-    let lock = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(dir.join(".ariad-worker.lock"))?;
-    lock.try_lock().map_err(std::io::Error::other)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).truncate(false).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options
+            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK)
+            .mode(0o600);
+    }
+    let lock = options.open(dir.join(".ariad-worker.lock"))?;
+    let metadata = lock.metadata()?;
+    if !metadata.is_file() {
+        return Err(std::io::Error::other("worker lock must be a regular file"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.uid() != nix::unistd::geteuid().as_raw() {
+            return Err(std::io::Error::other(
+                "worker lock must be owned by the current user",
+            ));
+        }
+    }
+    lock.try_lock().map_err(|err| match err {
+        std::fs::TryLockError::WouldBlock => std::io::Error::new(
+            std::io::ErrorKind::WouldBlock,
+            format!("another worker is using work directory {}", dir.display()),
+        ),
+        std::fs::TryLockError::Error(err) => err,
+    })?;
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name();
@@ -880,6 +904,17 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn worker_lock_refuses_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::fs::write(&target, "untouched").unwrap();
+        std::os::unix::fs::symlink(&target, dir.path().join(".ariad-worker.lock")).unwrap();
+        assert!(prepare_work_dir(dir.path()).is_err());
+        assert_eq!(std::fs::read_to_string(target).unwrap(), "untouched");
+    }
+
     #[test]
     fn startup_reclaims_only_job_directories_with_exclusive_ownership() {
         let dir = tempfile::tempdir().unwrap();
@@ -893,7 +928,10 @@ mod tests {
         assert!(unrelated.exists());
         let active = dir.path().join(format!("ariad-job-{}", Uuid::new_v4()));
         std::fs::create_dir(&active).unwrap();
-        assert!(prepare_work_dir(dir.path()).is_err());
+        let err = prepare_work_dir(dir.path()).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::WouldBlock);
+        assert!(err.to_string().contains("another worker is using"));
+        assert!(err.to_string().contains(&dir.path().display().to_string()));
         assert!(active.exists());
         drop(lock);
         let _lock = prepare_work_dir(dir.path()).unwrap();
