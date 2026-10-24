@@ -18,7 +18,7 @@ XML parts:
 <?xml version="1.0" encoding="UTF-8"?>
 <package version="3.0" xmlns="http://www.idpf.org/2007/opf" xml:lang="und" unique-identifier="epub-id-1" prefix="ibooks: http://vocabulary.itunes.apple.com/rdf/ibooks/vocabulary-extensions-1.0/">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:identifier id="epub-id-1">urn:uuid:ca7eb8d5-71d0-5d53-9b28-b52dd87d39d4</dc:identifier>
+    <dc:identifier id="epub-id-1">urn:uuid:62df4f4a-a123-58c3-b963-94ca53e6a089</dc:identifier>
     <dc:title id="epub-title-1">mixed-math</dc:title>
     <dc:date id="epub-date">2023-11-14T22:13:20Z</dc:date>
     <dc:language>und</dc:language>
@@ -160,7 +160,7 @@ D = \sum_{i=1}^{n} d_i
 
 Template and media SHA-256:
 932ab19ee3371838c3dd65eb770a6515e2730fc1c4bdd5a533984f2e355c8b24  EPUB/styles/stylesheet1.css
-eb515c5d6d3daa106874d1d98b40f05ac262844748924289680e71be53d75f8c  EPUB/toc.ncx
+23124afa91abc22518b36b668ba879f29a74152b71b58b89c81666c19eebcb7d  EPUB/toc.ncx
 364a17d7a4967325d2956f09c0626d564c1884c9dfa02116dc115d6a49538f56  META-INF/com.apple.ibooks.display-options.xml
 7c06491ce25e3cc80ccec0eed382c4c5570265f886415e4ce0cbe5866a57c461  META-INF/container.xml
 e468e350d1143eb648f60c7b0bd6031101ec0544a361ca74ecef256ac901f48b  mimetype

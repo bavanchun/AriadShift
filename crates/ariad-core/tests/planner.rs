@@ -1098,3 +1098,15 @@ fn restricted_capabilities_keep_only_edges_of_one_runtime() {
         Err(PlanError::NoRoute { .. })
     ));
 }
+
+#[test]
+fn measured_pdf_routes_select_structure_or_speed_for_the_requested_profile() {
+    let engines = ["ariad-core", "pdf", "docling", "pandoc"].map(str::to_owned);
+    for target in [Format::Markdown, Format::Docx] {
+        for (profile, expected) in [(Profile::Editable, "docling"), (Profile::Fast, "pdf")] {
+            let route = plan(embedded(), Format::Pdf, target, profile, &engines).unwrap();
+            assert!(route.measured, "PDF route must use measured edges");
+            assert_eq!(route.steps[0].engine, expected, "{profile:?}: {route:?}");
+        }
+    }
+}

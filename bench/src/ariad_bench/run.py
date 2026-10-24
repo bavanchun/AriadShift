@@ -131,6 +131,10 @@ def run_benchmark(
             if edges_filter and edge_key not in edges_filter:
                 continue
 
+            if engine in {"pdf", "typst", "libreoffice", "docling"} or from_fmt == "docling+json":
+                print(f"  [skip] {edge_key} ({engine}): measured by the heavy subcommand")
+                continue
+
             print(f"Benchmarking edge: {from_fmt} -> {to_fmt} ({engine})...")
             edge_scores: list[SingleFixtureScore] = []
 

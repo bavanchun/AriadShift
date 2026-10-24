@@ -18,7 +18,7 @@ fn convert(input: &Path, to: &str, output: &Path) -> Value {
     let result = cli()
         .arg("convert")
         .arg(input)
-        .args(["--to", to, "--json", "-o"])
+        .args(["--to", to, "--profile", "fast", "--json", "-o"])
         .arg(output)
         .output()
         .unwrap();
@@ -168,7 +168,7 @@ fn batch_pdf_routes_use_the_shared_executor_and_canonical_extensions() {
     let result = cli()
         .arg("convert")
         .args(jsons)
-        .args(["--to", "pdf", "--json"])
+        .args(["--to", "pdf", "--profile", "fast", "--json"])
         .output()
         .unwrap();
     assert!(
