@@ -13,8 +13,8 @@ publish = false
 
 [workspace.dependencies]
 ammonia = "4.2.1"
-ariad-core = { path = "crates/ariad-core", version = "0.1.0" }
-ariad-host = { path = "crates/ariad-host", version = "0.1.0" }
+ariad-core = { path = "crates/ariad-core", version = "0.1.0", default-features = false }
+ariad-host = { path = "crates/ariad-host", version = "0.1.0", default-features = false }
 assert_cmd = "2.2.2"
 async-trait = "0.1.92"
 axum = { version = "0.8.9", default-features = false }
@@ -38,6 +38,7 @@ landlock = "0.4.7"
 jsonschema = { version = "0.58.5", default-features = false, features = ["resolve-file", "idna"] }
 jsonwebtoken = { version = "11.1.0", default-features = false }
 libc = "0.2"
+lopdf = { version = "0.46.0", default-features = false }
 minisign = "0.10.0"
 minisign-verify = "0.3.0"
 nix = { version = "0.31.3", default-features = false }
@@ -58,7 +59,7 @@ saphyr-parser = "0.2.2"
 schemars = "1.2.2"
 semver = "1.0.28"
 serde = "1.0.229"
-serde_json = { version = "1.0.151", features = ["unbounded_depth"] }
+serde_json = { version = "1.0.151", features = ["unbounded_depth", "float_roundtrip"] }
 serde_stacker = "0.1.14"
 seccompiler = "0.5.0"
 sha2 = "0.11.0"
@@ -77,7 +78,8 @@ tower-http = "0.7.1"
 tracing = "0.1.44"
 tracing-opentelemetry = { version = "0.34.0", default-features = false }
 tracing-subscriber = { version = "0.3.23", default-features = false }
-typst = "0.15"
+typst = "0.15.1"
+typst-pdf = "0.15.1"
 unicode-normalization = "0.1.25"
 ureq = { version = "3.5.0", default-features = false, features = ["rustls-no-provider"] }
 url = "2.5.8"
