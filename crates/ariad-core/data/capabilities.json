@@ -12,6 +12,7 @@
       "to": "docx",
       "engine": "pandoc",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "GPL-2.0-or-later",
@@ -28,6 +29,7 @@
       "to": "epub",
       "engine": "pandoc",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "GPL-2.0-or-later",
@@ -89,6 +91,7 @@
       "to": "ariad-ir+json",
       "engine": "pandoc",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "GPL-2.0-or-later",
@@ -115,6 +118,7 @@
       "to": "ariad-ir+json",
       "engine": "pandoc",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "GPL-2.0-or-later",
@@ -235,6 +239,7 @@
       "to": "pdf",
       "engine": "typst",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "Apache-2.0",
@@ -335,6 +340,7 @@
       "to": "ariad-ir+json",
       "engine": "pdf",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "Apache-2.0",

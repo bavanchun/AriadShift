@@ -1,114 +1,36 @@
-use std::{
-    env,
-    fs::File,
-    io::{self, Read, Write},
-    path::Path,
-};
-
+#[cfg(test)]
+use ariad_core::package_meta::MAX_ENTRY_BYTES;
+pub use ariad_core::package_meta::PackageMetaError;
 use jiff::Timestamp;
-use quick_xml::{Reader, Writer, events::Event};
+use std::{env, fs::File, path::Path};
 use tempfile::NamedTempFile;
-use thiserror::Error;
-use zip::{ZipArchive, ZipWriter};
 
-const CORE_PROPERTIES: &str = "docProps/core.xml";
-const MAX_ENTRY_BYTES: u64 = 64 * 1024 * 1024;
-
-#[derive(Debug, Error)]
-pub enum PackageMetaError {
-    #[error("package metadata I/O failed")]
-    Io(#[from] io::Error),
-    #[error("package archive is invalid")]
-    Archive(#[from] zip::result::ZipError),
-    #[error("package contains an entry larger than 64 MiB")]
-    EntryTooLarge,
-    #[error("package properties are missing")]
-    MissingProperties,
-    #[error("package properties are invalid")]
-    InvalidProperties,
-    #[error("SOURCE_DATE_EPOCH is not a supported Unix timestamp")]
-    InvalidSourceDateEpoch,
-}
-
-/// Stamps DOCX created and modified metadata, preserving every other entry's raw ZIP data.
+/// Stamps DOCX created/modified timestamps.
 pub fn stamp_docx(path: &Path, timestamp: Timestamp) -> Result<(), PackageMetaError> {
-    let timestamp_str = timestamp.to_string();
-    stamp_package(
-        path,
-        |name| name == CORE_PROPERTIES,
-        |xml| stamp_core_properties(xml, &timestamp_str),
-    )
+    stamp(path, timestamp, false)
 }
-
-/// Stamps EPUB dcterms:modified and dc:date metadata, preserving every other entry's raw ZIP data.
+/// Stamps EPUB publication/modified timestamps.
 pub fn stamp_epub(path: &Path, timestamp: Timestamp) -> Result<(), PackageMetaError> {
-    let timestamp_str = timestamp.strftime("%Y-%m-%dT%H:%M:%SZ").to_string();
-    stamp_package(
-        path,
-        |name| name.ends_with(".opf") && !name.starts_with("__MACOSX"),
-        |xml| stamp_opf_properties(xml, &timestamp_str),
-    )
+    stamp(path, timestamp, true)
 }
-
-fn stamp_package<P, F>(path: &Path, is_target: P, transform: F) -> Result<(), PackageMetaError>
-where
-    P: Fn(&str) -> bool,
-    F: FnOnce(&[u8]) -> Result<Vec<u8>, PackageMetaError>,
-{
+fn stamp(path: &Path, timestamp: Timestamp, epub: bool) -> Result<(), PackageMetaError> {
     let parent = path
         .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     let temporary = NamedTempFile::new_in(parent)?;
-    let input = File::open(path)?;
-    let mut archive = ZipArchive::new(input)?;
-    let mut writer = ZipWriter::new(temporary.reopen()?);
-    writer.set_raw_comment(archive.comment().to_vec().into_boxed_slice())?;
-    let mut found_properties = false;
-    let mut transform = Some(transform);
-
-    for index in 0..archive.len() {
-        let mut entry = archive.by_index(index)?;
-        if entry.size() > MAX_ENTRY_BYTES {
-            return Err(PackageMetaError::EntryTooLarge);
-        }
-        if !is_target(&entry.name()?) {
-            writer.raw_copy_file(entry)?;
-            continue;
-        }
-        if found_properties {
-            return Err(PackageMetaError::InvalidProperties);
-        }
-        found_properties = true;
-
-        let name = entry.name()?.into_owned();
-        let options = entry.options().into_full_options();
-        let mut xml = Vec::with_capacity(entry.size() as usize);
-        (&mut entry)
-            .take(MAX_ENTRY_BYTES + 1)
-            .read_to_end(&mut xml)?;
-        if xml.len() as u64 > MAX_ENTRY_BYTES {
-            return Err(PackageMetaError::EntryTooLarge);
-        }
-        let transformer = transform
-            .take()
-            .ok_or(PackageMetaError::InvalidProperties)?;
-        let stamped = transformer(&xml)?;
-        writer.start_file(name, options)?;
-        writer.write_all(&stamped)?;
-    }
-
-    if !found_properties {
-        return Err(PackageMetaError::MissingProperties);
-    }
-
-    drop(archive);
-    let output = writer.finish()?;
+    let text = if epub {
+        timestamp.strftime("%Y-%m-%dT%H:%M:%SZ").to_string()
+    } else {
+        timestamp.to_string()
+    };
+    let output =
+        ariad_core::package_meta::stamp_into(File::open(path)?, temporary.reopen()?, epub, &text)?;
     output.sync_all()?;
     drop(output);
     temporary
         .persist(path)
-        .map_err(|error| PackageMetaError::Io(error.error))?;
+        .map_err(|e| PackageMetaError::Io(e.error))?;
     Ok(())
 }
 
@@ -133,209 +55,6 @@ fn timestamp_from_source_date_epoch(value: Option<&str>) -> Result<Timestamp, Pa
             .ok_or(PackageMetaError::InvalidSourceDateEpoch),
         None => Ok(Timestamp::now()),
     }
-}
-
-fn stamp_core_properties(xml: &[u8], timestamp: &str) -> Result<Vec<u8>, PackageMetaError> {
-    #[derive(Clone, Copy, Eq, PartialEq)]
-    enum Field {
-        Created,
-        Modified,
-    }
-
-    fn field(name: &str) -> Option<Field> {
-        match name {
-            "created" => Some(Field::Created),
-            "modified" => Some(Field::Modified),
-            _ => None,
-        }
-    }
-
-    let mut reader = Reader::from_reader(xml);
-    let mut writer = Writer::new(Vec::with_capacity(xml.len()));
-    let mut active = None;
-    let mut created = false;
-    let mut modified = false;
-
-    loop {
-        let event = reader
-            .read_event()
-            .map_err(|_| PackageMetaError::InvalidProperties)?;
-        match event {
-            Event::Start(start) => {
-                let target = field(start.name().local_name().as_ref());
-                if let Some(target) = target {
-                    if active.is_some()
-                        || match target {
-                            Field::Created => created,
-                            Field::Modified => modified,
-                        }
-                    {
-                        return Err(PackageMetaError::InvalidProperties);
-                    }
-                    active = Some(target);
-                }
-                writer
-                    .write_event(Event::Start(start))
-                    .map_err(PackageMetaError::Io)?;
-            }
-            Event::Text(_) | Event::CData(_) if active.is_some() => {}
-            Event::End(end) => {
-                if let Some(target) = active {
-                    if field(end.name().local_name().as_ref()) != Some(target) {
-                        return Err(PackageMetaError::InvalidProperties);
-                    }
-                    writer
-                        .write_event(Event::Text(quick_xml::events::BytesText::new(timestamp)))
-                        .map_err(PackageMetaError::Io)?;
-                    match target {
-                        Field::Created => created = true,
-                        Field::Modified => modified = true,
-                    }
-                    active = None;
-                }
-                writer
-                    .write_event(Event::End(end))
-                    .map_err(PackageMetaError::Io)?;
-            }
-            Event::Empty(empty) if field(empty.name().local_name().as_ref()).is_some() => {
-                return Err(PackageMetaError::InvalidProperties);
-            }
-            Event::Eof => break,
-            other => writer.write_event(other).map_err(PackageMetaError::Io)?,
-        }
-    }
-
-    if !created || !modified || active.is_some() {
-        return Err(PackageMetaError::InvalidProperties);
-    }
-    Ok(writer.into_inner())
-}
-
-fn has_attribute(element: &quick_xml::events::BytesStart<'_>, key: &str, val: &str) -> bool {
-    for attr in element.attributes().flatten() {
-        if attr.key.local_name().as_ref() == key && attr.value.as_ref() == val {
-            return true;
-        }
-    }
-    false
-}
-
-fn stamp_opf_properties(xml: &[u8], timestamp: &str) -> Result<Vec<u8>, PackageMetaError> {
-    #[derive(Clone, Copy, Eq, PartialEq)]
-    enum Field {
-        Date,
-        Modified,
-    }
-
-    let mut reader = Reader::from_reader(xml);
-    let mut writer = Writer::new(Vec::with_capacity(xml.len()));
-    let mut active = None;
-    let mut date_stamped = false;
-    let mut modified_stamped = false;
-
-    loop {
-        let event = reader
-            .read_event()
-            .map_err(|_| PackageMetaError::InvalidProperties)?;
-        match event {
-            Event::Start(start) => {
-                let local_name = start.name().local_name();
-                let target = if local_name.as_ref() == "date" {
-                    Some(Field::Date)
-                } else if local_name.as_ref() == "meta"
-                    && has_attribute(&start, "property", "dcterms:modified")
-                {
-                    Some(Field::Modified)
-                } else {
-                    None
-                };
-
-                if let Some(target) = target {
-                    if active.is_some()
-                        || match target {
-                            Field::Date => date_stamped,
-                            Field::Modified => modified_stamped,
-                        }
-                    {
-                        return Err(PackageMetaError::InvalidProperties);
-                    }
-                    active = Some(target);
-                }
-                writer
-                    .write_event(Event::Start(start))
-                    .map_err(PackageMetaError::Io)?;
-            }
-            Event::Text(_) | Event::CData(_) if active.is_some() => {}
-            Event::End(end) => {
-                if let Some(target) = active {
-                    let local_name = end.name().local_name();
-                    let expected_local: &str = match target {
-                        Field::Date => "date",
-                        Field::Modified => "meta",
-                    };
-                    if local_name.as_ref() != expected_local {
-                        return Err(PackageMetaError::InvalidProperties);
-                    }
-                    writer
-                        .write_event(Event::Text(quick_xml::events::BytesText::new(timestamp)))
-                        .map_err(PackageMetaError::Io)?;
-                    match target {
-                        Field::Date => date_stamped = true,
-                        Field::Modified => modified_stamped = true,
-                    }
-                    active = None;
-                }
-                writer
-                    .write_event(Event::End(end))
-                    .map_err(PackageMetaError::Io)?;
-            }
-            Event::Empty(empty) => {
-                let local_name = empty.name().local_name();
-                if local_name.as_ref() == "date" {
-                    if date_stamped || active.is_some() {
-                        return Err(PackageMetaError::InvalidProperties);
-                    }
-                    writer
-                        .write_event(Event::Start(empty.borrow()))
-                        .map_err(PackageMetaError::Io)?;
-                    writer
-                        .write_event(Event::Text(quick_xml::events::BytesText::new(timestamp)))
-                        .map_err(PackageMetaError::Io)?;
-                    writer
-                        .write_event(Event::End(empty.to_end()))
-                        .map_err(PackageMetaError::Io)?;
-                    date_stamped = true;
-                } else if local_name.as_ref() == "meta"
-                    && has_attribute(&empty, "property", "dcterms:modified")
-                {
-                    if modified_stamped || active.is_some() {
-                        return Err(PackageMetaError::InvalidProperties);
-                    }
-                    writer
-                        .write_event(Event::Start(empty.borrow()))
-                        .map_err(PackageMetaError::Io)?;
-                    writer
-                        .write_event(Event::Text(quick_xml::events::BytesText::new(timestamp)))
-                        .map_err(PackageMetaError::Io)?;
-                    writer
-                        .write_event(Event::End(empty.to_end()))
-                        .map_err(PackageMetaError::Io)?;
-                    modified_stamped = true;
-                } else {
-                    writer
-                        .write_event(Event::Empty(empty))
-                        .map_err(PackageMetaError::Io)?;
-                }
-            }
-            Event::Eof => break,
-            other => writer.write_event(other).map_err(PackageMetaError::Io)?,
-        }
-    }
-
-    if !date_stamped || !modified_stamped || active.is_some() {
-        return Err(PackageMetaError::InvalidProperties);
-    }
-    Ok(writer.into_inner())
 }
 
 #[cfg(test)]

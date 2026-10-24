@@ -33,9 +33,9 @@ export default function HomePage() {
           Convert documents on your own device
         </h1>
         <p className="max-w-2xl text-lg text-muted-foreground">
-          AriadShift turns Markdown, HTML and structured JSON into each other right here in your
-          browser. Word and EPUB files convert with the free command-line tool. One engine, one
-          measured planner, no uploads.
+          AriadShift converts Markdown, HTML, Word, EPUB and structured JSON right here in your
+          browser. Read digital PDF text and create PDFs on your device. One measured planner, no
+          uploads.
         </p>
         <div className="flex flex-wrap gap-3">
           <a href="/app" className={buttonVariants({ size: "lg" })}>

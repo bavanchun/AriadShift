@@ -148,7 +148,7 @@ fn reachable_split(from: Format) -> (Vec<Format>, Vec<Format>) {
 /// Which capability edges a plan may use.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum PlanScope {
-    /// Only edges that run in the browser; the routes [`convert`] executes.
+    /// Only edges the browser worker can execute, including its external WASM engines.
     #[default]
     Browser,
     /// Every known edge, including CLI, desktop and cloud engines; for explanations.
@@ -262,7 +262,17 @@ pub fn convert(
     let route = plan_route(from, to, profile)?;
     let converted = pipeline::execute(
         bytes,
-        &route.steps,
+        &route
+            .steps
+            .iter()
+            .cloned()
+            .map(|mut step| {
+                if step.engine == "pdf" {
+                    step.engine = "ariad-core".to_owned();
+                }
+                step
+            })
+            .collect::<Vec<_>>(),
         &limits,
         WriteOptions {
             title_fallback: options.title.as_deref(),
@@ -304,6 +314,26 @@ mod tests {
     }
 
     #[test]
+    fn plans_every_document_pair_in_the_browser() {
+        let formats = ["markdown", "html", "docx", "epub"];
+        for from in formats {
+            for to in formats {
+                if from != to {
+                    let route = plan(from, to, None, None).unwrap();
+                    assert_eq!(route.steps.first().unwrap().from.id(), from);
+                    assert_eq!(route.steps.last().unwrap().to.id(), to);
+                    assert!(
+                        route
+                            .steps
+                            .iter()
+                            .all(|step| matches!(step.engine.as_str(), "ariad-core" | "pandoc"))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn reports_route_media_type_and_extension() {
         let conversion = convert(
             b"# Hi\n",
@@ -321,11 +351,18 @@ mod tests {
 
     #[test]
     fn typed_errors_carry_codes_and_details() {
-        let error = plan("markdown", "docx", None, None).unwrap_err();
+        let error = plan("odt", "markdown", None, None).unwrap_err();
         assert_eq!(error.code(), "no_route");
         assert_eq!(
             error.detail("reachable_elsewhere"),
-            Some(&serde_json::json!(["docx", "epub", "pdf"]))
+            Some(&serde_json::json!([
+                "ariad-ir+json",
+                "docx",
+                "epub",
+                "html",
+                "markdown",
+                "pdf"
+            ]))
         );
         assert!(
             error
@@ -357,10 +394,10 @@ mod tests {
 
     #[test]
     fn plans_cli_routes_only_in_the_all_scope() {
-        let route = plan("docx", "markdown", None, Some("all")).unwrap();
-        assert_eq!(route.steps[0].engine, "pandoc");
+        let route = plan("odt", "docx", None, Some("all")).unwrap();
+        assert_eq!(route.steps[0].engine, "libreoffice");
         assert_eq!(
-            plan("docx", "markdown", None, None).unwrap_err().code(),
+            plan("odt", "docx", None, None).unwrap_err().code(),
             "no_route"
         );
         assert_eq!(
@@ -416,7 +453,13 @@ mod tests {
         assert_eq!(inspection.format, Format::Html);
         assert_eq!(
             inspection.reachable,
-            vec![Format::AriadIrJson, Format::Markdown]
+            vec![
+                Format::AriadIrJson,
+                Format::Docx,
+                Format::Epub,
+                Format::Markdown,
+                Format::Pdf
+            ]
         );
     }
 }

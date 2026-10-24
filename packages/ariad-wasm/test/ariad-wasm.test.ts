@@ -41,8 +41,8 @@ describe("ariad-wasm", () => {
     expect(result.counts?.headings["1"]).toBe(1);
     expect(result.counts?.words).toBe(4);
     expect(result.meta?.title).toBeNull();
-    expect(result.reachable).toEqual(["ariad-ir+json", "html"]);
-    expect(result.reachable_elsewhere).toEqual(["docx", "epub", "pdf"]);
+    expect(result.reachable).toEqual(["ariad-ir+json", "docx", "epub", "html", "pdf"]);
+    expect(result.reachable_elsewhere).toEqual([]);
   });
 
   it("uses the total size for a prefix of a large file", () => {
@@ -63,9 +63,9 @@ describe("ariad-wasm", () => {
   });
 
   it("plans CLI routes when asked for every runtime", () => {
-    const route = plan("docx", "markdown", "editable", "all");
-    expect(route.steps[0]?.engine).toBe("pandoc");
-    expect(thrown(() => plan("docx", "markdown")).code).toBe("no_route");
+    const route = plan("odt", "docx", "editable", "all");
+    expect(route.steps[0]?.engine).toBe("libreoffice");
+    expect(thrown(() => plan("odt", "docx")).code).toBe("no_route");
   });
 
   it("converts Markdown to HTML and back", () => {
@@ -96,9 +96,8 @@ describe("ariad-wasm", () => {
 
   it("throws typed error objects", () => {
     const noRoute = thrown(() => convert(encoder.encode("x"), "markdown", "docx", undefined));
-    expect(noRoute.code).toBe("no_route");
-    expect(noRoute.reachable_elsewhere).toEqual(["docx", "epub", "pdf"]);
-    expect(noRoute.message).toContain("CLI");
+    expect(noRoute.code).toBe("engine_unavailable");
+    expect(noRoute.engine).toBe("pandoc");
 
     expect(thrown(() => plan("md", "html")).code).toBe("unknown_format");
     expect(thrown(() => plan("html", "html")).code).toBe("same_format");

@@ -1,0 +1,28 @@
+[package]
+name = "ariad-typst"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "In-memory Typst PDF compiler shared by native and browser surfaces"
+publish = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ariad-core.workspace = true
+jiff = { workspace = true, features = ["js"] }
+thiserror.workspace = true
+typst.workspace = true
+typst-pdf.workspace = true
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+serde_json.workspace = true
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true

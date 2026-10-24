@@ -12,6 +12,11 @@ export function SiteFooter() {
             </a>
           </li>
           <li>
+            <a className="hover:text-foreground" href="/licenses">
+              Licences
+            </a>
+          </li>
+          <li>
             <a className="hover:text-foreground" href="/quality">
               Quality
             </a>

@@ -19,6 +19,8 @@ encoding_rs.workspace = true
 hex.workspace = true
 html5ever.workspace = true
 lopdf = { workspace = true, optional = true }
+quick-xml.workspace = true
+zip.workspace = true
 schemars.workspace = true
 sha2.workspace = true
 saphyr-parser.workspace = true
