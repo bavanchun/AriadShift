@@ -454,10 +454,15 @@ fn doctor_can_run_tesseract_with_data_in_a_custom_install_prefix() {
 
     let directory = tempdir().unwrap();
     let bin = directory.path().join("prefix/bin");
-    let share = directory.path().join("prefix/share");
+    let tessdata = directory.path().join("prefix/share/tessdata");
     fs::create_dir_all(&bin).unwrap();
-    fs::create_dir_all(&share).unwrap();
-    fs::write(share.join("version"), "tesseract 5.5.3\n").unwrap();
+    fs::create_dir_all(&tessdata).unwrap();
+    fs::write(tessdata.join("version"), "tesseract 5.5.3\n").unwrap();
+    fs::write(
+        directory.path().join("prefix/share/private"),
+        "must stay unreadable",
+    )
+    .unwrap();
     fs::write(
         directory.path().join("prefix/private"),
         "must stay unreadable",
@@ -467,7 +472,7 @@ fn doctor_can_run_tesseract_with_data_in_a_custom_install_prefix() {
     // Like a relocated installation, the helper must read data outside the job workspace.
     fs::write(
         &program,
-        "#!/bin/sh\nif cat \"${0%/bin/tesseract}/private\" >/dev/null 2>&1; then exit 1; fi\ncat \"${0%/bin/tesseract}/share/version\"\n",
+        "#!/bin/sh\nfor private in private share/private; do\nif cat \"${0%/bin/tesseract}/$private\" >/dev/null 2>&1; then exit 1; fi\ndone\ncat \"${0%/bin/tesseract}/share/tessdata/version\"\n",
     )
     .unwrap();
     fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
