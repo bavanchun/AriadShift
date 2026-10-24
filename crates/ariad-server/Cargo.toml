@@ -45,8 +45,11 @@ utoipa = { workspace = true, features = ["axum_extras", "chrono", "uuid"] }
 utoipa-axum.workspace = true
 uuid = { workspace = true, features = ["serde", "v4"] }
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["process", "user"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = { workspace = true, features = ["process"] }
+seccompiler.workspace = true
 
 [dev-dependencies]
 axum = { workspace = true, features = ["form", "http1", "json", "tokio"] }

@@ -314,3 +314,50 @@ while True:
         "the engine outlived its RSS-terminated helper"
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn helper_children_cannot_connect_to_tcp_while_pandoc_converts() {
+    use std::{net::TcpListener, os::unix::fs::PermissionsExt, process::Command};
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let probe = format!("echo probe > /dev/tcp/127.0.0.1/{port}");
+    assert!(
+        Command::new("/bin/bash")
+            .args(["-c", &probe])
+            .env_clear()
+            .status()
+            .unwrap()
+            .success()
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let mut request = request(dir.path(), false);
+    let engine = dir.path().join("network-probe");
+    let denied = dir.path().join("denied");
+    std::fs::write(&engine, format!(
+        "#!/bin/bash\nif ({probe}) 2>/dev/null; then exit 99; fi\ntouch '{}'\nexec '{}' \"$@\"\n",
+        denied.display(), common::ashift().display())).unwrap();
+    std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o755)).unwrap();
+    request.engine_program = engine;
+    request.target_format = "docx".into();
+    request.output = dir.path().join("out/result.docx");
+    std::fs::write(
+        &request.input,
+        "# Network denied\n\nReal Pandoc conversion.\n",
+    )
+    .unwrap();
+    let report = isolated::convert(
+        Path::new(env!("CARGO_BIN_EXE_ariad-server")),
+        &request,
+        Limits::cloud(),
+        SandboxMode::Off,
+        CancellationToken::new(),
+        |_| {},
+    )
+    .unwrap();
+    assert!(
+        denied.is_file(),
+        "a child of the real helper ran the TCP probe"
+    );
+    assert!(report.output.is_file());
+}

@@ -49,6 +49,10 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     if let Command::Convert = cli.command {
+        if let Err(err) = ariad_server::sandbox::deny_helper_network() {
+            eprintln!("ariad-server: cannot deny helper network access: {err}");
+            return ExitCode::FAILURE;
+        }
         return match ariad_host::convert::isolated::serve(CancellationToken::new()) {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
