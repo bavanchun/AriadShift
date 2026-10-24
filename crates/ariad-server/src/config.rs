@@ -400,9 +400,7 @@ impl WorkerConfig {
                 .map(PathBuf::from)
                 .or_else(|| std::env::current_exe().ok())
                 .ok_or(ConfigError::Missing("ARIAD_CONVERSION_PROGRAM"))?,
-            work_dir: env
-                .get("ARIAD_WORK_DIR")
-                .map_or_else(std::env::temp_dir, PathBuf::from),
+            work_dir: env.required("ARIAD_WORK_DIR").map(PathBuf::from)?,
             sandbox: match env.get("ARIAD_SANDBOX") {
                 Some(raw) => raw
                     .parse()
@@ -503,6 +501,15 @@ mod tests {
     }
 
     #[test]
+    fn workers_require_an_explicit_work_directory() {
+        let pairs = with(base(), "ARIAD_ENGINE_PROGRAM", "ashift");
+        assert!(matches!(
+            WorkerConfig::from_env(&Env::from_pairs(pairs), &[]),
+            Err(ConfigError::Missing("ARIAD_WORK_DIR"))
+        ));
+    }
+
+    #[test]
     fn auth_url_derives_jwks_issuer_and_audience() {
         let pairs = with(
             base(),
@@ -588,6 +595,7 @@ mod debug_tests {
             ("ARIAD_TURNSTILE_SECRET", sentinel),
             ("UNRELATED_SECRET", sentinel),
             ("ARIAD_ENGINE_PROGRAM", "ashift"),
+            ("ARIAD_WORK_DIR", "/tmp/ariad-debug-test"),
         ]);
         let api = ApiConfig::from_env(&env).unwrap();
         for debug in [

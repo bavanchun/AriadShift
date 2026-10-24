@@ -594,10 +594,15 @@ async fn a_stopping_worker_hands_its_job_back() {
         .expect("job");
     let id = job["id"].as_str().expect("id").to_owned();
 
+    let work_dir = tempfile::tempdir().unwrap();
     let mut pairs = vec![
         ("DATABASE_URL".to_owned(), h.db.url.clone()),
         ("ARIAD_SANDBOX".to_owned(), "off".to_owned()),
         ("ARIAD_ENGINE_PROGRAM".to_owned(), "/unused".to_owned()),
+        (
+            "ARIAD_WORK_DIR".to_owned(),
+            work_dir.path().display().to_string(),
+        ),
     ];
     pairs.extend(h.storage_env.clone());
     let config =
