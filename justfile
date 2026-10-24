@@ -44,6 +44,8 @@ test:
     cargo test --workspace --doc
 
 deny:
+    node --test scripts/check-crypto-bigint.test.mjs
+    node scripts/check-crypto-bigint.mjs
     cargo deny check
 
 deny-advisories:
