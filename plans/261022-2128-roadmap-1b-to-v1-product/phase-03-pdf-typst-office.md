@@ -201,3 +201,34 @@ The previous `338b6c4` run passed macOS/Windows verification, Server integration
 - Web package typechecks passed. Application `next typegen` was stopped after more than ten minutes waiting on mounted-volume filesystem reads. The remaining Web checks are required in remote CI; the local `just ci` run is not recorded as fully passing.
 - `just test-server` passed all 88 tests against fresh PostgreSQL/pgmq and S3 containers. Its first run exposed an older PDF API assumption from cloud hardening: core-only deployments now have the native reader. The corrected regression checks the chosen input engine and persisted queue for both deployments, keeps core at its default budget, and retains Docling's rejection below 2,048 MiB before admitting it at that budget.
 - Conflict review preserves the credential-isolation code and worker Dockerfiles unchanged from `dev`, together with generic public errors, runtime namespace requirements and helper error typing. Final Linux namespace, container/procfs and Pack evidence belongs to the post-push task report.
+
+### Native surface integration
+
+Rebased onto `dev` at `60e6a4f`, including the desktop, cloud hardening and current
+Docling follow-ups. The five rebased commits each pass `cargo check` for
+`ariad-host`, `ariad-cli`, `ariad-server` and `ariad-desktop` with `--tests`.
+The checks use the shared build lock, three Cargo jobs and three test threads.
+
+- CLI and Desktop share the built-in Pandoc/PDF/Typst/LibreOffice dispatcher.
+  Unknown engine names return exit 2 with no protocol output. Desktop and server
+  explicitly enable the base PDF features; Desktop uses the common format registry.
+- Cloud sandbox failures retain `sandbox_unavailable` with a generic public
+  message and can retry on another worker. Helper isolation, credential protection,
+  current Tesseract `share/tessdata` grants and Windows DLL diagnostics are preserved.
+- The dependency policy keeps the existing JWT advisory entry and Decision Log
+  row, the crypto-bigint dependency guard and both quick-xml exceptions. The Rust
+  and JavaScript notice inventories use the current `just licenses` generators.
+- Full local `just ci` passed: static checks, Clippy, WASM, 919 native tests
+  (12 opt-in skips), doctests, 64 benchmark tests, four package verifications,
+  67 Web tests, production Web build and the Desktop checks. The local PowerShell
+  parser mutations still require Windows CI because this host has no `pwsh`.
+- `just test-server` passed all 99 tests against fresh PostgreSQL/pgmq and S3
+  containers, including credential boundaries and the restricted database roles.
+- A real FUSE-mounted debug AppImage passed PDF/Typst/LibreOffice discovery and
+  PPTX to PDF conversion with required isolation. The native PDF reader parsed the
+  output. The launcher preserves its bundle through read-only bind mounts, so no
+  AppImage-specific launcher change is needed. Its process and mount were removed.
+
+The final feature head must pass the three native platforms, Desktop (including
+the macOS updater guard), Engine conformance and all Docling pack targets before
+coordinator review. The external worker report records that head and its run URLs.
