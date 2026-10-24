@@ -56,7 +56,7 @@ docker run -d --name "$worker" "${args[@]}" \
     -e ARIAD_WORK_DIR=/work -e ARIAD_SANDBOX=required -e ARIAD_WORKER_POLL_S=1 \
     "$image" worker --packs core >/dev/null
 python3 - <<'PY'
-import hashlib, json, time, urllib.request
+import hashlib, io, json, time, urllib.request, zipfile
 
 base = "http://127.0.0.1:58042"
 def call(path, body=None):
@@ -72,13 +72,13 @@ for attempt in range(60):
         time.sleep(1)
 else:
     raise SystemExit("container API never became ready")
-data = b"# Container smoke\n\nA real native conversion.\n"
+data = b"# Container smoke\n\nA real Pandoc conversion.\n"
 upload = call("/v1/uploads", {"filename": "smoke.md", "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
 put = upload["upload"]
 with urllib.request.urlopen(urllib.request.Request(put["url"], data=data, method=put["method"], headers=put["headers"]), timeout=5):
     pass
 call("/v1/uploads/" + upload["id"] + "/complete", {})
-job = call("/v1/jobs", {"upload_id": upload["id"], "to": "html"})
+job = call("/v1/jobs", {"upload_id": upload["id"], "to": "docx"})
 for attempt in range(60):
     job = call("/v1/jobs/" + job["id"])
     if job["status"] in ("succeeded", "failed", "canceled", "expired"):
@@ -87,8 +87,9 @@ for attempt in range(60):
 assert job["status"] == "succeeded", job
 outputs = call("/v1/jobs/" + job["id"] + "/outputs")
 with urllib.request.urlopen(outputs["outputs"][0]["url"], timeout=5) as response:
-    assert b"Container smoke" in response.read()
-print("container required-mode Markdown conversion passed")
+    with zipfile.ZipFile(io.BytesIO(response.read())) as document:
+        assert b"Container smoke" in document.read("word/document.xml")
+print("container required-mode Markdown to DOCX Pandoc conversion passed")
 PY
 # Simulate a compromised same-user helper with a cleared environment. It must
 # not recover credentials from either the worker or the root tini supervisor.

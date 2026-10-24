@@ -311,7 +311,7 @@ jobs:
           ASHIFT_SANDBOX: off
         run: cargo nextest run -p ariad-server --test isolated -E 'test(required_mode_reaches_the_engine_through_the_helper)'
 
-      - name: Check images and run a required-mode container worker
+      - name: Check images and run a required-mode Pandoc container job
         run: just test-server-container
 
       - name: Stop SeaweedFS
