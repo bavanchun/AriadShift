@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ariad_fixture_gen import docx, epub, html, image, markdown, office, pdf, scan, truth
+from ariad_fixture_gen import docx, epub, heavy, heavy_office, html, image, markdown, office, pdf, scan, truth
 from ariad_fixture_gen.manifest import update_generated_hashes
 
 
@@ -21,6 +21,8 @@ def main() -> None:
         "image": image.generate,
         "office": office.generate,
         "truth": truth.generate,
+        "heavy": heavy.generate,
+        "heavy-office": heavy_office.generate,
     }
     parser.add_argument("--only", choices=(*generators, "all"), default="all")
     args = parser.parse_args()
