@@ -32,6 +32,8 @@ Focused IR compatibility, schemas, native conformance and all nine real Docling 
 
 Full `just ci` passed: 924 native tests with 12 opt-in skips, doctests, 74 benchmark tests, four package verifications, 67 web tests and the production web build. Additional desktop binding checks, build, eight frontend tests, six tool tests and 12 native tests passed. Publication still requires the feature-branch PR and green platform checks.
 
+The first remote Verify run passed Ubuntu but exposed benchmark portability assumptions on macOS and Windows. Reconstructing the macOS PNG from its assertion log proved exact pixel and DPI identity despite different compressed bytes. Generation checks now preserve byte identity within one environment and exact PNG content across platforms, while committed fixture SHA checks remain strict. New benchmark text IO explicitly uses UTF-8 instead of the Windows default code page. All nine heavy tests passed with UTF-8 mode disabled under an ASCII locale.
+
 The base benchmark also observed the existing deeply nested EPUB read-back limit and scored that conversion failure as zero. Keep this limitation visible in the delivery report.
 
 Production signing, published-pack smoke, version changes and release remain coordinator work. AgentWiki publish skipped.
