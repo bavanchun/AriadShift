@@ -1,0 +1,392 @@
+{
+  "version": "ariad-truth/0",
+  "id": "en-map",
+  "canonical": {
+    "text": "Notes from the Map Room\nArchive practice\nThe map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions.\nReading old maps\nMara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map.\nArchive item\nRecorded detail\nStreet plan\nSurvey date\nOverlay\nTransparent sheet\nMap weight\nBrass",
+    "headings": [
+      {
+        "level": 1,
+        "text": "Notes from the Map Room",
+        "children": [
+          {
+            "level": 2,
+            "text": "Archive practice",
+            "children": []
+          },
+          {
+            "level": 2,
+            "text": "Reading old maps",
+            "children": []
+          }
+        ]
+      }
+    ],
+    "tables": [
+      {
+        "caption": "",
+        "rows": [
+          [
+            {
+              "text": "Archive item",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            },
+            {
+              "text": "Recorded detail",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": true
+            }
+          ],
+          [
+            {
+              "text": "Street plan",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "Survey date",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ],
+          [
+            {
+              "text": "Overlay",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "Transparent sheet",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ],
+          [
+            {
+              "text": "Map weight",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            },
+            {
+              "text": "Brass",
+              "rowspan": 1,
+              "colspan": 1,
+              "is_header": false
+            }
+          ]
+        ]
+      }
+    ],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "blocks": [
+    {
+      "type": "heading",
+      "level": 1,
+      "text": "Notes from the Map Room"
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Archive practice"
+    },
+    {
+      "type": "paragraph",
+      "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions."
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "Reading old maps"
+    },
+    {
+      "type": "paragraph",
+      "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map."
+    },
+    {
+      "type": "table",
+      "caption": "",
+      "rows": [
+        [
+          {
+            "text": "Archive item",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          },
+          {
+            "text": "Recorded detail",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": true
+          }
+        ],
+        [
+          {
+            "text": "Street plan",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "Survey date",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ],
+        [
+          {
+            "text": "Overlay",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "Transparent sheet",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ],
+        [
+          {
+            "text": "Map weight",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          },
+          {
+            "text": "Brass",
+            "rowspan": 1,
+            "colspan": 1,
+            "is_header": false
+          }
+        ]
+      ]
+    }
+  ],
+  "ir": {
+    "version": "ariad-ir/0",
+    "meta": {
+      "title": "Notes from the Map Room",
+      "language": "en",
+      "authors": [
+        "AriadShift contributors"
+      ],
+      "date": null,
+      "keywords": [],
+      "source_format": null,
+      "subject": null
+    },
+    "body": [
+      {
+        "type": "heading",
+        "level": 1,
+        "content": [
+          {
+            "type": "text",
+            "text": "Notes from the Map Room"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "Archive practice"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "The map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions."
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "level": 2,
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading old maps"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Mara volunteers on Thursday afternoons. She records the paper's date, the names of its surveyors, and any handwritten notes near the margins. When a street changes, she adds a transparent overlay rather than altering the older map."
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "caption": [],
+        "columns": [
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          }
+        ],
+        "head": [
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Archive item"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Recorded detail"
+                    }
+                  ]
+                }
+              ],
+              "header": true
+            }
+          ]
+        ],
+        "body": [
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Street plan"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Survey date"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Overlay"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Transparent sheet"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          [
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Map weight"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "rowspan": 1,
+              "colspan": 1,
+              "blocks": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Brass"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        ]
+      }
+    ],
+    "assets": {},
+    "furniture": [],
+    "layout": null,
+    "provenance": null
+  }
+}
