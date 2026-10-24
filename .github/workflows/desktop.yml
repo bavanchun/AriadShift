@@ -66,7 +66,35 @@ jobs:
         if: runner.os == 'Linux'
         run: node apps/desktop/scripts/linux-tools.mjs
       - name: Build platform installers without publishing
+        if: runner.os != 'macOS'
         run: just desktop-build
+      - name: Build macOS installers and assert updater signature without Apple credentials
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ""
+          APPLE_CERTIFICATE_PASSWORD: ""
+          APPLE_SIGNING_IDENTITY: ""
+          APPLE_ID: ""
+          APPLE_PASSWORD: ""
+          APPLE_TEAM_ID: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          key_dir=$(mktemp -d "$RUNNER_TEMP/desktop-updater.XXXXXX")
+          trap 'rm -rf "$key_dir"' EXIT
+          umask 077
+          pnpm --filter @ariadshift/desktop tauri signer generate --ci --password '' --write-keys "$key_dir/updater.key" >/dev/null 2>&1
+          node --input-type=module - "$key_dir" <<'JS'
+          import { readFileSync, writeFileSync } from "node:fs";
+          const dir = process.argv[2];
+          writeFileSync(`${dir}/updater.json`, JSON.stringify({
+            bundle: { createUpdaterArtifacts: true },
+            plugins: { updater: { pubkey: readFileSync(`${dir}/updater.key.pub`, "utf8").trim() } },
+          }));
+          JS
+          export TAURI_SIGNING_PRIVATE_KEY="$(cat "$key_dir/updater.key")"
+          pnpm --filter @ariadshift/desktop tauri build --config "$key_dir/updater.json"
+          test -s target/release/bundle/macos/AriadShift.app.tar.gz.sig
+          echo 'Verified nonempty AriadShift.app.tar.gz.sig without Apple credentials.'
       - name: Install WebDriver
         if: runner.os == 'Linux'
         run: cargo install tauri-driver --version 2.1.0 --locked
@@ -89,7 +117,6 @@ jobs:
       run:
         shell: bash
     env:
-      HAS_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE != '' }}
       HAS_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -180,7 +207,7 @@ jobs:
           releaseId: ${{ steps.release.outputs.id }}
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          args: --config src-tauri/tauri.release.local.json ${{ runner.os == 'macOS' && env.HAS_APPLE_CERTIFICATE == 'false' && '--no-sign' || '' }}
+          args: --config src-tauri/tauri.release.local.json
   verify-release:
     name: Verify desktop updater release
     needs: release

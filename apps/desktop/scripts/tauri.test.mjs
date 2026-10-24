@@ -2,19 +2,25 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { signingInvocation } from "./tauri.mjs";
 
-test("empty Apple secrets become absent and macOS builds explicitly skip signing", () => {
-  const result = signingInvocation(
-    ["build", "--bundles", "app"],
-    {
-      APPLE_CERTIFICATE: "",
-      APPLE_CERTIFICATE_PASSWORD: "",
-      APPLE_SIGNING_IDENTITY: "",
-      PATH: "/bin",
-    },
-    "darwin",
-  );
-  assert.deepEqual(result.args, ["build", "--bundles", "app", "--no-sign"]);
-  assert.deepEqual(result.env, { PATH: "/bin" });
+test("empty Apple secrets become absent without changing build or bundle arguments", () => {
+  for (const command of ["build", "bundle"]) {
+    const result = signingInvocation(
+      [command, "--bundles", "app"],
+      {
+        APPLE_CERTIFICATE: "",
+        APPLE_CERTIFICATE_PASSWORD: "",
+        APPLE_SIGNING_IDENTITY: "",
+        APPLE_ID: "",
+        APPLE_PASSWORD: "",
+        APPLE_TEAM_ID: "",
+        TAURI_SIGNING_PRIVATE_KEY: "test-updater-key",
+        PATH: "/bin",
+      },
+      "darwin",
+    );
+    assert.deepEqual(result.args, [command, "--bundles", "app"]);
+    assert.deepEqual(result.env, { PATH: "/bin", TAURI_SIGNING_PRIVATE_KEY: "test-updater-key" });
+  }
 });
 
 test("complete signing credentials preserve signing and reject partial groups", () => {
@@ -42,8 +48,4 @@ test("other platforms and development commands keep their signing behavior", () 
   ]) {
     assert.deepEqual(signingInvocation([command], {}, platform).args, [command]);
   }
-  assert.deepEqual(signingInvocation(["build", "--no-sign"], {}, "darwin").args, [
-    "build",
-    "--no-sign",
-  ]);
 });

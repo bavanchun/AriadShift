@@ -10,9 +10,7 @@ export function signingInvocation(args, environment, platform = process.platform
   );
   const next = [...args];
   if (platform === "darwin" && ["build", "bundle"].includes(next[0])) {
-    if (!env.APPLE_CERTIFICATE) {
-      if (!next.includes("--no-sign")) next.push("--no-sign");
-    } else {
+    if (env.APPLE_CERTIFICATE) {
       for (const name of ["APPLE_CERTIFICATE_PASSWORD", "APPLE_SIGNING_IDENTITY"]) {
         if (!env[name]) throw new Error(`Apple signing requires ${name} with APPLE_CERTIFICATE`);
       }

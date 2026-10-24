@@ -13,6 +13,10 @@ and RPM declare these package dependencies; install them separately for AppImage
 
 Unsigned builds are available until the maintainer configures platform signing
 certificates. On macOS, open the disk image and copy AriadShift to Applications.
+On first launch from a downloaded unsigned DMG, Gatekeeper blocks the app with a
+warning that its developer cannot be verified or Apple cannot check it for
+malicious software; follow [Apple’s guidance](https://support.apple.com/102445)
+if you trust the download.
 macOS installers and in-app updates currently support Apple silicon (aarch64)
 only. Intel macOS is not built and has no updater metadata entry.
 
@@ -126,8 +130,8 @@ Apple signing requires `APPLE_CERTIFICATE` (base64 PKCS#12),
 `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` together. Optional
 notarization additionally requires all three of `APPLE_ID`, `APPLE_PASSWORD` and
 `APPLE_TEAM_ID`. Empty Apple variables are removed before invoking Tauri; when
-the certificate is absent, macOS builds explicitly use `--no-sign`. This leaves
-the separate minisign updater signature enabled. Windows signing is optional through
+the certificate is absent, Tauri leaves the macOS app unsigned while still
+creating the separate minisign updater signature. Windows signing is optional through
 `WINDOWS_CERTIFICATE` (base64 PFX) and `WINDOWS_CERTIFICATE_PASSWORD`. Without
 platform signing material, bundles are unsigned; updater signatures are still
 mandatory for release updates. Only Tauri 2 updater artifacts are supported; the
@@ -180,7 +184,9 @@ Upstream trailing whitespace is normalized to the repository style; the only
 behavioral change is the parser initializer.
 
 Pull requests build installers on `ubuntu-26.04`, `macos-26` and `windows-2025`
-without publishing artifacts. Linux also runs `just desktop-smoke` under Xvfb
+without publishing artifacts; the macOS job generates a disposable updater key,
+enables updater artifacts and requires a nonempty app archive signature with
+empty Apple credentials. Linux also runs `just desktop-smoke` under Xvfb
 using `tauri-driver` and the real UI to convert Markdown to HTML. Tag builds use
 the release environment, sign update artifacts and attach bundles to the GitHub
 release created by the CLI workflow. Desktop jobs wait for that release and
@@ -188,6 +194,9 @@ attach assets by release ID, avoiding competing release creation.
 Signing credentials are scoped to their consuming steps. Before Linux builds,
 the workflow verifies all three downloaded AppImage bundler executables against
 the SHA-256 values in [the tool manifest](../apps/desktop/scripts/linux-tools.json).
+To refresh the manifest, download the upstream release assets, compute their
+SHA-256 hashes, compare them with GitHub’s release asset `digest` values and
+update the matching URLs and hashes in `linux-tools.json`.
 After the release matrix finishes, a verification job requires all three updater
 platform entries, checks their URLs against attached assets and verifies every
 signature with the committed public key. See [releasing.md](releasing.md#failure-responses)

@@ -223,9 +223,9 @@ The final documentation commit is checked again before marking the PR ready.
   and the new server container test recipe.
 - The review's exact empty-Apple environment build failed before the fix with
   exit 1 (empty PKCS#12 import), passed after the fix with exit 0, and passed
-  again after rebase. The wrapper removes empty Apple variables and explicitly
-  skips macOS platform signing without a certificate. Signing credential groups
-  are documented; updater signatures remain independent.
+  again after rebase. The wrapper removes empty Apple variables; without a
+  certificate, Tauri leaves the macOS app unsigned while still creating the
+  separate updater signature. Signing credential groups are documented.
 - Release secrets are scoped to their consuming steps. Linux bundler tools
   are prefetched and SHA-256 verified. A post-matrix release job requires the
   Linux x86-64, Apple silicon and Windows x86-64 updater entries, attached asset
