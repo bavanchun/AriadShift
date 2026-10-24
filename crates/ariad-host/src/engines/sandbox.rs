@@ -90,7 +90,7 @@ fn grant_tesseract(paths: &mut EnginePaths, program: &Path) {
         && bin.file_name().is_some_and(|name| name == "bin")
         && let Some(prefix) = bin.parent()
     {
-        for name in ["lib", "lib64", "libexec", "share", "etc"] {
+        for name in ["lib", "lib64", "libexec", "share/tessdata", "etc"] {
             paths.read_only.push(prefix.join(name));
         }
     }
@@ -166,13 +166,15 @@ mod tests {
             assert_eq!(paths.exec, vec![program]);
             assert_eq!(
                 paths.read_only,
-                ["lib", "lib64", "libexec", "share", "etc"].map(|name| prefix.join(name))
+                ["lib", "lib64", "libexec", "share/tessdata", "etc"].map(|name| prefix.join(name))
             );
-            assert!(
-                !paths.read_only.iter().any(|path| {
-                    path == Path::new("/") || path == home.path() || path == prefix
-                })
-            );
+            assert!(!paths.read_only.iter().any(|path| {
+                path == Path::new("/")
+                    || path == home.path()
+                    || path == prefix
+                    || path == &prefix.join("share")
+                    || path == &home.path().join(".local/share")
+            }));
         }
     }
 }
