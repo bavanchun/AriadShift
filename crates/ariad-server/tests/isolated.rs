@@ -24,6 +24,78 @@ fn request(dir: &Path, html: bool) -> ConvertRequest {
     )
 }
 
+#[cfg(target_os = "linux")]
+fn refused_helper_filter_stops_startup(syscall: i64, rules: Vec<seccompiler::SeccompRule>) {
+    use nix::libc;
+    use seccompiler::{BpfProgram, SeccompAction, SeccompFilter};
+    // Restrict this test thread and its descendants, leaving the test runner
+    // and the rest of the suite unchanged. No database is needed: preflight
+    // must fail before configuration or the worker runtime starts.
+    let filter: BpfProgram = SeccompFilter::new(
+        std::collections::BTreeMap::from([(syscall, rules)]),
+        SeccompAction::Allow,
+        SeccompAction::Errno(libc::EPERM as u32),
+        std::env::consts::ARCH.try_into().unwrap(),
+    )
+    .unwrap()
+    .try_into()
+    .unwrap();
+    seccompiler::apply_filter(&filter).unwrap();
+    for mode in ["off", "best-effort", "required"] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_ariad-server"))
+            .arg("worker")
+            .env_clear()
+            .env("ARIAD_SANDBOX", mode)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("helper network preflight failed"),
+            "{mode}: {error}"
+        );
+        assert!(
+            error.contains("cannot deny helper network access"),
+            "{mode}: {error}"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn refused_seccomp_stops_worker_before_jobs_in_every_mode() {
+    refused_helper_filter_stops_startup(nix::libc::SYS_seccomp, Vec::new());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn refused_no_new_privs_stops_worker_before_jobs_in_every_mode() {
+    use seccompiler::{SeccompCmpArgLen, SeccompCmpOp, SeccompCondition, SeccompRule};
+    let condition = SeccompCondition::new(
+        0,
+        SeccompCmpArgLen::Dword,
+        SeccompCmpOp::Eq,
+        nix::libc::PR_SET_NO_NEW_PRIVS as u64,
+    )
+    .unwrap();
+    refused_helper_filter_stops_startup(
+        nix::libc::SYS_prctl,
+        vec![SeccompRule::new(vec![condition]).unwrap()],
+    );
+}
+
+#[test]
+fn helper_network_startup_probe_succeeds_on_a_supported_runtime() {
+    assert!(
+        std::process::Command::new(env!("CARGO_BIN_EXE_ariad-server"))
+            .arg("__check-helper-network")
+            .env_clear()
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
 fn table() -> String {
     let mut html = String::from("<table><tbody>\n");
     for i in 0..250_000 {
