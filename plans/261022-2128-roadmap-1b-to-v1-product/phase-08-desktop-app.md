@@ -272,3 +272,13 @@ The final documentation commit is checked again before marking the PR ready.
   Windows directory entries retain cached metadata. The focused test and
   formatting check passed after this portability correction; production
   behavior and the accepted DMG code are unchanged.
+- CI's refreshed advisory database identified `RUSTSEC-2026-0387` in
+  crypto-bigint through the server's JWT verifier. The normal dependency tree
+  reaches it only through jsonwebtoken's p256/p384 verification, and production
+  uses public JWKS with `DecodingKey::from_jwk` and `decode`, never private-key
+  arithmetic. Registry checks confirmed stable jsonwebtoken 11.1.0 still needs
+  the older RustCrypto branch. A narrowly documented advisory exclusion follows
+  the existing verification-only RSA decision; the provider and license policy
+  remain unchanged. With a refreshed database, the baseline scan failed with
+  this exact advisory and the scoped configuration passed. Reassess if signing
+  is added, and remove the exclusion when stable upstream adopts the fix.
