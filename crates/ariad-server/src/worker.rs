@@ -118,6 +118,12 @@ impl Failure {
 }
 
 impl Worker {
+    async fn remove_invalid_input(&self, key: &str) {
+        if let Err(err) = self.storage.delete(key).await {
+            tracing::warn!(error = %err, "could not delete an invalid input");
+        }
+    }
+
     /// Runs until `shutdown`. Jobs still running then are handed back to the queue.
     pub async fn run(self: Arc<Self>, shutdown: CancellationToken) {
         log_work_dir(&self.config.work_dir);
@@ -395,6 +401,7 @@ impl Worker {
         match downloaded {
             Ok((size, sha)) if size == declared && sha == upload.sha256 => {}
             Ok(_) => {
+                self.remove_invalid_input(&upload.storage_key).await;
                 return Err(Outcome::permanent(
                     "input_io",
                     "the stored input does not match its hash",
@@ -407,6 +414,7 @@ impl Worker {
                 ));
             }
             Err(storage::StorageError::TooLarge(_)) => {
+                self.remove_invalid_input(&upload.storage_key).await;
                 return Err(Outcome::permanent(
                     "input_io",
                     "the stored input exceeds its declared size",

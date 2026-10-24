@@ -317,6 +317,7 @@ pub struct ApiConfig {
     pub trusted_client_ip_header: Option<String>,
     pub request_timeout: Duration,
     pub sweep_interval: Duration,
+    pub sweep_batch: i64,
     pub storage: StorageConfig,
 }
 
@@ -342,6 +343,10 @@ impl ApiConfig {
                 "is required with file:// storage, because the API serves object URLs",
             ));
         }
+        let sweep_batch: i64 = env.parse_or("ARIAD_SWEEP_BATCH", 200)?;
+        if sweep_batch <= 0 {
+            return Err(invalid("ARIAD_SWEEP_BATCH", "must be greater than zero"));
+        }
         Ok(Self {
             bind: env.parse_or("ARIAD_BIND", SocketAddr::from(([0, 0, 0, 0], 8080)))?,
             public_url,
@@ -354,6 +359,7 @@ impl ApiConfig {
                 .map(str::to_ascii_lowercase),
             request_timeout: env.secs_or("ARIAD_REQUEST_TIMEOUT_S", 30)?,
             sweep_interval: env.secs_or("ARIAD_SWEEP_INTERVAL_S", 60)?,
+            sweep_batch,
             storage,
         })
     }
@@ -507,6 +513,23 @@ mod tests {
             WorkerConfig::from_env(&Env::from_pairs(pairs), &[]),
             Err(ConfigError::Missing("ARIAD_WORK_DIR"))
         ));
+    }
+
+    #[test]
+    fn sweep_settings_require_positive_values() {
+        let defaults = ApiConfig::from_env(&Env::from_pairs(base())).unwrap();
+        assert_eq!(defaults.sweep_batch, 200);
+        assert_eq!(defaults.sweep_interval, Duration::from_secs(60));
+        for (name, value) in [
+            ("ARIAD_SWEEP_BATCH", "0"),
+            ("ARIAD_SWEEP_BATCH", "-1"),
+            ("ARIAD_SWEEP_INTERVAL_S", "0"),
+        ] {
+            assert!(ApiConfig::from_env(&Env::from_pairs(with(base(), name, value))).is_err());
+        }
+        let config =
+            ApiConfig::from_env(&Env::from_pairs(with(base(), "ARIAD_SWEEP_BATCH", "17"))).unwrap();
+        assert_eq!(config.sweep_batch, 17);
     }
 
     #[test]
