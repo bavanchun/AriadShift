@@ -173,18 +173,22 @@ cargo nextest run -p ariad-desktop
 xvfb-run -a dbus-run-session -- just desktop-smoke
 ```
 
-To check Office engines in a real Linux AppImage, keep the image mounted with
-`--appimage-mount`, set `APPDIR` to the reported mount directory and
-`ARIAD_TEST_APPIMAGE_BINARY` to its `usr/bin/ariad-desktop`, then run:
+To check PDF, Typst and Office engines in a real Linux AppImage after building:
 
 ```sh
-cargo nextest run -p ariad-cli --features ariad-host/test-probe \
-  --test builtin_engine_contracts --run-ignored ignored-only \
-  -E 'test(appimage_office_conversion_preserves_the_bundle_in_private_tmp)'
+just desktop-engine-smoke
 ```
 
-This checks PDF/Typst/LibreOffice discovery and a required-sandbox PPTX to PDF
-conversion using the mounted executable. Stop the mount process afterward.
+The [smoke script](../scripts/desktop-engine-smoke.sh) sets
+`APPIMAGE_EXTRACT_AND_RUN=1` and explicitly extracts the bundle
+under `/tmp` so it remains available throughout the test without FUSE. It sets
+`APPDIR` and `ARIAD_TEST_APPIMAGE_BINARY` to the extracted bundle and its `AppRun`
+entry point, then runs the ignored AppImage contract test. The test checks engine
+discovery, PDF to IR to Typst PDF, and PPTX to PDF with required isolation. Missing
+or unsupported LibreOffice skips only the Office conversion with a visible
+message; PDF and Typst still run. The extracted bundle is removed on exit.
+Linux Desktop CI installs LibreOffice Impress, enables user/mount namespaces and
+runs this recipe after building the installers.
 
 IPC DTOs derive `ts_rs::TS`. One Rust command table both registers handlers and
 generates typed `invoke` wrappers. Everything in `apps/desktop/src/bindings/` is

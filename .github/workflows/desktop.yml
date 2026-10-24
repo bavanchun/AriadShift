@@ -57,8 +57,15 @@ jobs:
             fi
           done
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils webkitgtk-webdriver xvfb dbus-daemon at-spi2-core
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils webkitgtk-webdriver xvfb dbus-daemon at-spi2-core libreoffice-impress
           command -v update-desktop-database && command -v xdg-mime
+      - name: Enable namespaces for LibreOffice sandbox tests
+        if: runner.os == 'Linux'
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --user --map-root-user --mount true
       - run: pnpm install --frozen-lockfile
       - run: just pandoc
       - run: just desktop-bindings-check
@@ -99,6 +106,11 @@ jobs:
           pnpm --filter @ariadshift/desktop tauri build --config "$key_dir/updater.json"
           test -s target/release/bundle/macos/AriadShift.app.tar.gz.sig
           echo 'Verified nonempty AriadShift.app.tar.gz.sig without Apple credentials.'
+      - name: Convert PDF and Office through the packaged AppImage
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: just desktop-engine-smoke
       - name: Install WebDriver
         if: runner.os == 'Linux'
         run: cargo install tauri-driver --version 2.1.0 --locked
