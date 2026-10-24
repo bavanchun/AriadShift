@@ -34,6 +34,8 @@ Full `just ci` passed: 924 native tests with 12 opt-in skips, doctests, 74 bench
 
 The first remote Verify run passed Ubuntu but exposed benchmark portability assumptions on macOS and Windows. Reconstructing the macOS PNG from its assertion log proved exact pixel and DPI identity despite different compressed bytes. Generation checks now preserve byte identity within one environment and exact PNG content across platforms, while committed fixture SHA checks remain strict. New benchmark text IO explicitly uses UTF-8 instead of the Windows default code page. All nine heavy tests passed with UTF-8 mode disabled under an ASCII locale.
 
+The next Windows run reached the ODF comparison. Reconstructing its ODT proved all five uncompressed entries identical, with matching dates and attributes; only ZIP compression and host markers differed. The ODF check now compares ordered entries, exact uncompressed contents and document metadata while retaining same-environment byte repeatability and exact measured input hashes.
+
 The base benchmark also observed the existing deeply nested EPUB read-back limit and scored that conversion failure as zero. Keep this limitation visible in the delivery report.
 
 Production signing, published-pack smoke, version changes and release remain coordinator work. AgentWiki publish skipped.
