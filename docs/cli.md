@@ -64,7 +64,7 @@ All CLI commands adhere to a single unified exit-code table:
 
 ### `ashift convert`
 
-Converts a document between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`). With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
+Converts Markdown, HTML, DOCX and EPUB to/from IR JSON (`json`), reads PDF text, writes PDF through Typst, and uses system LibreOffice for legacy Office and ODF routes. With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
 
 ```bash
 ashift convert [OPTIONS] --to <FORMAT> <INPUT>...
@@ -73,8 +73,9 @@ ashift convert [OPTIONS] --to <FORMAT> <INPUT>...
 #### Arguments and Options
 
 - `<INPUT>...`: One or more input document paths, processed in order.
-- `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`).
+- `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input.
 - `-o, --output <OUTPUT>`: With one input, an explicit output file path. With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
+- `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
 - `--json`: Output conversion report as JSON instead of the bare output path.
@@ -88,12 +89,29 @@ ashift convert draft.md --to docx
 # Convert DOCX to Markdown with explicit output path
 ashift convert report.docx --to md -o output/report.md
 
+# Extract digital PDF text, create PDF, or normalize a legacy document
+ashift convert report.pdf --to md
+ashift convert notes.md --to pdf
+ashift convert legacy.doc --to md
+ashift convert slides.pptx --to pdf
+ashift convert notes.md --to json
+
 # Convert with JSON output for scripts or pipelines
 ashift convert draft.md --to docx --json
 
 # Convert a batch into an existing directory
 ashift convert draft.md notes.md --to docx -o output/
 ```
+
+With automatic reader selection, PDF input is read once by the bounded built-in reader to check its text layer. Digital PDFs use that result directly; when `needs_ocr` is true, conversion and `plan` select Docling for OCR instead. Without the Docling engine, a scanned PDF fails with exit 5 and an installation hint. Use `--engine docling` to request layout extraction even for a digital PDF, or `--engine pdf` to keep the text-layer result and its `ocr_required` warning for pages without text. `inspect` always uses the built-in reader and never needs the Docling pack. Typst supports headings, lists/tasks, tables/spans, code, quotes, figures and footnotes, embeds Vietnamese fonts, and preserves TeX as text with `math_not_converted`.
+
+PDF, Typst and LibreOffice advertise `supports_session: false`; batches and MCP pools run them as one-shot jobs. The shared host watchdog applies `max_memory_mb` to their process trees. On Linux, when a LibreOffice installation is found, sandboxed LibreOffice requires user and mount namespaces for a private `/tmp` because its IPC ignores `TMPDIR`. Its installation helpers remain executable through the engine's declared sandbox paths.
+
+When LibreOffice is found, namespace setup failure is fatal in both `best-effort` and `required` modes (`error[sandbox_unavailable]` on stderr, exit 5). `doctor` reports the failed `engine_libreoffice` check with the cause, and `engines` lists the engine as `cannot start`. Conversion keeps this error when LibreOffice was the planner's first choice; it does not silently fall back to a different-fidelity route. On Ubuntu, run `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`, or install an [AppArmor profile allowing `userns` for the `ashift` binary](https://documentation.ubuntu.com/security/security-features/privilege-restriction/apparmor/#apparmor-unprivileged-user-namespace-restrictions). The sysctl changes the host-wide policy; a binary-specific profile limits that grant. Default Docker and Kubernetes container seccomp profiles also block the namespace setup. See [worker runtime requirements](server.md#worker) for cloud deployments. `ASHIFT_SANDBOX=off` explicitly bypasses this requirement by disabling engine isolation; use it only when accepting that trade-off.
+
+LibreOffice >=24.2 is optional: DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP → PPTX, and all Office/ODF formats → PDF. Chained routes include DOC → DOCX → IR → MD. Without LibreOffice, discovery needs no private `/tmp` or namespace setup; DOCX → PDF falls back to Pandoc and Typst, and LibreOffice-only routes report the missing optional engine. Each job uses a fresh profile with macros disabled and Writer/Calc link updates set to never.
+
+`--to json` writes IR JSON; `--json` instead selects the conversion report on stdout.
 
 #### JSON Output Shape
 
@@ -154,13 +172,13 @@ ashift inspect [OPTIONS] <INPUT>
 
 #### Behavior
 
-- Sniffs format from prefix magic bytes, HTML tags, or ZIP central-directory inspection (for DOCX and EPUB).
+- Sniffs format from prefix magic bytes, HTML tags, ZIP central-directory inspection (OOXML and ODF), or bounded OLE2 stream names (DOC/XLS/PPT). JPEG, WebP, TIFF and RTF use magic bytes.
 - Parses metadata (title, authors, language, date) and structural counts (headings by level, paragraphs, tables, images, links, footnotes, words).
 - Deep document structure analysis is capped at 32 MiB (`ANALYSIS_MAX_BYTES`). Files larger than 32 MiB skip structural counting and emit `warning[document_too_large]: document too large to analyse`.
 - Note that local conversion (`ashift convert`) enforces no local file size cap (cloud plans enforce entitlements per §9.5). For compressed archives (DOCX and EPUB), the 32 MiB analysis cap applies to the compressed file size on disk rather than the uncompressed IR document size.
 - Peak memory usage during AST expansion is approximately 100x the input document size (~3 GB peak RSS on a 32 MiB markdown file).
 - Lists reachable target formats that the planner can convert to.
-- For PDF documents, reports byte size, instructs the user to install the engine with `ashift engines install docling`, and exits with code 0.
+- For PDF documents within the analysis cap, reports `page_count`, metadata and a `pdf` object with `pages`, `text_pages`, `image_only_pages`, `needs_ocr`, `encrypted`, and optional `producer`. A page without a text layer emits `ocr_required`; for OCR, install the Docling engine with `ashift engines install docling`. Encrypted documents open only with an empty user password; other encrypted or malformed PDFs fail with exit code 1.
 - If the file format cannot be recognized, exits with code 3.
 - Requires regular files: FIFOs, device nodes, and directories are rejected upfront to prevent blocking or resource exhaustion.
 
@@ -219,6 +237,7 @@ ashift plan [OPTIONS] --to <FORMAT> <INPUT>
 
 - `<INPUT>`: Path to the input document file.
 - `--to <FORMAT>`: Target format identifier (`md`, `docx`, `html`, `epub`).
+- `--engine <ENGINE>`: Select the input reader, with the same content-aware PDF default and no reader fallback as `convert`. PDF planning reads the text layer under the conversion limits.
 - `--profile <PROFILE>`: Optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--json`: Output plan results as JSON.
 
@@ -229,7 +248,7 @@ ashift plan [OPTIONS] --to <FORMAT> <INPUT>
 - Renders routes with engine chain arrows (`markdown ─ariad-core→ ariad-ir+json ─pandoc→ docx`).
 - Marks measured score edges from benchmark capabilities or notes unmeasured edges.
 - Input file summary parsing is bounded to 4 MiB to keep planning fast. Files over 4 MiB skip deep IR summary parsing; below 4 MiB, malformed input documents fail planning with the underlying IR read error.
-- External engine availability is checked. If an engine required by the planned route is not installed locally (e.g. `docling`), the score line displays `engine missing (<engine>)` (e.g. `engine missing (docling)`). The command still exits with code `0` because planning analyzes route feasibility rather than executing the conversion.
+- External engine availability is checked. If an engine required by the planned route is not installed locally (e.g. `docling`), the score line displays `engine missing (<engine>)` (e.g. `engine missing (docling)`). If the engine was found but its launcher failed, the human score line shows `startup_failure (<engine>): <cause>` instead; the plan JSON contract is unchanged. The command still exits with code `0` because planning analyzes route feasibility rather than executing the conversion.
 - Note that `plan` validates the container and the input, not whether the engine will succeed.
 
 #### Human Output Layout (ARCHITECTURE §6.3)
@@ -285,11 +304,11 @@ ashift engines <install|remove|verify> ...
 #### Behavior
 
 - Reports native in-process engine `ariad-core` as `ready`.
-- Probes external engine availability (`pandoc`), checking executable presence and supported version (`>= 3.12, < 4`).
+- Reports the built-in `pdf` reader and `typst` writer, probes Pandoc (`>=3.12,<4`) and optional LibreOffice (`>=24.2`), and lists their routes. A build with a disabled feature reports that engine as missing.
 - Lists `docling` as `not installed` (note `available in v0.2`) until its pack is installed. When `ASHIFT_DOCLING_ENGINE` is set, the `docling` row comes from that engine's `describe` (its Docling version, `ready` once it answers) with the note `development override`. A docling engine without Tesseract 5 is still `ready`, with a note that OCR is unavailable, because digital documents convert without it.
 - For every resolved engine pack (installed, or an `ASHIFT_PACK_<NAME>` development directory) runs the engine's `describe` through the pack entrypoint and reports its status. The row carries a `pack` object; routes come from the capabilities registry, or from `describe` for engines the registry does not know. A pack that is installed but cannot be used (damaged receipt, other platform, other `ashift` range) is listed as `missing` with a note pointing at `ashift doctor`.
 
-#### Human Output Example
+#### Human Output Example (excerpt)
 
 ```text
 ENGINE       VERSION   LICENSE            STATUS                             ROUTES
@@ -304,7 +323,7 @@ docling      0.1.0     -                          installed
 
 Without packs the second section reads `no engine packs installed`.
 
-#### JSON Output Shape
+#### JSON Output Shape (excerpt)
 
 An array of engine rows. `pack` appears only on rows backed by an engine pack:
 
@@ -466,7 +485,7 @@ ashift doctor [OPTIONS]
 
 1. **Pandoc**: Verifies Pandoc executable is found and satisfies `>= 3.12, < 4`.
 2. **Workspace**: Verifies temporary directory is writable, workspaces can be created and cleaned up, and reports count of stale workspaces older than 24 hours without deleting them.
-3. **Engine Describe**: Verifies the out-of-process engine runner can exchange protocol messages with the Pandoc engine.
+3. **Engine Describe**: Verifies describe round trips for Pandoc, PDF, Typst and LibreOffice. LibreOffice is optional, so its absence does not fail `doctor`.
 4. **Engine pack directory** (`data_dir`, not required): the pack data directory exists or can be created and is writable.
 5. **Pack signing keys** (`pack_keys`, not required): lists the ids of the minisign keys built into `ashift`; a build without keys cannot install packs.
 6. **Installed packs** (`pack_<name>`, not required): one check per installed version (receipt present, every recorded file present with its recorded size, built for this platform and `ashift` range) and per `ASHIFT_PACK_<NAME>` override. `ashift engines verify` does the full re-hash.
@@ -575,10 +594,11 @@ The `--profile` flag guides route selection when multiple routes connect a forma
 
 - `ASHIFT_PANDOC`: Specifies the explicit path to the Pandoc executable. When unset, `ashift` searches the system `PATH`.
 - `ASHIFT_DOCLING_ENGINE`: Development override for the Docling engine: a command line that starts it, for example `"$PWD/.tools/docling/python-env/bin/python" -I -m ariad_docling` (double quotes group words). It is tried before any installed pack; see [docling.md](docling.md#running-it-from-a-checkout).
+- `ASHIFT_SOFFICE`: Selects a system LibreOffice executable. It overrides `PATH` and the standard install locations.
 - `ASHIFT_DATA_DIR`: Data directory for engine packs (packs live under `<dir>/packs`). Defaults to the platform's local data directory for `com.ariadnev.ariadshift`; see [packs.md](packs.md#layout).
 - `ASHIFT_PACK_<NAME>`: Uses an unpacked development pack directory (holding an unsigned `pack.toml`) instead of the installed pack `<name>`; the name is upper-cased with `-` written as `_`.
 - `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`: Proxy settings for pack downloads.
 - `SSL_CERT_FILE`, `SSL_CERT_DIR`: Trusted CA certificates for pack downloads on Linux, when the system store is not in a standard location.
-- `ASHIFT_SANDBOX`: `off`, `best-effort` (CLI default), or `required`. Linux engines run through Landlock and seccomp with workspace write access and declared runtime read/execute access. Missing confinement produces `warning[sandbox_unavailable]` in best-effort mode; required mode refuses it with exit 5. `off` bypasses the launcher. Unknown values fail closed. macOS/Windows retain process groups or Job Objects; required mode needs Linux.
+- `ASHIFT_SANDBOX`: `off`, `best-effort` (CLI default), or `required`. Linux engines run through Landlock and seccomp with workspace write access and declared runtime read/execute access. Missing kernel confinement support produces `warning[sandbox_unavailable]` in best-effort mode; required mode refuses it with exit 5. Launcher enforcement errors, including namespace setup denial for a discovered LibreOffice installation, are fatal in every mode except `off` (`sandbox_unavailable`, exit 5). On Ubuntu, allow `userns` for `ashift` in AppArmor or use `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`; default container seccomp profiles also block setup. `ASHIFT_SANDBOX=off` explicitly trades engine isolation for running without the launcher. Unknown values fail closed. macOS/Windows retain process groups or Job Objects; required mode needs Linux.
 - Linux local IPC: `required` needs Landlock filesystem rules and seccomp, while `AF_UNIX` remains allowed. Pathname UNIX socket confinement needs Landlock ABI 9; abstract sockets and signals need ABI 6. On older kernels local services may remain reachable. `doctor --json` reports `landlock_unix_sockets` and `landlock_scopes`; use ABI 9 or stronger container isolation when local IPC must be blocked.
-- `SOURCE_DATE_EPOCH`: Unix timestamp in seconds used for deterministic, byte-reproducible ZIP archives (DOCX and EPUB).
+- `SOURCE_DATE_EPOCH`: Unix timestamp in seconds used for deterministic, byte-reproducible ZIP archives (DOCX and EPUB) and for the Typst PDF date. LibreOffice outputs are structurally tested and are not byte-reproducible.

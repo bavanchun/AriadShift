@@ -20,12 +20,17 @@ if you trust the download.
 macOS installers and in-app updates currently support Apple silicon (aarch64)
 only. Intel macOS is not built and has no updater metadata entry.
 
-Markdown and HTML conversion needs no external engine. DOCX and EPUB routes need
-Pandoc `>=3.12,<4` on PATH or selected through the `ASHIFT_PANDOC` environment
-variable when launching the app. Open Diagnostics to check dependencies and the
-host sandbox. PDF, PPTX, XLSX and image inputs use the optional Docling pack;
-DoclingDocument JSON inputs are mapped by the core. The picker and watch routes
-include these host input formats, while output choices follow supported writers.
+Markdown and HTML conversion needs no external engine. Digital PDF input uses the
+built-in text reader, and PDF output uses the built-in Typst compiler. Scanned PDFs,
+layout extraction and images use the optional Docling pack. DOCX and EPUB routes
+need Pandoc `>=3.12,<4` on PATH or selected through `ASHIFT_PANDOC` when launching
+the app. System LibreOffice >=24.2 handles legacy Office/ODF inputs and Office to
+PDF; `ASHIFT_SOFFICE` can select its executable. PPTX and XLSX extraction into
+editable text uses Docling. IR JSON and DoclingDocument JSON are mapped by the core.
+Open Diagnostics to check dependencies and the host sandbox. Sandboxed Linux
+LibreOffice requires permitted user and mount namespaces for its private `/tmp`;
+see [the CLI runtime requirements](cli.md#ashift-convert). The picker and watch
+routes include these host formats; output choices follow supported writers.
 Engine packs use the same installation directory and signature
 policy as the CLI; see [Engine packs](packs.md).
 

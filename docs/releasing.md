@@ -6,6 +6,36 @@ Every step that touches `main`, GitHub environments, tags, or external package r
 
 ---
 
+## Base PDF build size
+
+The embedded Typst compiler increases the base CLI size; the browser build does not enable it. A slim CLI can be built with `cargo build -p ariad-cli --release --no-default-features`. The repository defines no binary or download size budget.
+
+The measured GNU x86_64 Linux `dist` binary grew from 18,067,576 bytes (17.23 MiB) to 80,416,152 bytes (76.69 MiB). The baseline is the historical pre-feature measurement, before the sandbox and pack work, so it slightly overstates the PDF feature's own delta.
+
+Release binaries and compressed archives measured directly from the [baseline rehearsal](https://github.com/bavanchun/AriadShift/actions/runs/39899966610) and the [PDF rehearsal](https://github.com/bavanchun/AriadShift/actions/runs/39992356754), all sizes in bytes:
+
+| Target | Binary before | Binary after | Archive before | Archive after |
+|---|---:|---:|---:|---:|
+| `x86_64-unknown-linux-musl` | 22,835,864 | 79,115,288 | 5,020,292 | 18,142,284 |
+| `aarch64-unknown-linux-musl` | 22,075,704 | 76,224,168 | 4,555,660 | 16,647,108 |
+| `x86_64-apple-darwin` | 19,435,992 | 71,038,952 | 4,470,476 | 16,772,844 |
+| `aarch64-apple-darwin` | 18,703,376 | 68,937,024 | 4,078,608 | 15,552,432 |
+| `x86_64-pc-windows-msvc` | 16,747,520 | 60,802,048 | 6,334,287 | 24,004,827 |
+
+Archives are the shipped `.tar.xz` files (Unix) or `.zip` file (Windows), including bundled release files. These figures exclude GitHub Actions' outer artifact ZIP wrapper. For comparison, the rounded artifact downloads recorded during review were:
+
+| Target | Artifact download before | Artifact download after |
+|---|---:|---:|
+| x86_64 Linux musl | 5.02 MB | 18.15 MB |
+| aarch64 Linux musl | 4.56 MB | 16.66 MB |
+| x86_64 macOS | 4.47 MB | 16.78 MB |
+| aarch64 macOS | 4.08 MB | 15.56 MB |
+| x86_64 Windows | 6.33 MB | 23.96 MB |
+
+MB is decimal; MiB is binary. These release builds differ from the GNU binary measurement above. The paired rehearsal runs provide a closer comparison than the historical GNU baseline.
+
+---
+
 ## Release procedure (`vX.Y.Z`)
 
 ### 1. Bump the version on `dev` through a pull request
