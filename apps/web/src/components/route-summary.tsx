@@ -7,6 +7,10 @@ import { formatLabel } from "@/lib/formats";
 const ENGINE_LABELS: Record<string, string> = {
   "ariad-core": "AriadShift core",
   pandoc: "Pandoc",
+  pdf: "PDF text reader",
+  typst: "Typst",
+  libreoffice: "LibreOffice",
+  docling: "Docling",
 };
 
 export function engineLabel(engine: string): string {

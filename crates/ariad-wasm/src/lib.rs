@@ -236,3 +236,73 @@ pub fn convert(
     )?;
     Ok(result)
 }
+
+/// Maps Pandoc JSON and extracted media using the shared core mapper.
+#[wasm_bindgen(js_name = readPandoc, unchecked_return_type = "ConvertResult")]
+pub fn read_pandoc(bytes: &[u8], media: &[u8], source: &str) -> Result<JsValue, JsValue> {
+    let format = api::parse_format(source).map_err(|e| to_js_error(&e))?;
+    let read = ariad_core::pandoc::package::read(
+        bytes,
+        media,
+        format,
+        &ariad_core::limits::Limits::local(),
+    )
+    .map_err(|e| to_js_error(&api::ApiError::from(e)))?;
+    let bytes =
+        serde_json::to_vec(&read.document).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    bridge_result(
+        &bytes,
+        "ariad-ir+json",
+        "application/json",
+        "ir.json",
+        &read.warnings,
+    )
+}
+
+/// Maps IR to Pandoc JSON with the same writer as native surfaces.
+#[wasm_bindgen(js_name = writePandoc, unchecked_return_type = "ConvertResult")]
+pub fn write_pandoc(bytes: &[u8], title: Option<String>) -> Result<JsValue, JsValue> {
+    let written = ariad_core::pandoc::package::write(
+        bytes,
+        title.as_deref(),
+        &ariad_core::limits::Limits::local(),
+    )
+    .map_err(|e| to_js_error(&api::ApiError::from(e)))?;
+    bridge_result(
+        &written.bytes,
+        "pandoc+json",
+        "application/json",
+        "json",
+        &written.warnings,
+    )
+}
+
+/// Stamps only package dates; Pandoc stays a separate aggregated module.
+#[wasm_bindgen(js_name = stampPackage)]
+pub fn stamp_package(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8>, JsValue> {
+    ariad_core::package_meta::stamp_bytes(bytes, epub, timestamp).map_err(|e| {
+        to_js_error(&api::ApiError::from(
+            ariad_core::pipeline::PipelineError::InvalidInput {
+                reason: e.to_string(),
+            },
+        ))
+    })
+}
+
+fn bridge_result(
+    bytes: &[u8],
+    format: &str,
+    media_type: &str,
+    extension: &str,
+    warnings: &[ariad_core::pipeline::Notice],
+) -> Result<JsValue, JsValue> {
+    let result = to_js(
+        &serde_json::json!({ "format": format, "media_type": media_type, "extension": extension, "route": [], "warnings": warnings }),
+    )?;
+    js_sys::Reflect::set(
+        &result,
+        &JsValue::from_str("bytes"),
+        &js_sys::Uint8Array::from(bytes),
+    )?;
+    Ok(result)
+}

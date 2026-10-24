@@ -13,7 +13,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       for (const name of await caches.keys()) {
-        if (name !== CACHE) {
+        if (name !== CACHE && name !== "ariadshift-engines-v1") {
           await caches.delete(name);
         }
       }
@@ -22,8 +22,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-async function cacheUrls(urls) {
+async function cacheUrls(urls, engineChunks = []) {
   const cache = await caches.open(CACHE);
+  const engines = await caches.open("ariadshift-engines-v1");
+  const lazy = new Set(engineChunks);
   const wanted = new Set();
   for (const url of urls) {
     if (new URL(url).origin !== self.location.origin) {
@@ -33,6 +35,7 @@ async function cacheUrls(urls) {
     try {
       const response = await fetch(url, { cache: "no-cache" });
       if (response.ok) {
+        if (lazy.has(url)) await engines.put(url, response.clone());
         await cache.put(url, response);
       }
     } catch {
@@ -48,7 +51,12 @@ async function cacheUrls(urls) {
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "cache" && Array.isArray(event.data.urls)) {
-    event.waitUntil(cacheUrls(event.data.urls));
+    event.waitUntil(
+      cacheUrls(
+        event.data.urls,
+        Array.isArray(event.data.engineChunks) ? event.data.engineChunks : [],
+      ),
+    );
   }
 });
 
@@ -92,7 +100,10 @@ self.addEventListener("fetch", (event) => {
       const cache = await caches.open(CACHE);
       let response;
       if (url.pathname.startsWith("/_next/static/")) {
-        response = (await cache.match(request)) ?? (await fetch(request));
+        response =
+          (await cache.match(request)) ??
+          (await (await caches.open("ariadshift-engines-v1")).match(request)) ??
+          (await fetch(request));
       } else {
         try {
           return await fetch(request);

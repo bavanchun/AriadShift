@@ -12,8 +12,13 @@ fixtures/manifest.toml.
 
 This software may invoke Pandoc (https://pandoc.org) as an external,
 out-of-process executable. Pandoc is licensed under the GNU General Public
-License, version 2 or later (GPL-2.0-or-later). Pandoc is not linked, bundled,
-or incorporated into AriadShift distributions, per the project's licensing rules.
+License, version 2 or later (GPL-2.0-or-later). Native distributions do not bundle or link Pandoc.
+The website aggregates the unmodified official Pandoc 3.12 WASM reactor as a
+separate file at /wasm/pandoc/pandoc.wasm, loaded lazily in a Web Worker and
+invoked through WASI; it is never linked into AriadShift code. Its GPL licence
+and copyright notices accompany it at /wasm/pandoc/COPYING.md and COPYRIGHT.
+Corresponding source: https://github.com/jgm/pandoc/tree/3.12
+Source archive: https://github.com/jgm/pandoc/archive/refs/tags/3.12.tar.gz
 
 This project includes unmodified third-party Rust crates licensed under the
 Mozilla Public License 2.0 (MPL-2.0), obtained from crates.io:
