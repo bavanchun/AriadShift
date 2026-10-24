@@ -259,12 +259,17 @@ fuzz target="" seconds="60":
     if [ -n "{{target}}" ]; then
         targets=("{{target}}")
     else
-        targets=("markdown_reader" "front_matter" "html_reader" "pandoc_ast_to_ir" "docling_to_ir" "ir_json" "limits_validate")
+        targets=("markdown_reader" "front_matter" "html_reader" "pandoc_ast_to_ir" "docling_to_ir" "ir_json" "limits_validate" "pdf_reader" "typst_writer")
     fi
     for t in "${targets[@]}"; do
         echo "=== Running fuzz target: $t ({{seconds}}s) ==="
         mkdir -p "fuzz/corpus/$t"
-        cargo fuzz run -s none "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048
+        build_options=()
+        case "$t" in
+            pdf_reader) build_options=(--dev --features pdf-reader) ;;
+            typst_writer) build_options=(--dev --features typst-writer) ;;
+        esac
+        cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048
     done
 
 [macos]

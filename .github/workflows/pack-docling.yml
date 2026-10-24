@@ -26,6 +26,12 @@ concurrency:
 permissions:
   contents: read
 
+# Typst joins the base CLI; keep pack builds within the native CI artifact budget.
+env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
 jobs:
   scope:
     name: Scope
