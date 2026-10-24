@@ -251,6 +251,10 @@ pack-docling out="target/pack-docling":
 pack-docling-verify out="target/pack-docling" input="fixtures/scan/vi-garden-300dpi.png" expect="Khu vườn đọc sách":
     uv run --no-project --python 3.14 python engines/docling/pack/build.py verify --out "{{out}}" --input "{{input}}" --expect "{{expect}}" {{ if os() == "linux" { "--offline" } else { "" } }} --ashift "{{justfile_directory()}}/target/debug/ashift{{ if os() == "windows" { ".exe" } else { "" } }}"
 
+# Run real-engine protocol, table and OCR tests against the built pack (needs Tesseract).
+pack-docling-test out="target/pack-docling":
+    uv run --no-project --python 3.14 python engines/docling/pack/build.py conformance --out "{{out}}"
+
 # Run fuzz targets on Linux (default: all targets, 60 s each)
 [linux]
 fuzz target="" seconds="60":

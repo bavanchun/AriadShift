@@ -348,6 +348,60 @@ def check_runtime_files(runtime: Path, libraries: list[dict], target: str) -> No
         raise SystemExit("runtime inventory check failed:\n" + "\n".join(errors))
 
 
+def check_vendor_files(root: Path, approved_openmp: dict[str, str] | None = None) -> None:
+    """Reject proprietary wheel contents, independently of distribution metadata.
+
+    The Windows LLVM replacement retains PyTorch's expected DLL name. Only the
+    exact file produced by the verified source build is accepted at that path.
+    The caller keeps its digest outside the runtime being checked.
+    """
+    approved_openmp = approved_openmp or {}
+    errors = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        name = path.name.lower()
+        native = any(fnmatchcase(name, p) for p in ("*.so*", "*.dll", "*.pyd", "*.dylib"))
+        if "iomp" in name or "ippicv" in name:
+            if relative not in approved_openmp or (
+                hashlib.sha256(path.read_bytes()).hexdigest() != approved_openmp[relative]
+            ):
+                errors.append(f"unapproved Intel library: {relative}")
+                continue
+        if native:
+            # Inspect even approved files: a poisoned native-build cache must
+            # not bless the original vendor DLL by supplying its digest.
+            with path.open("rb") as handle:
+                tail = b""
+                while chunk := handle.read(1 << 20):
+                    data = (tail + chunk).lower()
+                    if any(
+                        marker in data
+                        for marker in (
+                            b"ippicvgetlibversion",
+                            b"ippicv_",
+                            b"intel(r) openmp",
+                            b"@(#) intel(r) omp",
+                            b"intel(r) oneapi math kernel library version",
+                            "Intel(R) OpenMP".encode("utf-16le").lower(),
+                        )
+                    ):
+                        errors.append(f"proprietary Intel binary content: {relative}")
+                        break
+                    tail = data[-128:]
+        elif any(word in name for word in ("license", "licence", "notice", "copying")):
+            data = path.read_bytes().lower()
+            if b"intel simplified software license" in data or b"ipp icv library" in data:
+                errors.append(f"proprietary IPP ICV notice: {relative}")
+    missing = set(approved_openmp) - {
+        path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()
+    }
+    errors.extend(f"missing LLVM OpenMP replacement: {name}" for name in sorted(missing))
+    if errors:
+        raise SystemExit("vendor library check failed:\n" + "\n".join(errors))
+
+
 def write_runtime_notices(notices: Path, libraries: list[dict]) -> None:
     """Copy the upstream release texts, verifying their recorded digests, and list their sources."""
     destination = notices / "runtime"

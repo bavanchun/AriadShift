@@ -163,7 +163,7 @@ jobs:
       - name: Cache models and OCR data
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
-          path: ~/.cache/ariadshift/docling
+          path: ~/.cache/ariadshift/docling/blobs
           key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
 
       - name: Install Pandoc
@@ -179,7 +179,7 @@ jobs:
     name: Pack (${{ matrix.target }})
     needs: [scope, engine]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -188,6 +188,8 @@ jobs:
       run:
         shell: bash
     env:
+      CARGO_BUILD_JOBS: 3
+      NEXTEST_TEST_THREADS: 3
       PACK_OUT: ${{ github.workspace }}/pack-out
       ASHIFT_BIN: ${{ github.workspace }}/target/debug/ashift${{ matrix.exe }}
     steps:
@@ -207,13 +209,27 @@ jobs:
           version: 0.12.23
           python-version: "3.14"
 
+      - name: Install command-line tools
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: just@1.58.0
+
       # fetch.py checks the size and SHA-256 of every cached blob before it uses it, so a
       # poisoned cache entry cannot change what goes into a pack.
       - name: Cache models and OCR data
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
-          path: ~/.cache/ariadshift/docling
+          path: ~/.cache/ariadshift/docling/blobs
           key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
+
+      # Source pins, target, tool lock and flags determine the cache namespace.
+      # Restored files are rehashed, probed and inspected before packaging.
+      - name: Cache OpenCV and LLVM source builds
+        if: startsWith(matrix.target, 'x86_64-')
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ~/.cache/ariadshift/docling/native
+          key: docling-native-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/native_build.py', 'engines/docling/pack/vcomp-*.cpp', 'engines/docling/pack/pins.toml', 'uv.lock') }}
 
       # The scanned fixture needs the Tesseract program, which the pack does not bundle.
       - name: Install Tesseract
@@ -222,6 +238,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends tesseract-ocr
           tesseract --version
+
+      - name: Install Windows Tesseract
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: |
+          choco install tesseract --yes --no-progress
+          echo 'C:\Program Files\Tesseract-OCR' >> "$GITHUB_PATH"
+
+      - name: Install Pandoc for pack conformance
+        if: startsWith(matrix.target, 'x86_64-')
+        run: just pandoc
 
       - name: Build ashift
         run: cargo build -p ariad-cli --bin ashift
@@ -271,6 +297,23 @@ jobs:
         run: >-
           cargo test -p ariad-cli --features test-probe --test docling_pack
           -- --ignored --nocapture
+
+      - name: Run engine conformance with the packaged runtime
+        if: startsWith(matrix.target, 'x86_64-')
+        env:
+          TARGET: ${{ matrix.target }}
+        run: >-
+          uv run --no-project --python 3.14 python engines/docling/pack/build.py conformance
+          --target "$TARGET" --out "$PACK_OUT"
+
+      - name: Upload original and replacement conversion comparisons
+        if: startsWith(matrix.target, 'x86_64-')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docling-comparison-${{ matrix.target }}
+          path: ${{ env.PACK_OUT }}/comparison-*.json
+          retention-days: 14
+          if-no-files-found: error
 
       # The models and OCR data are the same for every target, so only one build uploads them.
       - name: Upload the shared components

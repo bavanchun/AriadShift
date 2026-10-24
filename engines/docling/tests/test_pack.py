@@ -13,7 +13,115 @@ from conftest import REPOSITORY
 sys.path.insert(0, str(REPOSITORY / "engines" / "docling" / "pack"))
 
 import build
+import fetch
+import licenses
+import native_build
 import windows_imports
+
+
+def test_opencv_source_pin_matches_the_locked_distribution():
+    pins = fetch.load_pins()
+    native_build.check_opencv_pin(pins)
+    pins["opencv"]["version"] = "0.0.0"
+    with pytest.raises(SystemExit, match="review the OpenCV source pin"):
+        native_build.check_opencv_pin(pins)
+
+
+@pytest.mark.parametrize(
+    "name", ["libiomp5md.dll", "libiompstubs5md.dll", "libiomp5-abcdef.dll", "libippicv.so"]
+)
+def test_vendor_gate_rejects_intel_libraries_inside_wheels(tmp_path, name):
+    path = tmp_path / "runtime/Lib/site-packages/vendor" / name
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"native code")
+    with pytest.raises(SystemExit, match="unapproved Intel library"):
+        licenses.check_vendor_files(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "content", [b"Intel Simplified Software License", b"Intel(R) IPP ICV library statically linked"]
+)
+def test_vendor_gate_rejects_ipp_notices_even_with_permissive_wheel_metadata(tmp_path, content):
+    info = tmp_path / "opencv-1.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text("Name: opencv-python-headless\nLicense-Expression: Apache-2.0\n")
+    (info / "LICENSE-3RD-PARTY.txt").write_bytes(content)
+    with pytest.raises(SystemExit, match="proprietary IPP ICV notice"):
+        licenses.check_vendor_files(tmp_path)
+
+
+def test_vendor_gate_admits_only_the_exact_llvm_build_and_rejects_tampering(tmp_path):
+    path = tmp_path / "runtime/Lib/site-packages/torch/lib/libiomp5md.dll"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"LLVM OpenMP")
+    approved = {
+        path.relative_to(tmp_path).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+    }
+    licenses.check_vendor_files(tmp_path, approved)
+    path.write_bytes(b"another OpenMP runtime")
+    with pytest.raises(SystemExit, match="unapproved Intel library"):
+        licenses.check_vendor_files(tmp_path, approved)
+    path.unlink()
+    with pytest.raises(SystemExit, match="missing LLVM OpenMP replacement"):
+        licenses.check_vendor_files(tmp_path, approved)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"ippicvGetLibVersion",
+        b"@(#) Intel(R) OMP Fortran support",
+        b"Intel(R) oneAPI Math Kernel Library Version 2024.2",
+        "Intel(R) OpenMP* Runtime Library".encode("utf-16le"),
+    ],
+)
+def test_vendor_gate_rejects_renamed_proprietary_binaries(tmp_path, content):
+    (tmp_path / "renamed.dll").write_bytes(b"MZ" + content)
+    with pytest.raises(SystemExit, match="proprietary Intel binary content"):
+        licenses.check_vendor_files(tmp_path)
+
+
+def test_vendor_gate_rejects_intel_even_if_the_cache_claims_its_digest(tmp_path):
+    path = tmp_path / "libiomp5md.dll"
+    path.write_bytes("Intel(R) OpenMP* Runtime Library".encode("utf-16le"))
+    approved = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()}
+    with pytest.raises(SystemExit, match="proprietary Intel binary content"):
+        licenses.check_vendor_files(tmp_path, approved)
+
+
+def test_only_the_reviewed_inapplicable_ipp_notice_is_removed(tmp_path):
+    path = tmp_path / "LICENSE-3RD-PARTY.txt"
+    separator = native_build.NOTICE_SEPARATOR
+    prefix, suffix = "OpenCV Apache-2.0\n", "\nOrbbec MIT licence\n"
+    path.write_text(
+        prefix
+        + separator
+        + "\n"
+        + native_build.IPP_HEADING
+        + "\nIntel Simplified Software License\n"
+        + separator
+        + suffix
+    )
+    native_build.remove_inapplicable_ipp_notice(path)
+    assert path.read_text() == prefix + separator + suffix
+    with pytest.raises(SystemExit, match="unreviewed OpenCV IPP notice layout"):
+        native_build.remove_inapplicable_ipp_notice(path)
+
+
+def test_replaced_openmp_and_notice_records_match_the_distributed_bytes(tmp_path):
+    site = tmp_path / "site-packages"
+    info = site / "torch-1.dist-info"
+    info.mkdir(parents=True)
+    dll = site / "libiomp5md.dll"
+    dll.write_bytes(b"LLVM OpenMP")
+    record = info / "RECORD"
+    record.write_text(
+        "libiomp5md.dll,sha256=old,0\nlibiompstubs5md.dll,sha256=old,0\n"
+        "torch-1.dist-info/RECORD,,\n"
+    )
+    build.refresh_wheel_records(site)
+    digest = urlsafe_b64encode(hashlib.sha256(dll.read_bytes()).digest()).decode().rstrip("=")
+    assert record.read_text() == f"libiomp5md.dll,sha256={digest},11\ntorch-1.dist-info/RECORD,,\n"
 
 
 @pytest.mark.parametrize("installer_records", [False, True])
