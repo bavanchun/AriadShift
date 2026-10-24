@@ -102,13 +102,15 @@ Without the chunk header the converter worker does not start, and the page repor
 
 ## Lighthouse
 
-Measured on 2026-10-23 with Lighthouse 13.5.0 (`just web-lighthouse`) against `next start` on the shared ASUS Linux x86_64 host, headless Chromium, default mobile (simulated throttling) and desktop presets:
+Measured on 2026-10-24 with Lighthouse 13.5.0 (`just web-lighthouse`) against `next start` on the shared ASUS Linux x86_64 host, headless Chromium, default mobile (simulated throttling) and desktop presets:
 
 | Page | Form factor | Performance | Accessibility | Best practices | SEO |
 |---|---|---:|---:|---:|---:|
-| `/` | mobile | 99 | 100 | 100 | 100 |
-| `/app` | mobile | 96 | 100 | 100 | 100 |
+| `/` | mobile | 94 | 100 | 100 | 100 |
+| `/app` | mobile | 91 | 100 | 100 | 100 |
 | `/` | desktop | 100 | 100 | 100 | 100 |
 | `/app` | desktop | 100 | 100 | 100 | 100 |
+
+An earlier run during unrelated concurrent compilation scored 67 and 73 for mobile performance. Repeating the same production build after that compilation ended produced the table above; all audits kept their default presets and the 90-point threshold.
 
 Lighthouse is not a CI gate: scores on shared runners vary too much. Run it before changing fonts, images or anything on the landing page, and update this table.
