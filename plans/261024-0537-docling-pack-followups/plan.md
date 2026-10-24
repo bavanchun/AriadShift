@@ -1,6 +1,6 @@
 # Docling pack follow-ups
 
-Status: First-round implementation completed. Review revisions are locally verified; Windows redistribution policy and final publication remain pending.
+Status: Implementation completed. Final verification and PR readiness are tracked in the pull request and coordinator handoff report.
 
 Outcome: Close the eight accepted low review findings on the merged Docling engine and pack, publish a focused pull request into `dev`, and verify its checks before marking it ready.
 
@@ -35,12 +35,20 @@ The first Windows pack smoke test exposed a case-insensitive path collision: sca
 
 Outcome: Remove unused Berkeley DB and LibTomMath, fail builds for unattributed native runtime files, restrict Tesseract reads to installation data directories, deduplicate the merged licence expression and refresh the CLI instructions. Keep PR #43 and the existing branch.
 
-Constraints: Use the shared build lock and three build/test workers. Keep Windows redistributable handling isolated until the coordinator decides its distribution policy. No dependency upgrades or unrelated conversion changes.
+Constraints: Use the shared build lock and three build/test workers. Keep Windows redistributable removal and its prerequisite documentation in one isolated commit, following the coordinator's decision to use the system runtime. No dependency upgrades or unrelated conversion changes.
 
-Acceptance: The structural check passes both Linux runtimes and macOS, and reports the two Windows redistributables while their policy is pending; final Windows acceptance requires the decision. Tesseract tests prove data access without prefix-wide access and force the sandbox. Focused tests, local CI and all remote Pack/OS jobs must pass before final delivery.
+Acceptance: The structural check passes all four pruned runtimes, and archives reject Microsoft redistributable DLLs, including copies from wheels. Tesseract tests prove data access without prefix-wide access and force the sandbox. Focused tests, local CI and all remote Pack/OS jobs must pass before final delivery.
 
-Status: Mechanical changes completed and locally verified; Windows distribution policy and publication remain pending. All four pinned archives were fetched and hash-verified. After pruning, Linux x86_64, Linux arm64 and macOS pass the structural inventory; Windows reports only `vcruntime140.dll` and `vcruntime140_1.dll`.
+Status: Implementation complete; final remote verification remains gated on CI. All four pinned archives were fetched and hash-verified, and all four pruned runtimes now pass the structural inventory.
 
 Verification: `just docling-test` passed all 61 Python tests and Ruff; final affected pack/licensing checks passed 30 tests. Three sandbox unit tests and the custom-prefix doctor test passed, with the latter requiring the sandbox and asserting that private prefix data stays unreadable. `just ci` passed 751 Rust tests, 64 benchmark tests and 59 web tests, plus static checks, Clippy, WASM, package checks and production build. Full-diff self-review and the read-only simplification review found no remaining mechanical issue. Fetched `origin` and rebased onto unchanged `origin/dev` (`be5e305`); commit lint passed.
 
-Windows evidence: The release workflow uses dist's default static MSVC CRT; PE inspection of the Windows artifact from run `40050574512` found only Windows system imports, with no VC runtime DLL dependency. The Pack job instead uses plain Cargo with no static-CRT override. The pinned Python DLL imports `VCRUNTIME140.dll`. The coordinator must choose redistribution terms or a prerequisite before the isolated Windows commit and final remote verification.
+Windows evidence: The release workflow uses dist's default static MSVC CRT; PE inspection of the Windows artifact from run `40050574512` found only Windows system imports, with no VC runtime DLL dependency. The Pack job instead uses plain Cargo with no static-CRT override. The pinned Python DLL imports `VCRUNTIME140.dll`. The coordinator chose to remove the bundled redistributables and document a Windows Docling prerequisite; no licensing exception is added.
+
+## Windows runtime prerequisite
+
+The build removes Microsoft runtime DLLs both before and after installing wheels, and the archive writer rejects remaining `vcruntime*` or `msvcp*` DLLs. The original Windows pack contained three hashed MSVCP copies inside NumPy, pandas and Shapely wheels in addition to the two CPython DLLs. Their PE import names are shortened to system DLL names before removal, without relocating image data. An independent `llvm-readobj` check over all 330 remaining native files confirmed there are no hashed Microsoft import names. Normal/delay-import rewriting and archive refusal have regression tests.
+
+Docling's path-free describe failure names the x64 Visual C++ Redistributable prerequisite for Windows missing-DLL loader errors, so doctor can explain the remedy. The distributed release host uses static CRT; only the Docling prerequisite is documented. The standalone host's install requirements and project licensing policy are unchanged.
+
+Final local verification: `just ci` passed 752 Rust tests, 64 benchmark tests and 59 web tests, including static checks, Clippy, WASM, package checks and production build. The complete Docling suite passed Ruff and 66 tests; final archive/import/record checks passed all 10 focused pack tests. Two Docling host unit tests passed. An audit of the real Windows wheel tree verified all 282 remaining native-file RECORD hashes after removal and import retargeting. Self-review found no unresolved implementation issue. Final remote checks and PR readiness are recorded in the coordinator handoff report.
