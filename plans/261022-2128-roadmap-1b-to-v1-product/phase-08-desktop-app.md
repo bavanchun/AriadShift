@@ -215,3 +215,56 @@ can be removed when a stable upstream plugin release carries the fix.
 
 PR: [Desktop document workspace](https://github.com/bavanchun/AriadShift/pull/40).
 The final documentation commit is checked again before marking the PR ready.
+
+## Review 1 completion (2026-10-24)
+
+- Rebased the preserved implementation and review fixes onto cloud hardening
+  at `fd4adf6`. The CI documentation conflict retains both desktop packaging
+  and the new server container test recipe.
+- The review's exact empty-Apple environment build failed before the fix with
+  exit 1 (empty PKCS#12 import), passed after the fix with exit 0, and passed
+  again after rebase. The wrapper removes empty Apple variables and explicitly
+  skips macOS platform signing without a certificate. Signing credential groups
+  are documented; updater signatures remain independent.
+- Release secrets are scoped to their consuming steps. Linux bundler tools
+  are prefetched and SHA-256 verified. A post-matrix release job requires the
+  Linux x86-64, Apple silicon and Windows x86-64 updater entries, attached asset
+  URLs and valid signatures with the committed public key. Local verification
+  accepted a real updater archive and refused tampering and a mismatched key.
+  Live tag publication remains outside this PR's acceptance run.
+- One Rust command table now also declares the application command manifest
+  and generates its main-window permission set. Updater grants match the UI
+  operations and the unused asset CSP source is removed. Binding and permission
+  regeneration produced no drift.
+- Polling skips vanished entries and unreadable nested folders, while saved
+  watch baselines initialize on their threads. Large-tree polling guidance is
+  documented. UI coverage includes deep-link preferences, picker and debounce,
+  plus explicit update installation, offline checks and signature errors.
+- The CLI and desktop use one host built-in engine dispatcher. No additional
+  engines were implemented; later built-in engines extend that host function.
+  The existing interrupt fixture still keeps its two-second deadline, and the
+  untrusted-pack refusal assertions remain intact.
+- The coordinator verified pack key `D87B0E33F55EA02B` against the release
+  secret; its creation and secret storage at 2026-10-22 16:02Z are recorded in
+  the signing documentation commit body. Product docs omit private backup
+  paths and explain loss/rotation of both signing keys and Apple silicon-only
+  macOS support.
+- Local gates passed static checks, workspace Clippy, WASM, 761 Rust tests
+  (9 environment-dependent skips), doctests, 61 benchmark tests (3 skips),
+  capabilities checks, four-crate packaging, all typechecks and 67 frontend
+  tests. Desktop checks additionally passed 12 native tests, 8 UI tests,
+  6 build-tool tests, production build and generated-file drift checks.
+  Local `just ci` stopped at Turbopack's refusal to resolve the external pnpm
+  cache; the supported Webpack production build passed. Standard Turbopack
+  builds and PowerShell syntax validation run in CI with its normal workspace
+  layout and tooling; local PowerShell checks were explicitly skipped.
+- Built and installed the refreshed unsigned DMG. Native UI acceptance passed
+  a Markdown/two-DOCX batch at concurrency 2, new/modified watch inputs,
+  pause/resume/restart, deep-link DOCX selection with the private profile,
+  signed local pack install/verify (5 files)/remove and Diagnostics. The
+  installed binary also passed the Pandoc protocol handshake and rejected an
+  unknown engine without opening a GUI. DMG SHA-256:
+  `df6a8fbd547907641e7208bd44fd2c61c05cf8d971543ef7fda5054dc6cacd0d`.
+  Ignored evidence is in `.tools/desktop-review-acceptance`; the app is closed,
+  test watch and pack removed, and DMG unmounted. The final three-platform CI
+  results are recorded in the PR and worker report.

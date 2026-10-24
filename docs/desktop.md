@@ -13,6 +13,8 @@ and RPM declare these package dependencies; install them separately for AppImage
 
 Unsigned builds are available until the maintainer configures platform signing
 certificates. On macOS, open the disk image and copy AriadShift to Applications.
+macOS installers and in-app updates currently support Apple silicon (aarch64)
+only. Intel macOS is not built and has no updater metadata entry.
 
 Markdown and HTML conversion needs no external engine. DOCX and EPUB routes need
 Pandoc `>=3.12,<4` on PATH or selected through the `ASHIFT_PANDOC` environment
@@ -39,9 +41,6 @@ reveals a successful result in Finder or Explorer. Set concurrency from 1 to 4
 in Settings. All conversions share a warm engine session pool. The queue holds
 at most 1,000 jobs and clears finished history when room is needed; it is not
 persisted across app restarts.
-
-macOS installers and in-app updates currently support Apple silicon (aarch64)
-only. Intel macOS is not built and has no updater metadata entry.
 
 ## Watch folders
 
@@ -186,6 +185,13 @@ using `tauri-driver` and the real UI to convert Markdown to HTML. Tag builds use
 the release environment, sign update artifacts and attach bundles to the GitHub
 release created by the CLI workflow. Desktop jobs wait for that release and
 attach assets by release ID, avoiding competing release creation.
+Signing credentials are scoped to their consuming steps. Before Linux builds,
+the workflow verifies all three downloaded AppImage bundler executables against
+the SHA-256 values in [the tool manifest](../apps/desktop/scripts/linux-tools.json).
+After the release matrix finishes, a verification job requires all three updater
+platform entries, checks their URLs against attached assets and verifies every
+signature with the committed public key. See [releasing.md](releasing.md#failure-responses)
+for recovery and the effect of a newer CLI-only release.
 The desktop app is not a crates.io package; root `package-check` verifies the
 other Rust workspace packages, including internal WASM, while this workflow
 verifies the desktop installers.
