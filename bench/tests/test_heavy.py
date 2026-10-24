@@ -51,6 +51,28 @@ def test_heavy_fixture_generation_is_reproducible_and_manifested():
                     hashlib.sha256(stored.tobytes()).digest()
                     == hashlib.sha256(generated.tobytes()).digest()
                 ), path
+        elif Path(path).suffix in (".odt", ".ods", ".odp"):
+            # ZIP compression and host markers vary; authored parts must match exactly.
+            with (
+                ZipFile(ROOT / path) as stored,
+                ZipFile(BytesIO(content)) as generated,
+            ):
+                assert stored.namelist() == generated.namelist(), path
+                assert stored.comment == generated.comment, path
+                for name in stored.namelist():
+                    assert stored.read(name) == generated.read(name), (path, name)
+                    for field in (
+                        "date_time",
+                        "compress_type",
+                        "external_attr",
+                        "internal_attr",
+                        "flag_bits",
+                        "extra",
+                        "comment",
+                    ):
+                        assert getattr(stored.getinfo(name), field) == getattr(
+                            generated.getinfo(name), field
+                        ), (path, name, field)
         else:
             assert (ROOT / path).read_bytes() == content, path
 
