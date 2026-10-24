@@ -164,6 +164,19 @@ The build prunes unused runtime modules and requires every remaining native file
 
 Windows packs use the system Microsoft runtime; see [Docling prerequisites](docling.md#what-it-needs). The build removes `vcruntime*` and `msvcp*` DLLs before and after wheel installation, and the archive writer rejects any remaining copy, including those under `site-packages`. Wheels can refer to hash-suffixed runtime names; their PE import tables are retargeted to the corresponding system DLL names before those copies are removed, without relocating image data.
 
+Docling packs exclude Intel IPP ICV and Intel's OpenMP binaries. On x86_64,
+OpenCV is built from the hash-pinned sdist with IPP/ITT and proprietary backends
+disabled; Linux uses a pinned manylinux 2.28 build container. Windows replaces
+PyTorch's Intel OpenMP with a source-built LLVM runtime and Apache-2.0 MSVC
+compatibility wrappers, retaining the DLL name its import table requires.
+The stubs DLL is removed and LLVM's licence and wrapper source are included in
+the notices. The final gate checks wheel binaries and notice contents as well
+as distribution metadata. Build prerequisites, ARM notice handling and real
+conversion comparisons are described in [the Docling build](docling.md#the-pack).
+The locked Linux x86_64 PyTorch wheel's statically linked proprietary MKL is an
+additional distribution blocker; the vendor gate refuses it pending an MKL-free
+PyTorch replacement.
+
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 
 ## Signing and publishing

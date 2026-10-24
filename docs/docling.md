@@ -48,6 +48,7 @@ cargo run -p ariad-cli --bin ashift -- convert fixtures/scan/vi-garden-300dpi.pn
 | `just docling-test` | `ruff check`, `ruff format --check` and `pytest` over `engines/docling`. The tests need only the environment, not the models. |
 | `just docling-engine-test` | Runs `crates/ariad-cli/tests/docling_engine.rs` against the real engine: protocol schema conformance (describe, convert, progress, warning, result last, clean stdout), scanned Vietnamese PNG and PDF to Markdown and DOCX, a digital PDF table, PPTX and XLSX, and cancellation stopping the engine and Tesseract. These tests are ignored by default and need Tesseract. |
 | `just pack-docling` | Builds the unsigned pack for this host into `target/pack-docling`. |
+| `just pack-docling-test` | Runs the real engine conformance and acceptance suite against that pack; needs Pandoc and Tesseract. |
 
 `ASHIFT_PACK_DOCLING=<dir>` runs an unpacked pack instead (see [packs.md](packs.md#resolution)); `build.py verify` uses it.
 
@@ -61,6 +62,9 @@ cargo run -p ariad-cli --bin ashift -- convert fixtures/scan/vi-garden-300dpi.pn
 | `fetch.py` | Downloads pinned files into the cache and verifies them; a cached blob is re-hashed before every use. |
 | `licenses.py` | The licence gate and the notices writer. |
 | `build.py` | `build`, `verify` and `manifest` (below). |
+| `native_build.py` | Hash-verified OpenCV and LLVM source builds, cached by source, target, flags and build tools. |
+| `vcomp-compat.cpp` | Apache-2.0 MSVC OpenMP entrypoints compiled into the Windows LLVM runtime. |
+| `conversion_proof.py`, `probe-runtime.py` | Original/replacement table and OCR comparisons, cv2 configuration and parallel PyTorch/Windows ABI checks. |
 
 `build.py build --target <triple> --out <dir> [--ashift <path>]` (or `just pack-docling`):
 
@@ -69,6 +73,44 @@ cargo run -p ariad-cli --bin ashift -- convert fixtures/scan/vi-garden-300dpi.pn
 3. Runs the licence gate over every installed distribution. Each distribution's SPDX expression (or its licence field or classifiers) is parsed: `OR` lets the build pick an allowed alternative, `AND` needs every operand allowed, and `WITH` accepts only reviewed exceptions. The licences must be on the allow-list of permissive licences, with MPL-2.0 only for reviewed, unmodified exceptions; AGPL, GPL, non-OSI, OpenRAIL and unknown licences fail the build, and so does a licence nobody has reviewed yet. Model and data licences come from `pins.toml`. The notices of every distribution, the model and data licences, CPython and its C-library licence texts, and the AriadShift `LICENSE` and `NOTICE` go to `notices/`. [runtime-libraries.toml](../engines/docling/pack/runtime-libraries.toml) records runtime library versions, upstream release URLs and text digests; changing the Python release requires reviewing this inventory. Unused Tk/Tcl, tkinter, idlelib and standard-library test directories are removed before wheel installation. The manifest licence expression combines the gate-approved distribution expressions with the runtime, model, data and project licences.
 4. Writes reproducible `tar.zst` archives (`SOURCE_DATE_EPOCH`, normalized ownership and modes), each under 2 GiB: `runtime` (the interpreter, the packages and `notices/`, per target), `models` and `tessdata` (shared by all targets).
 5. Writes an unsigned `pack.toml` with `ashift __pack manifest`, which hashes the archives and declares their unpacked size and entry count. The entrypoint is `runtime/bin/python3 -I -m ariad_docling` (`runtime/python.exe` on Windows) and the default options are `artifacts_path = "{root}/models"` and `tessdata_path = "{root}/tessdata"`.
+
+The x86_64 packs replace the published OpenCV wheel with a build of the same locked
+sdist, with IPP, ITT and proprietary device/acceleration backends disabled. Linux
+builds use a digest-pinned manylinux 2.28 container and auditwheel; Docker is a
+build prerequisite on Linux x86_64. Windows builds use Visual Studio 2022.
+The `pack-build` dependency group locks the build tools without adding them to
+the distributed runtime. Source URLs, sizes and SHA-256 digests are in `pins.toml`;
+the OpenCV pin must match `uv.lock` when it is updated.
+
+The Windows pack builds LLVM OpenMP from its pinned release with five MSVC
+`_vcomp_*` wrappers using LLVM's `__kmpc_*` operations. It keeps PyTorch's required
+`libiomp5md.dll` name, removes `libiompstubs5md.dll`, refreshes wheel RECORD hashes,
+and includes the LLVM licence and wrapper source in the notices. Every OpenMP
+region and thread query uses this one runtime. Parallel matrix, reduction and
+elementwise checks, plus direct wrapper checks of captures, barriers, serialized
+regions and static loops, run before packaging.
+
+ARM packs retain the upstream hash-locked OpenCV wheels. Their common third-party
+notice includes an IPP section explicitly scoped to x86/x86_64, even though IPP
+does not apply to ARM. The builder removes only that reviewed section, and does
+the same for source builds after probing cv2's configuration. Every other notice
+is preserved. The structural gate scans the final runtime and notices, including
+wheel contents, and rejects IPP ICV notice text, IPP binary markers, Intel OpenMP
+version resources and unapproved `iomp` files. Only the exact LLVM build digest
+is allowed at the replacement path; its bytes are still scanned. An unrecognized
+notice layout or native artifact fails the build.
+
+The locked Linux x86_64 PyTorch wheel also statically contains proprietary Intel
+oneMKL, which is separate from Apache-2.0 oneDNN/MKL-DNN. The vendor gate rejects
+its version marker. Producing a distributable pack is blocked until an MKL-free
+PyTorch build or audited replacement is selected; replacing OpenCV and the
+Windows OpenMP DLL alone does not satisfy the no-non-OSI policy.
+
+Native x86_64 builds convert the table PDF and two OCR PDFs with both the original
+locked wheels and the replacements. `comparison-<target>.json` records extracted
+text, table data and layout differences for TableFormer, RapidOCR and Tesseract.
+The original proprietary libraries are used only for this build-time comparison;
+they are replaced before the distribution gate and archive writer run.
 
 `build.py verify --out <dir> --input <file> --expect <text> [--offline]` unpacks the archives into a new directory, uses it as `ASHIFT_PACK_DOCLING`, and converts `<input>` to Markdown with `ashift`, so the manifest, engine, models and OCR data all take part. With `--offline` on Linux the conversion runs under `unshare -rn`, which proves that nothing is downloaded. `build.py manifest --out <dir> <triple>...` merges the targets built into `<dir>` into one `pack.toml`.
 
@@ -80,7 +122,7 @@ Targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-ap
 
 - **Engine tests** on `ubuntu-26.04` and `windows-2025`: ruff and pytest.
 - **Engine conformance** on Linux with cached models and Tesseract: `just docling-engine-test`.
-- **Pack** builds the Linux x86_64 pack twice in separate directories, compares the component and manifest hashes, and converts the scanned Vietnamese page with it offline. Tags, and pull requests that change `engines/docling/pack/` or the workflow, also build `aarch64` Linux (not run), macOS and Windows (each converts a digital PDF) and merge their manifests.
+- **Pack** builds the Linux x86_64 pack twice in separate directories, compares the component and manifest hashes, and converts the scanned Vietnamese page with it offline. Tags, and pull requests that change `engines/docling/pack/` or the workflow, also build `aarch64` Linux (not run), macOS and Windows (each converts a digital PDF) and merge their manifests. Linux and Windows x86_64 jobs additionally run the conformance/acceptance tests with the packaged interpreter and upload the original/replacement conversion comparisons. Native OpenCV/LLVM caches are separate from downloaded source/model blobs.
 
 Native pack jobs also sign a test copy of the manifest with an ephemeral key, install it through
 `ashift engines install docling --from`, convert a digital PDF using installed-pack resolution,
