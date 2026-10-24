@@ -18,6 +18,8 @@ tha = "tha"
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".
 PNGs = "PNGs"
+# Linux procfs names this field for inheritable process capabilities.
+CapInh = "CapInh"
 
 [files]
 extend-exclude = [

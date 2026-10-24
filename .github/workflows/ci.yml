@@ -219,7 +219,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.heavy == 'true'
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     defaults:
@@ -299,6 +299,9 @@ jobs:
           ARIAD_TEST_SANDBOX_SUPPORT: none
           ASHIFT_SANDBOX: off
         run: cargo nextest run -p ariad-server --test isolated -E 'test(required_mode_reaches_the_engine_through_the_helper)'
+
+      - name: Check images and run a required-mode container worker
+        run: just test-server-container
 
       - name: Stop SeaweedFS
         if: always()
