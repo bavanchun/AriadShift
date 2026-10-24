@@ -1,6 +1,6 @@
 # AriadShift — System Architecture
 
-> **Status:** Proposal v1 · **Updated:** 2026-10-22
+> **Status:** Proposal v1 · **Updated:** 2026-10-23
 > Version selections are based on registry and release checks recorded on 2026-10-06; the web rows in §2.2 and the wasm rows in §2.3 were re-verified on 2026-10-22. Lockfiles pin exact resolved versions.
 
 AriadShift is an open-source, local-first document transformation platform. A single core engine powers five surfaces: **CLI, Desktop, Web, REST API/SDK, and MCP server**.
@@ -29,7 +29,7 @@ The name is derived from Ariadne's thread: AriadShift's planner navigates the fo
 | 8 | License clean | Apache-2.0 project; no AGPL in distribution; CI blocks invalid licenses |
 | 9 | No lock-in | Open standards at every boundary: S3 API, OpenAPI 3.1, JWT/JWKS, OpenTelemetry, MCP |
 
-Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exceptions to Principle 3. These readers are pure Rust with `#![forbid(unsafe_code)]`, typed errors, and finite nesting, node, and block limits; core readers are fuzzed starting in roadmap 1a. The DoclingDocument JSON mapper (`ariad_core::docling`) joins them: it reads the JSON that the out-of-process Docling engine wrote, never the user's input file, under the same bounds, typed errors and fuzzing (`docling_to_ir`). Every other parser runs out of process.
+Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exceptions to Principle 3. The I/O-free PDF reader also compiles for browser WASM; native surfaces always run it through the isolated PDF engine. These readers are pure Rust with `#![forbid(unsafe_code)]`, typed errors, and finite nesting, node, and block limits; core readers are fuzzed starting in roadmap 1a. The DoclingDocument JSON mapper (`ariad_core::docling`) joins them: it reads the JSON that the out-of-process Docling engine wrote, never the user's input file, under the same bounds, typed errors and fuzzing (`docling_to_ir`). Every other parser runs out of process.
 
 ---
 
@@ -86,8 +86,8 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | reqwest / rustls | **0.13.5** (`rustls-no-provider`) / **0.23.46** (`ring`) | Outbound HTTP from the server (JWKS, Turnstile, S3); ring is installed as the process crypto provider |
 | chrono / hmac / async-trait / tokio-stream / futures-util / bytes / url | **0.4.45** / **0.13.0** / **0.1.92** / **0.1.19** / **0.3.34** / **1.12.1** / **2.5.8** | Server timestamps (sqlx has no `jiff` support), signed local blob URLs, the `JobQueue` trait, SSE streams |
 | serde / thiserror / clap / schemars / jiff / uuid | 1 / 2 / 4.6 / 1.2 / 0.2 / 1 | Common foundational utilities |
-| pdfium-render + PDFium | 0.9 + `chromium/8076` (bblanchon/pdfium-binaries, **non-V8** build) | PDF rendering, text extraction, images, metadata |
-| typst | 0.15 | IR → PDF |
+| lopdf | **0.46.0**, default features off; `wasm_js` on wasm32 | Base PDF text-layer reader, MIT; PDFium remains inside the Docling pack and benchmark rendering only |
+| typst / typst-pdf | **0.15.1** | IR → PDF in an out-of-process engine; embedded OFL fonts |
 | rmcp | **3.5.1** (`default-features = false`, `server`, `macros`, `transport-io`) | Official MCP SDK for Rust |
 | wasm-bindgen / wasm-bindgen-cli / js-sys | **0.2.129** / **0.2.129** / **0.3.106** | Build `ariad-wasm`; the CLI comes from its release archive with checksums pinned in `scripts/install-wasm-bindgen.sh` and must equal the crate version |
 | jsonwebtoken | **11.1.0** (`rust_crypto`) | JWT verification from Better Auth |
@@ -155,9 +155,9 @@ flowchart TB
   end
 
   HOST["ariad-host: engine runner, sandbox, engine packs"]
-  WASM["ariad-wasm + pandoc.wasm + PDFium WASM + Typst"]
+  WASM["ariad-wasm + pandoc.wasm + core PDF reader + Typst"]
   SERVER["ariad-server: api / worker"]
-  ENG["Engines: PDFium · Pandoc · Docling + Tesseract / RapidOCR · LibreOffice · Typst"]
+  ENG["Engines: PDF text reader · Pandoc · Docling + Tesseract / RapidOCR · LibreOffice · Typst"]
   PG[("PostgreSQL 18 + pgmq")]
   S3[("S3 API: SeaweedFS / R2")]
 
@@ -184,7 +184,7 @@ flowchart TB
 | **CLI** `ashift` | Developers, scripts, CI | Local machine | All installed engines |
 | **MCP** `ashift mcp` (stdio) | AI agents: Claude, Cursor, IDEs | Local machine | Same as CLI |
 | **Desktop** | Privacy-focused users, large files, batch | Local machine | All, installed via engine packs |
-| **Web, Local Mode** | General users | Browser (WASM) | core, Pandoc WASM, PDFium WASM, Typst |
+| **Web, Local Mode** | General users | Browser (WASM) | core, Pandoc WASM, core PDF reader, Typst |
 | **Web, Cloud Mode** | Complex files, scans, legacy Office | Server workers | All |
 | **REST API + TS SDK** | Developers, enterprises | Server | All |
 
@@ -200,7 +200,7 @@ ashift doctor                   # check environment
 ashift mcp                      # run MCP server over stdio
 ```
 
-The conversion command is `ashift convert <INPUT>… --to <FORMAT> [-o <OUTPUT>] [--overwrite] [--profile <PROFILE>] [--json]`. With several inputs, `-o` must name an existing directory; results keep input order, human output has one path per success, and JSON has a `results` array containing successes and typed failures. The command continues after individual failures and returns the first failure's exit code (130 on cancellation). Batch jobs share a warm engine pool; one input preserves the single-document output contract. It supports converting between `md`/`markdown`, `html`, `docx`, and `epub` across all 12 distinct format pairs. The default output is `<input stem>.<target extension>` beside the input. Same-format routes (such as `md -> md`) are refused with exit code 3; destinations that canonicalize to the input path are refused with exit code 2 even when `--overwrite` is specified. In Markdown and HTML writers, asset-backed images are embedded as `data:` URIs so output remains a single file. `ashift mcp` confines file access to client roots plus `--allow-dir` paths; overwriting needs the server flag `--allow-overwrite`.
+The conversion command is `ashift convert <INPUT>… --to <FORMAT> [-o <OUTPUT>] [--overwrite] [--profile <PROFILE>] [--engine <ENGINE>] [--json]`. With several inputs, `-o` must name an existing directory; results keep input order, human output has one path per success, and JSON has a `results` array containing successes and typed failures. The command continues after individual failures and returns the first failure's exit code (130 on cancellation). Batch jobs share a warm engine pool; one input preserves the single-document output contract. It supports `md`/`markdown`, `html`, `docx`, and `epub` to/from IR JSON (`--to json`), PDF text extraction through the built-in PDF reader, and IR → PDF through Typst. System LibreOffice adds DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP → PPTX, and all ten Office/ODF formats → PDF. The executor chains any number of registered steps, so DOC → DOCX → IR → Markdown works. PDF reader selection is content-aware: the bounded built-in engine reads digital text once and its result is reused; `needs_ocr` selects Docling. `--engine` pins the input reader, including Docling layout extraction for digital PDFs, without constraining later writers. Reader choice and OCR requirements never silently fall back to another reader. `inspect` uses only the built-in PDF path. LibreOffice is optional; DOCX → PDF falls back to Pandoc → IR → Typst when it is absent. The default output is `<input stem>.<target extension>` beside the input. Same-format routes (such as `md -> md`) are refused with exit code 3; destinations that canonicalize to the input path are refused with exit code 2 even when `--overwrite` is specified. In Markdown and HTML writers, asset-backed images are embedded as `data:` URIs so output remains a single file. `ashift mcp` confines file access to client roots plus `--allow-dir` paths; overwriting needs the server flag `--allow-overwrite`.
 
 Diagnostic and introspection commands:
 - `ashift inspect <INPUT> [--json]`: detects format through prefix/central-directory sniffing, structural element counts, metadata, and reachable targets. Regular-file verification prevents blocking on FIFOs or device nodes; files over 32 MiB skip deep structural counting (emitting `warning[document_too_large]`). Peak memory usage during AST expansion is bounded to approximately 100x the input document size.
@@ -228,7 +228,7 @@ Diagnostic and introspection commands:
 | 6 | destination exists |
 | 130 | interrupted |
 
-Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains human output (or the output path for `convert`), or exactly one JSON document when `--json` is specified. SIGTERM and SIGHUP (Unix), Ctrl-C, and Ctrl-Break (Windows) cancel the run, kill the engine process tree, delete the workspace, return 130, and leave the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `SOURCE_DATE_EPOCH` fixes DOCX and EPUB timestamps for reproducible goldens. Commands reuse the same exit-code table. Full reference: [docs/cli.md](docs/cli.md) and [docs/mcp.md](docs/mcp.md).
+Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains human output (or the output path for `convert`), or exactly one JSON document when `--json` is specified. SIGTERM and SIGHUP (Unix), Ctrl-C, and Ctrl-Break (Windows) cancel the run, kill the engine process tree, delete the workspace, return 130, and leave the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `ASHIFT_SOFFICE` selects a system LibreOffice (>=24.2); `SOURCE_DATE_EPOCH` fixes Typst PDF, DOCX and EPUB timestamps for reproducible goldens. Commands reuse the same exit-code table. Full reference: [docs/cli.md](docs/cli.md) and [docs/mcp.md](docs/mcp.md).
 
 ---
 
@@ -290,8 +290,8 @@ Only 5 crates exist initially. Further crate splits occur only when distinct bou
 
 | Crate | Responsibility | WASM | Key Dependencies |
 |---|---|---|---|
-| `ariad-core` | IR types, format registry, planner, limit enforcement, pure-data engine-protocol message types shared with host, browser, and server, native Markdown and HTML readers/writers, the in-memory pipeline (`pipeline`: read, write and run in-process routes by format id, with bounded IR JSON input) and in-memory inspection (`inspect`) | ✓ | serde, schemars |
-| `ariad-host` | Asset resolution, engine process execution, workspaces, engine pack management, PDFium/Pandoc/LibreOffice/Docling/Typst adapters, and DOCX metadata rewrite | ✗ | tokio, pdfium-render, typst |
+| `ariad-core` | IR types, format registry, planner, limit enforcement, pure-data engine-protocol message types shared with host, browser, and server, native Markdown and HTML readers/writers, PDF text reader, Typst markup writer, the in-memory pipeline (`pipeline`: read, write and run in-process routes by format id, with bounded IR JSON input) and in-memory inspection (`inspect`) | ✓ | serde, schemars, lopdf |
+| `ariad-host` | Asset resolution, engine process execution, workspaces, engine pack management, PDF/Pandoc/LibreOffice/Docling/Typst adapters, and DOCX metadata rewrite | ✗ | tokio, typst |
 | `ariad-cli` | Command-line interface, MCP server | ✗ | clap, rmcp |
 | `ariad-wasm` | Browser JS API: `version`, `capabilities`, `inspect`, `plan`, `convert` over format ids and the `wasm` capability edges; typed error objects; no conversion logic of its own | ✓ | wasm-bindgen, js-sys |
 | `ariad-server` | `api`: Axum + OpenAPI; `worker`: consumes jobs from pgmq and calls ariad-host | ✗ | axum, sqlx, object_store |
@@ -300,7 +300,7 @@ Only 5 crates exist initially. Further crate splits occur only when distinct bou
 
 The IR serves as the "lingua franca" across readers and writers. Designed in three layers, the layout layer is entirely optional:
 
-The versioned schema is `ariad-ir/0` at `schemas/ir.v0.json` during 0.x; breaking changes are allowed. It freezes as `ariad-ir/1` together with `ariad-engine/1` in roadmap 1b.
+The versioned schema is `ariad-ir/0` at `schemas/ir.v0.json` during 0.x; breaking changes are allowed. It freezes as `ariad-ir/1` together with `ariad-engine/1` before v0.2.0.
 
 Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants. Format variants serialize with a single wire identity matching `Format::id()` (for example `ariad-ir+json` and `pandoc+json`). In addition to `Markdown`, `Html`, and `Docx`, the format registry provides `Epub`, `Pdf`, and `Png` (required by the spike for image inputs and source-format deserialization without a reader in 1a).
 
@@ -365,26 +365,27 @@ Provenance boxes become `LayoutIndex` entries: Docling's bottom-left origin is f
 The planner runs Dijkstra's shortest-path algorithm over weighted costs with deterministic tie-breaking on engine ID then format ID. Cycles are prevented by rejecting routes that visit the same format more than once. The planner records the primary route, aggregated score (fidelity and editability multiply along the route, time adds), and up to 2 alternatives computed by removing each edge of the primary route in turn. Decisions are always **explainable**:
 
 ```text
-$ ashift plan paper.pdf --to docx
-input   paper.pdf · pdf (digital) · 37 pages · 7 tables · 4 formulas
-route   pdf ─docling→ ariad-ir ─pandoc→ docx
-score   fidelity 0.86 · editability 0.95 · estimated 9s · runs locally ✓
-alt     pdf ─pdfium(text)→ ariad-ir ─pandoc→ docx · 6x faster but loses table structure
+$ ashift plan paper.pdf --to docx --engine docling
+input   paper.pdf · pdf
+route   pdf ─docling→ docling+json ─ariad-core→ ariad-ir+json ─pandoc→ docx
+score   unmeasured
 ```
 
 For pipeline composition and diagnostic testing, the CLI provides hidden hooks:
-- `ashift __ir <INPUT> -o <OUTPUT>` executes a single reader edge converting an input document to AriadShift IR.
-- `ashift __write <INPUT> --to <FORMAT> -o <OUTPUT>` executes a single writer edge converting an IR document to the target format. If the IR document lacks an explicit metadata title, target formats supporting titles (such as DOCX and EPUB) fall back to using the input filename stem, stripping any `.ir` suffix (e.g., `document.ir.json` -> `document`).
+- `ashift __ir <INPUT> -o <OUTPUT>` executes the planned route converting an input document to AriadShift IR.
+- `ashift __write <INPUT> --to <FORMAT> -o <OUTPUT>` executes the planned route converting an IR document to the target format. If the IR document lacks an explicit metadata title, target formats supporting titles (such as DOCX and EPUB) fall back to using the input filename stem, stripping any `.ir` suffix (e.g., `document.ir.json` -> `document`).
+
+The format registry recognizes PPTX, XLSX, ODT, ODS, ODP, DOC, XLS, PPT, RTF, JPEG, WebP and TIFF through ZIP parts, ODF mimetypes, bounded OLE2 directory inspection or magic bytes. `json` is the user name of `ariad-ir+json`; `pandoc+json` stays internal. New PDF, Typst and LibreOffice capability edges have `metrics: null` until benchmark measurements exist.
 
 ### 6.4 Format Matrix (v0.x Scope)
 
 | Format | Read | Write | In Browser |
 |---|---|---|---|
-| PDF (digital) | Docling (structure), PDFium (text, images, metadata) | Typst (from IR) | PDFium WASM: inspect, text, images, page render |
+| PDF (digital) | Base: pure-Rust text-layer reader; Docling pack: layout and OCR | Typst (from IR) | Core reader: text, metadata, page geometry; Typst markup writer |
 | PDF (scan) | Docling + Tesseract for `vi`; RapidOCR otherwise; optional PaddleOCR-VL | — | ✗ (requires cloud or desktop) |
 | DOCX | Docling, Pandoc | Pandoc | Pandoc WASM |
-| PPTX, XLSX | Docling | LibreOffice (→ PDF) | ✗ |
-| DOC, XLS, PPT, RTF, ODT, ODS, ODP | LibreOffice → OOXML/ODF → reader | LibreOffice | ✗ |
+| PPTX, XLSX | Docling pack; system LibreOffice for PDF export | LibreOffice (→ PDF) | ✗ |
+| DOC, RTF, ODT; XLS, ODS; PPT, ODP | System LibreOffice → DOCX / XLSX / PPTX; DOCX then reaches IR through Pandoc | LibreOffice (→ PDF and OOXML) | ✗ |
 | Markdown (GFM), HTML | ariad-core | ariad-core | ✓ |
 | EPUB, LaTeX, RST | Pandoc | Pandoc | Pandoc WASM |
 | PNG, JPEG, WebP, TIFF | image crate / libvips (+ OCR when text needed) | image crate / libvips | Basic operations |
@@ -442,14 +443,14 @@ Protocol rules:
 
 - Engines **read and write only within the designated workspace** and **open no network connections**.
 - **Stdout discipline:** stdout carries NDJSON protocol lines only; all diagnostic logging belongs on stderr. The host runner treats any non-JSON line on stdout as a protocol violation. Adapters redirect native library stdout (fd 1) to stderr (fd 2) and emit protocol events only over a duplicated protocol descriptor.
-- **Engine configuration contract:** engine settings travel in request `options` (e.g. `artifacts_path`, `tessdata_path`). The runner clears the environment (`env_clear()`) and inherits only allow-listed variables: `PATH`, `TMPDIR`/`TMP`/`TEMP` (pointing to `work_dir` for one-shot conversion or `<session>/tmp` for sessions), `ASHIFT_PANDOC`, and on Windows `SYSTEMROOT`. An engine launched from a pack also receives its allow-listed `env` entries (§7.1); its `EngineCommand` includes those settings and the install root, which the sandbox grants read and execute access. A built-in helper in an AppImage uses the canonical `APPDIR` as its installation root only when that directory contains both `AppRun` and the helper executable; the bundle receives read and execute access for its shared libraries. Windows profile variables (such as `USERPROFILE` and `APPDATA`) stay unset; an engine that needs a home directory points `HOME` and `USERPROFILE` into its job `work_dir`, as the Docling engine does. Adapters set engine-specific flags (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `TESSDATA_PREFIX`) from request `options`.
+- **Engine configuration contract:** engine settings travel in request `options` (e.g. `artifacts_path`, `tessdata_path`). The runner clears the environment (`env_clear()`) and inherits only allow-listed variables: `PATH`, `TMPDIR`/`TMP`/`TEMP` (pointing to `work_dir` for one-shot conversion or `<session>/tmp` for sessions), `ASHIFT_PANDOC`, `ASHIFT_SOFFICE`, and on Windows `SYSTEMROOT`, `ProgramFiles`, `ProgramW6432` and `ProgramFiles(x86)` (so LibreOffice is found outside `PATH`). An engine launched from a pack also receives its allow-listed `env` entries (§7.1); its `EngineCommand` includes those settings and the install root, which the sandbox grants read and execute access. A built-in helper in an AppImage uses the canonical `APPDIR` as its installation root only when that directory contains both `AppRun` and the helper executable; the bundle receives read and execute access for its shared libraries. Windows profile variables (such as `USERPROFILE` and `APPDATA`) stay unset; an engine that needs a home directory points `HOME` and `USERPROFILE` into its job `work_dir`, as the Docling engine does. Adapters set engine-specific flags (`HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE`, `TESSDATA_PREFIX`) from request `options`.
 - **Memory rule:** when `limits.max_memory_mb` is set, the host samples aggregate resident memory of the engine process tree before delivering each request and every 250 ms while it runs, kills the tree if it exceeds the limit, and returns `limit_exceeded` naming `max_memory_mb`. The initial check rejects a warm session that already exceeds a new job's lower limit. Linux reads `/proc`; macOS and Windows use `sysinfo`. Engines still receive the limit and advertise `enforces_memory_limit` for their own enforcement (e.g. Pandoc `+RTS -M` or Python `RLIMIT_DATA`), but `false` no longer causes host refusal. Sampling can miss shorter spikes; engine-side enforcement remains useful. The host avoids `RLIMIT_AS`, which can abort GHC/PyTorch runtimes, and uses no unsafe `pre_exec` hooks.
 - `describe` runs with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`), preventing hung engines from blocking host discovery commands or MCP tools.
 - For a one-shot process, `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation.
 - Receiving `capabilities` during a convert request is a protocol violation.
 - The schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "draft"`. All engines must pass a shared conformance test suite.
-- `ariad-engine/1` is a draft until the Docling engine passes conformance (roadmap phase 1b); breaking changes are allowed only before that point.
-- PDFium also runs out-of-process: `ariad-host` re-executes its own binary via `ashift __engine pdfium`.
+- `ariad-engine/1` is a draft until the Docling engine passes conformance before v0.2.0; breaking changes are allowed only before that point.
+- Built-in PDF and Typst engines run through the same runner as Pandoc: `ashift __engine pdf|typst`. The third adapter is `ashift __engine libreoffice`, which drives the system installation.
 
 **Session mode.** An engine that reports `supports_session: true` can serve several jobs in one warm process (1.56x measured throughput for Docling). The wire shape is the optional `session_id` on `convert` and the `supports_session` capability.
 
@@ -476,13 +477,19 @@ pandoc +RTS -M{cap}M -RTS --sandbox --log=<workspace>/log/pandoc-log.json -f <do
 
 For archive inputs (DOCX, EPUB), the engine always bounds Pandoc memory usage with `+RTS -M<cap>M -RTS`. If `limits.max_memory_mb` is set, `<cap>` is `max_memory_mb` (e.g. 4096 MB under cloud defaults). Otherwise, `<cap>` defaults to `(limits.max_decompressed_bytes / (1024 * 1024)).max(512)` in megabytes (e.g. 4096 MB under local defaults), ensuring that archive reader conversions are memory-bounded even when `max_memory_mb` is omitted. Stdout is captured with a byte cap of `max_ir_json_bytes` and pre-scanned for JSON depth before deserializing the Pandoc AST. The AST is mapped to IR v0, media files in `<work_dir>/media` referenced by the document are verified within the directory without following symlinks and hashed into `AssetStore`, and the output document is written to `<output.dir>/document.ir.json`.
 
+The PDF engine reads a byte slice through `ariad_core::reader::pdf::read`, produces IR with reading order, paragraphs, font-size headings, lists and repeated header/footer furniture, and stores page geometry and block boxes in `LayoutIndex`. PDF provenance carries page/text/image-only counts, encryption and producer for `inspect`; a page without text emits `ocr_required`. This base route extracts the text layer; layout analysis and OCR belong to the Docling pack.
+
+The Typst writer in `ariad-core` emits escaped markup and virtual image files. Its host `World` serves only those in-memory files and embedded Libertinus/Source Code Pro fonts (OFL-1.1, including Vietnamese); it cannot load packages, network resources or arbitrary filesystem files. TeX math is preserved as text with `math_not_converted`. The engine fixes document and PDF dates from the host conversion timestamp, honoring `SOURCE_DATE_EPOCH`. The `pdf` feature in core and the `pdf`/`typst` features in host/CLI default on.
+
+LibreOffice >=24.2 is located through `ASHIFT_SOFFICE`, `PATH`, or standard platform install paths. Every conversion gets its own workspace profile with maximum macro security and macro execution disabled, an isolated home/temp directory, and process-tree cancellation and timeout handling. On Linux, when an installation is found, sandboxed LibreOffice also requires user and mount namespaces: its IPC ignores `TMPDIR`, so the launcher mounts a private `/tmp` backed by the job workspace. Namespace setup failure stops the launch. Native tool output is drained without becoming protocol output or content diagnostics.
+
 ### 7.1 Engine Packs
 
 The base installation must remain lightweight. Heavy engines are downloaded on demand:
 
 | Pack | Contents | Default |
 |---|---|---|
-| `core` | ashift, PDFium, Pandoc, Typst | Included in base install |
+| `core` | ashift with the Rust PDF reader and Typst; Pandoc is installed separately | PDF and Typst included in base install |
 | `docling` | CPython 3.14.9 (python-build-standalone) + the locked Docling, CPU PyTorch and RapidOCR wheels + the engine package + Heron layout, TableFormer and PP-OCRv6 models + `tessdata_best` `vie`/`eng`/`osd` and `configs/tsv` + licence notices. The Tesseract 5 program is not bundled | Download on demand |
 | `office` | Uses existing system LibreOffice 26.8; guides official installation if absent | Auto-detected |
 | `ocr-extra` | Additional Tesseract language packs beyond `vie`/`eng`/`osd` | Download on demand |
@@ -513,7 +520,7 @@ The host resolves the engine in `ariad_host::engines::docling`: the `ASHIFT_DOCL
 ### 8.1 Browser (Local)
 
 ```text
-File ─stream→ OPFS ─→ Web Worker ─→ ariad-wasm / pandoc.wasm / PDFium WASM / Typst ─→ OPFS ─→ download
+File ─stream→ OPFS ─→ Web Worker ─→ ariad-wasm / pandoc.wasm / core PDF reader / Typst ─→ OPFS ─→ download
 ```
 
 - Files **never enter React state**. A module worker owns `ariad-wasm`, streams the input into its own OPFS folder (`ariadshift/<session>/`, held by a Web Lock so tabs never share files and abandoned folders are swept) and reads and writes through `createSyncAccessHandle`. Without sync access handles or Web Locks it keeps files in worker memory up to 64 MiB and the page says so. The browser converter accepts inputs up to 16 MB; larger files go to the CLI or desktop app.
@@ -650,9 +657,9 @@ Self-hosted deployments do not require external OAuth: email/password authentica
 | Threat | Example | Mitigation |
 |---|---|---|
 | Decompression bomb | 10 KB OOXML/ZIP expands to 100 GB | Copy before inspect (TOCTOU guard); central directory preflight; stream-level byte counting with `take(limit+1)`; entry count and decompressed byte caps; Pandoc archive reader runs bounded by `+RTS -M<cap>` derived from `max_decompressed_bytes` |
-| Structural bomb | 2,000,000-page PDF, 100k × 100k image | Pre-inspection via PDFium before processing; limits on pages, pixels, and object counts |
-| Embedded code | LibreOffice macros, JavaScript in PDF | LibreOffice: maximum macro security, per-process user profiles (`-env:UserInstallation`); non-V8/non-XFA PDFium builds |
-| SSRF / local file inclusion | Remote images in HTML, XXE in OOXML, `\input` in LaTeX | Pandoc `--sandbox`; zero engine network access; Landlock restricts filesystem access to workspace |
+| Structural bomb | 2,000,000-page PDF, 100k × 100k image | Bounded Rust PDF reader in the base install; Docling/PDFium in the pack; limits on pages, pixels, objects and decoded streams |
+| Embedded code | LibreOffice macros, JavaScript in PDF | LibreOffice: maximum macro security, per-process user profiles (`-env:UserInstallation`); base reader never executes PDF JavaScript; PDFium stays inside the Docling pack and bench |
+| SSRF / local file inclusion | Remote images in HTML, XXE in OOXML, `\input` in LaTeX | Pandoc `--sandbox`; Linux sandbox blocks engine network access; Landlock restricts filesystem access to workspace; LibreOffice Writer/Calc link updates disabled |
 | Parser vulnerabilities | CVEs in C/C++ libraries | Isolated processes + seccomp; cloud workers in native Linux OCI containers with the required host sandbox; Renovate; fuzzing |
 | Data leakage | Content logged in traces, lingering temp files | Zero content logging; hashed filenames; tmpfs workspaces purged after every job; storage TTLs |
 | Resource exhaustion | Heavy job spamming | Per-user/IP quotas, Turnstile verification, queue prioritization |
@@ -681,14 +688,16 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 3. **Deep deserialization:** `serde_stacker` deserializes on a grown stack.
 4. **Block count check:** `Document::block_count` asserts total blocks (body and furniture) stay within `max_blocks`. Every failure maps to a typed `limit_exceeded` error.
 
+The PDF reader caps indirect objects (2,000,000), page/form nesting, operators and glyphs per page, decoded stream bytes both per stream and in total, retained font allocations, and decoded/glyph work relative to input size. Loader stream limits are applied before decompression, and retained object/xref streams are charged against the total after loading. Decoder limits are additionally capped to `usize::MAX / 4` for wasm32 allocation headroom. It respects page/block limits, opens encrypted documents only with an empty user password, and returns typed failures. PDF and Typst run out of process, preserving host crash isolation. Typst markup text is always escaped; unsupported images fall back to alt text.
+
 ### 11.3 Isolation Layers
 
-- **Linux (CLI, worker):** the runner re-executes `ashift __sandbox`, which applies `RLIMIT_CORE=0`, Landlock filesystem rules and supported network/scoping rights, and a seccomp filter denying non-UNIX socket creation and `io_uring_setup`, then `exec`s the engine. Engines can write the job workspace (or the session directory), read/execute system runtimes and their program, and read system configuration/devices. Extra read-only and executable paths live in the single `ariad_host::engines::sandbox::ENGINE_PATHS` declaration. Pandoc grants its resolved executable; the probe needs no extra paths. `EngineCommand::from_pack` grants the resolved pack install root read and execute access; engines needing paths outside that root add an entry to the declaration.
-- **Modes:** `best-effort` is the CLI/desktop default; missing filesystem or network confinement becomes a `sandbox_unavailable` conversion warning. `required` refuses unavailable isolation before starting the engine (`sandbox_unavailable`, exit 5); cloud workers pass their selected `ARIAD_SANDBOX` mode explicitly through the cleared helper environment as `ASHIFT_SANDBOX`. `ASHIFT_SANDBOX=off|best-effort|required` overrides the default for local surfaces, and an invalid value fails closed. Cloud workers give `ARIAD_SANDBOX` precedence over ambient `ASHIFT_SANDBOX`; their orchestration helper and native readers retain the filesystem exemption, with process-tree RSS and deadline enforcement on the helper. A helper-only Linux seccomp filter installed before threads denies non-UNIX sockets and io_uring_setup in every engine mode; descendants inherit it while the engine launcher adds filesystem restrictions. Launcher enforcement errors fail the job. `ashift doctor` reports effective mode, Landlock ABI and seccomp availability; only required mode makes missing sandbox support a required diagnostic failure.
+- **Linux (CLI, worker):** the runner re-executes `ashift __sandbox`, which applies `RLIMIT_CORE=0`, Landlock filesystem rules and supported network/scoping rights, and a seccomp filter denying non-UNIX socket creation and `io_uring_setup`, then `exec`s the engine. Engines can write the job workspace (or the session directory), read/execute system runtimes and their program, and read system configuration/devices. Extra paths and private-temp requirements live in the single `ariad_host::engines::sandbox::ENGINE_PATHS` declaration. Pandoc grants its resolved executable; PDF, Typst and the probe need no extra paths. LibreOffice grants its discovered installation roots for helper execution, reads `/opt` for standard-install discovery, and, only when an installation is found, uses a private `/tmp` mount backed by its workspace; bind mounts preserve declared paths beneath `/tmp`, with installation mounts kept read-only. The launcher maps only the caller's uid/gid to a non-root namespace identity, which loses its mount capabilities at exec. Describe calls get a temporary workspace for the same setup. `EngineCommand::from_pack` grants the resolved pack install root read and execute access; engines needing paths outside that root add an entry to the declaration.
+- **Modes:** `best-effort` is the CLI/desktop default; missing filesystem or network confinement becomes a `sandbox_unavailable` conversion warning. `required` refuses unavailable isolation before starting the engine (`sandbox_unavailable`, exit 5); cloud workers pass their selected `ARIAD_SANDBOX` mode explicitly through the cleared helper environment as `ASHIFT_SANDBOX`. `ASHIFT_SANDBOX=off|best-effort|required` overrides the default for local surfaces, and an invalid value fails closed. Cloud workers give `ARIAD_SANDBOX` precedence over ambient `ASHIFT_SANDBOX`; their orchestration helper and native readers retain the native-reader exemption, with process-tree RSS and deadline enforcement on the helper. A helper-only Linux seccomp filter installed before threads denies non-UNIX sockets and io_uring_setup in every engine mode; descendants inherit it while the engine launcher adds filesystem restrictions. Launcher enforcement errors fail the job with `sandbox_unavailable` (exit 5) in both modes, retain their fixed diagnostic through engine availability, and prevent silent fallback when they block the initially planned route. `ashift doctor` reports effective mode, Landlock ABI and seccomp availability; only required mode makes missing sandbox support a required diagnostic failure.
 - **Local IPC on older kernels:** `required` guarantees filesystem rules and denial of non-UNIX sockets. `AF_UNIX` remains allowed: pathname UNIX sockets require Landlock ABI 9 for confinement, and abstract sockets and signals require ABI 6 for scoping. On older kernels an engine may still contact local services such as Docker, D-Bus or an SSH agent. `doctor` exposes the ABI and each coverage flag; deployments requiring local IPC isolation must use ABI 9 or stronger container isolation.
-- **Cloud (deployment target):** native Linux OCI worker containers layer a read-only root filesystem and tmpfs workspaces over the host sandbox. gVisor is unsupported for required mode while it lacks the Landlock ABI; Office additionally needs permitted user/mount namespaces (see `docs/server.md`). `ARIAD_SANDBOX` (`required` by default on Linux workers) selects the host engine sandbox mode; `required` refuses to start a worker that cannot isolate engines.
+- **Cloud (deployment target):** native Linux OCI worker containers layer a read-only root filesystem and tmpfs workspaces over the host sandbox. Their runtime must expose Landlock and permit its syscalls; gVisor lacks that ABI and cannot satisfy `required` mode. Office workers also need user/mount namespace operations permitted by seccomp and AppArmor when LibreOffice is installed; see [runtime requirements](docs/server.md#worker). `ARIAD_SANDBOX` (`required` by default on Linux workers) selects the host engine sandbox mode; `required` refuses to start a worker that cannot isolate engines.
 - **Worker credentials:** before launching helpers, Linux workers disable dumpability so same-user procfs/ptrace reads of environment, memory and descriptors are denied. Container `tini` retains root ownership of its initial environment; `setpriv` drops the application to UID/GID 10001 before startup. Do not run credential-bearing same-user ancestors/siblings or grant `CAP_SYS_PTRACE`. Startup fails if the runtime refuses PR_SET_DUMPABLE. Images require root startup with CAP_SETUID/CAP_SETGID and cannot use Kubernetes runAsNonRoot or restricted Pod Security unchanged. Direct binary launch as UID 10001 requires a runtime init or shared process namespace to reap orphaned engines; see the concrete example in docs/server.md. Helpers retain UNIX socket/filesystem access; use bucket-scoped credentials, metadata egress blocking or an appropriate hop limit, PostgreSQL password authentication and egress policy. ARIAD_WORK_DIR is required; its lifetime lock refuses symlinks, nonregular files and foreign owners before abandoned-job reclamation.
-- **macOS / Windows:** process groups on macOS and Job Objects with `KillOnDrop` on Windows, cancellation/timeouts and the RSS watchdog. The Linux launcher is not used; `required` mode is unavailable. Seatbelt remains later hardening work.
+- **macOS / Windows:** process groups on macOS and Job Objects with `KillOnDrop` on Windows, cancellation/timeouts and the RSS watchdog. The Linux launcher is not used; `required` mode is unavailable. LibreOffice profiles set Writer/Calc link updates to never, but these platforms have no engine network sandbox; profiles do not provide general network isolation. Seatbelt remains later hardening work.
 - **Limits:** While the parent is alive, Unix error cleanup snapshots and kills descendants before reaping its group, including engine groups nested below a cloud conversion helper. A parent that dies before the snapshot can leave reparented engines; container lifecycle and resource limits remain the deployment backstop. Windows uses Job Objects. The watchdog samples every 250 ms while a job is active. It is a resource guard, not a strict peak-memory ceiling. `max_memory_mb = null` leaves the watchdog disabled.
 
 ---
@@ -740,7 +749,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
   - `limits_validate`: Arbitrary Limits builder; asserts `Limits::validate` never panics and returns `Ok` if and only if all boundary constraints are satisfied.
 - Fuzzing cadence:
   - PR and push CI gate (`ci.yml`): Runs on `ubuntu-26.04` with stable Rust (`-s none`) for 60 seconds per target on changes affecting code, with a 10s per-input timeout. Uses committed seeds in `fuzz/seeds/`, restores/saves cargo-fuzz, `fuzz/target`, and corpus caches on push to keep warm CI runtime well under 10 minutes (real CI duration is recorded after the first run on `dev`), and uploads crash artifacts on failure or cancellation.
-  - Nightly sanitizers (`fuzz-nightly.yml`): Runs daily on `ubuntu-26.04` using a date-pinned nightly toolchain (`nightly-2026-10-05`) with AddressSanitizer for 10 minutes each on targets with unsafe-adjacent dependencies (`markdown_reader`, `html_reader`, `pandoc_ast_to_ir`, `docling_to_ir`, `ir_json`), testing `dev` prior to promotion.
+  - Nightly sanitizers (`fuzz-nightly.yml`): Runs daily on `ubuntu-26.04` using a date-pinned nightly toolchain (`nightly-2026-10-05`) with AddressSanitizer for 10 minutes each on targets with unsafe-adjacent dependencies (`markdown_reader`, `html_reader`, `pandoc_ast_to_ir`, `docling_to_ir`, `ir_json`, `pdf_reader`), testing `dev` prior to promotion.
 - `cargo test --doc` runs alongside cargo-nextest because nextest does not run doctests.
 - DOCX goldens snapshot each fixture's sorted ZIP entry list and pretty-printed XML parts with insta; they hash template-derived XML parts and media. A shared `PANDOC_GOLDEN_VERSION` is asserted, and `SOURCE_DATE_EPOCH=1700000000` fixes timestamps.
 - Fixtures use only distributable public-domain, CC-BY, or generated documents; exclude CC-BY-SA, GPL test suites, and research-only or non-commercial datasets. `fixtures/manifest.toml` records each file's source and license.
@@ -752,7 +761,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 | Component | License | Integration Method | Obligations |
 |---|---|---|---|
 | AriadShift | Apache-2.0 | — | — |
-| PDFium | BSD-3-Clause / Apache-2.0 | Dynamic library | Include notice |
+| lopdf / PDFium | MIT / BSD-3-Clause, Apache-2.0 | lopdf in base; PDFium only in Docling pack and bench | Include notices |
 | Pandoc | GPL-2.0-or-later | Isolated process (aggregation) | Include license + link to source code |
 | Docling + weights | MIT + Apache-2.0 / CDLA-Permissive-2.0 / MIT | Isolated process | Include notices |
 | RapidOCR / ONNX Runtime | Apache-2.0 / MIT | Bundled in docling pack | Include notices |
@@ -799,7 +808,7 @@ IR JSON reading (`ariad_host::ir_io::read`) streams incrementally through a boun
 | **1a · v0.1 CLI + MCP, core routes** | `convert / inspect / plan / engines / doctor / mcp`; planner over `bench/` scores; routes: MD↔DOCX/HTML/EPUB via IR + Pandoc; cargo-fuzz targets for `ariad-core` readers and limit validation | `capabilities.json` consumed by planner; fuzz targets run in CI; distributed via Homebrew |
 | **1b · v0.2 CLI, heavy routes** | Engine pack mechanism (manifest, SHA-256, minisign verification, `ashift engines install`); `docling` pack; routes: PDF→MD/HTML/JSON/DOCX (incl. OCR for scans), Office→PDF, IR→PDF | Engine protocol v1 frozen after the Docling engine passes conformance; public benchmark report covering PDF routes; signed `docling` pack installs and verifies on 3 platforms; scanned PDF→DOCX succeeds locally |
 | **2 · v0.3 Desktop** | Tauri app, engine pack management UI, batch processing, folder watching, deep linking, auto-updates | Signed installers for 3 platforms; base install excludes docling pack |
-| **3 · v0.4 Web Local** | Next.js site, `/app` running WASM (core, Pandoc, PDFium, Typst) + OPFS, format-pair SEO pages, "Open in Desktop" button | In-browser DOCX↔MD↔HTML↔EPUB conversions; Lighthouse score ≥ 90 |
+| **3 · v0.4 Web Local** | Next.js site, `/app` running WASM (core (PDF reader), Pandoc, Typst) + OPFS, format-pair SEO pages, "Open in Desktop" button | In-browser DOCX↔MD↔HTML↔EPUB conversions; Lighthouse score ≥ 90 |
 | **4 · v0.5 Cloud** | `ariad-server` api + worker, pgmq, R2/SeaweedFS, Better Auth, Uppy, SSE, TTL, sandboxing, per-user/IP quotas and rate limits, self-host compose, TS SDK | `docker compose up` executes end-to-end; scanned PDF→DOCX job succeeds in sandbox; quotas enforced before the public cloud opens |
 | **5 · v1.0** | Security audit, API stability commitment, remote MCP, OS integration, NATS adapter if warranted by metrics | Zero open high-severity issues; `/v1` API frozen |
 
@@ -831,7 +840,11 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | License inventory | `THIRD_PARTY_LICENSES` covers every workspace binary, stored byte for byte (`-text`) | A separate server inventory | Server images ship the same crates; some upstream license texts use CRLF |
 | UI primitives | shadcn + Base UI | Radix, MUI, Ant | Base UI is the new shadcn default; fully customizable |
 | Writing DOCX/ODT/EPUB | IR → Pandoc AST → Pandoc | Custom `docx-rs`, `pdf2docx` | Single adapter targets multiple formats; avoids AGPL dependency chains |
-| PDF export | Typst | LaTeX, headless Chromium | Fast, embeddable (crate + WASM), Apache-2.0 |
+| PDF export | Typst 0.15.1 in `ashift __engine typst`, in-memory World, OFL Libertinus/Source Code Pro | LaTeX, headless Chromium, unescaped Typst input | Same pure markup writer for native and browser; Vietnamese fonts, no package or filesystem access |
+| PDF input routing | Reuse the bounded native read for digital text; require Docling on `needs_ocr`, or pin the reader with `--engine` | Engine-name ordering alone; silent reader fallback | Text-layer extraction stays in the base install, scans cannot silently produce empty output, and users can request layout extraction. Format-only cloud planning reserves OCR-capable workers when configured. |
+| Base PDF reader | lopdf 0.46.0 plus bounded text/layout interpretation in `ariad-core` | PDFium in base, pdf-extract | Static musl and WASM support; measurement found correct Vietnamese ToUnicode decoding and no panics in the mutation probe |
+| Office routes | System LibreOffice >=24.2, fresh profile per job, macros disabled | Bundled LibreOffice, shared user profile | Avoid a large bundled runtime and isolate document state; use the common engine runner |
+| Route execution | Registry-driven steps carrying a file or IR between fresh workspaces | Fixed two-step reader/writer pipeline | Supports legacy Office → OOXML → IR without conversion logic in surfaces |
 | OCR | Tesseract for Vietnamese, RapidOCR for other languages, PaddleOCR-VL opt-in | RapidOCR-only, EasyOCR, Surya/Chandra weights | PP-OCRv5/v6 dictionaries lack 88–90 Vietnamese letters in U+1EA0–U+1EF9; Tesseract covers `vi` and mixed `vi`/`en` |
 | Binary name | `ashift` | `as` | GNU binutils already uses `as`; Rust crate names retain `ariad-*` |
 | Markdown reader | comrak 0.56.0 with default features off and shortcodes on | pulldown-cmark; markdown-rs | Active CommonMark/GFM implementation, pure Rust build, and an AST for the core reader |
@@ -866,6 +879,8 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | winget identifier | `VChun.AriadShift`, moniker `ashift` | `bavanchun.AriadShift`, `AriadShift.AriadShift` | Matches the copyright holder in LICENSE and NOTICE. |
 | Engine memory limits | Host process-tree RSS watchdog every 250 ms plus engine-side enforcement | Refusing engines without their own limiter; host `RLIMIT_AS` or unsafe `pre_exec` | Applies `max_memory_mb` to every engine on Linux, macOS and Windows without GHC/PyTorch address-space crashes; preserves the capability field and acknowledges sampling gaps. |
 | Linux engine isolation | Re-exec launcher with Landlock, seccomp and core-dump rlimit; per-engine path declaration; best-effort default and required worker mode | Unsafe host `pre_exec`; relying only on Pandoc `--sandbox`; silently skipping isolation | Restrictions survive `exec` without unsafe host code, kernel gaps are visible, and required mode fails closed. |
+| LibreOffice IPC isolation | Workspace-backed private `/tmp` in user/mount namespaces, before Landlock | Granting write access to the host `/tmp`; relying on `TMPDIR` or `OSL_SOCKET_PATH` | LibreOffice binds its IPC socket to a hard-coded system-temp path; the private mount preserves host filesystem confinement and workspace cleanup. Namespace setup must succeed before launch; failure remains visible in availability and stops the initially planned route without fallback. |
+| LibreOffice link updates | Set Writer `Content/Update/Link=2` and Calc `Content/Update/Link=1` (never) in every job profile | Relying on headless defaults or update-check settings | The supported 24.2 schemas for [Writer](https://github.com/LibreOffice/core/blob/libreoffice-24.2.0.3/officecfg/registry/schema/org/openoffice/Office/Writer.xcs) and [Calc](https://github.com/LibreOffice/core/blob/libreoffice-24.2.0.3/officecfg/registry/schema/org/openoffice/Office/Calc.xcs) use different enum values. This disables their automatic link refresh on macOS/Windows too; it does not replace Linux network isolation. |
 | Engine artifact reads | Capture the output directory capability before launch and snapshot writer artifacts into a host workspace | Reopen engine-controlled paths after result; edit outputs while a warm engine can replace them | Keeps host reads within the original output directory and metadata edits outside the engine sandbox. |
 | Warm engine sessions | Optional `session_id`, default-false `supports_session`, caller-owned pool with idle and job-count retirement | One process per batch item; global process cache | Reuses expensive initialization while keeping one request in flight, separating pack environments and roots, preserving one-shot APIs, and killing failed sessions before reuse. |
 | Format wire id | Equals the registry id (`Format::id()`, e.g. `ariad-ir+json`) | snake_case variant identifiers (e.g. `ariad_ir_json`) | Unifies format identity across CLI, IR, engine protocol, and capabilities schema with zero drift. |

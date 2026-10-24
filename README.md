@@ -6,7 +6,8 @@ AriadShift is an open-source, local-first document transformation platform in
 early development. Its goal is to turn documents into clean Markdown and
 structured data through a shared engine used by local and hosted interfaces.
 
-The repository provides local conversion across Markdown, HTML, DOCX, and EPUB.
+The repository converts Markdown, HTML, DOCX and EPUB, extracts digital PDF text, writes PDF with embedded Vietnamese fonts, and exports IR JSON. A system LibreOffice adds legacy Office and ODF conversion.
+
 The website converts Markdown, HTML, and AriadShift IR JSON entirely in the
 browser; files never leave the device.
 
@@ -54,7 +55,7 @@ winget install VChun.AriadShift
 
 ## Convert Documents
 
-Convert between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`) with `ashift convert`:
+Convert between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`) with `ashift convert`; PDF and IR JSON are also supported:
 
 ```sh
 just pandoc
@@ -63,6 +64,12 @@ ashift convert notes.md --to html
 ashift convert report.docx --to md
 ashift convert book.epub --to md
 ashift convert draft.md notes.md --to docx -o output/  # existing directory
+ashift convert report.pdf --to md
+ashift convert notes.md --to pdf
+ashift convert notes.md --to json
+# Requires system LibreOffice >=24.2 (or set ASHIFT_SOFFICE)
+ashift convert legacy.doc --to md
+ashift convert slides.pptx --to pdf
 ```
 
 The default output is `<input stem>.<target extension>` beside the input. Use `-o` to choose another
