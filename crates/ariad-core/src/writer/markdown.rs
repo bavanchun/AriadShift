@@ -297,7 +297,7 @@ fn write_list(list: &ListContext<'_>, ctx: &mut MarkdownContext, out: &mut Strin
         };
 
         let (marker, base_marker_len) = if list.ordered {
-            let num = list.start.unwrap_or(1) + idx as u64;
+            let num = list.start.unwrap_or(1).saturating_add(idx as u64);
             let base = format!("{num}. ");
             let base_len = base.len();
             let marker = match checked {

@@ -46,4 +46,10 @@ pub enum WarningCode {
     ImageNotEmbedded,
     FootnoteMissing,
     FootnoteUnused,
+    /// A PDF page has no text layer; reading it needs OCR.
+    OcrRequired,
+    /// Some PDF glyphs have no Unicode mapping and were replaced or dropped.
+    TextUnmapped,
+    /// TeX math could not be converted for the target and was kept as text.
+    MathNotConverted,
 }

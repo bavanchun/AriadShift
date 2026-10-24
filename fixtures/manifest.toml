@@ -15,7 +15,7 @@ pages = 1
 tags = []
 phase = "1b"
 routes = ["pdf->md"]
-companions = []
+companions = [{ path = "fixtures/pdf/vi-garden-route.truth.txt", sha256 = "2bffde8e62916f36acf6b0faedb42d49514c7a4f23a300858b0817cf9c95cc24" }]
 
 [[fixture]]
 id = "en-map-room-pdf"
@@ -34,7 +34,7 @@ pages = 1
 tags = []
 phase = "1b"
 routes = ["pdf->md"]
-companions = []
+companions = [{ path = "fixtures/pdf/en-map-room.truth.txt", sha256 = "116312e7074b0d7735d2eedf88f6f10cbc16b895fdcdcf142f51d4f55773c88e" }]
 
 [[fixture]]
 id = "pd-vi-qd-1922-2026"
@@ -1345,3 +1345,21 @@ sha256 = "08f334fcf188f03bbab899a68e299e05ed59025e3c1c5f1d26622273c4750735"
 tags = ["tables", "mixed-script"]
 phase = "1b"
 routes = ["docling->ir"]
+
+[[fixture]]
+id = "vi-garden-image-only"
+path = "fixtures/pdf/vi-garden-image-only.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Khu vườn đọc sách (image-only)"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/pdf.py"
+license = "Apache-2.0"
+license_basis = "Original AriadShift text rasterized into a generated scan and embedded as an image-only PDF."
+attribution = "AriadShift contributors"
+sha256 = "048930c263e1b5aefe30990d74a207fbec3ce275abfda6fd402ead05ee7170fb"
+tags = ["scan"]
+phase = "1b"
+routes = ["pdf->md"]
+companions = [{ path = "fixtures/pdf/vi-garden-image-only.truth.txt", sha256 = "25ef501a392f2950782ae8d0d29f6552b083f2b5461700ef9f7bf15713fe17a7" }]

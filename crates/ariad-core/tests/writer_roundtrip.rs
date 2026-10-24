@@ -2699,3 +2699,30 @@ fn test_footnote_id_ending_in_backslash_percent_encoded() {
         "footnote ref must be preserved on read-back"
     );
 }
+
+#[test]
+fn ordered_list_numbering_saturates_instead_of_overflowing() {
+    let item = |text: &str| ListItem {
+        checked: None,
+        blocks: vec![Block::Paragraph {
+            content: vec![Inline::Text {
+                text: text.to_owned(),
+            }],
+        }],
+    };
+    let mut doc = Document::default();
+    doc.body.push(Block::List {
+        ordered: true,
+        start: Some(u64::MAX),
+        tight: true,
+        items: vec![item("first"), item("second")],
+    });
+
+    let out = writer::markdown::write(&doc);
+    assert!(
+        out.content.contains("18446744073709551615. first")
+            && out.content.contains("18446744073709551615. second"),
+        "numbers past the limit must stay at the limit: {}",
+        out.content
+    );
+}
