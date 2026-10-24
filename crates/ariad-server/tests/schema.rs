@@ -57,10 +57,7 @@ async fn runtime_database_roles_cannot_read_identity_secrets_or_migrate() {
     common::create_apikey_table(&test_db.pool).await;
     sqlx::raw_sql("CREATE TABLE jwks (private_key text); CREATE TABLE \"user\" (email text); CREATE TABLE session (token text); CREATE TABLE account (password text)")
         .execute(&test_db.pool).await.unwrap();
-    sqlx::raw_sql(include_str!("../../../infra/server-roles.sql"))
-        .execute(&test_db.pool)
-        .await
-        .unwrap();
+    test_db.apply_runtime_roles().await;
     for role in ["ariad_api", "ariad_worker"] {
         let mut conn = test_db.pool.acquire().await.unwrap();
         sqlx::raw_sql(if role == "ariad_api" {
@@ -92,6 +89,16 @@ async fn runtime_database_roles_cannot_read_identity_secrets_or_migrate() {
                 sqlx::raw_sql(query).execute(&mut *conn).await.is_err(),
                 "{role}: {query}"
             );
+        }
+        if role == "ariad_worker" {
+            for table in ["workspaces", "rate_limit_counters", "event_stream_leases"] {
+                assert!(
+                    sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DELETE FROM {table}")))
+                        .execute(&mut *conn)
+                        .await
+                        .is_err()
+                );
+            }
         }
         let apikey = sqlx::query("SELECT * FROM apikey")
             .execute(&mut *conn)
@@ -224,4 +231,63 @@ async fn migrations_seed_plans_queues_and_the_anonymous_tenant() {
     .expect("tables");
     assert_eq!(foreign, 0);
     test_db.drop_database().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn restricted_logins_run_the_upload_plan_job_and_download_path() {
+    use common::{Auth, Harness, Options};
+    use serde_json::{Value, json};
+    use std::time::Duration;
+    let Some(mut h) = Harness::start(
+        "restricted_logins_run_the_upload_plan_job_and_download_path",
+        Options {
+            restricted_logins: true,
+            ..Options::default()
+        },
+    )
+    .await
+    else {
+        return;
+    };
+    h.start_worker();
+    let key = common::insert_api_key(&h.db.pool, "restricted-runtime").await;
+    let auth = Auth::ApiKey(key);
+    let upload = h
+        .upload(
+            &auth,
+            "restricted.md",
+            b"# Restricted roles\n\nReal conversion.\n",
+        )
+        .await;
+    let plan = h
+        .post(
+            &auth,
+            "/v1/plan",
+            &json!({"upload_id":upload["id"], "to":"docx"}),
+        )
+        .await;
+    assert_eq!(plan.status(), 200, "{}", common::text(plan).await);
+    let response = h
+        .create_job(&auth, upload["id"].as_str().unwrap(), "docx")
+        .await;
+    assert_eq!(response.status(), 202);
+    let job: Value = response.json().await.unwrap();
+    let id = job["id"].as_str().unwrap();
+    let job = h.wait_final(&auth, id, Duration::from_secs(60)).await;
+    assert_eq!(job["status"], "succeeded", "{job}");
+    let outputs: Value = h
+        .get(&auth, &format!("/v1/jobs/{id}/outputs"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let output = h
+        .http
+        .get(outputs["outputs"][0]["url"].as_str().unwrap())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(output.status(), 200);
+    assert!(output.bytes().await.unwrap().starts_with(b"PK"));
+    h.stop().await;
 }
