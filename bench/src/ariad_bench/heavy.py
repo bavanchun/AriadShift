@@ -358,7 +358,12 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
                     if c["path"].endswith(".truth.json")
                 )
                 path = Path(scratch) / f"{fixture['id']}.json"
-                path.write_text(json.dumps(json.loads(truth_path.read_text())["ir"]))
+                path.write_text(
+                    json.dumps(
+                        json.loads(truth_path.read_text(encoding="utf-8"))["ir"]
+                    ),
+                    encoding="utf-8",
+                )
                 bench.measure(
                     {**fixture, "format": IR, "path": str(path)}, "typst", "pdf"
                 )
@@ -380,9 +385,9 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
                 if c["path"].endswith(".truth.json")
             ]
             if companions:
-                if not json.loads((root / companions[0]["path"]).read_text()).get(
-                    "unscored", False
-                ):
+                if not json.loads(
+                    (root / companions[0]["path"]).read_text(encoding="utf-8")
+                ).get("unscored", False):
                     scored_ids.add(fixture["id"])
             elif fixture["format"] in ("md", "markdown"):
                 scored_ids.add(fixture["id"])
@@ -407,7 +412,7 @@ def run(root: Path, ashift: Path, pandoc: Path, repeat: int, out: Path, evidence
             binary_digest = hashlib.file_digest(binary, "sha256").hexdigest()
         pack = None
         if manifest_path := os.environ.get("ARIAD_BENCH_PACK_MANIFEST"):
-            manifest = tomllib.loads(Path(manifest_path).read_text())
+            manifest = tomllib.loads(Path(manifest_path).read_text(encoding="utf-8"))
             pack = {
                 "name": manifest["name"],
                 "version": manifest["version"],
