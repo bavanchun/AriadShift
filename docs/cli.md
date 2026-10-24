@@ -378,7 +378,7 @@ ashift engines install <NAME> [--version <VERSION>] [--manifest <URL_OR_PATH> | 
 3. Downloads each component (resuming from verified downloads of an earlier attempt), checking its size and SHA-256.
 4. Extracts under the rules in [packs.md](packs.md#extraction-rules) into a staging directory, writes `receipt.toml`, renames the result into `<data>/packs/<name>/<version>` and makes it the active version.
 
-Reinstalling an identical, intact version reports `already_installed` without downloading. Another `ashift` installing or removing the same pack makes the command fail with exit code 1. Progress goes to stderr when it is a terminal.
+Reinstalling an identical, intact version reports `already_installed` without downloading. Another `ashift` installing or removing the same pack makes the command fail with exit code 1. Progress goes to stderr when it is a terminal. Human-readable Docling install output lists the Tesseract prerequisite and, on Windows, the latest x64 Microsoft Visual C++ Redistributable prerequisite; see [Docling prerequisites](docling.md#what-it-needs).
 
 #### Human Output Example
 
