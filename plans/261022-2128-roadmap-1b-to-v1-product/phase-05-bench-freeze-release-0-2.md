@@ -85,4 +85,4 @@ The benchmark used the existing local Docling pack because the Intel IPP removal
 
 The [session journal](../journals/2026-10-24-measure-heavy-routes-and-freeze-conversion-contracts.md) records corrections and decisions. The feature head still follows the normal three-platform CI and coordinator review gates. Production signing, pack publication, published-pack smoke, the version bump, promotion and release remain open; this phase is not complete.
 
-Cross-platform checks preserve identical PNG pixels and metadata when platform compressors produce different encodings; the measured committed inputs still require exact SHA-256 matches. Explicit UTF-8 IO also passes all nine heavy tests under an ASCII locale with automatic UTF-8 mode disabled.
+Cross-platform checks preserve identical PNG pixels and metadata when platform compressors produce different encodings. ODF checks preserve ordered archive entries, exact uncompressed bytes and document metadata across ZIP compressors and host markers. The measured committed inputs still require exact SHA-256 matches. Explicit UTF-8 IO also passes all nine heavy tests under an ASCII locale with automatic UTF-8 mode disabled.
