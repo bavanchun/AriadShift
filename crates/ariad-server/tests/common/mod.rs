@@ -49,6 +49,7 @@ pub struct TestDb {
     pub url: String,
     name: String,
     admin: String,
+    runtime_logins: Vec<String>,
 }
 
 impl TestDb {
@@ -76,6 +77,7 @@ impl TestDb {
             url: url.to_string(),
             name,
             admin,
+            runtime_logins: Vec::new(),
         })
     }
 
@@ -84,6 +86,25 @@ impl TestDb {
         let db = Self::create_empty(test).await?;
         db::migrate(&db.pool).await.expect("migrate");
         Some(db)
+    }
+
+    /// Role names are cluster-wide even though each test owns a database.
+    /// Serialize their first creation through the shared admin database.
+    pub async fn apply_runtime_roles(&self) {
+        let admin = PgPool::connect(&self.admin)
+            .await
+            .expect("role setup connection");
+        let mut tx = admin.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock(781124401)")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        sqlx::raw_sql(include_str!("../../../../infra/server-roles.sql"))
+            .execute(&self.pool)
+            .await
+            .expect("apply runtime grants");
+        tx.commit().await.unwrap();
+        admin.close().await;
     }
 
     pub async fn drop_database(self) {
@@ -95,6 +116,12 @@ impl TestDb {
             )))
             .execute(&admin)
             .await;
+            for login in self.runtime_logins {
+                sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP ROLE \"{login}\"")))
+                    .execute(&admin)
+                    .await
+                    .expect("drop runtime login");
+            }
             admin.close().await;
         }
     }
@@ -125,6 +152,7 @@ pub struct Options {
     pub env: Vec<(String, String)>,
     /// Keep the seeded quotas and rate limits instead of lifting them.
     pub keep_quotas: bool,
+    pub restricted_logins: bool,
 }
 
 /// API and optional worker on a fresh database.
@@ -138,11 +166,12 @@ pub struct Harness {
     api: JoinHandle<()>,
     workers: Vec<(CancellationToken, JoinHandle<()>)>,
     work_dir: tempfile::TempDir,
+    worker_url: Option<String>,
 }
 
 impl Harness {
     pub async fn start(test: &str, options: Options) -> Option<Self> {
-        let db = TestDb::create(test).await?;
+        let mut db = TestDb::create(test).await?;
         if !options.keep_quotas {
             sqlx::query(
                 "UPDATE plan_entitlements SET jobs_per_day = NULL, input_bytes_per_day = NULL, \
@@ -151,6 +180,38 @@ impl Harness {
             .execute(&db.pool)
             .await
             .expect("lift quotas");
+        }
+        let mut api_pool = db.pool.clone();
+        let mut worker_url = None;
+        if options.restricted_logins {
+            create_apikey_table(&db.pool).await;
+            db.apply_runtime_roles().await;
+            for role in ["ariad_api", "ariad_worker"] {
+                let login = format!("runtime_{}", Uuid::new_v4().simple());
+                let password = Uuid::new_v4().simple().to_string();
+                sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+                    "CREATE ROLE \"{login}\" LOGIN PASSWORD '{password}' IN ROLE {role}"
+                )))
+                .execute(&db.pool)
+                .await
+                .expect("create restricted login");
+                let mut url = Url::parse(&db.url).unwrap();
+                url.set_username(&login).unwrap();
+                url.set_password(Some(&password)).unwrap();
+                let pool = db::connect(url.as_str(), 8)
+                    .await
+                    .expect("restricted connection");
+                let elevated: bool = sqlx::query_scalar("SELECT rolsuper OR rolcreaterole OR rolbypassrls FROM pg_roles WHERE rolname = current_user")
+                    .fetch_one(&pool).await.unwrap();
+                assert!(!elevated);
+                if role == "ariad_api" {
+                    api_pool = pool;
+                } else {
+                    pool.close().await;
+                    worker_url = Some(url.to_string());
+                }
+                db.runtime_logins.push(login);
+            }
         }
         let objects = tempfile::tempdir().expect("object dir");
         let storage_url = Url::from_directory_path(objects.path()).expect("file URL");
@@ -177,7 +238,7 @@ impl Harness {
         pairs.append(&mut env);
         let config = ApiConfig::from_env(&Env::from_pairs(pairs)).expect("API config");
         let shutdown = CancellationToken::new();
-        let pool = db.pool.clone();
+        let pool = api_pool;
         let api_shutdown = shutdown.clone();
         let api = tokio::spawn(async move {
             app::serve_api(listener, config, pool, api_shutdown)
@@ -194,6 +255,7 @@ impl Harness {
             api,
             workers: Vec::new(),
             work_dir: tempfile::tempdir().expect("work dir"),
+            worker_url,
         })
     }
 
@@ -229,7 +291,12 @@ impl Harness {
         let config = WorkerConfig::from_env(&Env::from_pairs(pairs), &["core".to_owned()])
             .expect("worker config");
         let token = self.shutdown.child_token();
-        let pool = if let Some((_, size)) = extra
+        let pool = if let Some(url) = &self.worker_url {
+            sqlx::postgres::PgPoolOptions::new()
+                .max_connections(8)
+                .connect_lazy(url)
+                .expect("restricted worker pool")
+        } else if let Some((_, size)) = extra
             .iter()
             .find(|(name, _)| *name == "ARIAD_DATABASE_MAX_CONNECTIONS")
         {
