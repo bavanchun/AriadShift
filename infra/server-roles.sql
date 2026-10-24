@@ -15,7 +15,10 @@ $$;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public, pgmq TO ariad_api, ariad_worker;
 GRANT SELECT ON _sqlx_migrations, plan_entitlements TO ariad_api, ariad_worker;
-GRANT SELECT, INSERT, UPDATE, DELETE ON uploads, jobs, job_steps, job_events,
+GRANT SELECT, INSERT, UPDATE, DELETE ON uploads TO ariad_api;
+REVOKE INSERT, UPDATE, DELETE ON uploads FROM ariad_worker;
+GRANT SELECT ON uploads TO ariad_worker;
+GRANT SELECT, INSERT, UPDATE, DELETE ON jobs, job_steps, job_events,
     artifacts TO ariad_api, ariad_worker;
 GRANT SELECT, INSERT, UPDATE, DELETE ON workspaces, rate_limit_counters,
     event_stream_leases TO ariad_api;
