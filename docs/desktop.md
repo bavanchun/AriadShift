@@ -25,8 +25,8 @@ built-in text reader, and PDF output uses the built-in Typst compiler. Scanned P
 layout extraction and images use the optional Docling pack. DOCX and EPUB routes
 need Pandoc `>=3.12,<4` on PATH or selected through `ASHIFT_PANDOC` when launching
 the app. System LibreOffice >=24.2 handles legacy Office/ODF inputs and Office to
-PDF; `ASHIFT_SOFFICE` can select its executable. PPTX and XLSX extraction into
-editable text uses Docling. IR JSON and DoclingDocument JSON are mapped by the core.
+PDF; `ASHIFT_SOFFICE` can select its executable. Docling also extracts PPTX and
+XLSX with layout. IR JSON and DoclingDocument JSON are mapped by the core.
 Open Diagnostics to check dependencies and the host sandbox. Sandboxed Linux
 LibreOffice requires permitted user and mount namespaces for its private `/tmp`;
 see [the CLI runtime requirements](cli.md#ashift-convert). The picker and watch
@@ -95,6 +95,9 @@ processes, preserving the CLI's isolation and cancellation behavior without an
 intermediate sidecar. AppImage helpers declare their validated bundle directory
 as an engine installation root so the Linux sandbox can read and execute the
 bundled libraries.
+When LibreOffice uses a private `/tmp`, the launcher preserves the mounted bundle
+at its original path through a read-only bind mount. The user/mount namespace
+prerequisite also applies to AppImage builds.
 
 ## Preferences and deep links
 
@@ -169,6 +172,19 @@ cargo nextest run -p ariad-desktop
 # Linux, after building the desktop app:
 xvfb-run -a dbus-run-session -- just desktop-smoke
 ```
+
+To check Office engines in a real Linux AppImage, keep the image mounted with
+`--appimage-mount`, set `APPDIR` to the reported mount directory and
+`ARIAD_TEST_APPIMAGE_BINARY` to its `usr/bin/ariad-desktop`, then run:
+
+```sh
+cargo nextest run -p ariad-cli --features ariad-host/test-probe \
+  --test builtin_engine_contracts --run-ignored ignored-only \
+  -E 'test(appimage_office_conversion_preserves_the_bundle_in_private_tmp)'
+```
+
+This checks PDF/Typst/LibreOffice discovery and a required-sandbox PPTX to PDF
+conversion using the mounted executable. Stop the mount process afterward.
 
 IPC DTOs derive `ts_rs::TS`. One Rust command table both registers handlers and
 generates typed `invoke` wrappers. Everything in `apps/desktop/src/bindings/` is

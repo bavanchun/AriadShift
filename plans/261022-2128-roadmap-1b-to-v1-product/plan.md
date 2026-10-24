@@ -63,7 +63,7 @@ Not covered, because they need the user's own accounts. The pipelines stay ready
 | 0 | [Housekeeping](./phase-00-housekeeping.md) | none | Mac | Done |
 | 1 | [Engine packs](./phase-01-engine-packs.md) | none | ASUS | Done |
 | 2 | [Linux sandbox, memory watchdog, sessions](./phase-02-sandbox-limits-sessions.md) | none | ASUS | Done |
-| 3 | [PDF reader, Typst writer, LibreOffice engine](./phase-03-pdf-typst-office.md) ([PR #34](https://github.com/bavanchun/AriadShift/pull/34), [review follow-up](./phase-03-pdf-typst-office.md#review-follow-up)) | none | ASUS | Done |
+| 3 | [PDF reader, Typst writer, LibreOffice engine](./phase-03-pdf-typst-office.md) ([PR #34](https://github.com/bavanchun/AriadShift/pull/34), [review follow-up](./phase-03-pdf-typst-office.md#review-follow-up), [native integration](./phase-03-pdf-typst-office.md#native-surface-integration)) | none | ASUS | Done |
 | 4 | [Docling engine, mapper and pack build](./phase-04-docling-engine-and-pack.md) | none (install path needs 1) | ASUS | Done |
 | 5 | [Heavy-route bench, freeze, v0.2.0](./phase-05-bench-freeze-release-0-2.md) | 1, 2, 3, 4 | ASUS, Mac | Pending |
 | 6 | [Web foundation and local app](./phase-06-web-foundation.md) | none | Mac | Done |
