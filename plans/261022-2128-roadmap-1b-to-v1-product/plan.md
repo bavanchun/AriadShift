@@ -67,7 +67,7 @@ Not covered, because they need the user's own accounts. The pipelines stay ready
 | 4 | [Docling engine, mapper and pack build](./phase-04-docling-engine-and-pack.md) | none (install path needs 1) | ASUS | Done |
 | 5 | [Heavy-route bench, freeze, v0.2.0](./phase-05-bench-freeze-release-0-2.md) | 1, 2, 3, 4 | ASUS, Mac | Pending |
 | 6 | [Web foundation and local app](./phase-06-web-foundation.md) | none | Mac | Done |
-| 7 | [Web heavy local routes and hand-offs](./phase-07-web-heavy-routes.md) | 3, 6 | Mac | Pending |
+| 7 | [Web heavy local routes and hand-offs](./phase-07-web-heavy-routes.md) ([PR #48](https://github.com/bavanchun/AriadShift/pull/48)) | 3, 6 | Mac | Done |
 | 8 | [Desktop app](./phase-08-desktop-app.md) | 1, 6 | Mac, ASUS | Done |
 | 9 | [Cloud backend](./phase-09-cloud-backend.md) | 2, 3 | ASUS | Done |
 | 10 | [Cloud web, auth, SDK, self-host](./phase-10-cloud-web-sdk-selfhost.md) | 7, 9 | ASUS | Pending |
@@ -98,7 +98,7 @@ Merge order inside a wave follows readiness. The later pull request rebases onto
 
 - [ ] 1b: signed engine packs install and verify on Linux, macOS and Windows; PDF (digital and scanned with OCR), Office and image routes work through the docling pack; IR → PDF works; `ariad-engine/1` and `ariad-ir/1` are frozen; a public benchmark report covers the PDF routes; `v0.2.0` is released with its docling pack.
 - [x] Desktop: the Tauri app converts single files and batches, watches folders, manages engine packs and opens `ariadshift://` links; CI builds installers for three platforms; the base install excludes the docling pack.
-- [ ] Web: `/app` converts DOCX ↔ MD ↔ HTML ↔ EPUB, reads PDF text and writes PDF entirely in the browser; Lighthouse is at least 90 in every category on the landing and converter pages; format-pair pages and "Open in Desktop" work.
+- [x] Web: `/app` converts DOCX ↔ MD ↔ HTML ↔ EPUB, reads PDF text and writes PDF entirely in the browser; Lighthouse is at least 90 in every category on the landing and converter pages; format-pair pages and "Open in Desktop" work.
 - [ ] Cloud: `docker compose up` runs web, api, workers, PostgreSQL with pgmq and SeaweedFS end to end; a scanned PDF → DOCX job succeeds in the sandboxed worker; quotas and rate limits are enforced; OpenAPI 3.1 is committed and the TypeScript SDK is generated from it.
 - [ ] v1.0: remote MCP over Streamable HTTP; OS integration on three platforms; a security audit closes with zero open high-severity findings; `/v1` is frozen; `v1.0.0` is released.
 - [ ] `just ci` is green on `ubuntu-26.04`, `macos-26` and `windows-2025`, and ARCHITECTURE.md, AGENTS.md, README and `docs/` match the shipped behaviour.

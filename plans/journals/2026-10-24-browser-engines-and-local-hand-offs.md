@@ -13,3 +13,5 @@ A repeated conversion initially crashed Chromium because the adapter reused the 
 Focused native validation passed 649 tests. Chromium heavy-route tests and the same conversion paths on Firefox passed, including Vietnamese PDF text and extracted EPUB images. The Arch host cannot launch the pinned WebKit build because libicu74, libxml2 and libflite1 are absent; Ubuntu CI must verify WebKit. Full workspace CI, final browser checks, Lighthouse and PR readiness are still pending at the time of this entry.
 
 > Historical work record — not durable authority. Prefer docs/specs/ADRs for current decisions.
+
+Completion evidence: the full local gate passed 929 workspace tests, doctests, 64 benchmark tests and 67 Vitest tests; explicit desktop checks passed eight tests. Hosted CI passed all three OS verification jobs and 79 browser tests across Chromium, Firefox and WebKit. The repeated Lighthouse run on the same production build scored 94/91 mobile performance and 100 for every other score. The first 67/73 mobile measurement under concurrent compilation remains recorded in the web documentation. PR #48 contains the implementation and verification record.
