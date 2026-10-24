@@ -68,7 +68,7 @@ Not covered, because they need the user's own accounts. The pipelines stay ready
 | 5 | [Heavy-route bench, freeze, v0.2.0](./phase-05-bench-freeze-release-0-2.md) | 1, 2, 3, 4 | ASUS, Mac | Pending |
 | 6 | [Web foundation and local app](./phase-06-web-foundation.md) | none | Mac | Done |
 | 7 | [Web heavy local routes and hand-offs](./phase-07-web-heavy-routes.md) | 3, 6 | Mac | Pending |
-| 8 | [Desktop app](./phase-08-desktop-app.md) | 1, 6 | Mac | Done |
+| 8 | [Desktop app](./phase-08-desktop-app.md) | 1, 6 | Mac, ASUS | Done |
 | 9 | [Cloud backend](./phase-09-cloud-backend.md) | 2, 3 | ASUS | Done |
 | 10 | [Cloud web, auth, SDK, self-host](./phase-10-cloud-web-sdk-selfhost.md) | 7, 9 | ASUS | Pending |
 | 11 | [v1.0: remote MCP, OS integration, audit, release](./phase-11-v1-release.md) | all | ASUS, Mac | Pending |
