@@ -153,7 +153,13 @@ pub fn describe(
 fn describe_failure(error: runner::RunError) -> String {
     const STATUS_DLL_NOT_FOUND: i32 = -1_073_741_515;
     let missing_dll = match &error {
-        runner::RunError::Crash { exit, .. } => *exit == Some(STATUS_DLL_NOT_FOUND),
+        runner::RunError::Crash { exit, stderr_tail } => {
+            *exit == Some(STATUS_DLL_NOT_FOUND)
+                || stderr_tail.contains("ImportError: DLL load failed")
+        }
+        runner::RunError::EngineFailed { message, .. } => {
+            message.contains("ImportError: DLL load failed")
+        }
         runner::RunError::Spawn(error) => error.raw_os_error() == Some(126),
         _ => false,
     };
@@ -264,6 +270,15 @@ mod tests {
                 stderr_tail: String::new(),
             },
             RunError::Spawn(std::io::Error::from_raw_os_error(126)),
+            RunError::EngineFailed {
+                code: ariad_core::protocol::ErrorCode::EngineFailure,
+                message: "ImportError: DLL load failed while importing torch".to_owned(),
+            },
+            RunError::Crash {
+                exit: Some(1),
+                stderr_tail: "Traceback:\nImportError: DLL load failed while importing torch"
+                    .to_owned(),
+            },
         ] {
             let message = super::describe_failure(error);
             assert_eq!(
@@ -271,8 +286,20 @@ mod tests {
                 cfg!(windows)
             );
         }
-        let error = RunError::Spawn(std::io::Error::from_raw_os_error(2));
-        assert!(!super::describe_failure(error).contains("Redistributable"));
+        for error in [
+            RunError::Spawn(std::io::Error::from_raw_os_error(2)),
+            RunError::EngineFailed {
+                code: ariad_core::protocol::ErrorCode::EngineFailure,
+                message: "ImportError: No module named torch".to_owned(),
+            },
+            RunError::Crash {
+                exit: Some(1),
+                stderr_tail: "unrelated engine failure".to_owned(),
+            },
+            RunError::Timeout,
+        ] {
+            assert!(!super::describe_failure(error).contains("Redistributable"));
+        }
     }
 
     #[test]
