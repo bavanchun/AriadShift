@@ -27,6 +27,8 @@ Usage, from the repository root::
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 import os
 import platform
@@ -36,12 +38,14 @@ import sys
 import tarfile
 import tempfile
 import tomllib
+from base64 import urlsafe_b64encode
 from dataclasses import asdict, dataclass
 from importlib import metadata
 from pathlib import Path
 
 import fetch
 import licenses
+import windows_imports
 
 PACK_DIR = Path(__file__).resolve().parent
 ENGINE_DIR = PACK_DIR.parent
@@ -174,6 +178,54 @@ def prune_runtime(runtime: Path, target: str) -> None:
             path.unlink()
         elif path.is_dir():
             shutil.rmtree(path)
+    if is_windows(target):
+        prune_microsoft_runtime(runtime)
+
+
+def is_microsoft_runtime(path: Path) -> bool:
+    return path.suffix.lower() == ".dll" and path.stem.lower().startswith(("vcruntime", "msvcp"))
+
+
+def prune_microsoft_runtime(runtime: Path) -> None:
+    """Use the system redistributable, including for DLLs supplied by wheels."""
+    files = [path for path in runtime.rglob("*") if path.is_file() or path.is_symlink()]
+    removed = [path for path in files if is_microsoft_runtime(path)]
+    aliases = {
+        path.name.lower().encode("ascii"): (path.stem.split("-", 1)[0] + ".dll").encode("ascii")
+        for path in removed
+        if "-" in path.stem
+    }
+    changed = set()
+    if aliases:
+        for path in files:
+            if path not in removed and path.suffix.lower() in {".dll", ".pyd"}:
+                if windows_imports.retarget(path, aliases):
+                    changed.add(path.resolve())
+    deleted = {path.resolve() for path in removed}
+    for path in removed:
+        path.unlink()
+    for record in runtime.rglob("*.dist-info/RECORD"):
+        with record.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.reader(handle))
+        kept = []
+        updated = False
+        for row in rows:
+            if Path(row[0]).suffix.lower() not in {".dll", ".pyd"}:
+                kept.append(row)
+                continue
+            source = (record.parent.parent / row[0]).resolve()
+            if source in deleted:
+                updated = True
+                continue
+            if source in changed:
+                data = source.read_bytes()
+                digest = urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+                row[1:] = [f"sha256={digest}", str(len(data))]
+                updated = True
+            kept.append(row)
+        if updated:
+            with record.open("w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle, lineterminator="\n").writerows(kept)
 
 
 def install_wheels(work: Path, runtime: Path, target: str) -> None:
@@ -430,6 +482,8 @@ def archive(root: Path, members: list[str], destination: Path) -> str:
     epoch = int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
 
     def normalize(info: tarfile.TarInfo) -> tarfile.TarInfo:
+        if is_microsoft_runtime(Path(info.name)):
+            raise SystemExit(f"Microsoft runtime DLL must not be bundled: {info.name}")
         info.uid = info.gid = 0
         info.uname = info.gname = ""
         info.mtime = epoch
@@ -472,6 +526,8 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         runtime, licenses.runtime_libraries(pins["python"]["release"], target), target
     )
     install_wheels(work, runtime, target)
+    if is_windows(target):
+        prune_microsoft_runtime(runtime)
     native = host_target() == target
     if native:
         compile_bytecode(runtime, target)

@@ -162,6 +162,8 @@ For byte-identical builds, run `build.py` with the same uv-managed python-build-
 
 The build prunes unused runtime modules and requires every remaining native file outside `site-packages` to match the platform's licence inventory before installing the locked wheels. Unlisted native files and inventory entries with no matching file fail the build. The merged manifest deduplicates licence obligations across targets while retaining nonredundant alternatives and exceptions.
 
+Windows packs use the system Microsoft runtime; see [Docling prerequisites](docling.md#what-it-needs). The build removes `vcruntime*` and `msvcp*` DLLs before and after wheel installation, and the archive writer rejects any remaining copy, including those under `site-packages`. Wheels can refer to hash-suffixed runtime names; their PE import tables are retargeted to the corresponding system DLL names before those copies are removed, without relocating image data.
+
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 
 ## Signing and publishing
