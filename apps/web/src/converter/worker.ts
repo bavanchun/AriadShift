@@ -1,5 +1,6 @@
 // Web Worker that owns ariad-wasm and the converter's files.
 import init, * as ariadWasm from "@ariadshift/ariad-wasm";
+import { browserEngines } from "./browser-engines";
 import { coreFrom } from "./engines";
 import { MEMORY_LIMIT_BYTES, MemoryStore, OpfsStore, randomSessionId } from "./file-store";
 import type { RequestEnvelope, WorkerResponse } from "./protocol";
@@ -11,7 +12,7 @@ const context: Promise<WorkerContext> = (async () => {
   const { memory } = await init();
   const store = (await OpfsStore.open(storageSession)) ?? new MemoryStore();
   return {
-    session: new ConverterSession(coreFrom(ariadWasm, memory), store),
+    session: new ConverterSession(browserEngines(coreFrom(ariadWasm, memory)), store),
     storageSession,
     version: ariadWasm.version(),
     memoryLimitBytes: MEMORY_LIMIT_BYTES,

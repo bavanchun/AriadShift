@@ -60,9 +60,22 @@ export class ConverterSession {
     this.#input = null;
     await this.store.clear();
     if (file.size > this.inputLimitBytes) {
+      let details = {};
+      try {
+        const prefix = new Uint8Array(await file.slice(0, CLASSIFY_PREFIX_BYTES).arrayBuffer());
+        const inspection = this.core.inspect(prefix, file.name, file.size);
+        details = {
+          format: inspection.format,
+          targets: [...inspection.reachable, ...inspection.reachable_elsewhere],
+        };
+      } catch {
+        /* The size error remains useful even for an unknown format. */
+      }
+
       throw {
         code: "limit_exceeded",
         limit: "browser_input_bytes",
+        ...details,
         message: `${file.name} is ${Math.ceil(file.size / MB)} MB. The browser converter takes files up to ${this.inputLimitBytes / MB} MB; the AriadShift CLI converts larger ones on your computer.`,
       } satisfies ConverterError;
     }
@@ -183,7 +196,10 @@ export async function handleRequest(
         result = session.plan(request.to, request.profile);
         break;
       case "convert":
-        result = await session.convert(request.to, request.profile);
+        result = {
+          ...(await session.convert(request.to, request.profile)),
+          resources: resources(),
+        };
         break;
       case "reset":
         result = await session.reset();

@@ -99,6 +99,7 @@ dependencies = [
  "hex",
  "html5ever",
  "lopdf",
+ "quick-xml 0.42.0",
  "saphyr-parser",
  "schemars",
  "serde",
@@ -106,6 +107,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "unicode-normalization",
+ "zip",
 ]
 
 [[package]]
@@ -128,6 +130,7 @@ name = "ariad-host"
 version = "0.1.0"
 dependencies = [
  "ariad-core",
+ "ariad-typst",
  "base64 0.23.1",
  "cap-std",
  "directories",
@@ -157,12 +160,24 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml 1.1.8+spec-1.1.0",
- "typst",
- "typst-pdf",
  "unicode-normalization",
  "ureq",
  "uuid",
  "zip",
+]
+
+[[package]]
+name = "ariad-typst"
+version = "0.1.0"
+dependencies = [
+ "ariad-core",
+ "jiff",
+ "js-sys",
+ "serde_json",
+ "thiserror",
+ "typst",
+ "typst-pdf",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1776,10 +1791,12 @@ dependencies = [
  "jiff-core",
  "jiff-static",
  "jiff-tzdb-platform",
+ "js-sys",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
+ "wasm-bindgen",
  "windows-link",
 ]
 

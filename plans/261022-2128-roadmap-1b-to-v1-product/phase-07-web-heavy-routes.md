@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Web heavy local routes and hand-offs"
-status: pending
+status: in-progress
 priority: P1
 effort: "18h"
 dependencies: [3, 6]
@@ -34,3 +34,10 @@ The browser converter reaches the roadmap 3 bar: DOCX ↔ MD ↔ HTML ↔ EPUB e
 |---|---|
 | `pandoc.wasm` is large | Load only when a DOCX or EPUB route is chosen; show progress; cache |
 | WebKit lacks a needed API | Feature-detect and degrade with a message |
+
+## Design notes
+
+- Pandoc 3.12 publishes `pandoc-3.12.wasm.zip`; GitHub's release API and the downloaded archive agree on SHA-256 `f14bc3e7722c8bdd58188707e8d5445ce1ac909eae43373f903b45c2f7390cf9`.
+- The native in-memory Typst compiler and fonts move into `ariad-typst`, shared by the host and a separate browser module. The browser loads it only for PDF output.
+- Browser adapters call core Pandoc mapping and package metadata functions; conversion logic remains in Rust. WASI is an isolated virtual filesystem and never fetches document resources.
+- Keep cloud processing hidden. Desktop hand-offs carry route/profile only and explain that the user must pick the file again.

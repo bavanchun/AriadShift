@@ -44,6 +44,8 @@ export type OutputLocation =
   | { kind: "memory"; blob: Blob };
 
 export interface ConvertedFile {
+  /** Assets loaded during this route, including lazy engine chunks. */
+  resources?: string[];
   name: string;
   size: number;
   format: FormatId;

@@ -1,3 +1,4 @@
+import { engineLabel } from "@/components/route-summary";
 import { offlineUrls } from "@/converter/offline";
 import { formatBytes, formatDuration, formatScore } from "@/lib/format-bytes";
 import { ACCEPT, FORMATS, formatLabel, pairSlug, parsePairSlug } from "@/lib/formats";
@@ -19,12 +20,37 @@ describe("format pairs", () => {
   it("rejects malformed slugs", () => {
     expect(parsePairSlug("markdown")).toBeUndefined();
     expect(parsePairSlug("markdown-to-html-to-docx")).toBeUndefined();
-    expect(parsePairSlug("pdf-to-html")).toBeUndefined();
+    expect(parsePairSlug("unknown-to-html")).toBeUndefined();
   });
 
   it("labels unknown ids with the id and builds the picker filter", () => {
     expect(formatLabel("ariad-ir+json")).toBe("AriadShift IR (JSON)");
-    expect(formatLabel("pdf")).toBe("pdf");
+    expect(formatLabel("pdf")).toBe("PDF");
+    expect(formatLabel("unknown")).toBe("unknown");
+    for (const id of [
+      "pdf",
+      "odt",
+      "rtf",
+      "pptx",
+      "xlsx",
+      "ods",
+      "odp",
+      "doc",
+      "xls",
+      "ppt",
+      "png",
+      "jpeg",
+      "webp",
+      "tiff",
+      "docling+json",
+      "pandoc+json",
+    ]) {
+      expect(formatLabel(id)).not.toBe(id);
+    }
+    expect(engineLabel("typst")).toBe("Typst");
+    expect(engineLabel("libreoffice")).toBe("LibreOffice");
+    expect(engineLabel("docling")).toBe("Docling");
+    expect(engineLabel("pdf")).toBe("PDF text reader");
     expect(ACCEPT.split(",")).toEqual(
       expect.arrayContaining([".md", ".markdown", ".html", ".htm", ".json", ".docx", ".epub"]),
     );

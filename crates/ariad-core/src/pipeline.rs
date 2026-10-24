@@ -174,7 +174,7 @@ pub const fn can_read(format: Format) -> bool {
     matches!(
         format,
         Format::Markdown | Format::Html | Format::AriadIrJson | Format::DoclingJson
-    )
+    ) || (cfg!(feature = "pdf") && matches!(format, Format::Pdf))
 }
 
 /// Whether [`write`] supports `format`.
@@ -219,6 +219,23 @@ pub fn read(format: Format, bytes: &[u8], limits: &Limits) -> Result<Read, Pipel
             reader_html::ReadError::NestingTooDeep { .. } => limit_exceeded("max_nesting_depth"),
             reader_html::ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
             reader_html::ReadError::TooManyNodes { .. } => limit_exceeded("max_dom_nodes"),
+        })?,
+        #[cfg(feature = "pdf")]
+        Format::Pdf => crate::reader::pdf::read(bytes, limits).map_err(|error| {
+            use crate::reader::pdf::ReadError;
+            match error {
+                ReadError::InvalidLimits(e) => e.into(),
+                ReadError::InputTooLarge { .. } => limit_exceeded("max_input_bytes"),
+                ReadError::TooManyPages { .. } => limit_exceeded("max_pages"),
+                ReadError::TooManyObjects { .. } | ReadError::DecompressedTooLarge { .. } => {
+                    limit_exceeded("max_decompressed_bytes")
+                }
+                ReadError::NestingTooDeep { .. } => limit_exceeded("max_nesting_depth"),
+                ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
+                other => PipelineError::InvalidInput {
+                    reason: other.to_string(),
+                },
+            }
         })?,
         Format::DoclingJson => {
             crate::docling::read(bytes, limits).map_err(|error| match error {

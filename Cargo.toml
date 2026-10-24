@@ -14,6 +14,7 @@ publish = false
 [workspace.dependencies]
 ammonia = "4.2.1"
 ariad-core = { path = "crates/ariad-core", version = "0.1.0", default-features = false }
+ariad-typst = { path = "crates/ariad-typst", version = "0.1.0" }
 ariad-host = { path = "crates/ariad-host", version = "0.1.0", default-features = false }
 assert_cmd = "2.2.2"
 async-trait = "0.1.92"

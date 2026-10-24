@@ -202,7 +202,7 @@ pub fn inspect_bytes(
     if !pipeline::can_read(format) {
         inspection.warnings.push(Notice::new(
             "reader_unavailable",
-            "This format cannot be read here; its structure was not analysed.",
+            "Structure was not analysed during inspection; conversion may use another engine.",
         ));
         return Ok(inspection);
     }
@@ -262,12 +262,15 @@ mod tests {
         assert_eq!(inspection.bytes, 16);
         assert_eq!(
             inspection.reachable,
-            vec![Format::AriadIrJson, Format::Html]
+            vec![
+                Format::AriadIrJson,
+                Format::Docx,
+                Format::Epub,
+                Format::Html,
+                Format::Pdf
+            ]
         );
-        assert_eq!(
-            inspection.reachable_elsewhere,
-            vec![Format::Docx, Format::Epub, Format::Pdf]
-        );
+        assert_eq!(inspection.reachable_elsewhere, Vec::<Format>::new());
         assert!(inspection.counts.is_some());
         assert!(inspection.warnings.is_empty());
     }
@@ -300,8 +303,8 @@ mod tests {
         .unwrap();
         assert_eq!(inspection.format, Format::Docx);
         assert!(inspection.counts.is_none());
-        assert!(inspection.reachable.is_empty());
-        assert!(inspection.reachable_elsewhere.contains(&Format::Markdown));
+        assert!(inspection.reachable.contains(&Format::Markdown));
+        assert!(inspection.reachable_elsewhere.is_empty());
         assert_eq!(inspection.warnings[0].code, "reader_unavailable");
     }
 
