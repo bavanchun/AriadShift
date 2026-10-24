@@ -515,7 +515,7 @@ pub(crate) fn regular_file(value: &str) -> Result<PathBuf, String> {
     std::fs::canonicalize(value).map_err(|e| e.to_string())
 }
 pub(crate) fn validate_route(target: &str) -> Result<(), String> {
-    if ariad_host::convert::DocumentFormat::parse(target).is_none() {
+    if crate::deep_link::output_format(target).is_none() {
         return Err("Unsupported output format".into());
     }
     Ok(())
@@ -524,7 +524,8 @@ fn output_path(input: &Path, folder: Option<&Path>, target: &str) -> Result<Path
     let stem = input.file_stem().ok_or("File has no name")?;
     let mut name = stem.to_os_string();
     name.push(".");
-    name.push(target);
+    let format = crate::deep_link::output_format(target).ok_or("Unsupported output format")?;
+    name.push(format.extensions()[0]);
     Ok(folder.unwrap_or_else(|| input.parent().unwrap()).join(name))
 }
 fn validate_settings(s: &Settings) -> Result<(), String> {

@@ -28,6 +28,28 @@ expression: normalize_engines_json_stdout(&output)
     ]
   },
   {
+    "id": "pdf",
+    "version": "[VERSION]",
+    "license": "Apache-2.0",
+    "status": "ready",
+    "routes": []
+  },
+  {
+    "id": "typst",
+    "version": "[VERSION]",
+    "license": "Apache-2.0",
+    "status": "ready",
+    "routes": []
+  },
+  {
+    "id": "libreoffice",
+    "version": "-",
+    "license": "MPL-2.0",
+    "status": "missing",
+    "note": "optional",
+    "routes": []
+  },
+  {
     "id": "docling",
     "version": "-",
     "license": "Apache-2.0",

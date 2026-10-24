@@ -82,7 +82,7 @@ fn pdf_converts_to_markdown_through_the_engine_and_the_mapper() {
     let directory = tempdir().unwrap();
     let output = directory.path().join("map-room.md");
     let result = cli_with_engine(&docling_fixture("en-map-room.docling.json"))
-        .args(["convert"])
+        .args(["convert", "--engine", "docling"])
         .arg(repository().join("fixtures/pdf/en-map-room.pdf"))
         .args(["--to", "md", "--json", "-o"])
         .arg(&output)
@@ -140,7 +140,7 @@ fn a_missing_engine_or_tool_exits_with_code_five_and_a_hint() {
     let source = repository().join("fixtures/scan/vi-garden-300dpi.png");
 
     let missing = cli()
-        .args(["convert"])
+        .args(["convert", "--engine", "docling"])
         .arg(&source)
         .args(["--to", "md", "-o"])
         .arg(directory.path().join("a.md"))
@@ -150,7 +150,7 @@ fn a_missing_engine_or_tool_exits_with_code_five_and_a_hint() {
     assert!(stderr(&missing).contains("ASHIFT_DOCLING_ENGINE"));
 
     let no_tesseract = cli_with_engine("-")
-        .args(["convert"])
+        .args(["convert", "--engine", "docling"])
         .arg(&source)
         .args(["--to", "md", "-o"])
         .arg(directory.path().join("b.md"))
@@ -189,7 +189,7 @@ fn docling_json_converts_and_inspects_without_an_engine() {
 #[test]
 fn plan_and_engines_report_the_docling_route() {
     let plan = cli_with_engine(&docling_fixture("en-map-room.docling.json"))
-        .args(["plan"])
+        .args(["plan", "--engine", "docling"])
         .arg(repository().join("fixtures/pdf/en-map-room.pdf"))
         .args(["--to", "docx", "--json"])
         .output()
@@ -271,7 +271,7 @@ fn the_docling_pack_provides_the_engine() {
     let output = directory.path().join("map-room.md");
     let result = cli()
         .env("ASHIFT_PACK_DOCLING", &pack)
-        .args(["convert"])
+        .args(["convert", "--engine", "docling"])
         .arg(repository().join("fixtures/pdf/en-map-room.pdf"))
         .args(["--to", "md", "--json", "-o"])
         .arg(&output)
@@ -311,7 +311,7 @@ fn the_development_override_wins_over_a_pack() {
     let output = directory.path().join("map-room.md");
     let result = cli_with_engine(&docling_fixture("en-map-room.docling.json"))
         .env("ASHIFT_PACK_DOCLING", &pack)
-        .args(["convert"])
+        .args(["convert", "--engine", "docling"])
         .arg(repository().join("fixtures/pdf/en-map-room.pdf"))
         .args(["--to", "md", "-o"])
         .arg(&output)
@@ -327,12 +327,173 @@ fn an_artifact_that_links_out_of_the_workspace_is_refused() {
     let output = directory.path().join("map-room.md");
     let fixture = format!("symlink:{}", docling_fixture("en-map-room.docling.json"));
     let result = cli_with_engine(&fixture)
-        .args(["convert"])
+        .args(["convert", "--engine", "docling"])
         .arg(repository().join("fixtures/pdf/en-map-room.pdf"))
         .args(["--to", "md", "-o"])
         .arg(&output)
         .output()
         .unwrap();
     assert_eq!(result.status.code(), Some(1), "{}", stderr(&result));
+    assert!(!output.exists());
+}
+
+#[test]
+fn digital_pdf_prefers_the_builtin_reader_with_docling_available() {
+    let directory = tempdir().unwrap();
+    let input = repository().join("fixtures/pdf/en-map-room.pdf");
+    let output = directory.path().join("digital.md");
+    let converted = cli_with_engine(&docling_fixture("en-map-room.docling.json"))
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "md", "--json", "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(converted.status.success(), "{}", stderr(&converted));
+    let report: Value = serde_json::from_slice(&converted.stdout).unwrap();
+    assert_eq!(report["route"][0]["engine"], "pdf");
+    let plan = cli_with_engine(&docling_fixture("en-map-room.docling.json"))
+        .arg("plan")
+        .arg(&input)
+        .args(["--to", "md", "--json"])
+        .output()
+        .unwrap();
+    assert!(plan.status.success(), "{}", stderr(&plan));
+    let plan: Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["route"][0]["engine"], "pdf");
+}
+
+#[test]
+fn scanned_pdf_selects_docling_and_an_explicit_pdf_reader_keeps_the_warning() {
+    let directory = tempdir().unwrap();
+    let input = repository().join("fixtures/pdf/vi-garden-image-only.pdf");
+    let output = directory.path().join("scan.md");
+    let fixture = docling_fixture("vi-garden-300dpi.docling.json");
+    let converted = cli_with_engine(&fixture)
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "md", "--json", "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(converted.status.success(), "{}", stderr(&converted));
+    let report: Value = serde_json::from_slice(&converted.stdout).unwrap();
+    assert_eq!(report["route"][0]["engine"], "docling");
+    assert!(!fs::read_to_string(&output).unwrap().trim().is_empty());
+    let plan = cli_with_engine(&fixture)
+        .arg("plan")
+        .arg(&input)
+        .args(["--to", "md", "--json"])
+        .output()
+        .unwrap();
+    assert!(plan.status.success(), "{}", stderr(&plan));
+    let plan: Value = serde_json::from_slice(&plan.stdout).unwrap();
+    assert_eq!(plan["route"][0]["engine"], "docling");
+    let explicit = cli_with_engine(&fixture)
+        .arg("convert")
+        .arg(&input)
+        .args([
+            "--engine",
+            "pdf",
+            "--to",
+            "md",
+            "--json",
+            "--overwrite",
+            "-o",
+        ])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(explicit.status.success(), "{}", stderr(&explicit));
+    let report: Value = serde_json::from_slice(&explicit.stdout).unwrap();
+    assert_eq!(report["route"][0]["engine"], "pdf");
+    assert!(
+        report["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|warning| warning["code"] == "ocr_required")
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn blocked_docling_keeps_its_launcher_cause_and_does_not_affect_pdf_inspection() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempdir().unwrap();
+    let blocked = directory.path().join("docling");
+    fs::write(&blocked, "#!/bin/sh\nexit 1\n").unwrap();
+    fs::set_permissions(&blocked, fs::Permissions::from_mode(0o644)).unwrap();
+    let input = repository().join("fixtures/pdf/en-map-room.pdf");
+    let run = |args: &[&str]| {
+        cli()
+            .env(
+                "ASHIFT_DOCLING_ENGINE",
+                format!("\"{}\"", blocked.display()),
+            )
+            .env("ASHIFT_SANDBOX", "best-effort")
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let inspection = run(&["inspect", input.to_str().unwrap(), "--json"]);
+    assert!(inspection.status.success(), "{}", stderr(&inspection));
+    let output: Value = serde_json::from_slice(&inspection.stdout).unwrap();
+    assert_eq!(output["pdf"]["needs_ocr"], false);
+    let converted = run(&[
+        "convert",
+        input.to_str().unwrap(),
+        "--to",
+        "md",
+        "--engine",
+        "docling",
+        "-o",
+        directory.path().join("blocked.md").to_str().unwrap(),
+    ]);
+    assert_eq!(converted.status.code(), Some(5), "{converted:?}");
+    assert!(
+        stderr(&converted).contains("sandbox_unavailable"),
+        "{converted:?}"
+    );
+    assert!(
+        stderr(&converted).contains("Permission denied"),
+        "{converted:?}"
+    );
+    let engines = run(&["engines", "--json"]);
+    let rows: Value = serde_json::from_slice(&engines.stdout).unwrap();
+    let docling = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == "docling")
+        .unwrap();
+    assert_eq!(docling["status"], "cannot start");
+    let doctor = run(&["doctor", "--json"]);
+    let doctor: Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    let check = doctor["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["id"] == "docling_engine")
+        .unwrap();
+    assert!(check["message"].as_str().unwrap().contains("cannot start"));
+    let hint = check["hint"].as_str().unwrap();
+    assert!(hint.contains("ASHIFT_SANDBOX"), "{hint}");
+    assert!(!hint.contains("namespace"), "{hint}");
+}
+
+#[test]
+fn scanned_pdf_requires_ocr_instead_of_silently_returning_empty_text() {
+    let directory = tempdir().unwrap();
+    let output = directory.path().join("scan.md");
+    let result = cli()
+        .arg("convert")
+        .arg(repository().join("fixtures/pdf/vi-garden-image-only.pdf"))
+        .args(["--to", "md", "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(5), "{}", stderr(&result));
+    assert!(stderr(&result).contains("docling"), "{}", stderr(&result));
     assert!(!output.exists());
 }

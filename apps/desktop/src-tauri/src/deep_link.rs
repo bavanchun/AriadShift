@@ -1,9 +1,24 @@
 use crate::types::{DeepLink, Profile};
 
-pub(crate) fn input_format(value: &str) -> Option<ariad_host::convert::DocumentFormat> {
-    ariad_host::convert::DocumentFormat::from_extension(value).or_else(|| {
-        ariad_core::format::Format::from_id(value).and_then(|format| format.try_into().ok())
+pub(crate) fn input_format(value: &str) -> Option<ariad_core::format::Format> {
+    ariad_core::format::Format::from_user_name(value)
+        .or_else(|| (value == "docling+json").then_some(ariad_core::format::Format::DoclingJson))
+}
+
+pub(crate) fn output_format(value: &str) -> Option<ariad_core::format::Format> {
+    ariad_core::format::Format::from_user_name(value).filter(|format| {
+        ariad_host::convert::executor_edges()
+            .iter()
+            .any(|(_, output, _)| output == format)
     })
+}
+
+pub(crate) fn format_name(format: ariad_core::format::Format) -> &'static str {
+    match format {
+        ariad_core::format::Format::Markdown => "md",
+        ariad_core::format::Format::AriadIrJson => "json",
+        other => other.id(),
+    }
 }
 
 /// Parses only routing preferences. Deep links never carry filesystem paths or credentials.
@@ -35,8 +50,7 @@ pub fn parse(value: &str) -> Result<Option<DeepLink>, String> {
     let route = route.ok_or("Missing route")?;
     let (from, target) = route.split_once('-').ok_or("Invalid route")?;
     let from = input_format(from).ok_or("Unsupported input format")?;
-    let target =
-        ariad_host::convert::DocumentFormat::parse(target).ok_or("Unsupported target format")?;
+    let target = output_format(target).ok_or("Unsupported target format")?;
     if from == target {
         return Err("Input and output formats must differ".into());
     }
@@ -48,8 +62,8 @@ pub fn parse(value: &str) -> Result<Option<DeepLink>, String> {
         _ => return Err("Invalid profile".into()),
     };
     Ok(Some(DeepLink {
-        from: from.as_str().into(),
-        target: target.as_str().into(),
+        from: format_name(from).into(),
+        target: format_name(target).into(),
         profile,
     }))
 }
@@ -67,6 +81,10 @@ mod tests {
             ("jpg-html", "jpeg"),
             ("tif-docx", "tiff"),
             ("webp-md", "webp"),
+            ("odt-pdf", "odt"),
+            ("xls-xlsx", "xls"),
+            ("md-pdf", "md"),
+            ("md-json", "md"),
             ("docling%2Bjson-html", "docling+json"),
         ] {
             assert_eq!(

@@ -266,7 +266,7 @@ mod tests {
         );
         assert_eq!(
             inspection.reachable_elsewhere,
-            vec![Format::Docx, Format::Epub]
+            vec![Format::Docx, Format::Epub, Format::Pdf]
         );
         assert!(inspection.counts.is_some());
         assert!(inspection.warnings.is_empty());

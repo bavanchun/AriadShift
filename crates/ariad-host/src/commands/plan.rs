@@ -3,18 +3,15 @@
 use std::path::Path;
 
 pub use ariad_core::planner::{PlanScore, PlanStep, Profile};
-use ariad_core::{
-    format::Format,
-    limits::Limits,
-    planner::{self, PlanError},
-};
+use ariad_core::{format::Format, limits::Limits, planner};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     commands::inspect::{classify_file, count_document},
-    convert::{ConvertError, DocumentFormat},
+    convert::ConvertError,
+    engines::{self, AvailabilityReport, EngineInvocation},
 };
 
 /// Alternative conversion route within a plan output.
@@ -27,6 +24,8 @@ pub struct PlanAlternative {
     pub runs_locally: bool,
     #[serde(skip)]
     pub missing_engine: Option<String>,
+    #[serde(skip)]
+    pub startup_failure: Option<String>,
 }
 
 /// Output data structure for the `plan` command.
@@ -43,27 +42,34 @@ pub struct PlanOutput {
     pub runs_locally: bool,
     #[serde(skip)]
     pub missing_engine: Option<String>,
+    #[serde(skip)]
+    pub startup_failure: Option<String>,
 }
 
 fn reachable_from_targets(reachable: &[Format]) -> String {
     let mut targets: Vec<&'static str> = reachable
         .iter()
         .copied()
-        .filter(|&f| f != Format::AriadIrJson && f != Format::PandocJson)
-        .map(|f| f.id())
+        .filter(|f| f.is_user_facing())
+        .map(Format::user_name)
         .collect();
     targets.sort_unstable();
     targets.dedup();
     targets.join(", ")
 }
 
-fn check_route_engines(steps: &[PlanStep], available: &[String]) -> (bool, Option<String>) {
-    let missing = steps.iter().find_map(|step| {
-        let ready =
-            step.engine == crate::engines::IN_PROCESS_ENGINE || available.contains(&step.engine);
-        (!ready).then(|| step.engine.clone())
-    });
-    (missing.is_none(), missing)
+fn check_route_engines(
+    steps: &[PlanStep],
+    available: Option<&AvailabilityReport>,
+) -> (bool, Option<String>, Option<String>) {
+    let missing = steps
+        .iter()
+        .find(|step| !available.is_some_and(|report| report.is_available(&step.engine)))
+        .map(|step| step.engine.clone());
+    let startup_failure = missing
+        .as_deref()
+        .and_then(|engine| available?.get(engine)?.startup_failure.clone());
+    (missing.is_none(), missing, startup_failure)
 }
 
 fn build_input_summary(path: &Path, format: Format) -> Result<String, ConvertError> {
@@ -83,11 +89,8 @@ fn build_input_summary(path: &Path, format: Format) -> Result<String, ConvertErr
 
     match format {
         Format::Markdown => {
-            let res = crate::convert::read_document_to_ir(
-                path,
-                crate::convert::DocumentFormat::Markdown,
-                &Limits::local(),
-            )?;
+            let res =
+                crate::convert::read_document_to_ir(path, Format::Markdown, &Limits::local())?;
             let counts = count_document(&res.document);
             let p_label = if counts.paragraphs == 1 {
                 "paragraph"
@@ -101,11 +104,7 @@ fn build_input_summary(path: &Path, format: Format) -> Result<String, ConvertErr
             ))
         }
         Format::Html => {
-            let res = crate::convert::read_document_to_ir(
-                path,
-                crate::convert::DocumentFormat::Html,
-                &Limits::local(),
-            )?;
+            let res = crate::convert::read_document_to_ir(path, Format::Html, &Limits::local())?;
             let counts = count_document(&res.document);
             let p_label = if counts.paragraphs == 1 {
                 "paragraph"
@@ -125,13 +124,26 @@ fn build_input_summary(path: &Path, format: Format) -> Result<String, ConvertErr
     }
 }
 
-/// Generates a conversion plan from an input file to a target format.
+/// Generates a plan with automatic input-reader selection.
 pub fn plan(
     path: &Path,
     target: &str,
     profile: Profile,
     caps: &planner::Capabilities,
     engine_program: Option<&Path>,
+    cancel: CancellationToken,
+) -> Result<PlanOutput, ConvertError> {
+    plan_with_engine(path, target, profile, caps, engine_program, None, cancel)
+}
+
+/// Generates a conversion plan from an input file to a target format.
+pub fn plan_with_engine(
+    path: &Path,
+    target: &str,
+    profile: Profile,
+    caps: &planner::Capabilities,
+    engine_program: Option<&Path>,
+    reader_engine: Option<&str>,
     cancel: CancellationToken,
 ) -> Result<PlanOutput, ConvertError> {
     if cancel.is_cancelled() {
@@ -146,15 +158,13 @@ pub fn plan(
         })?;
 
     // Archive preflight for archives to fail fast with typed errors
-    if input_format == Format::Docx || input_format == Format::Epub {
+    if input_format.is_zip_container() {
         crate::archive::preflight_archive(path, &Limits::local())?;
     }
 
-    let target_format =
-        DocumentFormat::parse(target).ok_or_else(|| ConvertError::UnsupportedRoute {
-            detail: Some(format!("unknown target format '{target}'")),
-        })?;
-    let to_fmt = Format::from(target_format);
+    let to_fmt = Format::from_user_name(target).ok_or_else(|| ConvertError::UnsupportedRoute {
+        detail: Some(format!("unknown target format '{target}'")),
+    })?;
 
     let registered_engines = caps.registered_engines();
 
@@ -163,7 +173,7 @@ pub fn plan(
             planner::reachable_formats(caps, input_format, profile, &registered_engines);
         let detail = format!(
             "reachable targets from {}: {}",
-            input_format.id(),
+            input_format.user_name(),
             reachable_from_targets(&reachable)
         );
         return Err(ConvertError::UnsupportedRoute {
@@ -171,44 +181,53 @@ pub fn plan(
         });
     }
 
-    let plan = match planner::plan(caps, input_format, to_fmt, profile, &registered_engines) {
-        Ok(p) => p,
-        Err(PlanError::NoRoute { reachable, .. }) => {
-            let detail = format!(
-                "no reachable targets from {}: {}",
-                input_format.id(),
-                reachable_from_targets(&reachable)
-            );
-            return Err(ConvertError::UnsupportedRoute {
-                detail: Some(detail),
-            });
-        }
-        Err(e) => {
-            return Err(ConvertError::UnsupportedRoute {
-                detail: Some(e.to_string()),
-            });
-        }
-    };
+    let default_exe = std::env::current_exe().map_err(|_| ConvertError::Failed)?;
+    let program = engine_program.unwrap_or(&default_exe);
+    let selected = crate::convert::routing::select(
+        path,
+        input_format,
+        to_fmt,
+        profile,
+        caps,
+        &EngineInvocation::new(program),
+        reader_engine,
+        &Limits::local(),
+        &cancel,
+    )?;
+    let plan = selected.plan;
 
     let summary = build_input_summary(path, input_format)?;
 
-    let available_engines: Vec<String> = {
+    let available = {
         let default_exe = std::env::current_exe().ok();
-        let ep = engine_program.or(default_exe.as_deref());
-        if let Some(ep) = ep {
-            match crate::engines::availability(ep, &[], cancel.clone()) {
-                Ok(report) => report.available_engine_ids(),
-                Err(crate::runner::RunError::Cancelled) => return Err(ConvertError::Interrupted),
-                Err(_) => Vec::new(),
+        match engine_program.or(default_exe.as_deref()) {
+            Some(program) => {
+                let mut needed: Vec<&str> = plan
+                    .steps
+                    .iter()
+                    .chain(plan.alternatives.iter().flat_map(|alt| alt.steps.iter()))
+                    .map(|step| step.engine.as_str())
+                    .collect();
+                needed.sort_unstable();
+                needed.dedup();
+                match engines::availability_of(
+                    &EngineInvocation::new(program),
+                    &needed,
+                    cancel.clone(),
+                ) {
+                    Ok(report) => Some(report),
+                    Err(crate::runner::RunError::Cancelled) => {
+                        return Err(ConvertError::Interrupted);
+                    }
+                    Err(_) => None,
+                }
             }
-        } else if crate::pandoc_bin::locate_with_cancel(Some(&cancel)).is_ok() {
-            vec!["pandoc".to_owned()]
-        } else {
-            Vec::new()
+            None => None,
         }
     };
 
-    let (runs_locally, missing_engine) = check_route_engines(&plan.steps, &available_engines);
+    let (runs_locally, missing_engine, startup_failure) =
+        check_route_engines(&plan.steps, available.as_ref());
 
     let raw_name = path
         .file_name()
@@ -220,13 +239,15 @@ pub fn plan(
         .alternatives
         .into_iter()
         .map(|alt| {
-            let (alt_locally, alt_missing) = check_route_engines(&alt.steps, &available_engines);
+            let (alt_locally, alt_missing, alt_startup) =
+                check_route_engines(&alt.steps, available.as_ref());
             PlanAlternative {
                 route: alt.steps,
                 score: alt.score,
                 measured: alt.measured,
                 runs_locally: alt_locally,
                 missing_engine: alt_missing,
+                startup_failure: alt_startup,
             }
         })
         .collect();
@@ -240,5 +261,6 @@ pub fn plan(
         input_summary: Some(summary),
         runs_locally,
         missing_engine,
+        startup_failure,
     })
 }

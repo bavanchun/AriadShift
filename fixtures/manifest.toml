@@ -1347,6 +1347,168 @@ phase = "1b"
 routes = ["docling->ir"]
 
 [[fixture]]
+id = "vi-garden-notes-odt"
+path = "fixtures/office/vi-garden-notes.odt"
+format = "odt"
+media_type = "application/vnd.oasis.opendocument.text"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and assembled by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "f90ced90fde81695cf33253507ae94fab46c58a6e7a74cdab9dd52c9260253e3"
+tags = []
+phase = "1b"
+routes = ["odt->docx", "odt->md", "odt->pdf"]
+companions = []
+
+[[fixture]]
+id = "vi-garden-notes-doc"
+path = "fixtures/office/vi-garden-notes.doc"
+format = "doc"
+media_type = "application/msword"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+sha256 = "d85b52c2620ba21c17165c66bcfb97c043e16542108d686aeecb1ad7e9baf037"
+tags = []
+phase = "1b"
+routes = ["doc->docx", "doc->md", "doc->pdf"]
+companions = []
+
+[[fixture]]
+id = "vi-garden-notes-rtf"
+path = "fixtures/office/vi-garden-notes.rtf"
+format = "rtf"
+media_type = "application/rtf"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+sha256 = "0e79a5b22a17375e3938a572d6970a42bed98e97a146db9db8b2970397dd0a09"
+tags = []
+phase = "1b"
+routes = ["rtf->docx", "rtf->md", "rtf->pdf"]
+companions = []
+
+[[fixture]]
+id = "vi-route-sheet-ods"
+path = "fixtures/office/vi-route-sheet.ods"
+format = "ods"
+media_type = "application/vnd.oasis.opendocument.spreadsheet"
+languages = ["vi"]
+title = "Lộ trình"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and assembled by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "28b29e6795816cfdba2f2e7141f4b482b07a25aaa798a949a609e41a0fde5a5c"
+tags = []
+phase = "1b"
+routes = ["ods->xlsx", "ods->pdf"]
+companions = []
+
+[[fixture]]
+id = "vi-route-sheet-xls"
+path = "fixtures/office/vi-route-sheet.xls"
+format = "xls"
+media_type = "application/vnd.ms-excel"
+languages = ["vi"]
+title = "Lộ trình"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+sha256 = "8085c0a6c228714c741d3ab779ee910d8beb550bc7ab2ca64fdc7bdf88d41ef2"
+tags = []
+phase = "1b"
+routes = ["xls->xlsx", "xls->pdf"]
+companions = []
+
+[[fixture]]
+id = "vi-route-sheet-xlsx"
+path = "fixtures/office/vi-route-sheet.xlsx"
+format = "xlsx"
+media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+languages = ["vi"]
+title = "Lộ trình"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+sha256 = "8ca56758ad6adf11e9f4335ba8c5e8067bc6d1da033c680b1e7e4ea9120b5f2d"
+tags = []
+phase = "1b"
+routes = ["xlsx->pdf"]
+companions = []
+
+[[fixture]]
+id = "en-map-room-slides-odp"
+path = "fixtures/office/en-map-room-slides.odp"
+format = "odp"
+media_type = "application/vnd.oasis.opendocument.presentation"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and assembled by the fixture generator."
+attribution = "AriadShift contributors"
+sha256 = "a82011c5e638e2446e874b7e2a848c51274d268881c3fd61b30d91ea0bcd4ff6"
+tags = []
+phase = "1b"
+routes = ["odp->pptx", "odp->pdf"]
+companions = []
+
+[[fixture]]
+id = "en-map-room-slides-ppt"
+path = "fixtures/office/en-map-room-slides.ppt"
+format = "ppt"
+media_type = "application/vnd.ms-powerpoint"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+sha256 = "8c29485b730d9659f45a63f2c3dc98ddb83251617f3deb6a3fc1c194a89f2165"
+tags = []
+phase = "1b"
+routes = ["ppt->pptx", "ppt->pdf"]
+companions = []
+
+[[fixture]]
+id = "en-map-room-slides-pptx"
+path = "fixtures/office/en-map-room-slides.pptx"
+format = "pptx"
+media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/office.py"
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+sha256 = "e0f7dd73d32d3c53748d33245cc33d2ded92fc660204c572a0ef7197033d471d"
+tags = []
+phase = "1b"
+routes = ["pptx->pdf"]
+companions = []
+
+[[fixture]]
 id = "vi-garden-image-only"
 path = "fixtures/pdf/vi-garden-image-only.pdf"
 format = "pdf"

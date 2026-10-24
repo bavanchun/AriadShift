@@ -104,6 +104,9 @@ impl Failure {
             | ConvertError::DoclingToolMissing => {
                 Self::transient("tool_missing", "a required engine is missing on the worker")
             }
+            ConvertError::SandboxUnavailable(_) => {
+                Self::transient("sandbox_unavailable", "the conversion could not finish")
+            }
             ConvertError::Failed => Self::transient("failed", "the conversion engine failed"),
             ConvertError::OutputIo => {
                 Self::transient("output_io", "the output could not be written")
@@ -435,6 +438,7 @@ impl Worker {
             engine_program: self.config.engine_program.clone(),
             title_fallback: Some(stem.clone()),
             asset_base_dir: None,
+            reader_engine: None,
         };
         let (events_tx, events_rx) = mpsc::unbounded_channel::<String>();
         let progress = tokio::spawn(forward_progress(self.db.clone(), job.id, events_rx));
@@ -889,17 +893,26 @@ mod tests {
         let rss = Failure::from_convert(&ConvertError::MemoryLimitExceeded { limit_mb: 1 });
         assert!(!rss.transient);
         assert_eq!(rss.code, "limit_exceeded");
-        let sandbox =
-            Failure::from_convert(&ConvertError::SandboxUnavailable("unavailable".to_owned()));
-        assert!(!sandbox.transient);
-        assert_eq!(sandbox.code, "sandbox_unavailable");
-        assert_eq!(sandbox.message, "the conversion could not finish");
         assert!(!Failure::from_convert(&ConvertError::UnsupportedRoute { detail: None }).transient);
         assert!(!Failure::from_convert(&ConvertError::InputIo).transient);
         assert_eq!(
             Failure::from_convert(&ConvertError::LimitExceeded).code,
             "limit_exceeded"
         );
+    }
+
+    #[test]
+    fn sandbox_failures_can_retry_on_another_worker() {
+        for detail in [
+            "private /tmp requires user and mount namespaces: permission denied",
+            "Landlock: deployment policy refused confinement",
+        ] {
+            let failure =
+                Failure::from_convert(&ConvertError::SandboxUnavailable(detail.to_owned()));
+            assert!(failure.transient);
+            assert_eq!(failure.code, "sandbox_unavailable");
+            assert_eq!(failure.message, "the conversion could not finish");
+        }
     }
 
     #[test]

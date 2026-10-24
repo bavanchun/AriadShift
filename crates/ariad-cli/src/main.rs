@@ -32,7 +32,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Convert a document between supported formats (Markdown, HTML, DOCX, EPUB).
+    /// Convert a document between supported formats (Markdown, HTML, DOCX, EPUB, PDF, Office, IR JSON).
     Convert(ConvertArgs),
     /// Inspect document format, metrics, structure counts, and reachable routes.
     Inspect(InspectArgs),
@@ -98,7 +98,7 @@ struct ConvertArgs {
     /// Input document file paths.
     #[arg(value_name = "INPUT", required = true, num_args = 1..)]
     inputs: Vec<PathBuf>,
-    /// Target output format (md, html, docx, epub).
+    /// Target output format (md, html, docx, epub, pdf, json, xlsx, pptx).
     #[arg(long = "to", value_name = "FORMAT")]
     target_format: String,
     /// Output file path (defaults to input stem with target extension); with several inputs,
@@ -114,6 +114,9 @@ struct ConvertArgs {
     /// Output structured conversion report as JSON to stdout.
     #[arg(long)]
     json: bool,
+    /// Choose the engine that reads the input (for example pdf or docling).
+    #[arg(long, value_name = "ENGINE")]
+    engine: Option<String>,
 }
 
 /// Hidden command to convert an input document to AriadShift IR.
@@ -140,7 +143,7 @@ struct WriteArgs {
     /// Input AriadShift IR document file path.
     #[arg(value_name = "INPUT")]
     input: PathBuf,
-    /// Target format to write (md, html, docx, epub).
+    /// Target format to write (md, html, docx, epub, pdf).
     #[arg(long = "to", value_name = "FORMAT")]
     target_format: String,
     /// Output file path.
@@ -180,6 +183,9 @@ struct PlanArgs {
     /// Output structured plan as JSON to stdout.
     #[arg(long)]
     json: bool,
+    /// Choose the engine that reads the input (for example pdf or docling).
+    #[arg(long, value_name = "ENGINE")]
+    engine: Option<String>,
 }
 
 /// Arguments for listing engines or managing engine packs.
@@ -352,6 +358,10 @@ trait CommandError: std::fmt::Display + Send + 'static {
     fn is_interrupted(&self) -> bool;
     /// Generic failures print "<command> failed" instead of a message.
     fn is_generic(&self) -> bool;
+    /// Diagnostic code shown alongside the message, when needed.
+    fn diagnostic_code(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 impl CommandError for ConvertError {
@@ -363,6 +373,9 @@ impl CommandError for ConvertError {
     }
     fn is_generic(&self) -> bool {
         matches!(self, Self::Failed)
+    }
+    fn diagnostic_code(&self) -> Option<&'static str> {
+        matches!(self, Self::SandboxUnavailable(_)).then(|| self.code())
     }
 }
 
@@ -386,7 +399,10 @@ fn report_error<E: CommandError>(command_name: &str, err: &E) -> ExitCode {
         let _ = writeln!(io::stderr(), "ashift: {command_name} failed");
         ExitCode::from(1)
     } else {
-        let _ = writeln!(io::stderr(), "ashift: {err}");
+        let _ = match err.diagnostic_code() {
+            Some(code) => writeln!(io::stderr(), "ashift: error[{code}]: {err}"),
+            None => writeln!(io::stderr(), "ashift: {err}"),
+        };
         ExitCode::from(err.exit_code())
     }
 }
@@ -464,8 +480,8 @@ where
 }
 
 fn target_extension(target_format: &str) -> &str {
-    match ariad_host::convert::DocumentFormat::parse(target_format) {
-        Some(fmt) => fmt.default_extension(),
+    match ariad_core::format::Format::from_user_name(target_format) {
+        Some(fmt) => fmt.user_name(),
         None => target_format,
     }
 }
@@ -497,6 +513,7 @@ fn run_convert(mut args: ConvertArgs) -> ExitCode {
         engine_program,
         title_fallback: None,
         asset_base_dir: None,
+        reader_engine: args.engine.clone(),
     };
 
     run_blocking(
@@ -586,6 +603,7 @@ fn run_plan(args: PlanArgs) -> ExitCode {
     let input = args.input;
     let target = args.target_format;
     let profile = args.profile.into();
+    let reader_engine = args.engine;
     let caps = match ariad_host::commands::active_capabilities() {
         Ok(c) => c,
         Err(e) => {
@@ -597,12 +615,13 @@ fn run_plan(args: PlanArgs) -> ExitCode {
     run_blocking(
         "planning",
         move |cancel| {
-            ariad_host::commands::plan::plan(
+            ariad_host::commands::plan::plan_with_engine(
                 &input,
                 &target,
                 profile,
                 &caps,
                 Some(&engine_program),
+                reader_engine.as_deref(),
                 cancel,
             )
         },

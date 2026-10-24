@@ -60,6 +60,59 @@ fn check_request(workspace: &Workspace, options: BTreeMap<String, Value>) -> Req
     }
 }
 
+#[test]
+fn namespace_launcher_failure_is_typed_for_describe_and_conversion() {
+    // Isolate discovery overrides from the other sandbox tests in this process.
+    const CHILD: &str = "ARIAD_TEST_INSTALLED_LIBREOFFICE";
+    if std::env::var_os(CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "namespace_launcher_failure_is_typed_for_describe_and_conversion",
+            ])
+            .env(CHILD, "1")
+            .env("ASHIFT_SOFFICE", probe())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let workspace = Workspace::new().unwrap();
+    let mut command = probe_command(SandboxMode::BestEffort);
+    command.engine = "libreoffice".to_owned();
+    command.args = vec![OsString::from("describe-no-memory-limit")];
+    command.env.push((
+        OsString::from("ARIAD_TEST_SANDBOX_SUPPORT"),
+        OsString::from("namespace-denied"),
+    ));
+    for mode in [SandboxMode::BestEffort, SandboxMode::Required] {
+        if mode == SandboxMode::Required && !sandbox::support().gaps().is_empty() {
+            continue;
+        }
+        command.sandbox = Some(mode);
+        let described =
+            runner::describe_command(&command, runner::DESCRIBE_TIMEOUT, CancellationToken::new());
+        let converted = runner::run_command(
+            &command,
+            &check_request(&workspace, BTreeMap::new()),
+            CancellationToken::new(),
+            |_| {},
+        );
+        for error in [described.unwrap_err(), converted.unwrap_err()] {
+            assert!(
+                matches!(error, RunError::SandboxLaunchFailed(ref detail)
+                if detail.contains("private /tmp requires user and mount namespaces: Permission denied")),
+                "{error:?}"
+            );
+        }
+    }
+    command.sandbox = Some(SandboxMode::Off);
+    assert!(
+        runner::describe_command(&command, runner::DESCRIBE_TIMEOUT, CancellationToken::new())
+            .is_ok()
+    );
+}
+
 struct Probe {
     outcome: RunOutcome,
     _outside_dir: tempfile::TempDir,
@@ -78,14 +131,22 @@ impl Probe {
 }
 
 fn run_check(mode: SandboxMode) -> Probe {
+    run_check_with_private_tmp(mode, false)
+}
+
+fn run_check_with_private_tmp(mode: SandboxMode, private_tmp: bool) -> Probe {
     let workspace = Workspace::new().expect("create workspace");
     let outside_dir = tempfile::tempdir().expect("create a directory outside the workspace");
-    let outside_file = outside_dir.path().join("escape.txt");
+    let outside_file = if private_tmp {
+        PathBuf::from(format!("/tmp/ariadshift-private-{}", uuid::Uuid::new_v4()))
+    } else {
+        outside_dir.path().join("escape.txt")
+    };
     let socket_path = outside_dir.path().join("host.sock");
     let _unix_listener = UnixListener::bind(&socket_path).expect("bind a UNIX socket");
     let tcp_listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind a local TCP port");
     let port = tcp_listener.local_addr().expect("local address").port();
-    let options = BTreeMap::from([
+    let mut options = BTreeMap::from([
         (
             "outside".to_owned(),
             json!(outside_file.display().to_string()),
@@ -94,17 +155,74 @@ fn run_check(mode: SandboxMode) -> Probe {
         ("port".to_owned(), json!(port)),
         ("unix".to_owned(), json!(socket_path.display().to_string())),
     ]);
+    if private_tmp {
+        options.insert(
+            "mount".to_owned(),
+            json!(
+                workspace
+                    .work_dir()
+                    .join("mount-check")
+                    .display()
+                    .to_string()
+            ),
+        );
+    }
+    let mut command = probe_command(mode);
+    let install = tempfile::tempdir().expect("create test installation");
+    if private_tmp {
+        command.engine = "libreoffice".to_owned();
+        let program = install.path().join("engine-probe");
+        std::fs::copy(probe(), &program).expect("copy test executable");
+        let data = install.path().join("data.txt");
+        std::fs::write(&data, b"original").unwrap();
+        options.insert("read".to_owned(), json!(data.display().to_string()));
+        options.insert(
+            "write_install".to_owned(),
+            json!(data.display().to_string()),
+        );
+        command.program = program;
+        command.install_root = Some(install.path().to_path_buf());
+    }
     let outcome = runner::run_command(
-        &probe_command(mode),
+        &command,
         &check_request(&workspace, options),
         CancellationToken::new(),
         |_| {},
     )
     .expect("the sandbox-check probe runs");
+    if private_tmp {
+        assert_eq!(
+            std::fs::read(install.path().join("data.txt")).unwrap(),
+            b"original"
+        );
+    }
     Probe {
         outcome,
         _outside_dir: outside_dir,
         outside_file,
+    }
+}
+
+#[test]
+fn private_system_tmp_is_writable_without_exposing_the_hosts_tmp() {
+    let probe = run_check_with_private_tmp(SandboxMode::BestEffort, true);
+    assert_eq!(probe.verdict("write_outside"), "allowed");
+    assert!(
+        !probe.outside_file.exists(),
+        "the host must never see the private file"
+    );
+    assert_eq!(probe.verdict("exec_self"), "allowed");
+    assert_eq!(probe.verdict("write_workspace"), "allowed");
+    assert_eq!(probe.verdict("unix_connect"), "denied");
+    assert_eq!(probe.verdict("read_install_root"), "allowed");
+    assert_eq!(probe.verdict("write_install_root"), "denied");
+    assert_eq!(
+        probe.verdict("mount"),
+        "denied",
+        "mount capabilities must be lost at exec"
+    );
+    if sandbox::support().landlock_network || sandbox::support().seccomp {
+        assert_eq!(probe.verdict("tcp_connect"), "denied");
     }
 }
 

@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A format supported by the core registry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum Format {
     #[serde(rename = "markdown")]
     Markdown,
@@ -16,25 +16,99 @@ pub enum Format {
     Pdf,
     #[serde(rename = "png")]
     Png,
-    #[serde(rename = "pptx")]
-    Pptx,
-    #[serde(rename = "xlsx")]
-    Xlsx,
-    #[serde(rename = "jpeg")]
-    Jpeg,
-    #[serde(rename = "tiff")]
-    Tiff,
-    #[serde(rename = "webp")]
-    Webp,
     #[serde(rename = "ariad-ir+json")]
     AriadIrJson,
     #[serde(rename = "pandoc+json")]
     PandocJson,
     #[serde(rename = "docling+json")]
     DoclingJson,
+    #[serde(rename = "pptx")]
+    Pptx,
+    #[serde(rename = "xlsx")]
+    Xlsx,
+    #[serde(rename = "odt")]
+    Odt,
+    #[serde(rename = "ods")]
+    Ods,
+    #[serde(rename = "odp")]
+    Odp,
+    #[serde(rename = "doc")]
+    Doc,
+    #[serde(rename = "xls")]
+    Xls,
+    #[serde(rename = "ppt")]
+    Ppt,
+    #[serde(rename = "rtf")]
+    Rtf,
+    #[serde(rename = "jpeg")]
+    Jpeg,
+    #[serde(rename = "webp")]
+    Webp,
+    #[serde(rename = "tiff")]
+    Tiff,
 }
 
+/// The stored `mimetype` payloads that identify ZIP containers by their first entry.
+const MIMETYPE_FORMATS: &[(&[u8], Format)] = &[
+    (b"application/epub+zip", Format::Epub),
+    (b"application/vnd.oasis.opendocument.text", Format::Odt),
+    (
+        b"application/vnd.oasis.opendocument.spreadsheet",
+        Format::Ods,
+    ),
+    (
+        b"application/vnd.oasis.opendocument.presentation",
+        Format::Odp,
+    ),
+];
+
+/// OOXML main parts that identify a ZIP holding `[Content_Types].xml`.
+const OOXML_MAIN_PARTS: &[(&str, Format)] = &[
+    ("word/document.xml", Format::Docx),
+    ("xl/workbook.xml", Format::Xlsx),
+    ("ppt/presentation.xml", Format::Pptx),
+];
+
+/// Streams that identify legacy Office documents inside an OLE2 compound file.
+const OLE_STREAMS: &[(&str, Format)] = &[
+    ("WordDocument", Format::Doc),
+    ("Workbook", Format::Xls),
+    ("Book", Format::Xls),
+    ("PowerPoint Document", Format::Ppt),
+];
+
+/// The OLE2 compound file signature.
+pub const OLE_MAGIC: &[u8] = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
+
+/// The ZIP local file header signature.
+pub const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
+
 impl Format {
+    /// Every registry format, in a stable order.
+    pub const ALL: &'static [Self] = &[
+        Self::Markdown,
+        Self::Html,
+        Self::Docx,
+        Self::Epub,
+        Self::Pdf,
+        Self::Png,
+        Self::AriadIrJson,
+        Self::PandocJson,
+        Self::DoclingJson,
+        Self::Pptx,
+        Self::Xlsx,
+        Self::Odt,
+        Self::Ods,
+        Self::Odp,
+        Self::Doc,
+        Self::Xls,
+        Self::Ppt,
+        Self::Rtf,
+        Self::Jpeg,
+        Self::Webp,
+        Self::Tiff,
+    ];
+
     /// The stable registry identifier for this format.
     #[must_use]
     pub const fn id(self) -> &'static str {
@@ -45,14 +119,21 @@ impl Format {
             Self::Epub => "epub",
             Self::Pdf => "pdf",
             Self::Png => "png",
-            Self::Pptx => "pptx",
-            Self::Xlsx => "xlsx",
-            Self::Jpeg => "jpeg",
-            Self::Tiff => "tiff",
-            Self::Webp => "webp",
             Self::AriadIrJson => "ariad-ir+json",
             Self::PandocJson => "pandoc+json",
             Self::DoclingJson => "docling+json",
+            Self::Pptx => "pptx",
+            Self::Xlsx => "xlsx",
+            Self::Odt => "odt",
+            Self::Ods => "ods",
+            Self::Odp => "odp",
+            Self::Doc => "doc",
+            Self::Xls => "xls",
+            Self::Ppt => "ppt",
+            Self::Rtf => "rtf",
+            Self::Jpeg => "jpeg",
+            Self::Webp => "webp",
+            Self::Tiff => "tiff",
         }
     }
 
@@ -63,6 +144,8 @@ impl Format {
     }
 
     /// File extensions associated with this format, without a leading dot.
+    ///
+    /// The first extension is the default for output files.
     #[must_use]
     pub const fn extensions(self) -> &'static [&'static str] {
         match self {
@@ -72,12 +155,19 @@ impl Format {
             Self::Epub => &["epub"],
             Self::Pdf => &["pdf"],
             Self::Png => &["png"],
+            Self::AriadIrJson | Self::PandocJson | Self::DoclingJson => &["json"],
             Self::Pptx => &["pptx"],
             Self::Xlsx => &["xlsx"],
+            Self::Odt => &["odt"],
+            Self::Ods => &["ods"],
+            Self::Odp => &["odp"],
+            Self::Doc => &["doc"],
+            Self::Xls => &["xls"],
+            Self::Ppt => &["ppt"],
+            Self::Rtf => &["rtf"],
             Self::Jpeg => &["jpg", "jpeg"],
-            Self::Tiff => &["tif", "tiff"],
             Self::Webp => &["webp"],
-            Self::AriadIrJson | Self::PandocJson | Self::DoclingJson => &["json"],
+            Self::Tiff => &["tif", "tiff"],
         }
     }
 
@@ -91,115 +181,110 @@ impl Format {
             Self::Epub => "application/epub+zip",
             Self::Pdf => "application/pdf",
             Self::Png => "image/png",
+            Self::AriadIrJson | Self::PandocJson | Self::DoclingJson => "application/json",
             Self::Pptx => {
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation"
             }
             Self::Xlsx => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Self::Odt => "application/vnd.oasis.opendocument.text",
+            Self::Ods => "application/vnd.oasis.opendocument.spreadsheet",
+            Self::Odp => "application/vnd.oasis.opendocument.presentation",
+            Self::Doc => "application/msword",
+            Self::Xls => "application/vnd.ms-excel",
+            Self::Ppt => "application/vnd.ms-powerpoint",
+            Self::Rtf => "application/rtf",
             Self::Jpeg => "image/jpeg",
-            Self::Tiff => "image/tiff",
             Self::Webp => "image/webp",
-            Self::AriadIrJson | Self::PandocJson | Self::DoclingJson => "application/json",
+            Self::Tiff => "image/tiff",
         }
+    }
+
+    /// The short name shown to users: the default extension, so `markdown` reads `md` and
+    /// `ariad-ir+json` reads `json`.
+    #[must_use]
+    pub const fn user_name(self) -> &'static str {
+        self.extensions()[0]
+    }
+
+    /// Whether files of this format are ZIP containers that need archive preflight before an
+    /// engine opens them.
+    #[must_use]
+    pub const fn is_zip_container(self) -> bool {
+        matches!(
+            self,
+            Self::Docx | Self::Epub | Self::Pptx | Self::Xlsx | Self::Odt | Self::Ods | Self::Odp
+        )
+    }
+
+    /// Whether users may name this format on the command line or in tool calls.
+    #[must_use]
+    pub const fn is_user_facing(self) -> bool {
+        !matches!(self, Self::PandocJson | Self::DoclingJson)
     }
 
     /// Resolves a supported extension without regard to ASCII case.
+    ///
+    /// `json` resolves to IR JSON.
     #[must_use]
     pub fn from_extension(extension: &str) -> Option<Self> {
         let extension = extension.trim_start_matches('.');
-        if ["md", "markdown", "mdown"]
+        Self::ALL
             .iter()
-            .any(|candidate| extension.eq_ignore_ascii_case(candidate))
-        {
-            Some(Self::Markdown)
-        } else if ["html", "htm"]
+            .copied()
+            .filter(|format| format.is_user_facing())
+            .find(|format| {
+                format
+                    .extensions()
+                    .iter()
+                    .any(|candidate| extension.eq_ignore_ascii_case(candidate))
+            })
+    }
+
+    /// Resolves a user-supplied format name: a user-facing registry id or an extension,
+    /// without regard to ASCII case. `json` names IR JSON.
+    #[must_use]
+    pub fn from_user_name(name: &str) -> Option<Self> {
+        let name = name.trim();
+        Self::ALL
             .iter()
-            .any(|candidate| extension.eq_ignore_ascii_case(candidate))
-        {
-            Some(Self::Html)
-        } else if extension.eq_ignore_ascii_case("docx") {
-            Some(Self::Docx)
-        } else if extension.eq_ignore_ascii_case("epub") {
-            Some(Self::Epub)
-        } else if extension.eq_ignore_ascii_case("pdf") {
-            Some(Self::Pdf)
-        } else if extension.eq_ignore_ascii_case("png") {
-            Some(Self::Png)
-        } else if extension.eq_ignore_ascii_case("pptx") {
-            Some(Self::Pptx)
-        } else if extension.eq_ignore_ascii_case("xlsx") {
-            Some(Self::Xlsx)
-        } else if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
-            Some(Self::Jpeg)
-        } else if extension.eq_ignore_ascii_case("tif") || extension.eq_ignore_ascii_case("tiff") {
-            Some(Self::Tiff)
-        } else if extension.eq_ignore_ascii_case("webp") {
-            Some(Self::Webp)
-        } else if extension.eq_ignore_ascii_case("json") {
-            Some(Self::AriadIrJson)
-        } else {
-            None
-        }
+            .copied()
+            .filter(|format| format.is_user_facing())
+            .find(|format| format.id().eq_ignore_ascii_case(name))
+            .or_else(|| Self::from_extension(name))
     }
 }
 
-/// Classifies a document format from a byte prefix, optional ZIP central directory entries,
-/// and an optional file extension. Pure-memory, I/O-free, and WASM-safe.
+/// Classifies a document format from a byte prefix, optional container entry names, and an
+/// optional file extension. Pure-memory, I/O-free, and WASM-safe.
+///
+/// `container_entries` holds the ZIP central-directory names when the prefix starts with a ZIP
+/// local header, or the directory entry names of an OLE2 compound file when the prefix starts
+/// with the compound file signature.
 #[must_use]
 pub fn classify(
     prefix: &[u8],
-    zip_entries: Option<&[&str]>,
+    container_entries: Option<&[&str]>,
     extension: Option<&str>,
 ) -> Option<Format> {
-    // 1. ZIP inspection (EPUB or DOCX)
-    if let Some(entries) = zip_entries {
-        // EPUB rule: a ZIP whose first entry is `mimetype` with stored content `application/epub+zip`.
-        const EPUB_MIMETYPE_PAYLOAD: &[u8] = b"application/epub+zip";
-        if entries.first() == Some(&"mimetype")
-            && prefix.starts_with(b"PK\x03\x04")
-            && prefix.len() >= 30
-        {
-            let fn_len = u16::from_le_bytes([prefix[26], prefix[27]]) as usize;
-            let extra_len = u16::from_le_bytes([prefix[28], prefix[29]]) as usize;
-            let data_offset = 30 + fn_len + extra_len;
-            if prefix.len() >= 30 + fn_len
-                && &prefix[30..30 + fn_len] == b"mimetype"
-                && prefix.len() >= data_offset + EPUB_MIMETYPE_PAYLOAD.len()
-                && &prefix[data_offset..data_offset + EPUB_MIMETYPE_PAYLOAD.len()]
-                    == EPUB_MIMETYPE_PAYLOAD
-            {
-                return Some(Format::Epub);
+    if let Some(entries) = container_entries {
+        if prefix.starts_with(OLE_MAGIC) {
+            if let Some(format) = classify_ole(entries) {
+                return Some(format);
             }
-        }
-
-        // DOCX rule: a ZIP with `[Content_Types].xml` and `word/document.xml`.
-        let has_content_types = entries.contains(&"[Content_Types].xml");
-        if has_content_types && entries.contains(&"word/document.xml") {
-            return Some(Format::Docx);
-        }
-        if has_content_types && entries.contains(&"ppt/presentation.xml") {
-            return Some(Format::Pptx);
-        }
-        if has_content_types && entries.contains(&"xl/workbook.xml") {
-            return Some(Format::Xlsx);
+        } else if let Some(format) = classify_zip(prefix, entries) {
+            return Some(format);
         }
     }
 
-    // 2. PDF rule: `%PDF-` is PDF.
-    if prefix.starts_with(b"%PDF-") {
-        return Some(Format::Pdf);
-    }
-
-    // 3. Raster image signatures.
-    if let Some(format) = classify_image(prefix) {
+    if let Some(format) = classify_magic(prefix) {
         return Some(format);
     }
 
-    // 4. DoclingDocument JSON names its schema in the first key.
     if is_docling_json(prefix) {
         return Some(Format::DoclingJson);
     }
 
-    // 5. HTML rule: a leading `<!doctype html` or `<html`, ignoring case and after a BOM or whitespace.
+    // HTML rule: a leading `<!doctype html` or `<html`, ignoring case and after a BOM or whitespace.
     let mut rest = prefix;
     if rest.starts_with(b"\xEF\xBB\xBF") {
         rest = &rest[3..];
@@ -215,19 +300,88 @@ pub fn classify(
         return Some(Format::Html);
     }
 
-    // 6. Otherwise the extension decides.
+    // Otherwise the extension decides.
     extension.and_then(Format::from_extension)
 }
 
-fn classify_image(prefix: &[u8]) -> Option<Format> {
-    if prefix.starts_with(b"\x89PNG\r\n\x1a\n") {
+fn classify_zip(prefix: &[u8], entries: &[&str]) -> Option<Format> {
+    // EPUB and ODF rule: the first entry is `mimetype`, stored, with a known payload.
+    if entries.first() == Some(&"mimetype")
+        && let Some(payload) = stored_mimetype_payload(prefix)
+        && let Some(&(_, format)) = MIMETYPE_FORMATS
+            .iter()
+            .find(|(expected, _)| payload == *expected)
+    {
+        return Some(format);
+    }
+
+    // OOXML rule: `[Content_Types].xml` plus the main part of a word, sheet or slide package.
+    if entries.contains(&"[Content_Types].xml") {
+        return OOXML_MAIN_PARTS
+            .iter()
+            .find(|(part, _)| entries.contains(part))
+            .map(|&(_, format)| format);
+    }
+    None
+}
+
+/// Returns the bytes after the first local header when that entry is named `mimetype`, trimmed
+/// to the longest known payload so a longer, unknown media type never matches a prefix.
+fn stored_mimetype_payload(prefix: &[u8]) -> Option<&[u8]> {
+    if !prefix.starts_with(ZIP_MAGIC) || prefix.len() < 30 {
+        return None;
+    }
+    let method = u16::from_le_bytes([prefix[8], prefix[9]]);
+    let stored_size = u32::from_le_bytes([prefix[18], prefix[19], prefix[20], prefix[21]]) as usize;
+    let fn_len = u16::from_le_bytes([prefix[26], prefix[27]]) as usize;
+    let extra_len = u16::from_le_bytes([prefix[28], prefix[29]]) as usize;
+    let name = prefix.get(30..30 + fn_len)?;
+    if name != b"mimetype" {
+        return None;
+    }
+    let data_offset = 30 + fn_len + extra_len;
+    let available = prefix.get(data_offset..)?;
+    // A stored entry with a recorded size bounds the payload exactly. Writers that stream the
+    // entry (size 0 with a data descriptor) leave the size unknown, so fall back to a prefix
+    // match against the known payloads.
+    if method == 0 && stored_size > 0 {
+        return available.get(..stored_size).map(<[u8]>::trim_ascii_end);
+    }
+    MIMETYPE_FORMATS
+        .iter()
+        .map(|(expected, _)| *expected)
+        .filter(|expected| available.starts_with(expected))
+        .max_by_key(|expected| expected.len())
+}
+
+fn classify_ole(entries: &[&str]) -> Option<Format> {
+    OLE_STREAMS
+        .iter()
+        .find(|(stream, _)| {
+            entries
+                .iter()
+                .any(|entry| entry.eq_ignore_ascii_case(stream))
+        })
+        .map(|&(_, format)| format)
+}
+
+fn classify_magic(prefix: &[u8]) -> Option<Format> {
+    if prefix.starts_with(b"%PDF-") {
+        Some(Format::Pdf)
+    } else if prefix.starts_with(b"{\\rtf") {
+        Some(Format::Rtf)
+    } else if prefix.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some(Format::Png)
-    } else if prefix.starts_with(b"\xff\xd8\xff") {
+    } else if prefix.starts_with(b"\xFF\xD8\xFF") {
         Some(Format::Jpeg)
-    } else if prefix.starts_with(b"II*\0") || prefix.starts_with(b"MM\0*") {
-        Some(Format::Tiff)
     } else if prefix.len() >= 12 && &prefix[..4] == b"RIFF" && &prefix[8..12] == b"WEBP" {
         Some(Format::Webp)
+    } else if prefix.starts_with(b"II*\0")
+        || prefix.starts_with(b"MM\0*")
+        || prefix.starts_with(b"II+\0")
+        || prefix.starts_with(b"MM\0+")
+    {
+        Some(Format::Tiff)
     } else {
         None
     }
@@ -277,7 +431,27 @@ fn is_leading_html(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::Format;
+    use super::{Format, OLE_MAGIC, classify};
+
+    fn stored_zip_prefix(name: &[u8], payload: &[u8], recorded_size: bool) -> Vec<u8> {
+        let mut prefix = Vec::new();
+        prefix.extend_from_slice(b"PK\x03\x04");
+        prefix.extend_from_slice(&[20, 0, 0, 0]); // version, flags
+        prefix.extend_from_slice(&0u16.to_le_bytes()); // method: stored
+        prefix.extend_from_slice(&[0; 8]); // time, date, crc
+        let size = if recorded_size {
+            payload.len() as u32
+        } else {
+            0
+        };
+        prefix.extend_from_slice(&size.to_le_bytes()); // compressed size
+        prefix.extend_from_slice(&size.to_le_bytes()); // uncompressed size
+        prefix.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        prefix.extend_from_slice(&0u16.to_le_bytes());
+        prefix.extend_from_slice(name);
+        prefix.extend_from_slice(payload);
+        prefix
+    }
 
     #[test]
     fn extensions_are_case_insensitive_and_json_defaults_to_ir() {
@@ -292,35 +466,58 @@ mod tests {
         assert_eq!(Format::from_extension("PNG"), Some(Format::Png));
         assert_eq!(Format::from_extension(".png"), Some(Format::Png));
         assert_eq!(Format::from_extension("JSON"), Some(Format::AriadIrJson));
-        assert_eq!(Format::from_extension("PPTX"), Some(Format::Pptx));
-        assert_eq!(Format::from_extension("xlsx"), Some(Format::Xlsx));
-        assert_eq!(Format::from_extension("JPG"), Some(Format::Jpeg));
-        assert_eq!(Format::from_extension(".jpeg"), Some(Format::Jpeg));
-        assert_eq!(Format::from_extension("tif"), Some(Format::Tiff));
-        assert_eq!(Format::from_extension("TIFF"), Some(Format::Tiff));
-        assert_eq!(Format::from_extension("webp"), Some(Format::Webp));
         assert_eq!(Format::from_extension("unknown"), None);
     }
 
     #[test]
-    fn serde_names_equal_id_for_every_variant() {
-        let variants = [
-            Format::Markdown,
-            Format::Html,
-            Format::Docx,
-            Format::Epub,
-            Format::Pdf,
-            Format::Png,
-            Format::Pptx,
-            Format::Xlsx,
-            Format::Jpeg,
-            Format::Tiff,
-            Format::Webp,
-            Format::AriadIrJson,
-            Format::PandocJson,
-            Format::DoclingJson,
+    fn office_and_image_extensions_resolve() {
+        let cases = [
+            ("pptx", Format::Pptx),
+            ("XLSX", Format::Xlsx),
+            ("odt", Format::Odt),
+            ("ods", Format::Ods),
+            ("odp", Format::Odp),
+            ("DOC", Format::Doc),
+            ("xls", Format::Xls),
+            ("ppt", Format::Ppt),
+            ("rtf", Format::Rtf),
+            ("jpg", Format::Jpeg),
+            ("JPEG", Format::Jpeg),
+            ("webp", Format::Webp),
+            ("tif", Format::Tiff),
+            ("tiff", Format::Tiff),
         ];
-        for variant in variants {
+        for (extension, format) in cases {
+            assert_eq!(
+                Format::from_extension(extension),
+                Some(format),
+                "{extension}"
+            );
+        }
+    }
+
+    #[test]
+    fn user_names_accept_ids_and_extensions_but_not_internal_formats() {
+        assert_eq!(Format::from_user_name("json"), Some(Format::AriadIrJson));
+        assert_eq!(
+            Format::from_user_name("ariad-ir+json"),
+            Some(Format::AriadIrJson)
+        );
+        assert_eq!(Format::from_user_name("md"), Some(Format::Markdown));
+        assert_eq!(Format::from_user_name("Markdown"), Some(Format::Markdown));
+        assert_eq!(Format::from_user_name("jpg"), Some(Format::Jpeg));
+        assert_eq!(Format::from_user_name("tiff"), Some(Format::Tiff));
+        assert_eq!(Format::from_user_name("pandoc+json"), None);
+        assert_eq!(Format::from_user_name("docling+json"), None);
+        assert_eq!(Format::from_user_name("exe"), None);
+        assert_eq!(Format::AriadIrJson.user_name(), "json");
+        assert_eq!(Format::Markdown.user_name(), "md");
+        assert_eq!(Format::Jpeg.user_name(), "jpg");
+    }
+
+    #[test]
+    fn serde_names_equal_id_for_every_variant() {
+        for &variant in Format::ALL {
             let json = serde_json::to_string(&variant).expect("serialize format");
             let expected = format!("\"{}\"", variant.id());
             assert_eq!(json, expected, "serialized name for {:?}", variant);
@@ -338,15 +535,46 @@ mod tests {
     }
 
     #[test]
+    fn all_lists_each_variant_once_with_a_unique_id() {
+        let mut ids: Vec<&str> = Format::ALL.iter().map(|f| f.id()).collect();
+        let count = ids.len();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), count);
+        assert_eq!(count, 21);
+    }
+
+    #[test]
     fn classify_identifies_pdf_from_magic_bytes() {
-        use super::classify;
         assert_eq!(classify(b"%PDF-1.7\n...", None, None), Some(Format::Pdf));
         assert_eq!(classify(b"%PDF-2.0", None, Some("docx")), Some(Format::Pdf));
     }
 
     #[test]
+    fn classify_identifies_rtf_and_images_from_magic_bytes() {
+        assert_eq!(
+            classify(b"{\\rtf1\\ansi hello}", None, Some("txt")),
+            Some(Format::Rtf)
+        );
+        assert_eq!(
+            classify(b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR", None, None),
+            Some(Format::Png)
+        );
+        assert_eq!(
+            classify(b"\xFF\xD8\xFF\xE0\0\x10JFIF", None, None),
+            Some(Format::Jpeg)
+        );
+        assert_eq!(
+            classify(b"RIFF\x24\0\0\0WEBPVP8 ", None, None),
+            Some(Format::Webp)
+        );
+        assert_eq!(classify(b"II*\0\x08\0\0\0", None, None), Some(Format::Tiff));
+        assert_eq!(classify(b"MM\0*\0\0\0\x08", None, None), Some(Format::Tiff));
+        assert_eq!(classify(b"RIFF\x24\0\0\0WAVEfmt ", None, None), None);
+    }
+
+    #[test]
     fn classify_identifies_html_with_bom_whitespace_and_case_variants() {
-        use super::classify;
         // Standard doctype
         assert_eq!(
             classify(b"<!DOCTYPE html><html>", None, None),
@@ -382,14 +610,7 @@ mod tests {
 
     #[test]
     fn classify_identifies_epub_strictly_by_first_entry_and_content() {
-        use super::classify;
-        let mut prefix = Vec::new();
-        prefix.extend_from_slice(b"PK\x03\x04");
-        prefix.extend_from_slice(&[0; 22]);
-        prefix.extend_from_slice(&8u16.to_le_bytes()); // fn_len = 8 ("mimetype")
-        prefix.extend_from_slice(&0u16.to_le_bytes()); // extra_len = 0
-        prefix.extend_from_slice(b"mimetype");
-        prefix.extend_from_slice(b"application/epub+zip");
+        let prefix = stored_zip_prefix(b"mimetype", b"application/epub+zip", false);
 
         // Valid EPUB
         let entries = ["mimetype", "META-INF/container.xml", "EPUB/content.opf"];
@@ -400,14 +621,11 @@ mod tests {
         assert_eq!(classify(&prefix, Some(&wrong_order), None), None);
 
         // Fake EPUB: first entry is mimetype but payload is text/plain, with epub payload later
-        let mut fake_prefix = Vec::new();
-        fake_prefix.extend_from_slice(b"PK\x03\x04");
-        fake_prefix.extend_from_slice(&[0; 22]);
-        fake_prefix.extend_from_slice(&8u16.to_le_bytes());
-        fake_prefix.extend_from_slice(&0u16.to_le_bytes());
-        fake_prefix.extend_from_slice(b"mimetype");
-        fake_prefix.extend_from_slice(b"text/plain");
-        fake_prefix.extend_from_slice(b"extra padding application/epub+zip in secondary data");
+        let fake_prefix = stored_zip_prefix(
+            b"mimetype",
+            b"text/plainextra padding application/epub+zip in secondary data",
+            false,
+        );
         assert_eq!(classify(&fake_prefix, Some(&entries), None), None);
 
         // Mimetype without payload in prefix
@@ -416,8 +634,41 @@ mod tests {
     }
 
     #[test]
+    fn classify_identifies_odf_by_mimetype_payload() {
+        let entries = ["mimetype", "content.xml", "META-INF/manifest.xml"];
+        let cases: [(&[u8], Format); 3] = [
+            (b"application/vnd.oasis.opendocument.text", Format::Odt),
+            (
+                b"application/vnd.oasis.opendocument.spreadsheet",
+                Format::Ods,
+            ),
+            (
+                b"application/vnd.oasis.opendocument.presentation",
+                Format::Odp,
+            ),
+        ];
+        for (payload, format) in cases {
+            for recorded in [true, false] {
+                let prefix = stored_zip_prefix(b"mimetype", payload, recorded);
+                assert_eq!(
+                    classify(&prefix, Some(&entries), Some("bin")),
+                    Some(format),
+                    "{format:?} recorded={recorded}"
+                );
+            }
+        }
+
+        // A template media type that merely starts with a known payload is not that format.
+        let template = stored_zip_prefix(
+            b"mimetype",
+            b"application/vnd.oasis.opendocument.text-template",
+            true,
+        );
+        assert_eq!(classify(&template, Some(&entries), None), None);
+    }
+
+    #[test]
     fn classify_identifies_docx_by_content_types_and_document() {
-        use super::classify;
         let prefix = b"PK\x03\x04";
         let valid_entries = [
             "[Content_Types].xml",
@@ -440,40 +691,64 @@ mod tests {
     }
 
     #[test]
-    fn classify_identifies_presentations_and_workbooks_by_zip_parts() {
-        use super::classify;
+    fn classify_identifies_xlsx_and_pptx_by_main_part() {
         let prefix = b"PK\x03\x04";
-        let pptx = ["[Content_Types].xml", "ppt/presentation.xml"];
+        let workbook = ["[Content_Types].xml", "_rels/.rels", "xl/workbook.xml"];
         assert_eq!(
-            classify(prefix, Some(&pptx), Some("zip")),
-            Some(Format::Pptx)
+            classify(prefix, Some(&workbook), Some("zip")),
+            Some(Format::Xlsx)
         );
-        let xlsx = ["[Content_Types].xml", "xl/workbook.xml"];
-        assert_eq!(classify(prefix, Some(&xlsx), None), Some(Format::Xlsx));
-        let neither = ["[Content_Types].xml", "ppt/slides/slide1.xml"];
-        assert_eq!(classify(prefix, Some(&neither), None), None);
+        let deck = ["[Content_Types].xml", "ppt/presentation.xml"];
+        assert_eq!(classify(prefix, Some(&deck), None), Some(Format::Pptx));
+        let no_types = ["xl/workbook.xml"];
+        assert_eq!(classify(prefix, Some(&no_types), None), None);
     }
 
     #[test]
-    fn classify_identifies_raster_images_by_signature() {
-        use super::classify;
+    fn classify_identifies_legacy_office_by_ole_streams() {
+        let mut prefix = OLE_MAGIC.to_vec();
+        prefix.extend_from_slice(&[0; 32]);
+        let word = ["Root Entry", "1Table", "WordDocument"];
         assert_eq!(
-            classify(b"\x89PNG\r\n\x1a\n\0\0", None, Some("jpg")),
-            Some(Format::Png)
+            classify(&prefix, Some(&word), Some("xls")),
+            Some(Format::Doc)
         );
+        let sheet = ["Root Entry", "Workbook"];
+        assert_eq!(classify(&prefix, Some(&sheet), None), Some(Format::Xls));
+        let old_sheet = ["Root Entry", "Book"];
+        assert_eq!(classify(&prefix, Some(&old_sheet), None), Some(Format::Xls));
+        let deck = ["Root Entry", "PowerPoint Document", "Current User"];
+        assert_eq!(classify(&prefix, Some(&deck), None), Some(Format::Ppt));
+        // An unknown compound file (for example an MSI) falls back to the extension.
+        let other = ["Root Entry", "SummaryInformation"];
+        assert_eq!(classify(&prefix, Some(&other), None), None);
         assert_eq!(
-            classify(b"\xff\xd8\xff\xe0", None, None),
-            Some(Format::Jpeg)
+            classify(&prefix, Some(&other), Some("doc")),
+            Some(Format::Doc)
         );
-        assert_eq!(classify(b"II*\0\x08\0", None, None), Some(Format::Tiff));
-        assert_eq!(classify(b"MM\0*\0\0", None, None), Some(Format::Tiff));
-        assert_eq!(
-            classify(b"RIFF\x10\0\0\0WEBPVP8 ", None, None),
-            Some(Format::Webp)
-        );
-        assert_eq!(classify(b"RIFF\x10\0\0\0WAVE", None, None), None);
     }
 
+    #[test]
+    fn classify_falls_back_to_extension_when_content_unmatched() {
+        assert_eq!(
+            classify(b"# Title\nProse text", None, Some("md")),
+            Some(Format::Markdown)
+        );
+        assert_eq!(
+            classify(b"# Title\nProse text", None, Some("markdown")),
+            Some(Format::Markdown)
+        );
+        assert_eq!(
+            classify(b"random bytes", None, Some("docx")),
+            Some(Format::Docx)
+        );
+        assert_eq!(
+            classify(b"random bytes", None, Some(".epub")),
+            Some(Format::Epub)
+        );
+        assert_eq!(classify(b"random bytes", None, Some("unknown")), None);
+        assert_eq!(classify(b"random bytes", None, None), None);
+    }
     #[test]
     fn classify_identifies_docling_json_by_its_first_member() {
         use super::classify;
@@ -501,28 +776,5 @@ mod tests {
             classify(b"{\"schema_name\":\"Other\"}", None, Some("json")),
             Some(Format::AriadIrJson)
         );
-    }
-
-    #[test]
-    fn classify_falls_back_to_extension_when_content_unmatched() {
-        use super::classify;
-        assert_eq!(
-            classify(b"# Title\nProse text", None, Some("md")),
-            Some(Format::Markdown)
-        );
-        assert_eq!(
-            classify(b"# Title\nProse text", None, Some("markdown")),
-            Some(Format::Markdown)
-        );
-        assert_eq!(
-            classify(b"random bytes", None, Some("docx")),
-            Some(Format::Docx)
-        );
-        assert_eq!(
-            classify(b"random bytes", None, Some(".epub")),
-            Some(Format::Epub)
-        );
-        assert_eq!(classify(b"random bytes", None, Some("unknown")), None);
-        assert_eq!(classify(b"random bytes", None, None), None);
     }
 }

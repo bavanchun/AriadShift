@@ -267,13 +267,18 @@ pub fn doctor(
         Err(e) => {
             if failure_error.is_none() {
                 failure_error = Some(match &e {
-                    runner::RunError::SandboxUnavailable(detail) => {
+                    runner::RunError::SandboxUnavailable(detail)
+                    | runner::RunError::SandboxLaunchFailed(detail) => {
                         ConvertError::SandboxUnavailable(detail.clone())
                     }
                     _ => ConvertError::Failed,
                 });
             }
-            let sanitized_msg = match e {
+            let startup_failure = match &e {
+                runner::RunError::SandboxLaunchFailed(detail) => Some(detail.as_str()),
+                _ => None,
+            };
+            let sanitized_msg = match &e {
                 runner::RunError::SandboxUnavailable(_) => "the engine sandbox is unavailable",
                 runner::RunError::Spawn { .. } => "could not spawn engine process",
                 runner::RunError::Io(_) => "engine communication I/O failure",
@@ -285,15 +290,38 @@ pub fn doctor(
                 id: "engine_describe".to_owned(),
                 ok: false,
                 required: true,
-                message: format!("engine describe round trip failed: {sanitized_msg}"),
-                hint: "run 'just pandoc' or verify ASHIFT_PANDOC path and execution permissions"
-                    .to_owned(),
+                message: startup_failure.map_or_else(
+                    || format!("engine describe round trip failed: {sanitized_msg}"),
+                    |detail| format!("engine 'pandoc' is installed but cannot start: {detail}"),
+                ),
+                hint: startup_failure.map_or_else(
+                    || {
+                        "run 'just pandoc' or verify ASHIFT_PANDOC path and execution permissions"
+                            .to_owned()
+                    },
+                    |detail| launcher_failure_hint(detail).to_owned(),
+                ),
             }
         }
     };
     checks.push(describe_check);
 
-    // 4. Engine packs: data directory, trusted keys, installed packs. None are required.
+    // 4. Built-in and system engines beyond Pandoc
+    for spec in crate::engines::REGISTRY
+        .iter()
+        .filter(|spec| spec.id != crate::engines::PANDOC.id && spec.id != docling::ENGINE_ID)
+    {
+        if cancel.is_cancelled() {
+            return Err(ConvertError::Interrupted);
+        }
+        let check = engine_check(engine_program, spec, cancel.clone());
+        if spec.required && !check.ok && failure_error.is_none() {
+            failure_error = Some(ConvertError::missing_engine(spec.id));
+        }
+        checks.push(check);
+    }
+
+    // 5. Engine packs: data directory, trusted keys, installed packs. None are required.
     let data_dir = pack_checks(&mut checks);
     let (sandbox_check, sandbox_report) = sandbox_check();
     if !sandbox_check.ok && sandbox_check.required && failure_error.is_none() {
@@ -495,8 +523,9 @@ fn docling_checks(engine_program: &Path, cancel: CancellationToken) -> Vec<Docto
             id: "docling_engine".to_owned(),
             ok: false,
             required: false,
-            message: "docling engine is not installed; PDF, PPTX, XLSX and image routes need it"
-                .to_owned(),
+            message:
+                "docling engine is not installed; OCR, layout extraction and image routes need it"
+                    .to_owned(),
             hint: format!(
                 "run 'ashift engines install docling', or set {} to a development engine",
                 docling::OVERRIDE_ENV
@@ -548,16 +577,107 @@ fn docling_checks(engine_program: &Path, cancel: CancellationToken) -> Vec<Docto
                 tesseract_check,
             ]
         }
-        Err(reason) => vec![DoctorCheck {
-            id: "docling_engine".to_owned(),
-            ok: false,
-            required: false,
-            message: format!("docling engine describe round trip failed: {reason}"),
-            hint: format!(
-                "run 'ashift engines verify docling', reinstall the pack, or check {}",
-                docling::OVERRIDE_ENV
+        Err(reason) => {
+            let launcher_failed = reason.starts_with(crate::sandbox::LAUNCH_FAILURE_PREFIX);
+            vec![DoctorCheck {
+                id: "docling_engine".to_owned(),
+                ok: false,
+                required: false,
+                message: if launcher_failed {
+                    format!("docling engine is installed but cannot start: {reason}")
+                } else {
+                    format!("docling engine describe round trip failed: {reason}")
+                },
+                hint: if launcher_failed {
+                    launcher_failure_hint(&reason).to_owned()
+                } else {
+                    format!(
+                        "run 'ashift engines verify docling', reinstall the pack, or check {}",
+                        docling::OVERRIDE_ENV
+                    )
+                },
+            }]
+        }
+    }
+}
+
+fn launcher_failure_hint(detail: &str) -> &'static str {
+    if detail.to_ascii_lowercase().contains("namespace") {
+        crate::sandbox::NAMESPACE_HINT
+    } else {
+        "check the launcher failure detail and ASHIFT_SANDBOX configuration; see docs/cli.md"
+    }
+}
+
+/// Runs `describe` against one registered engine and reports its tool status.
+fn engine_check(
+    engine_program: &Path,
+    spec: &crate::engines::EngineSpec,
+    cancel: CancellationToken,
+) -> DoctorCheck {
+    let invocation = crate::engines::EngineInvocation::new(engine_program);
+    let id = format!("engine_{}", spec.id);
+    let mut startup_hint = None;
+    let (ok, message) =
+        match runner::describe(engine_program, &invocation.args_for(spec.id), cancel) {
+            Ok(ariad_core::protocol::Event::Capabilities { tool, .. }) => match tool.status {
+                ariad_core::protocol::ToolAvailability::Found => {
+                    let version = tool
+                        .version
+                        .filter(|_| !spec.builtin)
+                        .map(|version| format!(" ({} {version})", tool.name))
+                        .unwrap_or_default();
+                    (true, format!("engine '{}' is ready{version}", spec.id))
+                }
+                ariad_core::protocol::ToolAvailability::WrongVersion => (
+                    false,
+                    format!(
+                        "engine '{}' found {} {}, outside the supported range {}",
+                        spec.id,
+                        tool.name,
+                        tool.version.as_deref().unwrap_or("of unknown version"),
+                        spec.supported.unwrap_or("-")
+                    ),
+                ),
+                ariad_core::protocol::ToolAvailability::Missing => (
+                    false,
+                    format!("engine '{}' could not find {}", spec.id, tool.name),
+                ),
+            },
+            Ok(_) => (
+                false,
+                format!(
+                    "engine '{}' returned an unexpected describe response",
+                    spec.id
+                ),
             ),
-        }],
+            Err(runner::RunError::SandboxLaunchFailed(detail)) => {
+                startup_hint = Some(launcher_failure_hint(&detail));
+                (
+                    false,
+                    format!(
+                        "engine '{}' is installed but cannot start: {detail}",
+                        spec.id
+                    ),
+                )
+            }
+            Err(_) => (
+                false,
+                format!("engine '{}' describe round trip failed", spec.id),
+            ),
+        };
+    DoctorCheck {
+        id,
+        ok,
+        required: spec.required,
+        message,
+        hint: if ok {
+            String::new()
+        } else if let Some(hint) = startup_hint {
+            hint.to_owned()
+        } else {
+            spec.install_hint.to_owned()
+        },
     }
 }
 
@@ -566,6 +686,17 @@ mod tests {
     use super::doctor;
     use crate::convert::ConvertError;
     use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn launcher_hints_match_the_failure_cause() {
+        assert!(
+            super::launcher_failure_hint("mount namespaces: Permission denied")
+                .contains("kernel.apparmor_restrict_unprivileged_userns=0")
+        );
+        let generic = super::launcher_failure_hint("seccomp filter could not be installed");
+        assert!(generic.contains("ASHIFT_SANDBOX"));
+        assert!(!generic.contains("userns"));
+    }
 
     #[test]
     fn doctor_describe_failure_produces_failed_report() {

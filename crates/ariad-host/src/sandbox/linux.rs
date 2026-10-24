@@ -14,6 +14,8 @@ use seccompiler::{
 
 use super::{LaunchSpec, SandboxSupport};
 
+mod private_tmp;
+
 /// The newest Landlock ABI this launcher knows; older kernels get the subset they support.
 const NEWEST_ABI: ABI = ABI::V9;
 
@@ -72,6 +74,11 @@ fn seccomp_available() -> bool {
 pub(super) fn apply_and_exec(spec: &LaunchSpec) -> String {
     if let Err(error) = apply_rlimits(spec) {
         return error;
+    }
+    if let Some(workspace) = &spec.policy.private_tmp
+        && let Err(error) = private_tmp::isolate(workspace, &spec.program, &spec.policy)
+    {
+        return format!("private /tmp requires user and mount namespaces: {error}");
     }
     #[cfg(debug_assertions)]
     let simulated = super::simulated_without_support();
@@ -150,13 +157,17 @@ fn apply_landlock(spec: &LaunchSpec) -> Result<(), RulesetError> {
     if spec.policy.deny_network {
         ruleset = ruleset.handle_access(AccessNet::from_all(NEWEST_ABI))?;
     }
+    let mut writable = spec.policy.read_write.clone();
+    if spec.policy.private_tmp.is_some() {
+        writable.push("/tmp".into());
+    }
     ruleset
         .scope(Scope::from_all(NEWEST_ABI))?
         .create()?
         .set_compatibility(CompatLevel::BestEffort)
         .add_rules(path_beneath_rules(&spec.policy.read_only, read_access()))?
         .add_rules(path_beneath_rules(&spec.policy.exec, exec_access()))?
-        .add_rules(path_beneath_rules(&spec.policy.read_write, write_access()))?
+        .add_rules(path_beneath_rules(&writable, write_access()))?
         .restrict_self()?;
     Ok(())
 }

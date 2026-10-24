@@ -107,10 +107,7 @@ fn required_mode_fails_closed_without_kernel_support() {
         "no output may be written when the sandbox is missing"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("sandbox is required but unavailable"),
-        "{stderr}"
-    );
+    assert!(stderr.contains("sandbox is unavailable"), "{stderr}");
 }
 
 #[test]
@@ -123,6 +120,7 @@ fn an_unknown_sandbox_mode_is_refused() {
     assert_eq!(output.status.code(), Some(5));
     assert!(!docx.exists());
     assert!(String::from_utf8_lossy(&output.stderr).contains("ASHIFT_SANDBOX must be"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("error[sandbox_unavailable]"));
 }
 
 #[test]

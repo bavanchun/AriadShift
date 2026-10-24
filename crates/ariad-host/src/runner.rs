@@ -62,6 +62,8 @@ pub enum RunError {
     MemoryLimitExceeded { limit_mb: u32 },
     #[error("engine sandbox is unavailable: {0}")]
     SandboxUnavailable(String),
+    #[error("engine sandbox could not start: {0}")]
+    SandboxLaunchFailed(String),
     #[error("engine crashed with exit {exit:?}: {stderr_tail}")]
     Crash {
         exit: Option<i32>,
@@ -294,10 +296,28 @@ where
         return Err(RunError::Cancelled);
     }
     let request_line = encode_request(request)?;
-    let (program, args, sandbox) = prepare_launch(command, &writable_paths(request))?;
+    // Describe has no request workspace, but some tools still need private system-temp IPC.
+    let describe_workspace =
+        if cfg!(target_os = "linux")
+            && matches!(request, Request::Describe { .. })
+            && crate::engines::sandbox::paths_for(&command.engine).private_tmp
+        {
+            Some(crate::workspace::Workspace::new().map_err(|_| {
+                RunError::Io(io::Error::other("could not create describe workspace"))
+            })?)
+        } else {
+            None
+        };
+    let writable = describe_workspace.as_ref().map_or_else(
+        || writable_paths(request),
+        |workspace| vec![workspace.root().to_path_buf()],
+    );
+    let (program, args, sandbox) = prepare_launch(command, &writable)?;
     let tmp_dir = match request {
         Request::Convert { work_dir, .. } => Some(OsString::from(work_dir)),
-        Request::Describe { .. } => None,
+        Request::Describe { .. } => describe_workspace
+            .as_ref()
+            .map(|workspace| workspace.work_dir().as_os_str().to_owned()),
     };
     let job = JobSpec::for_request(request, describe_timeout, cancel);
 
@@ -314,6 +334,18 @@ where
         process.reap(result.is_err()).await;
         let (artifacts, metrics) = match result {
             Ok(done) => done,
+            Err(RunError::EngineFailed {
+                code: ErrorCode::EngineFailure,
+                message,
+            }) if matches!(
+                sandbox,
+                SandboxOutcome::Applied | SandboxOutcome::Degraded(_)
+            ) && process.status.and_then(|status| status.code())
+                == Some(i32::from(sandbox::LAUNCH_FAILURE_EXIT))
+                && message.starts_with(sandbox::LAUNCH_FAILURE_PREFIX) =>
+            {
+                return Err(RunError::SandboxLaunchFailed(message));
+            }
             Err(RunError::Crash { exit, .. }) => {
                 return Err(RunError::Crash {
                     exit,
@@ -513,8 +545,10 @@ impl EngineProcess {
                     .env("TEMP", tmp_dir);
             }
 
-            if let Some(pandoc) = std::env::var_os("ASHIFT_PANDOC") {
-                command.env("ASHIFT_PANDOC", pandoc);
+            for name in ["ASHIFT_PANDOC", crate::engines::libreoffice::SOFFICE_ENV] {
+                if let Some(value) = std::env::var_os(name) {
+                    command.env(name, value);
+                }
             }
             #[cfg(debug_assertions)]
             for variable in ["ARIAD_TEST_ENGINE", "ARIAD_TEST_SANDBOX_SUPPORT"] {
@@ -524,8 +558,15 @@ impl EngineProcess {
             }
             #[cfg(windows)]
             {
-                if let Some(system_root) = std::env::var_os("SYSTEMROOT") {
-                    command.env("SYSTEMROOT", system_root);
+                for name in [
+                    "SYSTEMROOT",
+                    "ProgramFiles",
+                    "ProgramW6432",
+                    "ProgramFiles(x86)",
+                ] {
+                    if let Some(value) = std::env::var_os(name) {
+                        command.env(name, value);
+                    }
                 }
             }
         });

@@ -4,4 +4,9 @@ expression: normalize_stdout(&output)
 ---
 format:    pdf
 bytes:     67775
+pages:     1
+title:     GAO-08-35 Homeland Security: Federal Efforts Are Helping to Alleviate Some Challenges Encountered by State and Local Information Fusion Centers
+authors:   U.S. Government Accountability Office, http://www.gao.gov
+counts:    6 headings (h1: 1, h2: 1, h3: 4), 11 paragraphs, 0 tables, 0 images, 0 links, 0 footnotes, 760 words
+pdf:       1 page, 1 with text, 0 image-only
 reachable: (none)

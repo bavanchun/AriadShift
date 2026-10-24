@@ -65,6 +65,12 @@ pub fn plan(from: Format, to: Format, profile: Profile, packs: &[Pack]) -> Resul
     let supported = executor_edges();
     caps.edges
         .retain(|edge| supported.contains(&(edge.from, edge.to, edge.engine.as_str())));
+    // The API has format metadata, not page content. Reserve a worker capable of
+    // OCR when available; its shared converter still uses native PDF for digital text.
+    if from == Format::Pdf && packs.contains(&Pack::Docling) {
+        caps.edges
+            .retain(|edge| edge.from != Format::Pdf || edge.engine == "docling");
+    }
     let engines = deployable_engines(&caps, packs);
     planner::plan(&caps, from, to, profile, &engines).map_err(|err| match err {
         PlanError::NoRoute { reachable, .. } => {
@@ -134,24 +140,16 @@ mod tests {
     }
 
     #[test]
-    fn pdf_routes_require_the_docling_pack() {
-        assert!(
-            plan(
-                Format::Pdf,
-                Format::Markdown,
-                Profile::Editable,
-                &[Pack::Core]
-            )
-            .is_err()
-        );
-        let planned = plan(
-            Format::Pdf,
-            Format::Markdown,
-            Profile::Editable,
-            &[Pack::Core, Pack::Docling],
-        )
-        .unwrap();
-        assert_eq!(Pack::for_route(&planned.steps), Pack::Docling);
+    fn pdf_jobs_reserve_ocr_workers_when_the_deployment_has_them() {
+        for (packs, expected, reader) in [
+            (vec![Pack::Core], Pack::Core, "pdf"),
+            (vec![Pack::Core, Pack::Docling], Pack::Docling, "docling"),
+        ] {
+            let route =
+                plan(Format::Pdf, Format::Markdown, Profile::Editable, &packs).expect("PDF route");
+            assert_eq!(Pack::for_route(&route.steps), expected);
+            assert_eq!(route.steps[0].engine, reader);
+        }
     }
 
     #[test]

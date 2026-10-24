@@ -389,6 +389,25 @@ fn sandbox_check() -> ExitCode {
             verdict(fs::read(path).is_ok()),
         );
     }
+    if let Some(path) = option("write_install") {
+        metrics.insert(
+            "write_install_root".to_owned(),
+            verdict(fs::write(path, b"changed").is_ok()),
+        );
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(path) = option("mount") {
+        use nix::mount::{MsFlags, mount};
+        let _ = fs::create_dir(path);
+        let mounted = mount(
+            Some("tmpfs"),
+            path,
+            Some("tmpfs"),
+            MsFlags::empty(),
+            None::<&str>,
+        );
+        metrics.insert("mount".to_owned(), verdict(mounted.is_ok()));
+    }
     if let Some(port) = options.get("port").and_then(serde_json::Value::as_u64) {
         let address =
             std::net::SocketAddr::from(([127, 0, 0, 1], u16::try_from(port).unwrap_or(0)));
