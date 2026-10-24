@@ -91,6 +91,56 @@ async fn bearer_tokens_are_verified_against_the_jwks() {
         .create_job(&bob, upload["id"].as_str().expect("id"), "html")
         .await;
     assert_eq!(bob_job.status(), 404, "uploads belong to their workspace");
+    let upload_id = upload["id"].as_str().unwrap();
+    for outsider in [&bob, &Auth::Anonymous] {
+        for path in [
+            format!("/v1/jobs/{job_id}/outputs"),
+            format!("/v1/jobs/{job_id}/events"),
+        ] {
+            assert_eq!(h.get(outsider, &path).await.status(), 404, "{path}");
+        }
+        assert_eq!(
+            h.delete(outsider, &format!("/v1/jobs/{job_id}"))
+                .await
+                .status(),
+            404
+        );
+        assert_eq!(
+            h.post(
+                outsider,
+                &format!("/v1/uploads/{upload_id}/complete"),
+                &json!({})
+            )
+            .await
+            .status(),
+            404
+        );
+        assert_eq!(
+            h.post(
+                outsider,
+                "/v1/plan",
+                &json!({"upload_id": upload_id, "to": "html"})
+            )
+            .await
+            .status(),
+            404
+        );
+        assert_eq!(
+            h.create_job(outsider, upload_id, "html").await.status(),
+            404
+        );
+    }
+    // Rejected deletes must leave the owner's upload and job usable.
+    assert_eq!(
+        h.post(
+            &alice,
+            "/v1/plan",
+            &json!({"upload_id": upload_id, "to": "html"})
+        )
+        .await
+        .status(),
+        200
+    );
 
     // Expired, foreign-audience, unknown-key and symmetric tokens fail.
     let expired = Auth::Bearer(issuer.token_with("alice", -120, &issuer.origin, &issuer.kid));

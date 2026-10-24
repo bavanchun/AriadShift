@@ -285,6 +285,12 @@ async fn retention_deletes_files_and_expires_jobs() {
             .await
             .expect("uploads");
     assert_eq!(statuses, ["expired", "expired"]);
+    let names: Vec<String> =
+        sqlx::query_scalar("SELECT filename FROM uploads UNION ALL SELECT filename FROM artifacts")
+            .fetch_all(&h.db.pool)
+            .await
+            .unwrap();
+    assert!(names.iter().all(String::is_empty));
     let abandoned_id = abandoned["id"].as_str().expect("id");
     let complete = h
         .post(
@@ -308,6 +314,99 @@ async fn retention_deletes_files_and_expires_jobs() {
         .await
         .expect("sweep");
     assert_eq!(report, sweeper::SweepReport::default());
+    h.sql_exec("UPDATE jobs SET expires_at = now() - interval '31 days'")
+        .await;
+    h.sql_exec("UPDATE uploads SET expires_at = now() - interval '31 days'")
+        .await;
+    sweeper::sweep_once(&h.db.pool, &storage(&h)).await.unwrap();
+    for query in [
+        "SELECT count(*) FROM jobs",
+        "SELECT count(*) FROM uploads",
+        "SELECT count(*) FROM job_events",
+        "SELECT count(*) FROM artifacts",
+        "SELECT count(*) FROM job_steps",
+    ] {
+        let count: i64 = sqlx::query_scalar(query)
+            .fetch_one(&h.db.pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "{query}");
+    }
+    let usage: i64 = sqlx::query_scalar("SELECT count(*) FROM usage_events")
+        .fetch_one(&h.db.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        usage, 2,
+        "immutable quota accounting survives metadata deletion"
+    );
+    h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn event_stream_limits_apply_per_job_and_subject_and_release_on_disconnect() {
+    let Some(h) = Harness::start(
+        "event_stream_limits_apply_per_job_and_subject_and_release_on_disconnect",
+        Options::default(),
+    )
+    .await
+    else {
+        return;
+    };
+    let upload = h.upload(&Auth::Anonymous, "streams.md", MARKDOWN).await;
+    let mut paths = Vec::new();
+    let mut streams = Vec::new();
+    for _ in 0..5 {
+        let job: Value = h
+            .create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "html")
+            .await
+            .json()
+            .await
+            .unwrap();
+        paths.push(format!("/v1/jobs/{}/events", job["id"].as_str().unwrap()));
+    }
+    for path in paths.iter().take(4) {
+        for _ in 0..2 {
+            let response = h.get(&Auth::Anonymous, path).await;
+            assert_eq!(response.status(), 200);
+            streams.push(response);
+        }
+        assert_eq!(
+            h.get(&Auth::Anonymous, path).await.status(),
+            429,
+            "job stream cap"
+        );
+    }
+    assert_eq!(
+        h.get(&Auth::Anonymous, &paths[4]).await.status(),
+        429,
+        "subject stream cap across jobs"
+    );
+    drop(streams);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM event_stream_leases")
+            .fetch_one(&h.db.pool)
+            .await
+            .unwrap();
+        if count == 0 {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "stream leases leaked after disconnect"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    // Expired leases left by a crashed replica cannot reserve job capacity.
+    let job_id = paths[4].split('/').nth(3).unwrap();
+    for _ in 0..2 {
+        sqlx::query("INSERT INTO event_stream_leases (id, subject, job_id, expires_at) SELECT $1, subject, id, now() - interval '1 second' FROM jobs WHERE id = $2::uuid")
+            .bind(uuid::Uuid::new_v4()).bind(job_id).execute(&h.db.pool).await.unwrap();
+    }
+    let response = h.get(&Auth::Anonymous, &paths[4]).await;
+    assert_eq!(response.status(), 200);
+    drop(response);
     h.stop().await;
 }
 

@@ -23,6 +23,16 @@ pub enum Pack {
 impl Pack {
     pub const ALL: [Self; 3] = [Self::Core, Self::Office, Self::Docling];
 
+    /// Docling's PDF runtime needs room for loaded models and its 256 MiB
+    /// allocation guard. See the real-pack measurement in docs/server.md.
+    #[must_use]
+    pub const fn minimum_memory_mb(self) -> u32 {
+        match self {
+            Self::Docling => 2048,
+            Self::Core | Self::Office => 0,
+        }
+    }
+
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

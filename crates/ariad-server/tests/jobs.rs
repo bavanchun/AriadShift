@@ -274,7 +274,11 @@ async fn deleting_a_queued_job_cancels_it_before_any_worker_runs() {
             .fetch_all(&h.db.pool)
             .await
             .expect("events");
-    assert_eq!(kinds, ["queued", "canceled", "expired"]);
+    assert_eq!(
+        kinds,
+        ["expired"],
+        "deletion erases previous diagnostic events"
+    );
 
     // A worker started afterwards drops the stale message without running it.
     h.start_worker();
@@ -433,6 +437,85 @@ async fn plan_and_capabilities_describe_the_deployment() {
     let request_id = h.get(&auth, "/healthz").await;
     assert!(request_id.headers().get("x-request-id").is_some());
     h.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pdf_uploads_plan_only_when_docling_is_deployed() {
+    for (packs, status) in [("core", 422), ("core,docling", 200)] {
+        let Some(h) = Harness::start(
+            "pdf_uploads_plan_only_when_docling_is_deployed",
+            Options {
+                env: vec![("ARIAD_PACKS".into(), packs.into())],
+                ..Options::default()
+            },
+        )
+        .await
+        else {
+            return;
+        };
+        let upload = h
+            .upload(
+                &Auth::Anonymous,
+                "real.pdf",
+                include_bytes!("../../../fixtures/pdf/en-map-room.pdf"),
+            )
+            .await;
+        assert_eq!(upload["format"], "pdf");
+        if packs.contains("docling") {
+            for response in [
+                h.post(
+                    &Auth::Anonymous,
+                    "/v1/plan",
+                    &json!({"upload_id": upload["id"], "to":"md"}),
+                )
+                .await,
+                h.create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "md")
+                    .await,
+            ] {
+                assert_eq!(response.status(), 422);
+                let error: Value = response.json().await.unwrap();
+                assert_eq!(error["error"]["code"], "limit_exceeded");
+            }
+            let count: i64 = sqlx::query_scalar("SELECT count(*) FROM jobs")
+                .fetch_one(&h.db.pool)
+                .await
+                .unwrap();
+            assert_eq!(count, 0, "an inadmissible pack never reaches a queue");
+        }
+        h.sql_exec("UPDATE plan_entitlements SET max_memory_mb = 2048 WHERE plan = 'anonymous'")
+            .await;
+        let response = h
+            .post(
+                &Auth::Anonymous,
+                "/v1/plan",
+                &json!({"upload_id": upload["id"], "to":"md"}),
+            )
+            .await;
+        assert_eq!(response.status(), status, "{}", text(response).await);
+        if status == 200 {
+            let planned: Value = response.json().await.unwrap();
+            assert_eq!(planned["pack"], "docling");
+            assert!(
+                planned["route"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|step| step["engine"] == "docling")
+            );
+            let job = h
+                .create_job(&Auth::Anonymous, upload["id"].as_str().unwrap(), "md")
+                .await;
+            assert_eq!(job.status(), 202);
+            let job: Value = job.json().await.unwrap();
+            let pack: String = sqlx::query_scalar("SELECT pack FROM jobs WHERE id = $1::uuid")
+                .bind(job["id"].as_str().unwrap())
+                .fetch_one(&h.db.pool)
+                .await
+                .unwrap();
+            assert_eq!(pack, "docling");
+        }
+        h.stop().await;
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -4,7 +4,10 @@
 pub mod api_key;
 pub mod jwt;
 
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use axum::http::{HeaderMap, header};
 use chrono::Utc;
@@ -68,6 +71,7 @@ pub struct Authenticator {
     secret: Vec<u8>,
     trusted_ip_header: Option<String>,
     http: reqwest::Client,
+    warned_private_peer: AtomicBool,
 }
 
 impl Authenticator {
@@ -88,6 +92,7 @@ impl Authenticator {
             secret,
             trusted_ip_header,
             http,
+            warned_private_peer: AtomicBool::new(false),
         }
     }
 
@@ -183,10 +188,23 @@ impl Authenticator {
             && let Some(ip) = headers
                 .get(name.as_str())
                 .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.split(',').next())
+                .filter(|_| headers.get_all(name.as_str()).iter().count() == 1)
                 .and_then(|v| v.trim().parse::<IpAddr>().ok())
         {
             return Some(ip);
+        }
+        if self.trusted_ip_header.is_none()
+            && peer.is_some_and(|addr| match addr.ip() {
+                IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local(),
+                IpAddr::V6(ip) => {
+                    ip.is_unique_local() || ip.is_loopback() || ip.is_unicast_link_local()
+                }
+            })
+            && !self.warned_private_peer.swap(true, Ordering::Relaxed)
+        {
+            tracing::warn!(
+                "private API peer without ARIAD_TRUSTED_CLIENT_IP_HEADER; a reverse proxy will share anonymous quotas and credential throttling across clients"
+            );
         }
         peer.map(|addr| addr.ip())
     }
@@ -309,6 +327,14 @@ mod tests {
             untrusted.client_ip(&headers, peer),
             Some("10.0.0.1".parse().expect("ip"))
         );
+        headers.insert(
+            "cf-connecting-ip",
+            "203.0.113.9, 203.0.113.10".parse().unwrap(),
+        );
+        assert_eq!(auth.client_ip(&headers, peer), peer.map(|addr| addr.ip()));
+        headers.insert("cf-connecting-ip", "203.0.113.9".parse().unwrap());
+        headers.append("cf-connecting-ip", "203.0.113.10".parse().unwrap());
+        assert_eq!(auth.client_ip(&headers, peer), peer.map(|addr| addr.ip()));
     }
 
     #[test]

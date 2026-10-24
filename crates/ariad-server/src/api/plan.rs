@@ -84,6 +84,7 @@ pub async fn plan(
                 detail,
             )
         })?;
+    super::check_pack_memory(Pack::for_route(&plan.steps), &caller.entitlement.limits)?;
     Ok(Json(PlanResponse {
         from: source.id().to_owned(),
         to: target.id().to_owned(),
