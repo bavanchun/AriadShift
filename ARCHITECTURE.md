@@ -528,6 +528,9 @@ File ─stream→ OPFS ─→ Web Worker ─→ ariad-wasm / pandoc.wasm / PDFiu
 - **Tauri 2.12** with React 19 + Vite 8. Shared UI components sourced from `packages/ui`.
 - Commands are strictly typed via **ts-rs** and a single Rust command table: TypeScript types and `invoke` wrappers are generated together into `apps/desktop/src/bindings/`, committed, and checked for drift in CI. Nothing in that directory is written by hand.
 - `src-tauri` calls `ariad-host` directly without intermediate sidecars.
+- CLI and desktop hidden `__engine <name>` requests delegate to the same
+  `ariad_host::engines::serve_builtin` dispatcher. Built-in engine names live
+  in the host once, so adding one also supports desktop child processes.
 - Plugins used: `deep-link`, `updater`, `single-instance`, `dialog`.
 - Desktop-specific features: batch conversion, **folder watching** (built-in polling watcher), background queues, offline mode, and engine pack installations.
 - **Web → Desktop bridge:** The web app triggers `ariadshift://open?route=pdf-docx&profile=editable`. Because browsers cannot pass arbitrary file handles to native apps, the desktop app opens a file picker with the preselected route. A localhost server is intentionally avoided, as Chrome 142+ prompts for Local Network Access permissions, degrading user experience.
@@ -810,6 +813,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 
 | Topic | Chosen | Rejected | Rationale |
 |---|---|---|---|
+| Native engine dispatch | One `ariad-host` built-in dispatcher shared by CLI and desktop | Separate engine lists in each executable | New built-in engines must work when either surface re-executes itself; unknown names fail without starting the GUI |
 | Queue | pgmq on Postgres 18 | NATS JetStream upfront | Eliminates an extra service for self-hosters; SSE leverages LISTEN/NOTIFY; trait abstracts future NATS addition |
 | Self-hosted storage | SeaweedFS | MinIO (archived 04/2026), RustFS (just hit 1.0), Garage (AGPL) | Mature, Apache-2.0, single-command setup |
 | Storage client | `object_store` | `aws-sdk-s3` | Single API across all backends, including local disk in tests |

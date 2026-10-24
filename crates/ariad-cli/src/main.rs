@@ -49,10 +49,7 @@ enum Command {
     #[command(name = "__write", hide = true)]
     Write(WriteArgs),
     #[command(name = "__engine", hide = true)]
-    Engine {
-        #[command(subcommand)]
-        command: EngineCommand,
-    },
+    Engine { engine: String },
     #[command(name = "__pack", hide = true)]
     Pack {
         #[command(subcommand)]
@@ -300,11 +297,6 @@ struct DoctorArgs {
     json: bool,
 }
 
-#[derive(Subcommand)]
-enum EngineCommand {
-    Pandoc,
-}
-
 fn main() -> ExitCode {
     // The sandbox launcher runs before anything else so it restricts and `exec`s the engine
     // without parsing the engine's own arguments.
@@ -324,9 +316,7 @@ fn main() -> ExitCode {
             Some(Command::Mcp(args)) => run_mcp_entry(args),
             Some(Command::Ir(args)) => run_ir(args),
             Some(Command::Write(args)) => run_write(args),
-            Some(Command::Engine {
-                command: EngineCommand::Pandoc,
-            }) => serve_pandoc(),
+            Some(Command::Engine { engine }) => serve_engine(&engine),
             Some(Command::Pack {
                 command: PackCommand::Manifest(args),
             }) => run_pack_manifest(args),
@@ -1016,12 +1006,12 @@ async fn interrupt() -> io::Result<()> {
     }
 }
 
-fn serve_pandoc() -> ExitCode {
+fn serve_engine(engine: &str) -> ExitCode {
     #[cfg(debug_assertions)]
-    if test_engine_override() {
+    if engine == "pandoc" && test_engine_override() {
         return serve_test_override(io::stdin().lock(), io::stdout().lock());
     }
-    ariad_host::engines::pandoc::serve(io::stdin().lock(), io::stdout().lock())
+    ariad_host::engines::serve_builtin(engine, io::stdin().lock(), io::stdout().lock())
 }
 
 #[cfg(debug_assertions)]
