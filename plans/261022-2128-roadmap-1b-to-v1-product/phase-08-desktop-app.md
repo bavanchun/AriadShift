@@ -292,7 +292,9 @@ The final documentation commit is checked again before marking the PR ready.
   arguments and retains the credential-group validation. The macOS PR installer
   job generates a disposable updater key, enables updater artifacts and requires
   a nonempty `AriadShift.app.tar.gz.sig`; its temporary key and configuration are
-  deleted on exit. No release secret is used for this check.
+  deleted on exit. No release secret is used for this check. Workflow lint also
+  passed with ShellCheck available; loading the updater key preserves read
+  failures before exporting the value.
 - `just deny` checks every normal dependency path for crypto-bigint 0.5.5 across
   all targets and features. Every path must end at jsonwebtoken under ariad-server.
   Its three tests accept the verifier tree and reject additional consumers,
