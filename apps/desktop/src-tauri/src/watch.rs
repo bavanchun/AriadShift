@@ -307,16 +307,16 @@ impl Backend {
         drop(watches);
         // New watches acknowledge their baseline before the caller writes inputs.
         // Saved watches initialize on their thread without blocking application setup.
-        if wait_initial {
-            if let Err(error) = initial_recv.recv().unwrap_or_else(|e| Err(e.to_string())) {
-                self.model
-                    .lock()
-                    .unwrap()
-                    .watches
-                    .retain(|w| w.id != view.id);
-                self.watches.lock().unwrap().remove(&view.id);
-                return Err(error);
-            }
+        if wait_initial
+            && let Err(error) = initial_recv.recv().unwrap_or_else(|e| Err(e.to_string()))
+        {
+            self.model
+                .lock()
+                .unwrap()
+                .watches
+                .retain(|w| w.id != view.id);
+            self.watches.lock().unwrap().remove(&view.id);
+            return Err(error);
         }
         Ok(view)
     }
