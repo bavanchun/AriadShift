@@ -268,3 +268,7 @@ The final documentation commit is checked again before marking the PR ready.
   Ignored evidence is in `.tools/desktop-review-acceptance`; the app is closed,
   test watch and pack removed, and DMG unmounted. The final three-platform CI
   results are recorded in the PR and worker report.
+- The disappearance regression test uses a fresh filesystem metadata lookup:
+  Windows directory entries retain cached metadata. The focused test and
+  formatting check passed after this portability correction; production
+  behavior and the accepted DMG code are unchanged.
