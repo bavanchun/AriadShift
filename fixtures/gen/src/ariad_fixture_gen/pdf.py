@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from io import BytesIO
+
 import typst
+from PIL import Image
 
 
 def _typst_string(value: str) -> str:
@@ -51,7 +54,27 @@ def generate(root: Path) -> dict[str, bytes]:
     map_room = _source(root, "english-map-room.md")
     repair_cafe = _source(root, "english-repair-cafe.md")
 
+    scan = BytesIO()
+    with Image.open(root / "fixtures/scan/vi-garden-300dpi.png") as image:
+        image.convert("RGB").save(
+            scan, format="PDF", resolution=300,
+            title="Khu vườn đọc sách", author="AriadShift contributors",
+            creationDate="D:20231114221320Z", modDate="D:20231114221320Z",
+        )
+
     return {
+        "fixtures/pdf/vi-garden-image-only.pdf": scan.getvalue(),
+        "fixtures/pdf/vi-garden-image-only.truth.txt": (root / "fixtures/scan/truth/vi-garden-300dpi.txt").read_bytes(),
+        "fixtures/pdf/vi-garden-route.truth.txt": "\n\n".join([
+            "Khu vườn đọc sách", *garden, "Điểm dừng", "Phút đi bộ", "Bến sông", "8",
+            "Vườn đọc", "14", "Ghi chú", "Ước lượng trong ngày nắng",
+        ]).encode("utf-8") + b"\n",
+        "fixtures/pdf/en-map-room.truth.txt": "\n\n".join([
+            "Notes from the Map Room", *map_room, *repair_cafe[:1], "Archive note",
+            "The archive keeps older map editions beside later revisions.",
+            "Archive item", "Recorded detail", "Street plan", "Survey date", "Overlay",
+            "Transparent sheet", "Map weight", "Brass",
+        ]).encode("utf-8") + b"\n",
         "fixtures/pdf/vi-garden-route.pdf": _document(
             title="Khu vườn đọc sách",
             language="vi",

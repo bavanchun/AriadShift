@@ -3,6 +3,7 @@
 pub mod html;
 pub mod markdown;
 pub mod sanitize;
+pub mod typst;
 
 use crate::{
     ir::{AssetRef, Block, Document, Inline, ListItem, Metadata, TableCell},
