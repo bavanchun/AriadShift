@@ -19,7 +19,7 @@ docs_paths='^(docs|plans)/|^(README|ARCHITECTURE|AGENTS|CLAUDE)\.md$'
 # The JavaScript workspace and the brand assets the site copies; the Rust jobs read neither.
 js_paths='^(apps|packages|brand)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version)$|^scripts/check-js-licenses\.mjs$'
 # Everything the web job builds or depends on, including the Rust code compiled to wasm.
-web_paths='^(apps|packages|brand)/|^crates/ariad-(core|wasm)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$'
+web_paths='^(apps|packages|brand)/|^crates/ariad-(core|wasm|typst)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$'
 
 # Prints heavy|web|reason.
 decide() {

@@ -40,7 +40,7 @@ test("site links load /app as a cross-origin isolated document and leave it", as
 test("the landing page loads no conversion engine", async ({ page }) => {
   const wasm: string[] = [];
   page.on("request", (request) => {
-    if (request.url().endsWith(".wasm")) {
+    if (new URL(request.url()).pathname.endsWith(".wasm")) {
       wasm.push(request.url());
     }
   });

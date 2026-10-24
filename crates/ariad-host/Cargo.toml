@@ -36,8 +36,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "signal", "time"] }
 tokio-util = { workspace = true, features = ["rt"] }
 toml.workspace = true
-typst = { workspace = true, optional = true }
-typst-pdf = { workspace = true, optional = true }
+ariad-typst = { workspace = true, optional = true }
 unicode-normalization.workspace = true
 uuid = { workspace = true, features = ["v4", "v5"] }
 zip.workspace = true
@@ -70,7 +69,7 @@ default = ["pdf", "typst"]
 # PDF text-layer reader served as `ashift __engine pdf`.
 pdf = ["ariad-core/pdf"]
 # IR to PDF through the embedded Typst compiler, served as `ashift __engine typst`.
-typst = ["dep:typst", "dep:typst-pdf"]
+typst = ["dep:ariad-typst"]
 test-probe = []
 
 [[bin]]

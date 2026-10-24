@@ -1,6 +1,6 @@
 // The conversion engines the worker can run, keyed by the engine ids that appear in
-// planned routes. ariad-core runs through ariad-wasm; later browser engines (Pandoc
-// WASM, Typst) register here without changing the worker protocol.
+// planned routes. ariad-core runs through ariad-wasm; browserEngines adds the lazy
+// Pandoc and Typst adapters without changing the worker protocol.
 import type {
   ConvertOptions,
   ConvertResult,

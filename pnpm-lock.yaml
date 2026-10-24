@@ -170,6 +170,9 @@ catalogs:
     '@biomejs/biome':
       specifier: 2.6.2
       version: 2.6.2
+    '@bjorn3/browser_wasi_shim':
+      specifier: 0.4.2
+      version: 0.4.2
     '@fontsource-variable/plus-jakarta-sans':
       specifier: 5.3.0
       version: 5.3.0
@@ -341,12 +344,18 @@ importers:
 
   apps/web:
     dependencies:
+      '@ariadshift/ariad-typst':
+        specifier: workspace:*
+        version: link:../../packages/ariad-typst
       '@ariadshift/ariad-wasm':
         specifier: workspace:*
         version: link:../../packages/ariad-wasm
       '@ariadshift/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@bjorn3/browser_wasi_shim':
+        specifier: 'catalog:'
+        version: 0.4.2
       lucide-react:
         specifier: 'catalog:'
         version: 1.61.0(@types/react@19.3.0)(react@19.3.1)
@@ -423,6 +432,8 @@ importers:
       svgo:
         specifier: 'catalog:'
         version: 4.1.0
+
+  packages/ariad-typst: {}
 
   packages/ariad-wasm:
     devDependencies:
@@ -750,6 +761,9 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@bjorn3/browser_wasi_shim@0.4.2':
+    resolution: {integrity: sha512-/iHkCVUG3VbcbmEHn5iIUpIrh7a7WPiwZ3sHy4HZKZzBdSadwdddYDZAII2zBvQYV0Lfi8naZngPCN7WPHI/hA==}
 
   '@bramus/specificity@2.4.3':
     resolution: {integrity: sha512-0GEz8qJWokkUVYQYRukmkSHIFNoBH8QTreeHrAFbvz1XFYc3Y+puhMs8PQ5x8GNugiC2l5jvDBXKLbBIByeSBw==}
@@ -3914,6 +3928,8 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.6.2':
     optional: true
+
+  '@bjorn3/browser_wasi_shim@0.4.2': {}
 
   '@bramus/specificity@2.4.3':
     dependencies:
