@@ -43,7 +43,7 @@ curl -sS -N "$API/v1/jobs/$(jq -r .id job.json)/events" -H "x-api-key: $KEY"
 curl -sS "$API/v1/jobs/$(jq -r .id job.json)/outputs" -H "x-api-key: $KEY"
 ```
 
-Completion is the authoritative size and hash check. S3 URLs sign the checksum header, but compatible stores may accept mismatching bytes and the signer cannot bind content-length. An uncompleted upload expires after 20 minutes; a verified upload uses the plan's retention measured from its creation. Bucket CORS must allow `PUT` and `x-amz-checksum-sha256` from the web app's origin.
+Completion is the authoritative size and hash check. S3 URLs sign the checksum header, but compatible stores may accept mismatching bytes and the signer cannot bind content-length. The sweeper independently checks pending objects older than two minutes and retires stored-size mismatches, including replays of retired URLs before expiry. An uncompleted upload expires after 20 minutes; a verified upload uses the plan's retention measured from its creation. Bucket CORS must allow `PUT` and `x-amz-checksum-sha256` from the web app's origin.
 
 One upload can feed several jobs, for example one per target format. Browsers upload with Uppy's `@uppy/aws-s3` plugin in single-request mode, using the presigned request as its upload parameters.
 
@@ -66,11 +66,11 @@ Formats are named by registry id (`markdown`, `docx`) or extension (`md`, `htm`)
 
 ## Jobs
 
-A job moves through `queued → running → succeeded | failed | canceled → expired`. Inputs and outputs are deleted when the plan's retention period ends (one hour by default) or on `DELETE`, and the job becomes `expired`; the job record stays. Transient failures, such as an engine crash or a storage error, are retried before a job fails. Failures caused by the document, such as an unsupported route or an exceeded limit, are final.
+A job moves through `queued → running → succeeded | failed | canceled → expired`. Inputs and outputs are deleted when the plan's retention period ends (one hour by default) or on `DELETE`, and the job becomes `expired`; retired filenames, previous events and detailed diagnostics are cleared. Expired job metadata is pruned after 30 days; the filename-free usage ledger stays. Transient failures, such as an engine crash or a storage error, are retried before a job fails. Failures caused by the document, such as an unsupported route or an exceeded limit, are final.
 
 Cloud jobs retain at most 64 warnings, with codes limited to 64 UTF-8 bytes and messages to 512 bytes. Repeated codes may be grouped with an occurrence count; `warnings_truncated` summarizes omitted occurrences. The CLI keeps its existing warning behavior.
 
-The event stream sends `event: <kind>`, `id: <event id>` and `data: <JobEvent JSON>` for each event and closes after the final one. Reconnecting after the final event closes immediately. Streams also close when the API shuts down:
+The event stream sends `event: <kind>`, `id: <event id>` and `data: <JobEvent JSON>` for each event and closes after the final one. Reconnecting after the final event closes immediately. Across API replicas, at most eight streams per caller subject and two per job may be open; further requests return `429` with `Retry-After`. Capacity is released on disconnect/completion or after a 90-second crash lease expires. Streams also close when the API shuts down:
 
 | Kind | Data |
 |---|---|
@@ -95,7 +95,7 @@ Every error has the body `{"error": {"code": "…", "message": "…"}}`. Message
 | 409 | `conflict`: the upload is not complete or no longer available, or the job has not succeeded |
 | 410 | `expired`: the job's files were deleted |
 | 413 | `limit_exceeded`: the file is larger than the plan accepts |
-| 422 | `invalid_request`, `unsupported_route` (with the reachable targets) |
+| 422 | `invalid_request`, `unsupported_route` (with the reachable targets), `limit_exceeded` (insufficient plan memory for the selected pack) |
 | 429 | `rate_limited` (with `Retry-After`), `quota_exceeded` |
 | 500 | `internal`: an internal database or storage operation failed |
 | 503 | `unavailable`: identity verification is unavailable |
@@ -106,6 +106,8 @@ A failed job reports the cause in its `error`: `limit_exceeded` (the document ex
 
 Each plan sets the conversion limits (input size, pages, time, memory, structural caps) and the quotas: jobs per day, input bytes per day, concurrent jobs and requests per minute. Quotas for accounts count per workspace; anonymous quotas count per client address. The defaults are listed in [server.md](server.md#plans-quotas-and-rate-limits).
 
-Upload admission separately counts all uploads and their declared bytes over 24 hours, including deleted or abandoned ones, against `jobs_per_day` and `input_bytes_per_day`. Pending uploads reserve `concurrent_jobs` slots (64 when that quota is unlimited). Completing an upload releases its pending slot; conversion quotas are checked independently for every job. This bounds outstanding signed requests; on S3, actual size is enforced at completion rather than at PUT.
+Upload admission separately counts all uploads and their declared bytes over 24 hours, including deleted or abandoned ones, against `jobs_per_day` and `input_bytes_per_day`. Pending uploads reserve `concurrent_jobs` slots (64 when that quota is unlimited). Completing an upload releases its pending slot; conversion quotas are checked independently for every job. This bounds outstanding signed requests; on S3, actual size is checked at completion and by the pending-upload sweeper, while a deployment-side public-upload body cap remains necessary before those checks.
+
+Docling routes need a plan memory budget of at least 2,048 MiB or an unlimited budget. Both `/v1/plan` and `/v1/jobs` reject smaller finite budgets before queueing or metering; the seeded anonymous tier therefore cannot use Docling. See the real-pack measurement and operator limits in [server.md](server.md#plans-quotas-and-rate-limits).
 
 Native Markdown and HTML input is also capped at `min(64 MiB, max_input_bytes)` to bound allocation bursts (64 MiB for free and 10 MiB for anonymous). Conversion runs in a helper process with the plan deadline and five seconds of cancellation grace. The host RSS watchdog enforces the memory budget across the helper and its descendants; exceeding it fails the job with `limit_exceeded` without retrying.
