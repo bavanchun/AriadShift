@@ -160,7 +160,7 @@ ashift inspect [OPTIONS] <INPUT>
 - Note that local conversion (`ashift convert`) enforces no local file size cap (cloud plans enforce entitlements per §9.5). For compressed archives (DOCX and EPUB), the 32 MiB analysis cap applies to the compressed file size on disk rather than the uncompressed IR document size.
 - Peak memory usage during AST expansion is approximately 100x the input document size (~3 GB peak RSS on a 32 MiB markdown file).
 - Lists reachable target formats that the planner can convert to.
-- For PDF documents, reports byte size, notes that Docling engine is required (roadmap 1b), and exits with code 0.
+- For PDF documents, reports byte size, instructs the user to install the engine with `ashift engines install docling`, and exits with code 0.
 - If the file format cannot be recognized, exits with code 3.
 - Requires regular files: FIFOs, device nodes, and directories are rejected upfront to prevent blocking or resource exhaustion.
 

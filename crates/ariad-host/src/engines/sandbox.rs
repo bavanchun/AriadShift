@@ -83,14 +83,16 @@ fn docling_paths() -> EnginePaths {
 }
 
 /// Libraries and data may live beside a non-system Tesseract binary. Keep execution limited
-/// to the binary itself and only grant read access to its canonical installation prefix.
+/// to the binary itself and read access to the prefix's library, data and configuration dirs.
 fn grant_tesseract(paths: &mut EnginePaths, program: &Path) {
     paths.exec.push(program.to_path_buf());
     if let Some(bin) = program.parent()
         && bin.file_name().is_some_and(|name| name == "bin")
         && let Some(prefix) = bin.parent()
     {
-        paths.read_only.push(prefix.to_path_buf());
+        for name in ["lib", "lib64", "libexec", "share", "etc"] {
+            paths.read_only.push(prefix.join(name));
+        }
     }
 }
 
@@ -144,5 +146,33 @@ mod tests {
         super::grant_editable_source(&mut paths, &prefix.join("bin/python"));
         assert_eq!(paths.read_only, vec![source.canonicalize().unwrap()]);
         assert!(paths.exec.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tesseract_grants_only_installation_data_directories() {
+        use std::path::Path;
+
+        let home = tempfile::tempdir().expect("home directory");
+        for prefix in [
+            Path::new("/"),
+            home.path(),
+            &home.path().join(".local"),
+            Path::new("/opt/tesseract"),
+        ] {
+            let program = prefix.join("bin/tesseract");
+            let mut paths = super::EnginePaths::default();
+            super::grant_tesseract(&mut paths, &program);
+            assert_eq!(paths.exec, vec![program]);
+            assert_eq!(
+                paths.read_only,
+                ["lib", "lib64", "libexec", "share", "etc"].map(|name| prefix.join(name))
+            );
+            assert!(
+                !paths.read_only.iter().any(|path| {
+                    path == Path::new("/") || path == home.path() || path == prefix
+                })
+            );
+        }
     }
 }
