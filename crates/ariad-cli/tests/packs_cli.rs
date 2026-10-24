@@ -156,6 +156,34 @@ fn stderr(output: &Output) -> String {
 }
 
 #[test]
+fn docling_install_reports_platform_prerequisites() {
+    let fixture = Fixture::new();
+    let path = fixture.source.path().join("pack.toml");
+    let mut manifest = ariad_host::packs::Manifest::parse(&fs::read_to_string(&path).unwrap())
+        .expect("probe manifest");
+    manifest.name = "docling".to_owned();
+    fs::write(&path, toml::to_string(&manifest).unwrap()).unwrap();
+    fixture.sign("pack:docling version:1.0.0");
+
+    for _ in 0..2 {
+        let output = fixture
+            .ashift()
+            .args(["engines", "install", "docling", "--from"])
+            .arg(fixture.source.path())
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{}", stderr(&output));
+        let human = String::from_utf8_lossy(&output.stdout);
+        assert!(human.contains("Tesseract 5"), "{human}");
+        assert_eq!(human.contains("Visual C++ Redistributable"), cfg!(windows));
+        assert_eq!(
+            human.contains("https://aka.ms/vc14/vc_redist.x64.exe"),
+            cfg!(windows)
+        );
+    }
+}
+
+#[test]
 fn pack_lifecycle_through_the_cli() {
     let fixture = Fixture::new();
     let data_dir = fixture.data.path().display().to_string();
@@ -180,6 +208,7 @@ fn pack_lifecycle_through_the_cli() {
         .unwrap();
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     let human = String::from_utf8_lossy(&output.stdout);
+    assert!(!human.contains("Redistributable"), "{human}");
     assert!(human.contains("probe 1.0.0"), "{human}");
     assert!(human.contains("is already installed in"), "{human}");
 

@@ -352,6 +352,12 @@ pub fn render_pack_install_human(report: &ariad_host::packs::InstallReport) -> i
             out,
             "Vietnamese OCR requires Tesseract 5 on PATH; run 'ashift doctor' for installation guidance."
         )?;
+        if cfg!(windows) {
+            writeln!(
+                out,
+                "Docling requires the latest Microsoft Visual C++ Redistributable (x64); install it from https://aka.ms/vc14/vc_redist.x64.exe and run 'ashift doctor'."
+            )?;
+        }
     }
     out.flush()
 }

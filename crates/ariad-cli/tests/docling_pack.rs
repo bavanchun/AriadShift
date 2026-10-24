@@ -77,6 +77,11 @@ fn installed_pack_converts_and_reuses_bounded_sessions() {
         String::from_utf8_lossy(&installed.stderr)
     );
     assert!(String::from_utf8_lossy(&installed.stdout).contains("Tesseract 5"));
+    assert_eq!(
+        String::from_utf8_lossy(&installed.stdout)
+            .contains("latest Microsoft Visual C++ Redistributable (x64)"),
+        cfg!(windows)
+    );
     let fixture = support::fixtures::repository_root().join("fixtures/pdf/en-map-room.pdf");
     let markdown = directory.path().join("converted.md");
     eprintln!("Converting a PDF through installed-pack resolution");
