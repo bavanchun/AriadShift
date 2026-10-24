@@ -5,7 +5,7 @@ status: completed
 priority: P1
 effort: "30h"
 dependencies: [1, 6]
-runs_on: Mac
+runs_on: Mac, ASUS
 branch: feat/desktop-app
 ---
 
@@ -282,3 +282,31 @@ The final documentation commit is checked again before marking the PR ready.
   remain unchanged. With a refreshed database, the baseline scan failed with
   this exact advisory and the scoped configuration passed. Reassess if signing
   is added, and remove the exclusion when stable upstream adopts the fix.
+
+
+## Updater signing regression checks (2026-10-24)
+
+- Rebased onto `origin/dev` at `9d21662`, retaining all 46 existing desktop
+  commits unchanged by patch comparison, including the advisory exclusion.
+- The wrapper removes empty Apple variables without changing build or bundle
+  arguments and retains the credential-group validation. The macOS PR installer
+  job generates a disposable updater key, enables updater artifacts and requires
+  a nonempty `AriadShift.app.tar.gz.sig`; its temporary key and configuration are
+  deleted on exit. No release secret is used for this check.
+- `just deny` checks every normal dependency path for crypto-bigint 0.5.5 across
+  all targets and features. Every path must end at jsonwebtoken under ariad-server.
+  Its three tests accept the verifier tree and reject additional consumers,
+  paths bypassing jsonwebtoken, another workspace consumer and malformed trees.
+  The real dependency tree and the unchanged advisory policy both passed.
+- Linux `just ci` passed: static checks, workspace Clippy, WASM, 777 Rust tests
+  (10 configured skips), doctests, 64 benchmark tests, four-crate packaging,
+  typechecks, 67 frontend tests and the production web build. Desktop checks
+  passed binding/permission drift, production build, 8 UI tests, 6 build-tool
+  tests and 12 native tests. PowerShell syntax checks require `pwsh` and were
+  skipped locally; the three-platform PR checks cover native installer builds.
+- Desktop documentation now explains the Linux tool manifest refresh and the
+  first-launch Gatekeeper warning for downloaded unsigned disk images.
+- Follow-ups remain separate: compile before exposing the release updater key,
+  and consider a visible warning when a nested watch folder is unreadable.
+  Cross-platform results and the macOS signature assertion are recorded in the
+  coordinator handoff report after checking the final PR head on GitHub.
