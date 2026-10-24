@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Heavy-route bench, freeze, v0.2.0"
-status: pending
+status: in-progress
 priority: P1
 effort: "20h"
 dependencies: [1, 2, 3, 4]
@@ -51,3 +51,36 @@ Read first: `docs/bench.md`, `bench/`, `fixtures/gen/`, `.github/workflows/{benc
 |---|---|
 | Bench noise churns timings | Deterministic fidelity metrics; timings rounded and drift-checked only in the bench job |
 | Pack smoke too slow on Windows | Cache the downloaded components by hash between attempts |
+
+## Design notes: bench and freeze delivery
+
+This branch owns the bench/capabilities and freeze sections only. Pack publication, production signing, release smoke against a published pack, the version bump and release remain coordinator work; the whole phase stays open until those outcomes hold.
+
+- Reuse authored block lists for structured PDF and scan truth, including English and Vietnamese tables and columns. Record generated inputs and truth hashes in the fixture manifest.
+- Measure engine edges explicitly so current planner choices cannot select the engine under test. Record end-to-end heavy routes separately, including both OCR backends and page SSIM from PDFium renders; never substitute route timings for individual edge timings.
+- Emit IR v1 and accept v0 in both native and in-memory readers. Preserve the v0 schema for existing documents. Freeze the engine schema after running the real adapters through shared conformance checks.
+- Keep unmeasured edges null and failed conversions visible. Generate the public report from capabilities and persisted route evidence.
+- Measure DOC/RTF/ODT to DOCX normalization alongside Office PDF output. Otherwise measured PDF edges beat unmeasured structured normalization and regress editable Office routes.
+- Profile selection is verified on the format graph. Retain the accepted content-aware native PDF selector: digital text uses the built-in reader, scans require Docling, and an explicit reader request wins. Changing that separate policy requires a coordinator decision.
+
+### Benchmark dependencies
+
+The benchmark promotes existing lockfile pins to direct dependencies; no package version changes. Verified against PyPI release metadata on 2026-10-25; `uv.lock` retains every wheel hash.
+
+| Package | Registry evidence | Source archive SHA-256 |
+|---|---|---|
+| pypdfium2 5.14.0 | [PyPI](https://pypi.org/pypi/pypdfium2/5.14.0/json) | `c5f009b3157f10e97dceb55963f5910eff92feb00587ba10a76f12b87ce1a4b6` |
+| NumPy 2.5.4 | [PyPI](https://pypi.org/pypi/numpy/2.5.4/json) | `9a94cf751c9ad8ebaa835bcd3d40dacf8534ad086b88c38029b65123c7999d2a` |
+| Pillow 12.3.0 | [PyPI](https://pypi.org/pypi/pillow/12.3.0/json) | `3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce` |
+
+## Bench and freeze verification
+
+- [x] 28 authored English/Vietnamese inputs and independent truth companions are recorded in the fixture manifest.
+- [x] The complete heavy harness measured 92 samples, including 30 complete routes and 52 SSIM comparisons. Capabilities contain 29 measured edges. The [public report](../../docs/bench-report.md) is generated from [capabilities](../../crates/ariad-core/data/capabilities.json) and [persisted route evidence](../../bench/results/heavy-routes.json).
+- [x] The measured format graph selects Docling for editable PDF and Rust for fast PDF, for Markdown and DOCX targets. Direct Office normalization retains the existing editable routes and heading regressions.
+- [x] `ariad-engine/1` and `ariad-ir/1` are final; native and in-memory readers accept IR v0. Shared native conformance and all nine real Docling tests passed. Nightly/manual/labelled benchmark CI runs the real Docling checks.
+- [x] Full local `just ci` passed: 924 native tests (12 opt-in skips), doctests, 74 benchmark tests, four package verifications, 67 web tests and the production web build. Additional desktop binding, build, eight frontend tests, six tool tests and 12 native tests passed.
+
+The benchmark used the existing local Docling pack because the Intel IPP removal branch was not merged at startup. Component hashes are preserved in the route evidence. Local timing was collected under heavy CPU contention, including a load average above 80 on eight logical CPUs; compare timing with isolated CI artifacts before drawing performance conclusions. The base benchmark zero-scored the deeply nested `en-deep-list` EPUB read-back limit rather than changing reader limits.
+
+The [session journal](../journals/2026-10-24-measure-heavy-routes-and-freeze-conversion-contracts.md) records corrections and decisions. The feature head still follows the normal three-platform CI and coordinator review gates. Production signing, pack publication, published-pack smoke, the version bump, promotion and release remain open; this phase is not complete.
