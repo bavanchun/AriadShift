@@ -6,7 +6,13 @@ use serde::{Deserialize, Serialize};
 use crate::format::Format;
 
 /// The active version of the document intermediate representation.
-pub const IR_VERSION: &str = "ariad-ir/0";
+pub const IR_VERSION: &str = "ariad-ir/1";
+
+/// Readers retain compatibility with the last draft without accepting future versions.
+#[must_use]
+pub fn is_supported_version(version: Option<&str>) -> bool {
+    matches!(version, Some(IR_VERSION | "ariad-ir/0"))
+}
 
 /// A format-independent document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -346,7 +352,7 @@ mod tests {
         );
 
         let json = serde_json::to_string(&document).unwrap();
-        assert!(json.contains(r#""version":"ariad-ir/0""#));
+        assert!(json.contains(r#""version":"ariad-ir/1""#));
         assert!(json.contains(r#""bytes":"AAEC/w==""#));
         let roundtripped: Document = serde_json::from_str(&json).unwrap();
         assert_eq!(roundtripped, document);

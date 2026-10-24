@@ -298,7 +298,7 @@ mod tests {
         assert!(markdown.contains("## Title"), "{markdown}");
 
         let ir = convert_text("# Hi\n", "markdown", "ariad-ir+json");
-        assert!(ir.contains("\"version\": \"ariad-ir/0\""), "{ir}");
+        assert!(ir.contains("\"version\": \"ariad-ir/1\""), "{ir}");
         let back = convert_text(&ir, "ariad-ir+json", "markdown");
         assert_eq!(back.trim_end(), "# Hi");
     }

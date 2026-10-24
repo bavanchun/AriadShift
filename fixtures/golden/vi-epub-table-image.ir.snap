@@ -249,5 +249,5 @@ source: crates/ariad-cli/tests/reader_golden.rs
     "title": "Bảng và hình ảnh hành trình ven sông"
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

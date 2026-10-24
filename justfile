@@ -314,3 +314,11 @@ desktop-ci:
 # Regenerate the committed desktop icons after changing brand sources.
 desktop-icons:
     pnpm --filter @ariadshift/desktop tauri icon ../../brand/png/ariadshift-app-icon-1024.png --output src-tauri/icons
+
+# Measure authored PDF, scan and Office edges and complete routes with a configured Docling runtime.
+bench-heavy *args:
+    uv run --package ariad-bench python -m ariad_bench heavy "$@"
+
+# Regenerate the public benchmark report from committed measurements.
+bench-report *args:
+    uv run --package ariad-bench python -m ariad_bench report "$@"

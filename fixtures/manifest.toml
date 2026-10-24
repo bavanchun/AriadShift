@@ -1525,3 +1525,563 @@ tags = ["scan"]
 phase = "1b"
 routes = ["pdf->md"]
 companions = [{ path = "fixtures/pdf/vi-garden-image-only.truth.txt", sha256 = "25ef501a392f2950782ae8d0d29f6552b083f2b5461700ef9f7bf15713fe17a7" }]
+
+[[fixture]]
+id = "heavy-en-map-pdf"
+path = "fixtures/heavy/en-map.pdf"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "9956e5ec5ca2d86b482eeed5859fa880b0f06b24587a95e9e9f50264245e334b"
+pages = 1
+tags = ["heavy-bench", "digital-pdf", "multi-column", "tables", "headings"]
+phase = "1b"
+routes = ["pdf->md"]
+companions = [{ path = "fixtures/heavy/en-map.pdf.truth.json", sha256 = "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13" }]
+
+[[fixture]]
+id = "heavy-en-map-scan-pdf"
+path = "fixtures/heavy/en-map-scan.pdf"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "81057b17f0147900dcac48b3d1740c9fada05877d46f74d25543171192dc19f3"
+pages = 1
+tags = ["heavy-bench", "scan", "skew", "multi-column", "tables", "headings"]
+phase = "1b"
+routes = ["pdf->md", "pdf->docx"]
+companions = [{ path = "fixtures/heavy/en-map-scan.pdf.truth.json", sha256 = "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13" }]
+
+[[fixture]]
+id = "heavy-en-map-scan-png"
+path = "fixtures/heavy/en-map-scan.png"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "png"
+media_type = "image/png"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "3cbbcffe0cb2146e48bca7e51f4d2c87de1d452a49e133f4931f97132798165b"
+pages = 1
+tags = ["heavy-bench", "scan", "skew", "multi-column", "tables", "headings"]
+phase = "1b"
+routes = ["png->md", "png->docx"]
+companions = [{ path = "fixtures/heavy/en-map-scan.png.truth.json", sha256 = "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13" }]
+
+[[fixture]]
+id = "heavy-en-map-md"
+path = "fixtures/heavy/en-map.md"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "md"
+media_type = "text/markdown"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "e03f2310db51e942fa6f16e2df7b33c97b9752199ff0f20f1b6a3fc93ad5300d"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["md->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.md.truth.json", sha256 = "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13" }]
+
+[[fixture]]
+id = "heavy-en-map-docx"
+path = "fixtures/heavy/en-map.docx"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "438042061d630dd60569766e37959e00c7f01337941c5ecb1067509e5560e6a7"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["docx->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.docx.truth.json", sha256 = "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13" }]
+
+[[fixture]]
+id = "heavy-en-map-pptx"
+path = "fixtures/heavy/en-map.pptx"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "pptx"
+media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "2437ceecdb8af7f8e661a0fcf55c378c59e34c7a56736b0fbff7ec4c0911067f"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["pptx->md", "pptx->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.pptx.truth.json", sha256 = "e896903f082d0c5eb4e19b2a7f6fa38da29d2005f4d0bfa01a0c6117b05b735e" }]
+
+[[fixture]]
+id = "heavy-en-map-xlsx"
+path = "fixtures/heavy/en-map.xlsx"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "xlsx"
+media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "a3fcad38ce6ecefa289109750d370976577b8d6f540d800dae61d8f38d62bc04"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["xlsx->md", "xlsx->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.xlsx.truth.json", sha256 = "0c4408c2d83c7dd25192b32eae45dc68193778a297ff236f8f93a0fe3a6dd70a" }]
+
+[[fixture]]
+id = "heavy-vi-garden-pdf"
+path = "fixtures/heavy/vi-garden.pdf"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "cd2cae907c5fe3202216c862a021441558d1b1c61609670c74c3c2f36d168966"
+pages = 1
+tags = ["heavy-bench", "digital-pdf", "multi-column", "tables", "headings"]
+phase = "1b"
+routes = ["pdf->md"]
+companions = [{ path = "fixtures/heavy/vi-garden.pdf.truth.json", sha256 = "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321" }]
+
+[[fixture]]
+id = "heavy-vi-garden-scan-pdf"
+path = "fixtures/heavy/vi-garden-scan.pdf"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "2e79071f6d07b8f9bffbb275aa49d13f461e4494729c20ddd8c4ec5ddd2548fc"
+pages = 1
+tags = ["heavy-bench", "scan", "skew", "multi-column", "tables", "headings"]
+phase = "1b"
+routes = ["pdf->md", "pdf->docx"]
+companions = [{ path = "fixtures/heavy/vi-garden-scan.pdf.truth.json", sha256 = "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321" }]
+
+[[fixture]]
+id = "heavy-vi-garden-scan-png"
+path = "fixtures/heavy/vi-garden-scan.png"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "png"
+media_type = "image/png"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "c2610e74fdfab088c1c637b6ffbd095a2a045da245d25f69314fb845c8d6c1ca"
+pages = 1
+tags = ["heavy-bench", "scan", "skew", "multi-column", "tables", "headings"]
+phase = "1b"
+routes = ["png->md", "png->docx"]
+companions = [{ path = "fixtures/heavy/vi-garden-scan.png.truth.json", sha256 = "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321" }]
+
+[[fixture]]
+id = "heavy-vi-garden-md"
+path = "fixtures/heavy/vi-garden.md"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "md"
+media_type = "text/markdown"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "e23d97d2dc5f87e003a548aecb9e1cc5eba47868ea9fd677a23027db3ae2772f"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["md->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.md.truth.json", sha256 = "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321" }]
+
+[[fixture]]
+id = "heavy-vi-garden-docx"
+path = "fixtures/heavy/vi-garden.docx"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "docx"
+media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "91a0b269cf4f447546416cf158007dc87cb14a28119d3256a373a64057c0c886"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["docx->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.docx.truth.json", sha256 = "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321" }]
+
+[[fixture]]
+id = "heavy-vi-garden-pptx"
+path = "fixtures/heavy/vi-garden.pptx"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "pptx"
+media_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "70e3b345268f0d152e2511a08c9307868b4372b61b0d15cbc85d4fabc337ff4b"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["pptx->md", "pptx->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.pptx.truth.json", sha256 = "a33d38b2f196bf73d30a2e19c0197c67fd209a426649353ae7455f3d1fb233ed" }]
+
+[[fixture]]
+id = "heavy-vi-garden-xlsx"
+path = "fixtures/heavy/vi-garden.xlsx"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "xlsx"
+media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks rendered by the project generator."
+attribution = "AriadShift contributors"
+sha256 = "a7c281bf531e2e7b8a79562b4c8bd10283fcfbfa4aded13e80119d03a88abe9f"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["xlsx->md", "xlsx->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.xlsx.truth.json", sha256 = "6f89cfdf28fdf0b579e0f0fc24550c7aa8ea9b9c176a16568039b006fe8eb143" }]
+
+[[fixture]]
+id = "heavy-en-map-odt"
+path = "fixtures/heavy/en-map.odt"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "odt"
+media_type = "application/vnd.oasis.opendocument.text"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "a16c28dcc2928754533a6e434fdcc569579b33c376f25a4456840dfdb0a476b4"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["odt->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.odt.truth.json", sha256 = "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13" }]
+
+[[fixture]]
+id = "heavy-en-map-ods"
+path = "fixtures/heavy/en-map.ods"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "ods"
+media_type = "application/vnd.oasis.opendocument.spreadsheet"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "6ae4a4c0830af0aaeeb6aabe7b6026e066cba486ba9bd5b859f3ecd8f9eff233"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["ods->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.ods.truth.json", sha256 = "0c4408c2d83c7dd25192b32eae45dc68193778a297ff236f8f93a0fe3a6dd70a" }]
+
+[[fixture]]
+id = "heavy-en-map-odp"
+path = "fixtures/heavy/en-map.odp"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "odp"
+media_type = "application/vnd.oasis.opendocument.presentation"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "7551ae6124b698c6b3c0f09cae4deba011e5dccf891ed64b350e31f015af8a51"
+pages = 1
+tags = ["heavy-bench", "headings"]
+phase = "1b"
+routes = ["odp->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.odp.truth.json", sha256 = "d238a74177d1f268acdf75e645400d615566c38c438a2d9903a2a8ddd0dd019f" }]
+
+[[fixture]]
+id = "heavy-en-map-doc"
+path = "fixtures/heavy/en-map.doc"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "doc"
+media_type = "application/msword"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "f563a0c03d7c8745c172b92c44c43c0f52410fc2bbdf4c76712eb96868a2d154"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["doc->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.doc.truth.json", sha256 = "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13" }]
+
+[[fixture]]
+id = "heavy-en-map-rtf"
+path = "fixtures/heavy/en-map.rtf"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "rtf"
+media_type = "application/rtf"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "efa0d3fd9229bc894efcb3377d3e71b9fd6e22a06e145f1031aade9fd14ccf6e"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["rtf->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.rtf.truth.json", sha256 = "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13" }]
+
+[[fixture]]
+id = "heavy-en-map-xls"
+path = "fixtures/heavy/en-map.xls"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "xls"
+media_type = "application/vnd.ms-excel"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "f9299dfd42f6cd59aba2dc5696ab3c8e8bb956ee02653990cee9a680991e71eb"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["xls->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.xls.truth.json", sha256 = "0c4408c2d83c7dd25192b32eae45dc68193778a297ff236f8f93a0fe3a6dd70a" }]
+
+[[fixture]]
+id = "heavy-en-map-ppt"
+path = "fixtures/heavy/en-map.ppt"
+visual_reference = "fixtures/heavy/en-map.pdf"
+format = "ppt"
+media_type = "application/vnd.ms-powerpoint"
+languages = ["en"]
+title = "Notes from the Map Room"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "9bb2b839b096661c077c9ab6b00af7f2178de9f80569227dc5e7620978722946"
+pages = 1
+tags = ["heavy-bench", "headings"]
+phase = "1b"
+routes = ["ppt->pdf"]
+companions = [{ path = "fixtures/heavy/en-map.ppt.truth.json", sha256 = "d238a74177d1f268acdf75e645400d615566c38c438a2d9903a2a8ddd0dd019f" }]
+
+[[fixture]]
+id = "heavy-vi-garden-odt"
+path = "fixtures/heavy/vi-garden.odt"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "odt"
+media_type = "application/vnd.oasis.opendocument.text"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "7360b3fad40bfa2bcb9c4adf1a681f37d231d05a2254a6260320e5f997a3a806"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["odt->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.odt.truth.json", sha256 = "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321" }]
+
+[[fixture]]
+id = "heavy-vi-garden-ods"
+path = "fixtures/heavy/vi-garden.ods"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "ods"
+media_type = "application/vnd.oasis.opendocument.spreadsheet"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "aa4aa1729fb9dd9bb60bde5b23363684e54c8b78b2e9a579621f92e6518df6e9"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["ods->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.ods.truth.json", sha256 = "6f89cfdf28fdf0b579e0f0fc24550c7aa8ea9b9c176a16568039b006fe8eb143" }]
+
+[[fixture]]
+id = "heavy-vi-garden-odp"
+path = "fixtures/heavy/vi-garden.odp"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "odp"
+media_type = "application/vnd.oasis.opendocument.presentation"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "14eb76de385a9e3b91c0fb8c9fda72c82422b475f888478340d1fed69ee4390c"
+pages = 1
+tags = ["heavy-bench", "headings"]
+phase = "1b"
+routes = ["odp->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.odp.truth.json", sha256 = "727522d105bd809443c80be6b5f37e4cd3576213104444773208d20cfda5ecef" }]
+
+[[fixture]]
+id = "heavy-vi-garden-doc"
+path = "fixtures/heavy/vi-garden.doc"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "doc"
+media_type = "application/msword"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "8ee87294e356f0eb0de0d5e35f9ba1db957adbf909cd70c747a89e74616cff1a"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["doc->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.doc.truth.json", sha256 = "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321" }]
+
+[[fixture]]
+id = "heavy-vi-garden-rtf"
+path = "fixtures/heavy/vi-garden.rtf"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "rtf"
+media_type = "application/rtf"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "6a0bb68d4fe33b3d9305e7baa5bd484c414d702fe42f999a6ad8bfd3393ebadd"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["rtf->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.rtf.truth.json", sha256 = "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321" }]
+
+[[fixture]]
+id = "heavy-vi-garden-xls"
+path = "fixtures/heavy/vi-garden.xls"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "xls"
+media_type = "application/vnd.ms-excel"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "4298d795f1c4b6d6a627af21fac12a54de960413c4da81911409655586a01e46"
+pages = 1
+tags = ["heavy-bench", "tables", "headings"]
+phase = "1b"
+routes = ["xls->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.xls.truth.json", sha256 = "6f89cfdf28fdf0b579e0f0fc24550c7aa8ea9b9c176a16568039b006fe8eb143" }]
+
+[[fixture]]
+id = "heavy-vi-garden-ppt"
+path = "fixtures/heavy/vi-garden.ppt"
+visual_reference = "fixtures/heavy/vi-garden.pdf"
+format = "ppt"
+media_type = "application/vnd.ms-powerpoint"
+languages = ["vi"]
+title = "Khu vườn đọc sách"
+origin = "generated"
+generated_by = "fixtures/gen/src/ariad_fixture_gen/heavy_office.py"
+license = "Apache-2.0"
+license_basis = "Original authored benchmark blocks; legacy exports generated once with LibreOffice."
+attribution = "AriadShift contributors"
+sha256 = "06d6b699ff6a4d2d7a39566bda29143391b2c40d979efb1b05d31e5a88c2c4b9"
+pages = 1
+tags = ["heavy-bench", "headings"]
+phase = "1b"
+routes = ["ppt->pdf"]
+companions = [{ path = "fixtures/heavy/vi-garden.ppt.truth.json", sha256 = "727522d105bd809443c80be6b5f37e4cd3576213104444773208d20cfda5ecef" }]

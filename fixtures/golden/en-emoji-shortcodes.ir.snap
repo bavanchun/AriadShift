@@ -52,5 +52,5 @@ input_file: fixtures/md/en-emoji-shortcodes.md
     "title": null
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

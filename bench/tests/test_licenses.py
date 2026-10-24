@@ -10,8 +10,13 @@ from __future__ import annotations
 import importlib.metadata
 from pathlib import Path
 import re
+import sys
 import tomllib
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "engines" / "docling" / "pack"))
+
+import licenses as pack_licenses
 
 BANNED_PACKAGE_NAMES = {
     "levenshtein",
@@ -29,17 +34,7 @@ BANNED_LICENSE_SUBSTRINGS = (
     "lgpl",
 )
 
-ALLOWED_EXACT_SPDX = {
-    "mit",
-    "mit-cmu",
-    "apache-2.0",
-    "bsd-2-clause",
-    "bsd-3-clause",
-    "psf-2.0",
-    "isc",
-    "unlicense",
-    "cc0-1.0",
-}
+ALLOWED_EXACT_SPDX = {item.lower() for item in pack_licenses.ALLOWED}
 
 ALLOWED_EXACT_CLASSIFIERS = {
     "license :: osi approved :: mit license",
@@ -48,6 +43,13 @@ ALLOWED_EXACT_CLASSIFIERS = {
     "license :: osi approved :: python software foundation license",
     "license :: osi approved :: isc license (iscl)",
 }
+
+
+def _reviewed_expression(name: str, field: str, expression: str) -> str:
+    # Reuse the pack's reviewed normalization only for this exact legacy metadata.
+    if name == "pypdfium2" and not expression and field == "BSD-3-Clause, Apache-2.0, dependency licenses":
+        return pack_licenses.OVERRIDES[name]
+    return expression
 
 
 def _is_permissive_exact(license_val: str, license_expr: str, classifiers: list[str]) -> bool:
@@ -78,6 +80,20 @@ def _is_permissive_exact(license_val: str, license_expr: str, classifiers: list[
 
 
 class TestLicenses(unittest.TestCase):
+    def test_composite_pdfium_metadata_is_specific_and_keeps_explicit_licenses(self) -> None:
+        field = "BSD-3-Clause, Apache-2.0, dependency licenses"
+        accepted = _reviewed_expression("pypdfium2", field, "")
+        self.assertTrue(_is_permissive_exact(field, accepted, []))
+        self.assertFalse(_is_permissive_exact("MPL-2.0", "", []))
+        for name, value, expression in [
+            ("another-package", field, ""),
+            ("pypdfium2", field + ", unknown", ""),
+            ("pypdfium2", field, "GPL-3.0-only"),
+        ]:
+            checked = _reviewed_expression(name, value, expression)
+            self.assertEqual(checked, expression)
+            self.assertFalse(_is_permissive_exact(value, checked, []))
+
     def test_no_banned_packages_in_uv_lock(self) -> None:
         """Verify uv.lock contains no banned or GPL packages."""
         root = Path(__file__).resolve().parents[2]
@@ -129,7 +145,8 @@ class TestLicenses(unittest.TestCase):
                     f"Package '{pkg_name}' contains banned license substring '{banned}'",
                 )
 
-            is_valid = _is_permissive_exact(license_val, license_expr, classifiers)
+            checked_expr = _reviewed_expression(pkg_name, license_val, license_expr)
+            is_valid = _is_permissive_exact(license_val, checked_expr, classifiers)
             self.assertTrue(
                 is_valid,
                 f"Package '{pkg_name}' does not have an exact allowed permissive license. "
@@ -137,7 +154,7 @@ class TestLicenses(unittest.TestCase):
             )
 
         # Assert all required bench dependencies and fixture-gen dependencies are verified
-        expected_bench = {"jiwer", "rapidfuzz", "apted", "psutil", "jsonschema"}
+        expected_bench = {"jiwer", "rapidfuzz", "apted", "psutil", "jsonschema", "numpy", "pypdfium2", "pillow"}
         expected_fixture_gen = {"lxml", "pillow", "python-docx", "typst"}
         self.assertTrue(
             expected_bench.issubset(installed_names),

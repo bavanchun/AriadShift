@@ -189,7 +189,7 @@ pub fn read_versioned(slice: &[u8], limits: &Limits) -> Result<Document, ReadErr
     let probe: Result<VersionProbe, serde_json::Error> = serde_json::from_slice(slice);
     match probe {
         Ok(v) => {
-            if v.version.as_deref() != Some(ariad_core::ir::IR_VERSION) {
+            if !ariad_core::ir::is_supported_version(v.version.as_deref()) {
                 return Err(ReadError::UnsupportedVersion);
             }
         }
@@ -201,9 +201,10 @@ pub fn read_versioned(slice: &[u8], limits: &Limits) -> Result<Document, ReadErr
         }
     }
 
-    let document: Document = read_json(slice, limits.max_ir_json_bytes, depth_budget)?;
+    let mut document: Document = read_json(slice, limits.max_ir_json_bytes, depth_budget)?;
     validate_block_count(&document, limits)?;
 
+    document.version = ariad_core::ir::IR_VERSION.to_owned();
     Ok(document)
 }
 
@@ -211,6 +212,19 @@ pub fn read_versioned(slice: &[u8], limits: &Limits) -> Result<Document, ReadErr
 mod tests {
     use super::*;
     use ariad_core::ir::Block;
+
+    #[test]
+    fn legacy_ir_is_accepted_without_losing_content() {
+        let bytes = br#"{"version":"ariad-ir/0","body":[{"type":"paragraph","content":[{"type":"text","text":"Legacy content"}]}]}"#;
+        let document = read_versioned(bytes, &Limits::local()).unwrap();
+        assert_eq!(document.version, ariad_core::ir::IR_VERSION);
+        assert_eq!(document.block_count(), 1);
+        assert!(
+            serde_json::to_string(&document)
+                .unwrap()
+                .contains("Legacy content")
+        );
+    }
 
     #[test]
     fn read_versioned_accepts_valid_ir() {

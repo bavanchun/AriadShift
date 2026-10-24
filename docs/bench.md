@@ -134,9 +134,11 @@ just pandoc
 ```
 
 ### Common Commands
-- **Run complete benchmark and update capabilities:**
+- **Run base edges, then heavy routes and update the report** (prepare Docling and LibreOffice first):
   ```bash
   just bench
+  just bench-heavy
+  just bench-report
   ```
 - **Validate capabilities against schema and invariants:**
   ```bash
@@ -191,3 +193,25 @@ where:
 | `faithful` | 0.70 | 0.20 | 0.10 | Prioritizes layout and visual preservation |
 | `fast` | 0.15 | 0.15 | 0.70 | Prioritizes conversion speed |
 | `private` | 0.30 | 0.60 | 0.10 | Filters graph strictly to local/WASM runtimes, then applies `editable` weights |
+
+## 8. PDF, OCR and Office measurements
+
+`fixtures/heavy/` contains English and Vietnamese inputs from the original block lists in `fixtures/gen/src/ariad_fixture_gen/heavy.py`: digital two-column PDFs with tables, lightly degraded 200 dpi PNG scans and image-only PDFs of those same pages, Markdown, DOCX, PPTX and XLSX. Truth companions contain canonical structure and independent IR authored from those lists. Every input and companion has a SHA-256 in `fixtures/manifest.toml`. Regenerate with `uv run --package ariad-fixture-gen python -m ariad_fixture_gen --only heavy` and `--only heavy-office`. The latter authors ODF files and preserves the committed legacy LibreOffice exports, whose metadata is not deterministic; LibreOffice is needed only when creating missing exports.
+
+Repeated generation must be byte-identical within one environment. Pillow's platform PNG compressors can emit different bytes for identical pixels, so cross-platform generation checks compare the exact pixel digest, dimensions, mode and metadata. ODF ZIP compression and host markers also vary; checks require identical ordered entries, uncompressed contents and document metadata. The committed inputs and truth used for calibration still require their exact manifest SHA-256. Benchmark text files are read and written explicitly as UTF-8.
+
+After the base `just bench` run, `just bench-heavy` measures individual engine edges and complete routes. Set `ASHIFT_DOCLING_ENGINE` to a prepared interpreter command (for example the value in [Docling setup](docling.md#running-it-from-a-checkout)). For an unpacked pack, set `ARIAD_BENCH_MODELS` and `ARIAD_BENCH_TESSDATA` to its model and OCR-data directories. `ARIAD_BENCH_TMPDIR` selects a disk-backed scratch directory when RAM-backed temporary storage is limited. `--ashift`, `--pandoc`, `--repeat`, `--out` and `--evidence` control the run. The default is three cold repetitions per fixture, without warm sessions.
+
+The heavy harness selects adapters directly through the engine protocol, so planner choices cannot select a different engine during a measurement. It measures digital PDF extraction with Rust and Docling; scanned PDF and PNG to Markdown and DOCX with both Tesseract and RapidOCR; PPTX/XLSX to Markdown; DOCX/PPTX/XLSX, ODT/ODS/ODP, DOC/XLS/PPT and RTF to PDF with LibreOffice; and Markdown/DOCX to PDF through IR and Typst. Markdown to LibreOffice PDF includes the native Markdown reader and Pandoc DOCX writer because LibreOffice has no Markdown reader.
+
+DOC, RTF and ODT to DOCX normalization is also measured, with Pandoc read-back against authored truth. This keeps structured Office paths represented alongside their PDF alternatives; otherwise the planner's pessimistic unmeasured-edge cost would favor a measured PDF detour over an unmeasured editable route.
+
+The default engine options are OCR off for digital inputs and an explicit backend for scans. Raw CER, heading TED, TEDS, fidelity, editability, wall time and peak process-tree RSS remain in `bench/results/heavy-routes.json`, separately for each fixture, engine and backend. Read-back and scoring are excluded from conversion time. Capability metrics aggregate the individual adapter measurements; complete route timings are never substituted for edge timings. Errors stop the heavy run without publishing partial capabilities. Timings include cold interpreter/model startup; the process tree is sampled with the same helper as the base suite. Capability timing is normalized per declared source page, while route evidence retains full job time.
+
+For the `faithful` comparison, `bench/` uses the produced PDF directly, renders DOCX through LibreOffice, and renders Markdown through the native reader and Typst. These visual read-back stages are excluded from route timing and memory; their renderer is recorded with each sample. It rasterizes the authored reference PDF and the rendered output PDF with pypdfium2 at 96 dpi, converts to grayscale and computes the mean local SSIM over non-overlapping 8×8 windows (population variance, data range 255, K1=0.01, K2=0.03). Page pairs are aligned at their top-left corners and padded white without scaling; missing or extra pages contribute zero and the mean uses the larger page count. SSIM is recorded independently from semantic fidelity and does not change the existing planner weights. Office output and reflowed Typst pages intentionally differ from the two-column reference; this measures layout preservation rather than claiming equivalent pagination across formats.
+
+PDF writer quality uses Rust PDF read-back, so its heading/table limitations also affect those scores. Docling extraction quality compares authored truth with Docling's own HTML export parsed by Pandoc. Mapper quality compares that independent interpretation of the Docling source with the mapped IR, so extraction loss is not charged again to the mapper. The HTML bridge preserves header flags and cell spans. Complete route scores are measured directly against authored truth. Backend-specific results are separate in the report. The single Docling graph edge aggregates digital OCR-off and scanned Tesseract measurements, matching the default engine without language hints; explicit RapidOCR results do not replace default-engine measurements. The planner does not expose an OCR-backend choice.
+
+`just bench-report` generates [the public report](bench-report.md) from capabilities plus persisted heavy-route measurements. `just bench-report --check` detects stale output. The scheduled, manual or `bench`-labelled [benchmark workflow](../.github/workflows/bench.yml) installs LibreOffice and Tesseract, prepares cached Docling models, runs real-engine conformance and publishes the capabilities, route evidence and generated report as workflow artifacts. Ordinary three-platform CI runs the benchmark tests and verifies the committed report without downloading models.
+
+The benchmark license gate uses the approved SPDX set from the [Docling pack license gate](../engines/docling/pack/licenses.py), including NumPy's `0BSD` and `Zlib` terms. Pack-specific MPL exceptions are not inherited. The pack's reviewed PDFium normalization applies only to `pypdfium2`'s exact composite license descriptor; explicit expressions retain their existing checks. The [upstream licensing documentation](https://pypdfium2.readthedocs.io/en/stable/readme.html#licensing) distinguishes the Apache-2.0/BSD-3-Clause code from documentation and examples. PDFium is a development dependency here; its binaries and upstream examples are not added to the CLI or benchmark artifacts.

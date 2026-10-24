@@ -83,7 +83,10 @@ dependencies = [
     { name = "apted" },
     { name = "jiwer" },
     { name = "jsonschema" },
+    { name = "numpy" },
+    { name = "pillow" },
     { name = "psutil" },
+    { name = "pypdfium2" },
     { name = "rapidfuzz" },
 ]
 
@@ -99,7 +102,10 @@ requires-dist = [
     { name = "apted", specifier = "==1.0.3" },
     { name = "jiwer", specifier = "==4.0.0" },
     { name = "jsonschema", specifier = "==4.26.0" },
+    { name = "numpy", specifier = "==2.5.4" },
+    { name = "pillow", specifier = "==12.3.0" },
     { name = "psutil", specifier = "==7.2.2" },
+    { name = "pypdfium2", specifier = "==5.14.0" },
     { name = "rapidfuzz", specifier = "==3.14.6" },
 ]
 

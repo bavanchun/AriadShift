@@ -346,6 +346,7 @@ def measure_execution(
     sample_interval_s: float = 0.0005,
     env: dict[str, str] | None = None,
     timeout_s: float = 60.0,
+    stdin_path: Path | None = None,
 ) -> tuple[int, str, str, float, int | None]:
     """Execute a command, tracking wall-clock time and sampling process tree peak RSS.
 
@@ -359,10 +360,12 @@ def measure_execution(
     start_time = time.perf_counter()
 
     with tempfile.TemporaryFile(mode="w+b") as out_f, \
-         tempfile.TemporaryFile(mode="w+b") as err_f:
+         tempfile.TemporaryFile(mode="w+b") as err_f, \
+         (stdin_path.open("rb") if stdin_path else open(os.devnull, "rb")) as in_f:
         proc = subprocess.Popen(
             cmd,
             cwd=cwd,
+            stdin=in_f,
             stdout=out_f,
             stderr=err_f,
             env=env,
