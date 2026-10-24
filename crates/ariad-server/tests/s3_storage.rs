@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use ariad_server::{
     config::{Env, StorageConfig},
-    storage::{CHECKSUM_HEADER, Storage},
+    storage::{CHECKSUM_HEADER, Storage, UPLOAD_URL_TTL},
 };
 use common::{Auth, Harness, Options, sha256_hex, text};
 use serde_json::{Value, json};
@@ -90,6 +90,37 @@ async fn completed_upload_size_checks_and_retired_url_expiry_bound_storage() {
     };
     let auth = Auth::Anonymous;
     let bytes = b"# Valid small input";
+    let valid = h.upload(&auth, "valid.md", bytes).await;
+    let valid_id = valid["id"].as_str().unwrap();
+    let valid_key: String =
+        sqlx::query_scalar("SELECT storage_key FROM uploads WHERE id = $1::uuid")
+            .bind(valid_id)
+            .fetch_one(&h.db.pool)
+            .await
+            .unwrap();
+    for age in [
+        Duration::from_secs(180),
+        UPLOAD_URL_TTL + Duration::from_secs(60),
+    ] {
+        sqlx::query("UPDATE uploads SET created_at = now() - $2 * interval '1 second', size_checked_at = NULL WHERE id = $1::uuid")
+            .bind(valid_id).bind(age.as_secs_f64()).execute(&h.db.pool).await.unwrap();
+        ariad_server::sweeper::sweep_once(&h.db.pool, &storage)
+            .await
+            .unwrap();
+        let (status, checked): (String, bool) = sqlx::query_as(
+            "SELECT status, size_checked_at IS NOT NULL FROM uploads WHERE id = $1::uuid",
+        )
+        .bind(valid_id)
+        .fetch_one(&h.db.pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "completed");
+        assert!(checked, "the valid completed input was actually checked");
+        assert_eq!(
+            storage.size(&valid_key).await.unwrap(),
+            Some(bytes.len() as u64)
+        );
+    }
     for (index, replacement) in [
         b"oversized replayed input body".as_slice(),
         b"wrong hash same len".as_slice(),
@@ -130,28 +161,40 @@ async fn completed_upload_size_checks_and_retired_url_expiry_bound_storage() {
         assert_eq!(job["attempts"], 1, "invalid inputs must not retry: {job}");
         assert_eq!(storage.size(&key).await.unwrap(), None);
         h.stop_workers().await;
-        // The signed URL was issued moments ago; age only the database row to
-        // prove a retired row is no longer selected once its URL window ends.
-        sqlx::query("UPDATE uploads SET status = 'deleted', created_at = now() - interval '16 minutes', size_checked_at = NULL WHERE id = $1::uuid")
-            .bind(id).execute(&h.db.pool).await.unwrap();
+        // Age only the row; the actual URL was issued moments ago. Simulate
+        // a last check just before expiry followed by a late replay, for both
+        // completed and retired inputs. The final check must still remove it.
+        let status = if index == 0 { "completed" } else { "deleted" };
+        sqlx::query("UPDATE uploads SET status = $2, created_at = now() - $3 * interval '1 second', size_checked_at = now() - interval '2 minutes' WHERE id = $1::uuid")
+            .bind(id).bind(status).bind((UPLOAD_URL_TTL + Duration::from_secs(60)).as_secs_f64())
+            .execute(&h.db.pool).await.unwrap();
         put_changed_input(&h, &storage, &upload, &key, replacement).await;
         ariad_server::sweeper::sweep_once(&h.db.pool, &storage)
             .await
             .unwrap();
         let checked: bool = sqlx::query_scalar(
-            "SELECT size_checked_at IS NOT NULL FROM uploads WHERE id = $1::uuid",
+            "SELECT size_checked_at >= created_at + $2 * interval '1 second' FROM uploads WHERE id = $1::uuid",
         )
         .bind(id)
+        .bind(UPLOAD_URL_TTL.as_secs_f64())
         .fetch_one(&h.db.pool)
         .await
         .unwrap();
-        assert!(!checked);
+        assert!(checked);
+        assert_eq!(storage.size(&key).await.unwrap(), None);
+        // A successful post-expiry check ends HEAD rotation for this row.
+        // This replacement uses a still-live test URL, unlike the aged row.
+        put_changed_input(&h, &storage, &upload, &key, replacement).await;
+        ariad_server::sweeper::sweep_once(&h.db.pool, &storage)
+            .await
+            .unwrap();
         assert_eq!(
             storage.size(&key).await.unwrap(),
             Some(replacement.len() as u64)
         );
         storage.delete(&key).await.unwrap();
     }
+    storage.delete(&valid_key).await.unwrap();
     h.stop().await;
 }
 

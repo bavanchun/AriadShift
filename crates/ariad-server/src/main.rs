@@ -25,6 +25,8 @@ struct Cli {
 enum Command {
     #[command(name = "__convert", hide = true)]
     Convert,
+    #[command(name = "__check-helper-network", hide = true)]
+    CheckHelperNetwork,
     /// Serve the /v1 HTTP API.
     Api,
     /// Run conversion jobs from the queues of the given engine packs.
@@ -48,10 +50,13 @@ fn main() -> ExitCode {
         eprintln!("ariad-server: cannot protect worker credentials: {err}");
         return ExitCode::FAILURE;
     }
-    if let Command::Convert = cli.command {
+    if matches!(cli.command, Command::Convert | Command::CheckHelperNetwork) {
         if let Err(err) = ariad_server::sandbox::deny_helper_network() {
             eprintln!("ariad-server: cannot deny helper network access: {err}");
             return ExitCode::FAILURE;
+        }
+        if matches!(cli.command, Command::CheckHelperNetwork) {
+            return ExitCode::SUCCESS;
         }
         return match ariad_host::convert::isolated::serve(CancellationToken::new()) {
             Ok(()) => ExitCode::SUCCESS,
@@ -60,6 +65,32 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+    if matches!(cli.command, Command::Worker { .. }) {
+        // Probe in a disposable child so the worker keeps database/storage
+        // network access. This helper boundary is mandatory in every mode.
+        let result = std::env::current_exe().and_then(|program| {
+            std::process::Command::new(program)
+                .arg("__check-helper-network")
+                .env_clear()
+                .stdin(std::process::Stdio::null())
+                .output()
+        });
+        match result {
+            Ok(output) if output.status.success() => {}
+            Ok(output) => {
+                eprintln!(
+                    "ariad-server: helper network preflight failed ({}): {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+                return ExitCode::FAILURE;
+            }
+            Err(err) => {
+                eprintln!("ariad-server: cannot probe helper network access: {err}");
+                return ExitCode::FAILURE;
+            }
+        }
     }
     if let Command::Openapi = cli.command {
         return match ariad_server::api::openapi().to_pretty_json() {
@@ -94,7 +125,9 @@ async fn run(command: Command) -> ExitCode {
     let service = match &command {
         Command::Api => "ariad-server-api",
         Command::Worker { .. } => "ariad-server-worker",
-        Command::Migrate | Command::Openapi | Command::Convert => "ariad-server",
+        Command::Migrate | Command::Openapi | Command::Convert | Command::CheckHelperNetwork => {
+            "ariad-server"
+        }
     };
     let telemetry = match TelemetryConfig::from_env(&env)
         .map_err(|e| e.to_string())
@@ -148,7 +181,7 @@ async fn execute(command: Command, env: &Env) -> Result<(), String> {
                 .await
                 .map_err(|e| e.to_string())
         }
-        Command::Openapi | Command::Convert => Ok(()),
+        Command::Openapi | Command::Convert | Command::CheckHelperNetwork => Ok(()),
     }
 }
 
