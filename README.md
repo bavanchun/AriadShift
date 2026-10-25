@@ -2,134 +2,186 @@
 
 ![AriadShift logo](brand/png/ariadshift-lockup-1200.png)
 
-AriadShift is an open-source, local-first document transformation platform in
-early development. Its goal is to turn documents into clean Markdown and
-structured data through a shared engine used by local and hosted interfaces.
+AriadShift is an open-source, local-first document transformation platform. It
+turns documents into clean Markdown, HTML, DOCX, EPUB, PDF and structured JSON
+through one shared Rust core, used by every surface:
 
-The repository converts Markdown, HTML, DOCX and EPUB, extracts digital PDF text, writes PDF with embedded Vietnamese fonts, and exports IR JSON. A system LibreOffice adds legacy Office and ODF conversion.
+| Surface | Runs on | Guide |
+|---|---|---|
+| CLI `ashift` | Linux, macOS, Windows | [CLI reference](docs/cli.md) |
+| MCP server | Local over stdio (`ashift mcp`), or remote over Streamable HTTP from the API server | [MCP reference](docs/mcp.md) |
+| Web app, local mode | The browser, through WebAssembly; files stay on the device | [Web app](docs/web.md) |
+| Web app, cloud mode | An AriadShift server, opt-in per file | [Web app](docs/web.md#cloud-mode) |
+| Desktop app | macOS (Apple silicon), Windows, Linux | [Desktop app](docs/desktop.md) |
+| Self-hosted cloud | One Linux host with Docker Compose | [Self-hosting](docs/self-hosting.md) |
+| REST API `/v1` and `@ariadshift/sdk` | The self-hosted server | [Cloud API](docs/api.md) |
 
-The website converts Markdown, HTML, and AriadShift IR JSON entirely in the
-browser; files never leave the device.
+The base install converts Markdown, HTML, DOCX and EPUB, extracts digital PDF
+text, writes PDF with embedded Vietnamese fonts, and exports IR JSON. A system
+LibreOffice adds legacy Office and ODF routes. The signed `docling` engine pack
+adds OCR for scans and layout-aware PDF, Office and image extraction.
 
 ## Installation
 
-Prebuilt standalone binaries are published on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases) for Linux (`x86_64` and `aarch64` static musl), macOS (Apple Silicon and Intel), and Windows (`x86_64`).
-
-> [!NOTE]
-> AriadShift invokes Pandoc (`>= 3.12, < 4`) as an external, out-of-process executable for DOCX and EPUB conversions.
-> Install Pandoc from the [official release](https://github.com/jgm/pandoc/releases) (distribution packages are frequently older than 3.12) or set `ASHIFT_PANDOC` to the executable path. The Homebrew formula, once published, installs Pandoc as a dependency; on Intel macOS (`x86_64-apple-darwin`) Homebrew builds Pandoc from source, so the official Pandoc installer package is significantly faster there.
-
-### Shell Installer (Linux & macOS)
+[docs/install.md](docs/install.md) covers every channel, checksum and Minisign
+verification, the first launch of the unsigned desktop builds, and the runtime
+prerequisites. The short version:
 
 ```sh
+# CLI, Linux and macOS
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-installer.sh | sh
+
+# CLI, Homebrew (macOS and Linux; installs Pandoc as a dependency)
+brew install bavanchun/tap/ashift
 ```
 
-### PowerShell Installer (Windows)
-
 ```powershell
+# CLI, Windows
 irm https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-installer.ps1 | iex
 ```
 
-### Manual Download
+[GitHub Releases](https://github.com/bavanchun/AriadShift/releases) also carry
+the standalone CLI archives with `.sha256` files, the desktop installers
+(`.dmg`, `-setup.exe`, `.msi`, `.deb`, `.rpm`, `.AppImage`) with `SHA256SUMS`
+and Minisign signatures, and the Homebrew formula. Desktop builds are not
+code-signed: macOS Gatekeeper and Windows SmartScreen ask for confirmation on
+first launch ([steps](docs/install.md#3-desktop-installation-and-first-run-guide)).
+Container images for the cloud stack are published to GHCR.
 
-Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`, and ships with a `.sha256` checksum.
+> [!NOTE]
+> DOCX and EPUB routes run Pandoc (`>= 3.12, < 4`) as a separate process.
+> Install it from the [official release](https://github.com/jgm/pandoc/releases)
+> (distribution packages are often older) or set `ASHIFT_PANDOC` to its path.
+> Homebrew installs it for you. `ashift doctor` reports what is missing.
 
-### Package managers (not yet published)
-
-The release pipeline is ready for Homebrew, crates.io and WinGet, but v0.1.0 has not reached them yet: the Homebrew formula and the crates were not published, and no WinGet submission exists. These commands work once each channel is published:
-
-```sh
-# Homebrew (macOS & Linux)
-brew install bavanchun/tap/ashift
-
-# crates.io: prebuilt binary through cargo-binstall, or a source build
-cargo binstall ariad-cli
-cargo install ariad-cli
-```
-
-```powershell
-# Windows Package Manager
-winget install VChun.AriadShift
-```
-
-## Convert Documents
-
-Convert between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`) with `ashift convert`; PDF and IR JSON are also supported:
+## CLI quick start
 
 ```sh
-just pandoc
 ashift convert notes.md --to docx
-ashift convert notes.md --to html
 ashift convert report.docx --to md
-ashift convert book.epub --to md
+ashift convert book.epub --to html
 ashift convert draft.md notes.md --to docx -o output/  # existing directory
 ashift convert report.pdf --to md
 ashift convert notes.md --to pdf
 ashift convert notes.md --to json
-# Requires system LibreOffice >=24.2 (or set ASHIFT_SOFFICE)
+# Requires system LibreOffice >= 24.2 (or set ASHIFT_SOFFICE)
 ashift convert legacy.doc --to md
 ashift convert slides.pptx --to pdf
 ```
 
-The default output is `<input stem>.<target extension>` beside the input. Use `-o` to choose another
-path and `--overwrite` to replace an existing destination. Select a routing goal with
-`--profile <editable|faithful|fast|private>` (defaults to `editable`). Same-format conversions (such as `md -> md`)
-are refused with exit code 3; destinations matching the input path are refused with exit code 2. Stdout
-contains the output path; warnings are written to stderr. Press Ctrl-C (or send SIGTERM/SIGHUP) to cancel a running
-conversion and clean up its temporary workspace. Set `ASHIFT_PANDOC` to select
-an existing Pandoc executable instead of installing the repository-pinned one.
+The output defaults to `<input stem>.<target extension>` beside the input. Use
+`-o` to choose another path, `--overwrite` to replace an existing file, and
+`--profile <editable|faithful|fast|private>` to pick the routing goal
+(`editable` by default). With several inputs, conversion continues after a
+failure and returns the first failure's exit code. Ctrl-C (or SIGTERM/SIGHUP)
+cancels a conversion and cleans up its workspace.
 
-With several inputs, conversion continues after individual failures and returns the first
-failure's exit code. `--json` returns a `results` array. Linux engines use a Landlock/seccomp
-sandbox by default; `ashift doctor` reports kernel support and `ASHIFT_SANDBOX` controls the mode.
-
-## Inspect, Plan, and Diagnose
-
-Inspect document structure, preview planned conversion routes, and check local environment readiness:
+Engines run out of process inside a sandbox: Landlock and seccomp on Linux, and
+Seatbelt on macOS when `sandbox-exec` is present. `ASHIFT_SANDBOX` selects
+`best-effort` (default), `required` or `off`.
 
 ```sh
-ashift inspect report.docx
-ashift plan report.docx --to md
-ashift engines
-ashift doctor
+ashift inspect report.docx         # format, structure, reachable targets
+ashift plan report.docx --to md    # the chosen route and its scores
+ashift engines                     # engines, versions, licenses, packs
+ashift engines install docling     # download and verify a signed engine pack
+ashift doctor                      # check Pandoc, sandbox, packs and Tesseract
 ```
 
-Add `--json` to any command for structured machine-readable output. See [`docs/cli.md`](docs/cli.md) for the complete reference.
+Add `--json` to any command for machine-readable output. The docling pack runs
+offline once installed (`--from <dir>` installs it without network access); OCR
+also needs a system Tesseract 5. See [docs/cli.md](docs/cli.md),
+[docs/packs.md](docs/packs.md) and [docs/docling.md](docs/docling.md).
 
-Heavy engines such as Docling ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the first published pack, docling, arrives with v0.2.0 and adds PDF, PPTX, XLSX and image inputs, with OCR for scans. See [`docs/packs.md`](docs/packs.md) and [`docs/docling.md`](docs/docling.md).
+## MCP
 
-## Convert in the Browser
+Give an AI assistant (Claude Code, Claude Desktop, Cursor and other MCP clients)
+local conversion tools confined to the directories you allow:
 
-The web app in [`apps/web`](apps/web) runs the same core compiled to
-WebAssembly. Files stay in the browser's private storage, the converter keeps
-working offline after the first visit, and every route shows its measured
-quality. Run it locally:
+```sh
+ashift mcp --allow-dir ~/Documents
+```
+
+The stdio server exposes `list_engines`, `inspect`, `plan` and `convert`.
+A self-hosted API server also serves remote MCP at `/mcp` over Streamable HTTP,
+authenticated with OAuth 2.1 (dynamic client registration, PKCE) or API keys,
+with the same quotas as the REST API. See [docs/mcp.md](docs/mcp.md) for client
+configuration and both tool sets.
+
+## Web app
+
+The Next.js app in [`apps/web`](apps/web) runs the core compiled to
+WebAssembly. Local mode converts Markdown, HTML, DOCX, EPUB and IR JSON, reads
+digital PDF text and writes PDF in the browser; files never leave the device,
+and downloaded routes keep working offline. When the build points at an
+AriadShift server, cloud mode offers server conversion for Office formats,
+scans and large files, plus sign-in, API keys and a jobs page. Nothing is
+uploaded until the user chooses the server for a file.
 
 ```sh
 just js
 just web-dev   # http://localhost:3200
 ```
 
-See [`docs/web.md`](docs/web.md) for building, testing, and deploying it as a
-static site or a Node.js server.
-
-## Model Context Protocol (MCP)
-
-Run an MCP server over standard I/O for AI assistants (such as Claude Code, Claude Desktop, or Cursor):
-
-```sh
-ashift mcp --allow-dir ~/Documents
-```
-
-The server exposes 4 tools (`list_engines`, `inspect`, `plan`, and `convert`) with strict path confinement, capability-based directory access, dynamic roots synchronization, and `resources/read` support. See [`docs/mcp.md`](docs/mcp.md) for configuration and tool details.
+See [docs/web.md](docs/web.md) for cloud configuration, building and
+deploying.
 
 ## Desktop app
 
-The Tauri app in `apps/desktop` converts local files and batches, watches folders,
-manages signed engine packs and opens `ariadshift://` links. Run `just desktop-dev`
-for development or `just desktop-build` for installers. See
-[the desktop guide](docs/desktop.md) for setup, dependencies and updates.
+The Tauri app in [`apps/desktop`](apps/desktop) converts files and batches,
+watches folders, manages signed engine packs, opens `ariadshift://` links from
+the web app, adds "Convert with AriadShift" to Finder, Explorer and Linux file
+managers, and updates itself. Install it from GitHub Releases, or build it with
+`just desktop-dev` (development) and `just desktop-build` (local installers).
+See [docs/desktop.md](docs/desktop.md).
+
+## Self-hosted cloud
+
+The cloud stack (web app, Better Auth service, `/v1` API, conversion workers,
+PostgreSQL with pgmq, SeaweedFS) runs on one Linux host with no external
+account:
+
+```sh
+cp .env.example infra/compose/.env   # then replace every "replace-with-…" value
+docker compose -f infra/compose/docker-compose.yml --profile core up -d --wait
+```
+
+The web app is then at `http://localhost:3000` and the API at
+`http://localhost:8080`. Add `--profile office` for LibreOffice routes or
+`--profile docling` for OCR. [docs/self-hosting.md](docs/self-hosting.md)
+lists the prerequisites (Landlock and seccomp are required for the workers),
+profiles, sizing and reverse-proxy rules; [docs/server.md](docs/server.md) is
+the reference for every server setting.
+
+## API and SDK
+
+The `/v1` REST API is stable: `schemas/openapi.v1.json` is the contract, and a
+snapshot test refuses breaking changes. Callers authenticate with a 15-minute
+JWT from the auth service, an API key (`x-api-key`), or anonymously on small
+files when the server allows it. A conversion uploads the file through one
+presigned `PUT`, creates a job, follows its Server-Sent Events and downloads
+the outputs.
+
+[`@ariadshift/sdk`](packages/sdk) is the TypeScript client, generated from the
+OpenAPI document with helpers for uploads, events and downloads. It is a
+workspace package, not published to npm:
+
+```ts
+import { openAsBlob } from "node:fs";
+import { createAriadClient } from "@ariadshift/sdk";
+
+const ariad = createAriadClient({
+  baseUrl: "http://localhost:8080",
+  credentials: { apiKey: process.env.ASHIFT_API_KEY ?? "" },
+});
+const file = await openAsBlob("report.docx");
+const upload = await ariad.upload(file, { filename: "report.docx" });
+const job = await ariad.createJob({ uploadId: upload.id, to: "md" });
+for await (const event of ariad.events(job.id)) console.log(event.kind);
+```
+
+See [docs/api.md](docs/api.md) for the full flow, every endpoint, limits,
+errors and the versioning policy.
 
 ## Development
 
@@ -153,27 +205,13 @@ cargo install --locked typos-cli --version 1.50.3
 The quality gate uses `just`, `cargo-nextest`, `cargo-deny`, and `typos-cli`;
 `cargo-insta` is for snapshot work.
 
-Build and inspect the current CLI:
-
 ```sh
+just pandoc               # download Pandoc 3.12 and verify its checksum
 cargo build --workspace
 cargo run -p ariad-cli -- --version
+just ci                   # the repository quality gate
+just fixtures             # regenerate the fixture corpus and its hashes
 ```
-
-Run the repository quality gate with:
-
-```sh
-just ci
-```
-
-Regenerate the deterministic fixture corpus and refresh its hashes with:
-
-```sh
-just fixtures
-```
-
-`just pandoc` downloads Pandoc 3.12 and verifies its archive checksum. Run it
-before working on tasks that use Pandoc.
 
 `just test-server` runs the `ariad-server` database and S3 tests against
 throwaway PostgreSQL (with pgmq) and SeaweedFS containers; it needs Docker.
@@ -181,18 +219,22 @@ throwaway PostgreSQL (with pgmq) and SeaweedFS containers; it needs Docker.
 Install JavaScript workspace dependencies with `just js`; then build the brand
 with `pnpm --dir brand build`. The root `package.json`,
 `pnpm-workspace.yaml`, and `pnpm-lock.yaml` own the JavaScript workspace
-(`apps/*`, `packages/*`, and `brand`). `just ci` also builds the wasm module
-and the web app; `just web-browsers` and `just web-e2e` run its browser tests.
+(`apps/*`, `packages/*`, `services/*` and `brand`). `just ci` also builds the
+wasm modules, the web app and the desktop checks; `just web-browsers` and
+`just web-e2e` run the browser tests. [docs/ci.md](docs/ci.md) describes the
+CI jobs and [docs/git-workflow.md](docs/git-workflow.md) how changes land.
 
 ## Project documents
 
-- [CLI reference](docs/cli.md)
+- [Installation and first run](docs/install.md)
+- [CLI reference](docs/cli.md), [engine packs](docs/packs.md) and [Docling](docs/docling.md)
 - [MCP server reference](docs/mcp.md)
 - [Web app](docs/web.md)
-- [Cloud API reference](docs/api.md) and [cloud server operation](docs/server.md)
 - [Desktop app](docs/desktop.md)
+- [Self-hosting](docs/self-hosting.md), [server operation](docs/server.md) and [cloud API](docs/api.md)
+- [Benchmarks](docs/bench.md) and the [benchmark report](docs/bench-report.md)
 - [System architecture](ARCHITECTURE.md)
 - [Security reporting](docs/SECURITY.md)
-- [Git workflow](docs/git-workflow.md)
+- [Git workflow](docs/git-workflow.md) and [CI](docs/ci.md)
 - [Release procedure](docs/releasing.md)
 - [License](LICENSE) and [third-party notices](NOTICE)
