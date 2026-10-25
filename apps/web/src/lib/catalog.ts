@@ -47,7 +47,7 @@ export function loadPairs(): PairRoute[] {
   const pairs: PairRoute[] = [];
   for (const from of FORMATS) {
     for (const to of FORMATS) {
-      if (from === to) {
+      if (from === to || from.internal || to.internal) {
         continue;
       }
       let best: Plan;

@@ -123,7 +123,7 @@ test("offers the desktop app for legacy Office input", async ({ page }) => {
   await expect(page.getByTestId("detected-format")).toHaveText("Rich Text (RTF)");
   await expect(page.getByRole("link", { name: "Open in Desktop" })).toHaveAttribute(
     "href",
-    "ariadshift://open?route=rtf-markdown&profile=faithful",
+    "ariadshift://open?route=rtf-md&profile=faithful",
   );
   await expect(page.getByText("Process in Cloud")).toHaveCount(0);
 });
@@ -249,9 +249,23 @@ test("refuses files above the browser limit", async ({ page }) => {
   await expect(page.getByTestId("converter-error")).toContainText("up to 16 MB");
   await expect(page.getByRole("link", { name: "Open in Desktop" })).toHaveAttribute(
     "href",
-    "ariadshift://open?route=markdown-html&profile=editable",
+    "ariadshift://open?route=md-html&profile=editable",
   );
   await expect(page.getByRole("button", { name: "Choose a file" })).toBeVisible();
+});
+
+test("offers a compatible Desktop route for oversized IR JSON", async ({ page }) => {
+  await page.goto("/app?to=docx&profile=private");
+  await page.locator("input[type=file]").setInputFiles({
+    name: "huge.ir.json",
+    mimeType: "application/json",
+    buffer: Buffer.alloc(17 * 1024 * 1024, " "),
+  });
+  await expect(page.getByTestId("converter-error")).toContainText("up to 16 MB");
+  await expect(page.getByRole("link", { name: "Open in Desktop" })).toHaveAttribute(
+    "href",
+    "ariadshift://open?route=json-docx&profile=private",
+  );
 });
 
 test("the file picker is keyboard operable", async ({ page }) => {

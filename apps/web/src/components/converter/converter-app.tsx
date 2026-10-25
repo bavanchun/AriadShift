@@ -40,7 +40,7 @@ import type {
   OutputLocation,
 } from "@/converter/protocol";
 import { formatBytes } from "@/lib/format-bytes";
-import { ACCEPT, formatLabel } from "@/lib/formats";
+import { ACCEPT, desktopLink, formatLabel } from "@/lib/formats";
 import { isProfile, PROFILES } from "@/lib/profiles";
 
 type Phase = "idle" | "ingesting" | "ready" | "converting" | "done";
@@ -324,7 +324,7 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
     handoffTargets[0];
   const desktopUrl =
     handoffFormat && desktopTarget
-      ? `ariadshift://open?route=${encodeURIComponent(`${handoffFormat}-${desktopTarget}`)}&profile=${encodeURIComponent(profile)}`
+      ? desktopLink(handoffFormat, desktopTarget, profile)
       : "/download";
   const headingCount = inspection?.counts
     ? Object.values(inspection.counts.headings).reduce((sum, count) => sum + count, 0)
