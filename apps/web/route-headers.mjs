@@ -7,21 +7,23 @@
 // scripts by SHA-256. `next start` cannot hash pages that do not exist yet when Next.js
 // compiles its header table, so it allows inline scripts instead; everything else is the
 // same policy. Cross-origin isolation is limited to the converter so embeds and sign-in
-// popups elsewhere keep working.
+// popups elsewhere keep working. The account pages call the cloud services too, so they
+// get the cloud origins in connect-src but none of the converter's other grants.
 import { createHash } from "node:crypto";
 
 /** @typedef {{ key: string; value: string }} Header */
 /** @typedef {{ source: string; headers: Header[] }} RouteHeaders */
-/** @typedef {"site" | "converter"} PageProfile */
+/** @typedef {"site" | "account" | "converter"} PageProfile */
 /**
- * Extra sources the converter talks to in cloud mode, from build-time configuration.
+ * Extra sources the cloud pages talk to in cloud mode, from build-time configuration.
  * @typedef {{ connect: string[]; script: string[]; frame: string[] }} CloudSources
  */
 /**
  * @typedef {object} PolicyOptions
  * @property {string[] | "unsafe-inline"} inlineScripts `'sha256-…'` sources of the page's
  *   inline scripts, or `"unsafe-inline"` where they cannot be hashed (`next start`).
- * @property {CloudSources} [cloud] Cloud mode origins; converter pages only.
+ * @property {CloudSources} [cloud] Cloud mode origins: connect-src on account and
+ *   converter pages, Turnstile on the converter only.
  * @property {boolean} [dev] `next dev`: React needs `'unsafe-eval'` for its debugging aids.
  */
 
@@ -73,6 +75,29 @@ export function isConverterPath(/** @type {string} */ route) {
 }
 
 /**
+ * The pages of `src/app/(account)`, which sign in and call the API from the browser.
+ * The header tests check this list against that directory.
+ */
+export const accountPaths = ["/account", "/api-keys", "/jobs", "/sign-in"];
+
+/** Whether a route path is one of the account pages. */
+export function isAccountPath(/** @type {string} */ route) {
+  return accountPaths.includes(route.replace(/(?:\/index)?\.html$|\/$/, ""));
+}
+
+/**
+ * The profile of the page served at a route path.
+ * @param {string} route
+ * @returns {PageProfile}
+ */
+export function pageProfile(route) {
+  if (isConverterPath(route)) {
+    return "converter";
+  }
+  return isAccountPath(route) ? "account" : "site";
+}
+
+/**
  * The Content-Security-Policy of one page.
  * @param {PageProfile} profile
  * @param {PolicyOptions} options
@@ -80,7 +105,12 @@ export function isConverterPath(/** @type {string} */ route) {
  */
 export function contentSecurityPolicy(profile, { inlineScripts, cloud, dev = false }) {
   const converter = profile === "converter";
-  const extra = converter && cloud ? cloud : { connect: [], script: [], frame: [] };
+  const sources = cloud ?? { connect: [], script: [], frame: [] };
+  const extra = {
+    connect: profile === "site" ? [] : sources.connect,
+    script: converter ? sources.script : [],
+    frame: converter ? sources.frame : [],
+  };
   const inline =
     inlineScripts === "unsafe-inline"
       ? ["'unsafe-inline'"]
@@ -200,8 +230,10 @@ export function serverRouteHeaders({ env, dev = false }) {
     value: contentSecurityPolicy(profile, { inlineScripts: "unsafe-inline", cloud, dev }),
   });
   const converter = [...isolation, policy("converter")];
+  const account = [policy("account")];
   return [
     { source: "/:path*", headers: [...commonHeaders, policy("site")] },
+    ...accountPaths.map((source) => ({ source, headers: account })),
     { source: "/app", headers: converter },
     { source: "/app/:path*", headers: converter },
     { source: "/_next/static/chunks/:path*", headers: chunkHeaders },
@@ -229,9 +261,9 @@ export function pagePaths(file) {
 }
 
 /**
- * Header rules for a static export: one rule per exported page with its own hashes (the
- * converter's pages also isolated), the worker scripts and the headers every response
- * carries. No two rules set the same header on one path, because Netlify joins the values
+ * Header rules for a static export: one rule per exported page with its own hashes and
+ * profile (the converter's pages also isolated), the worker scripts and the headers every
+ * response carries. No two rules set the same header on one path, because Netlify joins the values
  * of every matching rule: two joined CSPs would both apply, and a joined COOP is invalid.
  * @param {{ pages: Array<{ file: string; html: string }>; env: Record<string, string | undefined> }} options
  * @returns {{ common: Header[]; rules: RouteHeaders[] }}
@@ -242,7 +274,7 @@ export function staticHeaderRules({ pages, env }) {
   const rules = [];
   for (const { file, html } of [...pages].sort((a, b) => a.file.localeCompare(b.file))) {
     const paths = pagePaths(file);
-    const profile = paths.some(isConverterPath) ? "converter" : "site";
+    const profile = pageProfile(paths[0] ?? "");
     const policy = contentSecurityPolicy(profile, {
       inlineScripts: inlineScriptHashes(html),
       cloud,

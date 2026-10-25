@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
+import path from "node:path";
 import {
+  accountPaths,
   cloudSources,
   commonHeaders,
   contentSecurityPolicy,
@@ -7,6 +10,7 @@ import {
   netlifyHeaders,
   nginxServer,
   pagePaths,
+  pageProfile,
   serverRouteHeaders,
   staticHeaderRules,
 } from "../route-headers.mjs";
@@ -41,6 +45,8 @@ const PAGES = [
   { file: "app.html", html: page(`<script>${payload(1)}</script>`) },
   { file: "convert/markdown-to-html.html", html: page(`<script>${payload(2)}</script>`) },
   { file: "404.html", html: page(`<script>${payload(3)}</script>`) },
+  { file: "sign-in.html", html: page(`<script>${payload(4)}</script>`) },
+  { file: "jobs.html", html: page(`<script>${payload(5)}</script>`) },
 ];
 const NO_CLOUD = {};
 const CLOUD = {
@@ -128,6 +134,49 @@ describe("content security policy", () => {
     expect(site.get("connect-src")).toEqual(["'self'"]);
     expect(site.get("frame-src")).toEqual(["'none'"]);
   });
+
+  it("lets account pages reach the cloud origins and grants them nothing else", () => {
+    const cloud = cloudSources(CLOUD);
+    const account = directives(contentSecurityPolicy("account", { inlineScripts: [hash], cloud }));
+    expect(account.get("connect-src")).toEqual([
+      "'self'",
+      "https://api.example.com",
+      "https://auth.example.com",
+      "https://storage.example.com",
+      "https://*.r2.example.com",
+    ]);
+    expect(account.get("script-src")).toEqual(["'self'", `'${hash}'`]);
+    expect(account.get("worker-src")).toEqual(["'none'"]);
+    expect(account.get("frame-src")).toEqual(["'none'"]);
+    expect(account.get("form-action")).toEqual(["'self'"]);
+    expect(account.get("frame-ancestors")).toEqual(["'none'"]);
+    const local = directives(contentSecurityPolicy("account", { inlineScripts: [] }));
+    expect(local.get("connect-src")).toEqual(["'self'"]);
+  });
+});
+
+describe("page profiles", () => {
+  it("lists exactly the pages of the account route group", () => {
+    const group = path.join(import.meta.dirname, "../src/app/(account)");
+    const pages = readdirSync(group, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .filter((entry) => existsSync(path.join(group, entry.name, "page.tsx")))
+      .map((entry) => `/${entry.name}`)
+      .sort();
+    expect([...accountPaths].sort()).toEqual(pages);
+  });
+
+  it("maps every form of a page path to its profile", () => {
+    for (const route of ["/app", "/app.html", "/app/", "/app/index.html"]) {
+      expect(pageProfile(route)).toBe("converter");
+    }
+    for (const route of ["/sign-in", "/sign-in.html", "/jobs/", "/jobs/index.html"]) {
+      expect(pageProfile(route)).toBe("account");
+    }
+    for (const route of ["/", "/index.html", "/formats", "/jobs-guide", "/convert/jobs"]) {
+      expect(pageProfile(route)).toBe("site");
+    }
+  });
 });
 
 describe("cloud sources", () => {
@@ -172,6 +221,18 @@ describe("next start headers", () => {
       expect(header(table[0]?.headers, key)).toBe(value);
     }
     expect(cspOf(table[0]?.headers).get("script-src")).toEqual(["'self'", "'unsafe-inline'"]);
+  });
+
+  it("gives the account pages the cloud origins without isolation", () => {
+    const cloudTable = serverRouteHeaders({ env: CLOUD });
+    const cloudEntry = (source: string) => cloudTable.find((item) => item.source === source);
+    for (const source of accountPaths) {
+      const headers = cloudEntry(source)?.headers;
+      expect(cspOf(headers).get("connect-src")).toContain("https://auth.example.com");
+      expect(cspOf(headers).get("script-src")).not.toContain("'wasm-unsafe-eval'");
+      expect(header(headers, "Cross-Origin-Opener-Policy")).toBeUndefined();
+    }
+    expect(cspOf(cloudTable[0]?.headers).get("connect-src")).toEqual(["'self'"]);
   });
 
   it("isolates the converter only and gives it the converter policy", () => {
@@ -236,6 +297,16 @@ describe("static export headers", () => {
       expect(header(rule(source)?.headers, "Cross-Origin-Opener-Policy")).toBeUndefined();
       expect(scripts(source)).not.toContain("'wasm-unsafe-eval'");
       expect(cspOf(rule(source)?.headers).get("connect-src")).toEqual(["'self'"]);
+    }
+  });
+
+  it("lets the exported account pages call the cloud services", () => {
+    for (const source of ["/sign-in", "/sign-in.html", "/jobs", "/jobs.html"]) {
+      const policy = cspOf(rule(source)?.headers);
+      expect(policy.get("connect-src")).toContain("https://api.example.com");
+      expect(policy.get("connect-src")).toContain("https://storage.example.com");
+      expect(policy.get("frame-src")).toEqual(["'none'"]);
+      expect(header(rule(source)?.headers, "Cross-Origin-Opener-Policy")).toBeUndefined();
     }
   });
 
