@@ -57,7 +57,7 @@ jobs:
             fi
           done
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils webkitgtk-webdriver xvfb dbus-daemon at-spi2-core libreoffice-impress
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils webkitgtk-webdriver xvfb dbus-daemon at-spi2-core libreoffice-impress minisign
           command -v update-desktop-database && command -v xdg-mime
       - name: Enable namespaces for LibreOffice sandbox tests
         if: runner.os == 'Linux'
@@ -71,6 +71,7 @@ jobs:
       - run: just desktop-bindings-check
       - run: pnpm --filter @ariadshift/desktop test
       - run: pnpm --filter @ariadshift/desktop test:tools
+      - run: node --test scripts/desktop-release-sums.test.mjs
       - run: cargo nextest run -p ariad-desktop
       - name: Verify cached Linux bundler tools
         if: runner.os == 'Linux'
@@ -78,6 +79,20 @@ jobs:
       - name: Build platform installers without publishing
         if: runner.os != 'macOS'
         run: just desktop-build
+      - name: Rehearse desktop checksums and Minisign signatures
+        if: runner.os == 'Linux'
+        run: |
+          work=$(mktemp -d "$RUNNER_TEMP/desktop-sums.XXXXXX")
+          trap 'rm -rf "$work"' EXIT
+          minisign -G -W -p "$work/rehearsal.pub" -s "$work/rehearsal.key" >/dev/null
+          MINISIGN_SECRET_KEY="$(cat "$work/rehearsal.key")"
+          export MINISIGN_SECRET_KEY
+          node scripts/desktop-release-sums.mjs --from target/release/bundle "$work/release"
+          bash scripts/desktop-release-sign.sh "$work/release" v0.0.0 "$work/rehearsal.pub"
+          if bash scripts/desktop-release-sign.sh "$work/release" v0.0.0 crates/ariad-host/data/pack-keys/*.pub; then
+            echo '::error::A key that matches no committed public key was accepted.'
+            exit 1
+          fi
       - name: Build macOS installers and assert updater signature without Apple credentials
         if: runner.os == 'macOS'
         env:
@@ -244,3 +259,60 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: node apps/desktop/scripts/verify-release.mjs
+  sign-release:
+    name: Sign desktop release checksums
+    needs: verify-release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: release
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: sudo apt-get update && sudo apt-get install -y minisign
+      - name: Download desktop assets and write SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/desktop-release-sums.mjs "$RUNNER_TEMP/desktop-release"
+      - name: Sign and verify with the release Minisign key
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.PACK_MINISIGN_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.PACK_MINISIGN_KEY_PASSWORD }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/desktop-release-sign.sh "$RUNNER_TEMP/desktop-release" "$RELEASE_TAG" crates/ariad-host/data/pack-keys/*.pub
+      - name: Keep only the checksums and signatures
+        run: |
+          mkdir "$RUNNER_TEMP/desktop-signatures"
+          cp "$RUNNER_TEMP/desktop-release/SHA256SUMS" "$RUNNER_TEMP"/desktop-release/*.minisig "$RUNNER_TEMP/desktop-signatures/"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-release-signatures
+          path: ${{ runner.temp }}/desktop-signatures/
+          if-no-files-found: error
+          retention-days: 7
+  publish-checksums:
+    name: Attach desktop checksums and signatures
+    needs: sign-release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: desktop-release-signatures
+          path: desktop-signatures
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test -s desktop-signatures/SHA256SUMS && test -s desktop-signatures/SHA256SUMS.minisig
+          gh release upload "$RELEASE_TAG" desktop-signatures/SHA256SUMS desktop-signatures/*.minisig --repo "$GITHUB_REPOSITORY" --clobber
