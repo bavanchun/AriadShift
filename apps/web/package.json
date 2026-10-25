@@ -16,8 +16,12 @@
   },
   "dependencies": {
     "@ariadshift/ariad-wasm": "workspace:*",
+    "@ariadshift/sdk": "workspace:*",
     "@ariadshift/ui": "workspace:*",
+    "@better-auth/api-key": "catalog:",
+    "@better-auth/passkey": "catalog:",
     "@bjorn3/browser_wasi_shim": "catalog:",
+    "better-auth": "catalog:",
     "lucide-react": "catalog:",
     "next": "catalog:",
     "react": "catalog:",
