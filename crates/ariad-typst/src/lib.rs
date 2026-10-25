@@ -445,6 +445,7 @@ mod tests {
 }
 
 /// Compiles bounded IR with the native writer and embedded fonts.
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen::prelude::wasm_bindgen(js_name = renderPdf)]
 pub fn render_pdf(
     bytes: &[u8],
