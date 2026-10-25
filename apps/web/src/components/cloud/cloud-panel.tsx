@@ -33,8 +33,8 @@ import {
   INITIAL_JOB_STATE,
   isActive,
 } from "@/lib/cloud/steps";
-import { formatBytes } from "@/lib/format-bytes";
 import type { Transfer } from "@/lib/cloud/transfer";
+import { formatBytes } from "@/lib/format-bytes";
 import { formatLabel } from "@/lib/formats";
 import { PROFILES } from "@/lib/profiles";
 import { AccountDialog } from "./account-dialog";
@@ -194,6 +194,8 @@ export default function CloudPanel({
         api,
         transfer,
         host: config.apiHost,
+        owner: () =>
+          context.current.user === undefined ? undefined : (context.current.user?.id ?? null),
         context: () => ({
           fileName: file.name,
           fileSize: file.size,
@@ -219,20 +221,22 @@ export default function CloudPanel({
     () => INITIAL_JOB_STATE,
   );
 
-  // "Start over and delete files" deletes the server copies too; leaving cloud
-  // mode does the same. A copy the server kept is handed to the page, which
-  // names it and offers the deletion again after this panel is gone.
+  // Only an explicit deletion removes a created job. Navigation and switching
+  // destinations leave it available on /jobs. An upload without a job still
+  // needs cleanup; hand a kept copy to the page so deletion remains retryable.
   const serverCopy = useRef(onServerCopy);
   serverCopy.current = onServerCopy;
   useEffect(() => {
     cleanup.current = () => job.discard();
     return () => {
       cleanup.current = null;
-      void job.discard().then((outcome) => {
-        if (outcome.status === "kept") {
-          serverCopy.current(outcome);
-        }
-      });
+      if (!job.state.job) {
+        void job.discard().then((outcome) => {
+          if (outcome.status === "kept") {
+            serverCopy.current(outcome);
+          }
+        });
+      }
       job.dispose();
     };
   }, [cleanup, job]);
@@ -548,8 +552,8 @@ export default function CloudPanel({
               )}
             </p>
             <p>
-              The file name is stored with the job and never logged. Files are not used for
-              anything other than this conversion.{" "}
+              The file name is stored with the job and never logged. Files are not used for anything
+              other than this conversion.{" "}
               {config.operator ? `Operated by ${config.operator}. ` : ""}
               <a className="underline" href="/privacy">
                 Privacy
@@ -658,6 +662,12 @@ export default function CloudPanel({
           onAction={onAction}
           onConvertAgain={() => job.reset()}
         />
+      )}
+
+      {state.job && config.authUrl && (
+        <a href="/jobs" className="text-sm underline">
+          View cloud jobs
+        </a>
       )}
 
       {auth && dialogOpen && (

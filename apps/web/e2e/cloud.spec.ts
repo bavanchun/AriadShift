@@ -98,7 +98,7 @@ function sse(events: Array<[number, string, unknown]>): string {
     .join("");
 }
 
-async function mockCloud(page: Page): Promise<Backend> {
+async function mockCloud(page: Page, signedIn = false): Promise<Backend> {
   const backend: Backend = { requests: [] };
   const job = (status: string) => ({
     id: JOB_ID,
@@ -179,6 +179,9 @@ async function mockCloud(page: Page): Promise<Backend> {
     if (method === "POST" && pathname === "/v1/jobs") {
       return json(route, origin, job("queued"), 202, { location: `/v1/jobs/${JOB_ID}` });
     }
+    if (method === "GET" && pathname === "/v1/jobs") {
+      return json(route, origin, { error: { code: "method_not_allowed" } }, 405);
+    }
     if (method === "GET" && pathname === `/v1/jobs/${JOB_ID}/events`) {
       return route.fulfill({
         status: 200,
@@ -247,7 +250,19 @@ async function mockCloud(page: Page): Promise<Backend> {
       await record(route);
       const { pathname } = new URL(route.request().url());
       if (pathname === "/api/auth/get-session") {
-        return json(route, origin, null);
+        return json(
+          route,
+          origin,
+          signedIn
+            ? {
+                session: { id: "session-1" },
+                user: { id: "user-1", name: "Ada", email: "ada@example.com" },
+              }
+            : null,
+        );
+      }
+      if (signedIn && pathname === "/api/auth/token") {
+        return json(route, origin, { token: "jwt-user-1" });
       }
       return json(route, origin, { code: "UNAUTHORIZED", message: "no session" }, 401);
     });
@@ -269,6 +284,36 @@ async function mockCloud(page: Page): Promise<Backend> {
 
 const apiRequests = (backend: Backend) =>
   backend.requests.filter((request) => API && request.url.startsWith(API));
+
+for (const signedIn of [false, true]) {
+  test(`keeps a converter-created job on Jobs when ${signedIn ? "signed in" : "anonymous"}`, async ({
+    page,
+  }) => {
+    test.skip(!AUTH, "the account pages need an auth service URL");
+    const backend = await mockCloud(page, signedIn);
+    await stage(page);
+    await chooseCloud(page);
+    await page.getByTestId("cloud-start").click();
+    await expect(page.getByTestId("cloud-result")).toBeVisible();
+    await expect(page.getByRole("link", { name: "View cloud jobs" })).toHaveAttribute(
+      "href",
+      "/jobs",
+    );
+    // Exercise React's panel cleanup, rather than relying on a full-page unload.
+    await page.getByRole("radio", { name: /On this device/ }).check();
+    await expect(page.getByTestId("cloud-panel")).toHaveCount(0);
+    await page.goto("/jobs");
+    await expect(page).toHaveURL(/\/jobs/);
+    await expect(page.getByRole("heading", { name: "report.md" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download report.docx" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Delete now.*report\.md/ })).toBeVisible();
+    expect(backend.requests.some((request) => request.method === "DELETE")).toBe(false);
+    const read = backend.requests.findLast(
+      (request) => request.method === "GET" && request.url.endsWith(`/v1/jobs/${JOB_ID}`),
+    );
+    expect(read?.headers.authorization).toBe(signedIn ? "Bearer jwt-user-1" : undefined);
+  });
+}
 
 async function stage(page: Page) {
   await page.goto("/app?to=docx");
