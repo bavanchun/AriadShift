@@ -52,6 +52,25 @@ test("writes DOCX then reads its text and structure back", async ({ page }) => {
   expect(back).toContain("| Name");
 });
 
+test("preserves an embedded image from Markdown through DOCX and back", async ({ page }) => {
+  const image = await readFile(fixture("md/assets/vietnamese-route.png"));
+  const data = image.toString("base64");
+  await page.goto("/app");
+  await pick(
+    page,
+    "image.md",
+    Buffer.from(`# Embedded image\n\n![Route image](data:image/png;base64,${data})\n`),
+  );
+  const output = await convert(page, "Word (DOCX)");
+  expect(output.subarray(0, 2).toString()).toBe("PK");
+  await reset(page);
+  await pick(page, "image.docx", output);
+  const back = (await convert(page, "Markdown")).toString();
+  expect(back).toContain("# Embedded image");
+  expect(back).toContain("![Route image]");
+  expect(back).toContain(`data:image/png;base64,${data}`);
+});
+
 test("reads EPUB with its embedded image into HTML", async ({ page }) => {
   await page.goto("/app");
   await pick(page, "book.epub", await readFile(fixture("epub/vi-epub-table-image.epub")));

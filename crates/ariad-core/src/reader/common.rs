@@ -2,7 +2,11 @@
 
 use unicode_normalization::UnicodeNormalization;
 
-use crate::{ir::Document, warning::Warning};
+use crate::{
+    ir::{Asset, AssetRef, AssetStore, Document},
+    limits::Limits,
+    warning::{Warning, WarningCode},
+};
 
 /// Result of reading a document into the IR.
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +41,63 @@ pub fn sniff_image_type(bytes: &[u8]) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+/// Embeds a bounded base64 data image, using its bytes rather than the declared media type.
+pub(crate) fn decode_data_uri_image(
+    uri: &str,
+    limits: &Limits,
+    assets: &mut AssetStore,
+    warnings: &mut Vec<Warning>,
+) -> Option<AssetRef> {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+
+    let (meta, encoded) = uri.strip_prefix("data:")?.split_once(',')?;
+    let mut parts = meta.split(';');
+    let _ = parts.next();
+    if !parts.any(|part| part.eq_ignore_ascii_case("base64")) {
+        return None;
+    }
+    let encoded = encoded.trim();
+    let estimated_len = (encoded.len() as u64).saturating_mul(3) / 4;
+    if let Some(max_asset) = limits.max_asset_bytes
+        && estimated_len > max_asset
+    {
+        warnings.push(Warning::new(
+            WarningCode::ImageNotEmbedded,
+            format!("data URI image estimated size exceeds limit of {max_asset} bytes"),
+        ));
+        return None;
+    }
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    if let Some(max_asset) = limits.max_asset_bytes
+        && decoded.len() as u64 > max_asset
+    {
+        warnings.push(Warning::new(
+            WarningCode::ImageNotEmbedded,
+            format!("data URI image size exceeds limit of {max_asset} bytes"),
+        ));
+        return None;
+    }
+    let Some(media_type) = sniff_image_type(&decoded) else {
+        warnings.push(Warning::new(
+            WarningCode::ImageNotEmbedded,
+            "data URI content is not a supported image format (expected PNG, JPEG, GIF, or WEBP)",
+        ));
+        return None;
+    };
+    let id = hex::encode(Sha256::digest(&decoded));
+    assets.insert(
+        id.clone(),
+        Asset {
+            media_type: media_type.to_owned(),
+            bytes: decoded,
+        },
+    );
+    Some(AssetRef::Asset { id })
 }
 
 #[cfg(test)]
