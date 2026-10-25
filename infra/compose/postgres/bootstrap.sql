@@ -13,6 +13,13 @@ FROM unnest(ARRAY['ariad_api_login', 'ariad_worker_login', 'ariad_auth']) AS nam
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = name)
 \gexec
 
+-- The NOLOGIN runtime roles of infra/server-roles.sql, created here too so a
+-- database dump restores its grants before db-grants runs.
+SELECT format('CREATE ROLE %I NOLOGIN', name)
+FROM unnest(ARRAY['ariad_api', 'ariad_worker']) AS name
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = name)
+\gexec
+
 ALTER ROLE ariad_api_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
     NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 50 PASSWORD :'api_password';
 ALTER ROLE ariad_worker_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE
