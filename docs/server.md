@@ -94,7 +94,7 @@ Workers additionally hold one dedicated PostgreSQL session per active attempt fo
 
 Objects are stored as `t/{workspace}/{owner}/{in|out}/{sha256}` under the prefix. The owner is the upload id for inputs and the job id for outputs, because one upload can feed several jobs.
 
-With `file://` storage the API signs and serves object URLs itself at `/v1/blobs/{token}` (HMAC-SHA256 with `ARIAD_SECRET`), so `ARIAD_PUBLIC_URL` is required.
+With `file://` storage the API signs and serves object URLs itself at `/v1/blobs/{token}` (HMAC-SHA256 with `ARIAD_SECRET`), so `ARIAD_PUBLIC_URL` is required. Local PUT and GET share a fixed budget of four concurrent transfers per API process, with at most one PUT per storage key. An overloaded request receives `429 rate_limited` with `Retry-After: 1` before its body is read or a writer is created. PUT writes to a staging file in bounded parts and publishes only after the size and SHA-256 match. Body reads and download backpressure have a 15-second idle limit; each transfer ends at the earlier of 15 minutes after admission or the signed URL's expiry. PUT timeouts return `408 transfer_timeout`; GET timeouts before headers do too, while a timeout after headers terminates the stream. Cancellation, errors and deadlines release admission and clean up local staging state. The budgets are shared by cloned storage handles within one process; deployments with multiple replicas still need ingress-wide concurrency and bandwidth limits.
 
 ### API
 
