@@ -237,7 +237,8 @@ export function JobsPanel({ createApi, pollIntervalMs }: JobsPanelProps) {
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Jobs</h1>
         <p className="text-muted-foreground">
-          {scope} Files stay on {host} until they are deleted automatically, or until you delete them here.
+          {scope} Files stay on {host} until they are deleted automatically, or until you delete
+          them here.
         </p>
       </div>
 

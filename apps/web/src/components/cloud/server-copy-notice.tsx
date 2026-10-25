@@ -34,7 +34,9 @@ export function ServerCopyNotice({ copy, host, onSettled }: ServerCopyNoticeProp
   return (
     <Alert variant="destructive" data-testid="server-copy">
       <TriangleAlertIcon aria-hidden="true" />
-      <AlertTitle>{copy.fileName} is still on {host}</AlertTitle>
+      <AlertTitle>
+        {copy.fileName} is still on {host}
+      </AlertTitle>
       <AlertDescription>
         <p>
           {copy.reason === "unsupported"

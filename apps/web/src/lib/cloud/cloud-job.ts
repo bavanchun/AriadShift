@@ -104,9 +104,7 @@ export function saveBlob(blob: Blob, filename: string) {
 }
 
 function isAbort(error: unknown, signal: AbortSignal | undefined): boolean {
-  return (
-    signal?.aborted === true || (error instanceof DOMException && error.name === "AbortError")
-  );
+  return signal?.aborted === true || (error instanceof DOMException && error.name === "AbortError");
 }
 
 export class CloudJob {

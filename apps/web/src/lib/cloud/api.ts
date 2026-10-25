@@ -110,8 +110,7 @@ function requestUrl(input: RequestInfo | URL): string {
 }
 
 export function createCloudApi(options: CloudApiOptions): CloudApi {
-  const baseFetch: typeof fetch =
-    options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const baseFetch: typeof fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   const listeners = new Set<(connection: EventConnection) => void>();
   const attempts = new Map<string, number>();
   const emit = (connection: EventConnection) => {

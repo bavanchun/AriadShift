@@ -256,10 +256,7 @@ export function describeJobFailure(
   context: CloudErrorContext,
 ): CloudErrorView {
   if (failure.code === "limit_exceeded" || failure.code === "unsupported_route") {
-    const view = describeCloudError(
-      new AriadApiError(422, failure.code, failure.message),
-      context,
-    );
+    const view = describeCloudError(new AriadApiError(422, failure.code, failure.message), context);
     return { ...view, actions: [...view.actions, "delete"] };
   }
   const reason = SHORT_REASONS[failure.code] ?? "the engine reported an error";

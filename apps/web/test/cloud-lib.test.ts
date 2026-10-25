@@ -154,9 +154,7 @@ describe("feature detection", () => {
       operations: {},
       fetch: async () => new Response(null, { status: 503 }),
     });
-    api.onEventConnection((connection) =>
-      seen.push(`${connection.attempt}:${connection.state}`),
-    );
+    api.onEventConnection((connection) => seen.push(`${connection.attempt}:${connection.state}`));
     const job = "5f0e8d3a-2c4b-4e71-8b6a-9d1c3e2f4a57";
     const events = api.client.events(job, { maxRetries: 1, retryDelayMs: 1 });
     await expect(events.next()).rejects.toMatchObject({ status: 503 });
@@ -251,9 +249,7 @@ describe("job steps", () => {
 describe("cloud error copy", () => {
   it("names the size limit and offers sign-in and on-device conversion", () => {
     const view = describeCloudError(new AriadApiError(413, "limit_exceeded", "too big"), CONTEXT);
-    expect(view.message).toBe(
-      "This file is 14 MB. The anonymous plan accepts files up to 10 MB.",
-    );
+    expect(view.message).toBe("This file is 14 MB. The anonymous plan accepts files up to 10 MB.");
     expect(view.actions).toEqual(["sign-in", "use-device"]);
     expect(view.technical).toBe("too big (limit_exceeded)");
   });

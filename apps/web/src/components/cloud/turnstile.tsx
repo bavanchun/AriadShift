@@ -70,7 +70,6 @@ export function Turnstile({ siteKey, onToken, resetKey }: TurnstileProps) {
   callback.current = onToken;
   const [problem, setProblem] = useState<string | null>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new `resetKey` renders a new widget for the next single-use token.
   useEffect(() => {
     let widget: string | null = null;
     let api: TurnstileApi | null = null;
