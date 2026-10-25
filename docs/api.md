@@ -163,7 +163,7 @@ One upload can feed several jobs, for example one per target format. Browsers up
 | `GET` | `/v1/capabilities` | none | Formats and conversion edges this deployment runs |
 | `GET` | `/healthz`, `/readyz` | none | Liveness, and readiness of the database and storage |
 
-"Optional" means the endpoint accepts a JWT, an API key, or no credential (the anonymous plan). With S3 storage the presigned URLs point at the object store. With the local file store they are `PUT` and `GET /v1/blobs/{token}` on the API, where the signed token is the only credential; a bad or expired token returns `403 forbidden`.
+"Optional" means the endpoint accepts a JWT, an API key, or no credential (the anonymous plan). With S3 storage the presigned URLs point at the object store. With the local file store they are `PUT` and `GET /v1/blobs/{token}` on the API, where the signed token is the only credential; a bad or expired token returns `403 forbidden`. Each local-store transfer must finish within the shorter of 15 minutes after the API admits it and the URL's remaining lifetime, or it fails with `408 transfer_timeout` (a download already streaming is cut off). Large files on slow links need S3 storage; see [self-hosting.md](self-hosting.md#configuration).
 
 Request bodies are JSON with `content-type: application/json`, at most 1 MiB. Unknown fields are rejected with `422 invalid_request`. Ids are UUIDs; a path id that is not a UUID returns `404 not_found`. Times are RFC 3339 strings in UTC. Every response carries an `x-request-id` header; quote it when reporting a problem. Browser access needs the web origin in the API's `ARIAD_CORS_ORIGINS`.
 
@@ -344,6 +344,7 @@ Every error from `/v1` has the body `{"error": {"code": "…", "message": "…"}
 | 401 | `unauthorized`: missing, malformed, invalid, expired or disabled credentials, or credentials of a kind the deployment does not accept |
 | 403 | `turnstile_required`, `turnstile_failed`, `forbidden` (an invalid or expired presigned local-store URL) |
 | 404 | `not_found` |
+| 408 | `transfer_timeout`: a local-store blob transfer missed its deadline |
 | 409 | `conflict`: the upload is not complete or no longer available, or the job has not succeeded |
 | 410 | `expired`: the job's files were deleted |
 | 413 | `limit_exceeded`: the file is larger than the plan accepts |
