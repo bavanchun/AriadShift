@@ -16,10 +16,12 @@ changed=''
 
 # Prose the static job already spell-checks.
 docs_paths='^(docs|plans)/|^(README|ARCHITECTURE|AGENTS|CLAUDE)\.md$'
-# The JavaScript workspace and the brand assets the site copies; the Rust jobs read neither.
-js_paths='^(apps|packages|brand)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version)$|^scripts/check-js-licenses\.mjs$'
-# Everything the web job builds or depends on, including the Rust code compiled to wasm.
-web_paths='^(apps|packages|brand)/|^crates/ariad-(core|wasm)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$'
+# The JavaScript workspace (apps, packages, Node services) and the brand assets the
+# site copies; the Rust jobs read none of them.
+js_paths='^(apps|packages|services|brand)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version)$|^scripts/check-js-licenses\.mjs$'
+# Everything the web job builds or depends on, including the Rust code compiled to wasm
+# and the OpenAPI document the SDK is generated from.
+web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|wasm)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$|^schemas/openapi\.v1\.json$'
 
 # Prints heavy|web|reason.
 decide() {
