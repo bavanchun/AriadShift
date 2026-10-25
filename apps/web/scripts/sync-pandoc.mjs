@@ -5,9 +5,9 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { pandocVersion as version } from "../engine-assets.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-const version = "3.12"; // Must match scripts/install-pandoc.sh.
 if (
   !(await readFile(path.join(root, "scripts/install-pandoc.sh"), "utf8")).includes(
     `/download/${version}/`,

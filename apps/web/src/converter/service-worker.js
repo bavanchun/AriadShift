@@ -17,6 +17,15 @@ self.addEventListener("activate", (event) => {
           await caches.delete(name);
         }
       }
+      // The generated script embeds this build's versioned binaries and hashed chunks.
+      // Its bytes change with the manifest, so deployments activate a new worker.
+      if (self.ENGINE_URLS?.length) {
+        const wanted = new Set(self.ENGINE_URLS.map((url) => new URL(url, self.location).href));
+        const engines = await caches.open("ariadshift-engines-v1");
+        for (const request of await engines.keys()) {
+          if (!wanted.has(request.url)) await engines.delete(request);
+        }
+      }
       await self.clients.claim();
     })(),
   );

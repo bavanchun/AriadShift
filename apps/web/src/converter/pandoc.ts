@@ -1,5 +1,6 @@
 // The GPL Pandoc reactor is fetched as a separate, unmodified file and called over WASI.
 import { File, OpenFile, PreopenDirectory, WASI } from "@bjorn3/browser_wasi_shim";
+import { pandocUrl } from "../../engine-assets.mjs";
 import { engineResponse } from "./wasm-cache";
 
 type Reactor = WebAssembly.Instance & {
@@ -38,7 +39,7 @@ export class Pandoc {
       ],
       { debug: false },
     );
-    const response = await engineResponse("/wasm/pandoc/pandoc.wasm?v=3.12");
+    const response = await engineResponse(pandocUrl);
     const module = await WebAssembly.compile(await response.arrayBuffer());
     const instance = (await WebAssembly.instantiate(module, {
       wasi_snapshot_preview1: wasi.wasiImport,
