@@ -11,7 +11,6 @@ One binary, four subcommands:
 | `ariad-server migrate` | Applies pending database migrations. Back up the database first. |
 | `ariad-server api` | Serves the API, streams job events, and runs the retention sweeper. |
 | `ariad-server worker --packs core[,office,docling]` | Runs conversion jobs from the queues of the given engine packs. |
-| `ariad-server openapi` | Prints the OpenAPI document (hidden; the committed copy is `schemas/openapi.v1.json`). |
 
 Use direct PostgreSQL connections or session pooling: LISTEN and advisory locks need session affinity and cannot use PgBouncer transaction pooling.
 

@@ -37,9 +37,6 @@ enum Command {
     },
     /// Apply pending database migrations. Back up the database first.
     Migrate,
-    /// Print the OpenAPI document.
-    #[command(hide = true)]
-    Openapi,
 }
 
 fn main() -> ExitCode {
@@ -92,18 +89,6 @@ fn main() -> ExitCode {
             }
         }
     }
-    if let Command::Openapi = cli.command {
-        return match ariad_server::api::openapi().to_pretty_json() {
-            Ok(json) => {
-                println!("{json}");
-                ExitCode::SUCCESS
-            }
-            Err(err) => {
-                eprintln!("ariad-server: {err}");
-                ExitCode::FAILURE
-            }
-        };
-    }
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -125,9 +110,7 @@ async fn run(command: Command) -> ExitCode {
     let service = match &command {
         Command::Api => "ariad-server-api",
         Command::Worker { .. } => "ariad-server-worker",
-        Command::Migrate | Command::Openapi | Command::Convert | Command::CheckHelperNetwork => {
-            "ariad-server"
-        }
+        Command::Migrate | Command::Convert | Command::CheckHelperNetwork => "ariad-server",
     };
     let telemetry = match TelemetryConfig::from_env(&env)
         .map_err(|e| e.to_string())
@@ -181,7 +164,7 @@ async fn execute(command: Command, env: &Env) -> Result<(), String> {
                 .await
                 .map_err(|e| e.to_string())
         }
-        Command::Openapi | Command::Convert | Command::CheckHelperNetwork => Ok(()),
+        Command::Convert | Command::CheckHelperNetwork => Ok(()),
     }
 }
 
