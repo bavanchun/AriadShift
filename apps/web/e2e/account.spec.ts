@@ -31,6 +31,8 @@ interface MockState {
   jobs: Record<string, Record<string, unknown>>;
   deleted: string[];
   bearer: (string | undefined)[];
+  /** Serve `GET /v1/jobs`; otherwise answer 405 like a deployment without the route. */
+  listJobs: boolean;
 }
 
 function corsHeaders(route: Route): Record<string, string> {
@@ -144,6 +146,19 @@ async function mockCloud(page: Page, state: MockState) {
     }
     const path = new URL(request.url()).pathname;
     state.bearer.push(request.headers().authorization);
+    if (path === "/v1/jobs" && request.method() === "GET") {
+      if (!state.listJobs) {
+        await route.fulfill({ status: 405, headers: corsHeaders(route) });
+        return;
+      }
+      return json(route, {
+        jobs: Object.values(state.jobs).map((current) => ({
+          ...current,
+          filename: `${String(current.id)}.md`,
+        })),
+        next_cursor: null,
+      });
+    }
     const match = /^\/v1\/jobs\/([^/]+)(\/events|\/outputs)?$/.exec(path);
     if (path === "/v1/blobs/output-1") {
       await route.fulfill({
@@ -213,6 +228,7 @@ function newState(overrides: Partial<MockState> = {}): MockState {
     jobs: {},
     deleted: [],
     bearer: [],
+    listJobs: false,
     ...overrides,
   };
 }
@@ -334,6 +350,30 @@ test.describe("with a mocked cloud", () => {
     );
     await expect(tombstone).toBeFocused();
     expect(state.deleted).toEqual(["job-done"]);
+    expect(state.bearer.filter(Boolean).every((value) => value === "Bearer jwt-for-tests")).toBe(
+      true,
+    );
+  });
+
+  test("lists the account's jobs from the API in a fresh browser", async ({ page }) => {
+    const state = newState({
+      listJobs: true,
+      jobs: { "job-done": job("job-done", "succeeded"), "job-live": job("job-live", "running") },
+    });
+    await mockCloud(page, state);
+    // Nothing is seeded into localStorage: the API is the only source of the list.
+    await page.goto("/jobs");
+
+    await expect(page.getByRole("heading", { name: "2 jobs" })).toBeVisible();
+    await expect(page.getByText(/from any device/)).toBeVisible();
+    const live = page.getByRole("listitem", { name: "job-live.md" });
+    await expect(live.getByText("Ready")).toBeVisible();
+    const done = page.getByRole("listitem", { name: "job-done.md" });
+    const downloading = page.waitForEvent("download");
+    await done.getByRole("button", { name: "Download notes.docx" }).click();
+    expect((await downloading).suggestedFilename()).toBe("notes.docx");
+    await expect(page.getByRole("button", { name: /Remove from this list/ })).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem("ariadshift-cloud-jobs"))).toBeNull();
     expect(state.bearer.filter(Boolean).every((value) => value === "Bearer jwt-for-tests")).toBe(
       true,
     );

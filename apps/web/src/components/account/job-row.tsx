@@ -50,18 +50,22 @@ function errorCode(error: unknown): string | undefined {
 
 export interface JobRowProps {
   entry: JobHistoryEntry;
+  /** The job as the account's job list returned it, so the row needs no first read. */
+  initialJob?: Job;
   api: JobsApi;
   /** Host name of the API, for the deletion confirmation. */
   serverHost: string;
   /** Focus the row's status once it has loaded (after a retry created it). */
   focusOnLoad?: boolean;
-  onRetried: (entry: JobHistoryEntry) => void;
-  onForget: (id: string) => void;
+  onRetried: (entry: JobHistoryEntry, job: Job) => void;
+  /** Removes the row from this browser's list; omitted for rows from the server's list. */
+  onForget?: (id: string) => void;
   pollIntervalMs?: number;
 }
 
 export function JobRow({
   entry,
+  initialJob,
   api,
   serverHost,
   focusOnLoad = false,
@@ -71,7 +75,9 @@ export function JobRow({
 }: JobRowProps) {
   const { announce } = useAccount();
   const titleId = useId();
-  const [state, setState] = useState<RowState>({ kind: "loading" });
+  const [state, setState] = useState<RowState>(
+    initialJob ? { kind: "job", job: initialJob } : { kind: "loading" },
+  );
   const [live, setLive] = useState<LiveJobState>({});
   const [outputs, setOutputs] = useState<OutputFile[] | null>(null);
   const [deleted, setDeleted] = useState(false);
@@ -107,7 +113,13 @@ export function JobRow({
     [api, entry.id],
   );
 
+  // A job handed over by the list is current; read it only when it was not.
+  const hasInitialJob = useRef(initialJob !== undefined);
   useEffect(() => {
+    if (hasInitialJob.current) {
+      hasInitialJob.current = false;
+      return;
+    }
     const controller = new AbortController();
     void load(controller.signal);
     return () => controller.abort();
@@ -274,13 +286,16 @@ export function JobRow({
         profile: job.profile,
       });
       announce(`Retrying ${entry.filename}.`);
-      onRetried({
-        id: next.id,
-        filename: entry.filename,
-        owner: entry.owner,
-        createdAt: next.created_at,
-        expiresAt: next.expires_at,
-      });
+      onRetried(
+        {
+          id: next.id,
+          filename: entry.filename,
+          owner: entry.owner,
+          createdAt: next.created_at,
+          expiresAt: next.expires_at,
+        },
+        next,
+      );
     } catch (error) {
       setRowError(
         errorCode(error) === "conflict"
@@ -292,11 +307,11 @@ export function JobRow({
     }
   };
 
-  const removeButton = (
+  const removeButton = onForget ? (
     <Button variant="ghost" size="sm" onClick={() => onForget(entry.id)}>
       Remove from this list<span className="sr-only"> ({entry.filename})</span>
     </Button>
-  );
+  ) : null;
 
   let body: ReactNode;
   if (state.kind === "loading") {

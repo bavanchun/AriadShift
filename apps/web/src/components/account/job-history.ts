@@ -1,8 +1,10 @@
-// The jobs page lists the cloud jobs started in this browser. `/v1` has no
-// endpoint that lists a workspace's jobs, so whoever creates a job records its
-// id here, and the page reads each job's live state from the API. The record
-// stays on this device: job ids of anonymous jobs are bearer secrets, and file
-// names are never sent anywhere by this store.
+// The cloud jobs started in this browser. Whoever creates a job records its id
+// here (the converter's cloud mode and the jobs page's Retry), and the jobs
+// page reads each job's live state from the API. Anonymous jobs belong to no
+// account, so this is the only list they have; a signed-in account's jobs come
+// from `GET /v1/jobs` instead, and this record covers deployments without it.
+// The record stays on this device: job ids of anonymous jobs are bearer
+// secrets, and file names are never sent anywhere by this store.
 
 export const JOB_HISTORY_KEY = "ariadshift-cloud-jobs";
 

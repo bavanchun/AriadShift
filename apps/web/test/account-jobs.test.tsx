@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { AccountShell } from "@/components/account/account-shell";
 import type { AccountUser, AuthApi } from "@/components/account/auth-api";
 import { JOB_HISTORY_KEY, type JobHistoryEntry } from "@/components/account/job-history";
-import type { JobsApi } from "@/components/account/jobs-api";
+import type { JobListPage, JobsApi, ListedJob } from "@/components/account/jobs-api";
 import { JobsPanel } from "@/components/account/jobs-panel";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/jobs" }));
@@ -76,6 +76,8 @@ function fakeJobs(jobs: Record<string, Job | (() => Job)>): FakeJobs {
     download: vi.fn(async () => new Blob(["docx bytes"])),
     deleteJob: vi.fn(async () => undefined),
     createJob: vi.fn(async () => job("retried", { status: "queued", attempts: 0 })),
+    // A deployment without `GET /v1/jobs`, unless a test lists jobs.
+    listJobs: vi.fn(async (): Promise<JobListPage> => ({ supported: false })),
   } as unknown as FakeJobs;
 }
 
@@ -116,6 +118,14 @@ afterEach(() => {
 });
 
 describe("jobs page", () => {
+  it("does not list account jobs from the API when signed out", async () => {
+    seed(entry("anonymous", null));
+    const api = fakeJobs({ anonymous: job("anonymous") });
+    renderJobs(api, null);
+    expect(await row("anonymous.pdf")).toBeTruthy();
+    expect(api.listJobs).not.toHaveBeenCalled();
+  });
+
   it("lists only the signed-in account's jobs from this browser", async () => {
     seed(entry("mine"), entry("anonymous", null), entry("other", "user-2"));
     const createApi = renderJobs(fakeJobs({ mine: job("mine") }));
@@ -309,6 +319,108 @@ describe("jobs page", () => {
     fireEvent.click(download);
     expect((await within(item).findByRole("alert")).textContent).toBe(
       "This file was already deleted.",
+    );
+  });
+});
+
+function listed(id: string, overrides: Partial<ListedJob> = {}): ListedJob {
+  return { ...job(id), filename: `${id}.pdf`, ...overrides };
+}
+
+describe("jobs page with the account's job list", () => {
+  it("lists the account's jobs from the API with nothing stored in this browser", async () => {
+    const api = fakeJobs({});
+    api.listJobs.mockResolvedValue({
+      supported: true,
+      jobs: [listed("server-done"), listed("server-failed", { status: "failed" })],
+      nextCursor: null,
+    });
+    renderJobs(api);
+
+    const done = await row("server-done.pdf");
+    expect(await within(done).findByText("Ready")).toBeTruthy();
+    expect(within(await row("server-failed.pdf")).getByText("Failed")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "2 jobs" })).toBeTruthy();
+    expect(screen.getByText(/from any device/)).toBeTruthy();
+    expect(api.listJobs).toHaveBeenCalledTimes(1);
+    // The list already carries each job, so rows do not read them again.
+    expect(api.getJob).not.toHaveBeenCalled();
+    // Server rows cannot be removed locally: the list would bring them back.
+    expect(screen.queryByRole("button", { name: /Remove from this list/ })).toBeNull();
+    expect(localStorage.getItem(JOB_HISTORY_KEY)).toBeNull();
+  });
+
+  it("names a listed job from this browser's record when the API gives no file name", async () => {
+    seed(entry("named"));
+    const api = fakeJobs({});
+    api.listJobs.mockResolvedValue({
+      supported: true,
+      jobs: [
+        listed("named", { filename: undefined }),
+        listed("abcdef1234", { filename: undefined }),
+      ],
+      nextCursor: null,
+    });
+    renderJobs(api);
+    expect(await row("named.pdf")).toBeTruthy();
+    expect(await row("Job abcdef12")).toBeTruthy();
+  });
+
+  it("falls back to this browser's jobs when the API cannot list jobs", async () => {
+    seed(entry("local"));
+    const api = fakeJobs({ local: job("local") });
+    renderJobs(api);
+    expect(await row("local.pdf")).toBeTruthy();
+    expect(screen.getByText(/cannot list your account's jobs yet/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove from this list (local.pdf)" })).toBeTruthy();
+  });
+
+  it("explains a failed list, keeps this browser's jobs and tries again", async () => {
+    seed(entry("local"));
+    const api = fakeJobs({ local: job("local") });
+    api.listJobs
+      .mockRejectedValueOnce(apiError(500, "internal"))
+      .mockResolvedValueOnce({ supported: true, jobs: [listed("server")], nextCursor: null });
+    renderJobs(api);
+    expect(await screen.findByText(/Cannot load your jobs from localhost:3902/)).toBeTruthy();
+    expect(await row("local.pdf")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await row("server.pdf")).toBeTruthy();
+    expect(screen.queryByText("local.pdf")).toBeNull();
+    expect(api.listJobs).toHaveBeenCalledTimes(2);
+  });
+
+  it("loads the next page on request", async () => {
+    const api = fakeJobs({});
+    api.listJobs
+      .mockResolvedValueOnce({ supported: true, jobs: [listed("first")], nextCursor: "page-2" })
+      .mockResolvedValueOnce({ supported: true, jobs: [listed("second")], nextCursor: null });
+    renderJobs(api);
+    expect(await row("first.pdf")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show more jobs" }));
+    expect(await row("second.pdf")).toBeTruthy();
+    expect(api.listJobs).toHaveBeenLastCalledWith({ cursor: "page-2" });
+    expect(screen.getByRole("heading", { name: "2 jobs" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show more jobs" })).toBeNull();
+  });
+
+  it("shows a retried job at the top of the account's list", async () => {
+    const api = fakeJobs({ retried: job("retried", { status: "queued", attempts: 0 }) });
+    api.listJobs.mockResolvedValue({
+      supported: true,
+      jobs: [listed("broken", { status: "failed", error: { code: "failed", message: "exit 1" } })],
+      nextCursor: null,
+    });
+    renderJobs(api);
+    const item = await row("broken.pdf");
+    fireEvent.click(await within(item).findByRole("button", { name: "Retry broken.pdf" }));
+    await waitFor(() =>
+      expect(screen.getAllByRole("listitem", { name: "broken.pdf" })).toHaveLength(2),
+    );
+    expect(screen.getAllByRole("listitem", { name: "broken.pdf" })[0]?.textContent).toContain(
+      "Queued",
     );
   });
 });
