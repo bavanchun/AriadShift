@@ -63,44 +63,22 @@ RUN pnpm install --frozen-lockfile --filter "@ariadshift/web..."
 # Public base URLs for cloud mode; the defaults match infra/compose.
 ARG NEXT_PUBLIC_ARIAD_API_URL=http://localhost:8080
 ARG NEXT_PUBLIC_ARIAD_AUTH_URL=http://localhost:3001
+# Object-store origins of the API's presigned URLs, for the converter's CSP
+# connect-src (space-separated); the default matches ARIAD_S3_PUBLIC_ENDPOINT
+# in infra/compose.
+ARG ARIADSHIFT_WEB_STORAGE_ORIGINS=http://localhost:8333
 ENV NEXT_PUBLIC_ARIAD_API_URL=${NEXT_PUBLIC_ARIAD_API_URL} \
-    NEXT_PUBLIC_ARIAD_AUTH_URL=${NEXT_PUBLIC_ARIAD_AUTH_URL}
-RUN pnpm --filter @ariadshift/web export
+    NEXT_PUBLIC_ARIAD_AUTH_URL=${NEXT_PUBLIC_ARIAD_AUTH_URL} \
+    ARIADSHIFT_WEB_STORAGE_ORIGINS=${ARIADSHIFT_WEB_STORAGE_ORIGINS}
+RUN ARIADSHIFT_WEB_NGINX_CONF=/src/web-nginx.conf pnpm --filter @ariadshift/web export
 
 FROM ${NGINX} AS web
 COPY LICENSE NOTICE THIRD_PARTY_LICENSES /usr/share/doc/ariadshift/
 COPY --from=build /src/apps/web/out /srv/web
-# The headers follow apps/web/route-headers.mjs: only the converter (/app) is
-# cross-origin isolated, and every script chunk declares a compatible embedder
-# policy so the converter's worker can start.
-COPY <<'EOF' /etc/nginx/conf.d/default.conf
-server {
-    listen 3000;
-    server_name _;
-    server_tokens off;
-    absolute_redirect off;
-    root /srv/web;
-    error_page 404 /404.html;
-
-    gzip on;
-    gzip_types application/javascript application/json application/wasm image/svg+xml text/css text/plain;
-
-    location / {
-        try_files $uri $uri.html $uri/ =404;
-    }
-
-    location ~ ^/app(\.html|/.*)?$ {
-        add_header Cross-Origin-Opener-Policy same-origin;
-        add_header Cross-Origin-Embedder-Policy credentialless;
-        try_files $uri $uri.html =404;
-    }
-
-    location ^~ /_next/static/chunks/ {
-        add_header Cross-Origin-Embedder-Policy credentialless;
-        try_files $uri =404;
-    }
-}
-EOF
+# The server and its headers are generated from apps/web/route-headers.mjs at
+# export time: a CSP per page that pins its inline scripts, cross-origin
+# isolation on /app only, and worker policies on the script chunks.
+COPY --from=build /src/web-nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD ["wget", "-q", "--spider", "http://127.0.0.1:3000/"]
