@@ -6,19 +6,24 @@ The base installer excludes the optional Docling engine pack.
 
 ## Install and run
 
-Download a desktop installer from the project's GitHub Release: `.dmg` for macOS,
-`.msi` or NSIS `.exe` for Windows, or AppImage, `.deb` or `.rpm` for Linux.
-Linux URL registration requires `desktop-file-utils` and `xdg-utils`. The DEB
-and RPM declare these package dependencies; install them separately for AppImage.
+Download the installer for your platform from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases) (replace `<version>` with the release version, such as `1.0.0`):
 
-Unsigned builds are available until the maintainer configures platform signing
-certificates. On macOS, open the disk image and copy AriadShift to Applications.
-On first launch from a downloaded unsigned DMG, Gatekeeper blocks the app with a
-warning that its developer cannot be verified or Apple cannot check it for
-malicious software; follow [Apple’s guidance](https://support.apple.com/102445)
-if you trust the download.
-macOS installers and in-app updates currently support Apple silicon (aarch64)
-only. Intel macOS is not built and has no updater metadata entry.
+- **macOS (Apple silicon `aarch64` only):** `AriadShift_<version>_aarch64.dmg` (Intel macOS is not built for the desktop app and has no updater metadata entry).
+- **Windows (`x86_64`):** `AriadShift_<version>_x64-setup.exe` (NSIS) or `AriadShift_<version>_x64_en-US.msi` (MSI).
+- **Linux (`x86_64`):** `AriadShift_<version>_amd64.deb`, `AriadShift-<version>-1.x86_64.rpm` or `AriadShift_<version>_amd64.AppImage`.
+
+v1 desktop releases ship **unsigned** (without Apple Developer ID or Windows Authenticode certificates) together with `SHA256SUMS` and detached Minisign signatures (`SHA256SUMS.minisig` and `<installer>.minisig`). Before opening an installer, verify its Minisign signature against the project's compiled-in public key `D87B0E33F55EA02B` ([`crates/ariad-host/data/pack-keys/d87b0e33f55ea02b.pub`](../crates/ariad-host/data/pack-keys/d87b0e33f55ea02b.pub)) and check its SHA-256 digest:
+
+```sh
+minisign -Vm SHA256SUMS -P RWQroF71Mw572E0d5K9ndPm5/Uf94TRU99qOHfm3ZCNmB7CebJkjmim/
+shasum -a 256 -c --ignore-missing SHA256SUMS   # or: sha256sum -c --ignore-missing SHA256SUMS
+```
+
+First-launch steps for unsigned builds (see [the full installation guide](install.md#3-desktop-installation-and-first-run-guide) for step-by-step details and Windows PowerShell verification):
+
+- **macOS (Gatekeeper):** Open `AriadShift_<version>_aarch64.dmg` and drag `AriadShift.app` to `/Applications`. On first launch, macOS Gatekeeper blocks the unsigned app because Apple cannot verify the developer or check it for malware ([Apple guidance](https://support.apple.com/102445)). Click **Done** (not **Move to Trash**), open **System Settings › Privacy & Security**, scroll to **Security**, click **Open Anyway** next to `AriadShift.app`, and confirm **Open**. As an advanced alternative after verifying the `.dmg` checksum and Minisign signature, you can run `xattr -dr com.apple.quarantine /Applications/AriadShift.app` in Terminal; note the trade-off that stripping `com.apple.quarantine` bypasses Gatekeeper and quarantine-triggered XProtect checks on the bundle rather than recording an explicit single-app approval in System Settings.
+- **Windows (SmartScreen):** When launching `AriadShift_<version>_x64-setup.exe` or `AriadShift_<version>_x64_en-US.msi`, Microsoft Defender SmartScreen displays **"Windows protected your PC"**. Click **More info**, confirm the installer name and `Unknown publisher`, and click **Run anyway**.
+- **Linux (`.deb`, `.rpm`, `.AppImage`):** Install with `sudo apt install ./AriadShift_<version>_amd64.deb` or `sudo dnf install ./AriadShift-<version>-1.x86_64.rpm`, or run `chmod +x AriadShift_<version>_amd64.AppImage && ./AriadShift_<version>_amd64.AppImage` (pass `APPIMAGE_EXTRACT_AND_RUN=1` if FUSE is unavailable). Linux `ariadshift://` URL registration requires `desktop-file-utils` and `xdg-utils`; the `.deb` and `.rpm` declare these package dependencies, so install them separately when using the AppImage.
 
 Markdown and HTML conversion needs no external engine. Digital PDF input uses the
 built-in text reader, and PDF output uses the built-in Typst compiler. Scanned PDFs,
@@ -32,7 +37,7 @@ LibreOffice requires permitted user and mount namespaces for its private `/tmp`;
 see [the CLI runtime requirements](cli.md#ashift-convert). The picker and watch
 routes include these host formats; output choices follow supported writers.
 Engine packs use the same installation directory and signature
-policy as the CLI; see [Engine packs](packs.md).
+policy as the CLI; see [Engine packs](packs.md) and [the installation guide](install.md).
 
 ## Convert and queue
 
