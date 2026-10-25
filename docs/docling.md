@@ -58,9 +58,9 @@ cargo run -p ariad-cli --bin ashift -- convert fixtures/scan/vi-garden-300dpi.pn
 
 | File | Role |
 |---|---|
-| `pins.toml` | Every non-wheel input with its source, revision, licence, size and SHA-256: python-build-standalone `20261021` (CPython 3.14.9) per target, the Heron layout, TableFormer and RapidOCR models, and `tessdata_best` with `configs/tsv`. Wheels are pinned by `uv.lock`. |
+| `pins.toml` | Every non-wheel input with its source, revision, licence, size and SHA-256: python-build-standalone `20261021` (CPython 3.14.9) per target, the Heron layout, TableFormer and RapidOCR models, `tessdata_best` with `configs/tsv`, and `[toolchain]` release pins for pre-built Intel-free OpenCV, CPU PyTorch and Windows LLVM OpenMP wheels/sidecars. Upstream PyPI wheels are pinned by `uv.lock`. |
 | `fetch.py` | Downloads pinned files into the cache and verifies them; a cached blob is re-hashed before every use. |
-| `licenses.py` | The licence gate and the notices writer. |
+| `licenses.py` | The licence gate, notice writer, native wheel vendor gate (`--wheels`), and `[toolchain]` pin renderer (`--render-toolchain-pins`). |
 | `build.py` | `build`, `verify` and `manifest` (below). |
 | `native_build.py` | Hash-verified OpenCV and LLVM source builds, cached by source, target, flags and build tools. |
 | `torch_build.py`, `torch-build.toml` | The MKL-free x86_64 CPU toolchain builder, source pins and build options. |
@@ -78,7 +78,8 @@ cargo run -p ariad-cli --bin ashift -- convert fixtures/scan/vi-garden-300dpi.pn
 The x86_64 packs replace the published OpenCV wheel with a build of the same locked
 sdist, with IPP, ITT and proprietary device/acceleration backends disabled. Linux
 builds use a digest-pinned manylinux 2.28 container and auditwheel; Docker is a
-build prerequisite on Linux x86_64. Windows builds use Visual Studio 2022.
+build prerequisite on Linux x86_64. Windows builds use Ninja with the runner's
+native MSVC developer environment instead of assuming a particular Visual Studio generator.
 The `pack-build` dependency group locks the build tools without adding them to
 the distributed runtime. Source URLs, sizes and SHA-256 digests are in `pins.toml`;
 the OpenCV pin must match `uv.lock` when it is updated.
@@ -114,23 +115,38 @@ PyTorch wheels and LLVM OpenMP. Its license ships in the native third-party
 notices. The gate rejects proprietary MKL identifiers, IPP/ICV and Intel OpenMP,
 independently of the permissive top-level wheel metadata. ITT symbols and
 Apache-2.0 oneDNN names are not proprietary MKL identifiers.
+Common third-party notice files can name optional components that were not built.
+The ONNX Runtime CPU wheels retain their upstream consolidated notices, including
+the unused MKL license entry; the native files still pass the MKL marker gate.
+An explicit IPP/ICV notice section remains forbidden independently of metadata.
 
-The [torch toolchain workflow](../.github/workflows/torch-docling.yml) owns source
-builds. It runs natively on Linux and Windows x86_64; the Mac arm64 development
-machine does not emulate these builds. Compiler caches preserve completed work
+The [toolchain wheels workflow](../.github/workflows/toolchain-wheels.yml) and
+[torch toolchain workflow](../.github/workflows/torch-docling.yml) own source
+builds. They run natively on Linux and Windows x86_64 and verify the retained
+ARM wheels on Linux aarch64 and macOS arm64; the Mac arm64 development machine
+does not emulate x86_64 source builds. Compiler caches preserve completed work
 across bounded jobs, and wheel caches avoid rebuilding unchanged toolchains.
 The build key covers source, options, target and frozen build tools, excluding
 model pins and the published wheel manifest. Restored wheels are rehashed and
-run through CPU/torchvision probes. Linux uses the pinned manylinux builder to
-preserve the pack's glibc floor. OpenBLAS C LAPACK avoids a bundled Fortran runtime.
+run through CPU/torchvision and OpenCV probes. Linux uses the pinned manylinux
+builder to preserve the pack's glibc floor. OpenBLAS C LAPACK avoids a bundled
+Fortran runtime.
 
-Build artifacts contain wheels, native licenses, the Windows LLVM DLL and
-`build.json` provenance with SHA-256 and sizes. Maintainers publish reviewed
-outputs under a dedicated `toolchain-torch-*` GitHub Release and pin each input
-in `engines/docling/pack/torch-wheels.toml` before building packs. Pack builds
-download and verify those exact inputs; they never select the latest artifact.
-Changing source versions or options requires a new toolchain build, release and
-wheel pins. A toolchain tag does not publish an AriadShift or Docling pack release.
+Build artifacts contain wheels, native licenses, the Windows LLVM DLL,
+per-target `*-build-<target>.json` provenance records, `toolchain-pins.toml` and
+`SHA256SUMS`. Pushing a `toolchain-wheels-v*` tag triggers
+[`.github/workflows/toolchain-wheels.yml`](../.github/workflows/toolchain-wheels.yml)
+to publish the audited wheels, sidecars and `SHA256SUMS` to a GitHub Release on
+this repository. Maintainers then pin each target's `build_key` and `files`
+under `[toolchain]` in `engines/docling/pack/pins.toml` (using
+`licenses.py --render-toolchain-pins`). While a target's `[toolchain.targets.<triple>.<kind>]`
+entry is omitted during bootstrap, `native_build.release_files()` falls back to
+building from the pinned sources. Once pinned, pack builds download and verify
+those exact release inputs by SHA-256 and size; they never select the latest
+artifact or silently fall back if a pin is stale. Changing source versions or
+options requires a new toolchain build, `toolchain-wheels-v*` release and
+updated `pins.toml` entries. A toolchain tag does not publish an AriadShift or
+Docling pack release.
 
 Native x86_64 builds convert the table PDF and two OCR PDFs with both the original
 locked wheels and the replacements. `comparison-<target>.json` records extracted
@@ -155,6 +171,14 @@ Targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-ap
 - **Engine conformance** on Linux with cached models and Tesseract: `just docling-engine-test`.
 - **Pack** builds the Linux x86_64 pack twice in separate directories, compares the component and manifest hashes, and converts the scanned Vietnamese page with it offline. Tags, and pull requests that change `engines/docling/pack/` or the workflow, also build `aarch64` Linux (not run), macOS and Windows (each converts a digital PDF) and merge their manifests. Linux and Windows x86_64 jobs additionally run the conformance/acceptance tests with the packaged interpreter and upload the original/replacement conversion comparisons. Native OpenCV/LLVM caches are separate from downloaded source/model blobs.
 
+For a failed matrix job while its sibling is still running, obtain the job ID
+with `gh run view <run-id> --json jobs`. Download only that completed job's logs
+with `gh api --allow-escape-sequences repos/bavanchun/AriadShift/actions/jobs/"$job_id"/logs > "$log_path"`.
+This uses the repository's existing Actions read access. The CLI's run-wide log
+command waits for the whole run to finish; the job endpoint allows earlier
+diagnosis. Keep raw logs in an ignored local file and strip terminal escapes
+before displaying them.
+
 Native pack jobs also sign a test copy of the manifest with an ephemeral key, install it through
 `ashift engines install docling --from`, convert a digital PDF using installed-pack resolution,
 and run two Office jobs in a shared session before checking a 64 MiB memory limit. The test
@@ -165,3 +189,9 @@ Signing the manifest and attaching it with the archives to the `pack-docling-v<v
 ### Updating a pin
 
 Check the new version or revision against its registry (PyPI, GitHub Releases, Hugging Face), take the SHA-256 and size from the publisher or from a verified download, update `pins.toml` or `uv.lock` together with them, and run `just docling-dev`, `just docling-test` and `just docling-engine-test`. Never use alpha, beta or release-candidate builds. A new model licence must also pass the licence gate (`licenses.ALLOWED_DATA`).
+
+When OpenCV, PyTorch, OpenBLAS, LLVM OpenMP or manylinux build inputs change:
+
+1. Update the source pins in `engines/docling/pack/pins.toml`, `engines/docling/pack/torch-build.toml` and `uv.lock`.
+2. Trigger or tag [`.github/workflows/toolchain-wheels.yml`](../.github/workflows/toolchain-wheels.yml) with `toolchain-wheels-v<version>` (after explicit maintainer authorization) so CI builds, caches, audits and publishes the Intel-free wheels, sidecars, provenance files, `toolchain-pins.toml` and `SHA256SUMS` to GitHub Releases.
+3. Download the `toolchain-wheels-release` artifact (or release assets), verify `sha256sum --check SHA256SUMS`, and update `[toolchain]` in `engines/docling/pack/pins.toml` with the rendered `toolchain-pins.toml` entries (`uv run --no-project --python 3.14 python engines/docling/pack/licenses.py --render-toolchain-pins <dir> --release-tag toolchain-wheels-v<version>`).
