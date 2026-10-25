@@ -129,6 +129,36 @@
               }
             }
           },
+          "408": {
+            "description": "The transfer timed out before response headers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The transfer budget or the workspace's share is busy",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal service error",
             "content": {
@@ -185,8 +215,38 @@
               }
             }
           },
+          "408": {
+            "description": "The transfer timed out or its URL expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "422": {
             "description": "The body does not match the declared size or SHA-256",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The transfer budget, the workspace's share or the upload key is busy",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds before retrying"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
