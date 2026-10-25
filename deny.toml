@@ -10,6 +10,10 @@ targets = [
 yanked = "deny"
 unmaintained = "workspace"
 ignore = [
+    # Last reviewed 2026-10-25: jsonwebtoken 11.1.0, rsa 0.9.10 and
+    # citationberg 0.7.0 are the newest stable releases, and none of them
+    # resolves a fixed version yet. Review again by 2027-01-25.
+    #
     # The Marvin attack is a timing side channel in RSA private-key
     # operations. rsa reaches the build only through jsonwebtoken's verifier
     # in ariad-server, which checks signatures with public keys and never
