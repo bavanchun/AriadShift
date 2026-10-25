@@ -20,6 +20,11 @@ export default function LicensesPage() {
           code. Pandoc is licensed under GPL-2.0-or-later.
         </p>
         <p>
+          We must keep the corresponding source available for as long as we ship this pandoc.wasm
+          build. The source links below must remain reachable; if upstream stops serving them, we
+          must provide an accessible copy of the corresponding source.
+        </p>
+        <p>
           <a className="underline" href="/wasm/pandoc/COPYING.md">
             GPL licence
           </a>
