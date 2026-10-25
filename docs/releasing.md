@@ -62,6 +62,11 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    ```bash
    just ci
    ```
+   For a web release, verify the Pandoc licence/copyright and corresponding-source
+   links shipped beside `pandoc.wasm` and on `/licenses`. Keep the corresponding
+   source available for as long as that WASM build is distributed. If upstream
+   stops serving it, provide an accessible copy before shipping; see
+   [browser engine distribution](web.md#build-and-deploy).
 5. Stage the explicit paths and commit as `chore(release): prepare X.Y.Z`:
    ```bash
    git add Cargo.toml Cargo.lock THIRD_PARTY_LICENSES
