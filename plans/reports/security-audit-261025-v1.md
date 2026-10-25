@@ -2,9 +2,11 @@
 
 | ID | Severity | Finding | Owning area | Status |
 |---|---|---|---|---|
-| SEC-01 | High | Replayed local upload URLs permit unbounded concurrent buffered bodies | Server storage and blob routes | Open |
-| SEC-02 | Medium | MCP image resolution reopens ambient paths and bypasses hidden-file policy | Host assets and local MCP | Open |
-| SEC-03 | Medium | Failed JWKS refresh extends trust in a removed signing key without a deadline | Server authentication | Open |
+| SEC-01 | High | Replayed local upload URLs permit unbounded concurrent buffered bodies | Server storage and blob routes | Fixed in `f9deea5` and `90787ce`; tests not yet run |
+| SEC-02 | Medium | MCP image resolution reopens ambient paths and bypasses hidden-file policy | Host assets and local MCP | Fixed in `7836169`; tests not yet run |
+| SEC-03 | Medium | Failed JWKS refresh extends trust in a removed signing key without a deadline | Server authentication | Fixed in `0136cd9`; tests not yet run |
+
+Status updated 2026-10-25 after the branches were integrated on `fix/v1-security-audit`. The final review of the integrated branch is in [code-review-261025-phase7-final.md](code-review-261025-phase7-final.md).
 
 There are **zero confirmed critical, one high and two medium findings** in this source snapshot. This is an early audit, not release approval. The high finding must be repaired and verified before the security acceptance gate can pass. No source fixes, builds, tests, dependency-audit commands or exploit traffic were run, as required by the ASUS brief. Findings below are verified control-flow failures; proposed reproductions still need the coordinator's isolated test queue.
 
