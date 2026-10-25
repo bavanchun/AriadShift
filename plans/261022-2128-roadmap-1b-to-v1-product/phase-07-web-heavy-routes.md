@@ -53,3 +53,17 @@ The browser converter reaches the roadmap 3 bar: DOCX ↔ MD ↔ HTML ↔ EPUB e
 Verification on 2026-10-24: `just ci` passed locally with 929 Rust tests, doctests, 64 benchmark tests and 67 Vitest tests. Explicit desktop bindings, production build and eight desktop tests passed. [CI run 40109839485](https://github.com/bavanchun/AriadShift/actions/runs/40109839485) passed Ubuntu 26.04, macOS 26 and Windows 2025 verification; its Web job passed 79 Playwright tests across Chromium, Firefox and WebKit, with eight conditional skips. [PR #48](https://github.com/bavanchun/AriadShift/pull/48) targets `dev`.
 
 The Arch host lacks the pinned WebKit build's libicu74/libxml2/libflite1 libraries, so hosted Ubuntu CI supplies WebKit evidence. An initial Lighthouse run during unrelated CPU-heavy compilation scored 67/73 on mobile; the same production build passed after that compilation ended, with unchanged presets and threshold. See [the Lighthouse table](../../docs/web.md#lighthouse).
+
+## Review follow-up
+
+The accepted repair scope is correct public format pages and CLI examples, complete engine labels, compatible Desktop links for IR JSON, registry-driven label coverage, truthful hosting/source-availability documentation, browser-only Typst bindings, an image DOCX round trip and engine-cache retirement. Lighthouse remeasurement is reserved for the coordinator before the release candidate; retain the recorded scores and presets.
+
+Execution order: inspect and reproduce; repair pages and Desktop links; repair cache lifecycle and add the image round trip; verify focused tests and the full gate; review the diff; fetch/rebase, push the same ready PR and wait for three-OS CI. Keep existing conversion, offline and licence boundaries. No delivery redesign or new dependency versions.
+
+- [x] Inspect the review, accepted scope and affected callers; rebase onto `e1ce0d7`.
+- [x] Implement the accepted repairs and regression coverage.
+- [x] Pass focused page/label tests (10), Desktop parser tests (2), reader tests (59), production/static builds and Chromium/Firefox regressions; complete self-review.
+
+The new image test exposed Markdown data images remaining URL references instead of IR assets. Markdown now shares HTML's bounded data-image decoder, preserving a real PNG through DOCX and back without resource fetches. The browser suite recorded 59 passes and two conditional skips; three Chromium context-teardown timeouts passed on a serial rerun with unchanged assertions and timeout. Static export verification found all 23 manifest assets and the correct worker, headers and public sitemap.
+
+A host reboot interrupted the first full gate during workspace test compilation after static checks, Clippy and WASM checks had passed. The repaired commits and edits survived. Post-reboot focused checks passed again. The final full gate and three-OS delivery evidence are tracked on [PR #48](https://github.com/bavanchun/AriadShift/pull/48) and in the coordinator's requested `to-mac/p07-review-fixes-report.md`; its final Status block controls the repair hand-off.
