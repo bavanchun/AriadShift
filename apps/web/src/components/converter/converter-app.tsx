@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@ariadshift/ui/components/select";
 import {
+  CloudIcon,
   DownloadIcon,
   HardDriveIcon,
   LoaderCircleIcon,
@@ -28,7 +29,9 @@ import {
   ShieldCheckIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
+import { type Destination, DestinationChoice } from "@/components/cloud/destination-choice";
+import { ServerCopyNotice } from "@/components/cloud/server-copy-notice";
 import { RouteSummary } from "@/components/route-summary";
 import { ConverterClient, downloadOutput } from "@/converter/client";
 import { enableOffline } from "@/converter/offline";
@@ -39,11 +42,17 @@ import type {
   InitResult,
   OutputLocation,
 } from "@/converter/protocol";
+import type { DiscardOutcome, ServerCopy } from "@/lib/cloud/cloud-job";
+import { CLOUD } from "@/lib/cloud/config";
 import { formatBytes } from "@/lib/format-bytes";
 import { ACCEPT, desktopLink, formatLabel } from "@/lib/formats";
 import { isProfile, PROFILES } from "@/lib/profiles";
 
 type Phase = "idle" | "ingesting" | "ready" | "converting" | "done";
+
+// Cloud mode loads only when the user picks the cloud for a file, so local
+// conversion never downloads the upload code and keeps working offline.
+const CloudPanel = lazy(() => import("@/components/cloud/cloud-panel"));
 
 type ConvertedSummary = Omit<ConvertedFile, "location">;
 
@@ -96,6 +105,28 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
   const [output, setOutput] = useState<ConvertedSummary | null>(null);
   const [error, setError] = useState<ConverterError | null>(null);
   const [status, setStatus] = useState("");
+  // The picked file itself, for cloud mode; local mode streams it into the worker.
+  const [staged, setStaged] = useState<File | null>(null);
+  const [destination, setDestination] = useState<Destination>("device");
+  const cloudCleanup = useRef<(() => Promise<DiscardOutcome>) | null>(null);
+  const cloudPanelRef = useRef<HTMLDivElement>(null);
+  // Server copies that "Start over" or leaving cloud mode could not delete; each
+  // stays listed with its retention time and a retry until the server confirms.
+  const [serverCopies, setServerCopies] = useState<ServerCopy[]>([]);
+  const keepServerCopy = useCallback((copy: ServerCopy) => {
+    setServerCopies((copies) => [...copies.filter((item) => item.id !== copy.id), copy]);
+  }, []);
+  const settleServerCopy = useCallback(
+    (copy: ServerCopy, outcome: DiscardOutcome) => {
+      setServerCopies((copies) => copies.filter((item) => item.id !== copy.id));
+      if (outcome.status === "kept") {
+        keepServerCopy(outcome);
+      } else {
+        setStatus(`${copy.fileName} was deleted from the server.`);
+      }
+    },
+    [keepServerCopy],
+  );
 
   const targetLabelId = useId();
   const profileLabelId = useId();
@@ -179,6 +210,9 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
       setRoute(null);
       setRouteError(null);
       outputRef.current = null;
+      // Every file starts on this device; the cloud is chosen per file.
+      setStaged(CLOUD ? file : null);
+      setDestination("device");
       setPhase("ingesting");
       setStatus(`Reading ${file.name} on this device.`);
       try {
@@ -290,14 +324,27 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
     setOutput(null);
     setError(null);
     setPhase("idle");
+    const cloudFiles = cloudCleanup.current;
+    setStaged(null);
+    setDestination("device");
     try {
+      const fromServer: DiscardOutcome = (await cloudFiles?.()) ?? { status: "none" };
+      if (fromServer.status === "kept") {
+        keepServerCopy(fromServer);
+      }
       // Always reach a worker: a fresh one first deletes the files of any worker it replaced.
       await client().request({ type: "reset" });
-      setStatus("Files were removed from this device.");
+      setStatus(
+        fromServer.status === "deleted"
+          ? "Files were removed from this device and from the server."
+          : fromServer.status === "kept"
+            ? `Files were removed from this device. ${fromServer.fileName} is still on the server.`
+            : "Files were removed from this device.",
+      );
     } catch (cause) {
       setError(asError(cause));
     }
-  }, [client]);
+  }, [client, keepServerCopy]);
 
   const busy = phase === "ingesting" || phase === "converting";
   const inspection = input?.inspection;
@@ -326,6 +373,14 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
     handoffFormat && desktopTarget
       ? desktopLink(handoffFormat, desktopTarget, profile)
       : "/download";
+  const onCloud = destination === "cloud" && !!CLOUD && !!staged;
+  const chooseCloud = () => {
+    setDestination("cloud");
+    setStatus(
+      `Cloud conversion selected for ${staged?.name ?? "this file"}. Nothing is uploaded yet.`,
+    );
+    queueMicrotask(() => cloudPanelRef.current?.scrollIntoView({ block: "nearest" }));
+  };
   const headingCount = inspection?.counts
     ? Object.values(inspection.counts.headings).reduce((sum, count) => sum + count, 0)
     : 0;
@@ -340,11 +395,23 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
         className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-secondary px-4 py-3 text-secondary-foreground"
         data-testid="device-indicator"
       >
-        <ShieldCheckIcon aria-hidden="true" className="size-5 shrink-0" />
-        <p className="text-sm">
-          <strong className="font-semibold">Processed on this device.</strong> Files never leave
-          your browser and are not uploaded.
-        </p>
+        {onCloud ? (
+          <>
+            <CloudIcon aria-hidden="true" className="size-5 shrink-0" />
+            <p className="text-sm">
+              <strong className="font-semibold">Cloud conversion selected.</strong> This file
+              leaves your browser only when you choose Upload and convert.
+            </p>
+          </>
+        ) : (
+          <>
+            <ShieldCheckIcon aria-hidden="true" className="size-5 shrink-0" />
+            <p className="text-sm">
+              <strong className="font-semibold">Processed on this device.</strong> Files never
+              leave your browser and are not uploaded.
+            </p>
+          </>
+        )}
         {engine && (
           <Badge variant="outline" className="ml-auto">
             <HardDriveIcon aria-hidden="true" />
@@ -365,7 +432,17 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
         </Alert>
       )}
 
-      {error && (
+      {CLOUD &&
+        serverCopies.map((copy) => (
+          <ServerCopyNotice
+            key={copy.id}
+            copy={copy}
+            host={CLOUD.apiHost}
+            onSettled={settleServerCopy}
+          />
+        ))}
+
+      {error && !onCloud && (
         <Alert variant="destructive" data-testid="converter-error">
           <TriangleAlertIcon aria-hidden="true" />
           <AlertTitle>
@@ -379,7 +456,7 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
         </Alert>
       )}
 
-      {needsDesktop && (
+      {needsDesktop && !onCloud && (
         <Alert data-testid="desktop-handoff">
           <HardDriveIcon aria-hidden="true" />
           <AlertTitle>Continue in the desktop app</AlertTitle>
@@ -397,6 +474,15 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
             <a className="underline font-semibold" href={desktopUrl}>
               Open in Desktop
             </a>
+            {CLOUD && staged && (
+              <p>
+                Or convert it on {CLOUD.apiHost}, after you confirm the upload.{" "}
+                <Button variant="outline" size="lg" className="mt-2" onClick={chooseCloud}>
+                  <CloudIcon aria-hidden="true" />
+                  Process in Cloud
+                </Button>
+              </p>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -472,7 +558,35 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
         </Card>
       )}
 
-      {input && inspection && inspection.reachable.length > 0 && (
+      {CLOUD && staged && (
+        <DestinationChoice
+          value={destination}
+          onChange={(value) => (value === "cloud" ? chooseCloud() : setDestination("device"))}
+          host={CLOUD.apiHost}
+          disabled={busy}
+        />
+      )}
+
+      {onCloud && CLOUD && staged && (
+        <div ref={cloudPanelRef}>
+          <Suspense
+            fallback={<p className="text-sm text-muted-foreground">Loading cloud mode…</p>}
+          >
+            <CloudPanel
+              config={CLOUD}
+              file={staged}
+              sourceFormat={inspection?.format ?? null}
+              preferredTarget={target ?? preselected.current.to}
+              profile={profile}
+              onUseDevice={() => setDestination("device")}
+              cleanup={cloudCleanup}
+              onServerCopy={keepServerCopy}
+            />
+          </Suspense>
+        </div>
+      )}
+
+      {!onCloud && input && inspection && inspection.reachable.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>

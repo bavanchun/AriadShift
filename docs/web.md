@@ -47,7 +47,7 @@ Without OPFS synchronous access handles or Web Locks (non-secure origins, some p
 
 Errors from the worker are objects with a `code` and a `message`; storage failures such as a full disk are ordinary errors. An unexpected failure (for example the wasm module trapping) is marked `fatal`: the page replaces the worker, fails every pending request, and the next worker deletes the old worker's folder once its lock is free. wasm memory never shrinks, so after a job that grew it past 256 MiB the page also replaces the worker before the next file.
 
-Oversized inputs, OCR warnings and formats that require native engines offer **Open in Desktop**. The `ariadshift://open?route=<from>-<to>&profile=<profile>` link preselects the route and profile; the desktop app asks the user to select the file again. The browser never transfers file bytes. **Process in Cloud** is hidden until the cloud UI is enabled.
+Oversized inputs, OCR warnings and formats that require native engines offer **Open in Desktop**. The `ariadshift://open?route=<from>-<to>&profile=<profile>` link preselects the route and profile; the desktop app asks the user to select the file again. The browser never transfers file bytes. **Process in Cloud** appears only in builds with [cloud mode](#cloud-mode) and switches the file to it.
 
 Links use the native short names `md` and `json` for Markdown and IR JSON. Desktop also accepts existing links using full registry names, including IR JSON in either route position. Public format pages and the sitemap exclude internal Pandoc and Docling interchange formats while retaining their labels for route summaries.
 
@@ -62,6 +62,57 @@ It is registered for the whole origin, because the converter's worker script liv
 ### Headers
 
 `/app` is cross-origin isolated: `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. Other pages get neither, so embeds and sign-in popups keep working. Isolation belongs to a document, not a route, so every link into or out of `/app` (the header, the footer and the calls to action) is a plain link that loads a new document rather than a client-side navigation. Safari does not implement `credentialless`, so `/app` is not isolated there; nothing needs isolation yet because the converter is single-threaded. The script chunks under `/_next/static/chunks/` also send `Cross-Origin-Embedder-Policy: credentialless`, because an isolated page may only start a worker whose script declares a compatible policy; on ordinary scripts the header has no effect. The single source is [`apps/web/route-headers.mjs`](../apps/web/route-headers.mjs).
+
+## Cloud mode
+
+Cloud mode converts a file on an AriadShift server ([api.md](api.md), [self-hosting.md](self-hosting.md)) for routes the browser cannot run, such as Office formats, scanned PDFs and files above the 16 MB on-device limit. It is built in only when `NEXT_PUBLIC_ARIAD_API_URL` is set at build time. Without it, `/app` stays a static, offline, account-free converter and loads no cloud code. The code lives in `apps/web/src/lib/cloud` and `apps/web/src/components/cloud`, on top of [`@ariadshift/sdk`](../packages/sdk).
+
+### Opt-in and where files go
+
+Every picked file starts **On this device**. A "Where to convert" radio group offers **On {api host}**, and the desktop hand-off notice offers **Process in Cloud**. Choosing either loads the cloud panel, which names the host, the retention period, what is stored and, when configured, the operator, with a link to `/privacy`. Nothing leaves the device until the user presses **Upload and convert**. Then:
+
+1. The browser hashes the file on the device. The SDK's `sha256Hex` reads it in 8 MiB slices into an incremental SHA-256 ([`@noble/hashes`](https://github.com/paulmillr/noble-hashes), MIT), inside a module Web Worker, so a 2 GiB file is never held in memory and the page stays responsive. The step reads "Preparing 45%" meanwhile. Where a worker cannot start, the same chunked hash runs on the main thread.
+2. `POST /v1/uploads` reserves the upload with the file name, size and lowercase hex SHA-256. The file then goes straight to the server's object store in one presigned `PUT` through Uppy's `@uppy/aws-s3`, never through the web origin. `complete` lets the server check the size and hash.
+3. The job is created and followed over its event stream; a dropped stream reconnects with `Last-Event-ID` and shows "Reconnecting…".
+4. **Download** asks for a fresh presigned URL, fetches the output, checks its size and SHA-256, and saves it.
+
+The API stores the input, the outputs and the file name with the job; it never logs the name. Signed-in requests send a 15-minute JWT from the auth service as `Authorization: Bearer`.
+
+### Retention and deletion
+
+- The server deletes the input and outputs when the plan's retention ends: one hour after upload for both seeded plans ([server.md](server.md#plans-quotas-and-rate-limits)). An upload that never completes expires after 20 minutes. Before the upload, the disclosure states the retention from `GET /v1/limits` when the API offers it; afterwards the status row shows the server's deletion time, for example "Deletes automatically at 19:45 (in 58 min)".
+- **Delete now** calls `DELETE /v1/jobs/{id}`, which cancels a running job and deletes its input and outputs at once.
+- **Delete after download** deletes the job once its download has started.
+- **Cancel** during the transfer deletes the pending upload through `DELETE /v1/uploads/{id}` when the API offers it; otherwise the panel names the time the server deletes it.
+- **Start over and delete files**, and switching back to **On this device**, delete the job or upload the panel created. A finished result that was not downloaded is lost then.
+- Closing the tab deletes nothing; the retention period does.
+
+### Anonymous use and accounts
+
+Callers without an account use the `anonymous` plan when the API runs with `ARIAD_ANONYMOUS=true` (the default). Its seeded limits are 10 MiB per file, 20 jobs and 100 MiB of input a day, one job at a time and 30 requests a minute, counted per client address; its 1,024 MiB memory budget excludes Docling routes. Signed-in users get their workspace's plan, `free` by default, with files up to 2 GiB. When the API offers `GET /v1/limits`, the panel shows the plan's limits and refuses a file that is too large, or a spent quota, before uploading. A `429` shows a countdown from `Retry-After`.
+
+When the build has a Turnstile site key, anonymous uploads first render a Cloudflare Turnstile widget. Each token is used for one `POST /v1/uploads` and the widget resets afterwards. With an auth URL, the panel also offers sign-in, sign-up and the two-factor step in a dialog against the Better Auth service; without one it offers anonymous use only.
+
+### Configuration
+
+Next.js inlines these variables when the site is built, so set them for `just web-build` or `just web-export` and rebuild after changing them ([`config.ts`](../apps/web/src/lib/cloud/config.ts)):
+
+| Variable | Effect |
+|---|---|
+| `NEXT_PUBLIC_ARIAD_API_URL` | API origin, optionally with a path prefix. Turns cloud mode on; unset or invalid leaves it off. |
+| `NEXT_PUBLIC_ARIAD_AUTH_URL` | Better Auth origin. Enables sign-in; unset offers anonymous use only. |
+| `NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key. Set it exactly when the API has `ARIAD_TURNSTILE_SECRET`. |
+| `NEXT_PUBLIC_ARIAD_OPERATOR` | Who runs the server, named in the upload disclosure. |
+
+The compose stack sets the first two from `ARIAD_PUBLIC_URL` and `BETTER_AUTH_URL` ([self-hosting.md](self-hosting.md#configuration)). The servers must also accept the web origin:
+
+- **API:** `ARIAD_CORS_ORIGINS` lists the web origin (compose sets it from `ARIAD_WEB_ORIGIN`). The API already exposes `Retry-After`.
+- **Auth:** `BETTER_AUTH_TRUSTED_ORIGINS` lists the web origin, since sign-in sends cookies cross-origin.
+- **Object store:** bucket CORS allows `PUT` with the `Content-Type` and `x-amz-checksum-sha256` headers, and `GET`, from the web origin. Downloads are fetched rather than opened, so their size and hash can be checked.
+
+### Turnstile under cross-origin isolation
+
+`/app` sends `Cross-Origin-Embedder-Policy: credentialless` ([Headers](#headers)). Turnstile's script loads under it, but the challenge renders in an iframe from `challenges.cloudflare.com`, and Chromium and Firefox block cross-origin iframes that do not send a compatible embedder policy. This has not been checked in a real browser yet. Test a cloud build with Cloudflare's always-pass test site key `1x00000000000000000000AA`. If the iframe is blocked, the widget reports "The check could not run. Reload the page, or convert on this device." and anonymous cloud uploads cannot start; signed-in uploads and on-device conversion still work.
 
 ## Build and deploy
 

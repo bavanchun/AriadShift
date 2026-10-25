@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AriadApiError, createAriadClient, sha256Hex } from "../src/index";
+import { AriadApiError, createAriadClient } from "../src/index";
 import {
   apiError,
   BASE_URL,
@@ -157,19 +157,23 @@ describe("upload", () => {
     expect(complete?.headers.get("authorization")).toBe("Bearer jwt");
   });
 
-  it("takes the filename from a File and sends no Turnstile header by default", async () => {
+  it("takes the filename from a File, reports hashing and sends no Turnstile header", async () => {
     const mock = mockFetch(
       () => json(uploadBody("pending"), 201),
       () => new Response(null, { status: 200 }),
       () => json(uploadBody("completed")),
     );
     const client = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch });
+    const hashed: Array<[number, number]> = [];
 
-    await client.upload(new File(["hello"], "notes.md"));
+    await client.upload(new File(["hello"], "notes.md"), {
+      onHashProgress: (done, total) => hashed.push([done, total]),
+    });
 
     const create = mock.requests[0];
     expect(create?.headers.get("cf-turnstile-response")).toBeNull();
-    expect(await create?.json()).toMatchObject({ filename: "notes.md", size: 5 });
+    expect(await create?.json()).toEqual({ filename: "notes.md", size: 5, sha256: HELLO_SHA256 });
+    expect(hashed).toEqual([[5, 5]]);
   });
 
   it("requires a filename for bodies that are not a File", async () => {
@@ -299,12 +303,5 @@ describe("download", () => {
       status: 403,
       code: "forbidden",
     });
-  });
-});
-
-describe("sha256Hex", () => {
-  it("hashes blobs and byte arrays alike", async () => {
-    expect(await sha256Hex(hello())).toBe(HELLO_SHA256);
-    expect(await sha256Hex(new Blob(["hello"]))).toBe(HELLO_SHA256);
   });
 });
