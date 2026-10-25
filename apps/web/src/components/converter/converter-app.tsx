@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
 import { type Destination, DestinationChoice } from "@/components/cloud/destination-choice";
+import { ServerCopyNotice } from "@/components/cloud/server-copy-notice";
 import { RouteSummary } from "@/components/route-summary";
 import { ConverterClient, downloadOutput } from "@/converter/client";
 import { enableOffline } from "@/converter/offline";
@@ -41,6 +42,7 @@ import type {
   InitResult,
   OutputLocation,
 } from "@/converter/protocol";
+import type { DiscardOutcome, ServerCopy } from "@/lib/cloud/cloud-job";
 import { CLOUD } from "@/lib/cloud/config";
 import { formatBytes } from "@/lib/format-bytes";
 import { ACCEPT, desktopLink, formatLabel } from "@/lib/formats";
@@ -106,8 +108,25 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
   // The picked file itself, for cloud mode; local mode streams it into the worker.
   const [staged, setStaged] = useState<File | null>(null);
   const [destination, setDestination] = useState<Destination>("device");
-  const cloudCleanup = useRef<(() => Promise<boolean>) | null>(null);
+  const cloudCleanup = useRef<(() => Promise<DiscardOutcome>) | null>(null);
   const cloudPanelRef = useRef<HTMLDivElement>(null);
+  // Server copies that "Start over" or leaving cloud mode could not delete; each
+  // stays listed with its retention time and a retry until the server confirms.
+  const [serverCopies, setServerCopies] = useState<ServerCopy[]>([]);
+  const keepServerCopy = useCallback((copy: ServerCopy) => {
+    setServerCopies((copies) => [...copies.filter((item) => item.id !== copy.id), copy]);
+  }, []);
+  const settleServerCopy = useCallback(
+    (copy: ServerCopy, outcome: DiscardOutcome) => {
+      setServerCopies((copies) => copies.filter((item) => item.id !== copy.id));
+      if (outcome.status === "kept") {
+        keepServerCopy(outcome);
+      } else {
+        setStatus(`${copy.fileName} was deleted from the server.`);
+      }
+    },
+    [keepServerCopy],
+  );
 
   const targetLabelId = useId();
   const profileLabelId = useId();
@@ -309,18 +328,23 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
     setStaged(null);
     setDestination("device");
     try {
-      const fromServer = (await cloudFiles?.()) ?? false;
+      const fromServer: DiscardOutcome = (await cloudFiles?.()) ?? { status: "none" };
+      if (fromServer.status === "kept") {
+        keepServerCopy(fromServer);
+      }
       // Always reach a worker: a fresh one first deletes the files of any worker it replaced.
       await client().request({ type: "reset" });
       setStatus(
-        fromServer
+        fromServer.status === "deleted"
           ? "Files were removed from this device and from the server."
-          : "Files were removed from this device.",
+          : fromServer.status === "kept"
+            ? `Files were removed from this device. ${fromServer.fileName} is still on the server.`
+            : "Files were removed from this device.",
       );
     } catch (cause) {
       setError(asError(cause));
     }
-  }, [client]);
+  }, [client, keepServerCopy]);
 
   const busy = phase === "ingesting" || phase === "converting";
   const inspection = input?.inspection;
@@ -407,6 +431,16 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
           </AlertDescription>
         </Alert>
       )}
+
+      {CLOUD &&
+        serverCopies.map((copy) => (
+          <ServerCopyNotice
+            key={copy.id}
+            copy={copy}
+            host={CLOUD.apiHost}
+            onSettled={settleServerCopy}
+          />
+        ))}
 
       {error && !onCloud && (
         <Alert variant="destructive" data-testid="converter-error">
@@ -546,6 +580,7 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
               profile={profile}
               onUseDevice={() => setDestination("device")}
               cleanup={cloudCleanup}
+              onServerCopy={keepServerCopy}
             />
           </Suspense>
         </div>

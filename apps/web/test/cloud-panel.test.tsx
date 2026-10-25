@@ -2,6 +2,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import CloudPanel, { type CloudPanelProps } from "@/components/cloud/cloud-panel";
 import type { PlanLimits } from "@/lib/cloud/api";
+import type { DiscardOutcome } from "@/lib/cloud/cloud-job";
 import type { CloudConfig } from "@/lib/cloud/config";
 
 const CONFIG: CloudConfig = {
@@ -74,7 +75,7 @@ function renderPanel(props: Partial<CloudPanelProps> & { limits?: PlanLimits | n
             response: new Response(null, { status: 200 }),
           }),
         };
-  const cleanup = { current: null as (() => Promise<boolean>) | null };
+  const cleanup = { current: null as (() => Promise<DiscardOutcome>) | null };
   const onUseDevice = vi.fn();
   render(
     <CloudPanel
@@ -85,6 +86,7 @@ function renderPanel(props: Partial<CloudPanelProps> & { limits?: PlanLimits | n
       profile="editable"
       onUseDevice={onUseDevice}
       cleanup={cleanup}
+      onServerCopy={vi.fn()}
       apiOptions={{ fetch: backend.fetch, operations }}
       {...rest}
     />,

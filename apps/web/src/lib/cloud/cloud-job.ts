@@ -54,6 +54,26 @@ type Client = Pick<
   | "deleteJob"
 >;
 
+/** A file whose server copy is still there after `discard`. */
+export interface ServerCopy {
+  status: "kept";
+  /** The job's id, or the upload's when no job was created. */
+  id: string;
+  fileName: string;
+  /**
+   * `failed`: the request failed and can be tried again. `unsupported`: the
+   * server cannot delete an upload on request, so only its retention does.
+   */
+  reason: "failed" | "unsupported";
+  /** When the retention period deletes it, if known. */
+  expiresAt: string | null;
+  /** Tries the deletion again. */
+  retry: () => Promise<DiscardOutcome>;
+}
+
+/** What `discard` left on the server: nothing to delete, deleted, or a kept copy. */
+export type DiscardOutcome = { status: "none" } | { status: "deleted" } | ServerCopy;
+
 const loadUppyTransfer: Transfer = async (file, presigned, options) => {
   const { uppyTransfer } = await import("./transfer");
   return uppyTransfer(file, presigned, options);
@@ -91,6 +111,7 @@ export class CloudJob {
   #lastEventId: number | undefined;
   #stopConnections: (() => void) | null = null;
   #discarded = false;
+  #discarding: Promise<DiscardOutcome> | null = null;
 
   constructor(file: File, deps: CloudJobDependencies) {
     this.#file = file;
@@ -481,27 +502,45 @@ export class CloudJob {
 
   /**
    * Deletes whatever this file left on the server, for "Start over and delete
-   * files" and for leaving cloud mode. Returns whether anything was deleted.
+   * files" and for leaving cloud mode. Concurrent calls share one request. A
+   * copy that could not be deleted stays retryable through the outcome.
    */
-  async discard(): Promise<boolean> {
-    const { job, upload, phase } = this.#state;
+  discard(): Promise<DiscardOutcome> {
     this.#controller?.abort();
+    this.#discarding ??= this.#discardOnce().finally(() => {
+      this.#discarding = null;
+    });
+    return this.#discarding;
+  }
+
+  async #discardOnce(): Promise<DiscardOutcome> {
+    const { job, upload, phase } = this.#state;
     if (this.#discarded || (!job && !upload) || phase === "deleted" || phase === "expired") {
-      return false;
+      return { status: "none" };
     }
-    this.#discarded = true;
+    const kept = (reason: ServerCopy["reason"]): DiscardOutcome => ({
+      status: "kept",
+      id: job?.id ?? upload?.id ?? "",
+      fileName: this.#file.name,
+      reason,
+      expiresAt: this.#expiresAt(),
+      retry: () => this.discard(),
+    });
     try {
       if (job) {
         await this.#client.deleteJob(job.id);
-        return true;
+      } else if (upload && !(await this.#deps.api.deleteUpload(upload.id))) {
+        return kept("unsupported");
       }
-      if (upload) {
-        return await this.#deps.api.deleteUpload(upload.id);
+    } catch (error) {
+      const code = error instanceof Error && "code" in error ? error.code : null;
+      // Already gone on the server: the outcome the user asked for.
+      if (code !== "not_found" && code !== "expired") {
+        return kept("failed");
       }
-    } catch {
-      // The retention period still deletes it.
     }
-    return false;
+    this.#discarded = true;
+    return { status: "deleted" };
   }
 
   /**

@@ -350,8 +350,70 @@ describe("CloudJob", () => {
     const state = fake();
     const { job } = controller(state);
     await job.start({ to: "docx" });
-    await expect(job.discard()).resolves.toBe(true);
+    await expect(job.discard()).resolves.toEqual({ status: "deleted" });
     expect(state.calls.at(-1)).toBe(`deleteJob ${JOB.id}`);
-    await expect(job.discard()).resolves.toBe(false);
+    await expect(job.discard()).resolves.toEqual({ status: "none" });
+  });
+
+  it.each([
+    ["offline", new TypeError("Failed to fetch")],
+    ["refused with a 500", new AriadApiError(500, "internal", "storage unavailable")],
+  ])("keeps a failed start-over deletion retryable when %s", async (_case, failure) => {
+    const state = fake();
+    const { job } = controller(state);
+    await job.start({ to: "docx" });
+    const deleteJob = state.client.deleteJob;
+    state.client.deleteJob = async (id: string) => {
+      state.calls.push(`deleteJob ${id}`);
+      throw failure;
+    };
+
+    const outcome = await job.discard();
+    expect(outcome).toMatchObject({
+      status: "kept",
+      id: JOB.id,
+      fileName: "report.md",
+      reason: "failed",
+      expiresAt: JOB.expires_at,
+    });
+    // A failed deletion is not remembered as done: the panel's unmount tries again.
+    await expect(job.discard()).resolves.toMatchObject({ status: "kept", reason: "failed" });
+    expect(state.calls.filter((call) => call.startsWith("deleteJob"))).toHaveLength(2);
+
+    state.client.deleteJob = deleteJob;
+    if (outcome.status !== "kept") {
+      throw new Error("expected a kept server copy");
+    }
+    await expect(outcome.retry()).resolves.toEqual({ status: "deleted" });
+    await expect(job.discard()).resolves.toEqual({ status: "none" });
+  });
+
+  it("shares one deletion between start over and the panel's unmount", async () => {
+    const state = fake();
+    const { job } = controller(state);
+    await job.start({ to: "docx" });
+    const [first, second] = await Promise.all([job.discard(), job.discard()]);
+    expect(first).toBe(second);
+    expect(state.calls.filter((call) => call.startsWith("deleteJob"))).toHaveLength(1);
+  });
+
+  it("reports an upload the server cannot delete on request", async () => {
+    const state = fake();
+    state.deleteUpload = async () => false;
+    state.client.createJob = async () => {
+      throw new AriadApiError(422, "unsupported_route", "no route to docx");
+    };
+    const { job } = controller(state);
+    await job.start({ to: "docx" });
+    expect(job.state.upload?.status).toBe("completed");
+    expect(job.state.job).toBeNull();
+
+    await expect(job.discard()).resolves.toMatchObject({
+      status: "kept",
+      id: COMPLETED.id,
+      reason: "unsupported",
+      expiresAt: COMPLETED.expires_at,
+    });
+    expect(state.calls.at(-1)).toBe(`deleteUpload ${COMPLETED.id}`);
   });
 });

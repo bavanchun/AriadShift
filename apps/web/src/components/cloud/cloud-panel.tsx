@@ -22,7 +22,7 @@ import {
   type PlanLimits,
 } from "@/lib/cloud/api";
 import { type AccountUser, CloudAuth } from "@/lib/cloud/auth";
-import { CloudJob } from "@/lib/cloud/cloud-job";
+import { CloudJob, type DiscardOutcome, type ServerCopy } from "@/lib/cloud/cloud-job";
 import type { CloudConfig } from "@/lib/cloud/config";
 import { type CloudAction, describeCloudError } from "@/lib/cloud/errors";
 import {
@@ -54,7 +54,9 @@ export interface CloudPanelProps {
   /** Switches the destination back to this device. */
   onUseDevice: () => void;
   /** Receives the function that deletes this file's server copies on "Start over". */
-  cleanup: RefObject<(() => Promise<boolean>) | null>;
+  cleanup: RefObject<(() => Promise<DiscardOutcome>) | null>;
+  /** Told when leaving the panel could not delete the server copy, so it stays retryable. */
+  onServerCopy: (copy: ServerCopy) => void;
   /** Overrides for tests: the fetch and generated operations the API client uses. */
   apiOptions?: Pick<CloudApiOptions, "fetch" | "operations">;
   /** Overrides the Uppy transfer, for tests. */
@@ -128,6 +130,7 @@ export default function CloudPanel({
   profile: localProfile,
   onUseDevice,
   cleanup,
+  onServerCopy,
   apiOptions,
   transfer,
 }: CloudPanelProps) {
@@ -217,12 +220,19 @@ export default function CloudPanel({
   );
 
   // "Start over and delete files" deletes the server copies too; leaving cloud
-  // mode does the same, so no upload outlives the panel that can delete it.
+  // mode does the same. A copy the server kept is handed to the page, which
+  // names it and offers the deletion again after this panel is gone.
+  const serverCopy = useRef(onServerCopy);
+  serverCopy.current = onServerCopy;
   useEffect(() => {
     cleanup.current = () => job.discard();
     return () => {
       cleanup.current = null;
-      void job.discard();
+      void job.discard().then((outcome) => {
+        if (outcome.status === "kept") {
+          serverCopy.current(outcome);
+        }
+      });
       job.dispose();
     };
   }, [cleanup, job]);
