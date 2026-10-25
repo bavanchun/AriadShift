@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pandocVersion as version, pandocWasmSha256 } from "../engine-assets.mjs";
+import { pandocWasmSha256, pandocVersion as version } from "../engine-assets.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 if (
