@@ -88,8 +88,7 @@ fn the_planner_chains_office_pdf_and_ir_routes() {
         route(Format::Markdown, Format::Pdf),
         [
             "markdown-ariad-core->ariad-ir+json",
-            "ariad-ir+json-pandoc->docx",
-            "docx-libreoffice->pdf"
+            "ariad-ir+json-typst->pdf"
         ]
     );
     assert_eq!(
@@ -197,4 +196,39 @@ fn docling_inputs_plan_through_extraction_mapping_and_a_writer() {
         docx.steps[0].engine, "pandoc",
         "Pandoc preserves more DOCX structure in the measured corpus"
     );
+}
+
+/// Pins the default-profile PDF writer for IR-family inputs. A bench or capabilities refresh
+/// must not silently move these routes off Typst.
+#[test]
+fn default_markdown_html_and_ir_json_to_pdf_routes_use_typst() {
+    const WHY: &str = "Typst is the default PDF writer for Markdown, HTML and IR JSON: it is the \
+        one IR -> PDF writer shared by CLI, desktop, server and browser, its output is \
+        byte-reproducible under SOURCE_DATE_EPOCH, it runs in milliseconds, and it needs no \
+        LibreOffice namespace sandbox (which stock Ubuntu denies). LibreOffice only renders \
+        the user's own Office file (SOURCE_ONLY_ENGINES); see ARCHITECTURE.md decision \
+        'IR → PDF writer'";
+    let caps = planner::embedded();
+    let engines = caps.registered_engines();
+    for (from, reader) in [
+        (Format::Markdown, Some("markdown-ariad-core->ariad-ir+json")),
+        (Format::Html, Some("html-ariad-core->ariad-ir+json")),
+        (Format::AriadIrJson, None),
+    ] {
+        let plan = planner::plan(caps, from, Format::Pdf, Profile::default(), &engines)
+            .unwrap_or_else(|error| panic!("{from:?} -> pdf must plan: {error}. {WHY}"));
+        let steps: Vec<String> = plan
+            .steps
+            .iter()
+            .map(|step| format!("{}-{}->{}", step.from.id(), step.engine, step.to.id()))
+            .collect();
+        let expected: Vec<&str> = reader
+            .into_iter()
+            .chain(["ariad-ir+json-typst->pdf"])
+            .collect();
+        assert_eq!(
+            steps, expected,
+            "default {from:?} -> pdf route changed. {WHY}"
+        );
+    }
 }
