@@ -8,6 +8,8 @@ export interface FormatInfo {
   noun: string;
   extensions: string[];
   description: string;
+  /** Internal engine interchange retains labels but has no public format page. */
+  internal?: boolean;
 }
 
 export const FORMATS: FormatInfo[] = [
@@ -170,6 +172,7 @@ export const FORMATS: FormatInfo[] = [
   },
   {
     id: "docling+json",
+    internal: true,
     slug: "docling-json",
     label: "DoclingDocument (JSON)",
     noun: "DoclingDocument JSON document",
@@ -178,6 +181,7 @@ export const FORMATS: FormatInfo[] = [
   },
   {
     id: "pandoc+json",
+    internal: true,
     slug: "pandoc-json",
     label: "Pandoc AST (JSON)",
     noun: "Pandoc JSON document",
@@ -196,6 +200,13 @@ export function formatById(id: string): FormatInfo | undefined {
 /** A readable label for any registry id, including formats without display information. */
 export function formatLabel(id: string): string {
   return BY_ID.get(id)?.label ?? id;
+}
+
+/** Desktop links use the short names accepted by native format selection. */
+export function desktopLink(from: string, to: string, profile: string): string {
+  const shortName = (id: string) =>
+    id === "ariad-ir+json" ? "json" : id === "markdown" ? "md" : id;
+  return `ariadshift://open?route=${encodeURIComponent(`${shortName(from)}-${shortName(to)}`)}&profile=${encodeURIComponent(profile)}`;
 }
 
 export function pairSlug(from: string, to: string): string {
