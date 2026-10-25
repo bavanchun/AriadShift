@@ -154,5 +154,5 @@ source: crates/ariad-core/tests/ir_snapshots.rs
     "title": "Các điểm dừng ven sông"
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

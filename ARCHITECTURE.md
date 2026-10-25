@@ -300,11 +300,11 @@ Only 5 crates exist initially. Further crate splits occur only when distinct bou
 
 The IR serves as the "lingua franca" across readers and writers. Designed in three layers, the layout layer is entirely optional:
 
-The versioned schema is `ariad-ir/0` at `schemas/ir.v0.json` during 0.x; breaking changes are allowed. It freezes as `ariad-ir/1` together with `ariad-engine/1` before v0.2.0.
+The frozen document schema is `ariad-ir/1` at `schemas/ir.v1.json`. Native and in-memory readers continue accepting `ariad-ir/0`, preserving its content and upgrading the version on output. `schemas/ir.v0.json` remains available for existing documents. Unknown or missing versions are rejected. Breaking changes require a new major wire version.
 
 Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants. Format variants serialize with a single wire identity matching `Format::id()` (for example `ariad-ir+json` and `pandoc+json`). In addition to `Markdown`, `Html`, and `Docx`, the format registry provides `Epub`, `Pdf`, and `Png` (required by the spike for image inputs and source-format deserialization without a reader in 1a).
 
-New IR fields follow the rule: **omit when empty** (`#[serde(default, skip_serializing_if = ...)]`). Existing fields keep their current `null` serialization. Every snapshot remains byte-identical.
+New IR fields follow the rule: **omit when empty** (`#[serde(default, skip_serializing_if = ...)]`). Existing fields keep their current `null` serialization. IR goldens change only the document version at the v1 freeze. EPUB identifiers derive from the IR byte hash, so their identifiers and dependent table-of-contents hashes also change.
 
 `Document` has `{ version, meta, body, assets, layout, provenance, furniture }`. `furniture: Vec<Block>` carries running page headers and footers outside `body` and is omitted when empty. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
 
@@ -353,6 +353,7 @@ Provenance boxes become `LayoutIndex` entries: Docling's bottom-left origin is f
   - Execution time normalization: $\text{normalized}(p50\_ms) = \min(1.0, p50\_ms / 5000.0)$.
   - Constant hop penalty: `HOP_PENALTY = 0.05` per graph edge to favor direct or shorter routes.
   - **Unmeasured edge rule**: an edge with `metrics: null` receives a pessimistic default cost of `1.5` plus the hop penalty, and is flagged as unmeasured in the plan explanation.
+  - **Source-only engines**: `SOURCE_ONLY_ENGINES` (LibreOffice) may only take the first step of a route. Their scores are measured on authored Office files and do not describe re-rendering another engine's intermediate, so IR-family inputs (Markdown, HTML, EPUB, IR JSON) write PDF through Typst in every profile.
 - **Profiles and Weights**:
 
 | Profile | Priority | $w_f$ (fidelity) | $w_e$ (editability) | $w_t$ (time) |
@@ -368,14 +369,13 @@ The planner runs Dijkstra's shortest-path algorithm over weighted costs with det
 $ ashift plan paper.pdf --to docx --engine docling
 input   paper.pdf · pdf
 route   pdf ─docling→ docling+json ─ariad-core→ ariad-ir+json ─pandoc→ docx
-score   unmeasured
 ```
 
 For pipeline composition and diagnostic testing, the CLI provides hidden hooks:
 - `ashift __ir <INPUT> -o <OUTPUT>` executes the planned route converting an input document to AriadShift IR.
 - `ashift __write <INPUT> --to <FORMAT> -o <OUTPUT>` executes the planned route converting an IR document to the target format. If the IR document lacks an explicit metadata title, target formats supporting titles (such as DOCX and EPUB) fall back to using the input filename stem, stripping any `.ir` suffix (e.g., `document.ir.json` -> `document`).
 
-The format registry recognizes PPTX, XLSX, ODT, ODS, ODP, DOC, XLS, PPT, RTF, JPEG, WebP and TIFF through ZIP parts, ODF mimetypes, bounded OLE2 directory inspection or magic bytes. `json` is the user name of `ariad-ir+json`; `pandoc+json` stays internal. New PDF, Typst and LibreOffice capability edges have `metrics: null` until benchmark measurements exist.
+The format registry recognizes PPTX, XLSX, ODT, ODS, ODP, DOC, XLS, PPT, RTF, JPEG, WebP and TIFF through ZIP parts, ODF mimetypes, bounded OLE2 directory inspection or magic bytes. `json` is the user name of `ariad-ir+json`; `pandoc+json` stays internal. Measured PDF, Docling, Typst and LibreOffice edges come from `bench/`; unsupported or unmeasured fixture families retain `metrics: null`. The generated [benchmark report](docs/bench-report.md) records the measured corpus and limitations.
 
 ### 6.4 Format Matrix (v0.x Scope)
 
@@ -448,8 +448,8 @@ Protocol rules:
 - `describe` runs with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`), preventing hung engines from blocking host discovery commands or MCP tools.
 - For a one-shot process, `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation.
 - Receiving `capabilities` during a convert request is a protocol violation.
-- The schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "draft"`. All engines must pass a shared conformance test suite.
-- `ariad-engine/1` is a draft until the Docling engine passes conformance before v0.2.0; breaking changes are allowed only before that point.
+- The frozen schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "final"`. The shared conformance checks cover Pandoc, PDF, Typst and LibreOffice in native tests, and the real Docling adapter in the scheduled or `bench`-labelled benchmark job.
+- `ariad-engine/1` is final after real Docling conformance. Breaking changes require a new major protocol version.
 - Built-in PDF and Typst engines run through the same runner as Pandoc: `ashift __engine pdf|typst`. The third adapter is `ashift __engine libreoffice`, which drives the system installation.
 
 **Session mode.** An engine that reports `supports_session: true` can serve several jobs in one warm process (1.56x measured throughput for Docling). The wire shape is the optional `session_id` on `convert` and the `supports_session` capability.
@@ -814,7 +814,7 @@ The PDF reader caps indirect objects (2,000,000), page/form nesting, operators a
 
 This sequence progresses from lowest to highest operational expense. The CLI validates core correctness. The Desktop app establishes differentiation. Web Local incurs zero server costs. Cloud introduces security overhead, hosting expenses, and abuse mitigation, and is therefore tackled last.
 
-Phase 0 ends with one working route rather than an empty scaffold, so the IR and protocol are shaped by a real conversion. The protocol stays a draft until Docling, the first heavy out-of-process engine, has run through it; changing it before then costs nothing. Phase 1 is split so that a usable release ships before the hardest work: 1a proves the IR, planner and engine protocol on lightweight routes, while 1b adds the heavy Python engine, OCR and PDF fidelity. Engine packs land in 1b because the CLI's `engines install` needs them; the desktop only adds a UI on top. Fuzzing starts with 1a because the core readers parse untrusted input from the first release. Quotas ship with the cloud phase because a public cloud without them invites abuse from day one; `plan_entitlements` supplies each tenant's limits.
+Phase 0 ends with one working route rather than an empty scaffold, so the IR and protocol are shaped by a real conversion. The protocol remained a draft until Docling, the first heavy out-of-process engine, passed conformance; the resulting v1 contract is frozen. Phase 1 is split so that a usable release ships before the hardest work: 1a proves the IR, planner and engine protocol on lightweight routes, while 1b adds the heavy Python engine, OCR and PDF fidelity. Engine packs land in 1b because the CLI's `engines install` needs them; the desktop only adds a UI on top. Fuzzing starts with 1a because the core readers parse untrusted input from the first release. Quotas ship with the cloud phase because a public cloud without them invites abuse from day one; `plan_entitlements` supplies each tenant's limits.
 
 ---
 
@@ -822,6 +822,8 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 
 | Topic | Chosen | Rejected | Rationale |
 |---|---|---|---|
+| IR → PDF writer | Typst for every IR-family input; LibreOffice only renders the user's own Office/ODF file (first route step) | Letting measured scores chain Pandoc DOCX into LibreOffice for Markdown, HTML and IR JSON | One reproducible, fast, sandbox-light PDF writer for CLI, desktop, server and browser; Office scores do not describe Pandoc-generated DOCX, and the chain fails on hosts that deny LibreOffice's namespaces |
+| Engine and IR freeze | `ariad-engine/1` and `ariad-ir/1`, with readers retaining v0 IR compatibility | Extending the draft window through release | Real adapter conformance and authored heavy-route measurements establish the shared contracts before v0.2.0 |
 | Native engine dispatch | One `ariad-host` built-in dispatcher shared by CLI and desktop | Separate engine lists in each executable | New built-in engines must work when either surface re-executes itself; unknown names fail without starting the GUI |
 | Queue | pgmq on Postgres 18 | NATS JetStream upfront | Eliminates an extra service for self-hosters; SSE leverages LISTEN/NOTIFY; trait abstracts future NATS addition |
 | Self-hosted storage | SeaweedFS | MinIO (archived 04/2026), RustFS (just hit 1.0), Garage (AGPL) | Mature, Apache-2.0, single-command setup |
@@ -852,7 +854,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Tenancy and metering | Per-account workspace, plan-keyed entitlements, append-only usage events; billing adapter later | Per-handler quota constants; billing before paid tiers | Supports a free launch and lets paid plans arrive without changing the limits contract |
 | In-process native readers | Markdown and HTML in `ariad-core`, with pure Rust, typed errors, finite depth, node, and block limits, and fuzzing from 1a | Running every native reader out of process | Enables lightweight native routes under a documented, bounded exception to Principle 3 |
 | Python fixture generator | Dev-only uv workspace member at `fixtures/gen/`; dependencies never ship | Shipping fixture-generation dependencies | Reproducible fixture creation without runtime dependencies |
-| IR version policy | `ariad-ir/0` with `schemas/ir.v0.json` through 0.x; freeze `/1` with the protocol in 1b | Starting Phase 0 at `/1` | Allows breaking changes while the foundation is still a draft |
+| IR version policy | Emit `ariad-ir/1` with `schemas/ir.v1.json`; read v0 and v1 | Starting the foundation at `/1`; rejecting old authored truth after freezing | The foundation used v0 while the schema developed; conformance establishes v1 without discarding existing documents |
 | DOCX timestamp rewrite | Host rewrites `created` and `modified` after Pandoc, honoring `SOURCE_DATE_EPOCH` | Keeping Pandoc's sandbox epoch-zero timestamps | User-facing documents get conversion-time metadata and golden outputs remain reproducible |
 | Repository publication | Public `bavanchun/AriadShift`; pinned 3-OS CI on pushes and pull requests | Private repository or floating action refs | Matches the accepted public-repository decision and keeps CI actions immutable |
 | Product identifiers | `ariadshift.ariadnev.com`, its `/schemas/` ID base, bundle `com.ariadnev.ariadshift`, and `ariadshift://` | Unrelated domains or bundle identifiers | Keeps web, schema, desktop, and deep-link identities aligned |

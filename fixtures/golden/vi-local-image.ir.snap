@@ -68,5 +68,5 @@ input_file: fixtures/md/vi-local-image.md
     "title": null
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

@@ -40,5 +40,5 @@ source: crates/ariad-core/tests/ir_snapshots.rs
     "title": "Truyện Kiều: Tài sắc hai chị em"
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

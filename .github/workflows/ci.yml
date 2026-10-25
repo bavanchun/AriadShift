@@ -252,7 +252,9 @@ jobs:
         run: just wasm
 
       - name: Run tests
-        run: just test
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then export ARIAD_REQUIRE_OFFICE=1; fi
+          just test
 
       - name: Check the CLI without default features
         run: cargo check -p ariad-cli --no-default-features

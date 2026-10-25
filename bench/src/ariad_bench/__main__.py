@@ -17,6 +17,9 @@ def main(argv: list[str] | None = None) -> int:
 
     # Subcommands define their own arguments as the single source of truth
     run.build_parser(subparsers.add_parser("run", help="Run benchmark measurements"))
+    from ariad_bench import heavy, report
+    heavy.build_parser(subparsers.add_parser("heavy", help="Measure PDF, OCR and Office routes"))
+    report.build_parser(subparsers.add_parser("report", help="Generate the public benchmark report"))
     check.build_parser(subparsers.add_parser("check", help="Check capabilities.json against schema"))
     diff.build_parser(subparsers.add_parser("diff", help="Diff capabilities.json against baseline"))
 
@@ -28,6 +31,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
+    if args.command == "heavy":
+        return heavy.main(argv[1:])
+    if args.command == "report":
+        return report.main(argv[1:])
     if args.command == "run":
         return run.main(argv[1:])
     elif args.command == "check":

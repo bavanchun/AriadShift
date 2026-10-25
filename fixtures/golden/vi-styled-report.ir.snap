@@ -82,5 +82,5 @@ source: crates/ariad-cli/tests/reader_golden.rs
     "title": null
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }
