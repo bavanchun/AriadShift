@@ -894,3 +894,95 @@ fn test_convert_confined_parent_swap_race() {
         "CRITICAL: convert_confined escaped root and clobbered outside file during parent swap!"
     );
 }
+
+#[test]
+fn test_confined_input_parent_dir_is_the_input_directory() {
+    let temp = tempdir().unwrap();
+    let root = fs::canonicalize(temp.path()).unwrap();
+    let sub = root.join("sub");
+    fs::create_dir(&sub).unwrap();
+    fs::write(sub.join("note.md"), "# Note").unwrap();
+    fs::write(sub.join("photo.png"), b"sibling").unwrap();
+
+    let allowed = AllowedDirs::new(std::slice::from_ref(&root), &[]).unwrap();
+    let input = confine_input(&sub.join("note.md"), &allowed).unwrap();
+
+    assert_eq!(input.parent_dir.read("photo.png").unwrap(), b"sibling");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_parent_swap_after_input_copy_never_embeds_a_private_image() {
+    use ariad_host::{
+        assets::AssetBase,
+        convert::{ConvertRequest, convert_confined_in},
+        session::{PoolConfig, SessionPool},
+    };
+    use sha2::{Digest, Sha256};
+
+    const PUBLIC_PNG: &[u8] = b"\x89PNG\r\n\x1a\npublic sibling image";
+    const PRIVATE_PNG: &[u8] = b"\x89PNG\r\n\x1a\nprivate image outside the root";
+
+    let temp = tempdir().unwrap();
+    let canon_temp = fs::canonicalize(temp.path()).unwrap();
+    let inbox = canon_temp.join("inbox");
+    let private = canon_temp.join("private");
+    let sub = inbox.join("sub");
+    fs::create_dir_all(&sub).unwrap();
+    fs::create_dir(&private).unwrap();
+    fs::write(sub.join("note.md"), "# Note\n\n![image](photo.png)\n").unwrap();
+    fs::write(sub.join("photo.png"), PUBLIC_PNG).unwrap();
+    fs::write(private.join("photo.png"), PRIVATE_PNG).unwrap();
+
+    let allowed = AllowedDirs::new(std::slice::from_ref(&inbox), &[]).unwrap();
+    let mut input = confine_input(&sub.join("note.md"), &allowed).unwrap();
+    let output = confine_output(
+        &input,
+        Some(&inbox.join("note.json")),
+        "json",
+        false,
+        false,
+        &allowed,
+    )
+    .unwrap();
+    let (_isolated_dir, isolated_input) = input.create_isolated_copy(None, None).unwrap();
+    let asset_base = AssetBase::confined(input.parent_dir.try_clone().unwrap());
+
+    // Replace the input's parent with a symlink to the private directory after the input
+    // copy and before images are resolved.
+    fs::rename(&sub, inbox.join("sub-original")).unwrap();
+    std::os::unix::fs::symlink(&private, &sub).unwrap();
+
+    let request = ConvertRequest {
+        input: isolated_input,
+        output: output.destination.clone(),
+        target_format: "json".to_owned(),
+        profile: ariad_core::planner::Profile::Editable,
+        overwrite: false,
+        engine_program: std::env::current_exe().unwrap(),
+        title_fallback: None,
+        asset_base_dir: None,
+        reader_engine: None,
+    };
+    let pool = SessionPool::new(PoolConfig::default());
+    convert_confined_in(
+        &pool,
+        &request,
+        &output.parent_dir,
+        Path::new(&output.file_name),
+        &asset_base,
+        tokio_util::sync::CancellationToken::new(),
+        |_| {},
+    )
+    .unwrap();
+
+    let ir = fs::read_to_string(inbox.join("note.json")).unwrap();
+    assert!(
+        !ir.contains(&hex::encode(Sha256::digest(PRIVATE_PNG))),
+        "CRITICAL: a parent swap redirected image resolution to a private directory"
+    );
+    assert!(
+        ir.contains(&hex::encode(Sha256::digest(PUBLIC_PNG))),
+        "the image from the authorized directory must still be embedded"
+    );
+}

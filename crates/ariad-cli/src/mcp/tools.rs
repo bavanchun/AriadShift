@@ -7,6 +7,7 @@ use std::{
 
 use ariad_core::planner::Profile;
 use ariad_host::{
+    assets::AssetBase,
     commands::{active_capabilities, engines, inspect, plan},
     confine::{AllowedDirs, ConfineError, confine_input, confine_output, parse_file_uri},
     convert::{
@@ -392,7 +393,18 @@ impl McpServer {
                 }
             };
 
-        let original_parent = validated_input.path.parent().map(|p| p.to_path_buf());
+        // Sidecar images resolve beneath the directory handle opened during confinement, under
+        // the same hidden-component rule as the input, never by reopening the input's path.
+        let asset_base = match validated_input.parent_dir.try_clone() {
+            Ok(dir) => AssetBase::confined(dir),
+            Err(e) => {
+                return Ok(tool_error(
+                    "input_io",
+                    2,
+                    format!("failed to open input directory: {e}"),
+                ));
+            }
+        };
         let request = ConvertRequest {
             input: isolated_input,
             output: validated_output.destination.clone(),
@@ -401,7 +413,7 @@ impl McpServer {
             overwrite: validated_output.overwrite,
             engine_program: self.engine_program.clone(),
             title_fallback: None,
-            asset_base_dir: original_parent,
+            asset_base_dir: None,
             reader_engine: None,
         };
 
@@ -425,6 +437,7 @@ impl McpServer {
                 &request,
                 &parent_dir,
                 std::path::Path::new(&file_name),
+                &asset_base,
                 cancel,
                 |_| {},
             )
