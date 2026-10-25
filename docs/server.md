@@ -127,6 +127,8 @@ The public `/readyz` and `/v1/capabilities` routes bypass caller throttling: rea
 | `ARIAD_TURNSTILE_SECRET` | unset | Requires a Cloudflare Turnstile token (`cf-turnstile-response`) on anonymous `POST /v1/uploads`. |
 | `ARIAD_TURNSTILE_VERIFY_URL` | Cloudflare's `siteverify` | Verification endpoint; tests point it at a stub. |
 
+JWKS is refreshed after five minutes or on an unknown `kid`, with cached-set refresh attempts spaced at least 30 seconds apart (five seconds when no set is cached). During fetch failures, a matching key remains usable only until 15 minutes after the last successful JWKS fetch: the normal five-minute TTL plus at most ten minutes of outage grace. Failed or throttled refreshes never renew that trust. At the limit, JWT authentication fails closed until a successful fetch confirms the key again; a successful rotation removes old keys immediately from that replica's cache. This policy bounds outage trust independently of the token's claimed lifetime and retains the existing signature algorithm, issuer, audience and expiry checks.
+
 The server reads Better Auth's `apikey` table and never writes it. It honours `enabled`, `expiresAt` and `configId`, and refuses a key whose `remaining` is used up or whose Better Auth rate-limit window is full. Because it never moves those counters, configure the API Key plugin with `rateLimit: { enabled: false }` (its default allows 10 requests per day) and without `remaining` for keys meant for the API; the API applies its own per-workspace rate limit.
 
 ### Worker
