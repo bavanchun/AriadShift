@@ -17,6 +17,14 @@ type Pending = { resolve: (value: unknown) => void; reject: (error: ConverterErr
  */
 export class ConverterClient {
   #worker: Worker | null = null;
+  #progress = new Set<(message: string) => void>();
+  onProgress(listener: (message: string) => void): () => void {
+    this.#progress.add(listener);
+    return () => {
+      this.#progress.delete(listener);
+    };
+  }
+
   /** Storage session of the current worker, known once its init request answered. */
   #session: string | null = null;
   #retired: string[] = [];
@@ -83,23 +91,30 @@ export class ConverterClient {
       return this.#worker;
     }
     const worker = this.spawn();
-    worker.addEventListener("message", (event: MessageEvent<WorkerResponse>) => {
-      const response = event.data;
-      const pending = this.#pending.get(response.id);
-      if (!pending) {
-        return;
-      }
-      this.#pending.delete(response.id);
-      if (response.ok) {
-        pending.resolve(response.result);
-      } else {
-        pending.reject(response.error);
-        if (response.error.fatal && this.#worker === worker) {
-          this.#retire();
-          this.#failAll(response.error);
+    worker.addEventListener(
+      "message",
+      (event: MessageEvent<WorkerResponse | { event: "progress"; message: string }>) => {
+        const response = event.data;
+        if ("event" in response) {
+          for (const listener of this.#progress) listener(response.message);
+          return;
         }
-      }
-    });
+        const pending = this.#pending.get(response.id);
+        if (!pending) {
+          return;
+        }
+        this.#pending.delete(response.id);
+        if (response.ok) {
+          pending.resolve(response.result);
+        } else {
+          pending.reject(response.error);
+          if (response.error.fatal && this.#worker === worker) {
+            this.#retire();
+            this.#failAll(response.error);
+          }
+        }
+      },
+    );
     worker.addEventListener("error", (event) => {
       event.preventDefault();
       if (this.#worker === worker) {

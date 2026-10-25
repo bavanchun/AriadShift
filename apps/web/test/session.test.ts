@@ -30,7 +30,7 @@ describe("ConverterSession", () => {
     const session = new ConverterSession(loadCore(), new MemoryStore());
     const ingested = await session.ingest(markdownFile("# Notes\n\nHello *there*.\n"));
     expect(ingested.inspection.format).toBe("markdown");
-    expect(ingested.inspection.reachable).toEqual(["ariad-ir+json", "html"]);
+    expect(ingested.inspection.reachable).toEqual(["ariad-ir+json", "docx", "epub", "html", "pdf"]);
 
     const route = session.plan("html", "editable");
     expect(route.steps).toHaveLength(2);
@@ -76,12 +76,13 @@ describe("ConverterSession", () => {
     await expect(store.readInput()).rejects.toMatchObject({ code: "no_input" });
   });
 
-  it("reports browser-unavailable targets as typed errors", async () => {
+  it("plans external browser engines and reports missing registrations", async () => {
     const session = new ConverterSession(loadCore(), new MemoryStore());
     await session.ingest(markdownFile("# Hi\n"));
-    expect(() => session.plan("docx", "editable")).toThrow(
-      expect.objectContaining({ code: "no_route" }),
-    );
+    expect(session.plan("docx", "editable").steps.at(-1)?.engine).toBe("pandoc");
+    await expect(session.convert("docx", "editable")).rejects.toMatchObject({
+      code: "engine_unavailable",
+    });
   });
 
   it("refuses inputs above the memory store limit", async () => {
@@ -97,6 +98,8 @@ describe("ConverterSession", () => {
     await expect(session.ingest(markdownFile("more than eight bytes"))).rejects.toMatchObject({
       code: "limit_exceeded",
       limit: "browser_input_bytes",
+      format: "markdown",
+      targets: expect.arrayContaining(["html", "docx", "pdf"]),
     });
     await expect(store.readInput()).rejects.toMatchObject({ code: "no_input" });
   });
@@ -149,7 +152,7 @@ describe("routes", () => {
     const calls: string[] = [];
     const docx = {
       convert: (bytes: Uint8Array, from: string, to: string) => {
-        calls.push(`${from}>${to}:${decoder.decode(bytes).includes("ariad-ir/0")}`);
+        calls.push(`${from}>${to}:${decoder.decode(bytes).includes("ariad-ir/1")}`);
         return {
           bytes: new Uint8Array([80, 75]),
           format: to,

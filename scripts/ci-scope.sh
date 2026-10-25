@@ -21,7 +21,7 @@ docs_paths='^(docs|plans)/|^(README|ARCHITECTURE|AGENTS|CLAUDE)\.md$'
 js_paths='^(apps|packages|services|brand)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version)$|^scripts/check-js-licenses\.mjs$'
 # Everything the web job builds or depends on, including the Rust code compiled to wasm
 # and the OpenAPI document the SDK is generated from.
-web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|wasm)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$|^schemas/openapi\.v1\.json$'
+web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|wasm|typst)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$|^schemas/openapi\.v1\.json$'
 
 # Prints heavy|web|reason.
 decide() {

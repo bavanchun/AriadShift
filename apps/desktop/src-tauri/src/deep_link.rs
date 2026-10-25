@@ -48,9 +48,15 @@ pub fn parse(value: &str) -> Result<Option<DeepLink>, String> {
         }
     }
     let route = route.ok_or("Missing route")?;
-    let (from, target) = route.split_once('-').ok_or("Invalid route")?;
-    let from = input_format(from).ok_or("Unsupported input format")?;
-    let target = output_format(target).ok_or("Unsupported target format")?;
+    let (from, target) = route
+        .match_indices('-')
+        .find_map(|(at, _)| {
+            Some((
+                input_format(&route[..at])?,
+                output_format(&route[at + 1..])?,
+            ))
+        })
+        .ok_or("Unsupported route formats")?;
     if from == target {
         return Err("Input and output formats must differ".into());
     }
@@ -70,6 +76,42 @@ pub fn parse(value: &str) -> Result<Option<DeepLink>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn links_accept_registry_names_and_short_names() {
+        use ariad_core::format::Format;
+        for &format in Format::ALL {
+            if !format.is_user_facing() && format != Format::DoclingJson {
+                continue;
+            }
+            let target = if format == Format::Html {
+                "docx"
+            } else {
+                "html"
+            };
+            let url = format!(
+                "ariadshift://open?route={}-{}&profile=private",
+                format.id().replace('+', "%2B"),
+                target
+            );
+            let link = parse(&url).unwrap().unwrap();
+            assert_eq!(link.from, format_name(format));
+            assert_eq!(link.target, target);
+            assert_eq!(link.profile, Profile::Private);
+        }
+        for route in ["json-md", "ariad-ir%2Bjson-markdown"] {
+            let link = parse(&format!("ariadshift://open?route={route}"))
+                .unwrap()
+                .unwrap();
+            assert_eq!((link.from.as_str(), link.target.as_str()), ("json", "md"));
+        }
+        for route in ["md-json", "markdown-ariad-ir%2Bjson"] {
+            let link = parse(&format!("ariadshift://open?route={route}"))
+                .unwrap()
+                .unwrap();
+            assert_eq!((link.from.as_str(), link.target.as_str()), ("md", "json"));
+        }
+    }
+
     #[test]
     fn links_only_select_preferences() {
         let link = parse("ariadshift://open?route=pdf-docx&profile=private")

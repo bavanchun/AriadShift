@@ -728,7 +728,7 @@ fn hidden_hooks_ir_and_write_end_to_end() {
     assert!(ir_file.is_file());
 
     let ir_content = fs::read_to_string(&ir_file).expect("read doc.ir.json");
-    assert!(ir_content.contains("\"version\": \"ariad-ir/0\""));
+    assert!(ir_content.contains("\"version\": \"ariad-ir/1\""));
     assert!(ir_content.contains("\"body\""));
 
     // 2. Overwrite check without --overwrite returns exit code 6

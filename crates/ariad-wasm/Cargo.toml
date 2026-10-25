@@ -12,7 +12,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-ariad-core.workspace = true
+ariad-core = { workspace = true, features = ["pdf"] }
 js-sys.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

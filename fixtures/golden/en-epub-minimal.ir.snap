@@ -37,5 +37,5 @@ source: crates/ariad-cli/tests/reader_golden.rs
     "title": "Minimal EPUB 3 document"
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

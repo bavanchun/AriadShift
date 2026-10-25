@@ -4,12 +4,12 @@ Rules for AI agents working in this repository. Design authority is [ARCHITECTUR
 
 ## Current state
 
-Roadmap 1a (`v0.1.0`) is shipped. `ashift` converts across all 12 directional routes between Markdown (`md`/`markdown`), HTML (`html`/`htm`), DOCX (`docx`), and EPUB (`epub`) through `ariad-ir+json` (native Markdown and HTML readers/writers in `ariad-core`; out-of-process Pandoc `>= 3.12, < 4` for DOCX and EPUB). The base build also reads PDF text, writes PDF through Typst, exposes IR JSON (`--to json`), and detects system LibreOffice >=24.2 for Office/ODF routes. Docling adds OCR and layout-aware PDF, Office and image extraction through its optional engine pack ([docs/docling.md](docs/docling.md)). PDF, Typst and LibreOffice use the same out-of-process runner as Pandoc. See [docs/cli.md](docs/cli.md) for the CLI commands (`convert`, `inspect`, `plan`, `engines`, `doctor`), [docs/mcp.md](docs/mcp.md) for the `ashift mcp` server, [docs/releasing.md](docs/releasing.md) for the release procedure, and [docs/web.md](docs/web.md) for the web app in `apps/web`, which converts Markdown, HTML and IR JSON in the browser through `ariad-wasm`. See [docs/desktop.md](docs/desktop.md) for the Tauri app in `apps/desktop`, backed directly by `ariad-host`. Run `just pandoc` before working on conversion tasks and `just ci` as the local quality gate.
+Roadmap 1a (`v0.1.0`) is shipped. `ashift` converts across all 12 directional routes between Markdown (`md`/`markdown`), HTML (`html`/`htm`), DOCX (`docx`), and EPUB (`epub`) through `ariad-ir+json` (native Markdown and HTML readers/writers in `ariad-core`; out-of-process Pandoc `>= 3.12, < 4` for DOCX and EPUB). The base build also reads PDF text, writes PDF through Typst, exposes IR JSON (`--to json`), and detects system LibreOffice >=24.2 for Office/ODF routes. Docling adds OCR and layout-aware PDF, Office and image extraction through its optional engine pack ([docs/docling.md](docs/docling.md)). PDF, Typst and LibreOffice use the same out-of-process runner as Pandoc. See [docs/cli.md](docs/cli.md) for the CLI commands (`convert`, `inspect`, `plan`, `engines`, `doctor`), [docs/mcp.md](docs/mcp.md) for the `ashift mcp` server, [docs/releasing.md](docs/releasing.md) for the release procedure, and [docs/web.md](docs/web.md) for the web app in `apps/web`, which converts Markdown, HTML, DOCX, EPUB, digital PDF and IR JSON in the browser through `ariad-wasm`, the separate official Pandoc WASM reactor and lazy `ariad-typst` module. See [docs/desktop.md](docs/desktop.md) for the Tauri app in `apps/desktop`, backed directly by `ariad-host`. Run `just pandoc` before working on conversion tasks and `just ci` as the local quality gate.
 
 ## Architecture changes
 
 - Do not add a crate, app, service or dependency that contradicts ARCHITECTURE.md. If a change is warranted, update ARCHITECTURE.md, including its "Decision Log" table, in the same change.
-- Conversion logic belongs in `ariad-core` or `ariad-host` only. Surfaces (CLI, desktop, web, server) never carry their own conversion code.
+- Conversion logic belongs in `ariad-core`, `ariad-host`, or the shared in-memory `ariad-typst` compiler only. Surfaces (CLI, desktop, web, server) never carry their own conversion code.
 - Third-party engines run out of process through the engine protocol. Never link them into the host.
 - The user-facing CLI binary is `ashift`; Rust crate names retain the `ariad-*` prefix.
 
@@ -27,6 +27,8 @@ Roadmap 1a (`v0.1.0`) is shipped. `ashift` converts across all 12 directional ro
 - MPL-2.0 Rust dependencies are allowed only unmodified and through per-crate cargo-deny exceptions. The Docling Python pack allows unmodified `certifi` and `tqdm` through per-distribution exceptions in `engines/docling/pack/licenses.py`.
 - JavaScript dependencies allow CC-BY-4.0 for `caniuse-lite` (data) and OFL-1.1 for the Plus Jakarta Sans packages through per-package exceptions.
 - GPL tools such as Pandoc are invoked as separate processes, never linked.
+  In the browser, only the unmodified official Pandoc WASM may be aggregated as a
+  separate file, with licence notices and corresponding-source links, never linked.
 - Fixtures exclude CC-BY-SA documents, GPL test suites, and research-only or non-commercial datasets. Record each fixture's source and license in `fixtures/manifest.toml`.
 - Model weights follow the same licensing rules as code, with CDLA-Permissive-2.0 accepted specifically for the Docling TableFormer weights (a permissive data licence, not an OSI code licence); exclude OpenRAIL-M, custom or missing licenses.
 - Never commit a user's or private document.

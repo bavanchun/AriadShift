@@ -174,7 +174,7 @@ pub const fn can_read(format: Format) -> bool {
     matches!(
         format,
         Format::Markdown | Format::Html | Format::AriadIrJson | Format::DoclingJson
-    )
+    ) || (cfg!(feature = "pdf") && matches!(format, Format::Pdf))
 }
 
 /// Whether [`write`] supports `format`.
@@ -219,6 +219,23 @@ pub fn read(format: Format, bytes: &[u8], limits: &Limits) -> Result<Read, Pipel
             reader_html::ReadError::NestingTooDeep { .. } => limit_exceeded("max_nesting_depth"),
             reader_html::ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
             reader_html::ReadError::TooManyNodes { .. } => limit_exceeded("max_dom_nodes"),
+        })?,
+        #[cfg(feature = "pdf")]
+        Format::Pdf => crate::reader::pdf::read(bytes, limits).map_err(|error| {
+            use crate::reader::pdf::ReadError;
+            match error {
+                ReadError::InvalidLimits(e) => e.into(),
+                ReadError::InputTooLarge { .. } => limit_exceeded("max_input_bytes"),
+                ReadError::TooManyPages { .. } => limit_exceeded("max_pages"),
+                ReadError::TooManyObjects { .. } | ReadError::DecompressedTooLarge { .. } => {
+                    limit_exceeded("max_decompressed_bytes")
+                }
+                ReadError::NestingTooDeep { .. } => limit_exceeded("max_nesting_depth"),
+                ReadError::TooManyBlocks { .. } => limit_exceeded("max_blocks"),
+                other => PipelineError::InvalidInput {
+                    reason: other.to_string(),
+                },
+            }
         })?,
         Format::DoclingJson => {
             crate::docling::read(bytes, limits).map_err(|error| match error {
@@ -314,17 +331,18 @@ pub fn read_ir_json(bytes: &[u8], limits: &Limits) -> Result<Document, PipelineE
             invalid_ir(&error)
         }
     })?;
-    if probe.version.as_deref() != Some(IR_VERSION) {
+    if !crate::ir::is_supported_version(probe.version.as_deref()) {
         return Err(PipelineError::UnsupportedIrVersion {
             found: probe.version,
             expected: IR_VERSION.to_owned(),
         });
     }
 
-    let document: Document = deserialize_bounded(bytes).map_err(|error| invalid_ir(&error))?;
+    let mut document: Document = deserialize_bounded(bytes).map_err(|error| invalid_ir(&error))?;
     if document.block_count() > limits.max_blocks as usize {
         return Err(limit_exceeded("max_blocks"));
     }
+    document.version = IR_VERSION.to_owned();
     Ok(document)
 }
 
@@ -503,6 +521,16 @@ mod tests {
     }
 
     #[test]
+    fn legacy_ir_is_read_and_emitted_as_the_current_version() {
+        let bytes = br#"{"version":"ariad-ir/0","body":[{"type":"paragraph","content":[{"type":"text","text":"Legacy content"}]}]}"#;
+        let document = read_ir_json(bytes, &Limits::local()).unwrap();
+        assert_eq!(document.version, IR_VERSION);
+        let output = serde_json::to_string(&document).unwrap();
+        assert!(output.contains("Legacy content"));
+        assert!(output.contains("ariad-ir/1"));
+    }
+
+    #[test]
     fn converts_markdown_to_html_with_title_fallback() {
         let converted = execute(
             b"Hello *world*\n",
@@ -530,7 +558,7 @@ mod tests {
         )
         .unwrap();
         let ir_text = String::from_utf8(ir.bytes.clone()).unwrap();
-        assert!(ir_text.contains("\"version\": \"ariad-ir/0\""), "{ir_text}");
+        assert!(ir_text.contains("\"version\": \"ariad-ir/1\""), "{ir_text}");
 
         let markdown = execute(
             &ir.bytes,

@@ -258,6 +258,7 @@ ariadshift/
 │   │   └── data/              # packs.toml (pack index) and pack-keys/*.pub (trusted signing keys)
 │   ├── ariad-cli/             # `ashift` binary (includes `ashift mcp`)
 │   ├── ariad-wasm/            # wasm-bindgen bindings for ariad-core (browser JS API)
+│   ├── ariad-typst/           # shared in-memory Typst compiler, fonts and lazy browser module
 │   └── ariad-server/          # `ariad-server api | worker` binary
 ├── engines/
 │   └── docling/               # Python engine (uv project) implementing the engine protocol
@@ -298,21 +299,22 @@ Only 5 crates exist initially. Further crate splits occur only when distinct bou
 
 | Crate | Responsibility | WASM | Key Dependencies |
 |---|---|---|---|
-| `ariad-core` | IR types, format registry, planner, limit enforcement, pure-data engine-protocol message types shared with host, browser, and server, native Markdown and HTML readers/writers, PDF text reader, Typst markup writer, the in-memory pipeline (`pipeline`: read, write and run in-process routes by format id, with bounded IR JSON input) and in-memory inspection (`inspect`) | ✓ | serde, schemars, lopdf |
-| `ariad-host` | Asset resolution, engine process execution, workspaces, engine pack management, PDF/Pandoc/LibreOffice/Docling/Typst adapters, and DOCX metadata rewrite | ✗ | tokio, typst |
+| `ariad-core` | IR types, format registry, planner, limit enforcement, pure-data engine-protocol message types shared with host, browser, and server, native Markdown and HTML readers/writers, PDF text reader, Typst markup writer, Pandoc mapping and in-memory package metadata stamping, the in-memory pipeline (`pipeline`: read, write and run in-process routes by format id, with bounded IR JSON input) and in-memory inspection (`inspect`) | ✓ | serde, schemars, lopdf |
+| `ariad-host` | Asset resolution, engine process execution, workspaces, engine pack management, PDF/Pandoc/LibreOffice/Docling/Typst adapters, and native package metadata I/O | ✗ | tokio, ariad-typst |
 | `ariad-cli` | Command-line interface, MCP server | ✗ | clap, rmcp |
-| `ariad-wasm` | Browser JS API: `version`, `capabilities`, `inspect`, `plan`, `convert` over format ids and the `wasm` capability edges; typed error objects; no conversion logic of its own | ✓ | wasm-bindgen, js-sys |
+| `ariad-wasm` | Browser JS API: `version`, `capabilities`, `inspect`, `plan`, `convert` over format ids and the `wasm` capability edges; internal `readPandoc`, `writePandoc` and `stampPackage` bridges to core; typed error objects; no conversion logic of its own | ✓ | wasm-bindgen, js-sys |
+| `ariad-typst` | In-memory Typst compilation and the embedded Libertinus/Source Code Pro fonts, shared by the host and a separate lazily loaded browser module | ✓ | typst, typst-pdf, wasm-bindgen |
 | `ariad-server` | `api`: Axum + OpenAPI; `worker`: consumes jobs from pgmq and calls ariad-host | ✗ | axum, sqlx, object_store |
 
 ### 6.2 Document IR
 
 The IR serves as the "lingua franca" across readers and writers. Designed in three layers, the layout layer is entirely optional:
 
-The versioned schema is `ariad-ir/0` at `schemas/ir.v0.json` during 0.x; breaking changes are allowed. It freezes as `ariad-ir/1` together with `ariad-engine/1` before v0.2.0.
+The frozen document schema is `ariad-ir/1` at `schemas/ir.v1.json`. Native and in-memory readers continue accepting `ariad-ir/0`, preserving its content and upgrading the version on output. `schemas/ir.v0.json` remains available for existing documents. Unknown or missing versions are rejected. Breaking changes require a new major wire version.
 
 Every enum variant is a struct variant serialized with an internally tagged `type` field and a snake_case tag, for example `{"type":"paragraph","content":[...]}`. This is required for Serde's internally tagged representation and avoids tuple or newtype variants. Format variants serialize with a single wire identity matching `Format::id()` (for example `ariad-ir+json` and `pandoc+json`). In addition to `Markdown`, `Html`, and `Docx`, the format registry provides `Epub`, `Pdf`, and `Png` (required by the spike for image inputs and source-format deserialization without a reader in 1a).
 
-New IR fields follow the rule: **omit when empty** (`#[serde(default, skip_serializing_if = ...)]`). Existing fields keep their current `null` serialization. Every snapshot remains byte-identical.
+New IR fields follow the rule: **omit when empty** (`#[serde(default, skip_serializing_if = ...)]`). Existing fields keep their current `null` serialization. IR goldens change only the document version at the v1 freeze. EPUB identifiers derive from the IR byte hash, so their identifiers and dependent table-of-contents hashes also change.
 
 `Document` has `{ version, meta, body, assets, layout, provenance, furniture }`. `furniture: Vec<Block>` carries running page headers and footers outside `body` and is omitted when empty. `Metadata` has `{ title, authors, language, date, subject, keywords, source_format }`.
 
@@ -361,6 +363,7 @@ Provenance boxes become `LayoutIndex` entries: Docling's bottom-left origin is f
   - Execution time normalization: $\text{normalized}(p50\_ms) = \min(1.0, p50\_ms / 5000.0)$.
   - Constant hop penalty: `HOP_PENALTY = 0.05` per graph edge to favor direct or shorter routes.
   - **Unmeasured edge rule**: an edge with `metrics: null` receives a pessimistic default cost of `1.5` plus the hop penalty, and is flagged as unmeasured in the plan explanation.
+  - **Source-only engines**: `SOURCE_ONLY_ENGINES` (LibreOffice) may only take the first step of a route. Their scores are measured on authored Office files and do not describe re-rendering another engine's intermediate, so IR-family inputs (Markdown, HTML, EPUB, IR JSON) write PDF through Typst in every profile.
 - **Profiles and Weights**:
 
 | Profile | Priority | $w_f$ (fidelity) | $w_e$ (editability) | $w_t$ (time) |
@@ -376,31 +379,30 @@ The planner runs Dijkstra's shortest-path algorithm over weighted costs with det
 $ ashift plan paper.pdf --to docx --engine docling
 input   paper.pdf · pdf
 route   pdf ─docling→ docling+json ─ariad-core→ ariad-ir+json ─pandoc→ docx
-score   unmeasured
 ```
 
 For pipeline composition and diagnostic testing, the CLI provides hidden hooks:
 - `ashift __ir <INPUT> -o <OUTPUT>` executes the planned route converting an input document to AriadShift IR.
 - `ashift __write <INPUT> --to <FORMAT> -o <OUTPUT>` executes the planned route converting an IR document to the target format. If the IR document lacks an explicit metadata title, target formats supporting titles (such as DOCX and EPUB) fall back to using the input filename stem, stripping any `.ir` suffix (e.g., `document.ir.json` -> `document`).
 
-The format registry recognizes PPTX, XLSX, ODT, ODS, ODP, DOC, XLS, PPT, RTF, JPEG, WebP and TIFF through ZIP parts, ODF mimetypes, bounded OLE2 directory inspection or magic bytes. `json` is the user name of `ariad-ir+json`; `pandoc+json` stays internal. New PDF, Typst and LibreOffice capability edges have `metrics: null` until benchmark measurements exist.
+The format registry recognizes PPTX, XLSX, ODT, ODS, ODP, DOC, XLS, PPT, RTF, JPEG, WebP and TIFF through ZIP parts, ODF mimetypes, bounded OLE2 directory inspection or magic bytes. `json` is the user name of `ariad-ir+json`; `pandoc+json` stays internal. Measured PDF, Docling, Typst and LibreOffice edges come from `bench/`; unsupported or unmeasured fixture families retain `metrics: null`. The generated [benchmark report](docs/bench-report.md) records the measured corpus and limitations.
 
 ### 6.4 Format Matrix (v0.x Scope)
 
 | Format | Read | Write | In Browser |
 |---|---|---|---|
-| PDF (digital) | Base: pure-Rust text-layer reader; Docling pack: layout and OCR | Typst (from IR) | Core reader: text, metadata, page geometry; Typst markup writer |
+| PDF (digital) | Base: pure-Rust text-layer reader; Docling pack: layout and OCR | Typst (from IR) | Core reader: text, metadata, page geometry; PDF export through the lazy `ariad-typst` compiler |
 | PDF (scan) | Docling + Tesseract for `vi`; RapidOCR otherwise; optional PaddleOCR-VL | — | ✗ (requires cloud or desktop) |
 | DOCX | Docling, Pandoc | Pandoc | Pandoc WASM |
 | PPTX, XLSX | Docling pack; system LibreOffice for PDF export | LibreOffice (→ PDF) | ✗ |
 | DOC, RTF, ODT; XLS, ODS; PPT, ODP | System LibreOffice → DOCX / XLSX / PPTX; DOCX then reaches IR through Pandoc | LibreOffice (→ PDF and OOXML) | ✗ |
 | Markdown (GFM), HTML | ariad-core | ariad-core | ✓ |
-| EPUB, LaTeX, RST | Pandoc | Pandoc | Pandoc WASM |
-| PNG, JPEG, WebP, TIFF | image crate / libvips (+ OCR when text needed) | image crate / libvips | Basic operations |
+| EPUB, LaTeX, RST | Pandoc | Pandoc | EPUB through Pandoc WASM; LaTeX and RST are not exposed by the current registry |
+| PNG, JPEG, WebP, TIFF | image crate / libvips (+ OCR when text needed) | image crate / libvips | Desktop hand-off for OCR; browser image operations are not exposed |
 | JSON (IR, DoclingDocument) | ariad-core | ariad-core | ✓ |
 | Audio, video | — | — | Later phase (FFmpeg + Docling ASR) |
 
-Markdown and HTML are written natively in `ariad-core` (`writer::markdown::write` producing GFM with embedded `data:` URIs and dropping raw HTML tags to preserve inner text safely, and `writer::html::write` dropping inline raw HTML to escaped text while sanitizing block raw HTML through a single ammonia policy). The Markdown writer emits only what is provably safe: math outside a small safe character class becomes a fenced `math` block or a code span with a warning, and a task-list checkbox is dropped with a warning when the item starts with a code, math or raw block. Known limit: inline raw HTML formatting is reduced to its text in both writers. Writing DOCX and EPUB proceeds out of process via **IR → Pandoc AST → Pandoc** (`-t docx` and `-t epub3` under `--sandbox`), followed by host package metadata stamping (`package_meta`) honoring `SOURCE_DATE_EPOCH`. A single Pandoc adapter handles both formats. Writing a native DOCX writer in Rust is only justified if benchmarks prove Pandoc to be a bottleneck.
+Markdown and HTML are written natively in `ariad-core` (`writer::markdown::write` producing GFM with embedded `data:` URIs and dropping raw HTML tags to preserve inner text safely, and `writer::html::write` dropping inline raw HTML to escaped text while sanitizing block raw HTML through a single ammonia policy). The Markdown writer emits only what is provably safe: math outside a small safe character class becomes a fenced `math` block or a code span with a warning, and a task-list checkbox is dropped with a warning when the item starts with a code, math or raw block. Known limit: inline raw HTML formatting is reduced to its text in both writers. Writing DOCX and EPUB proceeds out of process via **IR → Pandoc AST → Pandoc** (`-t docx` and `-t epub3` under `--sandbox`), followed by shared core package metadata stamping (`package_meta`); native I/O wrappers honor `SOURCE_DATE_EPOCH`. Browser routes invoke the separate official Pandoc WASM reactor through WASI and use the same core mapper and metadata stamper. A single Pandoc adapter handles both formats. Writing a native DOCX writer in Rust is only justified if benchmarks prove Pandoc to be a bottleneck.
 
 ---
 
@@ -456,8 +458,8 @@ Protocol rules:
 - `describe` runs with a fixed 30 s timeout (`DESCRIBE_TIMEOUT = 30s`), preventing hung engines from blocking host discovery commands or MCP tools.
 - For a one-shot process, `result` with `ok: true` and process exit 0 is success. `result` with `ok: false` is a typed engine failure regardless of exit code. No `result`, or `ok: true` with a non-zero exit, is a crash. A line after `result` is a protocol violation.
 - Receiving `capabilities` during a convert request is a protocol violation.
-- The schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "draft"`. All engines must pass a shared conformance test suite.
-- `ariad-engine/1` is a draft until the Docling engine passes conformance before v0.2.0; breaking changes are allowed only before that point.
+- The frozen schema is located at `schemas/engine-protocol.v1.json` with `"x-status": "final"`. The shared conformance checks cover Pandoc, PDF, Typst and LibreOffice in native tests, and the real Docling adapter in the scheduled or `bench`-labelled benchmark job.
+- `ariad-engine/1` is final after real Docling conformance. Breaking changes require a new major protocol version.
 - Built-in PDF and Typst engines run through the same runner as Pandoc: `ashift __engine pdf|typst`. The third adapter is `ashift __engine libreoffice`, which drives the system installation.
 
 **Session mode.** An engine that reports `supports_session: true` can serve several jobs in one warm process (1.56x measured throughput for Docling). The wire shape is the optional `session_id` on `convert` and the `supports_session` capability.
@@ -532,11 +534,13 @@ File ─stream→ OPFS ─→ Web Worker ─→ ariad-wasm / pandoc.wasm / core 
 ```
 
 - Files **never enter React state**. A module worker owns `ariad-wasm`, streams the input into its own OPFS folder (`ariadshift/<session>/`, held by a Web Lock so tabs never share files and abandoned folders are swept) and reads and writes through `createSyncAccessHandle`. Without sync access handles or Web Locks it keeps files in worker memory up to 64 MiB and the page says so. The browser converter accepts inputs up to 16 MB; larger files go to the CLI or desktop app.
-- The worker runs a planned route by engine id: consecutive steps of one engine go to that engine in one call. `ariad-core` maps to `ariad-wasm`; JavaScript-side engines (Pandoc WASM, Typst) register in the same table.
+- The worker runs a planned route by engine id: consecutive steps of one engine go to that engine in one call. `ariad-core` and `pdf` map to `ariad-wasm`; `pandoc` invokes the unmodified official Pandoc 3.12 WASM reactor through a WASI shim in a closed virtual filesystem, and `typst` loads the separate `ariad-typst` module. Pandoc JSON mapping, extracted image ingestion and package date stamping live in `ariad-core`. The Typst compiler and its fonts are shared with the native host in `ariad-typst`.
+- Markdown and HTML readers share bounded base64 data-image ingestion in core, retaining embedded images through DOCX output without fetching document resource URLs.
 - The theme toggle and converter use separate React Suspense boundaries so their hydration work can be scheduled independently of the pre-rendered page.
-- WASM modules are **lazy-loaded per route** and cached using Cache Storage. The home page loads zero engines. A service worker caches what `/app`, its worker and the wasm module loaded, so the converter works offline after the first visit.
+- The core module loads when `/app` is idle. Heavy WASM modules are **lazy-loaded per conversion route** and cached using versioned Cache Storage: Pandoc for DOCX/EPUB and Typst only for PDF output. Pandoc is fetched and SHA-256-verified at build time from the release pinned in `scripts/install-pandoc.sh`, served separately under `/wasm/pandoc/` with GPL-2.0-or-later licence/copyright notices and corresponding-source links, and never linked into AriadShift code. The home page loads zero engines. A service worker caches what `/app`, its worker and the wasm module loaded, so the downloaded routes work offline after their first use.
+- The generated service worker embeds the current build's engine/chunk manifest; activation removes retired engine-cache entries and keeps current downloaded routes. Public format and pair pages omit internal Pandoc/Docling interchange formats while keeping labels for engine summaries.
 - Multithreaded WASM requires `SharedArrayBuffer`, necessitating COOP/COEP headers. `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless` are enabled exclusively on `/app/*` routes, preventing OAuth popups and embedded content on other pages from breaking. Script chunks also send the COEP header, because an isolated page may only start a worker whose script declares one.
-- When file inspection detects that OCR, legacy Office formats, or oversized files are involved, the UI presents two choices: **"Open in Desktop"** or **"Process in Cloud"**. Users always have complete visibility into where their data travels.
+- When file inspection detects that OCR, legacy Office formats, or oversized files are involved, the UI offers **"Open in Desktop"** with `ariadshift://open?route=<from>-<to>&profile=<profile>` and explains that the user must select the file again. **"Process in Cloud"** stays hidden until cloud processing is enabled. OCR warnings remain visible when a partial text-layer conversion is possible; no file bytes enter the hand-off URL.
 
 ### 8.2 Desktop
 
@@ -824,7 +828,7 @@ The PDF reader caps indirect objects (2,000,000), page/form nesting, operators a
 
 This sequence progresses from lowest to highest operational expense. The CLI validates core correctness. The Desktop app establishes differentiation. Web Local incurs zero server costs. Cloud introduces security overhead, hosting expenses, and abuse mitigation, and is therefore tackled last.
 
-Phase 0 ends with one working route rather than an empty scaffold, so the IR and protocol are shaped by a real conversion. The protocol stays a draft until Docling, the first heavy out-of-process engine, has run through it; changing it before then costs nothing. Phase 1 is split so that a usable release ships before the hardest work: 1a proves the IR, planner and engine protocol on lightweight routes, while 1b adds the heavy Python engine, OCR and PDF fidelity. Engine packs land in 1b because the CLI's `engines install` needs them; the desktop only adds a UI on top. Fuzzing starts with 1a because the core readers parse untrusted input from the first release. Quotas ship with the cloud phase because a public cloud without them invites abuse from day one; `plan_entitlements` supplies each tenant's limits.
+Phase 0 ends with one working route rather than an empty scaffold, so the IR and protocol are shaped by a real conversion. The protocol remained a draft until Docling, the first heavy out-of-process engine, passed conformance; the resulting v1 contract is frozen. Phase 1 is split so that a usable release ships before the hardest work: 1a proves the IR, planner and engine protocol on lightweight routes, while 1b adds the heavy Python engine, OCR and PDF fidelity. Engine packs land in 1b because the CLI's `engines install` needs them; the desktop only adds a UI on top. Fuzzing starts with 1a because the core readers parse untrusted input from the first release. Quotas ship with the cloud phase because a public cloud without them invites abuse from day one; `plan_entitlements` supplies each tenant's limits.
 
 ---
 
@@ -832,6 +836,8 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 
 | Topic | Chosen | Rejected | Rationale |
 |---|---|---|---|
+| IR → PDF writer | Typst for every IR-family input; LibreOffice only renders the user's own Office/ODF file (first route step) | Letting measured scores chain Pandoc DOCX into LibreOffice for Markdown, HTML and IR JSON | One reproducible, fast, sandbox-light PDF writer for CLI, desktop, server and browser; Office scores do not describe Pandoc-generated DOCX, and the chain fails on hosts that deny LibreOffice's namespaces |
+| Engine and IR freeze | `ariad-engine/1` and `ariad-ir/1`, with readers retaining v0 IR compatibility | Extending the draft window through release | Real adapter conformance and authored heavy-route measurements establish the shared contracts before v0.2.0 |
 | Native engine dispatch | One `ariad-host` built-in dispatcher shared by CLI and desktop | Separate engine lists in each executable | New built-in engines must work when either surface re-executes itself; unknown names fail without starting the GUI |
 | Queue | pgmq on Postgres 18 | NATS JetStream upfront | Eliminates an extra service for self-hosters; SSE leverages LISTEN/NOTIFY; trait abstracts future NATS addition |
 | Self-hosted storage | SeaweedFS | MinIO (archived 04/2026), RustFS (just hit 1.0), Garage (AGPL) | Mature, Apache-2.0, single-command setup |
@@ -862,7 +868,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Tenancy and metering | Per-account workspace, plan-keyed entitlements, append-only usage events; billing adapter later | Per-handler quota constants; billing before paid tiers | Supports a free launch and lets paid plans arrive without changing the limits contract |
 | In-process native readers | Markdown and HTML in `ariad-core`, with pure Rust, typed errors, finite depth, node, and block limits, and fuzzing from 1a | Running every native reader out of process | Enables lightweight native routes under a documented, bounded exception to Principle 3 |
 | Python fixture generator | Dev-only uv workspace member at `fixtures/gen/`; dependencies never ship | Shipping fixture-generation dependencies | Reproducible fixture creation without runtime dependencies |
-| IR version policy | `ariad-ir/0` with `schemas/ir.v0.json` through 0.x; freeze `/1` with the protocol in 1b | Starting Phase 0 at `/1` | Allows breaking changes while the foundation is still a draft |
+| IR version policy | Emit `ariad-ir/1` with `schemas/ir.v1.json`; read v0 and v1 | Starting the foundation at `/1`; rejecting old authored truth after freezing | The foundation used v0 while the schema developed; conformance establishes v1 without discarding existing documents |
 | DOCX timestamp rewrite | Host rewrites `created` and `modified` after Pandoc, honoring `SOURCE_DATE_EPOCH` | Keeping Pandoc's sandbox epoch-zero timestamps | User-facing documents get conversion-time metadata and golden outputs remain reproducible |
 | Repository publication | Public `bavanchun/AriadShift`; pinned 3-OS CI on pushes and pull requests | Private repository or floating action refs | Matches the accepted public-repository decision and keeps CI actions immutable |
 | Product identifiers | `ariadshift.ariadnev.com`, its `/schemas/` ID base, bundle `com.ariadnev.ariadshift`, and `ariadshift://` | Unrelated domains or bundle identifiers | Keeps web, schema, desktop, and deep-link identities aligned |
@@ -911,11 +917,12 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 | Desktop deep-link compatibility | Vendor stable tauri-plugin-deep-link 2.6.2 with one ParseOption default-field update | Downgrade rust-ini or use prereleases | The latest stable rust-ini 0.21.3 adds fields omitted by the plugin's Linux initializer; defaults preserve the plugin's explicit quote/escape behavior while keeping both stable versions |
 | Desktop compile-time license exception | Per-crate CC0 exception for tiny-keccak only, a proc-macro dependency of const-random-macro | Global CC0 allowance | cargo tree confirms this is a compile-time dependency of the deep-link plugin and is not present in distributed binaries |
 | Desktop IPC bindings | ts-rs plus a generated command table instead of tauri-specta | tauri-specta | tauri-specta has no stable Tauri 2 release and prereleases are not allowed; one Rust command table generates the typed wrappers alongside the IPC types |
-| Browser binding | `ariad-wasm` exports `version`, `capabilities`, `inspect`, `plan` and `convert` over format ids, routes over the `wasm` capability edges, crosses the boundary as JSON and throws `{ code, message, ... }` objects; the in-memory pipeline and inspection live in `ariad-core` | One export per format pair; conversion code in the binding crate; `serde-wasm-bindgen` | New in-process readers and writers (PDF, Typst) become available without an API change; the CLI and browser report the same shapes; `serde-wasm-bindgen` ignores unknown option fields, so typos would pass silently |
+| Heavy browser engines | Official Pandoc 3.12 WASM aggregated separately through WASI; shared `ariad-typst` compiler/fonts compiled into a lazy module; core owns Pandoc mapping, media ingestion and package stamping | Linking GPL code into core; separate browser conversion implementations; eager heavy downloads | All DOCX/EPUB/PDF routes stay on device, native and browser PDF output share code, and the landing page loads no WASM |
+| Browser binding | `ariad-wasm` exports `version`, `capabilities`, `inspect`, `plan` and `convert` over format ids plus internal Pandoc/package bridge calls, routes over the `wasm` capability edges, crosses the boundary as JSON and throws `{ code, message, ... }` objects; the in-memory pipeline and inspection live in `ariad-core` | One export per format pair; conversion code in the binding crate; `serde-wasm-bindgen` | New in-process readers and writers (PDF, Typst) become available without an API change; the CLI and browser report the same shapes; `serde-wasm-bindgen` ignores unknown option fields, so typos would pass silently |
 | Browser build tooling | `wasm-bindgen-cli` 0.2.129 from its release archive with pinned checksums, a `wasm-release` profile (`opt-level = "s"`, fat LTO) and an 8 MiB wasm stack | wasm-pack 0.15 | wasm-pack only wraps the same two steps and downloads binaryen unpinned; `opt-level = "z"` saved under 4%; the default 1 MiB stack overflows on IR at the local nesting limit |
 | Browser file storage | OPFS through synchronous access handles inside the worker, one folder per worker held by a Web Lock and swept when no lock holds it; worker memory up to 64 MiB as a visible fallback | `createWritable` on the main thread; IndexedDB; one shared folder | Sync handles work in Chromium, Firefox and Safari workers and keep file bytes out of the page; a shared folder let one tab overwrite another tab's input |
 | Browser input size | 16 MB per file, structure counted up to 4 MiB, and the worker replaced once wasm memory passes 256 MiB | The local table's unlimited input | Reading expands a document in wasm memory by up to about 70 times and wasm memory never shrinks; larger files belong to the CLI or desktop app |
-| Web offline mode | A hand-written service worker for the origin that caches the URLs `/app` and its worker report, answers only `/app` navigations, serves hashed assets cache-first and everything else network-first | Workbox, a PWA plugin, precaching every asset | No extra dependency; caches exactly what the converter needs; no page sees a stale unhashed asset |
+| Web offline mode | A generated service worker for the origin that caches the URLs `/app` and its worker report, prunes retired engines/chunks against the embedded build manifest on activation, answers only `/app` navigations, serves hashed assets cache-first and everything else network-first | Workbox, a PWA plugin, precaching every asset | No extra dependency; caches exactly what the converter needs, retires old downloads, and no page sees a stale unhashed asset |
 | Web hosting shape | All routes statically generated; `next start` sends the headers; `just web-export` writes a static site with `out/_headers` from the same header table | Static export only; Node only | Local mode needs no server, while the cloud features add server routes later |
 | Shared UI packaging | `packages/ui` ships TypeScript source compiled by the consumer (`transpilePackages`; Vite compiles it natively) | A prebuilt component library | No extra build step, and the desktop app reuses it unchanged |
 | JavaScript licenses | `just static` checks production JavaScript dependencies against a permissive allow list (`scripts/check-js-licenses.mjs`). Per-package exceptions allow CC-BY-4.0 for `caniuse-lite` (data) and OFL-1.1 for the Plus Jakarta Sans packages. | No check; an npm license checker dependency | The site bundles them, so AGENTS.md licensing rules apply as they do to crates |
