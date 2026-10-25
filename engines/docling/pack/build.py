@@ -309,35 +309,55 @@ def install_wheels(work: Path, runtime: Path, target: str) -> None:
 
 
 def install_torch_toolchain(work: Path, runtime: Path, target: str, cache: Path) -> dict:
-    """Install only the target's reviewed, hash-pinned source-build outputs."""
-    manifest = PACK_DIR / "torch-wheels.toml"
-    if not manifest.is_file():
-        raise SystemExit(
-            "build the torch toolchain in Actions and pin its release in torch-wheels.toml"
-        )
-    with manifest.open("rb") as handle:
-        pins = tomllib.load(handle)
-    if pins["torch_version"] != torch_build.load_config()["torch"]["version"]:
-        raise SystemExit("torch wheel pins do not match the selected source version")
-    if pins["source_config_sha256"] != fetch._sha256(PACK_DIR / "torch-build.toml"):
-        raise SystemExit("rebuild and repin torch wheels after changing the source build options")
-    if pins["llvm_source_sha256"] != fetch.load_pins()["llvm"]["sha256"]:
-        raise SystemExit("rebuild and repin the torch toolchain after changing LLVM")
-    entry = pins["targets"][target]
+    """Install pinned release wheels, or audited native builds during bootstrap."""
+    pins = fetch.load_pins()
+    key = torch_build.key(target)
     directory = work / "torch-toolchain"
-    directory.mkdir()
-    files = {}
-    for pin in entry["files"]:
-        name = fetch._relative(pin["name"])
-        if len(name.parts) != 1:
-            raise SystemExit("toolchain assets must have a single file name")
-        blob = fetch.fetch(fetch.Pinned(pin["url"], pin["sha256"], pin["size"], name), cache)
-        destination = directory / name.name
-        shutil.copyfile(blob, destination)
-        files[name.name] = destination
+    files = native_build.release_files("torch", target, pins, cache, directory, key)
+    if files is None:
+        if host_target() != target:
+            raise SystemExit("torch fallback requires a matching native runner")
+        cached = cache.resolve() / "native" / f"torch-{key}"
+        command = native_build.tools(
+            "python",
+            PACK_DIR / "torch_build.py",
+            "verify" if (cached / "build.json").is_file() else "build",
+            "--target",
+            target,
+            "--out",
+            cached,
+            "--cache",
+            cache.resolve(),
+        )
+        # Keep the build interpreter separate from the installed pack interpreter.
+        # The Linux driver supplies its own manylinux environment inside Docker.
+        run(
+            command,
+            cwd=REPOSITORY,
+            env=dict(
+                os.environ, UV_PROJECT_ENVIRONMENT=str(REPOSITORY / ".tools/pack-torch-build-env")
+            ),
+        )
+        directory.mkdir()
+        files = {}
+        for source in sorted(cached.iterdir()):
+            if source.is_file() and source.name != "build.json":
+                destination = directory / source.name
+                shutil.copyfile(source, destination)
+                files[source.name] = destination
     wheels = [path for name, path in files.items() if name.endswith(".whl")]
-    if not any(path.name.startswith("torch-") for path in wheels):
-        raise SystemExit("pinned toolchain has no torch wheel")
+    config = torch_build.load_config()
+    torch_prefix = f"torch-{config['torch']['version']}-"
+    vision_prefix = f"torchvision-{config['vision']['version']}-"
+    if len([path for path in wheels if path.name.startswith(torch_prefix)]) != 1:
+        raise SystemExit("toolchain must contain exactly one matching torch wheel")
+    if any(not path.name.startswith((torch_prefix, vision_prefix)) for path in wheels):
+        raise SystemExit("toolchain contains an unexpected wheel or version")
+    required = {"OpenBLAS-LICENSE.txt"}
+    if is_windows(target):
+        required.update({"libiomp5md.dll", "LLVM-OpenMP-LICENSE.txt"})
+    if missing := required - files.keys():
+        raise SystemExit(f"toolchain is missing required sidecars: {sorted(missing)}")
     run(
         [
             "uv",
@@ -695,7 +715,8 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         )
         + "The common upstream notice's inapplicable x86 IPP section was removed.\n"
         + "ITT API / ittnotify: BSD-3-Clause (permitted native instrumentation).\n"
-        + "Source: https://github.com/intel/ittapi/tree/54835bb96f1b85f8f21841ce821487f69d95ecce\n",
+        + "License text: notices/ittapi-LICENSE.txt\n"
+        + "License source: https://github.com/intel/ittapi/blob/54835bb96f1b85f8f21841ce821487f69d95ecce/LICENSES/BSD-3-Clause.txt\n",
         "utf-8",
     )
     if toolchain:

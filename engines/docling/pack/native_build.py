@@ -164,6 +164,46 @@ def cached_build(kind, target, pins, cache, builder):
     return destination
 
 
+def release_files(kind, target, pins, cache, destination, build_key):
+    """Fetch reviewed release outputs, or return None while bootstrapping.
+
+    A configured pin is authoritative: stale inputs, bad hashes and download
+    errors must fail rather than silently switching to a different build.
+    """
+    toolchain = pins.get("toolchain", {})
+    entry = toolchain.get("targets", {}).get(target, {}).get(kind)
+    if entry is None:
+        print(f"No pinned {kind} release for {target}; building from source", flush=True)
+        return None
+    release = toolchain.get("release", "")
+    if not re.fullmatch(r"toolchain-wheels-[A-Za-z0-9][A-Za-z0-9._-]*", release):
+        raise SystemExit("toolchain release must be named toolchain-wheels-<version>")
+    if entry.get("build_key") != build_key:
+        raise SystemExit(f"rebuild and repin {kind} wheels after changing source build inputs")
+    prefix = f"https://github.com/bavanchun/AriadShift/releases/download/{release}/"
+    files = {}
+    for pin in entry.get("files", []):
+        name = pin["name"]
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", name) or name in files:
+            raise SystemExit("toolchain assets must have unique single file names")
+        url = pin["url"]
+        asset = url.removeprefix(prefix)
+        if not url.startswith(prefix) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*", asset):
+            raise SystemExit("toolchain assets must come from the pinned repository release")
+        if not re.fullmatch(r"[a-f0-9]{64}", pin["sha256"]) or pin["size"] <= 0:
+            raise SystemExit("toolchain assets require a SHA-256 and positive size")
+        blob = fetch.fetch(
+            fetch.Pinned(url, pin["sha256"], pin["size"], PurePosixPath(name)), cache
+        )
+        destination.mkdir(parents=True, exist_ok=True)
+        path = destination / name
+        shutil.copyfile(blob, path)
+        files[name] = path
+    if not files:
+        raise SystemExit(f"pinned {kind} toolchain has no files")
+    return files
+
+
 def remove_inapplicable_ipp_notice(path: Path) -> None:
     """Remove only the reviewed IPP section, after proving IPP is absent.
 
@@ -179,6 +219,18 @@ def remove_inapplicable_ipp_notice(path: Path) -> None:
 
 
 def opencv(target, pins, cache):
+    key = cache_key("opencv", target, pins)
+    released = release_files(
+        "opencv", target, pins, cache, cache / "native" / f"opencv-release-{key}", key
+    )
+    if released is not None:
+        wheels = [path for path in released.values() if path.name.endswith(".whl")]
+        if len(wheels) != 1 or not wheels[0].name.startswith(
+            f"opencv_python_headless-{pins['opencv']['version']}-"
+        ):
+            raise SystemExit("pinned OpenCV toolchain must contain exactly one headless wheel")
+        return wheels[0]
+
     def build(work, destination):
         src = source(pins["opencv"], work / "source", cache)
         if target.endswith("windows-msvc"):
@@ -202,7 +254,7 @@ def opencv(target, pins, cache):
             SOURCE_DATE_EPOCH="0",
         )
         if target.endswith("windows-msvc"):
-            env["CMAKE_GENERATOR"] = "Visual Studio 17 2022"
+            env.update(CMAKE_GENERATOR="Ninja", CC="cl", CXX="cl")
         command = tools("python", src / "setup.py", "bdist_wheel", "--dist-dir", destination)
         if target.endswith("linux-gnu"):
             # Preserve the existing glibc 2.28 floor instead of linking against
@@ -282,9 +334,9 @@ def llvm_openmp(target, pins, cache):
                 "-B",
                 work / "build",
                 "-G",
-                "Visual Studio 17 2022",
-                "-A",
-                "x64",
+                "Ninja",
+                "-DCMAKE_C_COMPILER=cl",
+                "-DCMAKE_CXX_COMPILER=cl",
                 *LLVM_FLAGS,
             )
         )

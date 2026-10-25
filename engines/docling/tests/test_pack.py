@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import struct
 import sys
 from argparse import Namespace
@@ -35,6 +36,156 @@ def test_opencv_source_pin_matches_the_locked_distribution():
         native_build.check_opencv_pin(pins)
 
 
+def release_pin(tmp_path, *, kind="opencv"):
+    target = "x86_64-unknown-linux-gnu"
+    name = "opencv_python_headless-5.0.0.93-cp314-cp314-manylinux_2_28_x86_64.whl"
+    content = b"release artifact"
+    digest = hashlib.sha256(content).hexdigest()
+    cache = tmp_path / "cache"
+    blob = cache / "blobs" / digest
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(content)
+    pin = {
+        "name": name,
+        "url": f"https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-1/{name}",
+        "sha256": digest,
+        "size": len(content),
+    }
+    entry = {"build_key": "source-key", "files": [pin]}
+    pins = {"toolchain": {"release": "toolchain-wheels-1", "targets": {target: {kind: entry}}}}
+    return target, pins, cache, blob, pin
+
+
+def test_pinned_release_files_are_rehashed_before_they_are_used(tmp_path, monkeypatch):
+    target, pins, cache, blob, pin = release_pin(tmp_path)
+    output = tmp_path / "out"
+    files = native_build.release_files("opencv", target, pins, cache, output, "source-key")
+    assert files[pin["name"]].read_bytes() == b"release artifact"
+    blob.write_bytes(b"damaged artifact")
+    monkeypatch.setattr(fetch, "ATTEMPTS", 1)
+    monkeypatch.setattr(fetch.time, "sleep", lambda _: None)
+
+    def unavailable(*_):
+        raise OSError("release unavailable")
+
+    monkeypatch.setattr(fetch, "_download", unavailable)
+    with pytest.raises(SystemExit, match="could not download"):
+        native_build.release_files("opencv", target, pins, cache, output, "source-key")
+
+
+def test_only_unpinned_toolchains_select_source_build_fallback(tmp_path):
+    target, pins, cache, _, _ = release_pin(tmp_path)
+    assert native_build.release_files("torch", target, pins, cache, tmp_path / "out", "key") is None
+    with pytest.raises(SystemExit, match="rebuild and repin"):
+        native_build.release_files("opencv", target, pins, cache, tmp_path / "out", "stale")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("name", "../wheel.whl", "unique single file names"),
+        ("name", r"C:\wheel.whl", "unique single file names"),
+        ("url", "https://example.com/wheel.whl", "pinned repository release"),
+        (
+            "url",
+            "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-2/wheel.whl",
+            "pinned repository release",
+        ),
+        ("sha256", "unverified", "SHA-256 and positive size"),
+        ("size", 0, "SHA-256 and positive size"),
+    ],
+)
+def test_release_pins_reject_unreviewed_locations_and_missing_hashes(
+    tmp_path, field, value, message
+):
+    target, pins, cache, _, pin = release_pin(tmp_path)
+    pin[field] = value
+    with pytest.raises(SystemExit, match=message):
+        native_build.release_files("opencv", target, pins, cache, tmp_path / "out", "source-key")
+
+
+def test_release_pins_require_nonempty_unique_files(tmp_path):
+    target, pins, cache, _, pin = release_pin(tmp_path)
+    entry = pins["toolchain"]["targets"][target]["opencv"]
+    entry["files"].append(pin)
+    with pytest.raises(SystemExit, match="unique single file names"):
+        native_build.release_files("opencv", target, pins, cache, tmp_path / "out", "source-key")
+    entry["files"] = []
+    with pytest.raises(SystemExit, match="has no files"):
+        native_build.release_files("opencv", target, pins, cache, tmp_path / "out", "source-key")
+
+
+def test_torch_bootstrap_requires_a_native_runner(tmp_path, monkeypatch):
+    target = "x86_64-unknown-linux-gnu"
+    monkeypatch.setattr(build, "host_target", lambda: "aarch64-apple-darwin")
+    monkeypatch.setattr(torch_build, "key", lambda _: "key")
+    monkeypatch.setattr(fetch, "load_pins", lambda: {})
+    with pytest.raises(SystemExit, match="matching native runner"):
+        build.install_torch_toolchain(tmp_path, tmp_path / "runtime", target, tmp_path / "cache")
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_torch_bootstrap_builds_once_then_verifies_cached_outputs(tmp_path, monkeypatch, cached):
+    target = "x86_64-unknown-linux-gnu"
+    cache = tmp_path / "cache"
+    output = cache / "native/torch-key"
+    output.mkdir(parents=True)
+    if cached:
+        (output / "build.json").write_text(json.dumps({"build_key": "key"}))
+    version = torch_build.load_config()["torch"]["version"]
+    wheel = output / f"torch-{version}-cp314-cp314-manylinux_2_28_x86_64.whl"
+    wheel.write_bytes(b"wheel")
+    (output / "OpenBLAS-LICENSE.txt").write_text("BSD-3-Clause")
+    monkeypatch.setattr(build, "host_target", lambda: target)
+    monkeypatch.setattr(torch_build, "key", lambda _: "key")
+    monkeypatch.setattr(fetch, "load_pins", lambda: {})
+    commands = []
+    monkeypatch.setattr(build, "run", lambda command, **_: commands.append(list(map(str, command))))
+    files = build.install_torch_toolchain(tmp_path, tmp_path / "runtime", target, cache)
+    assert files[wheel.name].read_bytes() == b"wheel"
+    assert ("verify" if cached else "build") in commands[0]
+    assert str(files[wheel.name]) in commands[1]
+    assert "--reinstall" in commands[1]
+
+
+def test_pinned_opencv_is_consumed_without_starting_a_source_build(tmp_path, monkeypatch):
+    target, pins, cache, _, pin = release_pin(tmp_path)
+    pins["opencv"] = {"version": "5.0.0.93"}
+    monkeypatch.setattr(native_build, "cache_key", lambda *_: "source-key")
+    wheel = native_build.opencv(target, pins, cache)
+    assert wheel.name == pin["name"]
+    assert wheel.read_bytes() == b"release artifact"
+
+
+@pytest.mark.parametrize("target", ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"])
+def test_pinned_torch_installs_without_building_and_requires_its_license_sidecars(
+    tmp_path, monkeypatch, target
+):
+    version = torch_build.load_config()["torch"]["version"]
+    platform = "win_amd64" if build.is_windows(target) else "manylinux_2_28_x86_64"
+    name = f"torch-{version}-cp314-cp314-{platform}.whl"
+    files = {name: tmp_path / name, "OpenBLAS-LICENSE.txt": tmp_path / "OpenBLAS-LICENSE.txt"}
+    if build.is_windows(target):
+        files.update(
+            {name: tmp_path / name for name in ("libiomp5md.dll", "LLVM-OpenMP-LICENSE.txt")}
+        )
+    monkeypatch.setattr(native_build, "release_files", lambda *_: files)
+    monkeypatch.setattr(torch_build, "key", lambda _: "key")
+    commands = []
+    monkeypatch.setattr(build, "run", lambda command, **_: commands.append(list(map(str, command))))
+    result = build.install_torch_toolchain(
+        tmp_path, tmp_path / "runtime", target, tmp_path / "cache"
+    )
+    assert result == files
+    assert len(commands) == 1
+    assert str(files[name]) in commands[0]
+    assert "--reinstall" in commands[0]
+    del files["OpenBLAS-LICENSE.txt"]
+    with pytest.raises(SystemExit, match="missing required sidecars"):
+        build.install_torch_toolchain(tmp_path, tmp_path / "runtime", target, tmp_path / "cache")
+    assert len(commands) == 1
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -55,7 +206,12 @@ def test_vendor_gate_rejects_intel_libraries_inside_wheels(tmp_path, name):
 
 
 @pytest.mark.parametrize(
-    "content", [b"Intel Simplified Software License", b"Intel(R) IPP ICV library statically linked"]
+    "content",
+    [
+        b"Intel(R) IPP ICV library\nIntel Simplified Software License",
+        b"Intel(R) IPP ICV library statically linked",
+        b"Intel(R) Integrated Performance Primitives",
+    ],
 )
 def test_vendor_gate_rejects_ipp_notices_even_with_permissive_wheel_metadata(tmp_path, content):
     info = tmp_path / "opencv-1.dist-info"
@@ -106,6 +262,18 @@ def test_vendor_gate_allows_permissive_itt_and_onednn_symbols(tmp_path):
     )
     (tmp_path / "libittnotify.so").write_bytes(b"BSD-3-Clause ITT API __itt_api_init")
     licenses.check_vendor_files(tmp_path)
+
+
+def test_vendor_gate_preserves_common_notices_for_components_not_in_the_binary(tmp_path):
+    (tmp_path / "ThirdPartyNotices.txt").write_text(
+        "Intel Math Kernel Library (Intel MKL)\n"
+        "Intel Simplified Software License (Version April 2018)"
+    )
+    (tmp_path / "onnxruntime.so").write_bytes(b"CPUExecutionProvider MLAS")
+    licenses.check_vendor_files(tmp_path)
+    (tmp_path / "onnxruntime.so").write_bytes(b"MKL_Get_Version_String")
+    with pytest.raises(SystemExit, match="proprietary Intel binary content"):
+        licenses.check_vendor_files(tmp_path)
 
 
 def test_vendor_gate_rejects_intel_even_if_the_cache_claims_its_digest(tmp_path):
