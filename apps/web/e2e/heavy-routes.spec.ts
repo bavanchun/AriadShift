@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test, type Worker } from "@playwright/test";
 
 test.setTimeout(120_000);
 
@@ -30,6 +30,18 @@ async function reset(page: Page) {
   await page.getByRole("button", { name: "Start over and delete files" }).click();
   await expect(page.locator("input[type=file]")).toBeAttached();
 }
+const cacheKeys = (page: Page, name: string) =>
+  page.evaluate(
+    async (cacheName) => (await (await caches.open(cacheName)).keys()).map((key) => key.url),
+    name,
+  );
+const scriptChunks = (worker: Worker) =>
+  worker.evaluate(() =>
+    performance
+      .getEntriesByType("resource")
+      .map((entry) => entry.name)
+      .filter((name) => name.includes("/_next/static/") && name.endsWith(".js")),
+  );
 
 test("reads a real DOCX entirely in the browser", async ({ page }) => {
   await page.goto("/app");
@@ -184,5 +196,71 @@ test("reuses the cached Pandoc engine and lazy chunks offline", async ({
   await expect(page.getByTestId("device-indicator")).toContainText(/browser storage|In memory/);
   await pick(page, "offline.docx", output);
   expect((await convert(page, "Markdown")).toString()).toContain("Browser document");
+  await context.setOffline(false);
+});
+
+test("keeps cached engines usable offline after a deployment renames their chunks", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "Chromium supports reliable service worker offline emulation",
+  );
+  test.setTimeout(240_000);
+  await page.goto("/app");
+  await pick(page, "deploy.md", Buffer.from(MARKDOWN));
+  await convert(page, "Word (DOCX)");
+  await convert(page, "PDF");
+  const loaded = await scriptChunks(page.workers()[0] as Worker);
+  expect(loaded.length).toBeGreaterThan(0);
+  await expect
+    .poll(() => cacheKeys(page, "ariadshift-engines-v1"))
+    .toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("/wasm/pandoc/pandoc.wasm"),
+        expect.stringMatching(/ariad_typst.*\.wasm$/),
+        ...loaded,
+      ]),
+    );
+  await expect
+    .poll(() => cacheKeys(page, "ariadshift-app-v1"))
+    .toEqual(expect.arrayContaining(loaded));
+
+  // A deployment that renames the worker's chunks leaves their new names in no cache, while
+  // the versioned engine binaries stay cached. Dropping the cached chunks reproduces that.
+  await page.evaluate(async (chunks) => {
+    for (const name of ["ariadshift-app-v1", "ariadshift-engines-v1"]) {
+      const cache = await caches.open(name);
+      for (const chunk of chunks) await cache.delete(chunk);
+    }
+  }, loaded);
+
+  // One online visit, with no conversion, is enough to make the routes work offline again.
+  const worker = page.waitForEvent("worker");
+  await page.reload();
+  await expect(page.getByTestId("device-indicator")).toContainText("browser storage");
+  // The new worker loads the chunks of the engines it found cached, before any conversion.
+  const warmed = await scriptChunks(await worker);
+  expect(warmed).toEqual(expect.arrayContaining(loaded));
+  await expect
+    .poll(() => cacheKeys(page, "ariadshift-engines-v1"))
+    .toEqual(expect.arrayContaining(warmed));
+  await expect
+    .poll(() => cacheKeys(page, "ariadshift-app-v1"))
+    .toEqual(expect.arrayContaining(warmed));
+
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByTestId("device-indicator")).toContainText(/browser storage|In memory/);
+  await pick(page, "offline.docx", await readFile(fixture("docx/vi-route-table.docx")));
+  expect((await convert(page, "Markdown")).toString()).toContain("Bảng hành trình ven sông");
+  await reset(page);
+  await pick(page, "offline.epub", await readFile(fixture("epub/vi-epub-table-image.epub")));
+  expect((await convert(page, "HTML")).toString()).toContain("<table>");
+  await reset(page);
+  await pick(page, "offline.md", Buffer.from(MARKDOWN));
+  expect((await convert(page, "PDF")).subarray(0, 5).toString()).toBe("%PDF-");
   await context.setOffline(false);
 });

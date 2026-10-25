@@ -44,7 +44,8 @@ export async function enableOffline(workerResources: string[]): Promise<boolean>
     registration.active?.postMessage({
       type: "cache",
       urls: offlineUrls(window.location.href, pageResources, workerResources),
-      // Preserve lazy engine code when a replacement worker refreshes the app shell.
+      // Preserve lazy engine code when a replacement worker refreshes the app shell. The
+      // worker lists the engine binaries it used, including those read from Cache Storage.
       engineChunks: workerResources.some((url) => /pandoc\.wasm|ariad_typst.*\.wasm/.test(url))
         ? offlineUrls(window.location.href, [], workerResources).filter((url) =>
             new URL(url).pathname.endsWith(".js"),

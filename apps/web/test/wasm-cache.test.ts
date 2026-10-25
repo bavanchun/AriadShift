@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { compileEngine, ENGINE_CACHE, engineResponse } from "@/converter/wasm-cache";
+import { compileEngine, ENGINE_CACHE, engineResponse, usedEngines } from "@/converter/wasm-cache";
 
 const URL_KEY = "https://example.test/wasm/pandoc/pandoc.wasm?v=test";
 // The smallest valid WebAssembly module: magic number and version, no sections.
@@ -35,6 +35,7 @@ let store: ReturnType<typeof fakeCaches>;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  usedEngines.clear();
   store = fakeCaches();
   fetchMock = vi.fn();
   vi.stubGlobal("caches", store.storage);
@@ -50,11 +51,12 @@ async function bytesOf(response: Response) {
 }
 
 describe("engineResponse", () => {
-  it("serves a verified cached binary without the network", async () => {
+  it("serves a verified cached binary without the network and reports it as used", async () => {
     store.entries.set(URL_KEY, VALID);
     const response = await engineResponse(URL_KEY, sha256(VALID));
     expect(await bytesOf(response)).toEqual(VALID);
     expect(fetchMock).not.toHaveBeenCalled();
+    expect([...usedEngines]).toEqual([URL_KEY]);
   });
 
   it("evicts a cached binary with the wrong digest and caches a verified download", async () => {
@@ -64,6 +66,7 @@ describe("engineResponse", () => {
     expect(await bytesOf(response)).toEqual(VALID);
     expect(fetchMock).toHaveBeenCalledWith(URL_KEY);
     expect(store.entries.get(URL_KEY)).toEqual(VALID);
+    expect([...usedEngines]).toEqual([URL_KEY]);
   });
 
   it("rejects a download with the wrong digest without caching it", async () => {
@@ -72,6 +75,7 @@ describe("engineResponse", () => {
       code: "engine_unavailable",
     });
     expect(store.entries.has(URL_KEY)).toBe(false);
+    expect(usedEngines.size).toBe(0);
   });
 
   it("drops a damaged cached copy even when the replacement download fails", async () => {
@@ -87,6 +91,7 @@ describe("engineResponse", () => {
     store.entries.set(URL_KEY, DAMAGED);
     expect(await bytesOf(await engineResponse(URL_KEY))).toEqual(DAMAGED);
     expect(fetchMock).not.toHaveBeenCalled();
+    expect([...usedEngines]).toEqual([URL_KEY]);
   });
 });
 
@@ -102,5 +107,6 @@ describe("compileEngine", () => {
       code: "engine_unavailable",
     });
     expect(store.entries.has(URL_KEY)).toBe(false);
+    expect(usedEngines.size).toBe(0);
   });
 });
