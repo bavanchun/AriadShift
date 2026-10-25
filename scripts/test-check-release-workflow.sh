@@ -800,12 +800,12 @@ apply_replace "matrix-install-dist-expression" "matrix['install_dist'].run expre
 
 # 58. Restore curl ... | sh in plan job
 apply_replace "plan-curl-pipe-sh" "Restore curl ... | sh in plan job" \
-  '          tar -xJf "$DIST_ARCHIVE" --strip-components=1 -C ~/.cargo/bin "${DIST_ARCHIVE%.tar.xz}/dist"
+  '          tar -xJf "$DIST_ARCHIVE" --strip-components=1 -C ~/.cargo/bin "cargo-dist-x86_64-unknown-linux-musl/dist"
           chmod +x ~/.cargo/bin/dist' \
   '          curl -sSf https://example.com/dist | sh'
 
-# 59. Run sh file without verified checksum
-apply_replace "run-sh-without-checksum" "Run sh file without verified checksum" \
+# 59. Run sh file without verified checksum in build-local job
+apply_replace "run-sh-without-checksum" "Run sh file without verified checksum in build-local job" \
   '          tar -xJf "$DIST_ARCHIVE" --strip-components=1 -C ~/.cargo/bin "${DIST_ARCHIVE%.tar.xz}/dist"
           chmod +x ~/.cargo/bin/dist' \
   '          sh /tmp/install.sh'
