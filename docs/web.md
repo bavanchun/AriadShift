@@ -59,9 +59,42 @@ The page and the worker report the URLs they loaded, and the service worker cach
 
 It is registered for the whole origin, because the converter's worker script lives under `/_next/static/` and must fall under it, but it only answers navigations to `/app`. Content-hashed assets under `/_next/static/` come from the cache first; every other request goes to the network first and falls back to the cache only when offline, so no page sees a stale copy. A cached worker script is served as a new `Response` so the worker keeps its URL fragment, which carries the bundler's bootstrap parameters.
 
-### Headers
+### Security headers
 
-`/app` is cross-origin isolated: `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. Other pages get neither, so embeds and sign-in popups keep working. Isolation belongs to a document, not a route, so every link into or out of `/app` (the header, the footer and the calls to action) is a plain link that loads a new document rather than a client-side navigation. Safari does not implement `credentialless`, so `/app` is not isolated there; nothing needs isolation yet because the converter is single-threaded. The script chunks under `/_next/static/chunks/` also send `Cross-Origin-Embedder-Policy: credentialless`, because an isolated page may only start a worker whose script declares a compatible policy; on ordinary scripts the header has no effect. The single source is [`apps/web/route-headers.mjs`](../apps/web/route-headers.mjs).
+Every response header comes from one module, [`apps/web/route-headers.mjs`](../apps/web/route-headers.mjs). `next.config.ts` serves its table under `next start` and `next dev`; after a static export, `scripts/write-static-headers.mjs` writes it to `out/_headers` for Netlify and, when `ARIADSHIFT_WEB_NGINX_CONF` names a file, to the nginx server of the web image. The header tests in `apps/web/test/headers.test.ts` check the same functions.
+
+**Cross-origin isolation.** `/app` is cross-origin isolated: `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: credentialless`. Other pages get neither, so embeds and sign-in popups keep working. Isolation belongs to a document, not a route, so every link into or out of `/app` (the header, the footer and the calls to action) is a plain link that loads a new document rather than a client-side navigation. Safari does not implement `credentialless`, so `/app` is not isolated there; nothing needs isolation yet because the converter is single-threaded. The script chunks under `/_next/static/chunks/` also send `Cross-Origin-Embedder-Policy: credentialless`, because an isolated page may only start a worker whose script declares a compatible policy; on ordinary scripts the header has no effect.
+
+**Content Security Policy.** Each page gets one of two profiles. Site pages (`/`, `/formats`, `/convert/*` and the rest) run no engine. The converter (`/app`) also compiles WebAssembly, starts its worker and service worker, and in cloud mode talks to the API, the auth service and the object store.
+
+| Directive | Site pages | Converter | Reason |
+|---|---|---|---|
+| `default-src` | `'self'` | `'self'` | Anything not listed below loads from this origin only. |
+| `script-src` | `'self'` plus the page's inline-script hashes | the same, plus `'wasm-unsafe-eval'` | Next.js inlines its bootstrap and the theme script. A static export cannot carry a per-request nonce, so each page pins the SHA-256 of its own inline scripts and any other inline script is refused. `'wasm-unsafe-eval'` lets `ariad-wasm`, `pandoc.wasm` and the Typst module compile; `'unsafe-eval'` (JavaScript `eval`) stays off. |
+| `style-src` | `'self' 'unsafe-inline'` | same | React renders `style` attributes, which a hash cannot allow without `'unsafe-hashes'`. Styles cannot run script. |
+| `img-src` | `'self'` | `'self'` | The pages show only their own images. Output downloads use `blob:` links, which are navigations rather than image loads. |
+| `font-src` | `'self'` | `'self'` | Plus Jakarta Sans is self-hosted. |
+| `connect-src` | `'self'` | `'self'` plus the cloud origins | The site fetches its own route data. The converter fetches its engines from this origin; in cloud mode it also calls the API and auth origins and PUTs to and downloads from the object store's presigned URLs. |
+| `worker-src` | `'none'` | `'self'` | Only the converter starts a worker (a hashed chunk) and registers `/sw.js`. |
+| `frame-src` | `'none'` | `'none'`, or Turnstile | The site embeds nothing; Cloudflare Turnstile renders an iframe when anonymous uploads need it. |
+| `object-src` | `'none'` | `'none'` | No plugins. |
+| `base-uri` | `'none'` | `'none'` | An injected `<base>` cannot redirect relative URLs. |
+| `form-action` | `'self'` | `'self'` | Forms (the cloud account dialog) submit through script and never post to another origin. |
+| `frame-ancestors` | `'none'` | `'none'` | No other site may frame these pages (clickjacking). |
+
+Worker chunks and `/sw.js` send their own `Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'none'`, because a worker started from a URL takes the policy delivered with its script rather than the page's. It allows scripts from this origin and WebAssembly compilation, and leaves fetches open so engine downloads and offline caching behave as before. The service worker stores whole responses, headers included, so an offline `/app` keeps the policy whose hashes match its cached HTML.
+
+`next start` compiles its header table before any page exists, so it cannot hash inline scripts and sends `'unsafe-inline'` in `script-src` instead; the rest of the policy is the same, which keeps Playwright and Lighthouse exercising it. `next dev` also adds `'unsafe-eval'`, which React needs for its development error overlays. Deploy the static export for the hashed policy.
+
+Cloud mode's origins are read at build or export time from the variables the app itself uses: the origins of `NEXT_PUBLIC_ARIAD_API_URL` and `NEXT_PUBLIC_ARIAD_AUTH_URL`, `https://challenges.cloudflare.com` in `script-src` and `frame-src` when `NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY` is set, and the object-store origins in `ARIADSHIFT_WEB_STORAGE_ORIGINS`. The last one is a space-separated list of the origins in the API's presigned URLs: the `ARIAD_S3_PUBLIC_ENDPOINT` origin for path-style URLs, or a `https://*.` wildcard for virtual-hosted buckets. Without `NEXT_PUBLIC_ARIAD_API_URL` the converter's policy lists no other origin. A value that is not an http or https origin fails the build. Change any of them and rebuild the site, as for the cloud base URLs.
+
+**Other headers.** Every response also carries:
+
+- `Referrer-Policy: strict-origin-when-cross-origin`: other origins see only the origin, never the path or query (`/app?from=…&to=…`).
+- `X-Content-Type-Options: nosniff`: browsers use the declared media type, so a file is never run as a script or stylesheet by guesswork.
+- `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), browsing-topics=()`: features the site never uses are off for it and for anything it embeds.
+
+**HSTS.** On a TLS host, send `Strict-Transport-Security: max-age=31536000`. The Netlify `_headers` file includes it, because Netlify always serves HTTPS. The web image serves plain HTTP on port 3000 and leaves HSTS to the TLS proxy in front of it; browsers ignore the header over HTTP. Add `includeSubDomains` only when every subdomain serves HTTPS, and `preload` only after deciding to join the browsers' preload list, which is slow to undo.
 
 ## Build and deploy
 
@@ -80,7 +113,7 @@ just web-build
 just web-start   # next start on http://localhost:3100
 ```
 
-`next start` sends the headers above. Deploy `apps/web` with its `.next`, `public/` (including the generated `/wasm/pandoc/` assets) and `node_modules` directories to any Node.js 24 host, or behind a reverse proxy.
+`next start` sends the headers above, with the inline-script allowance described in [Security headers](#security-headers). Deploy `apps/web` with its `.next`, `public/` (including the generated `/wasm/pandoc/` assets) and `node_modules` directories to any Node.js 24 host, or behind a reverse proxy.
 
 ### Static hosting
 
@@ -90,17 +123,7 @@ just web-export
 
 This writes a static site to `apps/web/out/`, including the generated service worker and `out/_headers` for Netlify. Netlify and GitHub Pages support the export; GitHub Pages does not apply `_headers`, so it serves the single-threaded converter without cross-origin isolation. Node `next start` is also supported.
 
-Cloudflare Pages is **not supported for this export as is**: its [25 MiB per-file limit](https://developers.cloudflare.com/pages/platform/limits/#file-size) is below the approximately 58 MiB uncompressed `pandoc.wasm`. Changing engine delivery is a separate design decision. Other servers need the header rules in their own configuration, for example nginx:
-
-```nginx
-location / { try_files $uri $uri.html $uri/ =404; }
-location = /app {
-    add_header Cross-Origin-Opener-Policy same-origin;
-    add_header Cross-Origin-Embedder-Policy credentialless;
-    try_files /app.html =404;
-}
-location /_next/static/chunks/ { add_header Cross-Origin-Embedder-Policy credentialless; }
-```
+Cloudflare Pages is **not supported for this export as is**: its [25 MiB per-file limit](https://developers.cloudflare.com/pages/platform/limits/#file-size) is below the approximately 58 MiB uncompressed `pandoc.wasm`. Changing engine delivery is a separate design decision. Other servers need the header rules in their own configuration. For nginx, generate the server block with `ARIADSHIFT_WEB_NGINX_CONF=/path/to/default.conf just web-export`, as the web image does: it has an exact-match location per page with that page's policy, and repeats the common headers in every location because nginx drops inherited `add_header` lines in a location that sets its own. Other servers need the same per-page policies; copy them from the generated `out/_headers`.
 
 Without the chunk header the converter worker does not start, and the page reports that the converter could not start.
 
