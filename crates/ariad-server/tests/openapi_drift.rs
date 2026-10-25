@@ -1,41 +1,58 @@
 //! The committed OpenAPI document matches the code.
 
-use std::{fs, path::Path};
+use std::fs;
+
+const REGENERATE: &str = "run `just openapi` and commit schemas/openapi.v1.json";
 
 #[test]
 fn openapi_document_is_committed_and_current() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/openapi.v1.json");
-    let mut generated = ariad_server::api::openapi()
-        .to_pretty_json()
-        .expect("serialize the OpenAPI document");
-    generated.push('\n');
-    if std::env::var("ARIAD_BLESS_SCHEMAS").as_deref() == Ok("1") {
-        fs::write(&path, &generated).expect("write schemas/openapi.v1.json");
-        return;
-    }
-    let committed = fs::read_to_string(&path).unwrap_or_else(|error| {
-        panic!(
-            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-server --test openapi_drift",
-            path.display()
-        )
-    });
+    let path = ariad_server::api::openapi_document_path();
+    let generated = ariad_server::api::openapi_json().expect("serialize the OpenAPI document");
+    let committed = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("could not read {}: {error}; {REGENERATE}", path.display()));
     assert!(
         committed.replace("\r\n", "\n") == generated,
-        "the OpenAPI document drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-server --test openapi_drift to update it."
+        "schemas/openapi.v1.json is stale: {REGENERATE}"
     );
 }
 
 #[test]
-fn openapi_document_is_version_3_1() {
-    let value: serde_json::Value =
-        serde_json::from_str(&ariad_server::api::openapi().to_json().expect("serialize"))
-            .expect("parse");
+fn openapi_document_describes_the_v1_contract() {
+    let json = ariad_server::api::openapi_json().expect("serialize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("parse");
     assert!(
         value["openapi"]
             .as_str()
             .is_some_and(|v| v.starts_with("3.1"))
     );
     assert_eq!(value["info"]["title"], "AriadShift API");
-    assert!(value["components"]["securitySchemes"]["bearer"].is_object());
-    assert!(value["components"]["securitySchemes"]["api_key"].is_object());
+
+    let schemes = &value["components"]["securitySchemes"];
+    assert_eq!(schemes["bearer"]["type"], "http");
+    assert_eq!(schemes["bearer"]["scheme"], "bearer");
+    assert_eq!(schemes["bearer"]["bearerFormat"], "JWT");
+    assert!(
+        schemes["bearer"]["description"]
+            .as_str()
+            .is_some_and(|d| d.contains("JWKS"))
+    );
+    assert_eq!(schemes["api_key"]["type"], "apiKey");
+    assert_eq!(schemes["api_key"]["in"], "header");
+    assert_eq!(schemes["api_key"]["name"], "x-api-key");
+
+    let paths = &value["paths"];
+    let events = &paths["/v1/jobs/{id}/events"]["get"]["responses"]["200"]["content"];
+    assert!(events["text/event-stream"].is_object(), "SSE events");
+    let put = &paths["/v1/blobs/{token}"]["put"];
+    assert_eq!(
+        put["requestBody"]["content"]["application/octet-stream"]["schema"]["format"],
+        "binary"
+    );
+    assert!(put.get("security").is_none());
+    let get = &paths["/v1/blobs/{token}"]["get"]["responses"]["200"]["content"];
+    assert!(get["application/octet-stream"].is_object());
+    assert!(
+        paths["/v1/jobs"]["post"]["responses"]["429"]["headers"]["retry-after"].is_object(),
+        "rate-limited responses document Retry-After"
+    );
 }
