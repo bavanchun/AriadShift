@@ -117,20 +117,15 @@ test("preselects the target from a format-pair link", async ({ page }) => {
   await expect(page.getByTestId("target-select")).toContainText("Markdown");
 });
 
-test("explains formats that need the CLI", async ({ page }) => {
-  await openConverter(page);
-  await chooseFile(page, "notes.md", "text/markdown", MARKDOWN);
-  await expect(page.getByText(/Word \(DOCX\), EPUB, pdf need the AriadShift CLI/)).toBeVisible();
-});
-
-test("offers the CLI for PDF input", async ({ page }) => {
-  await openConverter(page);
-  await chooseFile(page, "page.pdf", "application/pdf", "%PDF-1.7\n");
-  await expect(page.getByText("pdf cannot be converted in the browser yet.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "The AriadShift CLI", exact: true })).toHaveAttribute(
+test("offers the desktop app for legacy Office input", async ({ page }) => {
+  await openConverter(page, "?to=markdown&profile=faithful");
+  await chooseFile(page, "page.rtf", "application/rtf", "{\\rtf1 Hello}");
+  await expect(page.getByTestId("detected-format")).toHaveText("Rich Text (RTF)");
+  await expect(page.getByRole("link", { name: "Open in Desktop" })).toHaveAttribute(
     "href",
-    "/download",
+    "ariadshift://open?route=rtf-md&profile=faithful",
   );
+  await expect(page.getByText("Process in Cloud")).toHaveCount(0);
 });
 
 test("file drops outside the picker preserve the current document", async ({ page }) => {
@@ -252,7 +247,25 @@ test("refuses files above the browser limit", async ({ page }) => {
     buffer: Buffer.alloc(17 * 1024 * 1024, "a"),
   });
   await expect(page.getByTestId("converter-error")).toContainText("up to 16 MB");
+  await expect(page.getByRole("link", { name: "Open in Desktop" })).toHaveAttribute(
+    "href",
+    "ariadshift://open?route=md-html&profile=editable",
+  );
   await expect(page.getByRole("button", { name: "Choose a file" })).toBeVisible();
+});
+
+test("offers a compatible Desktop route for oversized IR JSON", async ({ page }) => {
+  await page.goto("/app?to=docx&profile=private");
+  await page.locator("input[type=file]").setInputFiles({
+    name: "huge.ir.json",
+    mimeType: "application/json",
+    buffer: Buffer.alloc(17 * 1024 * 1024, " "),
+  });
+  await expect(page.getByTestId("converter-error")).toContainText("up to 16 MB");
+  await expect(page.getByRole("link", { name: "Open in Desktop" })).toHaveAttribute(
+    "href",
+    "ariadshift://open?route=json-docx&profile=private",
+  );
 });
 
 test("the file picker is keyboard operable", async ({ page }) => {
@@ -273,7 +286,7 @@ test("the target and profile selects are keyboard operable", async ({ page }) =>
   await target.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("option", { name: "HTML" })).toBeFocused();
-  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Home");
   await page.keyboard.press("Enter");
   await expect(target).toContainText("AriadShift IR (JSON)");
   await expect(page.getByRole("listbox")).toBeHidden();

@@ -29,15 +29,16 @@ lint-commits range="origin/dev..HEAD": lint-tools
     sh scripts/check-commits.sh {{range}}
 
 wasm:
-    cargo check -p ariad-core -p ariad-wasm --target wasm32-unknown-unknown
+    cargo check -p ariad-core -p ariad-wasm -p ariad-typst --target wasm32-unknown-unknown
 
 wasm-bindgen-tool:
     sh scripts/install-wasm-bindgen.sh
 
 # Builds the browser module into packages/ariad-wasm/pkg (not committed).
 wasm-build: wasm-bindgen-tool
-    cargo build -p ariad-wasm --target wasm32-unknown-unknown --profile wasm-release
+    cargo build -p ariad-wasm -p ariad-typst --target wasm32-unknown-unknown --profile wasm-release
     .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm
+    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg target/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm
 
 test:
     cargo nextest run --workspace --features ariad-host/test-probe
@@ -228,7 +229,7 @@ test-server-container:
     bash scripts/test-server-container.sh
 
 package-check:
-    cargo package --workspace --exclude ariad-server --exclude ariad-desktop --allow-dirty --config 'patch.crates-io.ariad-core.path="crates/ariad-core"' --config 'patch.crates-io.ariad-host.path="crates/ariad-host"'
+    cargo package --workspace --exclude ariad-server --exclude ariad-desktop --allow-dirty --config 'patch.crates-io.ariad-core.path="crates/ariad-core"' --config 'patch.crates-io.ariad-host.path="crates/ariad-host"' --config 'patch.crates-io.ariad-typst.path="crates/ariad-typst"'
 
 ci: static clippy wasm test bench-test bench-check package-check web-ci desktop-ci
 

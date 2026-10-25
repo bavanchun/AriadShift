@@ -5,6 +5,7 @@ packages:
   - services/*
 
 catalog:
+  "@bjorn3/browser_wasi_shim": 0.4.2
   "@base-ui/react": 1.9.0
   "@better-auth/api-key": 1.7.12
   "@better-auth/passkey": 1.7.12

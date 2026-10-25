@@ -1,6 +1,8 @@
+import { engineLabel } from "@/components/route-summary";
 import { offlineUrls } from "@/converter/offline";
 import { formatBytes, formatDuration, formatScore } from "@/lib/format-bytes";
-import { ACCEPT, FORMATS, formatLabel, pairSlug, parsePairSlug } from "@/lib/formats";
+import { ACCEPT, desktopLink, FORMATS, formatLabel, pairSlug, parsePairSlug } from "@/lib/formats";
+import capabilities from "../../../crates/ariad-core/data/capabilities.json";
 import { routeHeaders } from "../route-headers.mjs";
 
 describe("format pairs", () => {
@@ -19,14 +21,42 @@ describe("format pairs", () => {
   it("rejects malformed slugs", () => {
     expect(parsePairSlug("markdown")).toBeUndefined();
     expect(parsePairSlug("markdown-to-html-to-docx")).toBeUndefined();
-    expect(parsePairSlug("pdf-to-html")).toBeUndefined();
+    expect(parsePairSlug("unknown-to-html")).toBeUndefined();
   });
 
   it("labels unknown ids with the id and builds the picker filter", () => {
     expect(formatLabel("ariad-ir+json")).toBe("AriadShift IR (JSON)");
-    expect(formatLabel("pdf")).toBe("pdf");
+    expect(formatLabel("pdf")).toBe("PDF");
+    expect(formatLabel("unknown")).toBe("unknown");
+    for (const id of new Set(capabilities.edges.flatMap((edge) => [edge.from, edge.to]))) {
+      expect(formatLabel(id)).not.toBe(id);
+    }
+    for (const id of new Set(capabilities.edges.map((edge) => edge.engine))) {
+      expect(engineLabel(id)).not.toBe(id);
+    }
+    expect(engineLabel("typst")).toBe("Typst");
+    expect(engineLabel("libreoffice")).toBe("LibreOffice");
+    expect(engineLabel("docling")).toBe("Docling");
+    expect(engineLabel("pdf")).toBe("PDF text reader");
     expect(ACCEPT.split(",")).toEqual(
       expect.arrayContaining([".md", ".markdown", ".html", ".htm", ".json", ".docx", ".epub"]),
+    );
+  });
+
+  it("encodes public formats as compatible Desktop route names", () => {
+    for (const format of FORMATS.filter((format) => !format.internal)) {
+      const expected =
+        format.id === "ariad-ir+json" ? "json" : format.id === "markdown" ? "md" : format.id;
+      const target = format.id === "html" ? "docx" : "html";
+      const url = new URL(desktopLink(format.id, target, "private"));
+      expect(url.searchParams.get("route")).toBe(`${expected}-${target}`);
+      expect(url.searchParams.get("profile")).toBe("private");
+    }
+    expect(desktopLink("ariad-ir+json", "markdown", "editable")).toBe(
+      "ariadshift://open?route=json-md&profile=editable",
+    );
+    expect(desktopLink("markdown", "ariad-ir+json", "fast")).toBe(
+      "ariadshift://open?route=md-json&profile=fast",
     );
   });
 });

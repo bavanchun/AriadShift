@@ -14,13 +14,6 @@ export function generateStaticParams() {
   return loadPairs().map(({ from, to }) => ({ pair: pairSlug(from.id, to.id) }));
 }
 
-const CLI_FORMAT: Record<string, string> = {
-  markdown: "md",
-  html: "html",
-  docx: "docx",
-  epub: "epub",
-};
-
 function findPair(slug: string): PairRoute | undefined {
   return loadPairs().find(({ from, to }) => pairSlug(from.id, to.id) === slug);
 }
@@ -104,16 +97,9 @@ export default async function PairPage({ params }: PageProps<"/convert/[pair]">)
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">From the command line</h2>
-        {from.id in CLI_FORMAT && to.id in CLI_FORMAT ? (
-          <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
-            <code>{`ashift convert input.${from.extensions[0]} --to ${CLI_FORMAT[to.id]}`}</code>
-          </pre>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            The command-line tool does not offer IR JSON as an input or output format yet; the
-            browser converter does.
-          </p>
-        )}
+        <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
+          <code>{`ashift convert input.${from.extensions[0]} --to ${to.id === "ariad-ir+json" ? "json" : to.extensions[0]}`}</code>
+        </pre>
       </section>
 
       {related.length > 0 && (

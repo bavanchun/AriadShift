@@ -16,9 +16,17 @@ export function offlineUrls(
       continue;
     }
     // Skip other sites, the service worker itself and prefetched data for other pages.
-    if (url.origin !== page.origin || url.pathname === "/sw.js" || url.searchParams.has("_rsc")) {
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.origin !== page.origin ||
+      url.pathname === "/sw.js" ||
+      url.searchParams.has("_rsc")
+    ) {
       continue;
     }
+    // Heavy binaries already live in the engine cache; keep only one disk copy.
+    if (url.pathname.startsWith("/wasm/pandoc/") || /ariad_typst.*\.wasm$/.test(url.pathname))
+      continue;
     url.hash = "";
     urls.add(url.href);
   }
@@ -36,6 +44,13 @@ export async function enableOffline(workerResources: string[]): Promise<boolean>
     registration.active?.postMessage({
       type: "cache",
       urls: offlineUrls(window.location.href, pageResources, workerResources),
+      // Preserve lazy engine code when a replacement worker refreshes the app shell. The
+      // worker lists the engine binaries it used, including those read from Cache Storage.
+      engineChunks: workerResources.some((url) => /pandoc\.wasm|ariad_typst.*\.wasm/.test(url))
+        ? offlineUrls(window.location.href, [], workerResources).filter((url) =>
+            new URL(url).pathname.endsWith(".js"),
+          )
+        : [],
     });
     return true;
   } catch {
