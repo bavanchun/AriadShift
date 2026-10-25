@@ -38,6 +38,8 @@ echo "=== Table tests: scripts/ci-scope.sh classification ==="
 assert_classification "core (ariad-core)" "crates/ariad-core/src/lib.rs" "true" "true" "code change"
 assert_classification "wasm (ariad-wasm)" "crates/ariad-wasm/src/lib.rs" "true" "true" "code change"
 
+assert_classification "typst (ariad-typst)" "crates/ariad-typst/src/lib.rs" "true" "true" "code change"
+
 # 2. host
 assert_classification "host (ariad-host)" "crates/ariad-host/src/main.rs" "true" "false" "code change"
 

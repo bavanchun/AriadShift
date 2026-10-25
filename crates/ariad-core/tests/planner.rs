@@ -1087,10 +1087,19 @@ fn restricted_capabilities_keep_only_edges_of_one_runtime() {
     )
     .expect("markdown to html runs in the browser");
     assert!(route.steps.iter().all(|s| s.engine == "ariad-core"));
+    let heavy = plan(
+        &wasm,
+        Format::Markdown,
+        Format::Docx,
+        Profile::Editable,
+        &engines,
+    )
+    .unwrap();
+    assert_eq!(heavy.steps.last().unwrap().engine, "pandoc");
     assert!(matches!(
         plan(
             &wasm,
-            Format::Markdown,
+            Format::Odt,
             Format::Docx,
             Profile::Editable,
             &engines

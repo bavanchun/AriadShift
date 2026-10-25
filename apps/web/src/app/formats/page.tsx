@@ -1,6 +1,7 @@
 import { Badge } from "@ariadshift/ui/components/badge";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { engineLabel } from "@/components/route-summary";
 import { loadCapabilities, loadPairs } from "@/lib/catalog";
 import { FORMATS, formatLabel, pairSlug } from "@/lib/formats";
 
@@ -24,7 +25,7 @@ export default function FormatsPage() {
         </p>
       </header>
       <ul className="grid gap-6 md:grid-cols-2">
-        {FORMATS.map((format) => {
+        {FORMATS.filter((format) => !format.internal).map((format) => {
           const reads = caps.edges.filter(
             (edge) => edge.from === format.id && edge.to === "ariad-ir+json",
           );
@@ -47,13 +48,17 @@ export default function FormatsPage() {
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground">{format.description}</p>
-              <p className="text-sm">
-                Extensions: {format.extensions.map((extension) => `.${extension}`).join(", ")}
-              </p>
+              {format.extensions.length > 0 && (
+                <p className="text-sm">
+                  Extensions: {format.extensions.map((extension) => `.${extension}`).join(", ")}
+                </p>
+              )}
               {format.id !== "ariad-ir+json" && (
                 <p className="text-sm">
-                  Read by {reads.map((edge) => edge.engine).join(", ") || "no engine yet"}; written
-                  by {writes.map((edge) => edge.engine).join(", ") || "no engine yet"}.
+                  Read by{" "}
+                  {reads.map((edge) => engineLabel(edge.engine)).join(", ") || "no engine yet"}
+                  {"; written by "}
+                  {writes.map((edge) => engineLabel(edge.engine)).join(", ") || "no engine yet"}.
                 </p>
               )}
               {targets.length > 0 && (

@@ -1,4 +1,4 @@
-Fonts embedded in ariad-host for the Typst PDF writer
+Fonts embedded in ariad-typst for the native and browser PDF writers
 =====================================================
 
 All fonts are unmodified copies of upstream release files and are licensed
