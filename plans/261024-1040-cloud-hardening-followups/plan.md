@@ -25,7 +25,7 @@ SeaweedFS rejects changed bytes under its checksum-bound signed PUT with `400 Ba
 
 ## Subsequent maintenance
 
-A follow-up on `fix/cloud-hardening-3`, starting from `dev` at `c52ef98`, addresses the low findings in the PR #45 review: a successful post-expiry sweep with valid-input controls, an open-only procfs probe, helper-filter startup preflight in every mode, an explicit untested Kubernetes-fragment statement, read-only worker upload grants, and current delivery records. The sweep, startup preflight, privilege revocations and documentation are implemented; the procfs test edit awaits one-time privacy-hook approval. The Mac real-service suite passed 95 tests, and workspace clippy passed. Full local CI and hosted checks remain in progress. These follow-up results do not retroactively change the PR #45 evidence above.
+[PR #47](https://github.com/bavanchun/AriadShift/pull/47), on `fix/cloud-hardening-3` from `dev` at `c52ef98`, implements the subsequent review's seven maintenance items: a successful post-expiry sweep with valid-input controls, an open-only procfs probe, helper-filter startup preflight in every mode, an explicit untested Kubernetes-fragment statement, read-only worker upload grants, and current delivery records. The procfs probe opens `environ` and `mem` without reading offset zero, which can return an I/O error even when memory access is permitted. Current verification and readiness are tracked by that PR's checks and description. These follow-up results do not retroactively change the PR #45 evidence above.
 
 ## Deployment and rollback
 
