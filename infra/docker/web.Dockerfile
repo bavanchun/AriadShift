@@ -2,7 +2,8 @@
 #
 # AriadShift web app: the static export of apps/web (docs/web.md, "Static
 # hosting") served by unprivileged nginx on port 3000. The API and auth base
-# URLs are compiled into the site, so rebuild the image after changing them.
+# URLs, the Turnstile site key and the operator name are compiled into the
+# site, so rebuild the image after changing them.
 #
 # From the repository root:
 #   docker build -f infra/docker/web.Dockerfile -t ariadshift-web .
@@ -60,11 +61,16 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
     && .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg \
         target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm
 RUN pnpm install --frozen-lockfile --filter "@ariadshift/web..."
-# Public base URLs for cloud mode; the defaults match infra/compose.
+# Public base URLs for cloud mode; the defaults match infra/compose. The
+# Turnstile site key and the operator name are optional; empty leaves them off.
 ARG NEXT_PUBLIC_ARIAD_API_URL=http://localhost:8080
 ARG NEXT_PUBLIC_ARIAD_AUTH_URL=http://localhost:3001
+ARG NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY=
+ARG NEXT_PUBLIC_ARIAD_OPERATOR=
 ENV NEXT_PUBLIC_ARIAD_API_URL=${NEXT_PUBLIC_ARIAD_API_URL} \
-    NEXT_PUBLIC_ARIAD_AUTH_URL=${NEXT_PUBLIC_ARIAD_AUTH_URL}
+    NEXT_PUBLIC_ARIAD_AUTH_URL=${NEXT_PUBLIC_ARIAD_AUTH_URL} \
+    NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY} \
+    NEXT_PUBLIC_ARIAD_OPERATOR=${NEXT_PUBLIC_ARIAD_OPERATOR}
 RUN pnpm --filter @ariadshift/web export
 
 FROM ${NGINX} AS web

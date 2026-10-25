@@ -375,6 +375,8 @@ services:
       args:
         NEXT_PUBLIC_ARIAD_API_URL: ${ARIAD_PUBLIC_URL:-http://localhost:8080}
         NEXT_PUBLIC_ARIAD_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+        NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY: ${ARIAD_TURNSTILE_SITE_KEY:-}
+        NEXT_PUBLIC_ARIAD_OPERATOR: ${ARIAD_OPERATOR:-}
     image: ${ARIADSHIFT_WEB_IMAGE:-ariadshift-web:local}
     environment:
       NEXT_PUBLIC_ARIAD_API_URL: ${ARIAD_PUBLIC_URL:-http://localhost:8080}
