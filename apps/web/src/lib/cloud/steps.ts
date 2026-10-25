@@ -29,7 +29,9 @@ export type CloudPhase =
 
 export interface CloudJobState {
   phase: CloudPhase;
-  /** Bytes sent and total during the transfer. */
+  /** Bytes hashed on this device while preparing. */
+  hashed: number;
+  /** Bytes sent during the transfer, and the file's size. */
   sent: number;
   total: number;
   /** The last `progress` stage of the engine. */
@@ -55,6 +57,7 @@ export interface CloudJobState {
 
 export const INITIAL_JOB_STATE: CloudJobState = {
   phase: "staged",
+  hashed: 0,
   sent: 0,
   total: 0,
   stage: null,
@@ -220,7 +223,9 @@ export function stepLabel(state: CloudJobState, now: number): string {
     case "staged":
       return "Not uploaded";
     case "preparing":
-      return "Preparing…";
+      return state.hashed > 0 && state.total > 0
+        ? `Preparing ${Math.floor((state.hashed / state.total) * 100)}%`
+        : "Preparing…";
     case "uploading":
       return `Uploading ${state.total > 0 ? Math.floor((state.sent / state.total) * 100) : 0}%`;
     case "checking":

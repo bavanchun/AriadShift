@@ -3,7 +3,6 @@
 // The controller owns the requests and the abort signal; the panel renders its
 // state and calls its actions.
 import type { AriadClient, Job, OutputFile, Upload } from "@ariadshift/sdk";
-import { sha256Hex } from "@ariadshift/sdk";
 import type { CloudApi } from "./api";
 import {
   type CloudErrorContext,
@@ -11,6 +10,7 @@ import {
   describeCloudError,
   describeJobFailure,
 } from "./errors";
+import { hashFile } from "./hash";
 import {
   applyJobEvent,
   type CloudJobState,
@@ -175,7 +175,10 @@ export class CloudJob {
     });
     let created: Upload;
     try {
-      const sha256 = await sha256Hex(this.#file);
+      const sha256 = await hashFile(this.#file, {
+        signal,
+        onProgress: (hashed) => this.#set({ hashed }),
+      });
       signal.throwIfAborted();
       created = await this.#client.createUpload(
         { filename: this.#file.name, size: this.#file.size, sha256 },
