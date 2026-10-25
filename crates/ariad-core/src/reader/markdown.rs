@@ -9,8 +9,8 @@ use thiserror::Error;
 use crate::{
     format::Format,
     ir::{
-        Alignment, AssetRef, Block, ColumnSpec, Document, IR_VERSION, Inline, ListItem, RawFormat,
-        TableCell,
+        Alignment, AssetRef, AssetStore, Block, ColumnSpec, Document, IR_VERSION, Inline, ListItem,
+        RawFormat, TableCell,
     },
     limits::{Limits, LimitsError},
     reader::{
@@ -52,6 +52,7 @@ enum Visit<'a> {
 
 #[derive(Default)]
 struct WalkState {
+    assets: AssetStore,
     block_nodes: u64,
     warnings: Vec<Warning>,
     footnote_references: BTreeSet<String>,
@@ -149,7 +150,7 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
                             .unwrap_or(ConvertedNode::Skip)
                     })
                     .collect::<Vec<_>>();
-                let output = convert_node(node, children, &mut state);
+                let output = convert_node(node, children, &mut state, limits);
                 converted.insert(node_key(node), output);
             }
         }
@@ -179,6 +180,7 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
         version: IR_VERSION.to_owned(),
         meta: metadata,
         body: blocks,
+        assets: state.assets,
         ..Document::default()
     };
     Ok(ReadOutput { document, warnings })
@@ -192,6 +194,7 @@ fn convert_node(
     node: &AstNode<'_>,
     children: Vec<ConvertedNode>,
     state: &mut WalkState,
+    limits: &Limits,
 ) -> ConvertedNode {
     let data = node.data();
     match &data.value {
@@ -368,10 +371,17 @@ fn convert_node(
         }),
         NodeValue::Image(link) => {
             let alt = nfc(&inline_text(&inlines(children)));
+            let target = common::decode_data_uri_image(
+                &link.url,
+                limits,
+                &mut state.assets,
+                &mut state.warnings,
+            )
+            .unwrap_or_else(|| AssetRef::Url {
+                href: link.url.clone(),
+            });
             inline(Inline::Image {
-                target: AssetRef::Url {
-                    href: link.url.clone(),
-                },
+                target,
                 alt,
                 title: nonempty(&link.title),
             })
@@ -981,6 +991,42 @@ mod tests {
                 .iter()
                 .any(|warning| warning.code == WarningCode::UnsupportedNode)
         );
+    }
+
+    #[test]
+    fn embeds_bounded_data_images_without_loading_url_images() {
+        let markdown = "![pixel](data:image/png;base64,iVBORw0KGgo=)\n\n![remote](https://example.test/image.png)\n";
+        let output = read(markdown, &Limits::local()).unwrap();
+        assert_eq!(output.document.assets.len(), 1);
+        let (id, asset) = output.document.assets.first_key_value().unwrap();
+        assert_eq!(asset.media_type, "image/png");
+        assert_eq!(asset.bytes, b"\x89PNG\r\n\x1a\n");
+        assert!(
+            matches!(&output.document.body[0], Block::Paragraph { content }
+            if matches!(&content[0], Inline::Image { target: AssetRef::Asset { id: embedded }, .. } if embedded == id))
+        );
+        assert!(
+            matches!(&output.document.body[1], Block::Paragraph { content }
+            if matches!(&content[0], Inline::Image { target: AssetRef::Url { href }, .. } if href == "https://example.test/image.png"))
+        );
+
+        let mut limits = Limits::local();
+        limits.max_asset_bytes = Some(1);
+        let limited = read(markdown, &limits).unwrap();
+        assert!(limited.document.assets.is_empty());
+        assert!(
+            limited
+                .warnings
+                .iter()
+                .any(|warning| warning.code == WarningCode::ImageNotEmbedded)
+        );
+        for uri in [
+            "data:image/png;base64,invalid!",
+            "data:image/png;base64,aGVsbG8=",
+        ] {
+            let output = read(&format!("![image]({uri})"), &Limits::local()).unwrap();
+            assert!(output.document.assets.is_empty());
+        }
     }
 
     #[test]
