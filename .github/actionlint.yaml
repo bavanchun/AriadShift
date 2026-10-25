@@ -1,5 +1,6 @@
-# actionlint 1.7.12 predates the ubuntu-26.04 hosted runner label; drop this
-# once actionlint lists it.
+# actionlint 1.7.12 predates the ubuntu-26.04 hosted runner labels; drop these
+# once actionlint lists them.
 self-hosted-runner:
   labels:
     - ubuntu-26.04
+    - ubuntu-26.04-arm
