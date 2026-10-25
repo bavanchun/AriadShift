@@ -369,7 +369,11 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
         <Alert variant="destructive" data-testid="converter-error">
           <TriangleAlertIcon aria-hidden="true" />
           <AlertTitle>
-            {error.code === "no_route" ? "Not available here" : "Something went wrong"}
+            {error.code === "no_route"
+              ? "Not available here"
+              : error.code === "engine_integrity"
+                ? "Engine integrity check failed"
+                : "Something went wrong"}
           </AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
         </Alert>

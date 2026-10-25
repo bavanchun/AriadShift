@@ -22,6 +22,19 @@ async function openEngineCache(): Promise<Cache | undefined> {
   return undefined;
 }
 
+/** The routes an engine serves, as the converter names them to the user. */
+function routeName(url: string) {
+  return url.includes("pandoc") ? "DOCX/EPUB" : "PDF";
+}
+
+/** A pinned engine binary that is damaged or does not run; the conversion stops here. */
+function integrityError(url: string, reason: string) {
+  return {
+    code: "engine_integrity",
+    message: `The ${routeName(url)} engine ${reason}. Reload the page to retry.`,
+  };
+}
+
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -82,8 +95,9 @@ async function download(url: string, label: string): Promise<Response> {
 
 /**
  * Returns an engine binary from the engine cache, or downloads and caches it. With a
- * `sha256` digest, a cached copy that does not match is evicted and downloaded again, and
- * a download that does not match is rejected without being cached.
+ * `sha256` digest it fails closed: a cached copy that does not match is evicted, and a
+ * download that does not match is never cached. Either way the conversion stops with an
+ * integrity error instead of running an unverified engine; the next attempt downloads anew.
  */
 export async function engineResponse(url: string, sha256?: string): Promise<Response> {
   const label = url.includes("pandoc") ? "Pandoc" : "Typst";
@@ -101,20 +115,17 @@ export async function engineResponse(url: string, sha256?: string): Promise<Resp
       return cached;
     }
     const bytes = await cached.arrayBuffer();
-    if ((await sha256Hex(bytes)) === sha256) {
-      usedEngines.add(url);
-      return new Response(bytes, { headers: cached.headers });
+    if ((await sha256Hex(bytes)) !== sha256) {
+      await evictEngine(url);
+      throw integrityError(url, "failed an integrity check");
     }
-    await evictEngine(url);
+    usedEngines.add(url);
+    return new Response(bytes, { headers: cached.headers });
   }
   let response = await download(url, label);
   if (sha256) {
     const bytes = await response.arrayBuffer();
-    if ((await sha256Hex(bytes)) !== sha256)
-      throw {
-        code: "engine_unavailable",
-        message: `The downloaded ${label} engine is damaged or out of date. Reload the page and try again.`,
-      };
+    if ((await sha256Hex(bytes)) !== sha256) throw integrityError(url, "failed an integrity check");
     response = new Response(bytes, { headers: response.headers });
   }
   progress(`Preparing ${label} on this device…`);
@@ -135,9 +146,6 @@ export async function compileEngine(url: string, sha256: string): Promise<WebAss
   } catch {
     await evictEngine(url);
     usedEngines.delete(url);
-    throw {
-      code: "engine_unavailable",
-      message: "The conversion engine could not start. Reload the page and try again.",
-    };
+    throw integrityError(url, "could not be loaded");
   }
 }
