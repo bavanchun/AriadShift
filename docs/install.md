@@ -206,7 +206,7 @@ Download the installer for your platform from [GitHub Releases](https://github.c
 
 | Platform | Architecture | Installer assets | Updater artifacts |
 |---|---|---|---|
-| **macOS** | Apple Silicon (`aarch64` only) | `AriadShift_<version>_aarch64.dmg` | `AriadShift_<version>_aarch64.app.tar.gz` (`.sig`) |
+| **macOS** | Apple Silicon (`aarch64` only) | `AriadShift_<version>_aarch64.dmg` | `AriadShift_aarch64.app.tar.gz` (`.sig`) |
 | **Windows** | x64 (`x86_64`) | `AriadShift_<version>_x64-setup.exe` (NSIS), `AriadShift_<version>_x64_en-US.msi` (MSI) | `AriadShift_<version>_x64-setup.exe` (`.sig`) |
 | **Linux** | x86_64 (`amd64`) | `AriadShift_<version>_amd64.deb`, `AriadShift-<version>-1.x86_64.rpm`, `AriadShift_<version>_amd64.AppImage` | `AriadShift_<version>_amd64.AppImage` (`.sig`) |
 
