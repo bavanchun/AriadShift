@@ -75,6 +75,9 @@ assert_classification "root manifest (justfile)" "justfile" "true" "true" "code 
 assert_classification "script (check-js-licenses.mjs)" "scripts/check-js-licenses.mjs" "false" "false" "JavaScript-only change"
 assert_classification "script (install-wasm-bindgen.sh)" "scripts/install-wasm-bindgen.sh" "true" "true" "code change"
 assert_classification "workflow (.github ci.yml)" ".github/workflows/ci.yml" "true" "true" "code change"
+assert_classification "workflow (cloud-e2e.yml)" ".github/workflows/cloud-e2e.yml" "false" "false" "JavaScript-only change"
+assert_classification "e2e test (infra/test/e2e)" "infra/test/e2e/run.sh" "false" "false" "JavaScript-only change"
+assert_classification "compose (infra/compose)" "infra/compose/docker-compose.yml" "true" "false" "code change"
 
 # 8. docs-only
 assert_classification "docs-only (docs/)" "docs/cli.md" "false" "false" "documentation-only change"
@@ -85,6 +88,7 @@ assert_classification "docs-only (plans/)" "plans/design.md" "false" "false" "do
 assert_classification "mixed (docs + host)" "$(printf 'docs/cli.md\ncrates/ariad-host/src/main.rs')" "true" "false" "code change"
 assert_classification "mixed (docs + apps)" "$(printf 'docs/web.md\napps/web/src/converter/worker.ts')" "false" "true" "JavaScript-only change"
 assert_classification "mixed (apps + host)" "$(printf 'apps/web/src/index.ts\ncrates/ariad-host/src/main.rs')" "true" "true" "code change"
+assert_classification "mixed (e2e + host)" "$(printf 'infra/test/e2e/run.sh\ncrates/ariad-host/src/main.rs')" "true" "false" "code change"
 assert_classification "mixed (core + docs)" "$(printf 'crates/ariad-core/src/lib.rs\nREADME.md')" "true" "true" "code change"
 
 # 10. fallback
