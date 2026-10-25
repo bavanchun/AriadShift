@@ -83,6 +83,8 @@ curl -sS -b jar.txt -X POST "$AUTH/api/auth/api-key/create" \
 
 The `key` field of the response is the only time the full key is shown; the service stores only its SHA-256 hash. Keys start with `ashift_`. List a user's keys (without their values) with `GET /api/auth/api-key/list`, and revoke one with `POST /api/auth/api-key/delete` and `{"keyId": "…"}`.
 
+Deleting an account also revokes its API keys before removing the user. If revocation fails, account deletion is refused. Already-issued JWTs can remain valid until their 15-minute expiry.
+
 Send the key on every API request:
 
 ```sh
@@ -438,7 +440,7 @@ for (const output of outputs) {
 await ariad.deleteJob(job.id);
 ```
 
-`upload` accepts a `Blob`, `File`, `ArrayBuffer` or `Uint8Array`. A `File` supplies its own name; other bodies need `filename`. Without `sha256` the helper hashes the whole body in memory, so pass a precomputed digest for large files. Anonymous callers omit `credentials` and pass `turnstileToken` when the deployment requires Turnstile.
+`upload` accepts a `Blob`, `File`, `ArrayBuffer` or `Uint8Array`. A `File` supplies its own name; other bodies need `filename`. Without `sha256`, the helper computes the digest incrementally in 8 MiB chunks; `Blob` and `File` inputs are read in slices. Pass `onHashProgress` to observe that work, or `sha256` to supply a precomputed digest. Anonymous callers omit `credentials` and pass `turnstileToken` when the deployment requires Turnstile.
 
 ### Credentials
 

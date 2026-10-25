@@ -84,7 +84,7 @@ The API stores the input, the outputs and the file name with the job; it never l
 - **Delete now** calls `DELETE /v1/jobs/{id}`, which cancels a running job and deletes its input and outputs at once.
 - **Delete after download** deletes the job once its download has started.
 - **Cancel** during the transfer deletes the pending upload through `DELETE /v1/uploads/{id}` when the API offers it; otherwise the panel names the time the server deletes it.
-- **Start over and delete files**, and switching back to **On this device**, delete the job or upload the panel created. A finished result that was not downloaded is lost then.
+- **Start over and delete files** deletes the job or upload the panel created. A finished result that was not downloaded is lost then. Switching destinations or navigating away keeps created jobs available on **Jobs**, including results that have not been downloaded. Uploads that have not become jobs are still cleaned up when leaving cloud mode.
 - When that deletion fails, for example offline or on a server error, the file stays listed under the converter with the time its retention period deletes it, and the status line says it is still on the server. **Delete from server** retries until the server confirms. An upload that never became a job, on a server without `DELETE /v1/uploads/{id}`, shows only the retention notice, because a retry cannot help.
 - Closing the tab deletes nothing; the retention period does.
 
@@ -99,7 +99,7 @@ When the build has a Turnstile site key, anonymous uploads first render a Cloudf
 `/sign-in`, `/account`, `/api-keys` and `/jobs` ([`src/app/(account)`](../apps/web/src/app/(account)), [`src/components/account`](../apps/web/src/components/account)) need both `NEXT_PUBLIC_ARIAD_API_URL` and `NEXT_PUBLIC_ARIAD_AUTH_URL`. Without them, each page says that cloud is not configured, links to `/app` and makes no request. They render on the client only, so the static export still works, and search engines are asked not to index them.
 
 - **Sign in** offers email and password, passkeys, the two-factor step (an authenticator code or a backup code) and account creation. It returns to a same-origin `?next=` path.
-- **Account** changes the name and password, adds and removes passkeys, turns two-factor on or off, issues new backup codes, signs out and deletes the account after a password confirmation. Account deletion needs Better Auth's `deleteUser` option on the auth service; without it the page says the server does not allow it.
+- **Account** changes the name and password, adds and removes passkeys, turns two-factor on or off, issues new backup codes, signs out and deletes the account after a password confirmation. The auth service revokes the account's API keys before deletion and refuses deletion if revocation fails. Already-issued JWTs can remain valid until their 15-minute expiry. Account deletion needs Better Auth's `deleteUser` option on the auth service; without it the page says the server does not allow it.
 - **API keys** lists, creates and revokes keys. A new key is shown once, with a Copy button, and is dropped when its dialog closes.
 - **Jobs** lists the signed-in account's jobs from `GET /v1/jobs`, newest first, with **Show more jobs** for further pages. Each row follows an active job's event stream and offers **Download**, **Delete now** and, for a failed or canceled job that has not expired, **Retry**. When the API answers `404`, `405` or `501`, the page falls back to the jobs recorded in this browser (`localStorage`) and says the server cannot list account jobs yet. Anonymous jobs never come from the server list; only this browser's record lists them.
 
@@ -114,7 +114,7 @@ Next.js inlines these variables when the site is built, so set them for `just we
 | `NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY` | Cloudflare Turnstile site key. Set it exactly when the API has `ARIAD_TURNSTILE_SECRET`. |
 | `NEXT_PUBLIC_ARIAD_OPERATOR` | Who runs the server, named in the upload disclosure. |
 
-The compose stack sets the first two from `ARIAD_PUBLIC_URL` and `BETTER_AUTH_URL` ([self-hosting.md](self-hosting.md#configuration)). The servers must also accept the web origin:
+The compose stack sets these four values from `ARIAD_PUBLIC_URL`, `BETTER_AUTH_URL`, `ARIAD_TURNSTILE_SITE_KEY` and `ARIAD_OPERATOR`, respectively ([self-hosting.md](self-hosting.md#configuration)). The servers must also accept the web origin:
 
 - **API:** `ARIAD_CORS_ORIGINS` lists the web origin (compose sets it from `ARIAD_WEB_ORIGIN`). The API already exposes `Retry-After`.
 - **Auth:** `BETTER_AUTH_TRUSTED_ORIGINS` lists the web origin, since sign-in sends cookies cross-origin.
