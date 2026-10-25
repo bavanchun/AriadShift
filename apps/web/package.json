@@ -16,8 +16,11 @@
   },
   "dependencies": {
     "@ariadshift/ariad-wasm": "workspace:*",
+    "@ariadshift/sdk": "workspace:*",
     "@ariadshift/ui": "workspace:*",
     "@bjorn3/browser_wasi_shim": "catalog:",
+    "@uppy/aws-s3": "6.3.0",
+    "@uppy/core": "6.3.0",
     "lucide-react": "catalog:",
     "next": "catalog:",
     "react": "catalog:",
