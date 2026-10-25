@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pandocVersion as version } from "../engine-assets.mjs";
+import { pandocVersion as version, pandocWasmSha256 } from "../engine-assets.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 if (
@@ -44,6 +44,12 @@ for (const name of ["pandoc.wasm", "COPYING.md", "COPYRIGHT"]) {
       maxBuffer: 70 * 1024 * 1024,
     },
   );
+  // The browser checks this digest before it caches or compiles the reactor.
+  if (
+    name === "pandoc.wasm" &&
+    createHash("sha256").update(data).digest("hex") !== pandocWasmSha256
+  )
+    throw new Error("pandoc.wasm SHA-256 does not match engine-assets.mjs");
   await writeFile(path.join(output, name), data);
 }
 await writeFile(
