@@ -175,8 +175,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The pinned actionlint predates this documented hosted runner label.
-          - {target: aarch64-unknown-linux-gnu, os: "${{ 'ubuntu-26.04-arm' }}"}
+          # .github/actionlint.yaml declares this hosted label for the pinned actionlint.
+          - {target: aarch64-unknown-linux-gnu, os: ubuntu-26.04-arm}
           - {target: aarch64-apple-darwin, os: macos-26}
     env:
       UV_PROJECT_ENVIRONMENT: .tools/torch-arm-env
