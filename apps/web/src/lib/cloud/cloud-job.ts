@@ -3,6 +3,7 @@
 // The controller owns the requests and the abort signal; the panel renders its
 // state and calls its actions.
 import type { AriadClient, Job, OutputFile, Upload } from "@ariadshift/sdk";
+import { type JobHistoryEntry, rememberJob } from "@/components/account/job-history";
 import type { CloudApi } from "./api";
 import {
   type CloudErrorContext,
@@ -39,6 +40,14 @@ export interface CloudJobDependencies {
   context: () => Omit<CloudErrorContext, "serverExpiresAt">;
   /** Called when the API refused the session, so the JWT is fetched again. */
   onUnauthorized?: () => void;
+  /**
+   * The signed-in user's id, `null` for an anonymous job, `undefined` while
+   * unknown. Without it, a job counts as anonymous only when the context says
+   * the user is signed out.
+   */
+  owner?: () => string | null | undefined;
+  /** Records a created job for the jobs page; this browser's job history by default. */
+  remember?: (entry: JobHistoryEntry) => void;
   now?: () => number;
 }
 
@@ -253,6 +262,7 @@ export class CloudJob {
       }
       return;
     }
+    this.#remember(job, upload);
     this.#lastEventId = undefined;
     this.#set((state) => ({
       ...state,
@@ -264,6 +274,28 @@ export class CloudJob {
       attempt: job.attempts,
     }));
     await this.#follow(job.id, signal);
+  }
+
+  /**
+   * Lists the job on the jobs page. A job whose owner is unknown is not
+   * recorded, so it never lands in another account's or the anonymous list.
+   */
+  #remember(job: Job, upload: Upload) {
+    const owner = this.#deps.owner
+      ? this.#deps.owner()
+      : this.#deps.context().signedIn
+        ? undefined
+        : null;
+    if (owner === undefined) {
+      return;
+    }
+    (this.#deps.remember ?? rememberJob)({
+      id: job.id,
+      filename: upload.filename,
+      owner,
+      createdAt: job.created_at,
+      expiresAt: job.expires_at,
+    });
   }
 
   /** Follows the job's events; the SDK resumes dropped streams with `Last-Event-ID`. */

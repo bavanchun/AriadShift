@@ -6,6 +6,7 @@ import {
   type OutputFile,
   type Upload,
 } from "@ariadshift/sdk";
+import type { JobHistoryEntry } from "@/components/account/job-history";
 import type { CloudApi, EventConnection } from "@/lib/cloud/api";
 import { CloudJob, type CloudJobDependencies } from "@/lib/cloud/cloud-job";
 import type { Transfer } from "@/lib/cloud/transfer";
@@ -415,5 +416,81 @@ describe("CloudJob", () => {
       expiresAt: COMPLETED.expires_at,
     });
     expect(state.calls.at(-1)).toBe(`deleteUpload ${COMPLETED.id}`);
+  });
+
+  it("records an anonymous job for the jobs page once it is created", async () => {
+    const state = fake();
+    const remembered: JobHistoryEntry[] = [];
+    const { job } = controller(state, { remember: (entry) => remembered.push(entry) });
+    await job.start({ to: "docx" });
+    expect(remembered).toEqual([
+      {
+        id: JOB.id,
+        filename: "report.md",
+        owner: null,
+        createdAt: JOB.created_at,
+        expiresAt: JOB.expires_at,
+      },
+    ]);
+  });
+
+  it("records a signed-in job under the user's id", async () => {
+    const state = fake();
+    const remembered: JobHistoryEntry[] = [];
+    const { job } = controller(state, {
+      owner: () => "user-1",
+      remember: (entry) => remembered.push(entry),
+    });
+    await job.start({ to: "docx" });
+    expect(remembered.map((entry) => entry.owner)).toEqual(["user-1"]);
+  });
+
+  it("does not record a job whose owner is unknown", async () => {
+    const state = fake();
+    const remembered: JobHistoryEntry[] = [];
+    const signedIn = controller(state, {
+      context: () => ({
+        fileName: FILE.name,
+        fileSize: FILE.size,
+        from: "markdown",
+        to: "docx",
+        limits: null,
+        signInOffered: true,
+        signedIn: true,
+      }),
+      remember: (entry) => remembered.push(entry),
+    });
+    await signedIn.job.start({ to: "docx" });
+    const loading = controller(fake(), {
+      owner: () => undefined,
+      remember: (entry) => remembered.push(entry),
+    });
+    await loading.job.start({ to: "docx" });
+    expect(remembered).toEqual([]);
+  });
+
+  it("does not record a job the server refused to create", async () => {
+    const state = fake();
+    state.client.createJob = async () => {
+      throw new AriadApiError(422, "unsupported_route", "no route to docx");
+    };
+    const remembered: JobHistoryEntry[] = [];
+    const { job } = controller(state, { remember: (entry) => remembered.push(entry) });
+    await job.start({ to: "docx" });
+    expect(remembered).toEqual([]);
+  });
+
+  it("records each job a retry creates", async () => {
+    const state = fake();
+    state.events = [event(1, "queued"), event(2, "failed", { code: "input_io", message: "" })];
+    state.final = { ...JOB, status: "failed", error: { code: "input_io", message: "" } } as Job;
+    const remembered: JobHistoryEntry[] = [];
+    const { job } = controller(state, { remember: (entry) => remembered.push(entry) });
+    await job.start({ to: "docx" });
+    const second = { ...JOB, id: "9a2b4c6d-8e0f-4a1b-9c3d-5e7f9a1b3c5d" } as Job;
+    state.client.createJob = async () => second;
+    state.final = { ...second, status: "succeeded" } as Job;
+    await job.retry();
+    expect(remembered.map((entry) => entry.id)).toEqual([JOB.id, second.id]);
   });
 });
