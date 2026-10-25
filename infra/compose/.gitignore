@@ -1,0 +1,4 @@
+# Local secrets for the compose stack. Copy the repository root's example
+# environment file here as ".env"; never commit the copy.
+.env
+.env.*
