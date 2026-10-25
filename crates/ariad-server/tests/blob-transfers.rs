@@ -35,6 +35,18 @@ const WAIT: Duration = Duration::from_secs(5);
 const PAYLOAD: &[u8] = b"# Uploaded\n";
 
 fn storage(dir: &Path, count: usize, idle: Duration, total: Duration) -> Storage {
+    storage_with(
+        dir,
+        BlobTransferLimits {
+            max_concurrent: count,
+            idle_timeout: idle,
+            transfer_timeout: total,
+            ..BlobTransferLimits::default()
+        },
+    )
+}
+
+fn storage_with(dir: &Path, limits: BlobTransferLimits) -> Storage {
     Storage::from_config(
         &StorageConfig::Local {
             root: dir.to_owned(),
@@ -43,12 +55,18 @@ fn storage(dir: &Path, count: usize, idle: Duration, total: Duration) -> Storage
         Some(b"0123456789abcdef0123456789abcdef"),
     )
     .unwrap()
-    .with_blob_transfer_limits(BlobTransferLimits {
-        max_concurrent: count,
-        idle_timeout: idle,
-        transfer_timeout: total,
-    })
+    .with_blob_transfer_limits(limits)
     .unwrap()
+}
+
+/// An object key in `workspace`'s layout, as `Storage::key` builds it.
+fn workspace_key(workspace: u128, owner: u128) -> String {
+    format!(
+        "t/{}/{}/in/{}",
+        uuid::Uuid::from_u128(workspace),
+        uuid::Uuid::from_u128(owner),
+        "0".repeat(64)
+    )
 }
 
 fn app(storage: Storage) -> axum::Router {
@@ -89,7 +107,12 @@ fn chunks(data: &'static [u8]) -> impl Stream<Item = Result<Bytes, Infallible>> 
     stream::iter([Ok(Bytes::from_static(data))])
 }
 
-fn held_body() -> (Body, oneshot::Receiver<()>) {
+/// One byte, then a body that never ends; the receiver fires once the
+/// transfer waits for more.
+fn held_stream() -> (
+    impl Stream<Item = Result<Bytes, Infallible>> + Send + Unpin + 'static,
+    oneshot::Receiver<()>,
+) {
     let (sender, observed) = oneshot::channel();
     let mut sender = Some(sender);
     let mut first = true;
@@ -103,6 +126,11 @@ fn held_body() -> (Body, oneshot::Receiver<()>) {
         }
         std::task::Poll::Pending
     });
+    (body, observed)
+}
+
+fn held_body() -> (Body, oneshot::Receiver<()>) {
+    let (body, observed) = held_stream();
     (Body::from_stream(body), observed)
 }
 
@@ -484,5 +512,152 @@ fn blob_openapi_declares_timeout_and_busy_responses() {
         let responses = &doc["paths"]["/v1/blobs/{token}"][method]["responses"];
         assert!(responses["408"].is_object());
         assert!(responses["429"]["headers"]["retry-after"].is_object());
+    }
+}
+
+#[tokio::test]
+async fn one_workspace_cannot_take_the_whole_transfer_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = storage_with(
+        dir.path(),
+        BlobTransferLimits {
+            max_concurrent: 4,
+            max_per_workspace: 1,
+            idle_timeout: WAIT,
+            transfer_timeout: WAIT,
+            ..BlobTransferLimits::default()
+        },
+    );
+    let held_key = workspace_key(1, 1);
+    let (body, observed) = held_stream();
+    let held = tokio::spawn({
+        let storage = storage.clone();
+        async move {
+            storage
+                .put_stream(&held_key, body, 2, &"0".repeat(64))
+                .await
+        }
+    });
+    timeout(WAIT, observed).await.unwrap().unwrap();
+    // Uploads and downloads of the same workspace share its budget.
+    assert!(matches!(
+        storage.get_stream(&workspace_key(1, 2)).await,
+        Err(StorageError::Busy)
+    ));
+    assert!(matches!(
+        storage
+            .put_stream(&workspace_key(1, 3), chunks(PAYLOAD), 1, &"0".repeat(64))
+            .await,
+        Err(StorageError::Busy)
+    ));
+    // Another workspace still has room: the missing object proves admission.
+    match storage.get_stream(&workspace_key(2, 1)).await {
+        Err(err) if err.is_not_found() => {}
+        _ => panic!("another workspace should be admitted"),
+    }
+    held.abort();
+    assert!(held.await.unwrap_err().is_cancelled());
+    timeout(WAIT, async {
+        loop {
+            match storage.get_stream(&workspace_key(1, 2)).await {
+                Err(StorageError::Busy) => tokio::task::yield_now().await,
+                Err(err) if err.is_not_found() => break,
+                _ => panic!("expected a released workspace slot"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_no_files(dir.path()).await;
+}
+
+#[tokio::test]
+async fn trickled_upload_falls_below_the_rate_floor_and_releases_admission() {
+    let dir = tempfile::tempdir().unwrap();
+    // Idle and total limits are far away, so only the rate floor can stop it.
+    let storage = storage_with(
+        dir.path(),
+        BlobTransferLimits {
+            max_concurrent: 1,
+            idle_timeout: WAIT,
+            transfer_timeout: Duration::from_secs(60),
+            min_bytes_per_sec: 1024,
+            rate_grace: Duration::from_millis(100),
+            ..BlobTransferLimits::default()
+        },
+    );
+    let body = stream::unfold((), |()| async {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        Some((Ok::<_, Infallible>(Bytes::from_static(b"x")), ()))
+    })
+    .boxed();
+    let result = timeout(
+        WAIT,
+        storage.put_stream("trickle", body, u64::MAX, &"0".repeat(64)),
+    )
+    .await
+    .expect("the rate floor stops the upload before the test timeout");
+    assert!(matches!(result, Err(StorageError::Timeout)));
+    assert_no_files(dir.path()).await;
+    assert_slot_released(&storage).await;
+}
+
+#[tokio::test]
+async fn slowly_read_download_falls_below_the_rate_floor_and_releases_admission() {
+    let dir = tempfile::tempdir().unwrap();
+    let payload = Bytes::from(vec![b'x'; 3 * 1024 * 1024]);
+    let hash = hex::encode(Sha256::digest(&payload));
+    let body = stream::iter([Ok::<_, Infallible>(payload.clone())]);
+    assert!(
+        storage(dir.path(), 1, WAIT, WAIT)
+            .put_stream("slow-read", body, payload.len() as u64, &hash)
+            .await
+            .unwrap()
+    );
+    // Idle and total limits outlast the test; only the floor releases the slot.
+    let strict = storage_with(
+        dir.path(),
+        BlobTransferLimits {
+            max_concurrent: 1,
+            idle_timeout: Duration::from_secs(60),
+            transfer_timeout: Duration::from_secs(60),
+            min_bytes_per_sec: 1024 * 1024 * 1024,
+            rate_grace: Duration::from_millis(50),
+            ..BlobTransferLimits::default()
+        },
+    );
+    let (_, mut stream) = strict.get_stream("slow-read").await.unwrap();
+    assert!(stream.next().await.is_some());
+    assert!(matches!(
+        strict.get_stream("slow-read").await,
+        Err(StorageError::Busy)
+    ));
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Reading one more chunk lets the producer reach its next floor check.
+    let _ = stream.next().await;
+    assert_slot_released(&strict).await;
+    drop(stream);
+    strict.delete("slow-read").await.unwrap();
+    assert_no_files(dir.path()).await;
+}
+
+#[test]
+fn rate_floor_and_workspace_budget_cannot_be_zero() {
+    for limits in [
+        BlobTransferLimits {
+            max_per_workspace: 0,
+            ..BlobTransferLimits::default()
+        },
+        BlobTransferLimits {
+            min_bytes_per_sec: 0,
+            ..BlobTransferLimits::default()
+        },
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            storage(dir.path(), 1, WAIT, WAIT)
+                .with_blob_transfer_limits(limits)
+                .is_err()
+        );
     }
 }

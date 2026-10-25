@@ -35,7 +35,8 @@ pub fn api_state(config: &ApiConfig, pool: PgPool) -> Result<AppState, StartErro
         &config.storage,
         config.public_url.as_ref(),
         Some(&config.secret),
-    )?;
+    )?
+    .with_blob_transfer_limits(config.blob_transfers)?;
     let queue: Arc<dyn JobQueue> = Arc::new(PgmqQueue::new(pool.clone()));
     let auth = Authenticator::new(
         config.auth.clone(),

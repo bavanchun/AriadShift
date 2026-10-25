@@ -80,6 +80,18 @@ impl Env {
         }
     }
 
+    fn positive_or<T>(&self, name: &'static str, default: T) -> Result<T, ConfigError>
+    where
+        T: FromStr + Default + PartialEq,
+        T::Err: std::fmt::Display,
+    {
+        let value = self.parse_or(name, default)?;
+        if value == T::default() {
+            return Err(invalid(name, "must be greater than zero"));
+        }
+        Ok(value)
+    }
+
     fn bool_or(&self, name: &'static str, default: bool) -> Result<bool, ConfigError> {
         match self.get(name).map(str::to_ascii_lowercase).as_deref() {
             None => Ok(default),
@@ -305,18 +317,47 @@ impl AuthConfig {
 /// Per-process resource limits for local signed blob transfers.
 #[derive(Clone, Copy, Debug)]
 pub struct BlobTransferLimits {
+    /// Transfers in flight on this process, uploads and downloads together.
     pub max_concurrent: usize,
+    /// Transfers in flight for one workspace, so one tenant (or every
+    /// anonymous caller together) cannot take the whole budget.
+    pub max_per_workspace: usize,
     pub idle_timeout: Duration,
     pub transfer_timeout: Duration,
+    /// Slowest average rate, in bytes per second, a transfer may keep once
+    /// `rate_grace` has passed. A slot costs a client real bandwidth instead
+    /// of one byte per idle period.
+    pub min_bytes_per_sec: u64,
+    pub rate_grace: Duration,
 }
 
 impl Default for BlobTransferLimits {
     fn default() -> Self {
         Self {
-            max_concurrent: 4,
+            max_concurrent: 64,
+            max_per_workspace: 8,
             idle_timeout: Duration::from_secs(15),
             transfer_timeout: Duration::from_secs(15 * 60),
+            min_bytes_per_sec: 16 * 1024,
+            rate_grace: Duration::from_secs(30),
         }
+    }
+}
+
+impl BlobTransferLimits {
+    /// Reads the `ARIAD_BLOB_*` overrides; none of them can be zero.
+    pub fn from_env(env: &Env) -> Result<Self, ConfigError> {
+        let defaults = Self::default();
+        Ok(Self {
+            max_concurrent: env.positive_or("ARIAD_BLOB_MAX_TRANSFERS", defaults.max_concurrent)?,
+            max_per_workspace: env.positive_or(
+                "ARIAD_BLOB_MAX_TRANSFERS_PER_WORKSPACE",
+                defaults.max_per_workspace,
+            )?,
+            min_bytes_per_sec: env
+                .positive_or("ARIAD_BLOB_MIN_RATE_BPS", defaults.min_bytes_per_sec)?,
+            ..defaults
+        })
     }
 }
 
@@ -337,6 +378,8 @@ pub struct ApiConfig {
     pub sweep_interval: Duration,
     pub sweep_batch: i64,
     pub storage: StorageConfig,
+    /// Budgets for the API-served blob URLs of `file://` storage.
+    pub blob_transfers: BlobTransferLimits,
 }
 
 impl ApiConfig {
@@ -379,6 +422,7 @@ impl ApiConfig {
             sweep_interval: env.secs_or("ARIAD_SWEEP_INTERVAL_S", 60)?,
             sweep_batch,
             storage,
+            blob_transfers: BlobTransferLimits::from_env(env)?,
         })
     }
 }
@@ -548,6 +592,36 @@ mod tests {
         let config =
             ApiConfig::from_env(&Env::from_pairs(with(base(), "ARIAD_SWEEP_BATCH", "17"))).unwrap();
         assert_eq!(config.sweep_batch, 17);
+    }
+
+    #[test]
+    fn blob_transfer_limits_read_positive_overrides() {
+        let defaults = ApiConfig::from_env(&Env::from_pairs(base())).unwrap();
+        assert_eq!(defaults.blob_transfers.max_concurrent, 64);
+        assert_eq!(defaults.blob_transfers.max_per_workspace, 8);
+        assert_eq!(defaults.blob_transfers.min_bytes_per_sec, 16 * 1024);
+        let pairs = with(
+            with(
+                with(base(), "ARIAD_BLOB_MAX_TRANSFERS", "16"),
+                "ARIAD_BLOB_MAX_TRANSFERS_PER_WORKSPACE",
+                "2",
+            ),
+            "ARIAD_BLOB_MIN_RATE_BPS",
+            "4096",
+        );
+        let config = ApiConfig::from_env(&Env::from_pairs(pairs)).unwrap();
+        assert_eq!(config.blob_transfers.max_concurrent, 16);
+        assert_eq!(config.blob_transfers.max_per_workspace, 2);
+        assert_eq!(config.blob_transfers.min_bytes_per_sec, 4096);
+        for name in [
+            "ARIAD_BLOB_MAX_TRANSFERS",
+            "ARIAD_BLOB_MAX_TRANSFERS_PER_WORKSPACE",
+            "ARIAD_BLOB_MIN_RATE_BPS",
+        ] {
+            for value in ["0", "-1", "many"] {
+                assert!(ApiConfig::from_env(&Env::from_pairs(with(base(), name, value))).is_err());
+            }
+        }
     }
 
     #[test]

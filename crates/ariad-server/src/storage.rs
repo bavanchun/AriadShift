@@ -5,7 +5,7 @@
 //! HMAC-SHA256 and serves them (see `api::blobs`).
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Path as FsPath, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -143,12 +143,14 @@ impl std::fmt::Debug for Signing {
 struct ActiveTransfers {
     count: usize,
     uploads: HashSet<String>,
+    workspaces: HashMap<String, usize>,
 }
 
 /// The guard removes its key on success, failure, timeout and cancellation.
 struct TransferPermit {
     active: Arc<Mutex<ActiveTransfers>>,
     upload: Option<String>,
+    workspace: Option<String>,
 }
 
 impl Drop for TransferPermit {
@@ -158,6 +160,53 @@ impl Drop for TransferPermit {
         if let Some(key) = &self.upload {
             active.uploads.remove(key);
         }
+        if let Some(workspace) = &self.workspace
+            && let Some(count) = active.workspaces.get_mut(workspace)
+        {
+            *count -= 1;
+            if *count == 0 {
+                active.workspaces.remove(workspace);
+            }
+        }
+    }
+}
+
+/// The workspace of a `…/t/{tenant}/{owner}/{dir}/{sha256}` key; `None` for
+/// any other key.
+fn key_workspace(key: &str) -> Option<&str> {
+    let mut parts = key.rsplit('/');
+    let (_sha, _dir, _owner) = (parts.next()?, parts.next()?, parts.next()?);
+    let tenant = parts.next()?;
+    (parts.next()? == "t").then_some(tenant)
+}
+
+/// Rejects a transfer whose average rate stays below the floor once the
+/// grace period has passed, so a slot cannot be held by trickling bytes.
+struct RateFloor {
+    started: Instant,
+    min_bytes_per_sec: u64,
+    grace: Duration,
+}
+
+impl RateFloor {
+    fn new(limits: &BlobTransferLimits) -> Self {
+        Self {
+            started: Instant::now(),
+            min_bytes_per_sec: limits.min_bytes_per_sec,
+            grace: limits.rate_grace,
+        }
+    }
+
+    fn check(&self, transferred: u64) -> Result<(), StorageError> {
+        let elapsed = self.started.elapsed();
+        if elapsed <= self.grace {
+            return Ok(());
+        }
+        let floor = u128::from(self.min_bytes_per_sec) * elapsed.as_millis() / 1000;
+        if u128::from(transferred) < floor {
+            return Err(StorageError::Timeout);
+        }
+        Ok(())
     }
 }
 
@@ -231,8 +280,10 @@ impl Storage {
         limits: BlobTransferLimits,
     ) -> Result<Self, StorageError> {
         if limits.max_concurrent == 0
+            || limits.max_per_workspace == 0
             || limits.idle_timeout.is_zero()
             || limits.transfer_timeout.is_zero()
+            || limits.min_bytes_per_sec == 0
         {
             return Err(StorageError::Config(
                 "blob transfer limits must be positive".to_owned(),
@@ -242,21 +293,34 @@ impl Storage {
         Ok(self)
     }
 
-    fn admit(&self, upload: Option<&str>) -> Result<TransferPermit, StorageError> {
+    /// Takes a transfer slot for `key`. An upload also holds its key
+    /// exclusively; both directions count against the key's workspace.
+    fn admit(&self, key: &str, upload: bool) -> Result<TransferPermit, StorageError> {
+        let workspace = key_workspace(key);
         let mut active = self.active.lock().unwrap_or_else(|err| err.into_inner());
+        let workspace_full = workspace.is_some_and(|workspace| {
+            active.workspaces.get(workspace).copied().unwrap_or(0)
+                >= self.blob_limits.max_per_workspace
+        });
         if active.count >= self.blob_limits.max_concurrent
-            || upload.is_some_and(|key| active.uploads.contains(key))
+            || workspace_full
+            || (upload && active.uploads.contains(key))
         {
             return Err(StorageError::Busy);
         }
         active.count += 1;
-        let upload = upload.map(str::to_owned);
+        let upload = upload.then(|| key.to_owned());
         if let Some(key) = &upload {
             active.uploads.insert(key.clone());
+        }
+        let workspace = workspace.map(str::to_owned);
+        if let Some(workspace) = &workspace {
+            *active.workspaces.entry(workspace.clone()).or_default() += 1;
         }
         Ok(TransferPermit {
             active: Arc::clone(&self.active),
             upload,
+            workspace,
         })
     }
 
@@ -483,8 +547,9 @@ impl Storage {
         E: std::fmt::Display,
     {
         // Refuse without polling the body or allocating a buffered writer.
-        let _permit = self.admit(Some(key))?;
+        let _permit = self.admit(key, true)?;
         let deadline = self.transfer_deadline(expires);
+        let floor = RateFloor::new(&self.blob_limits);
         let mut writer = timeout_at(deadline, self.store.put_multipart(&Path::from(key)))
             .await
             .map_err(|_| StorageError::Timeout)??;
@@ -497,6 +562,7 @@ impl Storage {
                 if Instant::now() >= deadline {
                     return Err(StorageError::Timeout);
                 }
+                floor.check(total)?;
                 let Some(chunk) = timeout(self.blob_limits.idle_timeout, body.next())
                     .await
                     .map_err(|_| StorageError::Timeout)?
@@ -562,8 +628,9 @@ impl Storage {
         ),
         StorageError,
     > {
-        let permit = self.admit(None)?;
+        let permit = self.admit(key, false)?;
         let deadline = self.transfer_deadline(expires);
+        let floor = RateFloor::new(&self.blob_limits);
         let result = timeout_at(deadline, self.store.get(&Path::from(key)))
             .await
             .map_err(|_| StorageError::Timeout)??;
@@ -576,8 +643,9 @@ impl Storage {
         tokio::spawn(async move {
             let _permit = permit;
             let transfer = async {
+                let mut sent = 0u64;
                 loop {
-                    if Instant::now() >= deadline {
+                    if Instant::now() >= deadline || floor.check(sent).is_err() {
                         return;
                     }
                     let next = tokio::select! {
@@ -590,9 +658,11 @@ impl Storage {
                         Err(_) => Err(StorageError::Timeout),
                     };
                     let failed = chunk.is_err();
+                    let len = chunk.as_ref().map_or(0, |chunk| chunk.len() as u64);
                     if !matches!(timeout(idle, sender.send(Some(chunk))).await, Ok(Ok(()))) {
                         return;
                     }
+                    sent += len;
                     if failed {
                         break;
                     }
@@ -700,6 +770,20 @@ mod tests {
             storage.key(tenant, owner, Direction::Out, "ab"),
             format!("t/{tenant}/{owner}/out/ab")
         );
+    }
+
+    #[test]
+    fn transfer_budgets_find_the_workspace_in_object_keys() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let storage = local(dir.path());
+        let tenant = Uuid::from_u128(3);
+        let key = storage.key(tenant, Uuid::from_u128(7), Direction::In, "ab");
+        assert_eq!(key_workspace(&key), Some(tenant.to_string().as_str()));
+        let prefixed = format!("bucket/prefix/{key}");
+        assert_eq!(key_workspace(&prefixed), Some(tenant.to_string().as_str()));
+        for other in ["", "absent", "a/b/c/d/e", "x/tenant/owner/in/sha"] {
+            assert_eq!(key_workspace(other), None);
+        }
     }
 
     #[tokio::test]
