@@ -16,6 +16,7 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | [`dependabot.yml`](../.github/dependabot.yml) | Weekly (Monday, Asia/Saigon) | Update pull requests into `dev` for GitHub Actions, Cargo, pnpm and uv |
 | [`release.yml`](../.github/workflows/release.yml) | Tag push `'**[0-9]+.[0-9]+.[0-9]+*'`, pull requests touching release paths (build-only rehearsal) | Builds 5 targets on 3 OSes, one CycloneDX SBOM per crate, Homebrew formula, and invokes `publish-crates.yml` (pull requests scoped via `paths:` filter) |
 | [`desktop.yml`](../.github/workflows/desktop.yml) | Desktop/shared/Rust changes in pull requests, `v*` tags, manual | Builds installers on three OSes, checks generated bindings and runs the real Linux WebDriver conversion; tag jobs attach signed updates to the CLI-owned release (see [desktop.md](desktop.md)) |
+| [`cloud-e2e.yml`](../.github/workflows/cloud-e2e.yml) | Daily at 04:00 UTC on `dev`, manual, pushes to `dev` or `main` and pull requests that touch `infra/`, `crates/ariad-server/`, `services/`, `packages/sdk/`, `.env.example`, the scanned fixture or the workflow, and pull requests that carry the `cloud-e2e` label | Builds the compose stack with the `core`, `office` and `docling` profiles through [`infra/test/e2e/run.sh`](../infra/test/e2e/run.sh), converts a scanned PDF to DOCX through `/v1` and the docling worker, and checks deletion and quota enforcement |
 | [`release-smoke.yml`](../.github/workflows/release-smoke.yml) | Manual dispatch (`workflow_dispatch`) | Multi-channel smoke test verifying binary installation across Homebrew, shell, PowerShell, and cargo-binstall |
 | [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | Called by `release.yml` | Publishes crates (`ariad-core`, `ariad-host`, `ariad-cli`) to crates.io with API version polling and idempotence |
 
@@ -48,6 +49,7 @@ The same tree is never built twice without a reason:
 | Hotfix pull request into `main`, and the push after it | Run | The tree is new |
 | Change to `docs/`, `plans/`, or the root `README.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` only | Skipped | Static checks still spell-check and lint it |
 | Change confined to the JavaScript workspace (`apps/` except `apps/desktop/src-tauri/`, `packages/`, `brand/`, `.node-version`, the root pnpm, Biome and Vitest files, or `scripts/check-js-licenses.mjs`) and prose | Skipped | No Rust code changed; the web and static jobs cover it |
+| Change confined to `infra/test/e2e/` or `.github/workflows/cloud-e2e.yml` and prose | Skipped | The cloud-e2e workflow runs the test; static checks lint the workflow |
 | Change under `apps/desktop/src-tauri/` | Run | Native desktop Rust needs the same three-OS checks as the other crates |
 | Manual run, or a push whose previous commit is unknown | Run | Nothing to compare against |
 
