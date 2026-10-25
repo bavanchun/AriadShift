@@ -304,6 +304,150 @@ fn refuses_a_fifo_without_blocking() {
     }
 }
 
+fn confined_base(path: &Path) -> assets::AssetBase {
+    let directory = cap_std::fs::Dir::open_ambient_dir(path, cap_std::ambient_authority()).unwrap();
+    assets::AssetBase::confined(directory)
+}
+
+#[test]
+fn confined_base_embeds_a_visible_sibling_image() {
+    let base = tempdir().unwrap();
+    fs::create_dir(base.path().join("images")).unwrap();
+    fs::write(base.path().join("photo.png"), PNG).unwrap();
+    fs::write(base.path().join("images").join("nested.png"), PNG).unwrap();
+    let mut document = document_with_images(["photo.png", "images/nested.png"]);
+
+    let warnings = assets::resolve_in(&mut document, &confined_base(base.path()), &Limits::local());
+
+    assert!(warnings.is_empty());
+    let AssetRef::Asset { id } = image_target(&document, 0) else {
+        panic!("visible sibling image should be embedded");
+    };
+    assert_eq!(id, &hex::encode(Sha256::digest(PNG)));
+    assert!(matches!(image_target(&document, 1), AssetRef::Asset { .. }));
+}
+
+#[test]
+fn confined_base_refuses_hidden_directories_and_hidden_files() {
+    let base = tempdir().unwrap();
+    fs::create_dir(base.path().join(".private")).unwrap();
+    fs::create_dir(base.path().join("visible")).unwrap();
+    fs::write(base.path().join(".private").join("photo.png"), PNG).unwrap();
+    fs::write(base.path().join(".photo.png"), PNG).unwrap();
+    fs::write(base.path().join("visible").join(".photo.png"), PNG).unwrap();
+    let hrefs = [".private/photo.png", ".photo.png", "visible/.photo.png"];
+    let mut document = document_with_images(hrefs);
+
+    let warnings = assets::resolve_in(&mut document, &confined_base(base.path()), &Limits::local());
+
+    assert_eq!(warnings.len(), hrefs.len());
+    assert!(warnings.iter().all(|warning| {
+        warning.code == WarningCode::ImageNotEmbedded && warning.message.contains("hidden")
+    }));
+    assert!(document.assets.is_empty());
+    for (index, href) in hrefs.iter().enumerate() {
+        assert_eq!(image_href(&document, index), *href);
+    }
+}
+
+#[test]
+fn ordinary_resolution_still_embeds_hidden_path_images() {
+    let base = tempdir().unwrap();
+    fs::create_dir(base.path().join(".private")).unwrap();
+    fs::write(base.path().join(".private").join("photo.png"), PNG).unwrap();
+    let mut document = document_with_images([".private/photo.png"]);
+
+    let warnings = assets::resolve(&mut document, base.path(), &Limits::local()).unwrap();
+
+    assert!(warnings.is_empty());
+    assert!(matches!(image_target(&document, 0), AssetRef::Asset { .. }));
+}
+
+#[cfg(unix)]
+#[test]
+fn confined_base_refuses_symlinks_that_stay_inside_the_base() {
+    use std::os::unix::fs::symlink;
+
+    let base = tempdir().unwrap();
+    fs::create_dir(base.path().join(".private")).unwrap();
+    fs::write(base.path().join(".private").join("photo.png"), PNG).unwrap();
+    symlink(".private", base.path().join("linked")).unwrap();
+    symlink(".private/photo.png", base.path().join("alias.png")).unwrap();
+    let mut document = document_with_images(["linked/photo.png", "alias.png"]);
+
+    let warnings = assets::resolve_in(&mut document, &confined_base(base.path()), &Limits::local());
+
+    assert_eq!(warnings.len(), 2);
+    assert!(document.assets.is_empty());
+    assert_eq!(image_href(&document, 0), "linked/photo.png");
+    assert_eq!(image_href(&document, 1), "alias.png");
+}
+
+#[cfg(unix)]
+#[test]
+fn confined_base_keeps_reading_the_opened_directory_after_its_path_is_replaced() {
+    use std::os::unix::fs::symlink;
+
+    const PRIVATE_PNG: &[u8] = b"\x89PNG\r\n\x1a\nprivate payload";
+    let root = tempdir().unwrap();
+    let input = root.path().join("input");
+    let private = root.path().join("private");
+    fs::create_dir(&input).unwrap();
+    fs::create_dir(&private).unwrap();
+    fs::write(input.join("photo.png"), PNG).unwrap();
+    fs::write(private.join("photo.png"), PRIVATE_PNG).unwrap();
+    let base = confined_base(&input);
+
+    fs::rename(&input, root.path().join("input-original")).unwrap();
+    symlink(&private, &input).unwrap();
+    let mut document = document_with_images(["photo.png"]);
+
+    let warnings = assets::resolve_in(&mut document, &base, &Limits::local());
+
+    assert!(warnings.is_empty());
+    let AssetRef::Asset { id } = image_target(&document, 0) else {
+        panic!("the image from the opened directory should be embedded");
+    };
+    assert_eq!(document.assets[id].bytes, PNG);
+    assert!(
+        document
+            .assets
+            .values()
+            .all(|asset| asset.bytes != PRIVATE_PNG)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn confined_base_refuses_a_fifo_without_blocking() {
+    let base = tempdir().unwrap();
+    let fifo = base.path().join("pipe.png");
+    let status = Command::new("mkfifo").arg(&fifo).status().unwrap();
+    assert!(status.success());
+    let asset_base = confined_base(base.path());
+    let (sender, receiver) = mpsc::channel();
+    let worker = thread::spawn(move || {
+        let mut document = document_with_images(["pipe.png"]);
+        let warnings = assets::resolve_in(&mut document, &asset_base, &Limits::local());
+        let _ = sender.send((warnings, document));
+    });
+
+    match receiver.recv_timeout(Duration::from_secs(2)) {
+        Ok((warnings, document)) => {
+            assert_eq!(warnings.len(), 1);
+            assert!(warnings[0].message.contains("regular file"));
+            assert_eq!(image_href(&document, 0), "pipe.png");
+            worker.join().unwrap();
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            let _writer = fs::OpenOptions::new().write(true).open(&fifo).unwrap();
+            worker.join().unwrap();
+            panic!("confined asset resolver blocked while opening a FIFO");
+        }
+        Err(error) => panic!("confined asset resolver worker stopped unexpectedly: {error}"),
+    }
+}
+
 #[cfg(windows)]
 #[test]
 fn refuses_windows_device_names_lexically() {

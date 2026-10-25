@@ -810,6 +810,73 @@ fn test_confinement_hidden_path_and_mismatched_extension() {
 }
 
 #[test]
+fn test_convert_refuses_hidden_sidecar_images_and_embeds_visible_ones() {
+    use sha2::{Digest, Sha256};
+
+    const VISIBLE_PNG: &[u8] = b"\x89PNG\r\n\x1a\nvisible sibling";
+    const HIDDEN_DIR_PNG: &[u8] = b"\x89PNG\r\n\x1a\nhidden directory";
+    const HIDDEN_FILE_PNG: &[u8] = b"\x89PNG\r\n\x1a\nhidden file";
+
+    let temp_dir = TempDir::new().unwrap();
+    let canonical_temp = fs::canonicalize(temp_dir.path()).unwrap();
+    let input_path = canonical_temp.join("note.md");
+    fs::write(
+        &input_path,
+        "# Note\n\n![visible](photo.png)\n\n![hidden directory](.private/photo.png)\n\n\
+         ![hidden file](.photo.png)\n",
+    )
+    .unwrap();
+    fs::write(canonical_temp.join("photo.png"), VISIBLE_PNG).unwrap();
+    fs::create_dir(canonical_temp.join(".private")).unwrap();
+    fs::write(
+        canonical_temp.join(".private").join("photo.png"),
+        HIDDEN_DIR_PNG,
+    )
+    .unwrap();
+    fs::write(canonical_temp.join(".photo.png"), HIDDEN_FILE_PNG).unwrap();
+    let output_path = canonical_temp.join("note.json");
+
+    let mut client = McpTestClient::spawn(
+        &["--allow-dir", canonical_temp.to_str().unwrap()],
+        Vec::new(),
+    );
+    client.initialize();
+    client.send_request(
+        30,
+        "tools/call",
+        json!({
+            "name": "convert",
+            "arguments": {
+                "input": input_path.to_str().unwrap(),
+                "to": "json",
+                "output": output_path.to_str().unwrap()
+            }
+        }),
+    );
+
+    let response = client.read_response(30);
+    assert_eq!(response["result"]["isError"], false);
+    let warnings = response["result"]["structuredContent"]["warnings"]
+        .as_array()
+        .expect("warnings array");
+    let not_embedded = warnings
+        .iter()
+        .filter(|warning| warning["code"] == "image_not_embedded")
+        .count();
+    assert_eq!(
+        not_embedded, 2,
+        "both hidden image references must be refused"
+    );
+
+    let ir = fs::read_to_string(&output_path).unwrap();
+    assert!(ir.contains(&hex::encode(Sha256::digest(VISIBLE_PNG))));
+    assert!(!ir.contains(&hex::encode(Sha256::digest(HIDDEN_DIR_PNG))));
+    assert!(!ir.contains(&hex::encode(Sha256::digest(HIDDEN_FILE_PNG))));
+
+    client.close_and_assert_purity();
+}
+
+#[test]
 fn test_confinement_overwrite_refusal() {
     let temp_dir = TempDir::new().unwrap();
     let input_path = temp_dir.path().join("doc.md");
