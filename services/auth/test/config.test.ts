@@ -79,14 +79,15 @@ describe("parseConfig", () => {
     ).toThrow(ConfigError);
   });
 
-  it("accepts AUTH_TRUSTED_ORIGINS as an alias", () => {
-    const config = parseConfig(
-      env({
-        BETTER_AUTH_TRUSTED_ORIGINS: undefined,
-        AUTH_TRUSTED_ORIGINS: "https://app.example.com",
-      }),
-    );
-    expect(config.trustedOrigins).toEqual(["https://app.example.com"]);
+  it("ignores the unsupported AUTH_TRUSTED_ORIGINS name", () => {
+    expect(() =>
+      parseConfig(
+        env({
+          BETTER_AUTH_TRUSTED_ORIGINS: undefined,
+          AUTH_TRUSTED_ORIGINS: "https://app.example.com",
+        }),
+      ),
+    ).toThrow(/BETTER_AUTH_TRUSTED_ORIGINS/);
   });
 
   it("validates the port", () => {

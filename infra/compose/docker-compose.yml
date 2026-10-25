@@ -183,8 +183,14 @@ services:
       PORT: "3000"
       DATABASE_URL: postgres://ariad_auth:${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in infra/compose/.env}@postgres:5432/ariadshift?options=-c%20search_path%3Dauth
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in infra/compose/.env}
+      # The public origin; it is also the JWT iss and aud that the API checks
+      # through ARIAD_AUTH_URL below.
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
       BETTER_AUTH_TRUSTED_ORIGINS: ${ARIAD_WEB_ORIGIN:-http://localhost:3000}
+      # The same proxy header as the API's; empty uses the socket peer.
+      AUTH_TRUSTED_CLIENT_IP_HEADER: ${ARIAD_TRUSTED_CLIENT_IP_HEADER:-}
+      # Empty uses the web origin's host as the WebAuthn relying party.
+      AUTH_PASSKEY_RP_ID: ${AUTH_PASSKEY_RP_ID:-}
       # Optional OAuth providers; empty values leave them off.
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}

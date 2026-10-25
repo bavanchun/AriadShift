@@ -19,7 +19,7 @@ Everything is served under `/api/auth/*`. `GET /api/auth/ok` is the health check
 | `DATABASE_URL` | yes | PostgreSQL URL. All tables go to the `auth` schema (the pool sets `search_path=auth`; a `search_path` in the URL overrides it). The login must own that schema. |
 | `BETTER_AUTH_SECRET` | yes | Signing and encryption secret, at least 32 characters (`openssl rand -hex 32`). Changing it makes existing sessions and stored JWKS private keys unreadable. |
 | `BETTER_AUTH_URL` | yes | The public origin of this service as browsers reach it, with no path, e.g. `https://auth.example.com`. It is the JWT `iss` and `aud`. |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | yes | Comma-separated web app origins allowed to call the service with cookies. `AUTH_TRUSTED_ORIGINS` is accepted as an alias. |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | yes | Comma-separated web app origins allowed to call the service with cookies. |
 | `PORT` | no | Listen port, default `3000`. |
 | `HOST` | no | Listen address, default `0.0.0.0`. |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | no | Enable GitHub sign-in. Set both or neither. |

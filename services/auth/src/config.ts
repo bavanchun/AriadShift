@@ -113,18 +113,13 @@ export function parseConfig(env: Env): AuthServiceConfig {
   }
   const baseUrl = parseOrigin("BETTER_AUTH_URL", required(env, "BETTER_AUTH_URL"));
 
-  // BETTER_AUTH_TRUSTED_ORIGINS is Better Auth's own name; AUTH_TRUSTED_ORIGINS
-  // is accepted as an alias.
-  const originsName = read(env, "BETTER_AUTH_TRUSTED_ORIGINS")
-    ? "BETTER_AUTH_TRUSTED_ORIGINS"
-    : "AUTH_TRUSTED_ORIGINS";
   const trustedOrigins = [
     ...new Set(
-      (read(env, originsName) ?? "")
+      (read(env, "BETTER_AUTH_TRUSTED_ORIGINS") ?? "")
         .split(",")
         .map((origin) => origin.trim())
         .filter(Boolean)
-        .map((origin) => parseOrigin(originsName, origin)),
+        .map((origin) => parseOrigin("BETTER_AUTH_TRUSTED_ORIGINS", origin)),
     ),
   ];
   if (trustedOrigins.length === 0) {
