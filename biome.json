@@ -8,6 +8,6 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["apps/**", "packages/**", "scripts/**/*.mjs", "*.json", "*.ts"]
+    "includes": ["apps/**", "packages/**", "services/**", "scripts/**/*.mjs", "*.json", "*.ts"]
   }
 }
