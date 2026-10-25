@@ -94,6 +94,8 @@ The Rust PDF reader extracts digital text with low startup cost. Docling reconst
 
 The measured format graph selects Docling for editable PDF routes and the Rust reader for fast routes. File-based conversion and plan previews retain content-aware reader selection: digital text uses the built-in reader, scans require Docling, and an explicit `--engine docling` requests digital layout extraction.
 
+LibreOffice renders only the user's own Office or ODF file; the planner never chains it after another engine. Markdown, HTML, EPUB and IR JSON therefore write PDF through Typst in every profile, and the `md` to `pdf` LibreOffice route row is a comparison only.
+
 PDF read-back uses the Rust reader, so PDF writer structural scores include that reader's limitations. The authored reference uses two columns; reflowed Typst, slides and spreadsheet PDFs deliberately differ in layout, so SSIM is not a cross-format accuracy ranking. Extraction uses Docling's native HTML export parsed by Pandoc as the hypothesis; the Rust mapper is separately compared with that Docling source interpretation. Complete route scores compare final output directly with authored truth. The HTML bridge preserves table header flags and cell spans.
 
 ## Environment
