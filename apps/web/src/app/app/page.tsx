@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { ConverterApp } from "@/components/converter/converter-app";
+import { CLOUD } from "@/lib/cloud/config";
 
 export const metadata: Metadata = {
   title: "Converter",
@@ -15,7 +16,8 @@ export default function ConverterPage() {
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Convert a document</h1>
         <p className="text-muted-foreground">
-          Choose a file, pick a target and download the result. Everything happens in this tab.
+          Choose a file, pick a target and download the result. Everything happens in this tab
+          {CLOUD ? ", unless you choose to convert this file in the cloud." : "."}
         </p>
       </div>
       <Suspense fallback={null}>
