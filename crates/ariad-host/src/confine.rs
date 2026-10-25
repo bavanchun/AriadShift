@@ -219,6 +219,11 @@ pub struct ConfinedInput {
     pub relative_path: PathBuf,
     /// An open File handle to the input file, opened through the capability handle with nofollow.
     pub file: fs::File,
+    /// The directory handle `file` was opened from.
+    ///
+    /// Ancillary reads such as sidecar images resolve beneath this handle so they stay tied to
+    /// the authorized directory even if its path is renamed or replaced afterwards.
+    pub parent_dir: cap_std::fs::Dir,
 }
 
 impl Clone for ConfinedInput {
@@ -227,6 +232,7 @@ impl Clone for ConfinedInput {
             path: self.path.clone(),
             relative_path: self.relative_path.clone(),
             file: self.file.try_clone().expect("clone file handle"),
+            parent_dir: self.parent_dir.try_clone().expect("clone directory handle"),
         }
     }
 }
@@ -390,7 +396,7 @@ pub fn confine_input(
         return Err(ConfineError::NotRegularFile { path: display_str });
     }
 
-    let file = open_file_nofollow(&root.dir, &relative).map_err(|e| {
+    let (parent_dir, file) = open_file_and_parent_nofollow(&root.dir, &relative).map_err(|e| {
         if e.kind() == io::ErrorKind::NotFound {
             ConfineError::InputNotFound {
                 path: display_str.clone(),
@@ -409,20 +415,26 @@ pub fn confine_input(
         path: canonical,
         relative_path: relative.to_path_buf(),
         file,
+        parent_dir,
     })
 }
 
 pub fn open_file_nofollow(root_dir: &cap_std::fs::Dir, relative: &Path) -> io::Result<fs::File> {
+    open_file_and_parent_nofollow(root_dir, relative).map(|(_, file)| file)
+}
+
+/// Opens `relative` beneath `root_dir` like [`open_file_nofollow`] and also returns the open
+/// handle of the directory that contains it.
+fn open_file_and_parent_nofollow(
+    root_dir: &cap_std::fs::Dir,
+    relative: &Path,
+) -> io::Result<(cap_std::fs::Dir, fs::File)> {
     let parent = relative.parent().unwrap_or_else(|| Path::new(""));
     let file_name = relative
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing file name"))?;
 
-    let parent_dir = if parent.as_os_str().is_empty() {
-        root_dir.try_clone()?
-    } else {
-        root_dir.open_dir(parent)?
-    };
+    let parent_dir = open_dir_nofollow(root_dir, parent)?;
 
     let mut options = cap_std::fs::OpenOptions::new();
     options.read(true);
@@ -455,7 +467,50 @@ pub fn open_file_nofollow(root_dir: &cap_std::fs::Dir, relative: &Path) -> io::R
         }
     }
 
-    Ok(cap_file.into_std())
+    Ok((parent_dir, cap_file.into_std()))
+}
+
+/// Opens the directory `relative` beneath `root_dir` one component at a time.
+///
+/// Every component must be a real directory: after each open the entry is checked again and,
+/// on Unix, compared by device and inode with the opened handle, so a component that is or is
+/// concurrently swapped for a symlink is refused rather than followed.
+pub(crate) fn open_dir_nofollow(
+    root_dir: &cap_std::fs::Dir,
+    relative: &Path,
+) -> io::Result<cap_std::fs::Dir> {
+    let mut current = root_dir.try_clone()?;
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "path component is not a plain name",
+            ));
+        };
+        let next = current.open_dir(name)?;
+        let entry = current.symlink_metadata(name)?;
+        let opened = next.dir_metadata()?;
+        if entry.is_symlink() || !entry.is_dir() || !same_inode(&entry, &opened) {
+            return Err(io::Error::other("path component is not a directory"));
+        }
+        current = next;
+    }
+    Ok(current)
+}
+
+/// Reports whether two metadata records describe the same file; always true off Unix, where
+/// the caller's symlink checks are the remaining guard.
+pub(crate) fn same_inode(left: &cap_std::fs::Metadata, right: &cap_std::fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use cap_std::fs::MetadataExt;
+        left.dev() == right.dev() && left.ino() == right.ino()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (left, right);
+        true
+    }
 }
 
 /// Validated output target with capability handle to the parent directory.
