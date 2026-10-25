@@ -53,13 +53,15 @@ ENV PATH=/root/.cargo/bin:${PATH} \
     NEXT_TELEMETRY_DISABLED=1
 WORKDIR /src
 COPY . .
-# Same steps as `just wasm-build`: the browser module goes to packages/ariad-wasm/pkg.
+# Same steps as `just wasm-build`: emit both browser modules before Next resolves them.
 RUN sh scripts/install-wasm-bindgen.sh
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --locked -p ariad-wasm --target wasm32-unknown-unknown --profile wasm-release \
+    cargo build --locked -p ariad-wasm -p ariad-typst --target wasm32-unknown-unknown --profile wasm-release \
     && .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg \
-        target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm
+        target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm \
+    && .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg \
+        target/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm
 RUN pnpm install --frozen-lockfile --filter "@ariadshift/web..."
 # Public base URLs for cloud mode; the defaults match infra/compose. The
 # Turnstile site key and the operator name are optional; empty leaves them off.

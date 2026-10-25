@@ -118,3 +118,18 @@ describe("web image build arguments", () => {
     expect(args).toMatch(new RegExp(`^ {8}${variable}: \\$\\{\\w+:-[^}]*\\}$`, "m"));
   });
 });
+
+describe("web image browser engines", () => {
+  it.each(["ariad-wasm", "ariad-typst"])("emits %s bindings before exporting the site", (crate) => {
+    const dockerfile = read("infra/docker/web.Dockerfile");
+    const beforeExport = dockerfile.slice(
+      0,
+      dockerfile.indexOf("RUN pnpm --filter @ariadshift/web export"),
+    );
+    expect(beforeExport).toContain(`-p ${crate} `);
+    expect(beforeExport).toContain(`--out-dir packages/${crate}/pkg`);
+    expect(beforeExport).toContain(
+      `target/wasm32-unknown-unknown/wasm-release/${crate.replaceAll("-", "_")}.wasm`,
+    );
+  });
+});
