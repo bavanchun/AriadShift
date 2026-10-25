@@ -4,6 +4,12 @@ How a new version of AriadShift (`ashift` and the workspace crates `ariad-core`,
 
 Every step that touches `main`, GitHub environments, tags, or external package registries requires the maintainer's explicit go-ahead ([AGENTS.md](../AGENTS.md)).
 
+`toolchain-torch-*` tags identify reviewed native build inputs for the
+[Docling pack](docling.md#the-pack). The product release workflow excludes them;
+they do not publish `ashift`, crates or engine packs. Creating or replacing a
+toolchain release still requires explicit authorization, and consumers pin its
+asset sizes and SHA-256 rather than resolving a moving release.
+
 ---
 
 ## Base PDF build size

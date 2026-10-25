@@ -47,6 +47,7 @@ import conversion_proof
 import fetch
 import licenses
 import native_build
+import torch_build
 import windows_imports
 
 PACK_DIR = Path(__file__).resolve().parent
@@ -305,6 +306,58 @@ def install_wheels(work: Path, runtime: Path, target: str) -> None:
     # `--target` installs console scripts into a bin directory the pack never uses.
     shutil.rmtree(site / "bin", ignore_errors=True)
     drop_build_records(site)
+
+
+def install_torch_toolchain(work: Path, runtime: Path, target: str, cache: Path) -> dict:
+    """Install only the target's reviewed, hash-pinned source-build outputs."""
+    manifest = PACK_DIR / "torch-wheels.toml"
+    if not manifest.is_file():
+        raise SystemExit(
+            "build the torch toolchain in Actions and pin its release in torch-wheels.toml"
+        )
+    with manifest.open("rb") as handle:
+        pins = tomllib.load(handle)
+    if pins["torch_version"] != torch_build.load_config()["torch"]["version"]:
+        raise SystemExit("torch wheel pins do not match the selected source version")
+    if pins["source_config_sha256"] != fetch._sha256(PACK_DIR / "torch-build.toml"):
+        raise SystemExit("rebuild and repin torch wheels after changing the source build options")
+    if pins["llvm_source_sha256"] != fetch.load_pins()["llvm"]["sha256"]:
+        raise SystemExit("rebuild and repin the torch toolchain after changing LLVM")
+    entry = pins["targets"][target]
+    directory = work / "torch-toolchain"
+    directory.mkdir()
+    files = {}
+    for pin in entry["files"]:
+        name = fetch._relative(pin["name"])
+        if len(name.parts) != 1:
+            raise SystemExit("toolchain assets must have a single file name")
+        blob = fetch.fetch(fetch.Pinned(pin["url"], pin["sha256"], pin["size"], name), cache)
+        destination = directory / name.name
+        shutil.copyfile(blob, destination)
+        files[name.name] = destination
+    wheels = [path for name, path in files.items() if name.endswith(".whl")]
+    if not any(path.name.startswith("torch-") for path in wheels):
+        raise SystemExit("pinned toolchain has no torch wheel")
+    run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--target",
+            site_packages(runtime, target),
+            "--python-platform",
+            PLATFORMS[target],
+            "--python-version",
+            PYTHON_VERSION,
+            "--no-deps",
+            "--reinstall",
+            "--link-mode",
+            "copy",
+            *wheels,
+        ]
+    )
+    drop_build_records(site_packages(runtime, target))
+    return files
 
 
 def refresh_wheel_records(site: Path) -> None:
@@ -570,6 +623,11 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
     baseline = (
         conversion_proof.capture(python_executable(runtime, target), REPOSITORY) if proof else None
     )
+    toolchain = (
+        install_torch_toolchain(work, runtime, target, cache)
+        if target.startswith("x86_64-")
+        else {}
+    )
     if target.startswith("x86_64-"):
         wheel = native_build.opencv(target, pins, cache)
         run(
@@ -595,15 +653,18 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
     approved_openmp = {}
     llvm = None
     if is_windows(target):
-        llvm = native_build.llvm_openmp(target, pins, cache)
+        llvm = work / "torch-toolchain"
         torch_lib = site_packages(runtime, target) / "torch/lib"
         shutil.copyfile(llvm / "libiomp5md.dll", torch_lib / "libiomp5md.dll")
-        (torch_lib / "libiompstubs5md.dll").unlink()
+        (torch_lib / "libiompstubs5md.dll").unlink(missing_ok=True)
         replacement = torch_lib / "libiomp5md.dll"
         approved_openmp[replacement.relative_to(root).as_posix()] = fetch._sha256(replacement)
         prune_microsoft_runtime(runtime)
     if native:
         native_build.verify_opencv(python_executable(runtime, target))
+        if target.startswith("x86_64-"):
+            run([python_executable(runtime, target), "-I", "-B", "-c", torch_build.TORCH_PROBE])
+            run([python_executable(runtime, target), "-I", "-B", "-c", torch_build.VISION_PROBE])
     elif not target.startswith("aarch64-"):
         raise SystemExit("only audited ARM OpenCV wheels may skip the native IPP probe")
     # ARM wheels use the same common notice as x86 wheels; its explicit x86-only
@@ -622,6 +683,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
     if native:
         compile_bytecode(runtime, target)
     expression = write_notices(root, runtime, target, pins)
+    shutil.copyfile(PACK_DIR / "licenses/ittapi.txt", root / "notices/ittapi-LICENSE.txt")
     (root / "notices/native-libraries.txt").write_text(
         f"OpenCV {pins['opencv']['version']}: {pins['opencv']['license']}\n"
         f"Source: {pins['opencv']['source']}\n"
@@ -631,9 +693,21 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
             if target.startswith("x86_64-")
             else "Unmodified upstream ARM wheel binary.\n"
         )
-        + "The common upstream notice's inapplicable x86 IPP section was removed.\n",
+        + "The common upstream notice's inapplicable x86 IPP section was removed.\n"
+        + "ITT API / ittnotify: BSD-3-Clause (permitted native instrumentation).\n"
+        + "Source: https://github.com/intel/ittapi/tree/54835bb96f1b85f8f21841ce821487f69d95ecce\n",
         "utf-8",
     )
+    if toolchain:
+        config = torch_build.load_config()
+        shutil.copyfile(toolchain["OpenBLAS-LICENSE.txt"], root / "notices/OpenBLAS-LICENSE.txt")
+        with (root / "notices/native-libraries.txt").open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"PyTorch {config['torch']['version']}: source-built CPU wheel, no MKL.\n"
+                f"Source: {config['torch']['source']}\n"
+                f"OpenBLAS {config['openblas']['version']}: BSD-3-Clause (static, C LAPACK).\n"
+                f"Source: {config['openblas']['source']}\n"
+            )
     if llvm is not None:
         shutil.copyfile(llvm / "LLVM-OpenMP-LICENSE.txt", root / "notices/LLVM-OpenMP-LICENSE.txt")
         shutil.copyfile(PACK_DIR / "vcomp-compat.cpp", root / "notices/vcomp-compat.cpp")

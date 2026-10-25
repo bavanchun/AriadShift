@@ -242,6 +242,10 @@ docling-test:
 docling-engine-test:
     ASHIFT_DOCLING_ENGINE='"{{docling_python}}" -I -m ariad_docling' cargo nextest run -p ariad-cli --features ariad-host/test-probe --run-ignored ignored-only --test-threads 2 -E 'binary(docling_engine)'
 
+# Build MKL-free CPU torch on a matching native x86_64 host (Linux uses Docker).
+docling-torch-build target out="torch-out":
+    uv run {{ if os() == "windows" { "--package ariad-docling --group torch-build --frozen" } else { "--no-project --python 3.14" } }} python engines/docling/pack/torch_build.py build --target "{{target}}" --out "{{out}}"
+
 # Build the unsigned docling engine pack for this host into target/pack-docling (needs uv).
 pack-docling out="target/pack-docling":
     cargo build -p ariad-cli --bin ashift

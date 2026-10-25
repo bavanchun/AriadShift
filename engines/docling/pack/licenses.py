@@ -362,8 +362,13 @@ def check_vendor_files(root: Path, approved_openmp: dict[str, str] | None = None
             continue
         relative = path.relative_to(root).as_posix()
         name = path.name.lower()
-        native = any(fnmatchcase(name, p) for p in ("*.so*", "*.dll", "*.pyd", "*.dylib"))
-        if "iomp" in name or "ippicv" in name:
+        native = any(
+            fnmatchcase(name, p)
+            for p in ("*.so*", "*.dll", "*.pyd", "*.dylib", "*.exe", "*.a", "*.lib")
+        )
+        if any(
+            word in name for word in ("iomp", "ippicv", "libipp", "libmkl", "mkl_rt", "mkl_core")
+        ):
             if relative not in approved_openmp or (
                 hashlib.sha256(path.read_bytes()).hexdigest() != approved_openmp[relative]
             ):
@@ -381,9 +386,14 @@ def check_vendor_files(root: Path, approved_openmp: dict[str, str] | None = None
                         for marker in (
                             b"ippicvgetlibversion",
                             b"ippicv_",
+                            b"ippgetlibversion",
                             b"intel(r) openmp",
                             b"@(#) intel(r) omp",
-                            b"intel(r) oneapi math kernel library version",
+                            b"intel(r) oneapi math kernel library",
+                            b"mkl_get_version_string",
+                            b"mkl_blas_",
+                            b"mkl_lapack_",
+                            b"mkl_serv_",
                             "Intel(R) OpenMP".encode("utf-16le").lower(),
                         )
                     ):

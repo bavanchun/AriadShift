@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import struct
 import sys
+from argparse import Namespace
 from base64 import urlsafe_b64encode
 
 import pytest
@@ -16,7 +17,14 @@ import build
 import fetch
 import licenses
 import native_build
+import torch_build
 import windows_imports
+
+
+def test_torch_source_build_requires_a_matching_native_runner():
+    target = "x86_64-unknown-linux-gnu" if sys.platform == "win32" else "x86_64-pc-windows-msvc"
+    with pytest.raises(SystemExit, match="matching native x86_64 runner"):
+        torch_build.build(Namespace(target=target))
 
 
 def test_opencv_source_pin_matches_the_locked_distribution():
@@ -28,7 +36,15 @@ def test_opencv_source_pin_matches_the_locked_distribution():
 
 
 @pytest.mark.parametrize(
-    "name", ["libiomp5md.dll", "libiompstubs5md.dll", "libiomp5-abcdef.dll", "libippicv.so"]
+    "name",
+    [
+        "libiomp5md.dll",
+        "libiompstubs5md.dll",
+        "libiomp5-abcdef.dll",
+        "libippicv.so",
+        "libmkl_rt.so",
+        "libippcore.so",
+    ],
 )
 def test_vendor_gate_rejects_intel_libraries_inside_wheels(tmp_path, name):
     path = tmp_path / "runtime/Lib/site-packages/vendor" / name
@@ -72,6 +88,9 @@ def test_vendor_gate_admits_only_the_exact_llvm_build_and_rejects_tampering(tmp_
         b"ippicvGetLibVersion",
         b"@(#) Intel(R) OMP Fortran support",
         b"Intel(R) oneAPI Math Kernel Library Version 2024.2",
+        b"MKL_Get_Version_String",
+        b"mkl_blas_sgemm",
+        b"ippGetLibVersion",
         "Intel(R) OpenMP* Runtime Library".encode("utf-16le"),
     ],
 )
@@ -79,6 +98,14 @@ def test_vendor_gate_rejects_renamed_proprietary_binaries(tmp_path, content):
     (tmp_path / "renamed.dll").write_bytes(b"MZ" + content)
     with pytest.raises(SystemExit, match="proprietary Intel binary content"):
         licenses.check_vendor_files(tmp_path)
+
+
+def test_vendor_gate_allows_permissive_itt_and_onednn_symbols(tmp_path):
+    (tmp_path / "libtorch_cpu.so").write_bytes(
+        b"__itt_sync_create_init_3_0\0iJIT_NotifyEvent\0dnnl_get_version\0mkldnn_convolution"
+    )
+    (tmp_path / "libittnotify.so").write_bytes(b"BSD-3-Clause ITT API __itt_api_init")
+    licenses.check_vendor_files(tmp_path)
 
 
 def test_vendor_gate_rejects_intel_even_if_the_cache_claims_its_digest(tmp_path):

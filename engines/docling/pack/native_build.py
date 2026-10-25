@@ -89,7 +89,7 @@ def tools(*args):
         "--package",
         "ariad-docling",
         "--group",
-        "pack-build",
+        "torch-build",
         "--frozen",
         "--",
         *args,
@@ -309,6 +309,10 @@ def llvm_openmp(target, pins, cache):
         env = dict(os.environ, PATH=str(dlls[0].parent) + os.pathsep + os.environ.get("PATH", ""))
         run([executable], env=env, timeout=120)
         shutil.copyfile(dlls[0], destination / "libiomp5md.dll")
+        shutil.copyfile(
+            next((work / "build").rglob("libiomp5md.lib")), destination / "libiomp5md.lib"
+        )
+        shutil.copyfile(next((work / "build").rglob("omp.h")), destination / "omp.h")
         shutil.copyfile(src / "openmp/LICENSE.TXT", destination / "LLVM-OpenMP-LICENSE.txt")
 
     return cached_build("llvm", target, pins, cache, build)

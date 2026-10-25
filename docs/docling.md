@@ -63,6 +63,7 @@ cargo run -p ariad-cli --bin ashift -- convert fixtures/scan/vi-garden-300dpi.pn
 | `licenses.py` | The licence gate and the notices writer. |
 | `build.py` | `build`, `verify` and `manifest` (below). |
 | `native_build.py` | Hash-verified OpenCV and LLVM source builds, cached by source, target, flags and build tools. |
+| `torch_build.py`, `torch-build.toml` | The MKL-free x86_64 CPU toolchain builder, source pins and build options. |
 | `vcomp-compat.cpp` | Apache-2.0 MSVC OpenMP entrypoints compiled into the Windows LLVM runtime. |
 | `conversion_proof.py`, `probe-runtime.py` | Original/replacement table and OCR comparisons, cv2 configuration and parallel PyTorch/Windows ABI checks. |
 
@@ -82,7 +83,7 @@ The `pack-build` dependency group locks the build tools without adding them to
 the distributed runtime. Source URLs, sizes and SHA-256 digests are in `pins.toml`;
 the OpenCV pin must match `uv.lock` when it is updated.
 
-The Windows pack builds LLVM OpenMP from its pinned release with five MSVC
+The Windows toolchain builds LLVM OpenMP from its pinned release with five MSVC
 `_vcomp_*` wrappers using LLVM's `__kmpc_*` operations. It keeps PyTorch's required
 `libiomp5md.dll` name, removes `libiompstubs5md.dll`, refreshes wheel RECORD hashes,
 and includes the LLVM licence and wrapper source in the notices. Every OpenMP
@@ -100,15 +101,45 @@ version resources and unapproved `iomp` files. Only the exact LLVM build digest
 is allowed at the replacement path; its bytes are still scanned. An unrecognized
 notice layout or native artifact fails the build.
 
-The locked Linux x86_64 PyTorch wheel also statically contains proprietary Intel
-oneMKL, which is separate from Apache-2.0 oneDNN/MKL-DNN. The vendor gate rejects
-its version marker. Producing a distributable pack is blocked until an MKL-free
-PyTorch build or audited replacement is selected; replacing OpenCV and the
-Windows OpenMP DLL alone does not satisfy the no-non-OSI policy.
+The official Linux and Windows x86_64 CPU PyTorch wheels contain proprietary
+oneMKL. These targets use a source-built CPU wheel with static OpenBLAS and C
+LAPACK instead. Apache-2.0 oneDNN remains enabled; CUDA, ROCm, XPU and distributed
+execution are disabled. The official torchvision wheel is retained only after
+its native NMS and ROIAlign operators pass against the replacement torch;
+otherwise the toolchain builds torchvision against that torch. ARM retains the
+official hash-locked PyTorch wheels, which were audited without MKL markers.
+
+BSD-3-Clause ITT instrumentation is permitted, including the ITT code in the ARM
+PyTorch wheels and LLVM OpenMP. Its license ships in the native third-party
+notices. The gate rejects proprietary MKL identifiers, IPP/ICV and Intel OpenMP,
+independently of the permissive top-level wheel metadata. ITT symbols and
+Apache-2.0 oneDNN names are not proprietary MKL identifiers.
+
+The [torch toolchain workflow](../.github/workflows/torch-docling.yml) owns source
+builds. It runs natively on Linux and Windows x86_64; the Mac arm64 development
+machine does not emulate these builds. Compiler caches preserve completed work
+across bounded jobs, and wheel caches avoid rebuilding unchanged toolchains.
+The build key covers source, options, target and frozen build tools, excluding
+model pins and the published wheel manifest. Restored wheels are rehashed and
+run through CPU/torchvision probes. Linux uses the pinned manylinux builder to
+preserve the pack's glibc floor. OpenBLAS C LAPACK avoids a bundled Fortran runtime.
+
+Build artifacts contain wheels, native licenses, the Windows LLVM DLL and
+`build.json` provenance with SHA-256 and sizes. Maintainers publish reviewed
+outputs under a dedicated `toolchain-torch-*` GitHub Release and pin each input
+in `engines/docling/pack/torch-wheels.toml` before building packs. Pack builds
+download and verify those exact inputs; they never select the latest artifact.
+Changing source versions or options requires a new toolchain build, release and
+wheel pins. A toolchain tag does not publish an AriadShift or Docling pack release.
 
 Native x86_64 builds convert the table PDF and two OCR PDFs with both the original
 locked wheels and the replacements. `comparison-<target>.json` records extracted
 text, table data and layout differences for TableFormer, RapidOCR and Tesseract.
+The comparison also records three timed samples after a discarded warmup and
+reports median elapsed time and engine-process CPU time. The latter includes
+native threads and excludes OCR child processes; elapsed time includes the full
+conversion. Both sides use the same runner, fixture, engine limits and thread
+policy. This is a bounded CPU conversion comparison, not a throughput guarantee.
 The original proprietary libraries are used only for this build-time comparison;
 they are replaced before the distribution gate and archive writer run.
 

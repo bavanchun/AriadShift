@@ -173,9 +173,13 @@ The stubs DLL is removed and LLVM's licence and wrapper source are included in
 the notices. The final gate checks wheel binaries and notice contents as well
 as distribution metadata. Build prerequisites, ARM notice handling and real
 conversion comparisons are described in [the Docling build](docling.md#the-pack).
-The locked Linux x86_64 PyTorch wheel's statically linked proprietary MKL is an
-additional distribution blocker; the vendor gate refuses it pending an MKL-free
-PyTorch replacement.
+Linux and Windows x86_64 also replace the MKL-bearing PyTorch wheels with
+source-built OpenBLAS CPU wheels, retaining Apache-2.0 oneDNN. The pack consumes
+checksummed inputs from a dedicated torch toolchain release. Official ARM
+PyTorch wheels remain; BSD-3-Clause ITT is permitted and its license is included
+in the third-party notices. The gate distinguishes ITT/oneDNN from proprietary
+MKL, IPP and Intel OpenMP. The owning build and update route is in the
+[Docling guide](docling.md#the-pack).
 
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 

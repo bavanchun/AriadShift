@@ -1,6 +1,6 @@
 # Remove proprietary Intel libraries from Docling packs
 
-Status: NEEDS_CONTEXT — the locked Linux PyTorch wheel statically contains proprietary MKL
+Status: IN_PROGRESS — source-built x86_64 PyTorch and permissive ITT policy authorized
 
 ## Outcome and boundaries
 
@@ -84,3 +84,24 @@ with IPP disabled, and cv2 import/resize passed. The final auditwheel integratio
 Windows LLVM build, real conversion comparisons, conformance and remote CI
 remain unverified. The requested external report records exact commands and
 artifact hashes. All processes and containers started by this worker stopped.
+
+## Accepted continuation
+
+The 2026-10-25 correction permits BSD-3-Clause ITT in every pack. Keep the
+official ARM torch wheels and their ITT code, recording its license. Build
+Linux and Windows x86_64 torch with OpenBLAS, oneDNN enabled, MKL and device
+backends disabled, and distributed disabled. Build on GitHub Actions only;
+cache by source, target, build options and tools. Publish verified wheels to
+a dedicated toolchain release and pin their sizes and SHA-256 in the pack
+inputs. No pack or product release tag is authorized.
+
+The final gate rejects proprietary MKL, IPP and Intel OpenMP while accepting
+ITT and the exact source-built Windows LLVM replacement. Compare table,
+RapidOCR and Tesseract outputs and timings against the original wheels.
+Finish with local CI, four-target pack CI, three-OS CI, a ready PR into dev,
+and the requested external report. Commit and push checkpoints early; squash
+the inherited WIP and provisional build fixes into tested final commits.
+
+ARM wheel audits and Windows MKL identification are recorded in the external
+continuation report. The earlier ITT scope blocker is withdrawn by the
+coordinator correction; it must not be treated as a user licensing decision.
