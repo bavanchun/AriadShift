@@ -98,8 +98,20 @@ web-e2e:
 web-lighthouse:
     pnpm --filter @ariadshift/web lighthouse
 
-# The JavaScript checks of `just ci`, apart from Biome in `just static`.
+# The JavaScript checks of `just ci`, apart from Biome and the SDK drift check in `just static`.
 web-ci: web-typecheck web-test web-build
+
+# Regenerates the committed OpenAPI document, schemas/openapi.v1.json, from the server code.
+openapi:
+    cargo run --locked -p ariad-server --bin openapi
+
+# Generates the SDK client into packages/sdk/src/generated (not committed).
+sdk-generate:
+    pnpm --filter @ariadshift/sdk generate
+
+# Fails when the SDK's generator, OpenAPI document or config drifted from packages/sdk/generator.lock.json.
+sdk-check:
+    pnpm --filter @ariadshift/sdk check
 
 py:
     uv lock --check
@@ -160,7 +172,7 @@ licenses-check:
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses web-lint py check-release-workflow licenses-check test-winget-manifest test-ci-scope
+static: fmt-check spell lint-workflows deny js js-licenses web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope
 
 # Images for the ariad-server integration tests; ci.yml pins the same digests.
 pgmq_image := "ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7"

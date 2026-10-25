@@ -18,6 +18,8 @@ apps/web/public/brand/
 apps/web/src/app/icon.svg
 apps/web/src/app/apple-icon.png
 packages/ariad-wasm/pkg/
+packages/sdk/src/generated/
+packages/sdk/.drift/
 playwright-report/
 test-results/
 blob-report/
