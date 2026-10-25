@@ -1,0 +1,4 @@
+# Written by `generate` from schemas/openapi.v1.json; generator.lock.json pins its inputs.
+src/generated/
+# Scratch output of the drift check.
+.drift/
