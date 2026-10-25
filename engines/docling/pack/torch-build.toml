@@ -1,4 +1,4 @@
-# Source-only toolchain inputs. Published wheel digests live in torch-wheels.toml.
+# Source-only toolchain inputs. Published wheel digests are maintained separately.
 # Do not change these inputs without rebuilding and repinning the output wheels.
 schema = 1
 
@@ -12,8 +12,11 @@ license = "BSD-3-Clause"
 
 [torch.options]
 USE_MKL = "0"
+CMAKE_DISABLE_FIND_PACKAGE_MKL = "ON"
 BLAS = "OpenBLAS"
 USE_MKLDNN = "1"
+USE_OPENMP = "1"
+MKLDNN_CPU_RUNTIME = "OMP"
 USE_CUDA = "0"
 USE_CUDNN = "0"
 USE_ROCM = "0"

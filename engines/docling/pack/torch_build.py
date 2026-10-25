@@ -27,15 +27,18 @@ PACK = Path(__file__).resolve().parent
 REPOSITORY = PACK.parents[2]
 CONFIG = PACK / "torch-build.toml"
 TARGETS = ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc")
+ARM_TARGETS = ("aarch64-unknown-linux-gnu", "aarch64-apple-darwin")
 OPENBLAS_FLAGS = (
     "-DCMAKE_BUILD_TYPE=Release",
     "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
     "-DBUILD_SHARED_LIBS=OFF",
+    "-DBUILD_STATIC_LIBS=ON",
     "-DBUILD_TESTING=OFF",
     "-DBUILD_BENCHMARKS=OFF",
     "-DDYNAMIC_ARCH=ON",
     "-DTARGET=NEHALEM",
     "-DUSE_THREAD=OFF",
+    "-DUSE_LOCKING=ON",
     "-DC_LAPACK=ON",
     "-DNOFORTRAN=ON",
 )
@@ -49,14 +52,12 @@ result = roi_align(image, [torch.tensor([[0., 0., 7., 7.]])], (2, 2))
 assert result.shape == (1, 1, 2, 2) and torch.isfinite(result).all()
 print(torch.__version__, torchvision.__version__, 'NMS and ROIAlign passed')
 """
-TORCH_PROBE = """
+CPU_PROBE = """
+from concurrent.futures import ThreadPoolExecutor
 import torch
 print(torch.__config__.show())
 assert not torch.backends.mkl.is_available(), 'MKL remains enabled'
-assert torch.backends.mkldnn.is_available(), 'oneDNN must remain enabled'
-assert not torch.distributed.is_available(), 'distributed must be disabled'
 assert torch.version.cuda is None and torch.version.hip is None
-assert 'BLAS_INFO=open' in torch.__config__.show(), 'OpenBLAS was not selected'
 torch.manual_seed(123)
 a, b = torch.randn(67, 41), torch.randn(41, 53)
 torch.set_num_threads(1)
@@ -64,8 +65,23 @@ expected = a @ b
 for threads in (2, 3):
     torch.set_num_threads(threads)
     torch.testing.assert_close(a @ b, expected)
+with ThreadPoolExecutor(max_workers=4) as pool:
+    for actual in pool.map(lambda _: a @ b, range(8)):
+        torch.testing.assert_close(actual, expected)
+"""
+TORCH_PROBE = (
+    CPU_PROBE
+    + """
+assert torch.backends.mkldnn.is_available(), 'oneDNN must remain enabled'
+assert not torch.distributed.is_available(), 'distributed must be disabled'
+assert 'BLAS_INFO=open' in torch.__config__.show(), 'OpenBLAS was not selected'
+image, weight = torch.randn(2, 3, 16, 16), torch.randn(5, 3, 3, 3)
+expected = torch.nn.functional.conv2d(image, weight)
+actual = torch.nn.functional.conv2d(image.to_mkldnn(), weight.to_mkldnn()).to_dense()
+torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-5)
 print('MKL-free OpenBLAS / oneDNN CPU math passed')
 """
+)
 
 
 def load_config():
@@ -126,7 +142,7 @@ def linux_container(args):
             "run",
             "--rm",
             "--name",
-            f"ashift-torch-{os.getpid()}",
+            os.environ.get("TORCH_BUILD_CONTAINER", f"ashift-torch-{os.getpid()}"),
             "--user",
             f"{os.getuid()}:{os.getgid()}",
             "--volume",
@@ -153,6 +169,8 @@ def linux_container(args):
             f"SCCACHE_DIR={REPOSITORY / '.tools/sccache'}",
             "--env",
             "SCCACHE_CACHE_SIZE=3G",
+            "--env",
+            "SCCACHE_IDLE_TIMEOUT=0",
             fetch.load_pins()["manylinux"]["image"],
             *native_build.tools(
                 "python",
@@ -197,6 +215,9 @@ def openblas(config, work, cache):
     libraries = list(prefix.rglob(pattern))
     if len(libraries) != 1:
         raise SystemExit(f"expected one static OpenBLAS library, found {libraries}")
+    headers = list(prefix.rglob("cblas.h"))
+    if len(headers) != 1:
+        raise SystemExit(f"expected one installed OpenBLAS cblas.h, found {headers}")
     return prefix, libraries[0], src / "LICENSE"
 
 
@@ -226,6 +247,32 @@ def audit_artifacts(out: Path, audit: Path, openmp: Path | None = None) -> None:
         approved[sidecar.relative_to(audit).as_posix()] = expected_digest
     licenses.check_vendor_files(audit, approved)
     shutil.rmtree(audit)
+
+
+def repair_linux_wheel(out: Path, work: Path, name: str) -> None:
+    wheels = list(out.glob(f"{name}-*.whl"))
+    if len(wheels) != 1:
+        raise SystemExit(f"expected exactly one built {name} wheel, found {wheels}")
+    repaired = work / f"{name}-repaired"
+    # torchvision declares torch as a wheel dependency. Keep those libraries
+    # in torch instead of grafting a second copy of its runtime into vision.
+    excludes = (
+        ["--exclude", "libtorch*.so*", "--exclude", "libc10*.so*"] if name == "torchvision" else []
+    )
+    run(
+        [
+            "auditwheel",
+            "repair",
+            "--plat",
+            "manylinux_2_28_x86_64",
+            "--wheel-dir",
+            repaired,
+            *excludes,
+            wheels[0],
+        ]
+    )
+    wheels[0].unlink()
+    shutil.move(next(repaired.glob("*.whl")), out)
 
 
 def build(args):
@@ -264,6 +311,7 @@ def build(args):
         MAX_JOBS="3",
         CMAKE_BUILD_PARALLEL_LEVEL="3",
         CMAKE_BUILD_TYPE="Release",
+        CMAKE_GENERATOR="Ninja",
         CMAKE_C_COMPILER_LAUNCHER="sccache",
         CMAKE_CXX_COMPILER_LAUNCHER="sccache",
         SOURCE_DATE_EPOCH="0",
@@ -271,39 +319,43 @@ def build(args):
         OpenBLAS_HOME=str(prefix),
         CMAKE_POLICY_VERSION_MINIMUM="3.5",
     )
-    options = [
-        f"-DOpenBLAS_LIB={blas.as_posix()}",
-        f"-DOpenBLAS_INCLUDE_DIR={(prefix / 'include').as_posix()}",
-        "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
-    ]
+    # OpenBLAS installs headers in include/openblas on some platforms. Pass
+    # their actual location instead of allowing CMake to select a system BLAS.
+    options = {
+        "OpenBLAS_LIB": blas.as_posix(),
+        "OpenBLAS_INCLUDE_DIR": next(prefix.rglob("cblas.h")).parent.as_posix(),
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+    }
     if llvm is not None:
-        options += [
-            f"-DOpenMP_libomp_LIBRARY={(llvm / 'libiomp5md.lib').as_posix()}",
-            f"-DOpenMP_CXX_FLAGS=/openmp -I{llvm.as_posix()}",
-            f"-DOpenMP_C_FLAGS=/openmp -I{llvm.as_posix()}",
-            "-DOpenMP_CXX_LIB_NAMES=libomp",
-            "-DOpenMP_C_LIB_NAMES=libomp",
-            f"-DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES={llvm.as_posix()}",
-            f"-DCMAKE_C_STANDARD_INCLUDE_DIRECTORIES={llvm.as_posix()}",
-        ]
-    env["CMAKE_ARGS"] = " ".join(f'"{option}"' for option in options)
-    run([sys.executable, "-m", "build", "--wheel", "--no-isolation", "--outdir", out, src], env=env)
-    if expected == "Linux":
-        raw = next(out.glob("torch-*.whl"))
-        repaired = work / "repaired"
-        run(
-            [
-                "auditwheel",
-                "repair",
-                "--plat",
-                "manylinux_2_28_x86_64",
-                "--wheel-dir",
-                repaired,
-                raw,
-            ]
+        env.update(CC="cl", CXX="cl")
+        options.update(
+            {
+                "OpenMP_libomp_LIBRARY": (llvm / "libiomp5md.lib").as_posix(),
+                "OpenMP_CXX_FLAGS": f'/openmp /I"{llvm.as_posix()}"',
+                "OpenMP_C_FLAGS": f'/openmp /I"{llvm.as_posix()}"',
+                "OpenMP_CXX_LIB_NAMES": "libomp",
+                "OpenMP_C_LIB_NAMES": "libomp",
+                "CMAKE_INCLUDE_PATH": llvm.as_posix(),
+            }
         )
-        raw.unlink()
-        shutil.move(next(repaired.glob("*.whl")), out)
+    # PEP 517 config settings preserve spaces in Windows paths and OpenMP
+    # flags without depending on CMAKE_ARGS shell tokenization.
+    run(
+        [
+            sys.executable,
+            "-m",
+            "build",
+            "--wheel",
+            "--no-isolation",
+            "--outdir",
+            out,
+            *(f"--config-setting=cmake.define.{name}={value}" for name, value in options.items()),
+            src,
+        ],
+        env=env,
+    )
+    if expected == "Linux":
+        repair_linux_wheel(out, work, "torch")
     wheels = list(out.glob("torch-*.whl"))
     if len(wheels) != 1:
         raise SystemExit("expected exactly one built torch wheel")
@@ -328,6 +380,8 @@ def build(args):
             cwd=vision,
             env=vision_env,
         )
+        if expected == "Linux":
+            repair_linux_wheel(out, work, "torchvision")
         wheel = next(out.glob("torchvision-*.whl"))
         run(["uv", "pip", "install", "--python", sys.executable, "--no-deps", "--reinstall", wheel])
         probe(sys.executable, VISION_PROBE, check=True)
@@ -385,15 +439,46 @@ def verify(args):
     probe(sys.executable, VISION_PROBE, check=True)
 
 
+def verify_upstream(args):
+    """Keep the accepted official ARM wheels, but audit and execute them natively."""
+    expected = "Darwin" if args.target.endswith("apple-darwin") else "Linux"
+    if platform.system() != expected or platform.machine().lower() not in ("arm64", "aarch64"):
+        raise SystemExit("ARM wheel verification requires a matching native ARM runner")
+    load_config()
+    # uv run --frozen supplies the hash-locked wheels. Do not scan unrelated
+    # development dependencies such as the still-unreplaced OpenCV wheel.
+    code = """
+import importlib.metadata, pathlib
+for name in ('torch', 'torchvision'):
+    distribution = importlib.metadata.distribution(name)
+    print(pathlib.Path(distribution.locate_file(name)).resolve())
+    print(pathlib.Path(distribution.locate_file(f'{name}-{distribution.version}.dist-info')).resolve())
+"""
+    roots = subprocess.check_output([sys.executable, "-I", "-c", code], text=True).splitlines()
+    for root in roots:
+        path = Path(root)
+        if not path.is_dir():
+            raise SystemExit(f"missing upstream wheel directory: {path}")
+        licenses.check_vendor_files(path)
+    probe(sys.executable, CPU_PROBE, check=True)
+    probe(sys.executable, VISION_PROBE, check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("command", choices=("build", "key", "verify"))
-    parser.add_argument("--target", choices=TARGETS, required=True)
+    parser.add_argument("command", choices=("build", "key", "verify", "verify-upstream"))
+    parser.add_argument("--target", choices=(*TARGETS, *ARM_TARGETS), required=True)
     parser.add_argument("--out", type=Path, default=Path("torch-out"))
     parser.add_argument("--cache", type=Path, default=fetch.default_cache())
     parser.add_argument("--inside-manylinux", action="store_true")
     args = parser.parse_args()
-    if args.command == "key":
+    if args.command == "verify-upstream":
+        if args.target not in ARM_TARGETS:
+            parser.error("verify-upstream is only for the retained official ARM wheels")
+        verify_upstream(args)
+    elif args.target not in TARGETS:
+        parser.error("source builds and their caches are only for x86_64 targets")
+    elif args.command == "key":
         print(key(args.target))
     elif args.command == "build":
         build(args)
