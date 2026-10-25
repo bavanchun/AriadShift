@@ -130,6 +130,11 @@ describe("buildAuthOptions", () => {
     expect(tls.advanced.useSecureCookies).toBe(true);
   });
 
+  it("lets users delete their own account without an emailed confirmation", () => {
+    const options = buildAuthOptions(config(), pool);
+    expect(options.user).toEqual({ deleteUser: { enabled: true } });
+  });
+
   it("does not require email verification and sends no telemetry", () => {
     const options = buildAuthOptions(config(), pool);
     expect(options.emailAndPassword).toEqual({ enabled: true, requireEmailVerification: false });

@@ -61,6 +61,11 @@ export function buildAuthOptions(config: AuthServiceConfig, database: pg.Pool) {
       requireEmailVerification: false,
     },
     socialProviders: socialProviders(config),
+    user: {
+      // The account page deletes an account after the user confirms the
+      // password; without a mail transport there is no emailed confirmation.
+      deleteUser: { enabled: true },
+    },
     rateLimit: {
       enabled: true,
       // Shared across replicas and kept across restarts.
