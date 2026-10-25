@@ -275,6 +275,8 @@ impl Storage {
     }
 
     /// Overrides local transfer budgets before sharing this storage instance.
+    /// The API calls this once at startup, so it also warns there when this
+    /// storage serves its own blob URLs.
     pub fn with_blob_transfer_limits(
         mut self,
         limits: BlobTransferLimits,
@@ -290,7 +292,25 @@ impl Storage {
             ));
         }
         self.blob_limits = limits;
+        if let Some(notice) = self.local_transfer_notice() {
+            tracing::warn!("{notice}");
+        }
         Ok(self)
+    }
+
+    /// The deadline that API-served blob transfers of `file://` storage
+    /// must meet, or `None` when this storage does not serve them.
+    fn local_transfer_notice(&self) -> Option<String> {
+        matches!(self.signing, Signing::Local { .. }).then(|| {
+            format!(
+                "local file storage: API-served transfers must finish within \
+                 min({}, signed URL lifetime: {} upload, {} download); \
+                 use S3 storage for large files",
+                minutes(self.blob_limits.transfer_timeout),
+                minutes(UPLOAD_URL_TTL),
+                minutes(DOWNLOAD_URL_TTL),
+            )
+        })
     }
 
     /// Takes a transfer slot for `key`. An upload also holds its key
@@ -718,6 +738,16 @@ fn s3_builder(bucket: &str, aws: &[(String, String)]) -> Result<AmazonS3Builder,
     Ok(builder)
 }
 
+/// Formats a duration for operators: whole minutes, otherwise seconds.
+fn minutes(duration: Duration) -> String {
+    let secs = duration.as_secs();
+    if secs % 60 == 0 {
+        format!("{} min", secs / 60)
+    } else {
+        format!("{secs} s")
+    }
+}
+
 fn expiry(ttl: Duration) -> DateTime<Utc> {
     Utc::now() + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::minutes(5))
 }
@@ -784,6 +814,33 @@ mod tests {
         for other in ["", "absent", "a/b/c/d/e", "x/tenant/owner/in/sha"] {
             assert_eq!(key_workspace(other), None);
         }
+    }
+
+    #[test]
+    fn local_blob_urls_announce_their_transfer_deadline() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let storage = local(dir.path())
+            .with_blob_transfer_limits(BlobTransferLimits::default())
+            .expect("limits");
+        assert_eq!(
+            storage.local_transfer_notice().as_deref(),
+            Some(
+                "local file storage: API-served transfers must finish within \
+                 min(15 min, signed URL lifetime: 15 min upload, 5 min download); \
+                 use S3 storage for large files"
+            )
+        );
+
+        let worker = Storage::from_config(
+            &StorageConfig::Local {
+                root: dir.path().to_path_buf(),
+            },
+            None,
+            None,
+        )
+        .expect("storage");
+        assert_eq!(worker.local_transfer_notice(), None);
+        assert_eq!(minutes(Duration::from_secs(90)), "90 s");
     }
 
     #[tokio::test]
