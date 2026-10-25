@@ -63,8 +63,8 @@ js-licenses:
 web-lint:
     pnpm exec biome check
 
-# Vitest across the JavaScript packages; the wasm bindings must be built first.
-web-test: wasm-build
+# Vitest across the JavaScript packages; the wasm bindings and the SDK client come first.
+web-test: wasm-build sdk-generate
     pnpm exec vitest run
 
 # TypeScript 7 checks of every JavaScript package.

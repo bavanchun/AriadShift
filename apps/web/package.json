@@ -5,12 +5,13 @@
   "description": "AriadShift website and in-browser converter.",
   "scripts": {
     "sync-brand": "node scripts/sync-brand.mjs",
-    "dev": "node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/write-service-worker.mjs --dev && next dev --port 3200",
-    "build": "node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && next build && node scripts/write-service-worker.mjs",
-    "export": "node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/export.mjs",
+    "generate-sdk": "pnpm --filter @ariadshift/sdk generate",
+    "dev": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/write-service-worker.mjs --dev && next dev --port 3200",
+    "build": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && next build && node scripts/write-service-worker.mjs",
+    "export": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/export.mjs",
     "start": "next start --port 3100",
-    "typecheck": "node scripts/sync-brand.mjs && next typegen && tsc --noEmit -p .",
-    "test": "vitest run",
+    "typecheck": "pnpm run generate-sdk && node scripts/sync-brand.mjs && next typegen && tsc --noEmit -p .",
+    "test": "pnpm run generate-sdk && vitest run",
     "e2e": "playwright test",
     "lighthouse": "node scripts/lighthouse.mjs"
   },
