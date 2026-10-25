@@ -110,6 +110,7 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
   const [destination, setDestination] = useState<Destination>("device");
   const cloudCleanup = useRef<(() => Promise<DiscardOutcome>) | null>(null);
   const cloudPanelRef = useRef<HTMLDivElement>(null);
+  const cloudHost = CLOUD?.apiHost;
   // Server copies that "Start over" or leaving cloud mode could not delete; each
   // stays listed with its retention time and a retry until the server confirms.
   const [serverCopies, setServerCopies] = useState<ServerCopy[]>([]);
@@ -399,16 +400,16 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
           <>
             <CloudIcon aria-hidden="true" className="size-5 shrink-0" />
             <p className="text-sm">
-              <strong className="font-semibold">Cloud conversion selected.</strong> This file
-              leaves your browser only when you choose Upload and convert.
+              <strong className="font-semibold">Cloud conversion selected.</strong> This file leaves
+              your browser only when you choose Upload and convert.
             </p>
           </>
         ) : (
           <>
             <ShieldCheckIcon aria-hidden="true" className="size-5 shrink-0" />
             <p className="text-sm">
-              <strong className="font-semibold">Processed on this device.</strong> Files never
-              leave your browser and are not uploaded.
+              <strong className="font-semibold">Processed on this device.</strong> Files never leave
+              your browser and are not uploaded.
             </p>
           </>
         )}
@@ -432,12 +433,12 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
         </Alert>
       )}
 
-      {CLOUD &&
+      {cloudHost &&
         serverCopies.map((copy) => (
           <ServerCopyNotice
             key={copy.id}
             copy={copy}
-            host={CLOUD.apiHost}
+            host={cloudHost}
             onSettled={settleServerCopy}
           />
         ))}
@@ -569,9 +570,7 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
 
       {onCloud && CLOUD && staged && (
         <div ref={cloudPanelRef}>
-          <Suspense
-            fallback={<p className="text-sm text-muted-foreground">Loading cloud mode…</p>}
-          >
+          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading cloud mode…</p>}>
             <CloudPanel
               config={CLOUD}
               file={staged}
