@@ -8,6 +8,8 @@ on:
       - engines/docling/pack/torch_build.py
       - engines/docling/pack/torch-build.toml
       - engines/docling/pack/native_build.py
+      - engines/docling/pack/fetch.py
+      - engines/docling/pack/licenses.py
       - engines/docling/pack/vcomp-*.cpp
       - engines/docling/pack/pins.toml
       - engines/docling/pyproject.toml
@@ -17,15 +19,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
-
 jobs:
   build:
     name: CPU torch (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 350
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ matrix.target }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -34,13 +35,14 @@ jobs:
           - {target: x86_64-pc-windows-msvc, os: windows-2025}
     defaults:
       run:
-        shell: bash
+        shell: python {0}
     env:
       UV_PROJECT_ENVIRONMENT: .tools/torch-build-env
       SCCACHE_DIR: ${{ github.workspace }}/.tools/sccache
       SCCACHE_CACHE_SIZE: 3G
       SCCACHE_IDLE_TIMEOUT: 0
       TARGET: ${{ matrix.target }}
+      TORCH_BUILD_CONTAINER: ashift-torch-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -55,6 +57,7 @@ jobs:
 
       - name: Free Linux build space
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
           df -h .
@@ -62,7 +65,7 @@ jobs:
       - name: Install compiler cache
         uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
-          tool: sccache@0.19.0,just@1.58.0
+          tool: sccache@0.19.0
 
       - name: Set up MSVC
         if: runner.os == 'Windows'
@@ -73,14 +76,20 @@ jobs:
       - name: Compute source build key
         id: key
         run: |
-          key=$(uv run --no-project --python 3.14 python engines/docling/pack/torch_build.py key --target "$TARGET")
-          echo "value=$key" >> "$GITHUB_OUTPUT"
+          import os
+          import subprocess
+          key = subprocess.check_output([
+              "uv", "run", "--no-project", "--python", "3.14", "python",
+              "engines/docling/pack/torch_build.py", "key", "--target", os.environ["TARGET"],
+          ], text=True).strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"value={key}\n")
 
       # Cache namespaces include source, options, target and frozen build tools.
       # Output files are rehashed and imported before a restored wheel is used.
       - name: Cache audited wheels
         id: wheels
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: torch-out
           key: docling-torch-${{ matrix.target }}-${{ steps.key.outputs.value }}
@@ -90,14 +99,39 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: .tools/sccache
-          key: torch-compiler-${{ matrix.target }}-${{ steps.key.outputs.value }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: torch-compiler-${{ matrix.target }}-${{ steps.key.outputs.value }}-
+          key: torch-compiler-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/torch-build.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            torch-compiler-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/torch-build.toml') }}-
+            torch-compiler-${{ matrix.target }}-
 
       - name: Build MKL-free CPU torch
         id: build
         if: steps.wheels.outputs.cache-hit != 'true'
         timeout-minutes: 310
-        run: just docling-torch-build "$TARGET" torch-out
+        run: |
+          import os
+          import subprocess
+          tools = ["--package", "ariad-docling", "--group", "torch-build", "--frozen"] if os.name == "nt" else ["--no-project", "--python", "3.14"]
+          subprocess.run([
+              "uv", "run", *tools, "python", "engines/docling/pack/torch_build.py", "build",
+              "--target", os.environ["TARGET"], "--out", "torch-out",
+          ], check=True)
+
+      # A canceled docker client can leave compilation running while the cache
+      # action archives it. Stop only this job's named container, then its cache.
+      - name: Stop compiler processes before saving their cache
+        if: always() && steps.build.outcome != 'skipped'
+        run: |
+          import os
+          import subprocess
+          if os.name != "nt":
+              name = os.environ["TORCH_BUILD_CONTAINER"]
+              found = subprocess.run(["docker", "container", "inspect", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+              if found.returncode == 0:
+                  subprocess.run(["docker", "stop", "--time", "30", name], check=True)
+          else:
+              # No server exists when configuration fails before compilation.
+              subprocess.run(["sccache", "--stop-server"], check=False)
 
       # Preserve completed compilation even when the bounded build step fails.
       # A rerun can resume through sccache without exceeding the hosted job limit.
@@ -106,13 +140,24 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
           path: .tools/sccache
-          key: torch-compiler-${{ matrix.target }}-${{ steps.key.outputs.value }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: torch-compiler-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/torch-build.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Verify cached wheel hashes and CPU ABI
-        if: steps.wheels.outputs.cache-hit == 'true'
-        run: >-
-          uv run --package ariad-docling --group torch-build --frozen python
-          engines/docling/pack/torch_build.py verify --target "$TARGET" --out torch-out
+        run: |
+          import os
+          import subprocess
+          subprocess.run([
+              "uv", "run", "--package", "ariad-docling", "--group", "torch-build", "--frozen",
+              "python", "engines/docling/pack/torch_build.py", "verify",
+              "--target", os.environ["TARGET"], "--out", "torch-out",
+          ], check=True)
+
+      - name: Save verified wheels by source hash
+        if: steps.wheels.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: torch-out
+          key: docling-torch-${{ matrix.target }}-${{ steps.key.outputs.value }}
 
       - name: Upload wheels, checksums and provenance
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -121,3 +166,37 @@ jobs:
           path: torch-out/*
           if-no-files-found: error
           retention-days: 30
+
+  arm:
+    name: CPU torch (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The pinned actionlint predates this documented hosted runner label.
+          - {target: aarch64-unknown-linux-gnu, os: "${{ 'ubuntu-26.04-arm' }}"}
+          - {target: aarch64-apple-darwin, os: macos-26}
+    env:
+      UV_PROJECT_ENVIRONMENT: .tools/torch-arm-env
+      TARGET: ${{ matrix.target }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      # The accepted design retains the MKL-free official ARM wheels. Do not
+      # require x86-only OpenBLAS/oneDNN configuration on Apple's native backend.
+      - name: Audit locked ARM wheels and verify native CPU ABI
+        shell: bash
+        run: >-
+          uv run --package ariad-docling --frozen python
+          engines/docling/pack/torch_build.py verify-upstream --target "$TARGET"
