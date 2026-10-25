@@ -75,11 +75,11 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        Before deleting your account, revoke your{" "}
+        Deleting your account revokes your{" "}
         <a href="/api-keys" className="underline underline-offset-3">
           API keys
         </a>{" "}
-        and delete the{" "}
+        automatically. Before deleting it, delete the{" "}
         <a href="/jobs" className="underline underline-offset-3">
           cloud jobs
         </a>{" "}
