@@ -1,7 +1,35 @@
 import type { ConvertResult } from "@ariadshift/ariad-wasm";
 import * as wasm from "@ariadshift/ariad-wasm";
+import { pandocUrl } from "../../engine-assets.mjs";
 import type { Core, Engine } from "./engines";
-import { engineResponse } from "./wasm-cache";
+import { ENGINE_CACHE, engineResponse, usedEngines } from "./wasm-cache";
+
+const typstUrl = new URL(
+  "../../../../packages/ariad-typst/pkg/ariad_typst_bg.wasm",
+  import.meta.url,
+).href;
+
+/**
+ * Loads the JavaScript of every engine whose binary is already cached. After a deployment
+ * renames the lazy engine chunks, this fetches the new ones while online, and the page then
+ * keeps them in the engine cache, so the route still works offline without converting first.
+ */
+export async function warmCachedEngines(): Promise<void> {
+  if (typeof caches === "undefined" || !navigator.onLine) return;
+  try {
+    const cache = await caches.open(ENGINE_CACHE);
+    if (await cache.match(pandocUrl)) {
+      await import("./pandoc");
+      usedEngines.add(pandocUrl);
+    }
+    if (await cache.match(typstUrl)) {
+      await import("@ariadshift/ariad-typst");
+      usedEngines.add(typstUrl);
+    }
+  } catch {
+    /* Storage denied or a chunk failed to load; the first conversion loads it instead. */
+  }
+}
 
 /** Register route engines without loading their modules until a conversion needs them. */
 export function browserEngines(core: Core): Core {
@@ -46,11 +74,9 @@ export function browserEngines(core: Core): Core {
     async convert(bytes, _from, _to, options) {
       if (!typst) {
         const module = await import("@ariadshift/ariad-typst");
-        const url = new URL(
-          "../../../../packages/ariad-typst/pkg/ariad_typst_bg.wasm",
-          import.meta.url,
-        ).href;
-        const initialized = await module.default({ module_or_path: await engineResponse(url) });
+        const initialized = await module.default({
+          module_or_path: await engineResponse(typstUrl),
+        });
         typstMemory = initialized.memory;
         typst = module;
       }

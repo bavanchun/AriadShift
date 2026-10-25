@@ -1,6 +1,13 @@
 /** Lazy engine assets have their own versioned cache, independent of the app shell. */
 export const ENGINE_CACHE = "ariadshift-engines-v1";
 
+/**
+ * Engine binaries this worker has loaded or found in the engine cache. Cache Storage
+ * reads leave no Resource Timing entry, so the worker reports these URLs itself; the page
+ * uses them to keep the worker's lazy engine chunks in the long-lived engine cache.
+ */
+export const usedEngines = new Set<string>();
+
 function progress(message: string) {
   if (typeof self !== "undefined" && typeof document === "undefined")
     self.postMessage({ event: "progress", message });
@@ -89,10 +96,15 @@ export async function engineResponse(url: string, sha256?: string): Promise<Resp
     /* Treat an unreadable cache as empty. */
   }
   if (cached) {
-    if (!sha256) return cached;
+    if (!sha256) {
+      usedEngines.add(url);
+      return cached;
+    }
     const bytes = await cached.arrayBuffer();
-    if ((await sha256Hex(bytes)) === sha256)
+    if ((await sha256Hex(bytes)) === sha256) {
+      usedEngines.add(url);
       return new Response(bytes, { headers: cached.headers });
+    }
     await evictEngine(url);
   }
   let response = await download(url, label);
@@ -111,6 +123,7 @@ export async function engineResponse(url: string, sha256?: string): Promise<Resp
   } catch {
     /* Storage full; use this download. */
   }
+  usedEngines.add(url);
   return response;
 }
 
@@ -121,6 +134,7 @@ export async function compileEngine(url: string, sha256: string): Promise<WebAss
     return await WebAssembly.compile(await response.arrayBuffer());
   } catch {
     await evictEngine(url);
+    usedEngines.delete(url);
     throw {
       code: "engine_unavailable",
       message: "The conversion engine could not start. Reload the page and try again.",
