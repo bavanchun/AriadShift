@@ -29,7 +29,7 @@ describe("parseSse", () => {
       parseSse(
         streamOf(
           ": keep-alive\r\n",
-          "id: 1\r\nevent: progress\r\ndata: {\"a\":1}\r\n\r\n",
+          'id: 1\r\nevent: progress\r\ndata: {"a":1}\r\n\r\n',
           "data: line one\rdata:line two\r\rretry: 2500\n",
           "event: warning\ndata: x\n\n",
         ),
@@ -163,9 +163,9 @@ describe("events", () => {
     const mock = mockFetch(unavailable, unavailable, unavailable);
     const client = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch });
 
-    await expect(
-      collect(client.events(JOB_ID, { ...fast, maxRetries: 2 })),
-    ).rejects.toMatchObject({ status: 503 });
+    await expect(collect(client.events(JOB_ID, { ...fast, maxRetries: 2 }))).rejects.toMatchObject({
+      status: 503,
+    });
     expect(mock.requests).toHaveLength(3);
   });
 

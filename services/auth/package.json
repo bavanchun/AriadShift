@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "description": "Better Auth as a separate Node service: accounts, sessions, JWT/JWKS and API keys for ariad-server.",
-  "files": ["src"],
+  "files": [
+    "src"
+  ],
   "engines": {
     "node": ">=24"
   },

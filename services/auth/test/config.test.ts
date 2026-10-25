@@ -114,9 +114,7 @@ describe("parseConfig", () => {
     expect(
       parseConfig(env({ BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com:8443" })).passkeyRpId,
     ).toBe("app.example.com");
-    expect(parseConfig(env({ AUTH_PASSKEY_RP_ID: "example.com" })).passkeyRpId).toBe(
-      "example.com",
-    );
+    expect(parseConfig(env({ AUTH_PASSKEY_RP_ID: "example.com" })).passkeyRpId).toBe("example.com");
   });
 
   it("lowercases a trusted client IP header and rejects invalid names", () => {

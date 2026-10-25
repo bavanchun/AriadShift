@@ -75,11 +75,7 @@ export function createApp({ config, handler, peerAddress }: AppDeps): Hono {
     }),
   );
   app.on(["GET", "POST"], routes, (c) => {
-    const address = clientAddress(
-      c.req.raw.headers,
-      peerAddress(c),
-      config.trustedClientIpHeader,
-    );
+    const address = clientAddress(c.req.raw.headers, peerAddress(c), config.trustedClientIpHeader);
     return handler(withClientAddress(c.req.raw, address));
   });
 
