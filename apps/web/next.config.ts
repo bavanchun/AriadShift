@@ -14,7 +14,8 @@ const nextConfig: NextConfig = {
   images: { unoptimized: true },
   turbopack: { root: repositoryRoot },
   outputFileTracingRoot: repositoryRoot,
-  // Static exports cannot send headers; scripts/write-static-headers.mjs writes out/_headers.
+  // Security headers and CSP come from route-headers.mjs. Static exports cannot send headers;
+  // scripts/write-static-headers.mjs writes them, with per-page script hashes, for the host.
   ...(staticExport ? {} : { headers: async () => routeHeaders }),
 };
 

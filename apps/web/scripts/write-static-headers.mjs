@@ -1,18 +1,23 @@
-// Writes Netlify's out/_headers from the shared table; static exports cannot send headers.
+// Writes the static export's response headers from route-headers.mjs: out/_headers for
+// Netlify, and the nginx server of infra/docker/web.Dockerfile when ARIADSHIFT_WEB_NGINX_CONF
+// names a file. Static exports cannot send headers themselves, and each page's CSP pins the
+// hashes of the inline scripts in that page, so this runs after `next build`.
 // Cloudflare Pages cannot host this export: its 25 MiB file cap excludes pandoc.wasm.
-import { writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { routeHeaders } from "../route-headers.mjs";
+import { netlifyHeaders, nginxServer, staticHeaderRules } from "../route-headers.mjs";
 
-const toPattern = (source) => source.replace(/\/:path\*$/, "/*");
+const out = path.join(import.meta.dirname, "../out");
+const pages = readdirSync(out, { recursive: true, encoding: "utf8" })
+  .filter((file) => file.endsWith(".html"))
+  .map((file) => ({
+    file: file.split(path.sep).join("/"),
+    html: readFileSync(path.join(out, file), "utf8"),
+  }));
+const table = staticHeaderRules({ pages, env: process.env });
 
-const lines = [
-  "# Netlify headers. Cloudflare Pages is unsupported: pandoc.wasm exceeds its 25 MiB file cap.",
-  ...routeHeaders.flatMap(({ source, headers }) => [
-    toPattern(source),
-    ...headers.map(({ key, value }) => `  ${key}: ${value}`),
-    "",
-  ]),
-];
-
-writeFileSync(path.join(import.meta.dirname, "../out/_headers"), lines.join("\n"));
+writeFileSync(path.join(out, "_headers"), netlifyHeaders(table));
+const nginx = process.env.ARIADSHIFT_WEB_NGINX_CONF;
+if (nginx) {
+  writeFileSync(nginx, nginxServer(table));
+}
