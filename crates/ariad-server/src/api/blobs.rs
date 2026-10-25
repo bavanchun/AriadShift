@@ -17,7 +17,7 @@ use super::AppState;
 use crate::{
     api::dto::FileBytes,
     error::{ApiError, ApiResult, ErrorBody},
-    storage::BlobClaims,
+    storage::{BlobClaims, StorageError},
 };
 
 fn claims(state: &AppState, token: &str, method: &str) -> ApiResult<BlobClaims> {
@@ -26,6 +26,18 @@ fn claims(state: &AppState, token: &str, method: &str) -> ApiResult<BlobClaims> 
         .verify_blob_token(token, Utc::now())
         .filter(|claims| claims.method == method)
         .ok_or_else(|| ApiError::forbidden("forbidden", "the URL is invalid or has expired"))
+}
+
+fn transfer_error(err: StorageError) -> ApiError {
+    match err {
+        StorageError::Busy => ApiError::rate_limited(1),
+        StorageError::Timeout => ApiError::new(
+            StatusCode::REQUEST_TIMEOUT,
+            "transfer_timeout",
+            "the blob transfer timed out or its URL expired",
+        ),
+        err => ApiError::internal(&err),
+    }
 }
 
 /// Upload a file through a presigned URL.
@@ -45,6 +57,9 @@ fn claims(state: &AppState, token: &str, method: &str) -> ApiResult<BlobClaims> 
     responses(
         (status = 200, description = "Stored"),
         (status = 403, description = "The URL is invalid or has expired", body = ErrorBody),
+        (status = 408, description = "The transfer timed out or its URL expired", body = ErrorBody),
+        (status = 429, description = "The global transfer budget or upload key is busy", body = ErrorBody,
+         headers(("retry-after" = u64, description = "Seconds before retrying"))),
         (status = 422, description = "The body does not match the declared size or SHA-256", body = ErrorBody),
         (status = 500, description = "Internal service error", body = ErrorBody),
     ),
@@ -71,9 +86,15 @@ pub async fn put_blob(
     }
     let stored = state
         .storage
-        .put_stream(&claims.key, body.into_data_stream(), size, sha256)
+        .put_stream_until(
+            &claims.key,
+            body.into_data_stream(),
+            size,
+            sha256,
+            chrono::DateTime::from_timestamp(claims.expires, 0),
+        )
         .await
-        .map_err(|err| ApiError::internal(&err))?;
+        .map_err(transfer_error)?;
     if stored {
         Ok(StatusCode::OK)
     } else {
@@ -98,6 +119,9 @@ pub async fn put_blob(
          headers(("content-length" = u64, description = "File size in bytes"))),
         (status = 403, description = "The URL is invalid or has expired", body = ErrorBody),
         (status = 404, description = "The file was deleted", body = ErrorBody),
+        (status = 408, description = "The transfer timed out before response headers", body = ErrorBody),
+        (status = 429, description = "The global transfer budget is busy", body = ErrorBody,
+         headers(("retry-after" = u64, description = "Seconds before retrying"))),
         (status = 500, description = "Internal service error", body = ErrorBody),
     ),
 )]
@@ -106,10 +130,17 @@ pub async fn get_blob(
     Path(token): Path<String>,
 ) -> ApiResult<Response> {
     let claims = claims(&state, &token, "GET")?;
-    let (size, stream) = match state.storage.get_stream(&claims.key).await {
+    let (size, stream) = match state
+        .storage
+        .get_stream_until(
+            &claims.key,
+            chrono::DateTime::from_timestamp(claims.expires, 0),
+        )
+        .await
+    {
         Ok(found) => found,
         Err(err) if err.is_not_found() => return Err(ApiError::not_found("object")),
-        Err(err) => return Err(ApiError::internal(&err)),
+        Err(err) => return Err(transfer_error(err)),
     };
     let mut response = Body::from_stream(stream).into_response();
     let headers = response.headers_mut();

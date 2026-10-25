@@ -302,6 +302,24 @@ impl AuthConfig {
     }
 }
 
+/// Per-process resource limits for local signed blob transfers.
+#[derive(Clone, Copy, Debug)]
+pub struct BlobTransferLimits {
+    pub max_concurrent: usize,
+    pub idle_timeout: Duration,
+    pub transfer_timeout: Duration,
+}
+
+impl Default for BlobTransferLimits {
+    fn default() -> Self {
+        Self {
+            max_concurrent: 4,
+            idle_timeout: Duration::from_secs(15),
+            transfer_timeout: Duration::from_secs(15 * 60),
+        }
+    }
+}
+
 /// Settings for `ariad-server api`.
 #[derive(Clone)]
 pub struct ApiConfig {

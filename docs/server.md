@@ -94,7 +94,7 @@ Workers additionally hold one dedicated PostgreSQL session per active attempt fo
 
 Objects are stored as `t/{workspace}/{owner}/{in|out}/{sha256}` under the prefix. The owner is the upload id for inputs and the job id for outputs, because one upload can feed several jobs.
 
-With `file://` storage the API signs and serves object URLs itself at `/v1/blobs/{token}` (HMAC-SHA256 with `ARIAD_SECRET`), so `ARIAD_PUBLIC_URL` is required.
+With `file://` storage the API signs and serves object URLs itself at `/v1/blobs/{token}` (HMAC-SHA256 with `ARIAD_SECRET`), so `ARIAD_PUBLIC_URL` is required. Local PUT and GET share a fixed budget of four concurrent transfers per API process, with at most one PUT per storage key. An overloaded request receives `429 rate_limited` with `Retry-After: 1` before its body is read or a writer is created. PUT writes to a staging file in bounded parts and publishes only after the size and SHA-256 match. Body reads and download backpressure have a 15-second idle limit; each transfer ends at the earlier of 15 minutes after admission or the signed URL's expiry. PUT timeouts return `408 transfer_timeout`; GET timeouts before headers do too, while a timeout after headers terminates the stream. Cancellation, errors and deadlines release admission and clean up local staging state. The budgets are shared by cloned storage handles within one process; deployments with multiple replicas still need ingress-wide concurrency and bandwidth limits.
 
 ### API
 
@@ -126,6 +126,8 @@ The public `/readyz` and `/v1/capabilities` routes bypass caller throttling: rea
 | `ARIAD_ANONYMOUS` | `true` | Whether callers without credentials may use the `anonymous` plan. |
 | `ARIAD_TURNSTILE_SECRET` | unset | Requires a Cloudflare Turnstile token (`cf-turnstile-response`) on anonymous `POST /v1/uploads`. |
 | `ARIAD_TURNSTILE_VERIFY_URL` | Cloudflare's `siteverify` | Verification endpoint; tests point it at a stub. |
+
+JWKS is refreshed after five minutes or on an unknown `kid`, with cached-set refresh attempts spaced at least 30 seconds apart (five seconds when no set is cached). During fetch failures, a matching key remains usable only until 15 minutes after the last successful JWKS fetch: the normal five-minute TTL plus at most ten minutes of outage grace. Failed or throttled refreshes never renew that trust. At the limit, JWT authentication fails closed until a successful fetch confirms the key again; a successful rotation removes old keys immediately from that replica's cache. This policy bounds outage trust independently of the token's claimed lifetime and retains the existing signature algorithm, issuer, audience and expiry checks.
 
 The server reads Better Auth's `apikey` table and never writes it. It honours `enabled`, `expiresAt` and `configId`, and refuses a key whose `remaining` is used up or whose Better Auth rate-limit window is full. Because it never moves those counters, configure the API Key plugin with `rateLimit: { enabled: false }` (its default allows 10 requests per day) and without `remaining` for keys meant for the API; the API applies its own per-workspace rate limit.
 
