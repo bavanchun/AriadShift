@@ -8,13 +8,18 @@ pub mod jobs;
 pub mod plan;
 pub mod uploads;
 
-use std::{net::SocketAddr, ops::Deref, sync::Arc, time::Duration};
+use std::{
+    net::SocketAddr,
+    ops::Deref,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::{
     Router,
     extract::{ConnectInfo, DefaultBodyLimit, FromRequest, FromRequestParts, Request},
     http::{HeaderName, HeaderValue, Method, StatusCode, request::Parts},
-    routing::put,
 };
 use serde::de::DeserializeOwned;
 use sqlx::PgPool;
@@ -207,6 +212,7 @@ pub fn parse_id(raw: &str, what: &str) -> Result<Uuid, ApiError> {
         (name = "uploads", description = "Send input files"),
         (name = "jobs", description = "Run and follow conversions"),
         (name = "planning", description = "Routes and capabilities"),
+        (name = "blobs", description = "Presigned file transfers of the local object store"),
         (name = "health", description = "Liveness and readiness"),
     ),
 )]
@@ -223,7 +229,13 @@ impl Modify for SecuritySchemes {
                 HttpBuilder::new()
                     .scheme(HttpAuthScheme::Bearer)
                     .bearer_format("JWT")
-                    .description(Some("A Better Auth JWT (JWT plugin, 15-minute lifetime)."))
+                    .description(Some(
+                        "A JWT issued by the AriadShift auth service (Better Auth JWT plugin, \
+                         15-minute lifetime). The API verifies its signature against the auth \
+                         service's JWKS, selecting the key by `kid` and accepting only the \
+                         asymmetric algorithm that key declares, and requires `exp`, `iss`, \
+                         `aud` and a non-empty `sub` (the user id).",
+                    ))
                     .build(),
             ),
         );
@@ -231,7 +243,8 @@ impl Modify for SecuritySchemes {
             "api_key",
             SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
                 crate::auth::API_KEY_HEADER,
-                "A Better Auth API key.",
+                "An API key issued by the AriadShift auth service (Better Auth API-key \
+                 plugin). Disabled, expired or exhausted keys are refused.",
             ))),
         );
     }
@@ -258,16 +271,35 @@ fn openapi_router(request_timeout: Duration) -> OpenApiRouter<AppState> {
         .routes(routes!(uploads::complete_upload))
         .routes(routes!(events::job_events))
         .layer(RequestBodyLimitLayer::new(JSON_BODY_LIMIT));
+    // File bodies have no size limit or timeout here (the signed token fixes
+    // the size), and they skip compression so `content-length` survives.
+    let blobs = OpenApiRouter::new()
+        .routes(routes!(blobs::put_blob, blobs::get_blob))
+        .layer(DefaultBodyLimit::disable());
     OpenApiRouter::with_openapi(ApiDoc::openapi())
         .merge(bounded)
         .merge(streaming)
         .layer(CompressionLayer::new())
+        .merge(blobs)
 }
 
 /// The OpenAPI 3.1 document of the `/v1` API.
 #[must_use]
 pub fn openapi() -> utoipa::openapi::OpenApi {
     openapi_router(Duration::from_secs(30)).into_openapi()
+}
+
+/// The committed form of [`openapi`]: pretty JSON with a trailing newline.
+pub fn openapi_json() -> Result<String, serde_json::Error> {
+    let mut json = openapi().to_pretty_json()?;
+    json.push('\n');
+    Ok(json)
+}
+
+/// Where the committed OpenAPI document lives in the source tree.
+#[must_use]
+pub fn openapi_document_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../schemas/openapi.v1.json")
 }
 
 /// Settings for [`router`].
@@ -279,15 +311,8 @@ pub struct RouterOptions {
 /// The complete HTTP service.
 pub fn router(state: AppState, options: &RouterOptions) -> Router {
     let (api, _) = openapi_router(options.request_timeout).split_for_parts();
-    let blobs = Router::new()
-        .route(
-            "/v1/blobs/{token}",
-            put(blobs::put_blob).get(blobs::get_blob),
-        )
-        .layer(DefaultBodyLimit::disable());
     let request_id = HeaderName::from_static("x-request-id");
-    api.merge(blobs)
-        .layer(cors(&options.cors_origins))
+    api.layer(cors(&options.cors_origins))
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
         .layer(TraceLayer::new_for_http().make_span_with(|req: &Request| {
             let id = req
@@ -345,11 +370,27 @@ mod tests {
             "/v1/jobs/{id}/events",
             "/v1/jobs/{id}/outputs",
             "/v1/capabilities",
+            "/v1/blobs/{token}",
             "/healthz",
             "/readyz",
         ] {
             assert!(paths.contains(&path), "missing {path}; have {paths:?}");
         }
-        assert!(!paths.iter().any(|p| p.starts_with("/v1/blobs")));
+    }
+
+    #[test]
+    fn blob_routes_carry_no_api_credentials() {
+        let doc = openapi();
+        let item = &doc.paths.paths["/v1/blobs/{token}"];
+        for operation in [item.get.as_ref(), item.put.as_ref()] {
+            let operation = operation.expect("blob GET and PUT are documented");
+            assert!(operation.security.is_none(), "the token is the credential");
+        }
+    }
+
+    #[test]
+    fn openapi_json_ends_with_a_newline() {
+        let json = openapi_json().expect("serialize");
+        assert!(json.ends_with("}\n"));
     }
 }

@@ -1,8 +1,9 @@
 //! `PUT` and `GET /v1/blobs/{token}`: presigned object URLs for the local
 //! store, which cannot sign URLs itself. The token is an HMAC-signed claim
 //! naming the key, method, expiry, and for uploads the exact size and hash.
-//! These routes are not part of the OpenAPI contract; clients only follow
-//! URLs that the API returned.
+//! Clients never build these URLs: they follow the `url` an upload or the
+//! outputs list returned. With S3 storage those URLs point at the object
+//! store instead, so these routes are documented as the local-store shape.
 
 use axum::{
     body::Body,
@@ -14,7 +15,8 @@ use chrono::Utc;
 
 use super::AppState;
 use crate::{
-    error::{ApiError, ApiResult},
+    api::dto::FileBytes,
+    error::{ApiError, ApiResult, ErrorBody},
     storage::BlobClaims,
 };
 
@@ -26,6 +28,27 @@ fn claims(state: &AppState, token: &str, method: &str) -> ApiResult<BlobClaims> 
         .ok_or_else(|| ApiError::forbidden("forbidden", "the URL is invalid or has expired"))
 }
 
+/// Upload a file through a presigned URL.
+///
+/// The URL comes from `POST /v1/uploads`; send exactly the declared bytes.
+/// The signed token in the path is the only credential.
+#[utoipa::path(
+    put,
+    path = "/v1/blobs/{token}",
+    tag = "blobs",
+    params(("token" = String, Path, description = "Signed token issued by the API")),
+    request_body(
+        content = inline(FileBytes),
+        content_type = "application/octet-stream",
+        description = "The file: exactly the declared size, with the declared SHA-256"
+    ),
+    responses(
+        (status = 200, description = "Stored"),
+        (status = 403, description = "The URL is invalid or has expired", body = ErrorBody),
+        (status = 422, description = "The body does not match the declared size or SHA-256", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+    ),
+)]
 pub async fn put_blob(
     State(state): State<AppState>,
     Path(token): Path<String>,
@@ -60,6 +83,24 @@ pub async fn put_blob(
     }
 }
 
+/// Download a file through a presigned URL.
+///
+/// The URL comes from `GET /v1/jobs/{id}/outputs`. The signed token in the
+/// path is the only credential.
+#[utoipa::path(
+    get,
+    path = "/v1/blobs/{token}",
+    tag = "blobs",
+    params(("token" = String, Path, description = "Signed token issued by the API")),
+    responses(
+        (status = 200, description = "The file", body = inline(FileBytes),
+         content_type = "application/octet-stream",
+         headers(("content-length" = u64, description = "File size in bytes"))),
+        (status = 403, description = "The URL is invalid or has expired", body = ErrorBody),
+        (status = 404, description = "The file was deleted", body = ErrorBody),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+    ),
+)]
 pub async fn get_blob(
     State(state): State<AppState>,
     Path(token): Path<String>,
