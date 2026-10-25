@@ -1,8 +1,8 @@
 #!/bin/sh
 # Structural YAML security and supply-chain verifier for .github/workflows/release.yml.
 # Parses workflow structure using PyYAML via uv to assert strict security invariants:
-# 1. secrets.HOMEBREW_TAP_TOKEN appears exactly once in the file, strictly inside
-#    jobs.publish-homebrew-formula.steps[name=="Push formula"].env.
+# 1. The tap token value appears only in Push formula's step env. The publishing
+#    job may also derive a boolean availability flag without exposing the token.
 # 2. jobs.prepare-homebrew-formula has no secret references and permissions: {contents: read}.
 # 3. Every job's permissions map equals its minimal expected map; no extra writes.
 # 4. Every actions/checkout step enforces persist-credentials: false (boolean).
@@ -65,7 +65,8 @@ if not isinstance(jobs, dict):
 # --- 1. Walk every string value in parsed YAML to audit secrets & tokens ---
 # Allowed occurrences of strings referencing secrets (case-insensitive):
 # 1. GH_TOKEN in job-level env of plan, build-local-artifacts, build-global-artifacts, host, prepare-homebrew-formula, announce
-# 2. HOMEBREW_TAP_TOKEN in publish-homebrew-formula Push formula step env
+# 2. HOMEBREW_TAP_TOKEN in publish-homebrew-formula Push formula step env,
+#    or the job's exact boolean-only availability expression
 # 3. CARGO_REGISTRY_TOKEN in custom-publish-crates secrets
 def walk_elements(obj, path=()):
     if isinstance(obj, dict):
@@ -87,6 +88,8 @@ for text, path in walk_elements(data):
             if path[1] in ('plan', 'build-local-artifacts', 'build-global-artifacts', 'host', 'prepare-homebrew-formula', 'publish-homebrew-formula', 'announce'):
                 if re.match(r'^\$\{\{\s*secrets\.GITHUB_TOKEN\s*\}\}$', text.strip()):
                     is_authorized = True
+        elif path == ('jobs', 'publish-homebrew-formula', 'env', 'TAP_PUBLISHING_ENABLED'):
+            is_authorized = text == "${{ secrets.HOMEBREW_TAP_TOKEN != '' }}"
         elif len(path) >= 5 and path[0] == 'jobs' and path[1] == 'publish-homebrew-formula' and path[2] == 'steps':
             # Must be in step env for HOMEBREW_TAP_TOKEN
             step_idx = int(path[3]) if path[3].isdigit() else -1
@@ -109,7 +112,8 @@ for text, path in walk_elements(data):
 
     # Check for HOMEBREW_TAP_TOKEN token name outside authorized locations
     if 'HOMEBREW_TAP_TOKEN' in text:
-        is_token_path = False
+        is_token_path = (path == ('jobs', 'publish-homebrew-formula', 'env', 'TAP_PUBLISHING_ENABLED')
+                         and text == "${{ secrets.HOMEBREW_TAP_TOKEN != '' }}")
         if len(path) >= 5 and path[0] == 'jobs' and path[1] == 'publish-homebrew-formula' and path[2] == 'steps':
             step_idx = int(path[3]) if path[3].isdigit() else -1
             steps = jobs.get('publish-homebrew-formula', {}).get('steps') or []
@@ -131,6 +135,12 @@ if not isinstance(pub_job, dict):
     fail("Job 'publish-homebrew-formula' missing or not a mapping")
 if 'HOMEBREW_TAP_TOKEN' in (pub_job.get('env') or {}):
     fail("HOMEBREW_TAP_TOKEN must not be in job-level env of publish-homebrew-formula")
+if (pub_job.get('env') or {}).get('TAP_PUBLISHING_ENABLED') != "${{ secrets.HOMEBREW_TAP_TOKEN != '' }}":
+    fail("Tap publishing must derive only a boolean token availability flag")
+for step in (pub_job.get('steps') or []):
+    if isinstance(step, dict) and step.get('name') != 'Push formula':
+        if step.get('if') != "env.TAP_PUBLISHING_ENABLED == 'true'":
+            fail("Tap checkout and formula preparation must skip when the token is missing")
 
 # --- 2. Top-level and job-level permissions ---
 if data.get('permissions') != {'contents': 'read'}:
@@ -177,6 +187,7 @@ SECURITY_STEPS = {
     'Install cargo-auditable',
     'Build artifacts',
     'Install cargo-cyclonedx',
+    'Verify Homebrew formula and archive checksums',
     'Push formula',
 }
 
@@ -337,6 +348,15 @@ def get_step_by_name(job_data, step_name):
         if isinstance(s, dict) and s.get('name') == step_name:
             return s
     return None
+
+formula_check = get_step_by_name(jobs.get('build-global-artifacts') or {}, 'Verify Homebrew formula and archive checksums')
+if not formula_check or formula_check.get('run', '').strip() != 'python3 scripts/release/verify-homebrew.py target/distrib':
+    fail("Global artifacts must verify the Homebrew formula against built archives before upload")
+
+push_step = get_step_by_name(pub_job, 'Push formula') or {}
+push_run = push_step.get('run') or ''
+if not re.search(r'if \[ -z "\$\{HOMEBREW_TAP_TOKEN:-\}" \]; then\s+echo "::notice::[^\n]+\n\s+exit 0\s+fi', push_run):
+    fail("Push formula must skip with a notice when its token is missing")
 
 # Plan job: Install dist
 plan_job = jobs.get('plan') or {}
@@ -505,6 +525,18 @@ if publish_crates_path and os.path.isfile(publish_crates_path):
         fail(f"{publish_crates_path} missing 'publish' job")
     if p_pub.get('environment') != 'release':
         fail(f"{publish_crates_path} publish job must declare 'environment: release'")
+    token_check = get_step_by_name(p_pub, 'Validate registry token') or {}
+    if token_check.get('id') != 'registry-token':
+        fail("Registry token validation must expose the registry-token step output")
+    token_run = token_check.get('run') or ''
+    if not re.search(r'if \[ -z "\$\{CARGO_REGISTRY_TOKEN:-\}" \]; then\s+echo "::notice::[^\n]+\n\s+echo "available=false" >> "\$GITHUB_OUTPUT"\s+else\s+echo "available=true" >> "\$GITHUB_OUTPUT"\s+fi', token_run):
+        fail("Registry token validation must report availability and skip with a notice when missing")
+    for step_name in ('Check out source', 'Set up Rust toolchain', 'Publish crates in dependency order'):
+        step = get_step_by_name(p_pub, step_name) or {}
+        if step.get('if') != "steps.registry-token.outputs.available == 'true'":
+            fail(f"{step_name} must run only when the registry token is available")
+        if step.get('continue-on-error') not in (None, False):
+            fail(f"{step_name} must not hide publication failures")
     for s in (p_pub.get('steps') or []):
         if isinstance(s, dict) and str(s.get('uses') or '').lower().startswith('actions/checkout@'):
             if not isinstance(s.get('with'), dict) or s['with'].get('persist-credentials') is not False:

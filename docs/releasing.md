@@ -113,17 +113,22 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    run_id=$(gh run list --workflow=release.yml --branch=vX.Y.Z --limit 1 --json databaseId --jq '.[0].databaseId')
    gh run watch "$run_id" --exit-status
    ```
-   Before proceeding to smoke testing, verify that `host`, `prepare-homebrew-formula`, `publish-homebrew-formula`, and `custom-publish-crates` all succeeded individually (see the `announce` note under [Workflows](#workflows)).
+   Before proceeding to smoke testing, verify that `host` and formula preparation succeeded. Inspect the publishing job logs: missing optional tokens produce a notice and a successful job without updating the channel. A green run alone does not prove that crates.io or the tap was updated.
 
 ### 4. Run the post-release smoke workflow
 
-Trigger [`.github/workflows/release-smoke.yml`](../.github/workflows/release-smoke.yml) against the newly published version and watch all four clean-runner channel jobs pass:
+When crates.io and the tap were both published, trigger [`.github/workflows/release-smoke.yml`](../.github/workflows/release-smoke.yml) against the newly published version and watch all four clean-runner channel jobs pass:
 
 ```bash
 gh workflow run release-smoke.yml -f version=X.Y.Z
 run_id=$(gh run list --workflow=release-smoke.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 gh run watch "$run_id" --exit-status
 ```
+
+If a token was absent, record that channel as unpublished and verify the GitHub
+Release archives, checksums and generated formula instead. The four-channel
+smoke workflow still expects the tap and crates.io versions to exist; it does
+not skip unavailable channels automatically.
 
 ### 5. Generate and submit WinGet manifests
 
@@ -152,10 +157,10 @@ excluded from musl targets. Desktop installers and updater metadata are built by
 
 - **`plan`**: Runs `cargo-dist` to compute the release manifest (`dist-manifest.json`), target matrix, and artifact list. On pull requests touching release paths, `release.yml` runs in rehearsal mode (`publishing == 'false'`) and stops after building artifacts. If `plan` fails, check `dist-workspace.toml` and `Cargo.toml` version consistency.
 - **`build-local-artifacts`**: Builds `ashift` (`ashift.exe` on Windows) with `cargo-auditable` across the five release targets (`aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-pc-windows-msvc`) and packages each archive with `LICENSE`, `NOTICE`, `THIRD_PARTY_LICENSES`, and a `.sha256` checksum. If a target build fails before `host` runs, no release has been published yet; fix the defect on `dev`, promote, and cut the next version tag.
-- **`build-global-artifacts`**: Generates the shell and PowerShell installers, the Homebrew formula (`ashift.rb`), and CycloneDX SBOMs (`*.cdx.xml`) for `ariad-core`, `ariad-host`, and `ariad-cli`.
+- **`build-global-artifacts`**: Uses cargo-dist's existing Homebrew generator to produce `ashift.rb`, alongside the shell and PowerShell installers and CycloneDX SBOMs. Before upload, [`verify-homebrew.py`](../scripts/release/verify-homebrew.py) hashes all five built archives and checks their `.sha256` sidecars. It checks the formula's version, exact release URLs, SHA-256 values and OS/CPU branches for Apple silicon and Intel macOS and arm64 and x86-64 Linux musl, plus the `ashift` binary and Pandoc dependency. Windows uses its ZIP and the PowerShell installer. This verification also runs during PR rehearsals, without publishing credentials.
 - **`host`** (`contents: write`, tag runs only): Uploads all archives, checksums, installers, and SBOMs and creates the GitHub Release via `gh release create`. Once `host` succeeds, the GitHub Release and its assets are public.
-- **`prepare-homebrew-formula`** (unprivileged, no secrets): Checks out `bavanchun/homebrew-tap` without credentials, downloads all `artifacts-*` workflow artifacts into `homebrew-tap/Formula/` (`merge-multiple: true`), runs `brew update` and `brew style --except-cops FormulaAudit/Homepage,FormulaAudit/Desc,FormulaAuditStrict --fix "Formula/${filename}" || true`, and uploads `homebrew-tap/Formula/*.rb` as the `prepared-homebrew-formula` artifact. If `brew update` or the tap checkout fails here, re-run the job; `host` does not need to re-run.
-- **`publish-homebrew-formula`** (`environment: release`): Checks out `bavanchun/homebrew-tap`, downloads `prepared-homebrew-formula` into `Formula/`, commits `Formula/ashift.rb` (or logs `Formula already up-to-date` on re-run), and pushes `HEAD:main` using `HOMEBREW_TAP_TOKEN` (masked via `::add-mask::`). No `brew` commands run in this job. Safe to re-run if the push fails.
+- **`prepare-homebrew-formula`** (unprivileged, no secrets): Checks out the release source, downloads `artifacts-*` into `target/distrib/`, and stages only the newly generated `ashift.rb` in `homebrew-tap/Formula/`. It runs `brew update` and `brew style` with the homepage, description and strict audit exclusions, then uploads the formula as `prepared-homebrew-formula`. Formatting failures fail the job. It does not depend on an existing tap checkout or tap token. Safe to re-run without re-running `host`.
+- **`publish-homebrew-formula`** (`environment: release`): Derives a boolean token availability flag. If absent, tap checkout, artifact download and commits are skipped; `Push formula` emits a notice and exits successfully. Otherwise it checks out `bavanchun/homebrew-tap`, downloads `prepared-homebrew-formula`, commits `Formula/ashift.rb` (or logs `Formula already up-to-date`), and pushes `HEAD:main` using `HOMEBREW_TAP_TOKEN` (masked via `::add-mask::`). Authentication and push failures still fail. No `brew` commands run in this job. Safe to re-run if the push fails.
 - **`custom-publish-crates`**: Calls [`.github/workflows/publish-crates.yml`](../.github/workflows/publish-crates.yml) with `CARGO_REGISTRY_TOKEN`.
 - **`announce`**: Gate job depending on `plan`, `host`, `prepare-homebrew-formula`, `publish-homebrew-formula`, and `custom-publish-crates`.
   > [!IMPORTANT]
@@ -164,7 +169,7 @@ excluded from musl targets. Desktop installers and updater metadata are built by
 ### `publish-crates.yml` — what runs and what to do on failure
 
 - Runs inside `environment: release` (`v*` tags only).
-- **`Validate registry token`** fails closed before any `cargo publish` if `CARGO_REGISTRY_TOKEN` is unset or empty.
+- **`Validate registry token`** emits a notice and sets `available=false` if `CARGO_REGISTRY_TOKEN` is unset or empty. Checkout, toolchain setup and crate publication are skipped, so missing credentials do not fail the release. A present token sets `available=true` and enables those steps; registry errors still fail.
 - **`Publish crates in dependency order`** publishes `ariad-core`, `ariad-host`, and `ariad-cli` sequentially. Before each crate, it queries the crates.io API (`User-Agent: AriadShift-Release-CI`); if HTTP `200` is returned, that crate version is already published and is skipped. After publishing a crate, it polls the crates.io API until HTTP `200` before moving to the next dependent crate. Because already-published crates are skipped, re-running a failed `publish` job after a transient registry timeout or token fix is idempotent.
 
 ### `release-smoke.yml` — what runs and what to do on failure
@@ -184,11 +189,46 @@ excluded from musl targets. Desktop installers and updater metadata are built by
 Repository `bavanchun/AriadShift` defines a GitHub Actions environment named **`release`**:
 
 - **Deployment protection rule**: Restricted to tags matching `v*` only. Branch pushes and pull requests cannot enter the `release` environment or read its secrets.
-- **Required environment secret names** (created and set directly by the maintainer, e.g. `gh secret set <NAME> --env release`; never committed or echoed):
-  - **`HOMEBREW_TAP_TOKEN`**: Fine-grained personal access token scoped exclusively to repository `bavanchun/homebrew-tap` with `contents: write` permission only. Passed via step-level `env` only to the `Push formula` step in `publish-homebrew-formula` (`release.yml`).
+- **Optional channel publishing secrets** (created and set directly by the maintainer, e.g. `gh secret set <NAME> --env release`; never committed or echoed). Missing values skip only that channel's publishing operation with a notice. CLI archives and the generated formula are still published to GitHub Releases:
+  - **`HOMEBREW_TAP_TOKEN`**: Fine-grained personal access token scoped exclusively to repository `bavanchun/homebrew-tap` with `contents: write` permission only. Its value is passed via step-level `env` only to `Push formula`; the job also derives a boolean availability flag without exposing the token.
   - **`CARGO_REGISTRY_TOKEN`**: Scoped crates.io API token (`publish-new` for initial crate registration; `publish-update` restricted to `ariad-core`, `ariad-host`, and `ariad-cli` for subsequent releases). Passed only to the `Validate registry token` and `Publish crates in dependency order` steps in `publish-crates.yml`.
 
-[`scripts/check-release-workflow.sh`](../scripts/check-release-workflow.sh) enforces in CI that `HOMEBREW_TAP_TOKEN` and `CARGO_REGISTRY_TOKEN` appear nowhere else in `.github/workflows/release.yml` or `.github/workflows/publish-crates.yml`, and that both publishing jobs declare `environment: release`.
+[`scripts/check-release-workflow.sh`](../scripts/check-release-workflow.sh)
+enforces these token value boundaries, the exact boolean-only tap availability
+expression, conditional publishing steps, archive verification and the
+`release` environments. Raw token values remain confined to their authorized
+step environments and the explicit reusable-workflow secret forwarding.
+
+### Verify the formula without publishing
+
+After a PR rehearsal, download the run's `artifacts-*` artifacts into one
+directory (or use the local `dist build` output). From the checkout for that
+release version, run:
+
+```bash
+gh run download <run-id> --pattern 'artifacts-*' --dir target/release-rehearsal
+# Workflow artifact directories must be merged, as the release workflow does.
+mkdir -p target/distrib
+find target/release-rehearsal -type f -exec cp '{}' target/distrib/ \;
+python3 scripts/release/verify-homebrew.py target/distrib
+python3 scripts/release/test-verify-homebrew.py
+```
+
+The verifier uses Python 3.11 or newer and reads the configured release targets
+from `dist-workspace.toml`. Add platform verification when adding a new Unix
+target; unsupported targets fail rather than silently disappearing from the
+formula. It never downloads archives or executes the generated Ruby.
+
+### Assets owned by other workflows
+
+The CLI workflow creates the version's GitHub Release. The
+[desktop workflow](../.github/workflows/desktop.yml) waits for that release and
+attaches installers and updater metadata to it. Engine packs have independent
+versions and signed manifests on their own `pack-<name>-v<version>` releases;
+follow [pack publishing](packs.md#signing-and-publishing) for their separate signing
+and upload procedure. Server images are a separate distribution channel; see
+[server deployment](server.md) for image and runtime prerequisites. Missing
+optional registry tokens do not gate these release assets.
 
 ---
 
