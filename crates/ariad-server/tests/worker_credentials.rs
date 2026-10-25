@@ -27,7 +27,7 @@ fn protected_worker_procfs_probe() {
     let pid = std::process::id().to_string();
     let read = |blocked: bool| {
         let code = if blocked {
-            "for name in environ mem; do if cat /proc/$1/$name >/dev/null 2>&1; then exit 1; fi; done"
+            "for name in environ mem; do if ( : < /proc/$1/$name ) 2>/dev/null; then exit 1; fi; done"
         } else {
             "cat /proc/$1/environ | tr '\\000' '\\n' | grep -qx 'DATABASE_URL=procfs-credential-sentinel'"
         };
