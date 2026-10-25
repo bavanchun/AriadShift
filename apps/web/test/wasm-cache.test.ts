@@ -59,8 +59,19 @@ describe("engineResponse", () => {
     expect([...usedEngines]).toEqual([URL_KEY]);
   });
 
-  it("evicts a cached binary with the wrong digest and caches a verified download", async () => {
+  it("fails closed on a cached binary with the wrong digest and evicts it", async () => {
     store.entries.set(URL_KEY, DAMAGED);
+    await expect(engineResponse(URL_KEY, sha256(VALID))).rejects.toEqual({
+      code: "engine_integrity",
+      message: "The DOCX/EPUB engine failed an integrity check. Reload the page to retry.",
+    });
+    // No silent re-download: the conversion stops, and the retry starts from an empty cache.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(store.entries.has(URL_KEY)).toBe(false);
+    expect(usedEngines.size).toBe(0);
+  });
+
+  it("downloads and caches a verified copy on the attempt after an eviction", async () => {
     fetchMock.mockResolvedValue(new Response(VALID.slice()));
     const response = await engineResponse(URL_KEY, sha256(VALID));
     expect(await bytesOf(response)).toEqual(VALID);
@@ -69,22 +80,13 @@ describe("engineResponse", () => {
     expect([...usedEngines]).toEqual([URL_KEY]);
   });
 
-  it("rejects a download with the wrong digest without caching it", async () => {
+  it("fails closed on a download with the wrong digest without caching it", async () => {
     fetchMock.mockResolvedValue(new Response(DAMAGED.slice()));
     await expect(engineResponse(URL_KEY, sha256(VALID))).rejects.toMatchObject({
-      code: "engine_unavailable",
+      code: "engine_integrity",
     });
     expect(store.entries.has(URL_KEY)).toBe(false);
     expect(usedEngines.size).toBe(0);
-  });
-
-  it("drops a damaged cached copy even when the replacement download fails", async () => {
-    store.entries.set(URL_KEY, DAMAGED);
-    fetchMock.mockRejectedValue(new TypeError("offline"));
-    await expect(engineResponse(URL_KEY, sha256(VALID))).rejects.toMatchObject({
-      code: "engine_unavailable",
-    });
-    expect(store.entries.has(URL_KEY)).toBe(false);
   });
 
   it("returns a cached binary unchanged when no digest is pinned", async () => {
@@ -96,15 +98,26 @@ describe("engineResponse", () => {
 });
 
 describe("compileEngine", () => {
+  it("never compiles a binary that fails its digest", async () => {
+    store.entries.set(URL_KEY, DAMAGED);
+    const compile = vi.spyOn(WebAssembly, "compile");
+    await expect(compileEngine(URL_KEY, sha256(VALID))).rejects.toMatchObject({
+      code: "engine_integrity",
+    });
+    expect(compile).not.toHaveBeenCalled();
+    compile.mockRestore();
+  });
+
   it("compiles a verified binary", async () => {
     store.entries.set(URL_KEY, VALID);
     expect(await compileEngine(URL_KEY, sha256(VALID))).toBeInstanceOf(WebAssembly.Module);
   });
 
-  it("evicts a cached binary that matches its digest but does not compile", async () => {
+  it("fails closed and evicts a verified binary that does not compile", async () => {
     store.entries.set(URL_KEY, DAMAGED);
-    await expect(compileEngine(URL_KEY, sha256(DAMAGED))).rejects.toMatchObject({
-      code: "engine_unavailable",
+    await expect(compileEngine(URL_KEY, sha256(DAMAGED))).rejects.toEqual({
+      code: "engine_integrity",
+      message: "The DOCX/EPUB engine could not be loaded. Reload the page to retry.",
     });
     expect(store.entries.has(URL_KEY)).toBe(false);
     expect(usedEngines.size).toBe(0);
