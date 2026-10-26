@@ -93,6 +93,8 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 
 The throwaway PostgreSQL in `just test-server` allows 180 seconds for `pg_ctl` operations and TCP readiness. This accommodates initialization on busy hosts; if the service never becomes ready, the recipe prints its container log and fails before compiling the test binaries.
 
+When capturing `gh auth token` into `GH_TOKEN`, its stdout must contain only the token. If a CLI wrapper adds status output, invoke the underlying `gh` binary and reject whitespace or control characters before exporting the value; otherwise zizmor cannot build a valid authorization header.
+
 `just lint-tools` installs `actionlint` and `committed` into `.tools/bin`, verified against SHA-256 checksums pinned in [`scripts/install-lint-tools.sh`](../scripts/install-lint-tools.sh). `zizmor` runs through `uvx` at the version pinned in the `justfile`.
 
 `just package-check` builds each generated crate archive with sibling dependencies from this checkout through Cargo configuration patches. [Cargo removes path dependencies when packaging](https://doc.rust-lang.org/cargo/commands/cargo-package.html), so verification would otherwise select the published `0.1.0` siblings while new APIs await the next release. Archive extraction and build verification remain enabled.
