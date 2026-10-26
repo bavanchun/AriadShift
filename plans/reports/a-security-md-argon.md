@@ -50,16 +50,26 @@ All 12 relative file targets in `docs/SECURITY.md` were checked against `git ls-
 ## Commits
 
 - `e954a9b` `docs: describe supported versions and reporting`
-- plus the commit adding this report (`plans/reports/a-security-md-argon.md`)
+- `6bd99e1` `docs(plans): add security policy worker report`
+- `8c88f52` `docs: list known limitations in the security policy`
+- plus the commit updating this report (`plans/reports/a-security-md-argon.md`)
+
+## Revision: known limitations
+
+- Replaced `### Out of scope (documented limitations)` in `docs/SECURITY.md` with a top-level `## Known limitations` section listing the four documented limitations with relative doc links (`server.md#object-storage-api-and-worker`, `install.md#2-checksum-and-minisign-verification`, `../ARCHITECTURE.md#113-isolation-layers`, `server.md#container-runtime-support`, `server.md#data-lifecycle`), `docs/release-notes.md` in backticks, and links to the corresponding `v1.x` issues ([#68](https://github.com/bavanchun/AriadShift/issues/68) for local `file://` transfer deadlines and [#77](https://github.com/bavanchun/AriadShift/issues/77) for automated publication and desktop code signing; no issue linked for `best-effort` sandbox gaps or missing reverse-proxy body-size limits in front of S3).
+- Added the closing statement that reports showing impact beyond a documented limitation are welcome through the private reporting flow.
+- Added a 4-bullet `## Out of scope` section covering generic items only: local admin/root DoS, upstream vulnerabilities in third-party engines/libraries (while keeping AriadShift sandboxing/invocation/containment flaws in scope), findings requiring an already compromised host or stolen credentials without an AriadShift flaw, and automated scanner output without demonstrated impact.
+- Verified issues `#68`, `#77`, and `#74` with `gh issue view 68 77 74`, updated item 12 (`#74`) evidence in `~/Codes/ariadshift-ops/reports/a-v1x-issues-argon.md` to cite `justfile:214-228`, `.github/workflows/ci.yml:283-295`, `infra/compose/docker-compose.yml:68-90`, and `crates/ariad-server/tests/common/mod.rs:113-130`, re-verified all 12 relative file links (`git ls-files --error-unmatch`) and 12 heading anchors (`rg`), and ran `typos` (`exit 0`).
 
 ## Commands run and outcomes
 
-- `git status -sb && git rev-parse HEAD && git ls-files docs/`: verified checkout on `docs/v1-security-policy` at `88c52eb7aa4d38a1fd8776200793a9997f6f41ad`.
+- `git status -sb && git rev-parse HEAD && git ls-files docs/`: verified checkout on `docs/v1-security-policy` at `88c52eb7aa4d38a1fd8776200793a9997f6f41ad` (initial) and `6bd99e1e5218eff5c0c6e93c12fb86ad90f86b04` (revision).
 - `git show origin/feat/v1-distribution--t5:docs/release-notes.md`: read v1.0.0 and v0.2.0 release notes and known limitations.
 - `git show origin/fix/v1-security-audit:plans/reports/security-audit-261025-v1.md`, `code-review-261025-phase7-final.md`, `worker-7-r4-opus55.md`: verified audit findings and status.
+- `gh issue view 68`, `gh issue view 77`, `gh issue view 74`: verified issue numbers, titles, and cited evidence lines.
 - `rg '^#{1,3} ' ARCHITECTURE.md docs/*.md`: verified heading anchors.
-- Link verification loop (`rg` + `git ls-files --error-unmatch`): all 12 relative targets passed (`OK file`).
-- `typos docs/SECURITY.md plans/reports/a-security-md-argon.md`: passed (`exit 0`).
+- Link verification loop (`rg` + `git ls-files --error-unmatch`): all 12 relative targets passed (`FILE OK`).
+- `typos docs/SECURITY.md plans/reports/a-security-md-argon.md /home/vchun/Codes/ariadshift-ops/reports/a-v1x-issues-argon.md`: passed (`exit 0`).
 - `sh scripts/install-lint-tools.sh && sh scripts/check-commits.sh origin/feat/v1-distribution..HEAD`: passed (`exit 0`).
 - Build/test gate: not run (task brief specifies build-free).
 
