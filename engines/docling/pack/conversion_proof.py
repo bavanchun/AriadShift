@@ -76,7 +76,7 @@ def _convert(python, repository, name, fixture, options, env):
         print(f"Converting {fixture} ({name}) for the pack comparison", flush=True)
         start = time.perf_counter()
         completed = subprocess.run(
-            [str(python), "-I", "-B", "-c", TIMED_ENGINE],
+            [str(python), "-I", "-B", "-X", "faulthandler", "-c", TIMED_ENGINE],
             input=json.dumps(request).encode() + b"\n",
             capture_output=True,
             env=env,
@@ -87,7 +87,9 @@ def _convert(python, repository, name, fixture, options, env):
         events = [json.loads(line) for line in completed.stdout.splitlines()]
         if completed.returncode or not events or not events[-1].get("ok"):
             raise SystemExit(
-                f"{name} comparison conversion failed: {events[-1:]}\n"
+                f"{name} comparison conversion failed "
+                f"(exit {completed.returncode}, 0x{completed.returncode & 0xFFFFFFFF:08X}): "
+                f"{events[-1:]}\n"
                 f"{completed.stderr.decode(errors='replace')[-8000:]}"
             )
         artifact = next(event for event in events if event["type"] == "artifact")
