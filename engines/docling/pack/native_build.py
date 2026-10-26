@@ -264,6 +264,10 @@ def opencv(target, pins, cache):
         if target.endswith("windows-msvc"):
             env.update(CMAKE_GENERATOR="Ninja", CC="cl", CXX="cl")
         command = tools("python", src / "setup.py", "bdist_wheel", "--dist-dir", destination)
+        if target.endswith("windows-msvc"):
+            # The packager sets x64 as a Visual Studio generator platform.
+            # Ninja uses the provisioned x64 compiler environment instead.
+            command += ["--", "-DCMAKE_GENERATOR_PLATFORM="]
         if target.endswith("linux-gnu"):
             # Preserve the existing glibc 2.28 floor instead of linking against
             # the CI runner's newer libc and optional host image libraries.
