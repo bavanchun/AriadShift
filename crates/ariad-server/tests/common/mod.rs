@@ -324,11 +324,16 @@ impl Harness {
         }
     }
 
-    pub async fn stop(mut self) {
+    /// Stops the API and workers, leaving database cleanup to the caller.
+    pub async fn stop_api(mut self) -> TestDb {
         self.stop_workers().await;
         self.shutdown.cancel();
-        let _ = self.api.await;
-        self.db.drop_database().await;
+        self.api.await.expect("API task");
+        self.db
+    }
+
+    pub async fn stop(self) {
+        self.stop_api().await.drop_database().await;
     }
 
     pub fn url(&self, path: &str) -> Url {
