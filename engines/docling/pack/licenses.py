@@ -581,7 +581,10 @@ def render_toolchain_pins(
     *,
     repo: str = "bavanchun/AriadShift",
 ) -> str:
-    """Render the ``[toolchain]`` TOML table from downloaded ``toolchain-wheels-*`` build records."""
+    """Render the ``[toolchain]`` TOML table from build records.
+
+    The records were downloaded from a ``toolchain-wheels-*`` release.
+    """
     if not re.fullmatch(r"toolchain-wheels-[A-Za-z0-9][A-Za-z0-9._-]*", release_tag):
         raise SystemExit("toolchain release tag must be named toolchain-wheels-<version>")
     prefix = f"https://github.com/{repo}/releases/download/{release_tag}/"
@@ -597,9 +600,7 @@ def render_toolchain_pins(
     for record_path in records:
         record = json.loads(record_path.read_text(encoding="utf-8"))
         target = record["target"]
-        kind = record.get(
-            "kind", "opencv" if record_path.name.startswith("opencv-") else "torch"
-        )
+        kind = record.get("kind", "opencv" if record_path.name.startswith("opencv-") else "torch")
         by_target.setdefault(target, {})[kind] = record
     for target in sorted(by_target):
         for kind in sorted(by_target[target]):
