@@ -53,6 +53,13 @@ LLVM_FLAGS = (
     "-DOPENMP_ENABLE_LIBOMPTARGET=OFF",
     "-DLIBOMP_ENABLE_SHARED=ON",
 )
+VCOMP_EXPORTS = (
+    "_vcomp_fork",
+    "_vcomp_set_num_threads",
+    "_vcomp_barrier",
+    "_vcomp_for_static_simple_init_i8",
+    "_vcomp_for_static_end",
+)
 IPP_HEADING = (
     "Intel(R) IPP ICV library statically linked within x86 and x86_64 opencv-python packages."
 )
@@ -133,6 +140,7 @@ def cache_key(kind, target, pins):
     if kind == "llvm":
         sources.append(PACK / "vcomp-compat.cpp")
         sources.append(PACK / "vcomp-probe.cpp")
+        sources.append(PACK / "vcomp-import.cpp")
     for path in sources:
         digest.update(path.read_bytes())
     return digest.hexdigest()
@@ -309,6 +317,65 @@ def opencv(target, pins, cache):
     return next(cached_build("opencv", target, pins, cache, build).glob("*.whl"))
 
 
+def configure_llvm_openmp(src, import_library):
+    """Extend both LLVM export maps and archive MSVC markers into its import lib.
+
+    LLVM generates the DLL and ompimp libraries independently from dllexports.
+    Match its historical kmp_import.c mechanism: direct compiler marker symbols
+    belong in an object inside the import archive, not a DATA-only DLL export.
+    """
+    exports = src / "openmp/runtime/src/dllexports"
+    original = exports.read_text(encoding="utf-8")
+    for name in VCOMP_EXPORTS:
+        if re.search(rf"^\s*{re.escape(name)}\b", original, re.MULTILINE):
+            raise SystemExit(f"review upstream LLVM's existing MSVC export: {name}")
+    exports.write_text(original + "\n" + "\n".join(VCOMP_EXPORTS) + "\n", encoding="utf-8")
+    cmake = src / "openmp/runtime/src/CMakeLists.txt"
+    with cmake.open("a", encoding="utf-8") as handle:
+        handle.write(
+            f'\ntarget_sources(omp PRIVATE "{(PACK / "vcomp-compat.cpp").as_posix()}")\n'
+            f'add_library(vcomp-markers OBJECT "{(PACK / "vcomp-import.cpp").as_posix()}")\n'
+            f'set(vcomp_import "{import_library.as_posix()}")\n'
+            'add_custom_command(OUTPUT "${vcomp_import}"\n'
+            '  COMMAND "${CMAKE_COMMAND}" -E make_directory '
+            f'"{import_library.parent.as_posix()}"\n'
+            '  COMMAND "${CMAKE_AR}" /NOLOGO "/OUT:${vcomp_import}"\n'
+            '    "$<TARGET_FILE:ompimp>" $<TARGET_OBJECTS:vcomp-markers>\n'
+            "  DEPENDS ompimp vcomp-markers $<TARGET_OBJECTS:vcomp-markers>\n"
+            "  COMMAND_EXPAND_LISTS VERBATIM)\n"
+            'add_custom_target(vcomp-import DEPENDS "${vcomp_import}")\n'
+            f'add_executable(vcomp-probe "{(PACK / "vcomp-probe.cpp").as_posix()}")\n'
+            'target_link_libraries(vcomp-probe PRIVATE "${vcomp_import}")\n'
+            "add_dependencies(vcomp-probe omp vcomp-import)\n"
+            f'add_executable(vcomp-probe-dll "{(PACK / "vcomp-probe.cpp").as_posix()}"\n'
+            "  $<TARGET_OBJECTS:vcomp-markers>)\n"
+            "target_link_libraries(vcomp-probe-dll PRIVATE omp)\n"
+            "foreach(probe vcomp-probe vcomp-probe-dll)\n"
+            "  target_compile_options(${probe} PRIVATE /openmp)\n"
+            "  target_link_options(${probe} PRIVATE /NODEFAULTLIB:vcomp)\n"
+            "endforeach()\n"
+        )
+
+
+def verify_msvc_import_library(library, *, markers=False):
+    symbols = set(
+        subprocess.check_output(
+            ["dumpbin", "/nologo", "/linkermember:1", str(library)], text=True
+        ).split()
+    )
+    required = set(VCOMP_EXPORTS)
+    if markers:
+        required.update(
+            {
+                "_You_must_link_with_exactly_one_OpenMP_library",
+                "_You_must_link_with_Microsoft_OpenMP_library",
+            }
+        )
+    if missing := required - symbols:
+        raise SystemExit(f"missing MSVC OpenMP import symbols in {library}: {sorted(missing)}")
+    print(f"verified MSVC OpenMP import symbols: {library}", flush=True)
+
+
 def llvm_openmp(target, pins, cache):
     def build(work, destination):
         src = source(
@@ -317,15 +384,8 @@ def llvm_openmp(target, pins, cache):
             cache,
             components={"openmp", "cmake", "llvm", "runtimes", "third-party"},
         )
-        cmake = src / "openmp/runtime/src/CMakeLists.txt"
-        with cmake.open("a", encoding="utf-8") as handle:
-            handle.write(
-                f'\ntarget_sources(omp PRIVATE "{(PACK / "vcomp-compat.cpp").as_posix()}")\n'
-                f'add_executable(vcomp-probe "{(PACK / "vcomp-probe.cpp").as_posix()}")\n'
-                "target_compile_options(vcomp-probe PRIVATE /openmp)\n"
-                "target_link_options(vcomp-probe PRIVATE /NODEFAULTLIB:vcomp)\n"
-                "target_link_libraries(vcomp-probe PRIVATE omp)\n"
-            )
+        import_library = work / "build/vcomp-import/libiomp5md.lib"
+        configure_llvm_openmp(src, import_library)
         run(
             tools(
                 "cmake",
@@ -350,6 +410,7 @@ def llvm_openmp(target, pins, cache):
                 "--target",
                 "omp",
                 "vcomp-probe",
+                "vcomp-probe-dll",
                 "--parallel",
                 "3",
             )
@@ -357,13 +418,14 @@ def llvm_openmp(target, pins, cache):
         dlls = list((work / "build").rglob("libiomp5md.dll"))
         if len(dlls) != 1:
             raise SystemExit(f"expected one LLVM OpenMP DLL, found {dlls}")
-        executable = next((work / "build").rglob("vcomp-probe.exe"))
+        verify_msvc_import_library(dlls[0].with_suffix(".dll.lib"))
+        verify_msvc_import_library(dlls[0].with_suffix(".lib"))
+        verify_msvc_import_library(import_library, markers=True)
         env = dict(os.environ, PATH=str(dlls[0].parent) + os.pathsep + os.environ.get("PATH", ""))
-        run([executable], env=env, timeout=120)
+        for name in ("vcomp-probe.exe", "vcomp-probe-dll.exe"):
+            run([next((work / "build").rglob(name))], env=env, timeout=120)
         shutil.copyfile(dlls[0], destination / "libiomp5md.dll")
-        shutil.copyfile(
-            next((work / "build").rglob("libiomp5md.lib")), destination / "libiomp5md.lib"
-        )
+        shutil.copyfile(import_library, destination / "libiomp5md.lib")
         shutil.copyfile(next((work / "build").rglob("omp.h")), destination / "omp.h")
         shutil.copyfile(src / "openmp/LICENSE.TXT", destination / "LLVM-OpenMP-LICENSE.txt")
 

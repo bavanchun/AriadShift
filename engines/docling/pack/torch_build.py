@@ -117,6 +117,7 @@ def key(target):
         PACK / "native_build.py",
         PACK / "vcomp-compat.cpp",
         PACK / "vcomp-probe.cpp",
+        PACK / "vcomp-import.cpp",
         REPOSITORY / ".github/workflows/torch-docling.yml",
         REPOSITORY / "uv.lock",
     ):

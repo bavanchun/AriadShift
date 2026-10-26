@@ -92,6 +92,14 @@ region and thread query uses this one runtime. Parallel matrix, reduction and
 elementwise checks, plus direct wrapper checks of captures, barriers, serialized
 regions and static loops, run before packaging.
 
+Windows also probes both LLVM import libraries: the DLL-generated library and
+the name-based `ompimp` library generated from `dllexports`. Both export the MSVC
+wrappers. Compiler compatibility markers live in an object archived into the
+name-based library, following [LLVM's former `kmp_import.c` mechanism](https://github.com/llvm/llvm-project/blob/llvmorg-3.8.0/openmp/runtime/src/kmp_import.c).
+A DLL data export alone cannot resolve MSVC's forced marker reference. Torch consumes this
+augmented import library. Both probes retain `/openmp` and `/NODEFAULTLIB:vcomp`,
+so their OpenMP operations use only the built LLVM DLL.
+
 ARM packs retain the upstream hash-locked OpenCV wheels. Their common third-party
 notice includes an IPP section explicitly scoped to x86/x86_64, even though IPP
 does not apply to ARM. The builder removes only that reviewed section, and does

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import shutil
 import struct
+import subprocess
 import sys
 from argparse import Namespace
 from base64 import urlsafe_b64encode
@@ -20,6 +23,71 @@ import licenses
 import native_build
 import torch_build
 import windows_imports
+
+
+def test_llvm_export_map_preserves_upstream_and_exports_every_msvc_wrapper(tmp_path):
+    source = tmp_path / "openmp/runtime/src"
+    source.mkdir(parents=True)
+    original = "# Existing LLVM exports\nomp_get_num_threads 718\n"
+    (source / "dllexports").write_text(original)
+    (source / "CMakeLists.txt").write_text("# Existing LLVM build\n")
+    native_build.configure_llvm_openmp(tmp_path, tmp_path / "build/libiomp5md.lib")
+    exports = (source / "dllexports").read_text()
+    assert exports.startswith(original)
+    wrappers = set(
+        re.findall(
+            r"__declspec\(dllexport\) void (_vcomp_\w+)\(",
+            (native_build.PACK / "vcomp-compat.cpp").read_text(),
+        )
+    )
+    assert set(exports[len(original) :].split()) == wrappers
+
+
+@pytest.mark.parametrize("name", native_build.VCOMP_EXPORTS)
+def test_llvm_export_changes_require_review_if_upstream_adds_a_wrapper(tmp_path, name):
+    source = tmp_path / "openmp/runtime/src"
+    source.mkdir(parents=True)
+    original = f"{name} 123\n"
+    (source / "dllexports").write_text(original)
+    with pytest.raises(SystemExit, match="review upstream LLVM's existing MSVC export"):
+        native_build.configure_llvm_openmp(tmp_path, tmp_path / "build/libiomp5md.lib")
+    assert (source / "dllexports").read_text() == original
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux"
+    or not all(shutil.which(tool) for tool in ("clang-cl", "llvm-dlltool", "llvm-lib", "llvm-nm")),
+    reason="Linux COFF archive proof needs the system LLVM tools",
+)
+def test_msvc_marker_requires_an_object_in_the_import_archive(tmp_path):
+    marker = "_You_must_link_with_Microsoft_OpenMP_library"
+    definition = tmp_path / "libiomp5md.def"
+    definition.write_text(
+        "LIBRARY libiomp5md.dll\nEXPORTS\n"
+        + "\n".join(native_build.VCOMP_EXPORTS)
+        + f"\n{marker} DATA\n"
+    )
+    raw = tmp_path / "raw.lib"
+    obj = tmp_path / "markers.obj"
+    corrected = tmp_path / "libiomp5md.lib"
+    subprocess.run(
+        ["llvm-dlltool", "-m", "i386:x86-64", "-d", str(definition), "-l", str(raw)],
+        check=True,
+    )
+    raw_symbols = subprocess.check_output(["llvm-nm", "--defined-only", str(raw)], text=True)
+    assert f"__imp_{marker}" in raw_symbols.split()
+    assert marker not in raw_symbols.split()
+    subprocess.run(
+        ["clang-cl", "/nologo", "/c", f"/Fo{obj}", str(native_build.PACK / "vcomp-import.cpp")],
+        check=True,
+    )
+    subprocess.run(["llvm-lib", f"/out:{corrected}", str(raw), str(obj)], check=True)
+    symbols = subprocess.check_output(
+        ["llvm-nm", "--defined-only", str(corrected)], text=True
+    ).split()
+    assert marker in symbols
+    assert "_You_must_link_with_exactly_one_OpenMP_library" in symbols
+    assert set(native_build.VCOMP_EXPORTS) <= set(symbols)
 
 
 def test_torch_source_build_requires_a_matching_native_runner():
