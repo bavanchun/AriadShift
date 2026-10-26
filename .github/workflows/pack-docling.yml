@@ -251,17 +251,16 @@ jobs:
           arch: x64
 
       # Git Bash prepends its Unix tools, including a different link.exe.
+      # rustc recognizes MSVC's informational output only with the bare name.
       - name: Select the MSVC linker for Rust
         if: matrix.target == 'x86_64-pc-windows-msvc'
-        shell: python {0}
         run: |
-          import os
-          from pathlib import Path
-          linker = Path(os.environ["VCToolsInstallDir"]) / "bin/Hostx64/x64/link.exe"
-          if not linker.is_file():
-              raise SystemExit(f"MSVC linker is missing: {linker}")
-          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
-              output.write(f"CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER={linker}\n")
+          msvc_bin="$(cygpath -u "$VCToolsInstallDir")/bin/Hostx64/x64"
+          test -f "$msvc_bin/link.exe"
+          linker_env="$(cygpath -u "$RUNNER_TEMP")/msvc-linker-env.sh"
+          printf 'export PATH=%q:"$PATH"\n' "$msvc_bin" > "$linker_env"
+          echo "BASH_ENV=$linker_env" >> "$GITHUB_ENV"
+          echo 'CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=link.exe' >> "$GITHUB_ENV"
 
       - name: Free Linux build space
         if: matrix.target == 'x86_64-unknown-linux-gnu'
