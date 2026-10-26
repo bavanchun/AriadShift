@@ -261,7 +261,9 @@ test.describe("with a mocked cloud", () => {
     await page.getByLabel("Email").fill("ada@example.com");
     await page.getByLabel("Password").fill("wrong password");
     await page.getByLabel("Password").press("Enter");
-    await expect(page.getByRole("alert")).toContainText("Invalid email or password");
+    await expect(page.locator("form").getByRole("alert")).toContainText(
+      "Invalid email or password",
+    );
 
     await page.getByLabel("Password").fill("correct horse battery");
     await page.getByLabel("Password").press("Enter");

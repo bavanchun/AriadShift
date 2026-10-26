@@ -11,6 +11,9 @@ const AUTH = process.env.NEXT_PUBLIC_ARIAD_AUTH_URL?.replace(/\/+$/, "");
 const SITE_KEY = process.env.NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY;
 const STORAGE = "https://storage.cloud.test";
 
+// Service workers can bypass page.route; the offline suites test the real worker separately.
+test.use({ serviceWorkers: "block" });
+
 test.skip(!API, "needs a build with NEXT_PUBLIC_ARIAD_API_URL set");
 
 const MARKDOWN = "# Cloud report\n\nConverted on the server.\n";
