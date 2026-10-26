@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import struct
@@ -23,6 +24,28 @@ import licenses
 import native_build
 import torch_build
 import windows_imports
+
+
+@pytest.mark.skipif(
+    not os.environ.get("ASHIFT_VCOMP_ABI_LIBRARY"),
+    reason="native wrapper ABI proof needs a source-built LLVM runtime",
+)
+def test_msvc_fork_abi_against_real_llvm_runtime():
+    code = (
+        "import ctypes, runpy, sys\n"
+        "runpy.run_path(sys.argv[1])['vcomp_abi'](ctypes.CDLL(sys.argv[2]))\n"
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(native_build.PACK / "probe-runtime.py"),
+            os.environ["ASHIFT_VCOMP_ABI_LIBRARY"],
+        ],
+        check=True,
+        timeout=120,
+    )
 
 
 def test_llvm_export_map_preserves_upstream_and_exports_every_msvc_wrapper(tmp_path):

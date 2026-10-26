@@ -41,7 +41,7 @@ void microtask(kmp_int32 *, kmp_int32 *, Region *region) {
 } // namespace
 
 extern "C" {
-__declspec(dllexport) void _vcomp_fork(int count, int parallel, Callback callback, ...) {
+__declspec(dllexport) void _vcomp_fork(int parallel, int count, Callback callback, ...) {
   if (count < 0 || count > max_arguments || !callback)
     std::abort();
   Region region{callback, count, {}};

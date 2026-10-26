@@ -6,9 +6,6 @@ import ctypes
 import sys
 from pathlib import Path
 
-import cv2
-import torch
-
 
 def check(condition, message):
     if not condition:
@@ -16,6 +13,8 @@ def check(condition, message):
 
 
 def torch_math():
+    import torch
+
     torch.manual_seed(42)
     torch.set_num_threads(1)
     matrix = torch.randn(257, 193)
@@ -34,12 +33,17 @@ def torch_math():
     )
 
 
-def vcomp_abi():
-    dll = ctypes.CDLL(str(Path(torch.__file__).parent / "lib/libiomp5md.dll"))
+def vcomp_abi(dll=None):
+    if dll is None:
+        import torch
+
+        dll = ctypes.CDLL(str(Path(torch.__file__).parent / "lib/libiomp5md.dll"))
     integer = ctypes.c_int
     unsigned = ctypes.c_uint64
     pointer = ctypes.c_void_p
     dll._vcomp_set_num_threads.argtypes = [integer]
+    dll._vcomp_fork.argtypes = [integer, integer, pointer]
+    dll._vcomp_fork.restype = None
     dll._vcomp_for_static_simple_init_i8.argtypes = [
         unsigned,
         unsigned,
@@ -66,7 +70,7 @@ def vcomp_abi():
             observed.clear()
             dll._vcomp_set_num_threads(3)
             dll._vcomp_fork(
-                integer(count), integer(parallel), callback, *[pointer(i + 1) for i in range(count)]
+                integer(parallel), integer(count), callback, *[pointer(i + 1) for i in range(count)]
             )
             check(len(observed) == team, "MSVC fork produced the wrong team size")
             check({row[0] for row in observed} == set(range(team)), "MSVC thread IDs differ")
@@ -102,7 +106,7 @@ def vcomp_abi():
             dll._vcomp_barrier()
 
         dll._vcomp_set_num_threads(3)
-        dll._vcomp_fork(integer(0), integer(1), loop)
+        dll._vcomp_fork(integer(1), integer(0), loop)
         expected = list(range(first, last + (1 if step > 0 else -1), step))
         check(
             sorted(observed) == sorted(expected), "MSVC static scheduling lost or duplicated work"
@@ -111,6 +115,8 @@ def vcomp_abi():
 
 
 if __name__ == "__main__":
+    import cv2
+
     check(not cv2.ipp.useIPP(), "OpenCV enables IPP")
     torch_math()
     if sys.platform == "win32":

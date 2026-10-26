@@ -99,6 +99,8 @@ name-based library, following [LLVM's former `kmp_import.c` mechanism](https://g
 A DLL data export alone cannot resolve MSVC's forced marker reference. Torch consumes this
 augmented import library. Both probes retain `/openmp` and `/NODEFAULTLIB:vcomp`,
 so their OpenMP operations use only the built LLVM DLL.
+The fork wrapper accepts MSVC's parallel flag before the capture count; native
+LLVM tests exercise both parallel and serialized calls with captured arguments.
 
 ARM packs retain the upstream hash-locked OpenCV wheels. Their common third-party
 notice includes an IPP section explicitly scoped to x86/x86_64, even though IPP
