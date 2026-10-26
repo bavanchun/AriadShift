@@ -17,12 +17,18 @@ const HTML = `<!doctype html>
 <html lang="en"><head><title>Sample page</title></head>
 <body><h1>Sample page</h1><p>Hello <strong>world</strong>.</p><ul><li>one</li><li>two</li></ul></body></html>`;
 
+const ENGINE_BOOT = { timeout: 60_000 };
+
 async function openConverter(page: Page, query = "") {
   await page.goto(`/app${query}`);
   await expect(page.getByRole("heading", { name: "Convert a document" })).toBeVisible();
 }
 
 async function chooseFile(page: Page, name: string, mimeType: string, content: string | Buffer) {
+  await expect(page.getByTestId("device-indicator")).toContainText(
+    /browser storage|In memory/,
+    ENGINE_BOOT,
+  );
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose a file" }).click();
   await (await chooser).setFiles({ name, mimeType, buffer: Buffer.from(content) });
