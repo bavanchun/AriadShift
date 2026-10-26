@@ -1,0 +1,16 @@
+# Context for the auth image (repository root): workspace manifests, the
+# lockfile, licence files and the service sources. Everything else is left out.
+*
+!LICENSE
+!NOTICE
+!THIRD_PARTY_LICENSES
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!**/package.json
+!services/auth/src
+**/node_modules
+target
+fuzz
+.run
+**/.env*

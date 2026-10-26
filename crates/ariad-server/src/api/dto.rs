@@ -61,6 +61,22 @@ impl Profile {
     }
 }
 
+/// Raw file bytes, the body of a presigned object `PUT` or `GET`.
+pub struct FileBytes;
+
+impl utoipa::PartialSchema for FileBytes {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::ObjectBuilder::new()
+            .schema_type(utoipa::openapi::Type::String)
+            .format(Some(utoipa::openapi::SchemaFormat::KnownFormat(
+                utoipa::openapi::KnownFormat::Binary,
+            )))
+            .into()
+    }
+}
+
+impl ToSchema for FileBytes {}
+
 /// Starts an upload.
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]

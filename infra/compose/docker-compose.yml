@@ -1,0 +1,405 @@
+# AriadShift cloud stack on one machine, with no external accounts.
+#
+#   cp .env.example infra/compose/.env    # from the repository root, then edit
+#   docker compose -f infra/compose/docker-compose.yml --profile core up -d --wait
+#
+# Profiles:
+#   core     api, worker-core, auth, web (always needed)
+#   office   worker-office (LibreOffice routes); set ARIAD_PACKS=core,office
+#   docling  worker-docling (OCR, layout-aware PDF) plus worker-office, whose
+#            image it builds on; set ARIAD_PACKS=core,office,docling
+#
+# PostgreSQL, SeaweedFS and the one-shot setup services have no profile and
+# start with any of them. docs/self-hosting.md is the operator guide.
+
+name: ariadshift
+
+x-server-build: &server-build
+  context: ../..
+  dockerfile: infra/docker/server.Dockerfile
+
+# The server image's root supervisor drops to UID 10001 itself, so the
+# containers keep only CAP_SETUID and CAP_SETGID for that transition.
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  cap_add: [SETUID, SETGID]
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  init: false
+
+x-storage-env: &storage-env
+  ARIAD_STORAGE_URL: s3://${S3_BUCKET:-ariadshift}
+  AWS_ENDPOINT: http://seaweedfs:8333
+  AWS_REGION: us-east-1
+  AWS_ALLOW_HTTP: "true"
+  AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in infra/compose/.env}
+  AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY in infra/compose/.env}
+
+x-worker-env: &worker-env
+  <<: *storage-env
+  DATABASE_URL: postgres://ariad_worker_login:${ARIAD_WORKER_DB_PASSWORD:?set ARIAD_WORKER_DB_PASSWORD in infra/compose/.env}@postgres:5432/ariadshift
+  ARIAD_WORK_DIR: /work
+  ARIAD_SANDBOX: required
+  ARIAD_LOG_FORMAT: json
+  RUST_LOG: ${RUST_LOG:-info}
+
+# Workers have no port. The check passes while the worker process, not only
+# its supervisor, is running.
+x-worker-healthcheck: &worker-healthcheck
+  test:
+    - CMD
+    - bash
+    - -c
+    - 'for f in /proc/[0-9]*/cmdline; do tr "\0" " " < "$$f" 2>/dev/null | grep -q "^/usr/local/bin/ariad-server worker " && exit 0; done; exit 1'
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 30s
+
+x-setup-depends: &setup-depends
+  db-grants:
+    condition: service_completed_successfully
+  bucket-init:
+    condition: service_completed_successfully
+
+services:
+  postgres:
+    # PostgreSQL 18 with the pgmq extension, pinned by digest (same image as
+    # the server integration tests in the justfile).
+    image: ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7
+    environment:
+      POSTGRES_DB: ariadshift
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/compose/.env}
+      # Network logins authenticate with SCRAM; the socket stays in-container.
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    volumes:
+      # PostgreSQL 18 images keep PGDATA in a versioned directory below this.
+      - postgres-data:/var/lib/postgresql
+    networks: [data]
+    shm_size: 256m
+    restart: unless-stopped
+    healthcheck:
+      # TCP opens only after the image's init scripts finish.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "ariadshift"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    entrypoint: ["/bin/sh", "/compose/start.sh"]
+    environment:
+      S3_BUCKET: ${S3_BUCKET:-ariadshift}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID in infra/compose/.env}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY in infra/compose/.env}
+    volumes:
+      - seaweedfs-data:/data
+      - ./seaweedfs/start.sh:/compose/start.sh:ro
+    tmpfs:
+      - /run/seaweedfs:mode=0700,size=1m
+    # Browsers upload to and download from presigned S3 URLs directly, so the
+    # S3 port is published. Master, volume and filer ports stay internal.
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:${S3_PORT:-8333}:8333
+    networks: [data, edge]
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O /dev/null http://127.0.0.1:9333/cluster/healthz && wget -q -O /dev/null http://127.0.0.1:8333/healthz
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  # One-shot: login roles, the auth schema and database connect rights.
+  db-init:
+    image: ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        exec psql -X -q -h postgres -U postgres -d ariadshift
+        -v api_password="$$ARIAD_API_DB_PASSWORD"
+        -v worker_password="$$ARIAD_WORKER_DB_PASSWORD"
+        -v auth_password="$$AUTH_DB_PASSWORD"
+        -f /sql/bootstrap.sql
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/compose/.env}
+      ARIAD_API_DB_PASSWORD: ${ARIAD_API_DB_PASSWORD:?set ARIAD_API_DB_PASSWORD in infra/compose/.env}
+      ARIAD_WORKER_DB_PASSWORD: ${ARIAD_WORKER_DB_PASSWORD:?set ARIAD_WORKER_DB_PASSWORD in infra/compose/.env}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in infra/compose/.env}
+    volumes:
+      - ./postgres/bootstrap.sql:/sql/bootstrap.sql:ro
+    networks: [data]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # One-shot: ariad-server migrations as the schema owner. This is the only
+  # AriadShift container that holds the superuser credentials.
+  migrate:
+    <<: *hardening
+    build: *server-build
+    image: ${ARIADSHIFT_SERVER_IMAGE:-ariadshift-server:local}
+    command: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/compose/.env}@postgres:5432/ariadshift
+      ARIAD_LOG_FORMAT: json
+    networks: [data]
+    restart: "no"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  # One-shot: the bucket and its expiry backstop.
+  bucket-init:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    entrypoint: ["/bin/sh", "/compose/bucket-init.sh"]
+    environment:
+      S3_BUCKET: ${S3_BUCKET:-ariadshift}
+    volumes:
+      - ./seaweedfs/bucket-init.sh:/compose/bucket-init.sh:ro
+    networks: [data]
+    restart: "no"
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+
+  # Better Auth as a separate Node service. It owns the auth schema, applies
+  # its own migrations before it reports healthy, and serves the JWKS the API
+  # verifies tokens against.
+  auth:
+    profiles: [core]
+    build:
+      context: ../..
+      dockerfile: services/auth/Dockerfile
+    image: ${ARIADSHIFT_AUTH_IMAGE:-ariadshift-auth:local}
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://ariad_auth:${AUTH_DB_PASSWORD:?set AUTH_DB_PASSWORD in infra/compose/.env}@postgres:5432/ariadshift?options=-c%20search_path%3Dauth
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in infra/compose/.env}
+      # The public origin; it is also the JWT iss and aud that the API checks
+      # through ARIAD_AUTH_URL below.
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      BETTER_AUTH_TRUSTED_ORIGINS: ${ARIAD_WEB_ORIGIN:-http://localhost:3000}
+      # The same proxy header as the API's; empty uses the socket peer.
+      AUTH_TRUSTED_CLIENT_IP_HEADER: ${ARIAD_TRUSTED_CLIENT_IP_HEADER:-}
+      # Empty uses the web origin's host as the WebAuthn relying party.
+      AUTH_PASSKEY_RP_ID: ${AUTH_PASSKEY_RP_ID:-}
+      # Optional OAuth providers; empty values leave them off.
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:${AUTH_PORT:-3001}:3000
+    # edge gives the service egress for OAuth token exchanges.
+    networks: [data, edge]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/auth/ok').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+
+  # One-shot: infra/server-roles.sql plus the login bindings. Waits for
+  # Better Auth's tables because the API is granted read access to apikey.
+  db-grants:
+    profiles: [core]
+    image: ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7
+    command: ["psql", "-X", "-q", "-1", "-h", "postgres", "-U", "postgres", "-d", "ariadshift", "-f", "/sql/grants.sql"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/compose/.env}
+    volumes:
+      - ./postgres/grants.sql:/sql/grants.sql:ro
+      - ../server-roles.sql:/sql/server-roles.sql:ro
+    networks: [data]
+    restart: "no"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      auth:
+        condition: service_healthy
+
+  api:
+    <<: *hardening
+    profiles: [core]
+    build: *server-build
+    image: ${ARIADSHIFT_SERVER_IMAGE:-ariadshift-server:local}
+    command: ["api"]
+    environment:
+      <<: *storage-env
+      DATABASE_URL: postgres://ariad_api_login:${ARIAD_API_DB_PASSWORD:?set ARIAD_API_DB_PASSWORD in infra/compose/.env}@postgres:5432/ariadshift
+      ARIAD_SECRET: ${ARIAD_SECRET:?set ARIAD_SECRET in infra/compose/.env}
+      ARIAD_BIND: 0.0.0.0:8080
+      ARIAD_PUBLIC_URL: ${ARIAD_PUBLIC_URL:-http://localhost:8080}
+      ARIAD_S3_PUBLIC_ENDPOINT: ${ARIAD_S3_PUBLIC_ENDPOINT:-http://localhost:8333}
+      ARIAD_PACKS: ${ARIAD_PACKS:-core}
+      ARIAD_CORS_ORIGINS: ${ARIAD_WEB_ORIGIN:-http://localhost:3000}
+      # Tokens carry the public Better Auth origin as iss and aud; the keys are
+      # fetched over the internal network.
+      ARIAD_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+      ARIAD_AUTH_JWKS_URL: http://auth:3000/api/auth/jwks
+      ARIAD_ANONYMOUS: ${ARIAD_ANONYMOUS:-true}
+      ARIAD_TURNSTILE_SECRET: ${ARIAD_TURNSTILE_SECRET:-}
+      ARIAD_TRUSTED_CLIENT_IP_HEADER: ${ARIAD_TRUSTED_CLIENT_IP_HEADER:-}
+      ARIAD_LOG_FORMAT: json
+      RUST_LOG: ${RUST_LOG:-info}
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700,size=64m
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8080}:8080
+    networks: [data, edge]
+    mem_limit: ${API_MEMORY:-1g}
+    pids_limit: 256
+    healthcheck:
+      # /readyz checks the database and the object store.
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf "GET /readyz HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3 && head -n 1 <&3 | grep -q " 200 "'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    depends_on:
+      <<: *setup-depends
+      auth:
+        condition: service_healthy
+
+  worker-core:
+    <<: *hardening
+    profiles: [core]
+    build: *server-build
+    image: ${ARIADSHIFT_SERVER_IMAGE:-ariadshift-server:local}
+    command: ["worker", "--packs", "core"]
+    environment: *worker-env
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700,size=64m
+      - /work:uid=10001,gid=10001,mode=0700,size=${WORKER_CORE_WORK_SIZE:-2g}
+    # Workers reach only PostgreSQL and SeaweedFS; data has no egress.
+    networks: [data]
+    mem_limit: ${WORKER_CORE_MEMORY:-4g}
+    pids_limit: 512
+    healthcheck: *worker-healthcheck
+    depends_on: *setup-depends
+
+  # The docling profile also starts this worker: its image is the docling
+  # image's base, and Office routes still need an office worker.
+  worker-office:
+    <<: *hardening
+    profiles: [office, docling]
+    build:
+      context: ../..
+      dockerfile: infra/docker/worker-office.Dockerfile
+      args:
+        SERVER_IMAGE: ariadshift-server
+      additional_contexts:
+        ariadshift-server: service:migrate
+    image: ${ARIADSHIFT_WORKER_OFFICE_IMAGE:-ariadshift-worker-office:local}
+    command: ["worker", "--packs", "office"]
+    environment: *worker-env
+    # LibreOffice runs with a private /tmp built in an unprivileged user and
+    # mount namespace. The seccomp profile is Docker's default plus exactly
+    # unshare(CLONE_NEWUSER|CLONE_NEWNS) and mount; Docker's default AppArmor
+    # profile denies mount, so AppArmor is lifted for this container only.
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp/worker-office.json
+      - apparmor=unconfined
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700,size=64m
+      - /work:uid=10001,gid=10001,mode=0700,size=${WORKER_OFFICE_WORK_SIZE:-4g}
+    networks: [data]
+    mem_limit: ${WORKER_OFFICE_MEMORY:-8g}
+    pids_limit: 1024
+    healthcheck: *worker-healthcheck
+    depends_on: *setup-depends
+
+  worker-docling:
+    <<: *hardening
+    profiles: [docling]
+    build:
+      context: ../..
+      dockerfile: infra/docker/worker-docling.Dockerfile
+      args:
+        SERVER_IMAGE: ariadshift-worker-office
+      additional_contexts:
+        ariadshift-worker-office: service:worker-office
+    image: ${ARIADSHIFT_WORKER_DOCLING_IMAGE:-ariadshift-worker-docling:local}
+    command: ["worker", "--packs", "docling"]
+    environment: *worker-env
+    # Same Office namespace requirements as worker-office: Docling routes can
+    # pass through LibreOffice.
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./seccomp/worker-office.json
+      - apparmor=unconfined
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700,size=64m
+      # One job at a time with the seeded 2 GiB input cap; docs/server.md
+      # explains the sizing.
+      - /work:uid=10001,gid=10001,mode=0700,size=${WORKER_DOCLING_WORK_SIZE:-12g}
+    networks: [data]
+    mem_limit: ${WORKER_DOCLING_MEMORY:-20g}
+    pids_limit: 1024
+    healthcheck: *worker-healthcheck
+    depends_on: *setup-depends
+
+  # The web app. Its image defines its own HEALTHCHECK; nothing waits on it.
+  web:
+    profiles: [core]
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_ARIAD_API_URL: ${ARIAD_PUBLIC_URL:-http://localhost:8080}
+        NEXT_PUBLIC_ARIAD_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+    image: ${ARIADSHIFT_WEB_IMAGE:-ariadshift-web:local}
+    environment:
+      NEXT_PUBLIC_ARIAD_API_URL: ${ARIAD_PUBLIC_URL:-http://localhost:8080}
+      NEXT_PUBLIC_ARIAD_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
+    ports:
+      - ${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000
+    networks: [edge]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:mode=1777,size=64m
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  # Internal: no route to the outside world. Workers live only here.
+  data:
+    internal: true
+  # Published ports and egress for the API (Turnstile) and auth (OAuth).
+  edge: {}
+
+volumes:
+  postgres-data: {}
+  seaweedfs-data: {}

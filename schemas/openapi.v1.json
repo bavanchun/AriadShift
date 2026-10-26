@@ -68,6 +68,206 @@
         }
       }
     },
+    "/v1/blobs/{token}": {
+      "get": {
+        "tags": [
+          "blobs"
+        ],
+        "summary": "Download a file through a presigned URL.",
+        "description": "The URL comes from `GET /v1/jobs/{id}/outputs`. The signed token in the\npath is the only credential.",
+        "operationId": "get_blob",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "Signed token issued by the API",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file",
+            "headers": {
+              "content-length": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "File size in bytes"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The URL is invalid or has expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The file was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The transfer timed out before response headers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The global transfer budget is busy",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "blobs"
+        ],
+        "summary": "Upload a file through a presigned URL.",
+        "description": "The URL comes from `POST /v1/uploads`; send exactly the declared bytes.\nThe signed token in the path is the only credential.",
+        "operationId": "put_blob",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "Signed token issued by the API",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The file: exactly the declared size, with the declared SHA-256",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Stored"
+          },
+          "403": {
+            "description": "The URL is invalid or has expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The transfer timed out or its URL expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body does not match the declared size or SHA-256",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The global transfer budget or upload key is busy",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/capabilities": {
       "get": {
         "tags": [
@@ -179,6 +379,16 @@
           },
           "429": {
             "description": "Rate limited or quota exceeded",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -271,6 +481,16 @@
           },
           "429": {
             "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -355,6 +575,16 @@
           },
           "429": {
             "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -461,6 +691,16 @@
           },
           "429": {
             "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -574,6 +814,16 @@
           },
           "429": {
             "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -685,6 +935,16 @@
           },
           "429": {
             "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -810,6 +1070,16 @@
           },
           "429": {
             "description": "Rate limited or upload quota exceeded",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -923,6 +1193,16 @@
           },
           "429": {
             "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1710,13 +1990,13 @@
         "type": "apiKey",
         "in": "header",
         "name": "x-api-key",
-        "description": "A Better Auth API key."
+        "description": "An API key issued by the AriadShift auth service (Better Auth API-key plugin). Disabled, expired or exhausted keys are refused."
       },
       "bearer": {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "A Better Auth JWT (JWT plugin, 15-minute lifetime)."
+        "description": "A JWT issued by the AriadShift auth service (Better Auth JWT plugin, 15-minute lifetime). The API verifies its signature against the auth service's JWKS, selecting the key by `kid` and accepting only the asymmetric algorithm that key declares, and requires `exp`, `iss`, `aud` and a non-empty `sub` (the user id)."
       }
     }
   },
@@ -1732,6 +2012,10 @@
     {
       "name": "planning",
       "description": "Routes and capabilities"
+    },
+    {
+      "name": "blobs",
+      "description": "Presigned file transfers of the local object store"
     },
     {
       "name": "health",

@@ -21,9 +21,12 @@ spell:
 lint-tools:
     sh scripts/install-lint-tools.sh
 
-lint-workflows: lint-tools
+test-github-token:
+    uv run --no-project python scripts/test-github-token.py
+
+lint-workflows: lint-tools test-github-token
     .tools/bin/actionlint
-    uvx zizmor@1.30.1 .github
+    uv run --no-project python scripts/with-github-token.py uvx zizmor@1.30.1 .github
 
 lint-commits range="origin/dev..HEAD": lint-tools
     sh scripts/check-commits.sh {{range}}
@@ -99,8 +102,20 @@ web-e2e:
 web-lighthouse:
     pnpm --filter @ariadshift/web lighthouse
 
-# The JavaScript checks of `just ci`, apart from Biome in `just static`.
+# The JavaScript checks of `just ci`, apart from Biome and the SDK drift check in `just static`.
 web-ci: web-typecheck web-test web-build
+
+# Regenerates the committed OpenAPI document, schemas/openapi.v1.json, from the server code.
+openapi:
+    cargo run --locked -p ariad-server --bin openapi
+
+# Generates the SDK client into packages/sdk/src/generated (not committed).
+sdk-generate:
+    pnpm --filter @ariadshift/sdk generate
+
+# Fails when the SDK's generator, OpenAPI document or config drifted from packages/sdk/generator.lock.json.
+sdk-check:
+    pnpm --filter @ariadshift/sdk check
 
 py:
     uv lock --check
@@ -161,7 +176,7 @@ licenses-check:
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses web-lint py check-release-workflow licenses-check test-winget-manifest test-ci-scope
+static: fmt-check spell lint-workflows deny js js-licenses web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope
 
 # Images for the ariad-server integration tests; ci.yml pins the same digests.
 pgmq_image := "ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7"
@@ -190,16 +205,21 @@ test-server:
     cleanup() { docker rm -f "$pg" "$s3" >/dev/null 2>&1 || true; }
     trap cleanup EXIT
     cleanup
-    docker run -d --name "$pg" --label "ariadshift.test-worktree={{justfile_directory()}}" -p 127.0.0.1:55442:5432 -e POSTGRES_PASSWORD=ariad "{{pgmq_image}}" >/dev/null
+    docker run -d --name "$pg" --label "ariadshift.test-worktree={{justfile_directory()}}" -p 127.0.0.1:55442:5432 -e POSTGRES_PASSWORD=ariad -e PGCTLTIMEOUT=180 "{{pgmq_image}}" >/dev/null
     docker run -d --name "$s3" --label "ariadshift.test-worktree={{justfile_directory()}}" -p 127.0.0.1:58342:8333 \
         -v "{{justfile_directory()}}/infra/test/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" \
         "{{seaweedfs_image}}" server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data \
         -volume.max=32 -master.volumeSizeLimitMB=16 >/dev/null
     # TCP opens only after the image's init scripts finish.
-    for _ in $(seq 1 60); do
+    for _ in $(seq 1 180); do
         docker exec "$pg" psql -h 127.0.0.1 -U postgres -qtc 'select 1' >/dev/null 2>&1 && break
         sleep 1
     done
+    if ! docker exec "$pg" psql -h 127.0.0.1 -U postgres -qtc 'select 1' >/dev/null 2>&1; then
+        docker logs "$pg" >&2
+        echo "test PostgreSQL did not become ready within 180 seconds" >&2
+        exit 1
+    fi
     for _ in $(seq 1 60); do
         docker exec "$s3" sh -c 'echo "s3.bucket.create -name ariad-test" | weed shell' 2>/dev/null \
             | grep -q 'created bucket' && break

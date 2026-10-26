@@ -50,6 +50,12 @@ assert_classification "desktop (React UI)" "apps/desktop/src/app.tsx" "false" "t
 
 # 4. packages/
 assert_classification "packages/ (ui package)" "packages/ui/src/button.tsx" "false" "true" "JavaScript-only change"
+assert_classification "packages/ (generated SDK)" "packages/sdk/src/client.ts" "false" "true" "JavaScript-only change"
+
+# 4b. services/ and the OpenAPI document the SDK is generated from
+assert_classification "services/ (auth service)" "services/auth/src/auth.ts" "false" "true" "JavaScript-only change"
+assert_classification "services/ (auth image)" "services/auth/Dockerfile" "false" "true" "JavaScript-only change"
+assert_classification "schemas (OpenAPI document)" "schemas/openapi.v1.json" "true" "true" "code change"
 
 # 5. brand/
 assert_classification "brand/ (brand assets)" "brand/src/logo.mjs" "false" "true" "JavaScript-only change"

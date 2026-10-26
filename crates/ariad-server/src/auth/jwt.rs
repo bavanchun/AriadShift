@@ -7,6 +7,7 @@
 
 use std::{
     collections::HashSet,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -22,6 +23,9 @@ use crate::config::JwtConfig;
 
 /// How long a fetched JWKS is trusted before a refetch.
 const JWKS_TTL: Duration = Duration::from_secs(300);
+
+/// Maximum trust age since the last successful fetch (TTL plus outage grace).
+const JWKS_MAX_AGE: Duration = Duration::from_secs(15 * 60);
 
 /// Minimum spacing of refetches triggered by unknown key ids.
 const REFRESH_SPACING: Duration = Duration::from_secs(30);
@@ -54,10 +58,14 @@ struct Cached {
     fetched_at: Instant,
 }
 
+type FetchJwks =
+    dyn Fn() -> futures_util::future::BoxFuture<'static, Result<JwkSet, JwtError>> + Send + Sync;
+
 /// Verifies tokens with keys fetched from a JWKS URL.
 pub struct JwtVerifier {
     config: JwtConfig,
-    http: reqwest::Client,
+    fetch: Arc<FetchJwks>,
+    now: Arc<dyn Fn() -> Instant + Send + Sync>,
     cache: RwLock<Option<Cached>>,
     last_fetch: Mutex<Option<Instant>>,
 }
@@ -65,9 +73,31 @@ pub struct JwtVerifier {
 impl JwtVerifier {
     #[must_use]
     pub fn new(config: JwtConfig, http: reqwest::Client) -> Self {
+        let url = config.jwks_url.clone();
+        let fetch = Arc::new(move || {
+            let http = http.clone();
+            let url = url.clone();
+            Box::pin(async move {
+                let response = http
+                    .get(url)
+                    .timeout(Duration::from_secs(10))
+                    .send()
+                    .await
+                    .and_then(reqwest::Response::error_for_status)
+                    .map_err(|err| {
+                        tracing::warn!(error = %err, "JWKS fetch failed");
+                        JwtError::Fetch
+                    })?;
+                response.json().await.map_err(|err| {
+                    tracing::warn!(error = %err, "JWKS response is not a key set");
+                    JwtError::Fetch
+                })
+            }) as futures_util::future::BoxFuture<'static, Result<JwkSet, JwtError>>
+        });
         Self {
             config,
-            http,
+            fetch,
+            now: Arc::new(Instant::now),
             cache: RwLock::new(None),
             last_fetch: Mutex::new(None),
         }
@@ -108,28 +138,33 @@ impl JwtVerifier {
         Ok(data.claims.sub)
     }
 
-    /// Looks a key up, refetching the set when it is stale or lacks the key.
-    /// A failed refetch falls back to a stale key that matches.
+    /// Looks up a key, refreshing stale sets and unknown ids. Every return
+    /// rechecks the current cache so a failed/throttled refresh cannot extend
+    /// trust or resurrect a key removed by a concurrent successful refresh.
     async fn find(&self, kid: &str) -> Result<Option<Jwk>, JwtError> {
-        let (hit, stale) = {
+        {
             let cache = self.cache.read().await;
-            match cache.as_ref() {
-                Some(cached) => (
-                    cached.keys.find(kid).cloned(),
-                    cached.fetched_at.elapsed() >= JWKS_TTL,
-                ),
-                None => (None, true),
+            if let Some(cached) = cache.as_ref()
+                && (self.now)().saturating_duration_since(cached.fetched_at) < JWKS_TTL
+                && let Some(key) = cached.keys.find(kid)
+            {
+                return Ok(Some(key.clone()));
             }
-        };
-        if hit.is_some() && !stale {
-            return Ok(hit);
         }
-        match self.refresh().await {
-            Ok(()) => {
-                let cache = self.cache.read().await;
-                Ok(cache.as_ref().and_then(|c| c.keys.find(kid).cloned()))
+        let refreshed = self.refresh().await;
+        let cache = self.cache.read().await;
+        match cache.as_ref() {
+            Some(cached)
+                if (self.now)().saturating_duration_since(cached.fetched_at) < JWKS_MAX_AGE =>
+            {
+                let key = cached.keys.find(kid).cloned();
+                if key.is_some() || refreshed.is_ok() {
+                    Ok(key)
+                } else {
+                    Err(JwtError::Fetch)
+                }
             }
-            Err(err) => hit.map_or(Err(err), |jwk| Ok(Some(jwk))),
+            _ => Err(JwtError::Fetch),
         }
     }
 
@@ -143,7 +178,7 @@ impl JwtVerifier {
             RETRY_SPACING
         };
         if let Some(at) = *last
-            && at.elapsed() < spacing
+            && (self.now)().saturating_duration_since(at) < spacing
         {
             return if has_cache {
                 Ok(())
@@ -151,25 +186,11 @@ impl JwtVerifier {
                 Err(JwtError::Fetch)
             };
         }
-        *last = Some(Instant::now());
-        let response = self
-            .http
-            .get(self.config.jwks_url.clone())
-            .timeout(Duration::from_secs(10))
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|err| {
-                tracing::warn!(error = %err, "JWKS fetch failed");
-                JwtError::Fetch
-            })?;
-        let keys: JwkSet = response.json().await.map_err(|err| {
-            tracing::warn!(error = %err, "JWKS response is not a key set");
-            JwtError::Fetch
-        })?;
+        *last = Some((self.now)());
+        let keys = (self.fetch)().await?;
         *self.cache.write().await = Some(Cached {
             keys,
-            fetched_at: Instant::now(),
+            fetched_at: (self.now)(),
         });
         Ok(())
     }
@@ -193,3 +214,7 @@ const fn algorithm_of(alg: KeyAlgorithm) -> Option<Algorithm> {
         _ => return None,
     })
 }
+
+#[cfg(test)]
+#[path = "../../tests/jwks-cache/mod.rs"]
+mod tests;
