@@ -32,10 +32,18 @@ The final-head snapshots above record the checks after the helper/report push.
 | `9f85e5e544a5077d490170a7e3adc959148e5a06` | Replace literal successful-signing keys in blob tests and the common server harness with fresh 256-bit material from the existing rustls/ring CSPRNG. Blob storage, API configuration and `signed_path` share the same per-process key. No dependency or production behavior changed. |
 | `62e390e6c07a5db5a8564475fe7efedecb40d460` | Add `scripts/with-github-token.py`, use it in `lint-workflows`, add nine regression tests, and document the credential route. It selects clean GH_TOKEN/GITHUB_TOKEN or captures gh stdout with stderr separate, rejects malformed output without revealing values, and replaces itself with the unchanged online zizmor command. |
 
-The final report is a separate documentation commit on top of the implementation
-head; the final snapshot records its SHA to avoid a self-referential commit hash. All new commits are checked over
-`9cdf06d1175511cd5bb079a85ac0891d8af71ffe..HEAD` before each push. No old commit
-was amended, rebased or force-pushed. No additional merge from dev was needed:
+The report commits sit on top of the implementation head; the final snapshot
+records their final SHA to avoid a self-referential commit hash. Implementation
+commits passed `just lint-commits` over
+`9cdf06d1175511cd5bb079a85ac0891d8af71ffe..HEAD` before being pushed.
+Procedural exception: the first report commit,
+`dd1a195b8a1c65e00e29bf8fbe24e5a24d3fc7bc`, was pushed while its queued lint
+had not yet run. This was my sequencing mistake, not an accepted historical
+exception. The subsequent lint result for the entire range and this corrective
+report commit is recorded in
+`/home/vchun/Codes/ariadshift-logs/g53-final-commits.log`; the correction is
+pushed only after that check passes. No pushed commit was amended, rebased or
+force-pushed. No additional merge from dev was needed:
 `git rev-list --count origin/feat/cloud-foundation..origin/dev` returned `0`.
 
 ## Gate and verification evidence
