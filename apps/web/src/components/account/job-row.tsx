@@ -308,7 +308,12 @@ export function JobRow({
   };
 
   const removeButton = onForget ? (
-    <Button variant="ghost" size="sm" onClick={() => onForget(entry.id)}>
+    <Button
+      variant="ghost"
+      size="sm"
+      aria-label={`Remove from this list (${entry.filename})`}
+      onClick={() => onForget(entry.id)}
+    >
       Remove from this list<span className="sr-only"> ({entry.filename})</span>
     </Button>
   ) : null;
@@ -437,6 +442,7 @@ export function JobRow({
               variant="outline"
               size="sm"
               disabled={busy !== null}
+              aria-label={`Retry ${entry.filename}`}
               onClick={() => void onRetry()}
             >
               <RotateCcwIcon aria-hidden="true" />
@@ -448,6 +454,7 @@ export function JobRow({
               variant="destructive"
               size="sm"
               disabled={busy !== null}
+              aria-label={`Delete now ${entry.filename} from the server`}
               onClick={() => void onDelete()}
             >
               <Trash2Icon aria-hidden="true" />

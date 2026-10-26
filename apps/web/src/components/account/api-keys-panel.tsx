@@ -194,6 +194,7 @@ function ApiKeys() {
               <Button
                 variant="destructive"
                 size="sm"
+                aria-label={`Revoke API key ${keyLabel(key)}`}
                 onClick={() => {
                   setDialogError(null);
                   setRevoking(key);

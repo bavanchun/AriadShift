@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { AccountProvider, useAccount } from "./account-context";
 import type { AuthApi } from "./auth-api";
 import { type CloudConfig, cloudConfig, displayHost } from "./cloud-config";
+import { signInHref } from "./session-gate";
 
 const SECTIONS = [
   { href: "/account", label: "Account" },
@@ -39,9 +40,13 @@ export function CloudNotConfigured() {
 
 function SessionLink() {
   const { session } = useAccount();
+  const pathname = usePathname();
   if (session.status !== "signed-in") {
     return (
-      <a href="/sign-in" className="text-sm text-primary underline-offset-4 hover:underline">
+      <a
+        href={signInHref(pathname ?? "/account")}
+        className="text-sm text-primary underline-offset-4 hover:underline"
+      >
         Sign in
       </a>
     );

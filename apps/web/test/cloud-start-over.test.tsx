@@ -89,10 +89,18 @@ async function startOverFromCloud() {
   });
   fireEvent.click(await screen.findByRole("button", { name: "Process in Cloud" }));
   await screen.findByTestId("cloud-panel");
+  await waitFor(() =>
+    expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Start over and delete files" }));
 }
 
 describe("Start over after a cloud job", () => {
+  beforeEach(() => {
+    // jsdom has no scrolling implementation; assert the requested browser action above.
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
   it("keeps a failed server deletion visible and retryable", async () => {
     const retry = vi.fn(async (): Promise<DiscardOutcome> => ({ status: "deleted" }));
     panel.discard = vi.fn(async () => kept("failed", retry));

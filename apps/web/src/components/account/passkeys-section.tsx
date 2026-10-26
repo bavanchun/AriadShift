@@ -104,6 +104,7 @@ export function PasskeysSection() {
                 <Button
                   variant="destructive"
                   size="sm"
+                  aria-label={`Remove passkey ${label}`}
                   onClick={() => {
                     setDialogError(null);
                     setRemoving(passkey);

@@ -43,7 +43,13 @@ export function AccountDialog({
     if (!dialog) {
       return;
     }
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const active = document.activeElement;
+    const opener =
+      active instanceof HTMLElement &&
+      active !== document.body &&
+      active !== document.documentElement
+        ? active
+        : null;
     if (typeof dialog.showModal === "function") {
       dialog.showModal();
     } else {
