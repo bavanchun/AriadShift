@@ -8,8 +8,8 @@ structured data through a shared engine used by local and hosted interfaces.
 
 The repository converts Markdown, HTML, DOCX and EPUB, extracts digital PDF text, writes PDF with embedded Vietnamese fonts, and exports IR JSON. A system LibreOffice adds legacy Office and ODF conversion.
 
-The website converts Markdown, HTML, and AriadShift IR JSON entirely in the
-browser; files never leave the device.
+The website converts Markdown, HTML, DOCX, EPUB and AriadShift IR JSON entirely
+in the browser, reads digital PDF text and writes PDF; files never leave the device.
 
 ## Installation
 
@@ -103,8 +103,8 @@ Heavy engines such as Docling ship as signed engine packs that `ashift engines i
 
 The web app in [`apps/web`](apps/web) runs the same core compiled to
 WebAssembly. Files stay in the browser's private storage, the converter keeps
-working offline after the first visit, and every route shows its measured
-quality. Run it locally:
+working offline with the engines already downloaded, and every route shows
+its measured quality when benchmark data exists. Run it locally:
 
 ```sh
 just js

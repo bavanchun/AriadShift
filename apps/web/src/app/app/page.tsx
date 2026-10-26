@@ -5,7 +5,7 @@ import { ConverterApp } from "@/components/converter/converter-app";
 export const metadata: Metadata = {
   title: "Converter",
   description:
-    "Convert Markdown, HTML and AriadShift IR JSON in your browser. Files stay on your device.",
+    "Convert Markdown, HTML, DOCX, EPUB, digital PDF and AriadShift IR JSON in your browser. Files stay on your device.",
   alternates: { canonical: "/app" },
 };
 

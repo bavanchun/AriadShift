@@ -94,7 +94,8 @@ fn the_planner_chains_office_pdf_and_ir_routes() {
     assert_eq!(
         route(Format::Pdf, Format::Markdown),
         [
-            "pdf-pdf->ariad-ir+json",
+            "pdf-docling->docling+json",
+            "docling+json-ariad-core->ariad-ir+json",
             "ariad-ir+json-ariad-core->markdown"
         ]
     );
@@ -193,6 +194,41 @@ fn docling_inputs_plan_through_extraction_mapping_and_a_writer() {
     .expect("DOCX still converts");
     assert_eq!(
         docx.steps[0].engine, "pandoc",
-        "measured Pandoc edges win over the unmeasured Docling route"
+        "Pandoc preserves more DOCX structure in the measured corpus"
     );
+}
+
+/// Pins the default-profile PDF writer for IR-family inputs. A bench or capabilities refresh
+/// must not silently move these routes off Typst.
+#[test]
+fn default_markdown_html_and_ir_json_to_pdf_routes_use_typst() {
+    const WHY: &str = "Typst is the default PDF writer for Markdown, HTML and IR JSON: it is the \
+        one IR -> PDF writer shared by CLI, desktop, server and browser, its output is \
+        byte-reproducible under SOURCE_DATE_EPOCH, it runs in milliseconds, and it needs no \
+        LibreOffice namespace sandbox (which stock Ubuntu denies). LibreOffice only renders \
+        the user's own Office file (SOURCE_ONLY_ENGINES); see ARCHITECTURE.md decision \
+        'IR → PDF writer'";
+    let caps = planner::embedded();
+    let engines = caps.registered_engines();
+    for (from, reader) in [
+        (Format::Markdown, Some("markdown-ariad-core->ariad-ir+json")),
+        (Format::Html, Some("html-ariad-core->ariad-ir+json")),
+        (Format::AriadIrJson, None),
+    ] {
+        let plan = planner::plan(caps, from, Format::Pdf, Profile::default(), &engines)
+            .unwrap_or_else(|error| panic!("{from:?} -> pdf must plan: {error}. {WHY}"));
+        let steps: Vec<String> = plan
+            .steps
+            .iter()
+            .map(|step| format!("{}-{}->{}", step.from.id(), step.engine, step.to.id()))
+            .collect();
+        let expected: Vec<&str> = reader
+            .into_iter()
+            .chain(["ariad-ir+json-typst->pdf"])
+            .collect();
+        assert_eq!(
+            steps, expected,
+            "default {from:?} -> pdf route changed. {WHY}"
+        );
+    }
 }

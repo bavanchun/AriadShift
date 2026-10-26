@@ -82,6 +82,45 @@ fn markdown_to_pdf_reads_back_with_vietnamese_text_and_fixed_dates() {
     assert!(bytes.windows(10).any(|window| window == b"D:20231114"));
 }
 
+// Stock Ubuntu denies the namespaces sandboxed LibreOffice needs. The default Markdown route
+// must not depend on it.
+#[cfg(target_os = "linux")]
+#[test]
+fn default_markdown_to_pdf_never_needs_a_blocked_libreoffice() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempdir().unwrap();
+    let soffice = dir.path().join("soffice");
+    fs::write(&soffice, "#!/bin/sh\nexit 1\n").unwrap();
+    fs::set_permissions(&soffice, fs::Permissions::from_mode(0o755)).unwrap();
+    let input = dir.path().join("notes.md");
+    fs::write(&input, "# Notes\n\nPlain text.\n").unwrap();
+    let output = dir.path().join("notes.pdf");
+    let result = cli()
+        .env("ASHIFT_SANDBOX", "best-effort")
+        .env("ASHIFT_SOFFICE", &soffice)
+        .env("ARIAD_TEST_SANDBOX_SUPPORT", "namespace-denied")
+        .arg("convert")
+        .arg(&input)
+        .args(["--to", "pdf", "--json", "-o"])
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: Value = serde_json::from_slice(&result.stdout).unwrap();
+    let engines: Vec<_> = report["route"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|step| step["engine"].as_str().unwrap())
+        .collect();
+    assert_eq!(engines, ["ariad-core", "typst"]);
+    assert!(pdf::read(&fs::read(output).unwrap(), &Limits::local()).is_ok());
+}
+
 #[test]
 fn inspect_image_only_pdf_reports_ocr_and_page_facts() {
     let root = support::fixtures::repository_root();

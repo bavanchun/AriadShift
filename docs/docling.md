@@ -9,7 +9,7 @@ Docling turns PDF (digital and scanned), Office files and images into a structur
 | `pdf`, `docx`, `pptx`, `xlsx`, `png`, `jpeg`, `tiff`, `webp` | `docling+json` | The engine. Scans, images and PDFs without a text layer get full-page OCR. |
 | `docling+json` | `ariad-ir+json` | The in-process mapper in `ariad-core`. It needs no engine, so `ashift convert page.docling.json --to md` works anywhere. |
 
-The planner appends any writer, so `ashift convert scan.pdf --to docx` is `pdf ─docling→ docling+json ─ariad-core→ ariad-ir+json ─pandoc→ docx`. A `.docx` input still goes through Pandoc, which is measured; the Docling `docx` edge stays unmeasured until the benchmarks fill it.
+The planner appends any writer, so `ashift convert scan.pdf --to docx` is `pdf ─docling→ docling+json ─ariad-core→ ariad-ir+json ─pandoc→ docx`. In the format graph, PDF `editable` routes prefer Docling while `fast` routes prefer the Rust reader, based on [measured capabilities](bench-report.md). File-based conversion and plan previews first apply the existing content-aware policy: digital text uses the built-in reader, scans require Docling, and `--engine docling` explicitly requests digital layout extraction. DOCX readers compete by profile using the measured metrics.
 
 ## What it needs
 

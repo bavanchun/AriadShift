@@ -5,9 +5,9 @@
   "description": "AriadShift website and in-browser converter.",
   "scripts": {
     "sync-brand": "node scripts/sync-brand.mjs",
-    "dev": "node scripts/sync-brand.mjs && next dev --port 3200",
-    "build": "node scripts/sync-brand.mjs && next build",
-    "export": "node scripts/sync-brand.mjs && node scripts/export.mjs",
+    "dev": "node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/write-service-worker.mjs --dev && next dev --port 3200",
+    "build": "node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && next build && node scripts/write-service-worker.mjs",
+    "export": "node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/export.mjs",
     "start": "next start --port 3100",
     "typecheck": "node scripts/sync-brand.mjs && next typegen && tsc --noEmit -p .",
     "test": "vitest run",
@@ -17,10 +17,12 @@
   "dependencies": {
     "@ariadshift/ariad-wasm": "workspace:*",
     "@ariadshift/ui": "workspace:*",
+    "@bjorn3/browser_wasi_shim": "catalog:",
     "lucide-react": "catalog:",
     "next": "catalog:",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "@ariadshift/ariad-typst": "workspace:*"
   },
   "devDependencies": {
     "@ariadshift/config": "workspace:*",

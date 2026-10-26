@@ -168,4 +168,55 @@ describe("ConverterApp", () => {
     expect(screen.queryByTestId("result")).toBeNull();
     expect(screen.queryByRole("button", { name: "Download notes.html" })).toBeNull();
   });
+
+  it("shows an integrity failure of the DOCX/EPUB engine and does not offer a result", async () => {
+    const worker = new FakeWorker();
+    const message = "The DOCX/EPUB engine failed an integrity check. Reload the page to retry.";
+    worker.reply = (request) => {
+      if (request.type === "ingest") {
+        return worker.ok(request, {
+          name: "notes.docx",
+          size: 7,
+          inspection: {
+            format: "docx",
+            detected_by: "extension",
+            reachable: ["markdown"],
+            reachable_elsewhere: [],
+            estimated_size_bytes: 7,
+            confidence: "exact",
+            counts: null,
+            warnings: [],
+          },
+          recycle: false,
+        });
+      }
+      if (request.type === "plan") {
+        return worker.ok(request, {
+          steps: [{ from: "docx", to: "markdown", engine: "pandoc" }],
+          score: { fidelity: 1, editability: 1, estimated_duration_ms: 10 },
+          measured: true,
+          alternatives: [],
+        });
+      }
+      if (request.type === "convert") {
+        return { id: request.id, ok: false, error: { code: "engine_integrity", message } };
+      }
+      return worker.ok(request);
+    };
+    const client = new ConverterClient(() => worker as unknown as Worker);
+    render(<ConverterApp client={client} />);
+
+    const fileInput = document.querySelector("input[type=file]") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["PK"], "notes.docx")] } });
+    const convertButton = await screen.findByRole("button", { name: "Convert" });
+    await waitFor(() => {
+      expect((convertButton as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(convertButton);
+
+    const alert = await screen.findByTestId("converter-error");
+    expect(alert.textContent).toContain("Engine integrity check failed");
+    expect(alert.textContent).toContain(message);
+    expect(screen.queryByTestId("result")).toBeNull();
+  });
 });

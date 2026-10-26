@@ -1,0 +1,11 @@
+{
+  "name": "@ariadshift/ariad-typst",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./pkg/ariad_typst.d.ts",
+      "default": "./pkg/ariad_typst.js"
+    }
+  }
+}

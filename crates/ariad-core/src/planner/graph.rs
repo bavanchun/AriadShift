@@ -7,7 +7,8 @@ use std::{
 
 use crate::format::Format;
 use crate::planner::{
-    Capabilities, Plan, PlanError, PlanScore, PlanStep, Profile, Runtime, cost::edge_cost,
+    Capabilities, Plan, PlanError, PlanScore, PlanStep, Profile, Runtime, SOURCE_ONLY_ENGINES,
+    cost::edge_cost,
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -156,6 +157,10 @@ fn search_shortest_path(
                 continue;
             }
             if !available_engines.iter().any(|eng| eng == &edge.engine) {
+                continue;
+            }
+            // Source-only engines convert the user's file, never another engine's output.
+            if !node.steps.is_empty() && SOURCE_ONLY_ENGINES.contains(&edge.engine.as_str()) {
                 continue;
             }
             if profile == Profile::Private

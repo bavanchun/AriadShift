@@ -160,5 +160,5 @@ source: crates/ariad-cli/tests/reader_golden.rs
     "title": "Tuyển tập đọc sách và hành trình"
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

@@ -32,3 +32,7 @@ apps/desktop/src-tauri/icons/macos/
 apps/desktop/public/icon.png
 apps/desktop/src-tauri/icons/android/
 apps/desktop/src-tauri/icons/ios/
+
+apps/web/public/wasm/
+apps/web/public/sw.js
+packages/ariad-typst/pkg/

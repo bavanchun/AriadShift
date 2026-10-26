@@ -16,3 +16,5 @@ pub mod protocol;
 pub mod reader;
 pub mod warning;
 pub mod writer;
+
+pub mod package_meta;

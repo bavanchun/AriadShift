@@ -10,19 +10,18 @@ use html5ever::{
     driver::ParseOpts,
     tendril::{StrTendril, TendrilSink},
 };
-use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
     format::Format,
     ir::{
-        Alignment, Asset, AssetRef, AssetStore, Block, ColumnSpec, Document, IR_VERSION, Inline,
-        ListItem, Metadata, TableCell,
+        Alignment, AssetRef, AssetStore, Block, ColumnSpec, Document, IR_VERSION, Inline, ListItem,
+        Metadata, TableCell,
     },
     limits::{Limits, LimitsError},
     links::allowed_link,
     reader::{
-        common::{ReadOutput, nfc, nonempty, sniff_image_type},
+        common::{ReadOutput, decode_data_uri_image, nfc, nonempty},
         html_sink::{Arena, Handle, HtmlSink, LimitExceeded, NodeData},
     },
     warning::{Warning, WarningCode},
@@ -761,7 +760,12 @@ fn convert_node(
                 "img" => {
                     let (src, alt, title) = parse_img_attrs(attrs);
                     let target = if src.starts_with("data:") {
-                        match decode_data_uri_image(mapper, &src)? {
+                        match decode_data_uri_image(
+                            &src,
+                            mapper.limits,
+                            &mut mapper.assets,
+                            &mut mapper.warnings,
+                        ) {
                             Some(target) => target,
                             None => AssetRef::Url { href: src },
                         }
@@ -1416,75 +1420,6 @@ fn parse_img_attrs(attrs: &[html5ever::Attribute]) -> (String, String, Option<St
         }
     }
     (src, alt, title)
-}
-
-fn decode_data_uri_image(
-    mapper: &mut TreeMapper<'_>,
-    uri: &str,
-) -> Result<Option<AssetRef>, ReadError> {
-    let Some(data_part) = uri.strip_prefix("data:") else {
-        return Ok(None);
-    };
-    let Some((meta, encoded)) = data_part.split_once(',') else {
-        return Ok(None);
-    };
-    let mut parts = meta.split(';');
-    let _ = parts.next();
-    let is_base64 = parts.any(|p| p.eq_ignore_ascii_case("base64"));
-    if !is_base64 {
-        return Ok(None);
-    }
-    let encoded = encoded.trim();
-
-    // Pre-check estimated size before decoding (base64 is ~4/3 of binary size)
-    let estimated_len = (encoded.len() as u64).saturating_mul(3) / 4;
-    if let Some(max_asset) = mapper.limits.max_asset_bytes
-        && estimated_len > max_asset
-    {
-        mapper.warnings.push(Warning::new(
-            WarningCode::ImageNotEmbedded,
-            format!("data URI image estimated size exceeds limit of {max_asset} bytes"),
-        ));
-        return Ok(None);
-    }
-
-    use base64::Engine;
-    let decoded = match base64::engine::general_purpose::STANDARD.decode(encoded) {
-        Ok(bytes) => bytes,
-        Err(_) => return Ok(None),
-    };
-
-    if let Some(max_asset) = mapper.limits.max_asset_bytes
-        && decoded.len() as u64 > max_asset
-    {
-        mapper.warnings.push(Warning::new(
-            WarningCode::ImageNotEmbedded,
-            format!("data URI image size exceeds limit of {max_asset} bytes"),
-        ));
-        return Ok(None);
-    }
-
-    let sniffed_type = sniff_image_type(&decoded);
-    let media_type = match sniffed_type {
-        Some(t) => t.to_owned(),
-        None => {
-            mapper.warnings.push(Warning::new(
-                WarningCode::ImageNotEmbedded,
-                "data URI content is not a supported image format (expected PNG, JPEG, GIF, or WEBP)",
-            ));
-            return Ok(None);
-        }
-    };
-
-    let asset_id = hex::encode(Sha256::digest(&decoded));
-    mapper.assets.insert(
-        asset_id.clone(),
-        Asset {
-            media_type,
-            bytes: decoded,
-        },
-    );
-    Ok(Some(AssetRef::Asset { id: asset_id }))
 }
 
 fn find_math_tex_annotation(arena: &Arena, math_handle: Handle) -> Option<String> {

@@ -40,7 +40,7 @@ import type {
   OutputLocation,
 } from "@/converter/protocol";
 import { formatBytes } from "@/lib/format-bytes";
-import { ACCEPT, formatLabel } from "@/lib/formats";
+import { ACCEPT, desktopLink, formatLabel } from "@/lib/formats";
 import { isProfile, PROFILES } from "@/lib/profiles";
 
 type Phase = "idle" | "ingesting" | "ready" | "converting" | "done";
@@ -107,6 +107,8 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
     clientRef.current ??= new ConverterClient();
     return clientRef.current;
   }, [customClient]);
+
+  useEffect(() => client().onProgress(setStatus), [client]);
 
   const start = useCallback(() => {
     initRef.current ??= client()
@@ -182,13 +184,18 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
       try {
         await start();
         const result = await client().request({ type: "ingest", file });
-        const reachable = result.inspection.reachable;
+        const reachable = result.inspection.reachable.length
+          ? result.inspection.reachable
+          : result.inspection.reachable_elsewhere;
         const wanted = preselected.current.to;
+        const preferred = result.inspection.format === "html" ? "markdown" : "html";
         setInput(result);
         setTarget(
           wanted && reachable.includes(wanted)
             ? wanted
-            : (reachable.find((format) => format !== "ariad-ir+json") ?? reachable[0] ?? null),
+            : reachable.includes(preferred)
+              ? preferred
+              : (reachable.find((format) => format !== "ariad-ir+json") ?? reachable[0] ?? null),
         );
         setPhase("ready");
         setStatus(`${file.name} is ${formatLabel(result.inspection.format)}.`);
@@ -242,10 +249,15 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
       });
       outputRef.current = location;
       setOutput(summary);
+      void enableOffline(summary.resources ?? []);
       setPhase("done");
       setStatus(`${summary.name} is ready to download.`);
     } catch (cause) {
-      const failure = asError(cause);
+      const failure = {
+        ...asError(cause),
+        format: input?.inspection.format,
+        targets: input?.inspection.reachable,
+      };
       setError(failure);
       setPhase(failure.fatal ? "idle" : "ready");
       if (failure.fatal) {
@@ -254,7 +266,7 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
       }
       setStatus("The conversion failed.");
     }
-  }, [client, profile, target]);
+  }, [client, input, profile, target]);
 
   const download = useCallback(async () => {
     if (!output || !outputRef.current) {
@@ -289,6 +301,31 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
 
   const busy = phase === "ingesting" || phase === "converting";
   const inspection = input?.inspection;
+  const handoffFormat =
+    inspection?.format ?? (typeof error?.format === "string" ? error.format : null);
+  const handoffTargets =
+    inspection?.reachable_elsewhere ??
+    (Array.isArray(error?.targets) ? (error.targets as string[]) : []);
+  const needsDesktop =
+    !!handoffFormat &&
+    (inspection?.reachable.length === 0 ||
+      inspection?.warnings.some((warning) => warning.code === "ocr_required") ||
+      output?.warnings.some((warning) => warning.code === "ocr_required") ||
+      error?.code === "limit_exceeded" ||
+      error?.code === "engine_unavailable" ||
+      error?.fatal);
+  const desktopTarget =
+    target ??
+    (preselected.current.to && handoffTargets.includes(preselected.current.to)
+      ? preselected.current.to
+      : null) ??
+    handoffTargets.find((id) => id === "html") ??
+    handoffTargets.find((id) => id === "markdown") ??
+    handoffTargets[0];
+  const desktopUrl =
+    handoffFormat && desktopTarget
+      ? desktopLink(handoffFormat, desktopTarget, profile)
+      : "/download";
   const headingCount = inspection?.counts
     ? Object.values(inspection.counts.headings).reduce((sum, count) => sum + count, 0)
     : 0;
@@ -332,9 +369,35 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
         <Alert variant="destructive" data-testid="converter-error">
           <TriangleAlertIcon aria-hidden="true" />
           <AlertTitle>
-            {error.code === "no_route" ? "Not available here" : "Something went wrong"}
+            {error.code === "no_route"
+              ? "Not available here"
+              : error.code === "engine_integrity"
+                ? "Engine integrity check failed"
+                : "Something went wrong"}
           </AlertTitle>
           <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
+      )}
+
+      {needsDesktop && (
+        <Alert data-testid="desktop-handoff">
+          <HardDriveIcon aria-hidden="true" />
+          <AlertTitle>Continue in the desktop app</AlertTitle>
+          <AlertDescription>
+            <p>
+              {inspection?.warnings.some((warning) => warning.code === "ocr_required") ||
+              output?.warnings.some((warning) => warning.code === "ocr_required")
+                ? "Some pages need OCR to extract all their text."
+                : "This document needs an engine or more memory than the browser provides."}
+            </p>
+            <p>
+              The desktop app opens a file picker. Choose this document again; your browser does not
+              send the file.
+            </p>
+            <a className="underline font-semibold" href={desktopUrl}>
+              Open in Desktop
+            </a>
+          </AlertDescription>
         </Alert>
       )}
 
@@ -349,7 +412,7 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
           <div className="flex flex-col gap-1">
             <p className="text-lg font-semibold">Drop a document here</p>
             <p className="text-sm text-muted-foreground">
-              Markdown, HTML or AriadShift IR JSON up to{" "}
+              Markdown, HTML, DOCX, EPUB, digital PDF or IR JSON up to{" "}
               {formatBytes(engine?.inputLimitBytes ?? 16 * 1024 * 1024)}. It stays on this device.
             </p>
           </div>
@@ -508,6 +571,12 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {phase === "converting" && (
+        <p className="text-sm text-muted-foreground" data-testid="engine-progress">
+          {status}
+        </p>
       )}
 
       {output && (
