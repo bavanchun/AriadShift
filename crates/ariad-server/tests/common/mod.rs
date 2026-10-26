@@ -7,11 +7,14 @@
 //! `ashift` binary as their engine program, as in production.
 #![allow(dead_code)]
 
+mod signing_key;
+use signing_key::random_signing_key;
+
 use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     process::Command,
-    sync::OnceLock,
+    sync::{LazyLock, OnceLock},
     time::Duration,
 };
 
@@ -30,7 +33,7 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 use uuid::Uuid;
 
-pub const SECRET: &str = "integration-test-secret-0123456789abcdef";
+pub static SECRET: LazyLock<String> = LazyLock::new(|| hex::encode(random_signing_key()));
 
 /// The admin connection string, or `None` to skip.
 pub fn admin_url(test: &str) -> Option<String> {
@@ -230,7 +233,7 @@ impl Harness {
         let base = Url::parse(&format!("http://{addr}/")).expect("base URL");
         let mut pairs = vec![
             ("DATABASE_URL".to_owned(), db.url.clone()),
-            ("ARIAD_SECRET".to_owned(), SECRET.to_owned()),
+            ("ARIAD_SECRET".to_owned(), SECRET.as_str().to_owned()),
             ("ARIAD_PUBLIC_URL".to_owned(), base.to_string()),
             ("ARIAD_SWEEP_INTERVAL_S".to_owned(), "3600".to_owned()),
         ];

@@ -1,10 +1,13 @@
 //! Local blob resource budgets, without a database or external services.
 
+#[path = "common/signing_key.rs"]
+mod signing_key;
+
 use std::{
     convert::Infallible,
     path::Path,
     sync::{
-        Arc,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -31,6 +34,9 @@ use tokio::{sync::oneshot, time::timeout};
 use tower::ServiceExt;
 use url::Url;
 
+static SIGNING_KEY: LazyLock<String> =
+    LazyLock::new(|| hex::encode(signing_key::random_signing_key()));
+
 const WAIT: Duration = Duration::from_secs(5);
 const PAYLOAD: &[u8] = b"# Uploaded\n";
 
@@ -40,7 +46,7 @@ fn storage(dir: &Path, count: usize, idle: Duration, total: Duration) -> Storage
             root: dir.to_owned(),
         },
         Some(&Url::parse("http://localhost:8080").unwrap()),
-        Some(b"0123456789abcdef0123456789abcdef"),
+        Some(SIGNING_KEY.as_bytes()),
     )
     .unwrap()
     .with_blob_transfer_limits(BlobTransferLimits {
@@ -53,7 +59,7 @@ fn storage(dir: &Path, count: usize, idle: Duration, total: Duration) -> Storage
 
 fn app(storage: Storage) -> axum::Router {
     let config = ApiConfig::from_env(&Env::from_pairs([
-        ("ARIAD_SECRET", "0123456789abcdef0123456789abcdef"),
+        ("ARIAD_SECRET", SIGNING_KEY.as_str()),
         ("ARIAD_STORAGE_URL", "s3://unused"),
     ]))
     .unwrap();
@@ -306,7 +312,7 @@ async fn accepted_upload_stops_at_url_expiry_and_expired_replay_is_forbidden() {
     let token = signed.url.path().trim_start_matches("/v1/blobs/");
     let mut claims = storage.verify_blob_token(token, Utc::now()).unwrap();
     claims.expires = Utc::now().timestamp() + 2;
-    let path = signed_path(&claims);
+    let path = signed_path(&claims, SIGNING_KEY.as_bytes());
     let router = app(storage.clone());
     let (body, observed) = held_body();
     let request = tokio::spawn(
@@ -334,12 +340,11 @@ async fn accepted_upload_stops_at_url_expiry_and_expired_replay_is_forbidden() {
     assert!(!polled.load(Ordering::SeqCst));
 }
 
-fn signed_path(claims: &ariad_server::storage::BlobClaims) -> String {
+fn signed_path(claims: &ariad_server::storage::BlobClaims, signing_key: &[u8]) -> String {
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use hmac::{KeyInit, Mac};
     let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims).unwrap());
-    let mut mac =
-        hmac::Hmac::<Sha256>::new_from_slice(b"0123456789abcdef0123456789abcdef").unwrap();
+    let mut mac = hmac::Hmac::<Sha256>::new_from_slice(signing_key).unwrap();
     mac.update(payload.as_bytes());
     format!(
         "/v1/blobs/{payload}.{}",
