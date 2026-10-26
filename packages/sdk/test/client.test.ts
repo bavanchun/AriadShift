@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AriadApiError, createAriadClient } from "../src/index";
+import { AriadApiError, createAriadClient, sha256Hex } from "../src/index";
 import {
   apiError,
   BASE_URL,
@@ -303,5 +303,12 @@ describe("download", () => {
       status: 403,
       code: "forbidden",
     });
+  });
+});
+
+describe("sha256Hex", () => {
+  it("hashes blobs and byte arrays alike", async () => {
+    expect(await sha256Hex(hello())).toBe(HELLO_SHA256);
+    expect(await sha256Hex(new Blob(["hello"]))).toBe(HELLO_SHA256);
   });
 });

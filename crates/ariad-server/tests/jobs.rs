@@ -27,12 +27,13 @@ async fn event_streams_close_when_the_api_stops() {
     let id = job["id"].as_str().expect("job id");
     let stream = h.get(&auth, &format!("/v1/jobs/{id}/events")).await;
     assert_eq!(stream.status(), 200);
-    let stopping = tokio::spawn(h.stop());
+    let stopping = tokio::spawn(h.stop_api());
     let _ = read_sse(stream, Duration::from_secs(10)).await;
-    tokio::time::timeout(Duration::from_secs(10), stopping)
+    let db = tokio::time::timeout(Duration::from_secs(10), stopping)
         .await
         .expect("API stopped with an open event stream")
         .expect("shutdown task");
+    db.drop_database().await;
 }
 
 async fn run_job(h: &Harness, auth: &Auth, to: &str) -> (Value, Vec<(String, Value)>) {

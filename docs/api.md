@@ -155,17 +155,22 @@ One upload can feed several jobs, for example one per target format. Browsers up
 | `POST` | `/v1/uploads` | optional | Start an upload: `{filename, size, sha256}` → `201` with one presigned `PUT` (valid 15 minutes) |
 | `PUT` | presigned upload URL | the URL | Send the file bytes |
 | `POST` | `/v1/uploads/{id}/complete` | optional | Verify the stored file's size and SHA-256 and detect its format; a mismatching file is deleted |
+| `DELETE` | `/v1/uploads/{id}` | optional | Deployment capability: discard an upload before job creation; unavailable on the base server |
 | `POST` | `/v1/plan` | optional | Plan a route without converting: `{from` or `upload_id, to, profile}` → route, scores, pack, alternatives |
 | `POST` | `/v1/jobs` | optional | Create a job: `{upload_id, to, profile}` → `202` with the job and a `Location` header |
+| `GET` | `/v1/jobs` | account | Deployment capability: list account jobs; the base server requires the browser-history fallback |
 | `GET` | `/v1/jobs/{id}` | optional | Job status, route, warnings and error |
 | `GET` | `/v1/jobs/{id}/events` | optional | Server-Sent Events, resumable with `Last-Event-ID` |
 | `GET` | `/v1/jobs/{id}/outputs` | optional | Download URLs valid for five minutes; call again for fresh ones |
 | `GET` | presigned download URL | the URL | Download one output |
 | `DELETE` | `/v1/jobs/{id}` | optional | Cancel if still active, and delete the input upload and outputs now → `204` |
 | `GET` | `/v1/capabilities` | none | Formats and conversion edges this deployment runs |
+| `GET` | `/v1/limits` | optional | Deployment capability: current plan limits and quota; unavailable on the base server |
 | `GET` | `/healthz`, `/readyz` | none | Liveness, and readiness of the database and storage |
 
 "Optional" means the endpoint accepts a JWT, an API key, or no credential (the anonymous plan). With S3 storage the presigned URLs point at the object store. With the local file store they are `PUT` and `GET /v1/blobs/{token}` on the API, where the signed token is the only credential; a bad or expired token returns `403 forbidden`.
+
+The web client probes the deployment capabilities above and handles `404`, `405` and `501` responses. They are not part of this base server's generated OpenAPI document. Jobs remain manageable through this browser's recorded history; an upload without a job remains subject to server expiry when direct deletion is unavailable.
 
 Request bodies are JSON with `content-type: application/json`, at most 1 MiB. Unknown fields are rejected with `422 invalid_request`. Ids are UUIDs; a path id that is not a UUID returns `404 not_found`. Times are RFC 3339 strings in UTC. Every response carries an `x-request-id` header; quote it when reporting a problem. Browser access needs the web origin in the API's `ARIAD_CORS_ORIGINS`.
 

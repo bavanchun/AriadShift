@@ -22,6 +22,7 @@ const ALLOWED_LICENSES: &[&str] = &[
 ];
 
 const ALLOWED_TAGS: &[&str] = &[
+    "heavy-bench",
     "headings",
     "lists-nested",
     "tables",

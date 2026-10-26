@@ -5,9 +5,9 @@
 //! HMAC-SHA256 and serves them (see `api::blobs`).
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     path::{Path as FsPath, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -29,11 +29,14 @@ use object_store::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    time::{Instant, timeout, timeout_at},
+};
 use url::Url;
 use uuid::Uuid;
 
-use crate::config::StorageConfig;
+use crate::config::{BlobTransferLimits, StorageConfig};
 
 type HmacSha256 = hmac::Hmac<Sha256>;
 
@@ -58,6 +61,10 @@ pub enum StorageError {
     Config(String),
     #[error("this storage cannot presign URLs")]
     NoSigner,
+    #[error("too many concurrent blob transfers")]
+    Busy,
+    #[error("the blob transfer timed out")]
+    Timeout,
 }
 
 impl StorageError {
@@ -132,12 +139,36 @@ impl std::fmt::Debug for Signing {
     }
 }
 
+#[derive(Debug, Default)]
+struct ActiveTransfers {
+    count: usize,
+    uploads: HashSet<String>,
+}
+
+/// The guard removes its key on success, failure, timeout and cancellation.
+struct TransferPermit {
+    active: Arc<Mutex<ActiveTransfers>>,
+    upload: Option<String>,
+}
+
+impl Drop for TransferPermit {
+    fn drop(&mut self) {
+        let mut active = self.active.lock().unwrap_or_else(|err| err.into_inner());
+        active.count -= 1;
+        if let Some(key) = &self.upload {
+            active.uploads.remove(key);
+        }
+    }
+}
+
 /// Object storage shared by the API and workers.
 #[derive(Clone, Debug)]
 pub struct Storage {
     store: Arc<dyn ObjectStore>,
     prefix: String,
     signing: Signing,
+    blob_limits: BlobTransferLimits,
+    active: Arc<Mutex<ActiveTransfers>>,
 }
 
 impl Storage {
@@ -169,6 +200,8 @@ impl Storage {
                     store,
                     prefix: prefix.clone(),
                     signing: Signing::S3(signer),
+                    blob_limits: BlobTransferLimits::default(),
+                    active: Arc::default(),
                 })
             }
             StorageConfig::Local { root } => {
@@ -185,9 +218,53 @@ impl Storage {
                     store,
                     prefix: String::new(),
                     signing,
+                    blob_limits: BlobTransferLimits::default(),
+                    active: Arc::default(),
                 })
             }
         }
+    }
+
+    /// Overrides local transfer budgets before sharing this storage instance.
+    pub fn with_blob_transfer_limits(
+        mut self,
+        limits: BlobTransferLimits,
+    ) -> Result<Self, StorageError> {
+        if limits.max_concurrent == 0
+            || limits.idle_timeout.is_zero()
+            || limits.transfer_timeout.is_zero()
+        {
+            return Err(StorageError::Config(
+                "blob transfer limits must be positive".to_owned(),
+            ));
+        }
+        self.blob_limits = limits;
+        Ok(self)
+    }
+
+    fn admit(&self, upload: Option<&str>) -> Result<TransferPermit, StorageError> {
+        let mut active = self.active.lock().unwrap_or_else(|err| err.into_inner());
+        if active.count >= self.blob_limits.max_concurrent
+            || upload.is_some_and(|key| active.uploads.contains(key))
+        {
+            return Err(StorageError::Busy);
+        }
+        active.count += 1;
+        let upload = upload.map(str::to_owned);
+        if let Some(key) = &upload {
+            active.uploads.insert(key.clone());
+        }
+        Ok(TransferPermit {
+            active: Arc::clone(&self.active),
+            upload,
+        })
+    }
+
+    fn transfer_deadline(&self, expires: Option<DateTime<Utc>>) -> Instant {
+        let remaining = expires.map_or(self.blob_limits.transfer_timeout, |expires| {
+            (expires - Utc::now()).to_std().unwrap_or(Duration::ZERO)
+        });
+        Instant::now() + remaining.min(self.blob_limits.transfer_timeout)
     }
 
     /// The key of an object: `t/{tenant}/{owner}/{in|out}/{sha256}`, where the
@@ -376,12 +453,11 @@ impl Storage {
         Ok(())
     }
 
-    /// Writes a byte stream to `key` from a local blob `PUT`, enforcing the
-    /// exact size and hash. On mismatch nothing remains under `key`.
+    /// Writes a local blob PUT, enforcing admission, size, hash and time limits.
     pub async fn put_stream<S, E>(
         &self,
         key: &str,
-        mut body: S,
+        body: S,
         size: u64,
         sha256_hex: &str,
     ) -> Result<bool, StorageError>
@@ -389,50 +465,154 @@ impl Storage {
         S: futures_util::Stream<Item = Result<bytes::Bytes, E>> + Unpin,
         E: std::fmt::Display,
     {
-        let mut writer = BufWriter::new(Arc::clone(&self.store), Path::from(key));
-        let mut hasher = Sha256::new();
-        let mut total = 0u64;
-        while let Some(chunk) = body.next().await {
-            let chunk = match chunk {
-                Ok(chunk) => chunk,
-                Err(err) => {
-                    let _ = writer.abort().await;
-                    return Err(StorageError::Io(std::io::Error::other(err.to_string())));
-                }
-            };
-            total += chunk.len() as u64;
-            if total > size {
-                let _ = writer.abort().await;
-                return Ok(false);
-            }
-            hasher.update(&chunk);
-            if let Err(err) = writer.write_all(&chunk).await {
-                let _ = writer.abort().await;
-                return Err(err.into());
-            }
-        }
-        if total != size || hex::encode(hasher.finalize()) != sha256_hex {
-            let _ = writer.abort().await;
-            return Ok(false);
-        }
-        writer.shutdown().await?;
-        Ok(true)
+        self.put_stream_until(key, body, size, sha256_hex, None)
+            .await
     }
 
-    /// Streams an object for a local blob `GET`.
+    /// A signed PUT also stops at the URL's expiry, even if accepted earlier.
+    pub async fn put_stream_until<S, E>(
+        &self,
+        key: &str,
+        mut body: S,
+        size: u64,
+        sha256_hex: &str,
+        expires: Option<DateTime<Utc>>,
+    ) -> Result<bool, StorageError>
+    where
+        S: futures_util::Stream<Item = Result<bytes::Bytes, E>> + Unpin,
+        E: std::fmt::Display,
+    {
+        // Refuse without polling the body or allocating a buffered writer.
+        let _permit = self.admit(Some(key))?;
+        let deadline = self.transfer_deadline(expires);
+        let mut writer = timeout_at(deadline, self.store.put_multipart(&Path::from(key)))
+            .await
+            .map_err(|_| StorageError::Timeout)??;
+        // Local multipart writes go directly to a staging file. No per-request
+        // 10 MiB buffer is retained; LocalUpload also cleans staging on drop.
+        let result = timeout_at(deadline, async {
+            let mut hasher = Sha256::new();
+            let mut total = 0u64;
+            loop {
+                if Instant::now() >= deadline {
+                    return Err(StorageError::Timeout);
+                }
+                let Some(chunk) = timeout(self.blob_limits.idle_timeout, body.next())
+                    .await
+                    .map_err(|_| StorageError::Timeout)?
+                else {
+                    break;
+                };
+                let chunk = chunk
+                    .map_err(|err| StorageError::Io(std::io::Error::other(err.to_string())))?;
+                if chunk.len() as u64 > size.saturating_sub(total) {
+                    return Ok(false);
+                }
+                total += chunk.len() as u64;
+                hasher.update(&chunk);
+                // Keep backend parts bounded even if a caller supplies a large chunk.
+                for part in chunk.chunks(256 * 1024) {
+                    writer
+                        .put_part(bytes::Bytes::copy_from_slice(part).into())
+                        .await?;
+                }
+            }
+            if total != size || hex::encode(hasher.finalize()) != sha256_hex {
+                return Ok(false);
+            }
+            if Instant::now() >= deadline {
+                return Err(StorageError::Timeout);
+            }
+            writer.complete().await?;
+            Ok(true)
+        })
+        .await
+        .unwrap_or(Err(StorageError::Timeout));
+        if !matches!(result, Ok(true)) {
+            // Cleanup has its own finite allowance. Cancellation is additionally
+            // covered by LocalUpload's drop cleanup for the local blob backend.
+            let _ = timeout(self.blob_limits.idle_timeout, writer.abort()).await;
+        }
+        result
+    }
+
+    /// Streams a local blob GET under the shared transfer admission budget.
     pub async fn get_stream(
         &self,
         key: &str,
     ) -> Result<
         (
             u64,
-            futures_util::stream::BoxStream<'static, object_store::Result<bytes::Bytes>>,
+            futures_util::stream::BoxStream<'static, Result<bytes::Bytes, StorageError>>,
         ),
         StorageError,
     > {
-        let result = self.store.get(&Path::from(key)).await?;
+        self.get_stream_until(key, None).await
+    }
+
+    /// A signed GET stops at URL expiry, including a backpressured response.
+    pub async fn get_stream_until(
+        &self,
+        key: &str,
+        expires: Option<DateTime<Utc>>,
+    ) -> Result<
+        (
+            u64,
+            futures_util::stream::BoxStream<'static, Result<bytes::Bytes, StorageError>>,
+        ),
+        StorageError,
+    > {
+        let permit = self.admit(None)?;
+        let deadline = self.transfer_deadline(expires);
+        let result = timeout_at(deadline, self.store.get(&Path::from(key)))
+            .await
+            .map_err(|_| StorageError::Timeout)??;
         let size = result.meta.size;
-        Ok((size, result.into_stream()))
+        let mut stream = result.into_stream();
+        let idle = self.blob_limits.idle_timeout;
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        // The producer owns the permit so an unpolled HTTP body cannot retain
+        // admission or the open file forever. Only one chunk may be queued.
+        tokio::spawn(async move {
+            let _permit = permit;
+            let transfer = async {
+                loop {
+                    if Instant::now() >= deadline {
+                        return;
+                    }
+                    let next = tokio::select! {
+                        () = sender.closed() => return,
+                        next = timeout(idle, stream.next()) => next,
+                    };
+                    let chunk = match next {
+                        Ok(Some(chunk)) => chunk.map_err(StorageError::from),
+                        Ok(None) => break,
+                        Err(_) => Err(StorageError::Timeout),
+                    };
+                    let failed = chunk.is_err();
+                    if !matches!(timeout(idle, sender.send(Some(chunk))).await, Ok(Ok(()))) {
+                        return;
+                    }
+                    if failed {
+                        break;
+                    }
+                }
+                // EOF is explicit so the producer can retain admission until
+                // the consumer drains/drops its body, or the deadline fires.
+                if matches!(timeout(idle, sender.send(None)).await, Ok(Ok(()))) {
+                    sender.closed().await;
+                }
+            };
+            let _ = timeout_at(deadline, transfer).await;
+        });
+        let stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
+            receiver
+                .recv()
+                .await
+                .flatten()
+                .map(|chunk| (chunk, receiver))
+        });
+        Ok((size, stream.boxed()))
     }
 
     /// Deletes an object; a missing object is not an error.

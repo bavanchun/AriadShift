@@ -21,9 +21,12 @@ spell:
 lint-tools:
     sh scripts/install-lint-tools.sh
 
-lint-workflows: lint-tools
+test-github-token:
+    uv run --no-project python scripts/test-github-token.py
+
+lint-workflows: lint-tools test-github-token
     .tools/bin/actionlint
-    uvx zizmor@1.30.1 .github
+    uv run --no-project python scripts/with-github-token.py uvx zizmor@1.30.1 .github
 
 lint-commits range="origin/dev..HEAD": lint-tools
     sh scripts/check-commits.sh {{range}}
@@ -202,16 +205,21 @@ test-server:
     cleanup() { docker rm -f "$pg" "$s3" >/dev/null 2>&1 || true; }
     trap cleanup EXIT
     cleanup
-    docker run -d --name "$pg" --label "ariadshift.test-worktree={{justfile_directory()}}" -p 127.0.0.1:55442:5432 -e POSTGRES_PASSWORD=ariad "{{pgmq_image}}" >/dev/null
+    docker run -d --name "$pg" --label "ariadshift.test-worktree={{justfile_directory()}}" -p 127.0.0.1:55442:5432 -e POSTGRES_PASSWORD=ariad -e PGCTLTIMEOUT=180 "{{pgmq_image}}" >/dev/null
     docker run -d --name "$s3" --label "ariadshift.test-worktree={{justfile_directory()}}" -p 127.0.0.1:58342:8333 \
         -v "{{justfile_directory()}}/infra/test/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" \
         "{{seaweedfs_image}}" server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data \
         -volume.max=32 -master.volumeSizeLimitMB=16 >/dev/null
     # TCP opens only after the image's init scripts finish.
-    for _ in $(seq 1 60); do
+    for _ in $(seq 1 180); do
         docker exec "$pg" psql -h 127.0.0.1 -U postgres -qtc 'select 1' >/dev/null 2>&1 && break
         sleep 1
     done
+    if ! docker exec "$pg" psql -h 127.0.0.1 -U postgres -qtc 'select 1' >/dev/null 2>&1; then
+        docker logs "$pg" >&2
+        echo "test PostgreSQL did not become ready within 180 seconds" >&2
+        exit 1
+    fi
     for _ in $(seq 1 60); do
         docker exec "$s3" sh -c 'echo "s3.bucket.create -name ariad-test" | weed shell' 2>/dev/null \
             | grep -q 'created bucket' && break
@@ -332,3 +340,11 @@ desktop-ci:
 # Regenerate the committed desktop icons after changing brand sources.
 desktop-icons:
     pnpm --filter @ariadshift/desktop tauri icon ../../brand/png/ariadshift-app-icon-1024.png --output src-tauri/icons
+
+# Measure authored PDF, scan and Office edges and complete routes with a configured Docling runtime.
+bench-heavy *args:
+    uv run --package ariad-bench python -m ariad_bench heavy "$@"
+
+# Regenerate the public benchmark report from committed measurements.
+bench-report *args:
+    uv run --package ariad-bench python -m ariad_bench report "$@"

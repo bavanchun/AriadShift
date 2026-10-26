@@ -88,7 +88,7 @@ describe("ariad-wasm", () => {
     const ir = convert(source, "markdown", "ariad-ir+json", undefined);
     expect(ir.extension).toBe("ir.json");
     const document = JSON.parse(decoder.decode(ir.bytes));
-    expect(document.version).toBe("ariad-ir/0");
+    expect(document.version).toBe("ariad-ir/1");
     const markdown = convert(ir.bytes, "ariad-ir+json", "markdown", undefined);
     const again = convert(markdown.bytes, "markdown", "ariad-ir+json", undefined);
     expect(JSON.parse(decoder.decode(again.bytes))).toEqual(document);

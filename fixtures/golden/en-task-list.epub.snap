@@ -18,7 +18,7 @@ XML parts:
 <?xml version="1.0" encoding="UTF-8"?>
 <package version="3.0" xmlns="http://www.idpf.org/2007/opf" xml:lang="und" unique-identifier="epub-id-1" prefix="ibooks: http://vocabulary.itunes.apple.com/rdf/ibooks/vocabulary-extensions-1.0/">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:identifier id="epub-id-1">urn:uuid:e39b328b-60a1-5a2e-8692-d497ad471a1e</dc:identifier>
+    <dc:identifier id="epub-id-1">urn:uuid:178232f7-e08c-533a-b7d9-97257cd75838</dc:identifier>
     <dc:title id="epub-title-1">en-task-list</dc:title>
     <dc:date id="epub-date">2023-11-14T22:13:20Z</dc:date>
     <dc:language>und</dc:language>
@@ -136,7 +136,7 @@ XML parts:
 
 Template and media SHA-256:
 932ab19ee3371838c3dd65eb770a6515e2730fc1c4bdd5a533984f2e355c8b24  EPUB/styles/stylesheet1.css
-6ba1f55e629e4c4784a6f91bbfcab95f84574fd390656b3bc8ca5edf061c00ec  EPUB/toc.ncx
+86c2e8bb9271f751e0d6e6fb2b4af9ef630160ccc22bd1886b1bf0576dcf1f08  EPUB/toc.ncx
 364a17d7a4967325d2956f09c0626d564c1884c9dfa02116dc115d6a49538f56  META-INF/com.apple.ibooks.display-options.xml
 7c06491ce25e3cc80ccec0eed382c4c5570265f886415e4ce0cbe5866a57c461  META-INF/container.xml
 e468e350d1143eb648f60c7b0bd6031101ec0544a361ca74ecef256ac901f48b  mimetype

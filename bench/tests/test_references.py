@@ -109,7 +109,7 @@ class TestReferences(unittest.TestCase):
                 self.assertIsInstance(doc.text, str)
                 self.assertTrue(len(doc.text) > 0, f"{tf} canonical text should not be empty")
 
-        self.assertEqual(scored_count, 13)
+        self.assertEqual(scored_count, 41)
         self.assertEqual(unscored_count, 1)
 
     def test_truth_generation_independent_of_fixtures_golden(self) -> None:

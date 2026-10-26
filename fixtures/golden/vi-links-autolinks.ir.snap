@@ -66,5 +66,5 @@ input_file: fixtures/md/vi-links-autolinks.md
     "title": null
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

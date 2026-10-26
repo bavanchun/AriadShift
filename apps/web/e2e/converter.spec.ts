@@ -99,7 +99,7 @@ test("round-trips Markdown through IR JSON", async ({ page }) => {
   const ir = await convertAndDownload(page);
   expect(ir.name).toBe("notes.ir.json");
   const document = JSON.parse(ir.text);
-  expect(document.version).toBe("ariad-ir/0");
+  expect(document.version).toBe("ariad-ir/1");
 
   await page.getByRole("button", { name: "Start over and delete files" }).click();
   await chooseFile(page, "notes.ir.json", "application/json", ir.text);

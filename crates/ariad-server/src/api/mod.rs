@@ -271,8 +271,8 @@ fn openapi_router(request_timeout: Duration) -> OpenApiRouter<AppState> {
         .routes(routes!(uploads::complete_upload))
         .routes(routes!(events::job_events))
         .layer(RequestBodyLimitLayer::new(JSON_BODY_LIMIT));
-    // File bodies have no size limit or timeout here (the signed token fixes
-    // the size), and they skip compression so `content-length` survives.
+    // Storage enforces signed sizes, transfer admission and body deadlines.
+    // Skip compression so `content-length` survives on streaming responses.
     let blobs = OpenApiRouter::new()
         .routes(routes!(blobs::put_blob, blobs::get_blob))
         .layer(DefaultBodyLimit::disable());
