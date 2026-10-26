@@ -13,6 +13,12 @@ The planner appends any writer, so `ashift convert scan.pdf --to docx` is `pdf â
 
 ## What it needs
 
+The 0.2.0 pack requires `ashift >=0.2.0, <2.0.0`: it speaks the frozen
+`ariad-engine/1` protocol and uses the frozen `ariad-pack/1` manifest schema
+retained by 1.x. A protocol break must accompany the 2.0 major release,
+which this range refuses at install time. See the [compatibility policy](packs.md#compatibility)
+for the current request-time protocol check and planned install-time check.
+
 - The `docling` pack (`ashift engines install docling`), or a development engine (below). Without either, a route that needs Docling exits with code 5 and says how to get it.
 - **Windows:** install the [Microsoft Visual C++ Redistributable x64](https://aka.ms/vc14/vc_redist.x64.exe) (2015â€“2022 family, latest supported v14) before running the Docling pack. The latest x64 redistributable is a hard requirement; check the installed version in the `Version` value under `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64` and update using the linked installer if needed. The pack uses the system runtime and excludes `vcruntime*` and `msvcp*` DLLs, including copies from wheels. The distributed `ashift.exe` uses static CRT; this prerequisite applies to Docling, not the standalone host.
 - **Tesseract 5** on `PATH` for OCR of Vietnamese and mixed Vietnamese-English text. The pack ships the `vie`, `eng` and `osd` data and `configs/tsv`, not the program: `apt install tesseract-ocr`, `brew install tesseract`, or the UB Mannheim installer on Windows. Without it, digital documents still convert. Installation prints the Tesseract prerequisite and, on Windows, the Visual C++ Redistributable prerequisite; `ashift doctor` explains what is missing.

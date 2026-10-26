@@ -10,6 +10,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tomllib
 from argparse import Namespace
 from base64 import urlsafe_b64encode
 
@@ -24,6 +25,12 @@ import licenses
 import native_build
 import torch_build
 import windows_imports
+
+
+def test_pack_manifest_keeps_the_frozen_protocol_host_range():
+    manifest = tomllib.loads(build.pack_fields("0.2.0", "Apache-2.0"))
+    assert manifest["requires_ashift"] == ">=0.2.0, <2.0.0"
+    assert manifest["schema"] == "ariad-pack/1"
 
 
 @pytest.mark.parametrize(

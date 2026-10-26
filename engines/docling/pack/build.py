@@ -55,7 +55,7 @@ ENGINE_DIR = PACK_DIR.parent
 REPOSITORY = ENGINE_DIR.parents[1]
 PYTORCH_INDEX = "https://download.pytorch.org/whl/cpu"
 PACK_NAME = "docling"
-REQUIRES_ASHIFT = ">=0.2.0, <0.3.0"
+REQUIRES_ASHIFT = ">=0.2.0, <2.0.0"
 DESCRIPTION = "Docling: PDF, scanned documents, Office files and images, with OCR"
 NOTICES = (
     "notices/AriadShift-LICENSE",
