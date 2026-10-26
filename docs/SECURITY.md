@@ -12,14 +12,25 @@ Include in a report:
 - minimal reproduction steps or a synthetic test input (never private or user documents);
 - the observed behavior and security impact.
 
-### Out of scope (documented limitations)
+## Known limitations
 
-Behavior already documented as a known limitation or operator prerequisite is not treated as an undisclosed vulnerability (`docs/release-notes.md`, [ARCHITECTURE.md §11.3](../ARCHITECTURE.md#113-isolation-layers), [server.md](server.md), [install.md](install.md)):
+The following known limitations and operator prerequisites are documented in `docs/release-notes.md`, [ARCHITECTURE.md §11.3](../ARCHITECTURE.md#113-isolation-layers), [server.md](server.md), and [install.md](install.md):
 
-- the fixed transfer deadline on local `file://` blob storage (`min(15 min, signed URL lifetime: 15 min upload, 5 min download)` before `408 transfer_timeout`; use S3-compatible storage such as SeaweedFS for large files; see [server.md](server.md#object-storage-api-and-worker));
-- unsigned v1 desktop installers, which rely on `SHA256SUMS` and Minisign `.minisig` signatures rather than Apple Developer ID or Windows Authenticode certificates ([install.md](install.md#2-checksum-and-minisign-verification));
+- the fixed transfer deadline on local `file://` blob storage (`min(15 min, signed URL lifetime: 15 min upload, 5 min download)` before `408 transfer_timeout`; use S3-compatible storage such as SeaweedFS for large files; see [server.md](server.md#object-storage-api-and-worker) and [#68](https://github.com/bavanchun/AriadShift/issues/68));
+- unsigned v1 desktop installers, which rely on `SHA256SUMS` and Minisign `.minisig` signatures rather than Apple Developer ID or Windows Authenticode certificates ([install.md](install.md#2-checksum-and-minisign-verification); automated publication and code signing tracked in [#77](https://github.com/bavanchun/AriadShift/issues/77));
 - platform or kernel sandbox gaps in `best-effort` mode, including Windows (Job Objects only, no filesystem or network sandbox), Linux kernels without Landlock ABI 9 for UNIX-socket confinement or user/mount namespaces for LibreOffice, gVisor lacking Landlock for `required` mode, and macOS Seatbelt's broad read rules under `/usr` and `/opt/homebrew` ([ARCHITECTURE.md §11.3](../ARCHITECTURE.md#113-isolation-layers), [server.md](server.md#container-runtime-support));
 - missing reverse-proxy body-size limits in front of a public S3 upload endpoint, because S3 presigned `PUT` URLs bind `x-amz-checksum-sha256` rather than `Content-Length` ([server.md](server.md#data-lifecycle)).
+
+Reports that show impact beyond a documented limitation (for example, an exploit that goes further than the documented behavior or a bypass of a stated mitigation) are welcome through the private reporting flow.
+
+## Out of scope
+
+The following generic categories are out of scope:
+
+- denial of service that requires local administrator or root access to the machine running AriadShift;
+- vulnerabilities in third-party engines or libraries themselves (Pandoc, Typst, LibreOffice, Docling, `rustc`, and so on), which should be reported to the upstream project, while a report about how AriadShift sandboxes, invokes, or fails to contain such an engine is in scope;
+- findings that need an already compromised host or stolen credentials without a flaw in AriadShift;
+- automated scanner output without a demonstrated impact.
 
 ## Supported versions
 
