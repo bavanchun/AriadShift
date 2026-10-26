@@ -28,9 +28,10 @@ No `ashift` option, exit code or JSON output, no MCP stdio tool schema and no `a
 - **`ariad-engine/1` and `ariad-ir/1` stay frozen.** Neither changes in 1.x. A change that breaks them needs a new major wire version, and readers keep accepting `ariad-ir/0`.
 - **Behaviour change: hidden and linked images in `ashift mcp`.** The local MCP server no longer embeds an image that a document references through a hidden file or directory (for example `.private/photo.png`) or through a symbolic link. The conversion succeeds and reports `image_not_embedded` for each such reference. Ordinary sibling images are still embedded, and `ashift convert` is unchanged. (The remote `/mcp` endpoint accepts no filesystem paths.)
 
-### Upgrade notes from 0.2.0
+### Upgrade notes from 0.1.0 and 0.2.0
 
-- **CLI, desktop and browser users need no action.** Existing IR JSON, scripts, exit codes and settings keep working.
+- **Upgrading from 0.1.0.** Review the [0.2.0 upgrade notes](#upgrade-notes) below as well: IR JSON moved from `ariad-ir/0` to `ariad-ir/1` (readers still accept `ariad-ir/0`), EPUB identifiers derive from IR bytes, Typst is the default PDF writer, Linux engines run under Landlock and seccomp in `best-effort` mode, and `pandoc.wasm` is verified by SHA-256 in the browser.
+- **CLI, desktop and browser users need no action from 0.2.0.** Existing IR JSON, scripts, exit codes and settings keep working.
 - **macOS engines now run under Seatbelt.** In the default `best-effort` mode, `ashift` and the desktop app launch engines through `/usr/bin/sandbox-exec` with a deny-by-default profile. An engine that needs a path outside that profile is denied and the job fails with `sandbox_unavailable`. `ASHIFT_SANDBOX=required` now works on macOS when `ashift doctor` reports Seatbelt as usable. `ASHIFT_SANDBOX=off` restores the 0.2.0 behaviour. See [the CLI reference](cli.md#macos-engine-sandbox).
 - **Docling packs are versioned with the host.** Packs published for 0.2.x declare `ashift >=0.2.0, <0.3.0`, so a 1.0.0 host reports them as `wrong version` and refuses them (exit 5). After upgrading, run `ashift engines install docling` to fetch the pack built for 1.x. Pack verification keys are unchanged.
 - **Self-hosters: the server is now a supported product.** In 0.2.0 `ariad-server` was only in the source tree. Start from the [self-hosting guide](self-hosting.md): copy `.env.example` to `infra/compose/.env`, replace every placeholder secret, and run the compose profiles you need. Database migrations are not reversible, so back up the database before every upgrade. Compose runs `migrate` and `db-grants` on each `up`, and the API and workers refuse to start against a database whose migrations do not match their binary.
@@ -113,6 +114,8 @@ The trusted comment of each signature reads `desktop:AriadShift release:v<versio
 - **No code signing yet.** Desktop installers carry no Apple Developer ID, notarization or Authenticode signature, so Gatekeeper and SmartScreen warn on first launch, and Windows 11's top-level context menu cannot show the Explorer verb. Checksums and Minisign signatures are the substitute.
 - **OAuth uses dynamic client registration only (DCR).** Client ID Metadata Documents, which MCP 2026-07-28 prefers, are planned (CIMD).
 - **No OAuth sign-up or consent-revocation UI yet.** `/oauth/sign-in` signs in existing accounts only. Create accounts through the web app, `/api/auth/sign-up/email` or social sign-in. Users cannot list or revoke the OAuth clients they approved, although the provider has the endpoints.
+- **Node.js stays on 24 LTS until Node 26 enters LTS.** `.node-version` (`24.21.0`) and `@types/node` (`24.19.2`) remain on Node 24 LTS for 1.0.0 because Node 26 enters Active LTS on 2026-10-28. Runtime and type definitions will move to Node 26 LTS together after that date.
+- **Cloud web app session, account-deletion and download limits.** Transient token-refresh errors in `CloudAuth.bearer()` and the account adapter currently fall back to an anonymous request; the account deletion form always requires a password (`deleteUser({ password })`) and has no passwordless recent-session flow for social-only OAuth users; and web downloads buffer the complete output as a `Blob` in browser memory.
 - **macOS desktop is Apple silicon only.** Intel Macs run the CLI and the browser converter.
 - **The Seatbelt profile reads broadly.** It permits all of `/usr` and `/opt/homebrew`, so a hostile engine could read service data stored there into its output even though networking is denied. Apple deprecates `sandbox-exec`, so `doctor` checks that it works.
 - **Turnstile under cross-origin isolation is unchecked.** `/app` sends `Cross-Origin-Embedder-Policy: credentialless`, and Turnstile's iframe may be blocked there. If so, anonymous cloud uploads cannot start, while signed-in uploads and on-device conversion still work.
@@ -129,11 +132,15 @@ The trusted comment of each signature reads `desktop:AriadShift release:v<versio
 
 - Client ID Metadata Documents for MCP clients, once the auth service's outbound fetch policy is decided.
 - An OAuth sign-up page and a screen to list and revoke approved clients.
-- Size-aware transfer deadlines for `file://` storage, so large local uploads stop depending on a fixed 15 minutes.
-- Code-signing and notarization certificates, with the Windows 11 top-level Explorer menu that needs a signed package.
+- Size-aware transfer deadlines for `file://` storage, so large local uploads stop depending on a fixed 15 minutes (R4).
+- Code-signing and notarization certificates, with the Windows 11 top-level Explorer menu that needs a signed package, and automated `crates.io` (`CARGO_REGISTRY_TOKEN`) and `bavanchun/homebrew-tap` (`HOMEBREW_TAP_TOKEN`) publication once tokens exist.
 - An Intel macOS desktop build.
 - A narrower Seatbelt read scope, verified against real Pandoc, Typst and LibreOffice runs on macOS.
-- Fixes for the Windows MCP image gaps and a per-upload guard on completion hashing.
+- Security audit low and informational follow-ups: a per-upload in-flight guard on completion hashing (R5), fixes for the Windows MCP image confinement gaps (R6), an asset-handle parameter on `convert_confined` when callers need confined image extraction (R7), and a Chromium check of Cloudflare Turnstile inside cross-origin-isolated `/app` (R8).
+- Cloud web app follow-ups: distinguish transient `5xx` token-refresh failures from unauthenticated state so signed-in sessions do not fall back to anonymous requests, add a recent-session passwordless account-deletion path for social-only OAuth users, and stream large cloud downloads instead of buffering the full `Blob` in browser memory.
+- Web E2E and runner hardening: extend the `ENGINE_BOOT` (`device-indicator`) readiness wait in `apps/web/e2e/converter.spec.ts` to the remaining direct fresh-page file-pick and `device-indicator` assertions, and install native Playwright WebKit system dependencies on the self-hosted Linux CI runner.
+- Migrate `.node-version`, CI/Docker Node pins and `@types/node` together to Node 26 LTS after 2026-10-28.
+- Add a supported-versions statement to [`docs/SECURITY.md`](SECURITY.md) and split [`ARCHITECTURE.md`](../ARCHITECTURE.md) into focused topical documents once all v1 branches merge.
 - Desktop notifications, a native menu bar, window-state restore, a recoverable **Clear finished** and Dock or taskbar progress.
 - S3 multipart uploads, and a NATS queue adapter only if measured throughput exceeds PostgreSQL.
 - Support for Cloudflare Pages through a different engine delivery.
