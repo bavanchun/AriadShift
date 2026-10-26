@@ -37,7 +37,7 @@ Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHu
 
 ### Package managers (not yet published)
 
-The release pipeline is ready for Homebrew, crates.io and WinGet, but v0.1.0 has not reached them yet: the Homebrew formula and the crates were not published, and no WinGet submission exists. These commands work once each channel is published:
+The release pipeline is ready for Homebrew, crates.io and WinGet, but v0.2.0 has not reached them yet: the Homebrew formula and the crates were not published, and no WinGet submission exists. These commands work once each channel is published:
 
 ```sh
 # Homebrew (macOS & Linux)
