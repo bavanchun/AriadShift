@@ -22,7 +22,7 @@ ARG PNPM_VERSION=12.9.1
 # Pass --build-arg CARGO_BUILD_JOBS=N to bound compile parallelism.
 ARG CARGO_BUILD_JOBS=3
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev \
+    && apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev unzip \
     && rm -rf /var/lib/apt/lists/*
 # rustup-init and pnpm are checked against their published SHA-256. The Rust
 # toolchain and its wasm32 target come from rust-toolchain.toml.
