@@ -131,6 +131,33 @@ def run(command, **kwargs):
     native_build.run(command, **kwargs)
 
 
+def report_cmake_failures(source: Path) -> None:
+    """Expose failed compiler checks without hiding the original build failure."""
+    path = source / "build/CMakeFiles/CMakeConfigureLog.yaml"
+    if not path.is_file():
+        return
+    import yaml
+
+    try:
+        for document in yaml.safe_load_all(path.read_text("utf-8")):
+            for event in (document or {}).get("events", []):
+                result = event.get("buildResult", {})
+                if event.get("kind", "").startswith("try_compile-") and result.get("exitCode"):
+                    print(
+                        "Failed CMake compiler check: "
+                        + json.dumps(
+                            {
+                                key: event[key]
+                                for key in ("checks", "backtrace", "buildResult")
+                                if key in event
+                            }
+                        ),
+                        flush=True,
+                    )
+    except (OSError, yaml.YAMLError) as error:
+        print(f"Could not read CMake compiler diagnostics: {error}", flush=True)
+
+
 def linux_container(args):
     """Run only on a native x86_64 Linux host; never emulate on the Mac."""
     cache = args.cache.resolve()
@@ -341,20 +368,27 @@ def build(args):
         )
     # PEP 517 config settings preserve spaces in Windows paths and OpenMP
     # flags without depending on CMAKE_ARGS shell tokenization.
-    run(
-        [
-            sys.executable,
-            "-m",
-            "build",
-            "--wheel",
-            "--no-isolation",
-            "--outdir",
-            out,
-            *(f"--config-setting=cmake.define.{name}={value}" for name, value in options.items()),
-            src,
-        ],
-        env=env,
-    )
+    try:
+        run(
+            [
+                sys.executable,
+                "-m",
+                "build",
+                "--wheel",
+                "--no-isolation",
+                "--outdir",
+                out,
+                *(
+                    f"--config-setting=cmake.define.{name}={value}"
+                    for name, value in options.items()
+                ),
+                src,
+            ],
+            env=env,
+        )
+    except subprocess.CalledProcessError:
+        report_cmake_failures(src)
+        raise
     if expected == "Linux":
         repair_linux_wheel(out, work, "torch")
     wheels = list(out.glob("torch-*.whl"))
