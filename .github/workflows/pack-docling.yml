@@ -258,7 +258,7 @@ jobs:
           msvc_bin="$(cygpath -u "$VCToolsInstallDir")/bin/Hostx64/x64"
           test -f "$msvc_bin/link.exe"
           linker_env="$(cygpath -u "$RUNNER_TEMP")/msvc-linker-env.sh"
-          printf 'export PATH=%q:"$PATH"\n' "$msvc_bin" > "$linker_env"
+          printf "export PATH=%q:\"\$PATH\"\n" "$msvc_bin" > "$linker_env"
           echo "BASH_ENV=$linker_env" >> "$GITHUB_ENV"
           echo 'CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=link.exe' >> "$GITHUB_ENV"
 
