@@ -26,6 +26,48 @@ import torch_build
 import windows_imports
 
 
+@pytest.mark.parametrize(
+    "source",
+    (
+        "changed upstream probe",
+        torch_build.SLEEF_BUILTIN_MATH_CHECK * 2,
+        torch_build.SLEEF_BUILTIN_MATH_CHECK + torch_build.SLEEF_MSVC_GUARD,
+    ),
+)
+def test_sleef_compiler_patch_refuses_unreviewed_source(tmp_path, source):
+    configure = tmp_path / "third_party/sleef/Configure.cmake"
+    configure.parent.mkdir(parents=True)
+    configure.write_text(source)
+    with pytest.raises(SystemExit, match="review upstream SLEEF's changed"):
+        torch_build.patch_sleef_msvc(tmp_path)
+    assert configure.read_text() == source
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or not shutil.which("cmake") or not shutil.which("cc"),
+    reason="real CMake compiler-check proof needs Linux CMake and a C compiler",
+)
+@pytest.mark.parametrize("msvc_version,expected", ((None, "1"), (1951, ""), (1952, "1")))
+def test_sleef_compiler_patch_only_rejects_the_affected_version(tmp_path, msvc_version, expected):
+    configure = tmp_path / "third_party/sleef/Configure.cmake"
+    configure.parent.mkdir(parents=True)
+    configure.write_text(torch_build.SLEEF_BUILTIN_MATH_CHECK)
+    torch_build.patch_sleef_msvc(tmp_path)
+    (tmp_path / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(SleefProbe C)\n"
+        "include(CheckCSourceCompiles)\n"
+        "include(third_party/sleef/Configure.cmake)\n"
+        'file(WRITE "${CMAKE_BINARY_DIR}/result.txt" "${COMPILER_SUPPORTS_BUILTIN_MATH}")\n'
+    )
+    command = ["cmake", "-S", str(tmp_path), "-B", str(tmp_path / "build")]
+    if msvc_version is not None:
+        command.append(f"-DCMAKE_REQUIRED_DEFINITIONS=-D_MSC_VER={msvc_version}")
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "build/result.txt").read_text() == expected
+
+
 @pytest.mark.skipif(
     not os.environ.get("ASHIFT_VCOMP_ABI_LIBRARY"),
     reason="native wrapper ABI proof needs a source-built LLVM runtime",

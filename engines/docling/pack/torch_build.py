@@ -28,6 +28,17 @@ REPOSITORY = PACK.parents[2]
 CONFIG = PACK / "torch-build.toml"
 TARGETS = ("x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc")
 ARM_TARGETS = ("aarch64-unknown-linux-gnu", "aarch64-apple-darwin")
+SLEEF_MSVC_PATCH = "https://github.com/shibatch/sleef/pull/710"
+SLEEF_BUILTIN_MATH_CHECK = """CHECK_C_SOURCE_COMPILES("
+  int main(void) {
+    double a = __builtin_sqrt (2);
+    float  b = __builtin_sqrtf(2);
+  }"
+  COMPILER_SUPPORTS_BUILTIN_MATH)"""
+SLEEF_MSVC_GUARD = """  #if defined(_MSC_VER) && _MSC_VER == 1951
+  #error Not supported, avoid a compiler crash
+  #endif
+"""
 OPENBLAS_FLAGS = (
     "-DCMAKE_BUILD_TYPE=Release",
     "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
@@ -129,6 +140,18 @@ def key(target):
 
 def run(command, **kwargs):
     native_build.run(command, **kwargs)
+
+
+def patch_sleef_msvc(source: Path) -> None:
+    """Apply the upstream MSVC 19.51 compiler-crash guard to the real probe."""
+    path = source / "third_party/sleef/Configure.cmake"
+    text = path.read_text("utf-8")
+    if text.count(SLEEF_BUILTIN_MATH_CHECK) != 1 or SLEEF_MSVC_GUARD in text:
+        raise SystemExit("review upstream SLEEF's changed builtin-math compiler check")
+    guarded = SLEEF_BUILTIN_MATH_CHECK.replace(
+        'CHECK_C_SOURCE_COMPILES("\n', 'CHECK_C_SOURCE_COMPILES("\n' + SLEEF_MSVC_GUARD
+    )
+    path.write_text(text.replace(SLEEF_BUILTIN_MATH_CHECK, guarded), "utf-8")
 
 
 def report_cmake_failures(source: Path) -> None:
@@ -331,6 +354,8 @@ def build(args):
     )
     prefix, blas, blas_license = openblas(config, work, args.cache)
     src = native_build.source(config["torch"], work / "torch", args.cache)
+    if llvm is not None:
+        patch_sleef_msvc(src)
     env = dict(
         os.environ,
         **config["torch"]["options"],
@@ -433,6 +458,7 @@ def build(args):
         "target": args.target,
         "build_key": key(args.target),
         "sources": config,
+        "patches": [SLEEF_MSVC_PATCH] if llvm is not None else [],
         "openblas_flags": OPENBLAS_FLAGS,
         "torchvision_source_build": vision_source,
         "files": {

@@ -73,6 +73,40 @@ jobs:
         with:
           arch: x64
 
+      - name: Check MSVC math feature diagnostics
+        if: runner.os == 'Windows'
+        run: |
+          import pathlib
+          import subprocess
+          import sys
+          import tempfile
+          sys.path.insert(0, "engines/docling/pack")
+          from torch_build import SLEEF_BUILTIN_MATH_CHECK, patch_sleef_msvc
+          results = {}
+          with tempfile.TemporaryDirectory() as directory:
+              root = pathlib.Path(directory)
+              configure = root / "third_party/sleef/Configure.cmake"
+              configure.parent.mkdir(parents=True)
+              configure.write_text(SLEEF_BUILTIN_MATH_CHECK, encoding="utf-8")
+              patch_sleef_msvc(root)
+              for name, check in (
+                  ("upstream", SLEEF_BUILTIN_MATH_CHECK),
+                  ("patched", configure.read_text(encoding="utf-8")),
+              ):
+                  (root / "probe.c").write_text(check.split('"')[1], encoding="utf-8")
+                  command = ["cl", "/nologo", "/c", "/TC", "/std:c17", "/MDd", "/Z7", "/Ob0", "/Od", "/RTC1", "/arch:AVX2", f"/Fo{name}.obj", "probe.c"]
+                  result = subprocess.run(command, cwd=root, capture_output=True, text=True, errors="replace", timeout=60)
+                  output = result.stdout + result.stderr
+                  print(name, command, f"exit={result.returncode:#x}", output, flush=True)
+                  ordinary = not any(marker in output for marker in ("C1001", "Internal compiler error", "Access violation"))
+                  results[name] = ordinary and (
+                      result.returncode == 0 or (
+                          0 < result.returncode < 256 and any(code in output for code in ("C1189", "C4013"))
+                      )
+                  )
+          if not results["patched"]:
+              raise SystemExit("Patched SLEEF feature probe must finish without a compiler crash")
+
       - name: Compute source build key
         id: key
         run: |
