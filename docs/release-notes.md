@@ -52,6 +52,7 @@ Roadmap 1b. `ashift` adds PDF, Office, OCR and image routes, signed engine packs
 - **Embedded Markdown images.** Markdown `data:` images now become embedded IR assets, so they survive conversion to DOCX and EPUB. No resource URLs are fetched. (#48)
 - **`ashift engines` output.** Human output adds a pack section after the engine table. JSON rows backed by a pack carry a `pack` object, whose `status` can be `ready`, `missing`, `wrong version` or `not installed`. MCP `list_engines` returns the same `pack` object. (#35)
 - **No Visual C++ Redistributable for `ashift`.** The Windows release binary now links the C runtime statically. (#46)
+- **Docling pack without proprietary Intel components.** x86_64 Docling packs exclude proprietary Intel IPP, oneMKL and Intel OpenMP binaries: OpenCV is built from source without IPP, x86_64 CPU PyTorch is built with static OpenBLAS and Apache-2.0 oneDNN, and ARM packs keep the audited official wheels. LLVM OpenMP is the only OpenMP runtime (with MSVC compatibility wrappers on Windows), Windows native builds use MSVC via Ninja, and a binary and notice gate rejects proprietary Intel artifacts on every target. (#51)
 - **Updated Rust dependencies,** including comrak 0.56.0 and saphyr-parser 0.2.2. (#31)
 
 ### Fixed
@@ -69,12 +70,6 @@ Roadmap 1b. `ashift` adds PDF, Office, OCR and image routes, signed engine packs
 - **IR JSON limits.** IR JSON reads now apply the input byte cap, and empty containers and tables count toward the nesting limit. Unknown limit names in `ariad-wasm` convert options are rejected. (#33, #36)
 - **Desktop confinement.** Native desktop commands are limited to the main window capability, and per-job batch request storage is bounded. (#40)
 - **Browser engine integrity.** `pandoc.wasm` is verified against its pinned SHA-256 before it is cached or compiled. The service worker serves only hashed assets cache-first. (#36, #48)
-
-### Docling pack without Intel components
-
-> **Coordinator: verify at merge time.** This entry describes #51, which is still open. Keep it only if #51 merges before the `v0.2.0` tag, and edit it to match the merged change. Otherwise delete this section and the matching sentence under Known limitations.
-
-- x86_64 Docling packs no longer contain proprietary Intel IPP, MKL or Intel OpenMP. OpenCV is rebuilt without IPP, x86_64 CPU PyTorch is built from source with OpenBLAS and oneDNN, and Windows uses LLVM OpenMP. These toolchain wheels are built in this repository's CI and pinned by size and SHA-256. ARM packs keep the audited official wheels. (#51)
 
 ### Known limitations
 
