@@ -179,6 +179,9 @@ wait_ok "$API/readyz"
 wait_ok "$AUTH/api/auth/ok"
 log "stack is healthy"
 
+# Preserve the disposable database before the client journey changes its data.
+compose exec -T postgres pg_dump -U postgres -d ariadshift -Fc >"$WORK/before-journey.dump"
+
 # --- Account and API key ---------------------------------------------------
 
 JAR="$WORK/cookies"
@@ -347,3 +350,44 @@ code=$(v1 POST /v1/uploads -H 'content-type: application/json' \
 expect 429 "$code" "upload beyond the allowance"
 [ "$(field '.error.code')" = quota_exceeded ] || fail "the refusal is not quota_exceeded"
 log "upload $((CAP + 1)) was refused with quota_exceeded"
+
+# --- Account deletion and credential isolation -----------------------------
+
+log "checking account deletion revokes only the deleted user's API keys"
+code=$(request POST "$AUTH/api/auth/api-key/create" -c "$JAR" -b "$JAR" \
+	-H 'content-type: application/json' -H "origin: $WEB_ORIGIN" \
+	--data '{"name":"deletion-check"}')
+expect 200 "$code" "second API key creation"
+EXTRA_KEY=$(field '.key')
+
+OTHER_JAR="$WORK/other-cookies"
+code=$(request POST "$AUTH/api/auth/sign-up/email" -c "$OTHER_JAR" -b "$OTHER_JAR" \
+	-H 'content-type: application/json' -H "origin: $WEB_ORIGIN" \
+	--data "$(jq -nc --arg e "other-$EMAIL" --arg p "$(random_hex)" \
+		'{name: "Other E2E", email: $e, password: $p}')")
+expect 200 "$code" "other account sign-up"
+code=$(request POST "$AUTH/api/auth/api-key/create" -c "$OTHER_JAR" -b "$OTHER_JAR" \
+	-H 'content-type: application/json' -H "origin: $WEB_ORIGIN" \
+	--data '{"name":"other-owner"}')
+expect 200 "$code" "other account API key creation"
+OTHER_KEY=$(field '.key')
+
+check_key() {
+	key=$1 wanted=$2 description=$3
+	code=$(request POST "$API/v1/plan" -H "x-api-key: $key" \
+		-H 'content-type: application/json' --data '{"from":"markdown","to":"html"}')
+	expect "$wanted" "$code" "$description"
+}
+check_key "$API_KEY" 200 "original key before account deletion"
+check_key "$EXTRA_KEY" 200 "second key before account deletion"
+check_key "$OTHER_KEY" 200 "other owner's key before account deletion"
+
+compose exec -T postgres pg_dump -U postgres -d ariadshift -Fc >"$WORK/before-deletion.dump"
+code=$(request POST "$AUTH/api/auth/delete-user" -c "$JAR" -b "$JAR" \
+	-H 'content-type: application/json' -H "origin: $WEB_ORIGIN" \
+	--data "$(jq -nc --arg p "$PASSWORD" '{password: $p}')")
+expect 200 "$code" "password-confirmed account deletion"
+check_key "$API_KEY" 401 "original key after account deletion"
+check_key "$EXTRA_KEY" 401 "second key after account deletion"
+check_key "$OTHER_KEY" 200 "other owner's key after account deletion"
+log "deleted account keys are rejected; the other owner's key still works"
