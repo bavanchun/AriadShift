@@ -21,9 +21,12 @@ spell:
 lint-tools:
     sh scripts/install-lint-tools.sh
 
-lint-workflows: lint-tools
+test-github-token:
+    uv run --no-project python scripts/test-github-token.py
+
+lint-workflows: lint-tools test-github-token
     .tools/bin/actionlint
-    uvx zizmor@1.30.1 .github
+    uv run --no-project python scripts/with-github-token.py uvx zizmor@1.30.1 .github
 
 lint-commits range="origin/dev..HEAD": lint-tools
     sh scripts/check-commits.sh {{range}}

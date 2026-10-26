@@ -87,13 +87,13 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 | `just test-server` | The `ariad-server` database and S3 tests in throwaway Docker containers (`ariadshift-test-pg` on 127.0.0.1:55442, `ariadshift-test-s3` on 127.0.0.1:58342), removed afterwards; an ownership label prevents removing another worktree's containers |
 | `just static` | The OS-independent checks (requires `cargo-about 0.9.2`, `uv`, `python3`, and `pwsh` in CI) |
 | `just lint-commits` | Your commits since `origin/dev`; pass a range to check others, for example `just lint-commits main..dev` |
-| `just lint-workflows` | `actionlint` and `zizmor`. Set `GH_TOKEN` (for example `GH_TOKEN=$(gh auth token)`) to enable zizmor's online audits, which CI always runs |
+| `just lint-workflows` | `actionlint` and `zizmor`. Online audits require a clean `GH_TOKEN`/`GITHUB_TOKEN` or a logged-in `gh` CLI |
 | `just deny-advisories` | The daily advisory scan |
 | `just fuzz` | Run fuzz targets locally on stable Rust (`target=""` for all, `seconds="60"`) |
 
 The throwaway PostgreSQL in `just test-server` allows 180 seconds for `pg_ctl` operations and TCP readiness. This accommodates initialization on busy hosts; if the service never becomes ready, the recipe prints its container log and fails before compiling the test binaries.
 
-When capturing `gh auth token` into `GH_TOKEN`, its stdout must contain only the token. If a CLI wrapper adds status output, invoke the underlying `gh` binary and reject whitespace or control characters before exporting the value; otherwise zizmor cannot build a valid authorization header.
+[`scripts/with-github-token.py`](../scripts/with-github-token.py) is the credential source for zizmor. It prefers a clean `GH_TOKEN`, then `GITHUB_TOKEN`, then captures `gh auth token` with stderr separate. Malformed environment values are ignored with a diagnostic; CLI output containing whitespace, control characters or wrapper status lines is rejected without printing the value. Only the normal trailing CLI line ending is removed. Missing credentials fail the audit with instructions to authenticate. `just test-github-token` checks these paths and runs as part of `lint-workflows`. The launcher passes the validated value directly to zizmor's environment; no shell capture or manual token export is needed.
 
 `just lint-tools` installs `actionlint` and `committed` into `.tools/bin`, verified against SHA-256 checksums pinned in [`scripts/install-lint-tools.sh`](../scripts/install-lint-tools.sh). `zizmor` runs through `uvx` at the version pinned in the `justfile`.
 
