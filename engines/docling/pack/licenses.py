@@ -1,9 +1,10 @@
 """Licence gate and notices for everything the docling pack bundles.
 
-Distributed artifacts must not contain AGPL, GPL or non-OSI code, and model weights must not
-use OpenRAIL-M, custom or missing licences. Each Python distribution's licence is read from its
-metadata (``License-Expression``, then ``License``, then trove classifiers) and checked against
-an allow-list; anything unrecognised fails until it is reviewed and listed here.
+AGPL and unreviewed copyleft or non-OSI code are refused. Named GNU runtime and permissive
+attribution-only native exceptions carry complete notices; CC0 covers data or metadata only.
+Each Python distribution's licence is read from its metadata (License-Expression, License and
+trove classifiers) and checked against an allow-list. Unknown fields or classifiers fail until
+their exact metadata is reviewed.
 
 Usage::
 
@@ -35,7 +36,6 @@ ALLOWED = frozenset(
         "BSD-2-Clause",
         "BSD-3-Clause",
         "BSL-1.0",
-        "CC0-1.0",
         "CNRI-Python",
         "HPND",
         "ISC",
@@ -52,9 +52,10 @@ MPL_EXCEPTIONS = frozenset({"certifi", "tqdm"})
 # License exceptions that only relax a permissive licence.
 ALLOWED_EXCEPTIONS = frozenset({"LLVM-exception"})
 # Model weights and data files.
-ALLOWED_DATA = frozenset({"Apache-2.0", "CDLA-Permissive-2.0", "MIT", "PSF-2.0"})
+ALLOWED_DATA = frozenset({"Apache-2.0", "CDLA-Permissive-2.0", "CC0-1.0", "MIT", "PSF-2.0"})
 
 _DENIED = re.compile(r"AGPL|(?<!L)GPL|SSPL|RAIL|BUSL|Commons-Clause|NC-|Proprietary", re.I)
+_RAW_DENIED = re.compile(r"(?<!Lesser )General Public License|Affero", re.I)
 
 # Free-text ``License`` fields and trove classifiers seen in the locked dependencies.
 _KNOWN = {
@@ -103,31 +104,50 @@ def canonical(name: str) -> str:
 def license_of(distribution: metadata.Distribution) -> str | None:
     """The SPDX expression for a distribution, or ``None`` when it cannot be determined."""
     name = canonical(distribution.metadata["Name"])
-    if name in OVERRIDES:
-        return OVERRIDES[name]
-    expression = distribution.metadata.get("License-Expression")
-    if expression:
-        return expression.strip()
     field = (distribution.metadata.get("License") or "").strip()
-    if field.lower() in _KNOWN:
-        return _KNOWN[field.lower()]
     classifiers = [
         item.split("::")[-1].strip().lower()
         for item in distribution.metadata.get_all("Classifier") or []
-        if item.startswith("License ::")
+        if item.startswith("License ::") and item.strip() != "License :: OSI Approved"
     ]
-    known = [_KNOWN[item] for item in classifiers if item in _KNOWN]
-    if known:
-        return " OR ".join(dict.fromkeys(known))
-    return None
+    if any(item not in _KNOWN for item in classifiers):
+        return None
+    reviewed = _reviewed_license_field(distribution)
+    if field and field.lower() not in _KNOWN and not reviewed:
+        return None
+    expression = distribution.metadata.get("License-Expression")
+    if expression:
+        return expression.strip()
+    if reviewed:
+        return OVERRIDES[name]
+    if field:
+        return _KNOWN[field.lower()]
+    return " OR ".join(dict.fromkeys(_KNOWN[item] for item in classifiers)) or None
 
 
-def verdict(name: str, expression: str) -> str | None:
+def _reviewed_license_field(distribution: metadata.Distribution) -> bool:
+    """Bind full-text overrides to the reviewed metadata, never just a package name."""
+    name = canonical(distribution.metadata["Name"])
+    field = distribution.metadata.get("License") or ""
+    if name == "scipy":
+        # SciPy 1.18.1's full text includes the separately inventoried GNU runtime notices.
+        return hashlib.sha256(field.encode()).hexdigest() in {
+            "2a463073ea6816d22b763c8e2f03886f4e8bf4f2a234f3c9267401d688588d17",
+            "7f2f9e131a09f25323e392aac37fb2e263c600bb9d1ffc7c3b6ca3e1d017573e",
+            "c85f6c4154a28ccb2a49fe9a1cbcacb17939c14ffad7a2f63d32655610652bb7",
+        }
+    return bool(field) and field.strip() == {
+        "pypdfium2": "BSD-3-Clause, Apache-2.0, dependency licenses",
+        "python-dateutil": "Dual License",
+    }.get(name)
+
+
+def verdict(name: str, expression: str, *, metadata_only: bool = False) -> str | None:
     """Returns why an expression is not acceptable, or ``None`` when it is."""
     if _DENIED.search(expression):
         return "excluded licence"
     try:
-        allowed = _Expression(name, expression).allowed()
+        allowed = _Expression(name, expression, metadata_only=metadata_only).allowed()
     except ValueError:
         return "not a valid SPDX expression"
     return None if allowed else "not in the allow-list"
@@ -141,8 +161,9 @@ class _Expression:
     error, which the gate treats as a refusal.
     """
 
-    def __init__(self, name: str, expression: str) -> None:
+    def __init__(self, name: str, expression: str, *, metadata_only: bool = False) -> None:
         self._name = name
+        self._metadata_only = metadata_only
         self._tokens = re.findall(r"\(|\)|[^\s()]+", expression)
         self._position = 0
 
@@ -192,6 +213,8 @@ class _Expression:
         return self._licence_allowed(word)
 
     def _licence_allowed(self, licence: str) -> bool:
+        if licence == "CC0-1.0":
+            return self._metadata_only
         if licence == "MPL-2.0":
             return self._name in MPL_EXCEPTIONS
         return licence in ALLOWED
@@ -201,14 +224,59 @@ def check(distributions: Iterable[metadata.Distribution]) -> list[Finding]:
     findings = []
     for distribution in distributions:
         name = canonical(distribution.metadata["Name"])
+        raw = [distribution.metadata.get("License") or ""]
+        # Only the exact reviewed field may contain unrelated, separately gated notices.
+        if _reviewed_license_field(distribution):
+            raw[0] = OVERRIDES[name]
+        raw += [
+            item
+            for item in distribution.metadata.get_all("Classifier") or []
+            if item.startswith("License ::")
+        ]
+        raw.append(distribution.metadata.get("License-Expression") or "")
+        excluded = next(
+            (item for item in raw if _DENIED.search(item) or _RAW_DENIED.search(item)), None
+        )
+        if excluded is not None:
+            findings.append(Finding(name, excluded, "excluded licence"))
+            continue
         expression = license_of(distribution)
         if expression is None:
             findings.append(Finding(name, "unknown", "licence could not be determined"))
             continue
-        reason = verdict(name, expression)
+        reason = verdict(name, expression, metadata_only=_cc0_metadata_only(distribution))
         if reason is not None:
             findings.append(Finding(name, expression, reason))
     return findings
+
+
+_NUMPY_METADATA_SHA256 = "e2b909d6a37d76c2bc130f528d7fed0c517322bce16dc7846b6a6df30e200403"
+_NUMPY_FILE_INVENTORIES = frozenset(
+    {
+        "1b8ffe0592f49f1daf0f29a365cb47354ffca7fe63030c831ec39894517c5e97",
+        "80e85ff2da44d20cb2848389cec02e7e0852325fdf188e1264d04bd39488794a",
+        "d8dae2d8a536498e0de91d3769f2d61bfa740a8a74ae34bd2fec84a072a0e94e",
+        "ed179c6718e7dbb6c023c54eee6cd5583375e629cde9030050994a6443751e40",
+    }
+)
+
+
+def _cc0_metadata_only(distribution: metadata.Distribution) -> bool:
+    # The four locked NumPy wheels contain the SplitMix64 notice, not its benchmark/
+    # test-generator code. Bind the exception to their metadata and complete source-file
+    # inventories so a renamed or newly added source file also requires review.
+    if (canonical(distribution.metadata["Name"]), distribution.version) != ("numpy", "2.5.4"):
+        return False
+    text = distribution.read_text("METADATA") or ""
+    if hashlib.sha256(text.encode()).hexdigest() != _NUMPY_METADATA_SHA256:
+        return False
+    root = Path(distribution.locate_file("numpy"))
+    paths = sorted(
+        "numpy/" + item.relative_to(root).as_posix()
+        for item in root.rglob("*")
+        if item.is_file() and "__pycache__" not in item.parts and item.suffix != ".pyc"
+    )
+    return hashlib.sha256("\n".join(paths).encode()).hexdigest() in _NUMPY_FILE_INVENTORIES
 
 
 def write_notices(distributions: Iterable[metadata.Distribution], notices: Path) -> None:
@@ -303,13 +371,7 @@ def runtime_libraries(release: str, target: str) -> list[dict]:
         inventory = tomllib.load(handle)
     if inventory["python_release"] != release:
         raise SystemExit("review runtime-library licences for the new Python release")
-    platform = (
-        "windows"
-        if target.endswith("windows-msvc")
-        else "macos"
-        if target.endswith("apple-darwin")
-        else "linux"
-    )
+    platform = _target_platform(target)
     return [
         item
         for item in inventory["libraries"]
@@ -324,25 +386,22 @@ def check_runtime_files(runtime: Path, libraries: list[dict], target: str) -> No
     Patterns name shared libraries and extensions, including libraries statically linked into
     libpython or a .pyd. Every selected inventory entry must describe at least one native file.
     """
-    platform = (
-        "windows"
-        if target.endswith("windows-msvc")
-        else ("macos" if target.endswith("apple-darwin") else "linux")
-    )
+    platform = _target_platform(target)
     files = {
         path.relative_to(runtime).as_posix()
         for path in runtime.rglob("*")
         if path.is_file()
         and "site-packages" not in path.relative_to(runtime).parts
-        and any(
-            fnmatchcase(path.name.lower(), pattern)
-            for pattern in ("*.so*", "*.dylib", "*.pyd", "*.dll")
-        )
+        and _native_file(path)
     }
     covered = set()
     errors = []
     for library in libraries:
-        patterns = library.get("native_files", {}).get(platform, [])
+        patterns = list(library.get("native_files", {}).get(platform, []))
+        if library["name"] == "cpython":
+            # The interpreter has the same upstream notice as libpython. It is now
+            # detected by magic even when it has no shared-library suffix.
+            patterns += ["bin/python3", "bin/python3.14", "python.exe", "pythonw.exe"]
         matches = {name for name in files if any(fnmatchcase(name, p) for p in patterns)}
         if not matches:
             errors.append(f"{library['name']}: inventory patterns match no native files")
@@ -350,6 +409,263 @@ def check_runtime_files(runtime: Path, libraries: list[dict], target: str) -> No
     errors.extend(f"unlisted native runtime file: {name}" for name in sorted(files - covered))
     if errors:
         raise SystemExit("runtime inventory check failed:\n" + "\n".join(errors))
+
+
+_NATIVE_MAGIC = (
+    b"\x7fELF",
+    b"MZ",
+    b"\xfe\xed\xfa\xce",
+    b"\xce\xfa\xed\xfe",
+    b"\xfe\xed\xfa\xcf",
+    b"\xcf\xfa\xed\xfe",
+    b"\xca\xfe\xba\xbe",
+    b"\xbe\xba\xfe\xca",
+    b"\xca\xfe\xba\xbf",
+    b"\xbf\xba\xfe\xca",
+    b"!<arch>\n",
+)
+_GCC_RUNTIME = "GPL-3.0-or-later WITH GCC-exception-3.1"
+# Native exceptions are bound to library and distribution, never Python classifiers.
+NATIVE_LIBRARIES = {
+    "libgomp": (_GCC_RUNTIME, {"torch"}),
+    "libgfortran": (_GCC_RUNTIME, {"numpy", "scipy", "opencv-python-headless"}),
+    "libquadmath": ("LGPL-2.1-or-later", {"numpy", "scipy", "opencv-python-headless"}),
+    "libscipy_openblas": ("BSD-3-Clause", {"numpy", "scipy"}),
+    "libopenblas": ("BSD-3-Clause", {"opencv-python-headless"}),
+    "libXau": ("MIT", {"pillow"}),
+    "libavif": ("BSD-2-Clause", {"pillow"}),
+    "libbrotlicommon": ("MIT", {"pillow"}),
+    "libbrotlidec": ("MIT", {"pillow"}),
+    "libharfbuzz": ("MIT", {"pillow"}),
+    "liblcms2": ("MIT", {"pillow"}),
+    "liblzma": ("0BSD", {"pillow"}),
+    "libopenjp2": ("BSD-2-Clause", {"pillow"}),
+    "libsharpyuv": ("BSD-3-Clause", {"pillow", "torchvision"}),
+    "libwebp": ("BSD-3-Clause", {"pillow", "torchvision"}),
+    "libwebpdemux": ("BSD-3-Clause", {"pillow"}),
+    "libwebpmux": ("BSD-3-Clause", {"pillow"}),
+    "libxcb": ("MIT", {"pillow"}),
+    "libzstd": ("BSD-3-Clause", {"pillow"}),
+    "libz": ("Zlib", {"pillow", "torchvision"}),
+}
+_NATIVE_VERSIONS = {
+    "numpy": {"2.5.4"},
+    "scipy": {"1.18.1"},
+    "pillow": {"12.3.0", "13.0.0"},
+    "torch": {"2.14.1"},
+    "torchvision": {"0.29.1"},
+    "opencv-python-headless": {"5.0.0.93"},
+}
+
+# Complete upstream notices reviewed in the hash-locked wheel artifacts.
+_NATIVE_NOTICES = {
+    ("numpy", "2.5.4"): (
+        "licenses/LICENSE.txt",
+        frozenset(
+            {
+                "4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488",
+                "649a589ab31076e79e9ce62ba24eae9959598124176640dbc95f87bd10f34fcf",
+                "a804dff0ead9fadc5293456410bcbfc32bf024be9c4513459663fb7b442d2341",
+            }
+        ),
+    ),
+    ("scipy", "1.18.1"): (
+        "LICENSE.txt",
+        frozenset(
+            {
+                "09a1b9e19573045b0784a181cc4bef677039d4f2111631c747bf72b7f19017d4",
+                "17e7db9ffa4913121fa2df484633a362456a482da736c99db4711a98473770ea",
+                "f0f5c56b298ec9795df1199edc328a987242716d14a1bde6813112e22dc15f99",
+            }
+        ),
+    ),
+    ("pillow", "12.3.0"): (
+        "licenses/LICENSE",
+        frozenset(
+            {
+                "4f7866a74802c6326f81faff59a56546b6aec2b10b91973e0e9308de95e79857",
+                "dda12a98c1979cf3d94df1cff45d27a4cb3f04a60c76f76902ac54cac03ec0ce",
+            }
+        ),
+    ),
+    ("pillow", "13.0.0"): (
+        "licenses/LICENSE",
+        frozenset(
+            {
+                "988ffe8ab3480b0f4e9a0ab2702bffd73d9fb6b47198043fb3ba101a62fac236",
+                "dda12a98c1979cf3d94df1cff45d27a4cb3f04a60c76f76902ac54cac03ec0ce",
+            }
+        ),
+    ),
+}
+
+
+def _native_file(path: Path) -> bool:
+    if any(fnmatchcase(path.name.lower(), p) for p in ("*.so*", "*.dylib", "*.dll", "*.pyd")):
+        return True
+    with path.open("rb") as handle:
+        return handle.read(8).startswith(_NATIVE_MAGIC)
+
+
+def _vendored_files(site: Path) -> set[str]:
+    return {
+        path.relative_to(site).as_posix()
+        for path in site.rglob("*")
+        if path.is_file()
+        and (
+            any(
+                part.endswith(".libs") or part == ".dylibs" for part in path.relative_to(site).parts
+            )
+            or fnmatchcase(path.relative_to(site).as_posix(), "torch/lib/libgomp*")
+        )
+        and _native_file(path)
+    }
+
+
+def vendored_libraries(site: Path, target: str) -> list[dict]:
+    """Select reviewed families in *.libs/.dylibs and the GNU runtime in torch/lib.
+
+    Each selected entry names its actual file, owning distribution, SPDX licence and
+    complete upstream notice. Unknown files remain uncovered and fail the inventory check.
+    """
+    distributions = {
+        canonical(item.metadata["Name"]): item for item in metadata.distributions(path=[str(site)])
+    }
+    platform = _target_platform(target)
+    inventory = []
+    for relative in sorted(_vendored_files(site)):
+        path = Path(relative)
+        prefix = path.parts[0]
+        owner = {"PIL": "pillow", "scipy": "scipy", "torch": "torch"}.get(
+            prefix, canonical(prefix.removesuffix(".libs"))
+        )
+        distribution = distributions.get(owner)
+        if distribution is None or distribution.version.split("+")[0] not in _NATIVE_VERSIONS.get(
+            owner, set()
+        ):
+            raise SystemExit(f"review vendored library licences for {owner}: {relative}")
+        family = next(
+            (
+                name
+                for name, (_, owners) in NATIVE_LIBRARIES.items()
+                if (owner in owners and re.match(re.escape(name) + r"(?:[-_.0-9]|$)", path.name))
+            ),
+            None,
+        )
+        if family is None:
+            continue
+        # The source-built torch/OpenCV wheels may only carry their own notices.
+        # SciPy supplies OpenBLAS/GNU runtime terms; Pillow supplies the complete
+        # matching codec notices missing from TorchVision's BSD-only wrapper notice.
+        notice_owner = (
+            distributions.get("scipy")
+            if owner in {"torch", "opencv-python-headless"}
+            else distributions.get("pillow")
+            if owner == "torchvision"
+            else distribution
+        )
+        if notice_owner is None:
+            raise SystemExit(f"missing vendored licence notice for {owner}: {relative}")
+        notice_name = canonical(notice_owner.metadata["Name"])
+        notice_version = notice_owner.version
+        reviewed = _NATIVE_NOTICES.get((notice_name, notice_version))
+        if reviewed is None:
+            raise SystemExit(f"review native licence notice for {notice_name} {notice_version}")
+        notice = f"{notice_name.replace('-', '_')}-{notice_version}.dist-info/{reviewed[0]}"
+        source = site / notice
+        if (
+            not source.is_file()
+            or hashlib.sha256(source.read_bytes()).hexdigest() not in reviewed[1]
+        ):
+            raise SystemExit(f"native licence notice digest mismatch: {notice}")
+        inventory.append(
+            {
+                "name": family,
+                "distribution": owner,
+                "license": NATIVE_LIBRARIES[family][0],
+                "notice": notice,
+                "notice_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "native_files": {platform: [relative]},
+            }
+        )
+    return inventory
+
+
+def _target_platform(target: str) -> str:
+    return (
+        "windows"
+        if target.endswith("windows-msvc")
+        else ("macos" if target.endswith("apple-darwin") else "linux")
+    )
+
+
+def check_vendored_native_files(site: Path, inventory: list[dict], target: str) -> list[dict]:
+    """Reject unlisted native files, stale/overlapping entries and missing notices."""
+    platform = _target_platform(target)
+    files = _vendored_files(site)
+    covered = set()
+    errors = []
+    for item in inventory:
+        reviewed = NATIVE_LIBRARIES.get(item["name"])
+        if reviewed is not None:
+            allowed = item["license"] == reviewed[0] and item["distribution"] in reviewed[1]
+        else:
+            allowed = verdict(item["distribution"], item["license"]) is None
+        if not allowed:
+            errors.append(f"{item['name']}: excluded or unreviewed native licence")
+        patterns = item.get("native_files", {}).get(platform, [])
+        matches = {name for name in files if any(fnmatchcase(name, p) for p in patterns)}
+        if not matches:
+            errors.append(f"{item['name']}: inventory patterns match no native files")
+        if covered & matches:
+            errors.append(f"{item['name']}: native file matches multiple inventory entries")
+        covered.update(matches)
+        notice = site / item["notice"]
+        if not notice.resolve().is_relative_to(site.resolve()) or not notice.is_file():
+            errors.append(f"{item['name']}: missing or unsafe native licence notice")
+        elif not notice.read_bytes():
+            errors.append(f"{item['name']}: empty native licence notice")
+        elif (
+            item.get("notice_sha256")
+            and hashlib.sha256(notice.read_bytes()).hexdigest() != item["notice_sha256"]
+        ):
+            errors.append(f"{item['name']}: native licence notice digest mismatch")
+        elif item["license"] in {_GCC_RUNTIME, "LGPL-2.1-or-later"}:
+            text = notice.read_text(encoding="utf-8").lower()
+            required = (
+                ("gnu lesser general public license",)
+                if item["name"] == "libquadmath"
+                else ("gnu general public license", "gcc runtime library exception")
+            )
+            if any(term not in text for term in required):
+                errors.append(f"{item['name']}: incomplete GNU runtime licence notice")
+    errors.extend(f"unlisted native wheel file: {name}" for name in sorted(files - covered))
+    if errors:
+        raise SystemExit("vendored inventory check failed:\n" + "\n".join(errors))
+    return inventory
+
+
+def write_vendored_notices(site: Path, notices: Path, inventory: list[dict]) -> None:
+    """Copy complete upstream texts once and attribute every native library/file."""
+    root = notices / "vendored"
+    root.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for item in inventory:
+        source = site / item["notice"]
+        destination = root / f"{hashlib.sha256(source.read_bytes()).hexdigest()}-{source.name}"
+        if not destination.exists():
+            shutil.copyfile(source, destination)
+        rows.extend(
+            [
+                f"{item['distribution']}: {item['name']}: {item['license']}",
+                f"  Text: notices/{destination.relative_to(notices).as_posix()}",
+                "  GNU runtime source: https://gcc.gnu.org/git/"
+                if item["license"] in {_GCC_RUNTIME, "LGPL-2.1-or-later"}
+                else f"  Source: https://pypi.org/project/{item['distribution']}/",
+                f"  Native files: {item['native_files']}",
+            ]
+        )
+    (notices / "vendored-libraries.txt").write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
 _INTEL_LIBRARIES = ("iomp", "ippicv", "libipp", "libmkl", "mkl_rt", "mkl_core")
@@ -382,6 +698,11 @@ def _strip_reviewed_opencv_ipp_notice(text: str, label: str) -> str:
     return _NOTICE_SEPARATOR.join(s for s in sections if s != matches[0])
 
 
+def _stream_chunks(header: bytes, handle):
+    yield header
+    yield from iter(lambda: handle.read(1 << 20), b"")
+
+
 def _scan_stream(
     handle,
     relative: str,
@@ -392,13 +713,14 @@ def _scan_stream(
     allow_itt: bool = True,
     strip_opencv_ipp_notice: bool = False,
 ) -> None:
-    native = any(
+    header = handle.read(8)
+    native = header.startswith(_NATIVE_MAGIC) or any(
         fnmatchcase(name, p)
         for p in ("*.so*", "*.dll", "*.pyd", "*.dylib", "*.exe", "*.a", "*.lib")
     )
     libraries = _INTEL_LIBRARIES if allow_itt else (*_INTEL_LIBRARIES, *_ITT_LIBRARIES)
     if any(word in name for word in libraries):
-        data = handle.read()
+        data = header + handle.read()
         if relative not in approved_openmp or (
             hashlib.sha256(data).hexdigest() != approved_openmp[relative]
         ):
@@ -412,7 +734,7 @@ def _scan_stream(
         # not bless the original vendor DLL by supplying its digest.
         markers = _INTEL_MARKERS if allow_itt else (*_INTEL_MARKERS, *_ITT_MARKERS)
         tail = b""
-        iterator = iter(chunks) if chunks is not None else iter(lambda: handle.read(1 << 20), b"")
+        iterator = iter(chunks) if chunks is not None else _stream_chunks(header, handle)
         for chunk in iterator:
             data = (tail + chunk).lower()
             if any(marker in data for marker in markers):
@@ -420,7 +742,7 @@ def _scan_stream(
                 break
             tail = data[-128:]
     elif any(word in name for word in ("license", "licence", "notice", "copying")):
-        raw = b"".join(chunks) if chunks is not None else handle.read()
+        raw = b"".join(chunks) if chunks is not None else header + handle.read()
         if strip_opencv_ipp_notice and name == "license-3rd-party.txt":
             raw = _strip_reviewed_opencv_ipp_notice(raw.decode("utf-8"), relative).encode("utf-8")
         data = raw.lower()

@@ -64,6 +64,7 @@ NOTICES = (
     "notices/models-and-data.txt",
     "notices/runtime-libraries.txt",
     "notices/native-libraries.txt",
+    "notices/vendored-libraries.txt",
 )
 MAX_COMPONENT_BYTES = 2 * 1024**3
 PYTHON_VERSION = "3.14"
@@ -464,6 +465,9 @@ def write_notices(root: Path, runtime: Path, target: str, pins: dict) -> str:
     site = site_packages(runtime, target)
     distributions = list(metadata.distributions(path=[str(site)]))
     libraries = licenses.runtime_libraries(pins["python"]["release"], target)
+    vendored = licenses.check_vendored_native_files(
+        site, licenses.vendored_libraries(site, target), target
+    )
     expression = licenses.pack_expression(
         distributions,
         [
@@ -472,11 +476,13 @@ def write_notices(root: Path, runtime: Path, target: str, pins: dict) -> str:
             pins["tessdata"]["license"],
             *(model["license"] for model in pins["models"]),
             *(item["license"] for item in libraries),
+            *(item["license"] for item in vendored),
         ],
     )
     notices = root / "notices"
     licenses.write_notices(distributions, notices)
     licenses.write_runtime_notices(notices, libraries)
+    licenses.write_vendored_notices(site, notices, vendored)
 
     for name in ("LICENSE", "NOTICE"):
         shutil.copyfile(REPOSITORY / name, notices / f"AriadShift-{name}")

@@ -25,6 +25,7 @@ Roadmap 1a (`v0.1.0`) is shipped. `ashift` converts across all 12 directional ro
 
 - Distributed artifacts must not contain AGPL or non-OSI code. This rules out PyMuPDF, `pdf2docx` and MinerU.
 - MPL-2.0 Rust dependencies are allowed only unmodified and through per-crate cargo-deny exceptions. The Docling Python pack allows unmodified `certifi` and `tqdm` through per-distribution exceptions in `engines/docling/pack/licenses.py`.
+- The Docling pack permits per-library, per-distribution exceptions for the libgomp/libgfortran/libquadmath runtime cases and the permissive native licences FTL (never the GPL alternative), IJG, libpng-2.0 and libtiff, with full notices. Other permissive attribution-only native licences require the same named review; CC0 covers data or metadata only (`engines/docling/pack/licenses.py`).
 - JavaScript dependencies allow CC-BY-4.0 for `caniuse-lite` (data) and OFL-1.1 for the Plus Jakarta Sans packages through per-package exceptions.
 - GPL tools such as Pandoc are invoked as separate processes, never linked.
   In the browser, only the unmodified official Pandoc WASM may be aggregated as a
