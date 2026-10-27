@@ -134,6 +134,7 @@ fn read_impl(
     };
     let mut converted = HashMap::new();
     let mut stack = vec![Visit::Enter(root, 0)];
+    let mut sharing_fallback_warned = false;
 
     while let Some(task) = stack.pop() {
         match task {
@@ -185,6 +186,20 @@ fn read_impl(
                 );
             }
             Visit::Exit(node) => {
+                if shared.skipped && !sharing_fallback_warned {
+                    let possible_shared_image = match &node.data().value {
+                        NodeValue::Image(link) => link.url.starts_with("data:"),
+                        NodeValue::Text(text) => text.contains("!["),
+                        _ => false,
+                    };
+                    if possible_shared_image {
+                        state.warnings.push(Warning::new(
+                            WarningCode::UnsupportedNode,
+                            "shared data image references could not be interned; unresolved references may remain text",
+                        ));
+                        sharing_fallback_warned = true;
+                    }
+                }
                 let children = node
                     .children()
                     .map(|child| {
@@ -251,6 +266,7 @@ struct ReferenceData<'a> {
     input: Cow<'a, str>,
     destinations: HashMap<String, String>,
     definitions: HashMap<String, String>,
+    skipped: bool,
 }
 
 fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> ReferenceData<'a> {
@@ -267,20 +283,49 @@ fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> R
         let position = node.data().sourcepos;
         visible_lines[position.start.line..=position.end.line].fill(true);
     }
-    // Intern only when every ordinary definition can be associated with its
-    // consumed source line. Otherwise a definition hidden in a paragraph or
-    // container could win before a duplicate, and source positions may shift.
-    // Literal and unsupported definition syntax keeps the original parser path.
+    let mut literal_lines = vec![false; visible_lines.len()];
+    let mut paragraph_lines = vec![0u8; visible_lines.len()];
+    for node in root.descendants() {
+        let data = node.data();
+        let position = data.sourcepos;
+        match &data.value {
+            NodeValue::CodeBlock(_)
+            | NodeValue::HtmlBlock(_)
+            | NodeValue::FrontMatter(_)
+            | NodeValue::TableRow(_) => {
+                literal_lines[position.start.line..=position.end.line].fill(true);
+            }
+            NodeValue::Paragraph | NodeValue::Heading(_) => {
+                paragraph_lines[position.start.line..=position.end.line].fill(2);
+                paragraph_lines[position.start.line] = 1;
+            }
+            _ => {}
+        }
+    }
+    // Parser-confirmed literal blocks and paragraph continuations cannot define
+    // references. An actual but unassociated declaration keeps the native path;
+    // possible unresolved images on that path must produce a diagnostic.
+    let mut multiline_label = false;
     for (index, line) in markdown.lines().enumerate() {
+        let content = definition_content(line);
+        if paragraph_lines[index + 1] != 2 {
+            multiline_label = paragraph_lines[index + 1] == 1 && unclosed_reference_label(content);
+        }
         if line.contains("]:") {
-            let declarations = line.matches("]:").count();
-            if declarations == 1 && footnote_definition_label(line).is_some() {
+            if literal_lines[index + 1] || (paragraph_lines[index + 1] == 2 && !multiline_label) {
                 continue;
             }
-            let definition = reference_definition(line.trim_start_matches(' '));
-            if visible_lines[index + 1] || definition.is_none() || declarations != 1 {
+            let ambiguous = if visible_lines[index + 1] {
+                multiline_label
+                    || paragraph_lines[index + 1] == 0
+                    || reference_definition(content).is_some()
+            } else {
+                reference_definition(line.trim_start_matches(' ')).is_none()
+            };
+            if ambiguous {
                 return ReferenceData {
                     input: Cow::Borrowed(markdown),
+                    skipped: true,
                     ..ReferenceData::default()
                 };
             }
@@ -302,13 +347,8 @@ fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> R
         let first_definition = label
             .as_ref()
             .is_some_and(|label| seen_labels.insert(label.clone()));
-        let uri = destination.and_then(|destination| {
-            if let Some(angled) = destination.strip_prefix('<') {
-                angled.split_once('>').map(|(uri, _)| uri)
-            } else {
-                Some(destination.split_whitespace().next().unwrap_or_default())
-            }
-        });
+        let span = destination.and_then(reference_destination);
+        let uri = span.map(|(uri, _)| uri);
         if let Some(uri) = uri.filter(|uri| {
             first_definition && uri.starts_with("data:") && uri.len() > prefix.len() + 20
         }) {
@@ -324,8 +364,7 @@ fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> R
             destinations.entry(token.clone()).or_insert(normalized);
             definitions.insert(label.unwrap(), token.clone());
             let start = line.len() - destination.unwrap().len();
-            let angled = line.as_bytes()[start] == b'<';
-            let end = start + uri.len() + if angled { 2 } else { 0 };
+            let end = start + span.unwrap().1;
             input.push_str(&line[..start]);
             input.push_str(token);
             // Preserve source positions and Comrak's original input-sized budget.
@@ -343,7 +382,82 @@ fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> R
         },
         destinations,
         definitions,
+        skipped: false,
     }
+}
+
+fn definition_content(line: &str) -> &str {
+    let mut content = line.trim_start_matches([' ', '\t']);
+    loop {
+        if let Some(rest) = content.strip_prefix('>') {
+            content = rest.trim_start_matches([' ', '\t']);
+        } else if let Some(end) = after_list_marker(content.as_bytes(), 0) {
+            content = content[end..].trim_start_matches([' ', '\t']);
+        } else if footnote_definition_label(content).is_some()
+            && let Some((_, rest)) = reference_definition(content)
+        {
+            content = rest.trim_start_matches([' ', '\t']);
+        } else {
+            return content;
+        }
+    }
+}
+
+fn unclosed_reference_label(content: &str) -> bool {
+    let Some(label) = content.strip_prefix('[') else {
+        return false;
+    };
+    let mut escaped = false;
+    for character in label.chars() {
+        if escaped {
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else if character == ']' {
+            return false;
+        }
+    }
+    true
+}
+
+fn reference_destination(destination: &str) -> Option<(&str, usize)> {
+    let bytes = destination.as_bytes();
+    if !destination.starts_with('<') {
+        let mut index = 0;
+        let mut parentheses = 0;
+        while index < bytes.len() {
+            match bytes[index] {
+                b'\\' if bytes.get(index + 1).is_some_and(u8::is_ascii_punctuation) => {
+                    index += 2;
+                }
+                b'(' => {
+                    parentheses += 1;
+                    if parentheses > 32 {
+                        return None;
+                    }
+                    index += 1;
+                }
+                b')' if parentheses == 0 => break,
+                b')' => {
+                    parentheses -= 1;
+                    index += 1;
+                }
+                byte if byte == b' ' || (byte.is_ascii_control() && byte != 0) => break,
+                _ => index += 1,
+            }
+        }
+        return (index > 0 && parentheses == 0).then_some((&destination[..index], index));
+    }
+    let mut index = 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 2,
+            b'>' => return Some((&destination[1..index], index + 1)),
+            b'\n' | b'\r' | b'<' => return None,
+            _ => index += 1,
+        }
+    }
+    None
 }
 
 fn reference_definition(line: &str) -> Option<(&str, &str)> {
@@ -1272,6 +1386,111 @@ mod tests {
     }
 
     #[test]
+    fn literal_reference_roundtrip_keeps_fenced_code_and_all_shared_images() {
+        let output = shared_png_roundtrip("```md\n[example]: literal\n```\n");
+        assert!(
+            matches!(&output.document.body[0], Block::Code { text, .. } if text == "[example]: literal\n")
+        );
+    }
+
+    #[test]
+    fn literal_reference_roundtrip_keeps_code_spans_and_all_shared_images() {
+        let output = shared_png_roundtrip("`[example]: literal`\n");
+        assert!(
+            matches!(&output.document.body[0], Block::Paragraph { content }
+            if matches!(content.as_slice(), [Inline::Code { text }] if text == "[example]: literal"))
+        );
+    }
+
+    #[test]
+    fn literal_reference_roundtrip_keeps_html_and_all_shared_images() {
+        let literal = "<div>\n[example]: literal\n</div>\n";
+        let output = shared_png_roundtrip(literal);
+        assert!(matches!(&output.document.body[0], Block::Raw { text, .. } if text == literal));
+    }
+
+    #[test]
+    fn literal_reference_roundtrip_keeps_paragraphs_and_all_shared_images() {
+        let literal = "Paragraph with [example]: literal text.";
+        let output = shared_png_roundtrip(literal);
+        assert_eq!(paragraph_text(&output.document.body[0]), literal);
+    }
+
+    fn shared_png_roundtrip(literal: &str) -> super::ReadOutput {
+        use crate::ir::{Asset, Document};
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let mut document = Document::default();
+        document.assets.insert(
+            "pixel".into(),
+            Asset {
+                media_type: "image/png".into(),
+                bytes: png.to_vec(),
+            },
+        );
+        for _ in 0..3 {
+            document.body.push(Block::Paragraph {
+                content: vec![Inline::Image {
+                    target: AssetRef::Asset { id: "pixel".into() },
+                    alt: "pixel".into(),
+                    title: None,
+                }],
+            });
+        }
+        let written = crate::writer::markdown::write(&document);
+        assert_eq!(written.content.matches("data:image/png;base64,").count(), 1);
+        let output = read(
+            &format!("{literal}\n\n{}", written.content),
+            &Limits::local(),
+        )
+        .unwrap();
+        assert_eq!(output.document.assets.len(), 1);
+        assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
+        let images = output.document.body.iter().filter(|block| {
+            matches!(block, Block::Paragraph { content }
+                if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+        }).count();
+        assert_eq!(images, 3);
+        assert!(output.warnings.is_empty());
+        output
+    }
+
+    #[test]
+    fn escaped_angle_reference_destinations_match_the_original_reader() {
+        for url in [
+            r"data:text/plain,12345678901234567890\>suffix",
+            r"data:text/plain,12345678901234567890\>one\>two",
+            r"data:text/plain,12345678901234567890\\\>suffix",
+        ] {
+            for image in ["", "!"] {
+                let markdown = format!("{image}[p][p]\n\n[p]: <{url}>\n");
+                assert_eq!(
+                    read(&markdown, &Limits::local()),
+                    super::read_impl(&markdown, &Limits::local(), false),
+                    "{markdown}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shared_image_fallback_never_silently_loses_references() {
+        use base64::Engine as _;
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        let markdown = format!(
+            "[other]: https://example.test/\nParagraph.\n\n{}\n[pixel]: data:image/png;base64,{encoded}\n",
+            "![pixel][pixel]\n\n".repeat(3)
+        );
+        let output = read(&markdown, &Limits::local()).unwrap();
+        assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
+        let images = output.document.body.iter().filter(|block| {
+            matches!(block, Block::Paragraph { content }
+                if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+        }).count();
+        assert!(images == 3 || output.warnings.iter().any(|warning| warning.message == "shared data image references could not be interned; unresolved references may remain text"));
+    }
+
+    #[test]
     fn escaped_internal_urls_match_the_original_reader() {
         for url in [
             "a&#58;0:0",
@@ -1308,6 +1527,10 @@ mod tests {
             "data:text/plain;base64,YQ&#61;&#61;",
             r"data:application/foo\;bar\,baz\=qux",
             r"https://example.test/a\(b\)?x&#61;1",
+            "data:text/plain,1234567890\u{a0}1234567890",
+            "data:text/plain,1234567890\u{2003}1234567890",
+            "data:text/plain,1234567890(1234567890)",
+            r"data:text/plain,1234567890\(1234567890\)",
         ] {
             for image in ["", "!"] {
                 let markdown = format!("{image}[p][p]\n\n[p]: {url}\n");
@@ -1342,11 +1565,22 @@ mod tests {
             "[pixel]: a&#58;0:0\nParagraph",
             "> [pixel]: a&#58;0:0",
             "[^note]: [pixel]: a&#58;0:0",
+            r"[^note\]: literal",
             "[pi\n xel]: a&#58;0:0",
             "[pixel]: a&#58;0:0",
         ] {
             let markdown = format!(
                 "{prefix}\n\n[link][pixel]\n\n[pixel]: data:image/png;base64,iVBORw0KGgo=\n"
+            );
+            assert_eq!(
+                read(&markdown, &Limits::local()),
+                super::read_impl(&markdown, &Limits::local(), false),
+                "{markdown}"
+            );
+        }
+        for tail in ["", "\nParagraph."] {
+            let markdown = format!(
+                "[pi\n xel]: a&#58;0:0{tail}\n\n[link][pi xel]\n\n[pi xel]: data:image/png;base64,iVBORw0KGgo=\n"
             );
             assert_eq!(
                 read(&markdown, &Limits::local()),
