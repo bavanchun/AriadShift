@@ -81,7 +81,7 @@ pub const PANDOC: EngineSpec = EngineSpec {
         (Format::Docx, Format::AriadIrJson),
         (Format::Epub, Format::AriadIrJson),
     ],
-    install_hint: "run 'just pandoc' or install Pandoc >=3.12,<4 and set ASHIFT_PANDOC",
+    install_hint: "install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC",
     supported: Some(">=3.12, <4"),
     required: true,
     builtin: false,

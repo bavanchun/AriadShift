@@ -269,12 +269,12 @@ mod tests {
             metrics: None,
             error: Some(EngineError {
                 code: ErrorCode::ToolMissing,
-                message: "Install Pandoc with `just pandoc`.".to_owned(),
+                message: "Install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC.".to_owned(),
             }),
         };
         assert_eq!(
             serde_json::to_value(error_event).unwrap(),
-            json!({"type":"result","ok":false,"error":{"code":"tool_missing","message":"Install Pandoc with `just pandoc`."}})
+            json!({"type":"result","ok":false,"error":{"code":"tool_missing","message":"Install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC."}})
         );
     }
 

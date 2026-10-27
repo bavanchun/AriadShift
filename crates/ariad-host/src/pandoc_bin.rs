@@ -16,10 +16,10 @@ pub struct PandocBinary {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum PandocBinaryError {
-    #[error("Pandoc was not found. Install Pandoc with `just pandoc` or set ASHIFT_PANDOC.")]
+    #[error("Pandoc was not found. Install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC.")]
     Missing,
     #[error(
-        "Pandoc must be {PANDOC_SUPPORTED}; install it with `just pandoc` or set ASHIFT_PANDOC."
+        "Pandoc must be {PANDOC_SUPPORTED}; install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC."
     )]
     UnsupportedVersion { found: Option<String> },
     #[error("Pandoc timed out while checking version")]

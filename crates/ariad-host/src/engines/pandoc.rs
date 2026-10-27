@@ -27,7 +27,7 @@ use crate::{ir_io, media, pandoc_bin};
 const MAX_REQUEST_LINE_BYTES: usize = 1 << 20;
 const STDERR_TAIL_BYTES: usize = 64 * 1024;
 const PANDOC_TIMEOUT_MARGIN_SECONDS: u64 = 2;
-const PANDOC_INSTALL_HINT: &str = "Install Pandoc with `just pandoc` or set ASHIFT_PANDOC.";
+const PANDOC_INSTALL_HINT: &str = "Install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC.";
 
 #[derive(Debug)]
 struct EngineFailure {
@@ -146,7 +146,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 }
                 pandoc_bin::PandocBinaryError::UnsupportedVersion { .. } => EngineFailure::new(
                     ErrorCode::ToolVersion,
-                    "Pandoc must be >= 3.12 and < 4. Install a supported release with `just pandoc`.",
+                    "Pandoc must be >= 3.12 and < 4. Install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC.",
                 ),
                 pandoc_bin::PandocBinaryError::TimedOut => EngineFailure::new(
                     ErrorCode::EngineFailure,

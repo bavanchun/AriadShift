@@ -292,7 +292,7 @@ impl std::fmt::Display for ConvertError {
             ),
             Self::ToolMissing => write!(
                 f,
-                "Pandoc is missing or unsupported. Run `just pandoc` or set ASHIFT_PANDOC."
+                "Pandoc is missing or unsupported. Install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC."
             ),
             Self::EngineMissing { engine, hint } => {
                 write!(f, "the {engine} engine is missing or unsupported; {hint}")

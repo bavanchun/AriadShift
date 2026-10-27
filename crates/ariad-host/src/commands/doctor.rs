@@ -111,8 +111,7 @@ pub fn doctor(
                     ok: false,
                     required: true,
                     message: "Pandoc executable was not found".to_owned(),
-                    hint: "run 'just pandoc' or install Pandoc >=3.12,<4 and set ASHIFT_PANDOC"
-                        .to_owned(),
+                    hint: "install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC".to_owned(),
                 },
             )
         }
@@ -133,7 +132,7 @@ pub fn doctor(
                     ok: false,
                     required: true,
                     message: detail,
-                    hint: "run 'just pandoc' or install Pandoc >=3.12,<4".to_owned(),
+                    hint: "install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC".to_owned(),
                 },
             )
         }
@@ -148,7 +147,7 @@ pub fn doctor(
                     ok: false,
                     required: true,
                     message: "Pandoc timed out while checking version".to_owned(),
-                    hint: "ensure Pandoc is responsive or reinstall it with 'just pandoc'"
+                    hint: "ensure Pandoc is responsive or reinstall Pandoc 3.12 or newer (<4)"
                         .to_owned(),
                 },
             )
@@ -248,7 +247,7 @@ pub fn doctor(
                     ok: false,
                     required: true,
                     message: format!("engine '{engine}' describe reported {status_desc}"),
-                    hint: "run 'just pandoc' to install Pandoc >=3.12,<4".to_owned(),
+                    hint: "install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC".to_owned(),
                 }
             }
         }
@@ -296,7 +295,7 @@ pub fn doctor(
                 ),
                 hint: startup_failure.map_or_else(
                     || {
-                        "run 'just pandoc' or verify ASHIFT_PANDOC path and execution permissions"
+                        "install Pandoc 3.12 or newer (<4) or verify ASHIFT_PANDOC path and execution permissions"
                             .to_owned()
                     },
                     |detail| launcher_failure_hint(detail).to_owned(),

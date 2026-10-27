@@ -174,7 +174,10 @@ fn maps_usage_route_limit_tool_and_input_errors_to_documented_exit_codes() {
         .output()
         .expect("start ashift");
     assert_eq!(missing_tool.status.code(), Some(5));
-    assert!(String::from_utf8_lossy(&missing_tool.stderr).contains("just pandoc"));
+    assert!(
+        String::from_utf8_lossy(&missing_tool.stderr)
+            .contains("Install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC.")
+    );
     assert!(!output.exists());
 
     let missing_input = run_convert(&directory.path().join("missing.md"), &output);

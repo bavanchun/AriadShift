@@ -813,10 +813,7 @@ fn doctor_missing_pandoc_exit_code_5() {
     assert_eq!(output.status.code(), Some(5));
     let stdout = normalize_stdout(&output);
     assert!(stdout.contains("Pandoc executable was not found"));
-    assert!(
-        stdout
-            .contains("hint: run 'just pandoc' or install Pandoc >=3.12,<4 and set ASHIFT_PANDOC")
-    );
+    assert!(stdout.contains("hint: install Pandoc 3.12 or newer (<4) or set ASHIFT_PANDOC"));
 }
 
 fn normalize_convert_json_stdout(output: &Output) -> String {
