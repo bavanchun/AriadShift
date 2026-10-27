@@ -62,35 +62,33 @@ pub struct McpArgs {
     pub allow_overwrite: bool,
 }
 
+const ROOTS_LIST_TIMEOUT: Duration = Duration::from_secs(10);
+
 impl McpServer {
     #[allow(deprecated)]
-    async fn refresh_roots_with_peer(&self, peer: &rmcp::service::Peer<RoleServer>) {
-        if let Ok(result) = peer.list_roots().await {
-            let mut roots_uris = Vec::new();
-            for root in result.roots {
-                roots_uris.push(root.uri);
-            }
-            // Keep existing --allow-dir directories that still exist
-            let existing_allow_dirs: Vec<PathBuf> = self
-                .cli_allow_dirs
-                .iter()
-                .filter(|p| p.is_dir())
-                .cloned()
-                .collect();
-            match AllowedDirs::new(&existing_allow_dirs, &roots_uris) {
-                Ok(new_allowed) => {
-                    if let Ok(mut allowed) = self.allowed_dirs.write() {
-                        *allowed = new_allowed;
-                    }
-                }
-                Err(_) => {
-                    // Fail closed on error (empty allowed set) per M2
-                    if let Ok(mut allowed) = self.allowed_dirs.write() {
-                        *allowed = AllowedDirs::default();
-                    }
-                }
-            }
-        }
+    async fn refresh_roots_with_peer(
+        &self,
+        peer: &rmcp::service::Peer<RoleServer>,
+        fail_closed: bool,
+    ) {
+        let roots_uris = match tokio::time::timeout(ROOTS_LIST_TIMEOUT, peer.list_roots()).await {
+            Ok(Ok(result)) => result.roots.into_iter().map(|root| root.uri).collect(),
+            // Initialization can involve a client without roots support. A failed refresh
+            // after list_changed must revoke the old client roots, retaining CLI grants.
+            _ if fail_closed => Vec::new(),
+            _ => return,
+        };
+        let existing_allow_dirs: Vec<PathBuf> = self
+            .cli_allow_dirs
+            .iter()
+            .filter(|p| p.is_dir())
+            .cloned()
+            .collect();
+        let new_allowed = AllowedDirs::new(&existing_allow_dirs, &roots_uris).unwrap_or_default();
+        *self
+            .allowed_dirs
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = new_allowed;
     }
 }
 
@@ -128,11 +126,11 @@ impl ServerHandler for McpServer {
     }
 
     async fn on_initialized(&self, context: rmcp::service::NotificationContext<RoleServer>) {
-        self.refresh_roots_with_peer(&context.peer).await;
+        self.refresh_roots_with_peer(&context.peer, false).await;
     }
 
     async fn on_roots_list_changed(&self, context: rmcp::service::NotificationContext<RoleServer>) {
-        self.refresh_roots_with_peer(&context.peer).await;
+        self.refresh_roots_with_peer(&context.peer, true).await;
     }
 }
 

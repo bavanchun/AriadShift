@@ -5,14 +5,12 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use ariad_core::planner::Profile;
+use ariad_core::{limits::Limits, planner::Profile};
 use ariad_host::{
     assets::AssetBase,
     commands::{active_capabilities, engines, inspect, plan},
     confine::{AllowedDirs, ConfineError, confine_input, confine_output, parse_file_uri},
-    convert::{
-        ANALYSIS_MAX_BYTES, ConvertError, ConvertOutput, ConvertRequest, convert_confined_in,
-    },
+    convert::{ConvertError, ConvertOutput, ConvertRequest, convert_confined_in},
     session::SessionPool,
 };
 use rmcp::{
@@ -125,6 +123,15 @@ fn tool_convert_error(err: &ConvertError) -> CallToolResult {
     tool_error(err.code(), err.exit_code(), err.to_string())
 }
 
+fn tool_input_error(err: &std::io::Error) -> CallToolResult {
+    let error = if err.kind() == std::io::ErrorKind::FileTooLarge {
+        ConvertError::LimitExceeded
+    } else {
+        ConvertError::InputIo
+    };
+    tool_convert_error(&error)
+}
+
 fn tool_success<T: serde::Serialize>(
     val: &T,
     extra_blocks: Vec<ContentBlock>,
@@ -155,7 +162,7 @@ impl McpServer {
         let caps = match active_capabilities() {
             Ok(c) => c,
             Err(e) => {
-                return Ok(tool_error("invalid_capabilities", 2, e.to_string()));
+                return Ok(tool_convert_error(&e));
             }
         };
 
@@ -196,23 +203,19 @@ impl McpServer {
             }
         };
 
-        // Create isolated copy to eliminate C2 input swap race
+        // Copy the authorized handle; the host applies its own analysis or conversion limits.
         let (_isolated_temp, isolated_input) =
-            match validated_input.create_isolated_copy(None, Some(ANALYSIS_MAX_BYTES)) {
+            match validated_input.create_isolated_copy(None, None) {
                 Ok(pair) => pair,
                 Err(e) => {
-                    return Ok(tool_error(
-                        "input_io",
-                        2,
-                        format!("failed to read input file: {e}"),
-                    ));
+                    return Ok(tool_input_error(&e));
                 }
             };
 
         let caps = match active_capabilities() {
             Ok(c) => c,
             Err(e) => {
-                return Ok(tool_error("invalid_capabilities", 2, e.to_string()));
+                return Ok(tool_convert_error(&e));
             }
         };
 
@@ -255,23 +258,19 @@ impl McpServer {
             }
         };
 
-        // Create isolated copy to eliminate C2 input swap race
+        // Copy the authorized handle; the host applies its own analysis or conversion limits.
         let (_isolated_temp, isolated_input) =
-            match validated_input.create_isolated_copy(None, Some(ANALYSIS_MAX_BYTES)) {
+            match validated_input.create_isolated_copy(None, None) {
                 Ok(pair) => pair,
                 Err(e) => {
-                    return Ok(tool_error(
-                        "input_io",
-                        2,
-                        format!("failed to read input file: {e}"),
-                    ));
+                    return Ok(tool_input_error(&e));
                 }
             };
 
         let caps = match active_capabilities() {
             Ok(c) => c,
             Err(e) => {
-                return Ok(tool_error("invalid_capabilities", 2, e.to_string()));
+                return Ok(tool_convert_error(&e));
             }
         };
 
@@ -380,16 +379,12 @@ impl McpServer {
             (valid_in, valid_out)
         };
 
-        // Create isolated copy to eliminate C2 input swap race
+        // Copy the authorized handle; the host applies its own analysis or conversion limits.
         let (_isolated_temp, isolated_input) =
-            match validated_input.create_isolated_copy(None, Some(ANALYSIS_MAX_BYTES)) {
+            match validated_input.create_isolated_copy(None, Limits::local().max_input_bytes) {
                 Ok(pair) => pair,
                 Err(e) => {
-                    return Ok(tool_error(
-                        "input_io",
-                        2,
-                        format!("failed to read input file: {e}"),
-                    ));
+                    return Ok(tool_input_error(&e));
                 }
             };
 
@@ -398,11 +393,7 @@ impl McpServer {
         let asset_base = match validated_input.parent_dir.try_clone() {
             Ok(dir) => AssetBase::confined(dir),
             Err(e) => {
-                return Ok(tool_error(
-                    "input_io",
-                    2,
-                    format!("failed to open input directory: {e}"),
-                ));
+                return Ok(tool_input_error(&e));
             }
         };
         let request = ConvertRequest {
@@ -482,5 +473,28 @@ impl McpServer {
 
         let convert_output = ConvertOutput::from(&report);
         tool_success(&convert_output, extra_blocks)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn staging_errors_match_host_codes_and_exit_statuses() {
+        for (kind, expected) in [
+            (ErrorKind::FileTooLarge, ConvertError::LimitExceeded),
+            (ErrorKind::PermissionDenied, ConvertError::InputIo),
+            (ErrorKind::NotFound, ConvertError::InputIo),
+            (ErrorKind::Other, ConvertError::InputIo),
+        ] {
+            let result = tool_input_error(&Error::from(kind));
+            assert_eq!(result.is_error, Some(true));
+            let value = result.structured_content.unwrap();
+            assert_eq!(value["code"], expected.code());
+            assert_eq!(value["exit_code"], expected.exit_code());
+            assert_eq!(value["message"], expected.to_string());
+        }
     }
 }

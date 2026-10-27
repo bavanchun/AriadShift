@@ -42,6 +42,12 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
+#[derive(Clone, Copy)]
+enum RootsFailure {
+    Error,
+    Timeout,
+}
+
 /// Helper client for testing `ashift mcp` over stdio.
 struct McpTestClient {
     child: Option<Child>,
@@ -50,6 +56,7 @@ struct McpTestClient {
     recorded_stdout: Vec<String>,
     advertised_roots: Vec<String>,
     roots_queries_count: usize,
+    roots_failure: Option<RootsFailure>,
 }
 
 impl Drop for McpTestClient {
@@ -97,6 +104,7 @@ impl McpTestClient {
             recorded_stdout: Vec::new(),
             advertised_roots,
             roots_queries_count: 0,
+            roots_failure: None,
         }
     }
 
@@ -165,6 +173,19 @@ impl McpTestClient {
             if val.get("method").and_then(Value::as_str) == Some("roots/list")
                 && let Some(req_id) = val.get("id")
             {
+                self.roots_queries_count += 1;
+                if let Some(failure) = self.roots_failure {
+                    if matches!(failure, RootsFailure::Error) {
+                        self.write_line(
+                            &json!({
+                                "jsonrpc": "2.0", "id": req_id,
+                                "error": { "code": -32603, "message": "roots unavailable" }
+                            })
+                            .to_string(),
+                        );
+                    }
+                    continue;
+                }
                 let roots_array: Vec<Value> = self
                     .advertised_roots
                     .iter()
@@ -183,7 +204,6 @@ impl McpTestClient {
                         "roots": roots_array
                     }
                 });
-                self.roots_queries_count += 1;
                 self.write_line(&resp.to_string());
                 continue;
             }
@@ -1569,4 +1589,231 @@ fn test_real_request_cancellation_preserves_server_and_cleans_engine() {
     );
 
     client.close_and_assert_purity();
+}
+
+mod limits_and_roots {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn tool(client: &mut McpTestClient, name: &str, args: Value) -> Value {
+        client.send_request(
+            700,
+            "tools/call",
+            json!({ "name": name, "arguments": args }),
+        );
+        client.read_response(700)
+    }
+
+    fn large_analysis_matches_cli(name: &str) {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("large.md");
+        fs::File::create(&input)
+            .unwrap()
+            .set_len(ariad_host::convert::ANALYSIS_MAX_BYTES + 1)
+            .unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ashift"));
+        command
+            .arg(name)
+            .arg(&input)
+            .arg("--json")
+            .env("ASHIFT_PANDOC", pandoc_path())
+            .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path());
+        if name == "plan" {
+            command.args(["--to", "html"]);
+        }
+        let cli = command.output().unwrap();
+        assert!(cli.status.success(), "{cli:?}");
+        let expected: Value = serde_json::from_slice(&cli.stdout).unwrap();
+        if name == "inspect" {
+            assert!(
+                expected["warnings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|w| w["code"] == "document_too_large")
+            );
+        }
+        let mut client =
+            McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
+        client.initialize();
+        let response = tool(&mut client, name, json!({ "input": input, "to": "html" }));
+        assert_eq!(response["result"]["isError"], false, "{response}");
+        assert_eq!(response["result"]["structuredContent"], expected);
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn inspect_above_analysis_limit_matches_cli() {
+        large_analysis_matches_cli("inspect");
+    }
+
+    #[test]
+    fn plan_above_analysis_limit_matches_cli() {
+        large_analysis_matches_cli("plan");
+    }
+
+    #[test]
+    fn convert_above_analysis_limit_succeeds() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("large.md");
+        let mut file = fs::File::create(&input).unwrap();
+        file.write_all(b"# Large document\n\n").unwrap();
+        let spaces = [b' '; 64 * 1024];
+        for _ in 0..512 {
+            file.write_all(&spaces).unwrap();
+        }
+        file.write_all(b"\n").unwrap();
+        assert!(file.metadata().unwrap().len() > ariad_host::convert::ANALYSIS_MAX_BYTES);
+        let mut client =
+            McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
+        client.initialize();
+        let output = dir.path().join("large.html");
+        let response = tool(
+            &mut client,
+            "convert",
+            json!({
+                "input": input, "to": "html", "output": output
+            }),
+        );
+        assert_eq!(response["result"]["isError"], false, "{response}");
+        assert!(
+            fs::read_to_string(output)
+                .unwrap()
+                .contains("Large document")
+        );
+        client.close_and_assert_purity();
+    }
+
+    #[cfg(feature = "test-probe")]
+    #[test]
+    fn invalid_capabilities_uses_host_error_codes() {
+        let dir = TempDir::new().unwrap();
+        let caps = dir.path().join("invalid.json");
+        fs::write(&caps, "invalid json").unwrap();
+        let input = dir.path().join("note.md");
+        fs::write(&input, "# Note").unwrap();
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", dir.path().to_str().unwrap()],
+            vec![],
+            &[("ASHIFT_TEST_CAPABILITIES", caps.as_os_str())],
+        );
+        client.initialize();
+        let error = ariad_host::convert::ConvertError::InvalidCapabilities(String::new());
+        for name in ["list_engines", "inspect", "plan"] {
+            let response = tool(&mut client, name, json!({"input": input, "to": "html"}));
+            let structured = &response["result"]["structuredContent"];
+            assert_eq!(structured["code"], error.code(), "{response}");
+            assert_eq!(structured["exit_code"], error.exit_code(), "{response}");
+        }
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn large_analysis_still_validates_utf8_past_the_limit() {
+        use std::io::{Seek, SeekFrom};
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("invalid.md");
+        let mut file = fs::File::create(&input).unwrap();
+        file.seek(SeekFrom::Start(ariad_host::convert::ANALYSIS_MAX_BYTES))
+            .unwrap();
+        file.write_all(&[0xff]).unwrap();
+        let mut client =
+            McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
+        client.initialize();
+        for name in ["inspect", "plan"] {
+            let response = tool(&mut client, name, json!({"input": input, "to": "html"}));
+            assert_eq!(response["result"]["isError"], true, "{response}");
+            assert_eq!(response["result"]["structuredContent"]["code"], "input_io");
+            assert_eq!(response["result"]["structuredContent"]["exit_code"], 1);
+        }
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn initial_roots_error_keeps_explicit_allow_dirs() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("note.md");
+        fs::write(&input, "# Explicit directory").unwrap();
+        let mut client =
+            McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
+        client.roots_failure = Some(RootsFailure::Error);
+        client.initialize();
+        let response = tool(&mut client, "inspect", json!({"input": input}));
+        assert_eq!(response["result"]["isError"], false, "{response}");
+        client.close_and_assert_purity();
+    }
+
+    fn failed_refresh_revokes_root(keep_allow_dir: bool, unanswered: bool) {
+        let root = TempDir::new().unwrap();
+        let explicit = TempDir::new().unwrap();
+        let input = root.path().join("note.md");
+        let other = explicit.path().join("other.md");
+        fs::write(&input, "# Root document").unwrap();
+        fs::write(&other, "# Explicit directory").unwrap();
+        let args = if keep_allow_dir {
+            vec!["--allow-dir", explicit.path().to_str().unwrap()]
+        } else {
+            vec![]
+        };
+        let mut client = McpTestClient::spawn(&args, vec![path_to_file_uri(root.path())]);
+        client.initialize();
+        let output = root.path().join("note.html");
+        let converted = tool(
+            &mut client,
+            "convert",
+            json!({
+                "input": input, "output": output, "to": "html"
+            }),
+        );
+        assert_eq!(converted["result"]["isError"], false, "{converted}");
+        let uri = path_to_file_uri(&output);
+        client.send_request(701, "resources/read", json!({"uri": uri}));
+        assert!(client.read_response(701).get("result").is_some());
+        client.roots_failure = Some(if unanswered {
+            RootsFailure::Timeout
+        } else {
+            RootsFailure::Error
+        });
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        let start = Instant::now();
+        loop {
+            let inspected = tool(&mut client, "inspect", json!({"input": input}));
+            if inspected["result"]["isError"] == true {
+                break;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(if unanswered { 12 } else { 2 }),
+                "failed roots refresh kept the old root authorized: {inspected}"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        client.send_request(702, "resources/read", json!({"uri": uri}));
+        assert!(client.read_response(702).get("error").is_some());
+        if keep_allow_dir {
+            let inspected = tool(&mut client, "inspect", json!({"input": other}));
+            assert_eq!(inspected["result"]["isError"], false, "{inspected}");
+        }
+        client.roots_failure = None;
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        let restored = tool(&mut client, "inspect", json!({"input": input}));
+        assert_eq!(restored["result"]["isError"], false, "{restored}");
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn roots_error_revokes_tools_and_resources() {
+        failed_refresh_revokes_root(false, false);
+    }
+
+    #[test]
+    fn roots_error_preserves_explicit_allow_dirs() {
+        failed_refresh_revokes_root(true, false);
+    }
+
+    #[test]
+    fn roots_timeout_revokes_tools_and_resources() {
+        failed_refresh_revokes_root(true, true);
+    }
 }
