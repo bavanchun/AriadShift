@@ -1,29 +1,84 @@
-# Cloud E2E verification
+# Cloud E2E rework verification
 
-The requested changes are implemented and the real Compose journey passed. The image-only Vietnamese PDF completed through Docling, its DOCX contained “Khu vườn đọc sách”, and both negative checks rejected invalid inputs. Nothing was pushed and no PR was opened. The branch awaits ACCEPT.
+All four requested workflow corrections are implemented. The static gate and exercised workflow cases passed on implementation commit `815af932761690c3b742027310d6b5bad8e63158`. This report supersedes the earlier delivery's label-scope and pack-provenance claims. Nothing was pushed, no workflow was dispatched, and no PR was opened. The local branch awaits ACCEPT.
 
 - Branch: `feat/cloud-product--e2e-docling`.
-- Verified implementation HEAD: `fa294e3dbcf9b6cb88c2007c3616534bab0be7f4`.
-- Combined gate: [d2120-t3-final-green.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-final-green.log).
-- Gate last line: `=== fa294e3dbcf9b6cb88c2007c3616534bab0be7f4 ALL GREEN`.
-- Raw Compose gate: [t3-proof-011908.log](/home/vchun/Codes/ariadshift-logs/t3-proof-011908.log), ending `=== 01:47:40 ALL GREEN`.
-- Final static checks: [d2120-t3-final-static.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-final-static.log), ending with the verified HEAD and `ALL GREEN`.
+- Verified implementation HEAD: `815af932761690c3b742027310d6b5bad8e63158`.
+- Raw rework gate: [t3-rework-032049.log](/home/vchun/Codes/ariadshift-logs/t3-rework-032049.log).
+- Raw gate last line: `=== 03:20:57 ALL GREEN`.
+- Exact commands: [rework-gate.zsh](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework-gate.zsh).
+- Executed case driver: [rework-proof.py](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework-proof.py).
+- Machine-readable case results: [rework-cases.json](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework-cases.json).
 
-## Changes and evidence
+## Corrections and verification
 
-| Item | Result |
-|---|---|
-| B1 | `run.sh` uses `fixtures/pdf/vi-garden-image-only.pdf`, SHA-256 `048930c263e1b5aefe30990d74a207fbec3ce275abfda6fd402ead05ee7170fb`, matching its exact manifest entry. `pdftotext` returned only a page separator. The final GET reported a succeeded Docling route without `ocr_required`; the downloaded 10,595-byte DOCX passed ZIP, size, hash and case-sensitive text checks. |
-| B2 | PR, push and manual runs resolve the Linux pack from a matching Docling workflow head. An isolated job can dispatch the registered pack workflow when necessary; the Compose job has read-only Actions permission. It waits for the successful Linux pack job, downloads runtime and shared artifacts, generates the unsigned manifest with the built server's CLI, safely unpacks it, and sets `E2E_DOCLING_PACK_DIR`. The override skips signed installation and its host-range check. Nightly retains the signed installer. Python bytecode writes are disabled during preparation to keep the image context stable. |
-| B9 | `.env.example` now includes the public Turnstile site key and operator name, with pairing and rebuild guidance. |
-| B10 | Concurrency belongs to the Compose job. Unrelated labels skip expensive jobs without cancelling an existing Compose run. Seven executions of the actual scope shell covered unrelated/cloud labels, labeled and path-matched PR updates, push, schedule and dispatch. |
-| B11 | Push and PR decisions call the single cloud path classifier in `ci-scope.sh`. The requested web, Rust, manifest, lockfile, toolchain, WASM installer and fixture paths are covered. All 76 scope tests passed, including excluded paths and mixed changes. |
+| Review requirement | Final behavior | Exercised evidence |
+|---|---|---|
+| Unrelated labels cannot create a skipped green cloud check | Every PR label event recomputes changed-path scope; an existing or newly added `cloud-e2e` label forces conversion. Concurrency remains on the actual conversion job. | Real git diffs cover cloud and documentation-only changes. An unrelated label on a cloud change produces `run=true`; skipped or failed conversion then makes the required check fail. |
+| Failed or empty scope must fail the required check | The always-run final job retains the exact required name `Compose stack (core, office, docling)`. It validates scope success and a boolean decision before accepting conversion success or an intentional nonmatching decision. | Failed, cancelled and skipped scope; failed scope with a false output; missing and invalid output; intentional omission; successful, failed, skipped and cancelled conversion. |
+| Deadline covers the dependency chain and queues | A single absolute 540-minute deadline covers request overhead, pack scope, engine tests, the 350-minute Linux pack build and queue time. A 300-minute polling window hands off to a 240-minute window without resetting the deadline. Job limits are 310 and 250 minutes. | The driver executes the real deadline assignment, derives the dependency budgets from `pack-docling.yml`, and checks that 385 minutes plus a 10-minute request and a 120-minute queue scenario fits in 540 minutes. Handoff succeeds; an expired deadline fails clearly in both windows. Failed, cancelled, timed-out and skipped Linux pack jobs fail. |
+| Pack and E2E use the same source | Scope records the PR head SHA; E2E checks out that exact SHA. Only push or dispatch pack runs for that SHA are accepted. PR artifacts are rejected because their API head SHA does not identify the synthetic merge tree. The download step validates its own checkout, artifact run SHA and event before downloading. | Exact-source push and dispatch metadata pass. Same-head PR metadata, a stale PR merge after base advancement, another pack commit and another E2E checkout are rejected with explanations. The actual resolver selector excludes PR runs before selecting dispatch. |
 
-The requested real pack came from [Docling pack run 40462719557](https://github.com/bavanchun/AriadShift/actions/runs/40462719557), head `796c83ea6faaa820996d4107847862ae00f704d2`. Both artifacts were unexpired. This local proof uses the existing run explicitly named in the brief; it does not claim that a pack was built for the final local branch head. The workflow enforces matching heads for future CI runs.
+The 540-minute deadline is finite and includes queue delay after the request begins. The 120-minute queue value is an exercised budget scenario, not a promise about GitHub runner availability. Both polling jobs remain below GitHub's six-hour per-job limit and leave ten minutes beyond their polling windows for reporting. They share the same YAML-anchored polling script. Only the request job has `actions: write`; polling and conversion use `actions: read`.
 
-The actual workflow resolver selected that run through the GitHub API. Running the actual preparation shell with a different expected head returned 1 with `Docling pack head mismatch`, before any download or compilation. A separate directory referencing the real pack's manifest, runtime and models but lacking tessdata made `run.sh` return 1 with `local Docling pack lacks tessdata`. No substitute engine or conversion output was used.
+## Scope and required-check case tables
 
-The positive journey also verified deletion of the downloaded output, refusal of the fifth pending upload with `429 quota_exceeded`, rejection of both API keys after their account was deleted, and continued access for the other account's key. Database snapshots preceded bootstrap, the journey and account deletion. All project containers, volumes and networks were removed; ports 18086, 13006, 18336 and 13016 were released. The detached runner exited.
+These cases execute the actual workflow shell against existing git history. Cloud changes use `d197cae..9c682bc`; documentation-only changes use `9c682bc..183c390`.
+
+| Event | Changed paths / label state | Scope result |
+|---|---|---|
+| Unrelated label | Cloud paths | `true` |
+| Unrelated label | Nonmatching paths | `false` |
+| Unrelated label | Nonmatching paths, existing `cloud-e2e` label | `true` |
+| `cloud-e2e` label | Nonmatching paths | `true` |
+| PR synchronize | Cloud paths | `true` |
+| PR synchronize | Nonmatching paths | `false` |
+| Push | Cloud paths | `true` |
+| Schedule | No path restriction | `true` |
+| Manual dispatch | No path restriction | `true` |
+
+| Scope state / decision | Conversion state | Required Compose result |
+|---|---|---|
+| Failed, cancelled or skipped | Skipped | FAIL |
+| Failed with `run=false` | Skipped | FAIL |
+| Successful with missing or invalid output | Skipped | FAIL |
+| Successful with explicit `run=false` | Skipped intentionally | PASS |
+| Successful with `run=true` | Success | PASS |
+| Successful with `run=true` | Failed, skipped or cancelled | FAIL |
+| Unrelated label on a cloud change (`run=true`) | Failed or skipped | FAIL |
+
+All 36 exercised shell cases passed, including expected nonzero exits. Additional assertions check the resolver's actual jq selection, pinned-checkout wiring, shared deadline, job timeout margins and job-only concurrency. Explicit metadata inputs are unit cases; they are not live GitHub runs and do not substitute for a remote artifact handoff.
+
+## Gate commands and outcome
+
+The detached runner used PID 139932 and held the shared build lock only when admitted to the queue. The saved driver invokes `flock /home/vchun/Codes/01-AriadShift/.run/build.lock nice -n 19 zsh /home/vchun/Codes/ariadshift-ops/asus-build.sh`. It uses `CARGO_BUILD_JOBS=4`, UV `0.12.23`, pnpm `12.9.1` and Node from `.node-version`. The standard runner prepares a separate verification worktree, then the first supplied command explicitly changes to this authorized local worktree to verify the unpushed implementation commit.
+
+The complete command list is preserved in the driver. The checks were:
+
+```sh
+just pandoc
+.tools/bin/actionlint .github/workflows/cloud-e2e.yml
+bash scripts/test-ci-scope.sh
+python3 /home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework-proof.py
+typos docs/ci.md .github/workflows/cloud-e2e.yml plans/reports/d2120-t3-cloud-e2e.md
+just lint-commits
+just lint-commits a25f05abc4e4ab1e0e05793c621bcc67269f5cac..HEAD
+git diff --check
+git diff --exit-code a25f05abc4e4ab1e0e05793c621bcc67269f5cac..HEAD -- infra/test/e2e/run.sh
+git rev-parse HEAD
+```
+
+Actionlint, all 76 classifier tests, all 36 workflow cases, typos, both commit-lint ranges and whitespace checks passed. `run.sh` was unchanged, so the rework brief's Compose rerun exemption applies. No full `just ci` run is claimed. Review against the four requirements found no remaining high issue in the inspected local implementation; GitHub orchestration remains an explicit verification limit below.
+
+## Retained real conversion evidence
+
+The earlier real Compose proof remains valid for the unchanged runner. Its raw log is [t3-proof-011908.log](/home/vchun/Codes/ariadshift-logs/t3-proof-011908.log), ending `=== 01:47:40 ALL GREEN`. It used image-only Vietnamese fixture `fixtures/pdf/vi-garden-image-only.pdf`, SHA-256 `048930c263e1b5aefe30990d74a207fbec3ce275abfda6fd402ead05ee7170fb`; `pdftotext` emitted only `0c`. The final GET reported a succeeded Docling route without `ocr_required`; the 10,595-byte DOCX passed size, hash and ZIP checks and contained “Khu vườn đọc sách”. Missing tessdata and a mismatched expected pack head each failed their real preflight.
+
+That local conversion deliberately used the existing pack specified by the original brief: [run 40462719557](https://github.com/bavanchun/AriadShift/actions/runs/40462719557), head `796c83ea6faaa820996d4107847862ae00f704d2`. It proves conversion, not a pack built from the reworked workflow's pinned source. The new workflow rejects those PR artifacts when resolving a future source-matched CI build.
+
+The original journey also verified output deletion, `429 quota_exceeded` for a fifth pending upload, invalidation of both keys after account deletion, and continued access for the other account. Its containers, volumes and networks were removed and ports 18086, 13006, 18336 and 13016 were released. The original runner exited. The rework started no service, container or listener and used no sudo or process suspension.
+
+The original B9 public Turnstile environment guidance and B11 shared cloud path classifier remain unchanged. The original implementation gate is [d2120-t3-final-green.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-final-green.log), ending `=== fa294e3dbcf9b6cb88c2007c3616534bab0be7f4 ALL GREEN`.
 
 ## Commits
 
@@ -33,39 +88,15 @@ The positive journey also verified deletion of the downloaded output, refusal of
 | `9c682bca0a0925945159840188a96f912a743933` | `test(cloud): prove docling OCR with matching CI packs` |
 | `183c3907078aa7713735edf6b7d575058ef90f5e` | `docs(ci): explain pack dispatch before workflow promotion` |
 | `fa294e3dbcf9b6cb88c2007c3616534bab0be7f4` | `ci(cloud): avoid changing the image context during pack setup` |
+| `a25f05abc4e4ab1e0e05793c621bcc67269f5cac` | `docs: record cloud OCR verification results` |
+| `815af932761690c3b742027310d6b5bad8e63158` | `fix(ci): require verified cloud conversion checks` |
 
-The dev merge was clean. The raw proof started at `183c390`; the only subsequent implementation change disables Python bytecode writes during CI preparation. Conversion sources, the fixture and `run.sh` were unchanged, as verified with `git diff --exit-code 183c390..HEAD -- crates fixtures infra/test/e2e/run.sh`. Final workflow and commit checks were repeated on `fa294e3`.
+The rework implementation changes only `.github/workflows/cloud-e2e.yml` and `docs/ci.md`. A separate documentation commit records this report; the canonical operations copy records the resulting branch head without a self-referencing commit hash in the repository report.
 
-## Commands and outcomes
+## Remaining concerns
 
-The detached command was `setsid nohup zsh -lic 'exec zsh /tmp/d2120-t3-gate.zsh'`, with output redirected to `d2120-t3-launch.log`. Its PID was 3503510. The [saved gate driver](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/gate.zsh) contains the exact invocation of `flock /home/vchun/Codes/01-AriadShift/.run/build.lock nice -n 19 ionice -c 3 zsh /home/vchun/Codes/ariadshift-ops/asus-build.sh`. The runner bootstrapped a separate verification worktree, then explicitly changed to this authorized local worktree, so no push was needed to test the local commits. `CARGO_BUILD_JOBS=4` and the prescribed mise pins were exported.
-
-The gate ran these commands successfully:
-
-```sh
-just pandoc
-.tools/bin/actionlint .github/workflows/cloud-e2e.yml
-bash scripts/test-ci-scope.sh
-bash -n infra/test/e2e/run.sh
-sh -n scripts/ci-scope.sh scripts/test-ci-scope.sh
-typos docs/ci.md .env.example infra/test/e2e/run.sh scripts/ci-scope.sh scripts/test-ci-scope.sh .github/workflows/cloud-e2e.yml
-python3 /tmp/d2120-t3-local-proof.py
-git diff --check
-git rev-parse HEAD
-```
-
-The [saved proof driver](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/local-proof.py) records the exact scope cases, both successful `just lint-commits` ranges, the expected failures, environment and preparation invocation. The [saved preparation shell](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/ci-pack-prepare.sh) is extracted from the workflow and records the exact artifact downloads, server build, manifest generation and unpacking commands. The positive invocation was:
-
-```sh
-E2E_DOCLING_PACK_DIR=$PWD/.tools/t3-ci-pack/docling-pack E2E_PROJECT=ariadshift-e2e-t3 E2E_API_PORT=18086 E2E_AUTH_PORT=13006 E2E_S3_PORT=18336 E2E_WEB_PORT=13016 bash infra/test/e2e/run.sh
-```
-
-Final static review repeated actionlint, all scope tests, shell syntax, typos, `just lint-commits`, the own commit range `d197cae..HEAD`, and `git diff --check`. All passed. No full `just ci` run is claimed for this task.
-
-## Remaining concerns and CI validation
-
-- The ASUS resource ceiling was exceeded transiently: the observed one-minute load reached 51.42 during image toolchain installation and 24.42 during web export. Serialization, runner priority 19 and four Cargo jobs were in place, but Docker executor processes retained priority 0. Attempts to adjust only the owned executor failed because sudo requires a password. No priority or affinity changes were applied and no Capstone or herdr processes were touched. The [resource record](/home/vchun/Codes/ariadshift-logs/d2120-t3-resource.log) preserves the observations. Controlling executor resources requires an owner-level builder change outside the owned files.
-- GitHub CI must still prove automatic dispatch with its Actions token, artifact handoff for a newly built head, fork approval behavior and actual cancellation between workflow runs. The API resolver, mismatched-head rejection, preparation commands and scope decisions were exercised locally; no remote workflow was dispatched by this worker.
-- Nightly signed installation still depends on a published signed pack and compatible host version. The development override proves conversion on the current host and deliberately does not prove signed installation.
+- GitHub must still exercise Actions-token dispatch, the new always-run required status, actual cancellation, fork prerequisites and source-matched artifact handoff on a revised remote head. This worker made no push or remote dispatch under the rework brief. Local shell decisions and static wiring passed; no green remote Compose check is claimed.
+- Nightly still uses signed-release installation and requires a published compatible pack. The development override does not prove signed installation.
+- The original Compose proof exceeded the shared ASUS load ceiling transiently (51.42 during toolchain installation and 24.42 during web export). Docker executor processes retained priority 0 despite a serialized priority-19 runner. The [historical resource record](/home/vchun/Codes/ariadshift-logs/d2120-t3-resource.log) preserves that limitation. No new Docker build, sudo attempt, priority change to another process, or suspension was performed during rework.
 
 Status: DONE_WITH_CONCERNS
