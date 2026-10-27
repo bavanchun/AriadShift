@@ -1025,3 +1025,59 @@ fn pooled_confined_conversion_keeps_the_existing_call_signature() {
             .contains("Compatible")
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn fifo_artifacts_preserve_type_errors_without_blocking() {
+    use ariad_host::workspace::{Workspace, WorkspaceError};
+    use std::{process::Command, time::Duration};
+
+    if std::env::var_os("ARIAD_FIFO_ARTIFACT_CHILD").is_some() {
+        let workspace = Workspace::new().unwrap();
+        let fifo = workspace.output_dir().join("pipe.docx");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(matches!(
+            workspace.open_artifact(&fifo),
+            Err(WorkspaceError::ArtifactNotFile)
+        ));
+        let allowed = AllowedDirs::new(&[workspace.output_dir().to_path_buf()], &[]).unwrap();
+        assert!(matches!(
+            confine_input(&fifo, &allowed),
+            Err(ConfineError::NotRegularFile { .. })
+        ));
+        return;
+    }
+
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "fifo_artifacts_preserve_type_errors_without_blocking",
+            "--nocapture",
+        ])
+        .env("ARIAD_FIFO_ARTIFACT_CHILD", "1")
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(
+                status.success(),
+                "FIFO type classification failed: {status}"
+            );
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("FIFO artifact or input opening blocked without a writer");
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}

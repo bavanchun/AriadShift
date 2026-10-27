@@ -566,13 +566,12 @@ pub(crate) fn open_entry_nofollow(
         "file-after"
     });
     let metadata = file.metadata()?;
-    if is_reparse_point(&metadata)
-        || (directory && !metadata.is_dir())
-        || (!directory && !metadata.is_file())
-    {
+    // Leaf callers classify the type to preserve their public error categories.
+    // Unix O_NONBLOCK lets them reject special files before reading any bytes.
+    if is_reparse_point(&metadata) || (directory && !metadata.is_dir()) {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "symlinks and non-regular entries are refused",
+            "symlinks and invalid directory entries are refused",
         ));
     }
     Ok(file)
