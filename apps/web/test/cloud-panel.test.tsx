@@ -284,4 +284,64 @@ describe("CloudPanel", () => {
     expect(await screen.findByText("Sign-in service unavailable")).toBeDefined();
     expect(requests.filter((entry) => entry === "POST /v1/uploads")).toHaveLength(0);
   });
+
+  it("keeps the user signed in and offers a retry when sign-out fails", async () => {
+    let signOutAttempts = 0;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json(
+          { user: { id: "u1", email: "ada@example.com", name: "Ada" } },
+          { headers: { "set-auth-jwt": "jwt-1" } },
+        );
+      }
+      if (url.pathname === "/api/auth/sign-out") {
+        signOutAttempts += 1;
+        if (signOutAttempts === 1) {
+          return new Response("gateway timeout", { status: 504 });
+        }
+        return Response.json({ success: true });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{
+          fetch: fetchImpl,
+          operations: {
+            getLimits: async () => ({
+              data: { ...limits(), plan: "pro", authenticated: true },
+              response: new Response(null, { status: 200 }),
+            }),
+          },
+        }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    const alert = await screen.findByTestId("cloud-sign-out-error");
+    expect(alert.textContent).toMatch(/could not sign out|refused/i);
+    expect(screen.getByText("Signed in as ada@example.com")).toBeDefined();
+
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    await screen.findByRole("button", { name: "Sign in" });
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(screen.queryByTestId("cloud-sign-out-error")).toBeNull();
+    expect(signOutAttempts).toBe(2);
+  });
 });

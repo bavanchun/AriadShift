@@ -182,8 +182,8 @@ export class CloudAuth {
   }
 
   async signOut(): Promise<void> {
-    this.#token = null;
     await this.#json("sign-out", {});
+    this.#token = null;
     this.#user = null;
     this.#anonymous = true;
   }

@@ -163,6 +163,8 @@ export default function CloudPanel({
   const [token, setToken] = useState<string | null>(null);
   const [turnstileKey, setTurnstileKey] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [retryUntil, setRetryUntil] = useState(0);
   const [polite, setPolite] = useState("");
@@ -396,13 +398,20 @@ export default function CloudPanel({
   };
 
   const signOut = async () => {
-    if (!auth) {
+    if (!auth || signingOut) {
       return;
     }
+    setSigningOut(true);
+    setSignOutError(null);
     try {
       await auth.signOut();
-    } finally {
       setUser(null);
+    } catch {
+      const message = "Could not sign out right now. Try again.";
+      setSignOutError(message);
+      setAssertive(message);
+    } finally {
+      setSigningOut(false);
     }
   };
 
@@ -463,7 +472,12 @@ export default function CloudPanel({
               <>
                 <UserIcon aria-hidden="true" className="size-4" />
                 <span>Signed in as {user.email || user.name}</span>
-                <Button variant="outline" size="lg" onClick={() => void signOut()}>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  disabled={signingOut}
+                  onClick={() => void signOut()}
+                >
                   Sign out
                 </Button>
               </>
@@ -475,6 +489,19 @@ export default function CloudPanel({
           </div>
         )}
       </div>
+
+      {signOutError && user && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 p-3 text-sm"
+          data-testid="cloud-sign-out-error"
+        >
+          <span>{signOutError}</span>
+          <Button variant="outline" size="lg" disabled={signingOut} onClick={() => void signOut()}>
+            Try again
+          </Button>
+        </div>
+      )}
 
       {!online && (
         <p className="flex items-center gap-2 text-sm" data-testid="cloud-offline">
