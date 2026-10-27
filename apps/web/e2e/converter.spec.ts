@@ -269,7 +269,7 @@ test("refuses files above the browser limit", async ({ page }) => {
 });
 
 test("offers a compatible Desktop route for oversized IR JSON", async ({ page }) => {
-  await page.goto("/app?to=docx&profile=private");
+  await openConverter(page, "?to=docx&profile=private");
   await page.locator("input[type=file]").setInputFiles({
     name: "huge.ir.json",
     mimeType: "application/json",
