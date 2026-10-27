@@ -1053,12 +1053,16 @@ fn map_figure(
             matches!(child, ConvertedNode::FigCaption(caption) if !caption.is_empty())
                 .then_some(index)
         });
-    let canonical_caption = caption_index.is_some()
-        && children.iter().enumerate().all(|(index, child)| {
-            index == image_index || Some(index) == caption_index || is_whitespace(child)
-        });
-    // A semantic Figure has a caption but no independent image alt/title fields.
-    if title.is_some() || (!alt.is_empty() && !canonical_caption) {
+    // Figure writers derive image alt from the caption and have no title field.
+    // Keep the original image whenever that representation would change metadata.
+    let caption_preserves_alt = match caption_index.map(|index| &children[index]) {
+        Some(ConvertedNode::FigCaption(caption)) => {
+            matches!(caption.as_slice(), [Inline::Text { text }] if text == alt)
+        }
+        None => alt.is_empty(),
+        _ => false,
+    };
+    if title.is_some() || !caption_preserves_alt {
         return blocks(mapper, children);
     }
     let asset = target.clone();

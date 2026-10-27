@@ -147,7 +147,18 @@ fn blocks_inside_inline_contexts_keep_content_and_separators() {
 #[test]
 fn figure_keeps_credit_and_additional_blocks() {
     let output = read(b"<figure><img src=\"photo.png\"><figcaption>Caption</figcaption> Photo by Jane<p>Details</p></figure>", &Limits::local()).unwrap();
-    assert!(matches!(&output.document.body[0], Block::Figure { .. }));
+    assert_eq!(
+        output.document.body[0],
+        Block::Paragraph {
+            content: vec![Inline::Image {
+                target: ariad_core::ir::AssetRef::Url {
+                    href: "photo.png".into()
+                },
+                alt: String::new(),
+                title: None,
+            }]
+        }
+    );
     let text = ariad_core::writer::markdown::write(&output.document).content;
     for part in ["Caption", "Photo by Jane", "Details"] {
         assert!(text.contains(part), "missing {part:?} in {text:?}");
@@ -246,5 +257,57 @@ fn figure_keeps_surrounding_content_in_source_order() {
             });
             offset += position + part.len();
         }
+    }
+}
+
+fn assert_captioned_figure_html_roundtrip(alt: &str, title: Option<&str>) {
+    let title_attribute = title
+        .map(|value| format!(" title=\"{value}\""))
+        .unwrap_or_default();
+    let source = format!(
+        "<figure><img src=\"logo.png\" alt=\"{alt}\"{title_attribute}><figcaption>Brand history</figcaption></figure>"
+    );
+    let output = read(source.as_bytes(), &Limits::local()).unwrap();
+    let written = ariad_core::writer::html::write(&output.document);
+    assert!(
+        written.content.contains(&format!("alt=\"{alt}\"")),
+        "{}",
+        written.content
+    );
+    if let Some(title) = title {
+        assert!(
+            written.content.contains(&format!("title=\"{title}\"")),
+            "{}",
+            written.content
+        );
+    }
+    let image_position = written.content.find("src=\"logo.png\"").unwrap();
+    let caption_position = written.content.find(">Brand history<").unwrap();
+    assert!(image_position < caption_position, "{}", written.content);
+
+    let reread = read(written.content.as_bytes(), &Limits::local()).unwrap();
+    assert_eq!(reread.document.body, output.document.body);
+    assert_eq!(
+        ariad_core::writer::html::write(&reread.document).content,
+        written.content
+    );
+}
+
+#[test]
+fn captioned_figure_preserves_nonempty_alt_through_html_roundtrip() {
+    for alt in ["Company logo", "Brand history"] {
+        assert_captioned_figure_html_roundtrip(alt, None);
+    }
+}
+
+#[test]
+fn captioned_figure_preserves_empty_alt_through_html_roundtrip() {
+    assert_captioned_figure_html_roundtrip("", None);
+}
+
+#[test]
+fn captioned_figure_preserves_title_through_html_roundtrip() {
+    for alt in ["Company logo", ""] {
+        assert_captioned_figure_html_roundtrip(alt, Some("Brand mark"));
     }
 }
