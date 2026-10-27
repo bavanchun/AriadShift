@@ -11,7 +11,12 @@ export function releaseTargets(metadata, assets, tag) {
   const seen = new Set();
   return targets.map((platform) => {
     const entry = metadata.platforms?.[platform];
-    const asset = assets.find((candidate) => candidate.browser_download_url === entry?.url);
+    const asset =
+      typeof entry?.url === "string" &&
+      entry.url.length > 0 &&
+      assets.find(
+        (candidate) => candidate.url === entry.url || candidate.browser_download_url === entry.url,
+      );
     if (!asset || !entry.signature || seen.has(asset.id)) {
       throw new Error(`Missing, unattached or duplicate updater artifact for ${platform}`);
     }
