@@ -195,3 +195,40 @@ def test_wheel_notice_content_changes_require_review(tmp_path):
     )
     with pytest.raises(SystemExit, match="native licence notice digest mismatch"):
         licenses.vendored_libraries(tmp_path, "x86_64-unknown-linux-gnu")
+
+
+@pytest.mark.parametrize(
+    ("expression", "owner", "allowed"),
+    [("FTL", "pillow", True), ("GPL-2.0-or-later", "pillow", False), ("FTL", "torch", False)],
+)
+def test_freetype_exception_is_bound_to_pillow_and_the_permissive_alternative(
+    tmp_path, expression, owner, allowed
+):
+    native = tmp_path / "pillow.libs/libfreetype-abc.so.6"
+    native.parent.mkdir()
+    native.write_bytes(b"\x7fELF")
+    (tmp_path / "COPYING").write_text("FreeType licence text fixture.\n")
+    inventory = [
+        {
+            "name": "libfreetype",
+            "distribution": owner,
+            "license": expression,
+            "notice": "COPYING",
+            "native_files": {"linux": ["pillow.libs/libfreetype-abc.so.6"]},
+        }
+    ]
+    if allowed:
+        assert (
+            licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
+            == inventory
+        )
+    else:
+        with pytest.raises(SystemExit, match="excluded or unreviewed native licence"):
+            licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
+
+
+def test_native_freetype_exception_does_not_allow_python_distributions(tmp_path):
+    info = tmp_path / "pillow-13.0.0.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text("Name: pillow\nVersion: 13.0.0\nLicense-Expression: FTL\n")
+    assert licenses.check([metadata.PathDistribution(info)])
