@@ -364,8 +364,8 @@ struct TableRowData {
 
 #[derive(Clone, Copy)]
 enum Visit {
-    Enter(Handle, u16),
-    Exit(Handle),
+    Enter(Handle, u16, bool),
+    Exit(Handle, bool),
 }
 
 /// Reads HTML markup from bytes into the shared Document IR.
@@ -444,11 +444,11 @@ fn convert_tree_iteratively(
 ) -> Result<Vec<Block>, ReadError> {
     let num_nodes = mapper.arena.nodes.len();
     let mut converted: Vec<Option<ConvertedNode>> = (0..num_nodes).map(|_| None).collect();
-    let mut stack = vec![Visit::Enter(doc_handle, 0)];
+    let mut stack = vec![Visit::Enter(doc_handle, 0, false)];
 
     while let Some(task) = stack.pop() {
         match task {
-            Visit::Enter(handle, ir_depth) => {
+            Visit::Enter(handle, ir_depth, within_inline) => {
                 let node = &mapper.arena.nodes[handle];
                 let is_container = match &node.data {
                     NodeData::Element { name, attrs, .. } => {
@@ -472,7 +472,8 @@ fn convert_tree_iteratively(
                     });
                 }
 
-                stack.push(Visit::Exit(handle));
+                stack.push(Visit::Exit(handle, within_inline));
+                let children_within_inline = within_inline || is_inline_context(&node.data);
 
                 // Check if element is a dropped element or preformatted text that handles its own children
                 let skip_children = match &node.data {
@@ -508,18 +509,22 @@ fn convert_tree_iteratively(
 
                 if !skip_children {
                     for &child_handle in node.children.iter().rev() {
-                        stack.push(Visit::Enter(child_handle, next_ir_depth));
+                        stack.push(Visit::Enter(
+                            child_handle,
+                            next_ir_depth,
+                            children_within_inline,
+                        ));
                     }
                 }
             }
-            Visit::Exit(handle) => {
+            Visit::Exit(handle, within_inline) => {
                 let node = &mapper.arena.nodes[handle];
                 let children: Vec<ConvertedNode> = node
                     .children
                     .iter()
                     .filter_map(|&ch| converted[ch].take())
                     .collect();
-                let output = convert_node(mapper, handle, children)?;
+                let output = convert_node(mapper, handle, children, within_inline)?;
                 converted[handle] = Some(output);
             }
         }
@@ -531,10 +536,64 @@ fn convert_tree_iteratively(
     }
 }
 
+/// These parents consume descendant blocks as inline content, even through
+/// intervening block containers. Carry the flag with the existing traversal.
+fn is_inline_context(data: &NodeData) -> bool {
+    let NodeData::Element { name, .. } = data else {
+        return false;
+    };
+    matches!(
+        &*name.local,
+        "h1" | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "p"
+            | "caption"
+            | "figcaption"
+            | "a"
+            | "em"
+            | "i"
+            | "strong"
+            | "b"
+            | "s"
+            | "del"
+            | "strike"
+            | "sup"
+            | "sub"
+            | "span"
+            | "u"
+            | "mark"
+            | "small"
+            | "abbr"
+            | "cite"
+            | "q"
+            | "time"
+            | "font"
+            | "label"
+            | "ins"
+            | "var"
+            | "dfn"
+            | "bdi"
+            | "bdo"
+            | "data"
+            | "ruby"
+            | "rt"
+            | "rp"
+            | "wbr"
+            | "tt"
+            | "big"
+            | "acronym"
+            | "nobr"
+    )
+}
+
 fn convert_node(
     mapper: &mut TreeMapper<'_>,
     handle: Handle,
     children: Vec<ConvertedNode>,
+    within_inline: bool,
 ) -> Result<ConvertedNode, ReadError> {
     let node = &mapper.arena.nodes[handle];
     match &node.data {
@@ -724,64 +783,11 @@ fn convert_node(
                     mapper.check_block_limit()?;
                     Ok(ConvertedNode::Blocks(vec![Block::Code { lang, text }]))
                 }
-                "figure" => {
-                    let mut img_asset = None;
-                    let mut img_count = 0;
-                    let mut figcaption = Vec::new();
-                    let mut other_children = Vec::new();
-
-                    for child in children {
-                        match child {
-                            ConvertedNode::Inlines(ref ins) => {
-                                for inline in ins {
-                                    if let Inline::Image { target, .. } = inline {
-                                        img_count += 1;
-                                        img_asset = Some(target.clone());
-                                    }
-                                }
-                                other_children.push(child);
-                            }
-                            ConvertedNode::FigCaption(cap) => {
-                                if figcaption.is_empty() {
-                                    figcaption = cap;
-                                } else {
-                                    other_children.push(ConvertedNode::FigCaption(cap));
-                                }
-                            }
-                            _ => {
-                                other_children.push(child);
-                            }
-                        }
-                    }
-
-                    if img_count == 1
-                        && let Some(asset) = img_asset
-                    {
-                        mapper.check_block_limit()?;
-                        let mut result = vec![Block::Figure {
-                            asset,
-                            caption: figcaption,
-                        }];
-                        // The image is represented by the Figure; keep credits,
-                        // paragraphs and other siblings after it in source order.
-                        for child in &mut other_children {
-                            if let ConvertedNode::Inlines(ins) = child {
-                                ins.retain(|inline| !matches!(inline, Inline::Image { .. }));
-                            }
-                        }
-                        result.extend(blocks(mapper, other_children)?);
-                        Ok(ConvertedNode::Blocks(result))
-                    } else {
-                        let mut blks = blocks(mapper, other_children)?;
-                        if !figcaption.is_empty() {
-                            mapper.check_block_limit()?;
-                            blks.push(Block::Paragraph {
-                                content: figcaption,
-                            });
-                        }
-                        Ok(ConvertedNode::Blocks(blks))
-                    }
-                }
+                "figure" => Ok(ConvertedNode::Blocks(map_figure(
+                    mapper,
+                    children,
+                    within_inline,
+                )?)),
                 "img" => {
                     let (src, alt, title) = parse_img_attrs(attrs);
                     let target = if src.starts_with("data:") {
@@ -997,6 +1003,77 @@ fn block_depth(block: &Block) -> u16 {
 
 fn blocks_depth(blocks: &[Block]) -> u16 {
     blocks.iter().map(block_depth).max().unwrap_or(0)
+}
+
+fn map_figure(
+    mapper: &mut TreeMapper<'_>,
+    mut children: Vec<ConvertedNode>,
+    within_inline: bool,
+) -> Result<Vec<Block>, ReadError> {
+    // Keep original images until inline consumers have seen their alt and title.
+    if within_inline {
+        return blocks(mapper, children);
+    }
+    let mut image_index = None;
+    for (index, child) in children.iter().enumerate() {
+        if let ConvertedNode::Inlines(inlines) = child {
+            for inline in inlines {
+                if matches!(inline, Inline::Image { .. }) {
+                    if image_index.is_some() {
+                        return blocks(mapper, children);
+                    }
+                    image_index = Some(index);
+                }
+            }
+        }
+    }
+    let Some(image_index) = image_index else {
+        return blocks(mapper, children);
+    };
+    let ConvertedNode::Inlines(image_content) = &children[image_index] else {
+        unreachable!("image index refers to inline content");
+    };
+    let [Inline::Image { target, alt, title }] = image_content.as_slice() else {
+        // Surrounding inline content must stay on its original side of the image.
+        return blocks(mapper, children);
+    };
+    let is_whitespace = |child: &ConvertedNode| match child {
+        ConvertedNode::Skip => true,
+        ConvertedNode::Inlines(inlines) => inlines
+            .iter()
+            .all(|inline| matches!(inline, Inline::Text { text } if text.trim().is_empty())),
+        _ => false,
+    };
+    let caption_index = children
+        .iter()
+        .enumerate()
+        .skip(image_index + 1)
+        .find(|(_, child)| !is_whitespace(child))
+        .and_then(|(index, child)| {
+            matches!(child, ConvertedNode::FigCaption(caption) if !caption.is_empty())
+                .then_some(index)
+        });
+    let canonical_caption = caption_index.is_some()
+        && children.iter().enumerate().all(|(index, child)| {
+            index == image_index || Some(index) == caption_index || is_whitespace(child)
+        });
+    // A semantic Figure has a caption but no independent image alt/title fields.
+    if title.is_some() || (!alt.is_empty() && !canonical_caption) {
+        return blocks(mapper, children);
+    }
+    let asset = target.clone();
+    let caption = if let Some(index) = caption_index {
+        match std::mem::replace(&mut children[index], ConvertedNode::Skip) {
+            ConvertedNode::FigCaption(caption) => caption,
+            _ => unreachable!("caption index refers to a figure caption"),
+        }
+    } else {
+        Vec::new()
+    };
+    mapper.check_block_limit()?;
+    // Replace the image in place; only its adjacent caption can be folded in.
+    children[image_index] = ConvertedNode::Blocks(vec![Block::Figure { asset, caption }]);
+    blocks(mapper, children)
 }
 
 fn blocks(

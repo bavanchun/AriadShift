@@ -153,3 +153,98 @@ fn figure_keeps_credit_and_additional_blocks() {
         assert!(text.contains(part), "missing {part:?} in {text:?}");
     }
 }
+
+#[test]
+fn figure_keeps_image_alternative_text_and_title() {
+    let assert_metadata = |html: &str| {
+        let output = read(html.as_bytes(), &Limits::local()).unwrap();
+        let rendered = ariad_core::writer::html::write(&output.document).content;
+        assert!(
+            rendered.contains("alt=\"Company logo\""),
+            "{html}: {rendered}"
+        );
+        if html.contains("title=\"Brand mark\"") {
+            assert!(
+                rendered.contains("title=\"Brand mark\""),
+                "{html}: {rendered}"
+            );
+        }
+    };
+    for (prefix, suffix) in [
+        ("", ""),
+        ("<a href=\"https://example.test\">", "</a>"),
+        ("<a href=\"https://example.test\"><div>", "</div></a>"),
+    ] {
+        for title in ["", " title=\"Brand mark\""] {
+            let html = format!(
+                "{prefix}<figure><img src=\"logo.png\" alt=\"Company logo\"{title}></figure>{suffix}"
+            );
+            assert_metadata(&html);
+        }
+    }
+    for html in [
+        "<a><figure><img src=\"logo.png\" alt=\"Company logo\"><figcaption>Caption</figcaption></figure></a>",
+        "<a><div><blockquote><figure><img src=\"logo.png\" alt=\"Company logo\"><figcaption>Caption</figcaption></figure></blockquote></div></a>",
+        "<h2><span><figure><img src=\"logo.png\" alt=\"Company logo\"><figcaption>Caption</figcaption></figure></span></h2>",
+        "<figure><p>Introduction</p><img src=\"logo.png\" alt=\"Company logo\"><figcaption>Caption</figcaption>Credit</figure>",
+        "<figure><img src=\"logo.png\" alt=\"Company logo\" title=\"Brand mark\"><figcaption>Caption</figcaption></figure>",
+    ] {
+        assert_metadata(html);
+    }
+}
+
+#[test]
+fn figure_keeps_surrounding_content_in_source_order() {
+    for (html, expected) in [
+        (
+            "<figure><p>Introduction</p><img src=\"chart.png\"><figcaption>Chart</figcaption><p>Conclusion</p></figure>",
+            vec![
+                ">Introduction<",
+                "src=\"chart.png\"",
+                ">Chart<",
+                ">Conclusion<",
+            ],
+        ),
+        (
+            "<figure>Leading<img src=\"chart.png\">After image<figcaption>Chart</figcaption>After caption<p>Tail</p></figure>",
+            vec![
+                "Leading",
+                "src=\"chart.png\"",
+                "After image",
+                ">Chart<",
+                "After caption",
+                ">Tail<",
+            ],
+        ),
+        (
+            "<figure><p>Before caption</p><figcaption>Chart</figcaption><p>Before image</p><img src=\"chart.png\"><p>After image</p></figure>",
+            vec![
+                ">Before caption<",
+                ">Chart<",
+                ">Before image<",
+                "src=\"chart.png\"",
+                ">After image<",
+            ],
+        ),
+        (
+            "<figure><img src=\"first.png\"><figcaption>First</figcaption><img src=\"second.png\"><figcaption>Second</figcaption></figure>",
+            vec![
+                "src=\"first.png\"",
+                ">First<",
+                "src=\"second.png\"",
+                ">Second<",
+            ],
+        ),
+    ] {
+        let output = read(html.as_bytes(), &Limits::local()).unwrap();
+        let rendered = ariad_core::writer::html::write(&output.document).content;
+        let mut offset = 0;
+        for part in expected {
+            let rest = &rendered[offset..];
+            let position = rest.find(part).unwrap_or_else(|| {
+                panic!("missing or reordered {part:?} after {offset} in {rendered:?}")
+            });
+            offset += position + part.len();
+        }
+    }
+}
