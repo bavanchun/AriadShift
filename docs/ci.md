@@ -21,7 +21,7 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | [`release-smoke.yml`](../.github/workflows/release-smoke.yml) | Manual dispatch (`workflow_dispatch`) | Multi-channel smoke test verifying binary installation across Homebrew, shell, PowerShell, and cargo-binstall |
 | [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | Called by `release.yml` | Publishes crates (`ariad-core`, `ariad-host`, `ariad-cli`) to crates.io with API version polling and idempotence |
 
-GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, only for workflows on the default branch, `main`. A new scheduled workflow therefore starts after the next promotion; until then, its pull request run is its test.
+GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, only for workflows on the default branch, `main`. A new scheduled workflow therefore starts after the next promotion; until then, its pull request run is its test. Once a workflow has run at least once, [the API and CLI can dispatch it at another branch or tag](https://github.com/github/docs/blob/main/content/actions/reference/workflows-and-actions/events-that-trigger-workflows.md#workflow_dispatch). Cloud E2E uses this API route for the already registered Docling pack workflow, including before its promotion to `main`.
 
 ## The CI gate
 
