@@ -101,6 +101,8 @@ jobs:
           PACK_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
         run: |
           set -euo pipefail
+          # This timestamp starts once the request has a runner. Wait shells
+          # enforce it only while running; GitHub bounds their runner queues.
           echo "deadline=$(($(date +%s) + 540 * 60))" >> "$GITHUB_OUTPUT"
           endpoint="repos/$GH_REPO/actions/workflows/pack-docling.yml/runs?head_sha=$PACK_SHA&per_page=100"
           # PR runs check out a synthetic merge, so their head_sha is insufficient.
@@ -140,6 +142,7 @@ jobs:
     needs: [scope, pack]
     if: needs.pack.result == 'success'
     runs-on: ubuntu-26.04
+    # Job timeouts bound execution, not time queued for a runner.
     timeout-minutes: 310
     permissions:
       actions: read
@@ -201,6 +204,7 @@ jobs:
     needs: [scope, pack, pack-wait]
     if: needs.pack-wait.result == 'success' && needs.pack-wait.outputs.ready != 'true'
     runs-on: ubuntu-26.04
+    # A queued continuation checks the original deadline once it gets a runner.
     timeout-minutes: 250
     permissions:
       actions: read
@@ -226,7 +230,8 @@ jobs:
     if: always() && !cancelled() && needs.scope.result == 'success' && needs.scope.outputs.run == 'true'
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+      # Labels may replace a pending job, but must preserve the running job.
+      cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
     runs-on: ubuntu-26.04
     # Image builds start only after the matching Linux CI pack is available.
     timeout-minutes: 180

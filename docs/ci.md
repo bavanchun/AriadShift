@@ -75,7 +75,15 @@ image-only fixture and its manifest. [`test-ci-scope.sh`](../scripts/test-ci-sco
 checks both included and excluded paths. Every label event recomputes scope;
 the `cloud-e2e` label forces a run. Adding another label to a cloud change
 therefore requires another real Compose result, rather than a skipped check.
-Cancellation remains scoped to the conversion job.
+Cancellation remains scoped to the conversion job. PR events other than
+`labeled` and `unlabeled`, including a new commit's `synchronize`, may cancel
+the older running conversion. Label events preserve that running job and
+wait in the same PR group. Under GitHub's default
+[one-running, one-pending policy](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
+another arrival can still replace a pending job; preserving every
+queued label run is not guaranteed. The required status fails when its
+requested conversion fails, is cancelled or is skipped. The workflow
+currently triggers `labeled`, but does not trigger `unlabeled`.
 
 The required **Compose stack (core, office, docling)** check is an always-run
 status job. It fails if Scope failed, was cancelled, or returned an empty or
@@ -93,14 +101,24 @@ If no usable pack exists, the request job dispatches **Docling pack** on the
 matching branch after checking that its ref still points to the recorded SHA.
 Only this job has `actions: write`; it executes no checked-out code.
 
-The absolute dependency deadline is 540 minutes from the request, including
-request overhead, the pack workflow's scope and engine tests, its 350-minute
-Linux build, and runner queues. A 300-minute wait can hand off to a second
-240-minute wait; both use the original deadline, so queue time reduces the
-remaining budget. Their job limits are 310 and 250 minutes, leaving time to
-report a clear timeout. Splitting the wait respects the
+The request shell sets a polling deadline 540 minutes after it obtains a
+runner. An active waiter accounts for request overhead, the pack workflow's
+scope and engine tests, its 350-minute Linux build, and that workflow's
+runner queues. A 300-minute wait can hand off to a second 240-minute wait;
+both check the original timestamp. A waiter queued past that timestamp
+fails once its polling shell starts.
+
+This is not a hard 540-minute wall-clock limit. The deadline is enforced by
+the polling shell only once a waiter has a runner. Time spent queued before
+the request or a wait job starts is bounded only by GitHub's own queue
+limits. Their
+[`timeout-minutes` values](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes)
+limit execution, not runner queue time. The wait jobs allow 310 and 250
+minutes of execution, leaving time to report a timeout after their polling
+windows. Splitting the wait respects the
 [GitHub-hosted six-hour per-job limit](https://docs.github.com/en/actions/reference/limits#actions-limits).
-The request job allows 10 minutes. Neither wait can extend the overall deadline.
+The request job allows 10 minutes of execution. Neither waiter resets the
+polling timestamp; no independent watchdog enforces it while jobs are queued.
 
 The Compose job has `actions: read` and waits for
 **Pack (x86_64-unknown-linux-gnu)** to succeed and publish both
