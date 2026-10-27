@@ -72,34 +72,54 @@ Pushes and pull requests use the single cloud path list in
 [`ci-scope.sh`](../scripts/ci-scope.sh) (`--classify-cloud`). It covers the web,
 shared Rust crates, workspace/toolchain inputs, image and service sources, the
 image-only fixture and its manifest. [`test-ci-scope.sh`](../scripts/test-ci-scope.sh)
-checks both included and excluded paths. Unrelated label events skip expensive
-jobs and cannot cancel an active Compose job; cancellation is scoped to that job.
+checks both included and excluded paths. Every label event recomputes scope;
+the `cloud-e2e` label forces a run. Adding another label to a cloud change
+therefore requires another real Compose result, rather than a skipped check.
+Cancellation remains scoped to the conversion job.
 
-For PR, push and manual runs, the isolated **Resolve same-head CI pack** job
-queries `pack-docling.yml` runs by the PR head SHA (push/manual: workflow SHA).
-It reuses an active or successful run with unexpired artifacts. If none is
-usable, it dispatches **Docling pack** on the matching branch after checking
-that the ref still points to that SHA. Only this job has `actions: write`; it
-executes no checked-out code. The Compose job has `actions: read` and waits for
+The required **Compose stack (core, office, docling)** check is an always-run
+status job. It fails if Scope failed, was cancelled, or returned an empty or
+invalid decision. An explicit `run=false` is an intentional nonmatching-path
+success; `run=true` requires the conversion job to succeed, including when a
+pack request or wait failed. The actual conversion job is named **Run Compose**.
+
+For PR, push and manual runs, Scope records one immutable source commit. PRs
+use their head commit rather than GitHub's synthetic merge commit. Compose
+checks out exactly this recorded SHA. The isolated **Request source-matched CI
+pack** job searches `pack-docling.yml` runs for that SHA and accepts only
+`workflow_dispatch` or `push` builds. A PR pack run's API `head_sha` identifies
+the PR head even though checkout built a merge, so those artifacts are rejected.
+If no usable pack exists, the request job dispatches **Docling pack** on the
+matching branch after checking that its ref still points to the recorded SHA.
+Only this job has `actions: write`; it executes no checked-out code.
+
+The absolute dependency deadline is 540 minutes from the request, including
+request overhead, the pack workflow's scope and engine tests, its 350-minute
+Linux build, and runner queues. A 300-minute wait can hand off to a second
+240-minute wait; both use the original deadline, so queue time reduces the
+remaining budget. Their job limits are 310 and 250 minutes, leaving time to
+report a clear timeout. Splitting the wait respects the
+[GitHub-hosted six-hour per-job limit](https://docs.github.com/en/actions/reference/limits#actions-limits).
+The request job allows 10 minutes. Neither wait can extend the overall deadline.
+
+The Compose job has `actions: read` and waits for
 **Pack (x86_64-unknown-linux-gnu)** to succeed and publish both
-`docling-pack-x86_64-unknown-linux-gnu` and `docling-pack-shared`.
-A failed pack job or missing components fails E2E rather than skipping it.
+`docling-pack-x86_64-unknown-linux-gnu` and `docling-pack-shared`. Before
+[`gh run download`](https://cli.github.com/manual/gh_run_download), it rechecks
+the artifact run's source SHA and event against its own checkout. A mismatch
+fails with an explanation before download. It generates the unsigned manifest
+with the built server image's `ashift __pack manifest`, safely extracts the
+components, and sets `E2E_DOCLING_PACK_DIR` for the read-only bind mount override.
+This development route skips signature installation and its `requires_ashift`
+check; it proves runtime conversion, not signed installation. No component is
+borrowed from a different commit or an unverified PR merge tree.
 
-The Compose job rechecks the run's head SHA and uses
-[`gh run download`](https://cli.github.com/manual/gh_run_download) for both
-artifacts. It generates the unsigned manifest with the built server image's
-`ashift __pack manifest`, safely extracts components through the pack builder,
-and sets `E2E_DOCLING_PACK_DIR`. The worker uses the existing read-only bind
-mount override. This development route skips signature installation and its
-`requires_ashift` host-range check; it proves runtime conversion, not release
-installation. No component is borrowed from another head or a release.
-
-Fork tokens cannot dispatch repository workflows. A fork run can consume an
-already approved same-head pack run; otherwise it fails with a maintainer
-prerequisite. Maintainers must approve the fork's **Docling pack** run, or bring
-the reviewed head into a repository branch and run both workflows there.
-The pack wait is bounded to 350 minutes; Compose then has 180 minutes.
-Expired one-day PR artifacts are rebuilt through the same dispatch mechanism.
+Fork tokens cannot dispatch repository workflows. A fork needs an existing
+push or dispatch pack for the exact tested commit; otherwise a maintainer must
+bring that head into a repository branch and run both workflows there. Approving
+a PR merge build alone does not establish matching sources. Expired one-day PR
+artifacts are not reused; expired push or dispatch artifacts trigger a new
+source-matched build through the dispatch mechanism.
 
 The nightly deliberately retains the production Dockerfile's signed-release
 installer. It requires a published signed pack compatible with the host version;

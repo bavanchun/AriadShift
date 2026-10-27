@@ -35,13 +35,18 @@ jobs:
       contents: read
     outputs:
       run: ${{ steps.scope.outputs.run }}
+      source-sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Record the tested source
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Decide whether to run
         id: scope
@@ -57,10 +62,7 @@ jobs:
           set -euo pipefail
           run=false
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            if [[ "$ACTION" == labeled ]]; then
-              # Other labels neither start nor cancel an expensive job.
-              [[ "$LABEL" == cloud-e2e ]] && run=true
-            elif [[ "$HAS_LABEL" == true ]]; then
+            if [[ "$HAS_LABEL" == true || ( "$ACTION" == labeled && "$LABEL" == cloud-e2e ) ]]; then
               run=true
             else
               git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed"
@@ -76,31 +78,34 @@ jobs:
           echo "Cloud E2E runs: $run"
 
   pack:
-    name: Resolve same-head CI pack
+    name: Request source-matched CI pack
     needs: scope
     if: needs.scope.outputs.run == 'true' && github.event_name != 'schedule'
     runs-on: ubuntu-26.04
-    timeout-minutes: 360
+    timeout-minutes: 10
     # This job executes no checked-out code. Only dispatch needs write access.
     permissions:
       actions: write
       contents: read
     outputs:
-      run-id: ${{ steps.pack.outputs.run-id }}
+      previous-id: ${{ steps.pack.outputs.previous-id }}
+      deadline: ${{ steps.pack.outputs.deadline }}
     steps:
-      - name: Find or request the Docling pack for this head
+      - name: Find or request the Docling pack for the tested source
         id: pack
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PACK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PACK_SHA: ${{ needs.scope.outputs.source-sha }}
           PACK_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
           PACK_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
         run: |
           set -euo pipefail
+          echo "deadline=$(($(date +%s) + 540 * 60))" >> "$GITHUB_OUTPUT"
           endpoint="repos/$GH_REPO/actions/workflows/pack-docling.yml/runs?head_sha=$PACK_SHA&per_page=100"
+          # PR runs check out a synthetic merge, so their head_sha is insufficient.
           find_run() {
-            gh api "$endpoint" --jq '.workflow_runs | first | .id // empty'
+            gh api "$endpoint" --jq '.workflow_runs | map(select(.event == "workflow_dispatch" or .event == "push")) | first | .id // empty'
           }
           run_id=$(find_run)
           if [[ -n "$run_id" ]]; then
@@ -115,29 +120,58 @@ jobs:
           fi
           if [[ -z "$run_id" ]]; then
             if [[ "$PACK_REPO" != "$GH_REPO" ]]; then
-              echo '::error::No same-head Docling pack run. A maintainer must enable the pack workflow for this fork head; a read-only fork token cannot dispatch it.'
+              echo '::error::No pack built from the pinned source. PR merge artifacts are rejected; a maintainer must bring this fork head to a repository branch and dispatch the pack there.'
               exit 1
             fi
             # Dispatch accepts a ref; reject a branch that has already moved.
             ref_sha=$(gh api "repos/$GH_REPO/commits/$PACK_REF" --jq .sha)
             [[ "$ref_sha" == "$PACK_SHA" ]] || { echo '::error::Pack ref has moved; rerun Cloud E2E on its new head.'; exit 1; }
             # Do not mistake an older completed run for the new dispatch.
-            previous_id=$(gh api "$endpoint" --jq '.workflow_runs | first | .id // 0')
+            previous_id=$(find_run)
+            previous_id=${previous_id:-0}
             gh workflow run pack-docling.yml --ref "$PACK_REF"
           else
             previous_id=0
           fi
-          deadline=$((SECONDS + 21000))
-          while (( SECONDS < deadline )); do
-            run_id=$(find_run)
-            if [[ -n "$run_id" && "$run_id" != "$previous_id" ]]; then
+          echo "previous-id=$previous_id" >> "$GITHUB_OUTPUT"
+
+  pack-wait:
+    name: Wait for source-matched pack
+    needs: [scope, pack]
+    if: needs.pack.result == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 310
+    permissions:
+      actions: read
+    outputs:
+      ready: ${{ steps.wait.outputs.ready }}
+      run-id: ${{ steps.wait.outputs.run-id }}
+    steps:
+      - name: Wait for the Linux pack and shared components
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PACK_SHA: ${{ needs.scope.outputs.source-sha }}
+          PREVIOUS_ID: ${{ needs.pack.outputs.previous-id }}
+          PACK_DEADLINE: ${{ needs.pack.outputs.deadline }}
+          WINDOW_SECONDS: "18000"
+          CONTINUE_WAIT: "true"
+        run: &wait-for-pack |
+          set -euo pipefail
+          endpoint="repos/$GH_REPO/actions/workflows/pack-docling.yml/runs?head_sha=$PACK_SHA&per_page=100"
+          window_end=$(($(date +%s) + WINDOW_SECONDS))
+          while (( $(date +%s) < PACK_DEADLINE && $(date +%s) < window_end )); do
+            run_id=$(gh api "$endpoint" --jq '.workflow_runs | map(select(.event == "workflow_dispatch" or .event == "push")) | first | .id // empty')
+            if [[ -n "$run_id" && "$run_id" != "$PREVIOUS_ID" ]]; then
               job=$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
                 --jq '.jobs[] | select(.name == "Pack (x86_64-unknown-linux-gnu)") | .conclusion // .status')
               if [[ "$job" == success ]]; then
                 artifacts=$(gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts?per_page=100" \
                   --jq '[.artifacts[] | select(.expired == false) | .name]')
                 if jq -e 'index("docling-pack-shared") != null and index("docling-pack-x86_64-unknown-linux-gnu") != null' <<< "$artifacts" >/dev/null; then
-                  echo "Using Docling pack run $run_id for $PACK_SHA"
+                  echo "Using source-matched Docling pack run $run_id for $PACK_SHA"
+                  echo "ready=true" >> "$GITHUB_OUTPUT"
                   echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
                   exit 0
                 fi
@@ -154,13 +188,42 @@ jobs:
             echo "Waiting for the Linux pack and shared components at $PACK_SHA"
             sleep 60
           done
-          echo "::error::Timed out waiting for a same-head Docling pack; see docs/ci.md."
+          if [[ "$CONTINUE_WAIT" == true ]] && (( $(date +%s) < PACK_DEADLINE )); then
+            echo "Continuing the pack wait in a fresh runner within the original deadline."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::Docling pack exceeded the 540-minute dependency deadline (scope, engine tests, Linux pack and runner queues); see docs/ci.md."
           exit 1
 
+  pack-wait-continued:
+    name: Continue waiting for source-matched pack
+    needs: [scope, pack, pack-wait]
+    if: needs.pack-wait.result == 'success' && needs.pack-wait.outputs.ready != 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 250
+    permissions:
+      actions: read
+    outputs:
+      run-id: ${{ steps.wait.outputs.run-id }}
+      ready: ${{ steps.wait.outputs.ready }}
+    steps:
+      - name: Wait within the original dependency deadline
+        id: wait
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PACK_SHA: ${{ needs.scope.outputs.source-sha }}
+          PREVIOUS_ID: ${{ needs.pack.outputs.previous-id }}
+          PACK_DEADLINE: ${{ needs.pack.outputs.deadline }}
+          WINDOW_SECONDS: "14400"
+          CONTINUE_WAIT: "false"
+        run: *wait-for-pack
+
   e2e:
-    name: Compose stack (core, office, docling)
-    needs: [scope, pack]
-    if: always() && !cancelled() && needs.scope.outputs.run == 'true'
+    name: Run Compose (core, office, docling)
+    needs: [scope, pack, pack-wait, pack-wait-continued]
+    if: always() && !cancelled() && needs.scope.result == 'success' && needs.scope.outputs.run == 'true'
     concurrency:
       group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -172,15 +235,15 @@ jobs:
       actions: read
     steps:
       - name: Require the CI pack dependency
-        if: github.event_name != 'schedule' && needs.pack.result != 'success'
+        if: github.event_name != 'schedule' && (needs.pack.result != 'success' || (needs.pack-wait.outputs.ready != 'true' && needs.pack-wait-continued.outputs.ready != 'true'))
         run: |
-          echo '::error::The same-head Docling pack dependency failed; see Resolve same-head CI pack.'
+          echo '::error::The source-matched Docling pack dependency failed; see the pack request and wait jobs.'
           exit 1
 
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
+          ref: ${{ needs.scope.outputs.source-sha }}
           persist-credentials: false
 
       # The docling image holds LibreOffice, PyTorch and the Docling models; the
@@ -215,19 +278,23 @@ jobs:
           version: 0.12.23
           python-version: "3.14"
 
-      - name: Download and unpack the same-head CI pack
+      - name: Download and unpack the source-matched CI pack
         if: github.event_name != 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          PACK_RUN_ID: ${{ needs.pack.outputs.run-id }}
+          PACK_RUN_ID: ${{ needs.pack-wait.outputs.run-id || needs.pack-wait-continued.outputs.run-id }}
           # Keep Python cache files out of the Docker source context.
           PYTHONDONTWRITEBYTECODE: "1"
-          PACK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PACK_SHA: ${{ needs.scope.outputs.source-sha }}
         run: |
           set -euo pipefail
-          actual_sha=$(gh run view "$PACK_RUN_ID" --json headSha --jq .headSha)
-          [[ "$actual_sha" == "$PACK_SHA" ]] || { echo '::error::Docling pack head mismatch'; exit 1; }
+          metadata=$(gh api "repos/$GH_REPO/actions/runs/$PACK_RUN_ID")
+          actual_sha=$(jq -r '.head_sha' <<< "$metadata")
+          event=$(jq -r '.event' <<< "$metadata")
+          [[ "$(git rev-parse HEAD)" == "$PACK_SHA" ]] || { echo '::error::E2E checkout differs from the pinned source'; exit 1; }
+          [[ "$actual_sha" == "$PACK_SHA" ]] || { echo '::error::Docling pack source commit mismatch'; exit 1; }
+          [[ "$event" == workflow_dispatch || "$event" == push ]] || { echo '::error::Docling pack source mismatch: PR artifacts use an unverified synthetic merge; a pinned-head dispatch or push build is required'; exit 1; }
           archives="$RUNNER_TEMP/docling-archives"
           gh run download "$PACK_RUN_ID" --name docling-pack-x86_64-unknown-linux-gnu --dir "$archives"
           gh run download "$PACK_RUN_ID" --name docling-pack-shared --dir "$archives"
@@ -265,3 +332,25 @@ jobs:
           E2E_WAIT_TIMEOUT: "900"
           E2E_JOB_TIMEOUT: "900"
         run: bash infra/test/e2e/run.sh
+
+  status:
+    name: Compose stack (core, office, docling)
+    needs: [scope, e2e]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require a valid scope decision and the requested conversion
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          RUN: ${{ needs.scope.outputs.run }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: |
+          set -euo pipefail
+          [[ "$SCOPE_RESULT" == success ]] || { echo "::error::Scope did not succeed: $SCOPE_RESULT"; exit 1; }
+          case "$RUN" in
+            false) echo 'Cloud paths did not match; Compose was intentionally omitted.' ;;
+            true) [[ "$E2E_RESULT" == success ]] || { echo "::error::Required Compose run did not succeed: $E2E_RESULT"; exit 1; } ;;
+            *) echo '::error::Scope returned a missing or invalid run decision'; exit 1 ;;
+          esac
