@@ -75,8 +75,6 @@ jobs:
               {target: "aarch64-unknown-linux-gnu", os: "ubuntu-26.04", exe: "", primary: false,
                input: "", expect: ""},
               {target: "aarch64-apple-darwin", os: "macos-26", exe: "", primary: false,
-               input: "fixtures/pdf/en-map-room.pdf", expect: "Notes from the Map Room"},
-              {target: "x86_64-pc-windows-msvc", os: "windows-2025", exe: ".exe", primary: false,
                input: "fixtures/pdf/en-map-room.pdf", expect: "Notes from the Map Room"}
             ] | if $all == "true" then . else map(select(.primary)) end
           ' <<< 'null')
@@ -425,7 +423,7 @@ jobs:
         run: >-
           uv run --no-project --python 3.14 python engines/docling/pack/build.py manifest
           --out "$PACK_OUT" x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
-          aarch64-apple-darwin x86_64-pc-windows-msvc
+          aarch64-apple-darwin
 
       - name: Upload the unsigned manifest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
