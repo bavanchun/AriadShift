@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeSet, HashMap},
+};
 
 use comrak::{
     Arena, Options,
@@ -53,6 +56,9 @@ enum Visit<'a> {
 #[derive(Default)]
 struct WalkState {
     assets: AssetStore,
+    shared_data_urls: HashMap<String, String>,
+    shared_image_targets: HashMap<String, Option<AssetRef>>,
+    shared_url_bytes_remaining: usize,
     block_nodes: u64,
     warnings: Vec<Warning>,
     footnote_references: BTreeSet<String>,
@@ -92,9 +98,12 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
     options.extension.shortcodes = true;
     options.parse.leave_footnote_definitions = true;
 
+    let (parser_input, shared_data_urls) = intern_reference_data_urls(&markdown, &options);
     let arena = Arena::new();
-    let root = comrak::parse_document(&arena, &markdown, &options);
+    let root = comrak::parse_document(&arena, &parser_input, &options);
     let mut state = WalkState {
+        shared_data_urls,
+        shared_url_bytes_remaining: markdown.len().min(100_000),
         footnote_references,
         footnote_definitions,
         ..WalkState::default()
@@ -198,6 +207,95 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
 
 fn node_key(node: &AstNode<'_>) -> usize {
     std::ptr::from_ref(node).cast::<()>() as usize
+}
+
+// Comrak charges URL bytes at every reference lookup. Keep shared data out of
+// that expansion path, then decode each destination once during IR conversion.
+// The first parse identifies consumed definitions: visible blocks (including
+// code and raw HTML) must never be rewritten as reference definitions.
+fn intern_reference_data_urls<'a>(
+    markdown: &'a str,
+    options: &Options<'_>,
+) -> (Cow<'a, str>, HashMap<String, String>) {
+    if !markdown.contains("data:") {
+        return (Cow::Borrowed(markdown), HashMap::new());
+    }
+    let arena = Arena::new();
+    let root = comrak::parse_document(&arena, markdown, options);
+    let mut visible_lines = vec![false; markdown.lines().count() + 1];
+    for node in root.children() {
+        let position = node.data().sourcepos;
+        visible_lines[position.start.line..=position.end.line].fill(true);
+    }
+    let reserved: BTreeSet<usize> = markdown
+        .match_indices("a:")
+        .filter_map(|(offset, _)| markdown[offset + 2..].split_once(':')?.0.parse().ok())
+        .collect();
+    let namespace = (0..).find(|index| !reserved.contains(index)).unwrap();
+    let prefix = format!("a:{namespace}:");
+    let mut tokens = HashMap::<&str, String>::new();
+    let mut destinations = HashMap::new();
+    let mut input = String::with_capacity(markdown.len());
+    for (index, line) in markdown.split_inclusive('\n').enumerate() {
+        let trimmed = line.trim_start_matches(' ');
+        let destination = (!visible_lines[index + 1] && trimmed.starts_with('['))
+            .then(|| trimmed.split_once("]:"))
+            .flatten()
+            .map(|(_, tail)| tail.trim_start_matches([' ', '\t']));
+        let uri = destination.and_then(|destination| {
+            if let Some(angled) = destination.strip_prefix('<') {
+                angled.split_once('>').map(|(uri, _)| uri)
+            } else {
+                Some(destination.split_whitespace().next().unwrap_or_default())
+            }
+        });
+        if let Some(uri) =
+            uri.filter(|uri| uri.starts_with("data:") && uri.len() > prefix.len() + 20)
+        {
+            let next = tokens.len();
+            let token = tokens
+                .entry(uri)
+                .or_insert_with(|| format!("{prefix}{next}"));
+            destinations
+                .entry(token.clone())
+                .or_insert_with(|| uri.to_owned());
+            let start = line.len() - destination.unwrap().len();
+            let angled = line.as_bytes()[start] == b'<';
+            let end = start + uri.len() + if angled { 2 } else { 0 };
+            input.push_str(&line[..start]);
+            input.push_str(token);
+            // Preserve source positions and Comrak's original input-sized budget.
+            input.extend(std::iter::repeat_n(' ', end - start - token.len()));
+            input.push_str(&line[end..]);
+        } else {
+            input.push_str(line);
+        }
+    }
+    if destinations.is_empty() {
+        (Cow::Borrowed(markdown), destinations)
+    } else {
+        (Cow::Owned(input), destinations)
+    }
+}
+
+// Non-image uses and failed decodes still carry their original URLs in the IR.
+// Short URLs have bounded cost per reference; retain the expansion ceiling for
+// long destinations that cannot be represented by a shared asset identifier.
+fn shared_url(token: &str, state: &mut WalkState) -> Option<String> {
+    let url = state.shared_data_urls.get(token)?;
+    if url.len() <= 128 {
+        return Some(url.clone());
+    }
+    if let Some(remaining) = state.shared_url_bytes_remaining.checked_sub(url.len()) {
+        state.shared_url_bytes_remaining = remaining;
+        Some(url.clone())
+    } else {
+        state.warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            "shared data URL expansion exceeds the Markdown reference budget",
+        ));
+        None
+    }
 }
 
 fn convert_node(
@@ -374,22 +472,55 @@ fn convert_node(
             format: RawFormat::Html,
             text: html.clone(),
         }),
-        NodeValue::Link(link) => inline(Inline::Link {
-            url: link.url.clone(),
-            title: nonempty(&link.title),
-            content: inlines(children),
-        }),
+        NodeValue::Link(link) => {
+            let url = if state.shared_data_urls.contains_key(&link.url) {
+                let Some(url) = shared_url(&link.url, state) else {
+                    return ConvertedNode::Inlines(inlines(children));
+                };
+                url
+            } else {
+                link.url.clone()
+            };
+            inline(Inline::Link {
+                url,
+                title: nonempty(&link.title),
+                content: inlines(children),
+            })
+        }
         NodeValue::Image(link) => {
             let alt = nfc(&inline_text(&inlines(children)));
-            let target = common::decode_data_uri_image(
-                &link.url,
-                limits,
-                &mut state.assets,
-                &mut state.warnings,
-            )
-            .unwrap_or_else(|| AssetRef::Url {
-                href: link.url.clone(),
-            });
+            let target = if let Some(url) = state.shared_data_urls.get(&link.url) {
+                let target = state
+                    .shared_image_targets
+                    .entry(link.url.clone())
+                    .or_insert_with(|| {
+                        common::decode_data_uri_image(
+                            url,
+                            limits,
+                            &mut state.assets,
+                            &mut state.warnings,
+                        )
+                    })
+                    .clone();
+                if let Some(target) = target {
+                    target
+                } else {
+                    let Some(href) = shared_url(&link.url, state) else {
+                        return inline(Inline::Text { text: alt });
+                    };
+                    AssetRef::Url { href }
+                }
+            } else {
+                common::decode_data_uri_image(
+                    &link.url,
+                    limits,
+                    &mut state.assets,
+                    &mut state.warnings,
+                )
+                .unwrap_or_else(|| AssetRef::Url {
+                    href: link.url.clone(),
+                })
+            };
             inline(Inline::Image {
                 target,
                 alt,
@@ -952,6 +1083,96 @@ mod tests {
                 .warnings
                 .iter()
                 .any(|warning| warning.code == WarningCode::UnsupportedNode)
+        );
+    }
+
+    #[test]
+    fn shared_data_image_definition_is_decoded_once_for_all_references() {
+        use base64::Engine as _;
+
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        let markdown = format!(
+            "{}\n[pixel]: data:image/png;base64,{encoded} \"Shared title\"\n",
+            "![pixel][pixel]\n\n".repeat(1_000)
+        );
+        let mut limits = Limits::local();
+        limits.max_asset_bytes = Some(png.len() as u64);
+        let output = read(&markdown, &limits).unwrap();
+        assert_eq!(output.document.assets.len(), 1);
+        assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
+        assert_eq!(output.document.body.len(), 1_000);
+        for block in &output.document.body {
+            assert!(matches!(block, Block::Paragraph { content }
+                if matches!(content.as_slice(), [Inline::Image {
+                    target: AssetRef::Asset { .. }, title: Some(title), ..
+                }] if title == "Shared title")));
+        }
+        assert!(output.warnings.is_empty());
+    }
+
+    #[test]
+    fn data_image_definition_interning_preserves_literal_blocks_and_urls() {
+        let uri = "data:image/png;base64,iVBORw0KGgo=";
+        let definition = format!("[pixel]: <{uri}> \"Pixel\"");
+        let markdown = format!(
+            "```md\n{definition}\n```\n\n<div>\n{definition}\n</div>\n\na:0:0\n\n![one][real]\n\n![two][real]\n\n[link][real]\n\n[real]: <{uri}> \"Pixel\"\n"
+        );
+        let output = read(&markdown, &Limits::local()).unwrap();
+        assert!(matches!(&output.document.body[0], Block::Code { text, .. }
+            if text == &format!("{definition}\n")));
+        assert!(matches!(&output.document.body[1], Block::Raw { text, .. }
+            if text.contains(&definition)));
+        assert_eq!(paragraph_text(&output.document.body[2]), "a:0:0");
+        assert_eq!(output.document.assets.len(), 1);
+        assert!(
+            matches!(&output.document.body[5], Block::Paragraph { content }
+            if matches!(&content[0], Inline::Link { url, title: Some(title), .. }
+                if url == uri && title == "Pixel"))
+        );
+
+        let mut limits = Limits::local();
+        limits.max_asset_bytes = Some(1);
+        let limited = read(&markdown, &limits).unwrap();
+        assert!(limited.document.assets.is_empty());
+        assert!(
+            limited
+                .warnings
+                .iter()
+                .any(|warning| warning.code == WarningCode::ImageNotEmbedded)
+        );
+        assert!(
+            !serde_json::to_string(&limited.document)
+                .unwrap()
+                .contains("a:1:")
+        );
+    }
+
+    #[test]
+    fn shared_data_hyperlinks_keep_the_reference_expansion_ceiling() {
+        let uri = format!("data:image/png;base64,{}", "iVBORw0KGgo=".repeat(1_000));
+        let markdown = format!("{}\n[pixel]: {uri}\n", "[pixel][pixel]\n\n".repeat(100));
+        let output = read(&markdown, &Limits::local()).unwrap();
+        let url_bytes: usize = output
+            .document
+            .body
+            .iter()
+            .filter_map(|block| {
+                if let Block::Paragraph { content } = block
+                    && let Some(Inline::Link { url, .. }) = content.first()
+                {
+                    return Some(url.len());
+                }
+                None
+            })
+            .sum();
+        assert!(url_bytes <= markdown.len().min(100_000));
+        assert!(output.document.assets.is_empty());
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning.message.contains("reference budget"))
         );
     }
 
