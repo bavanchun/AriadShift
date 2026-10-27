@@ -60,6 +60,7 @@ struct WalkState {
 }
 
 /// Reads CommonMark and GFM Markdown into the shared document IR.
+/// Nesting limits count both block and inline containers.
 pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
     limits.validate()?;
     if let Some(limit) = limits.max_input_bytes
@@ -73,6 +74,8 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
         .unwrap_or(markdown)
         .replace("\r\n", "\n")
         .replace('\r', "\n");
+    // Only block syntax can be bounded before parsing without treating literal
+    // brackets, emphasis markers, code or math as nested inline containers.
     prescan_nesting(&markdown, limits.max_nesting_depth)?;
 
     let front_matter = front_matter_content(&markdown)
@@ -112,6 +115,13 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
                             | NodeValue::List(_)
                             | NodeValue::Table(_)
                             | NodeValue::FootnoteDefinition(_)
+                            | NodeValue::Emph
+                            | NodeValue::Strong
+                            | NodeValue::Strikethrough
+                            | NodeValue::Superscript
+                            | NodeValue::Subscript
+                            | NodeValue::Link(_)
+                            | NodeValue::Image(_)
                     );
                     let is_block = value.block()
                         && !matches!(value, NodeValue::Document | NodeValue::FrontMatter(_));
@@ -489,40 +499,49 @@ fn parent_is_inline(node: &AstNode<'_>) -> bool {
     })
 }
 
+const MAX_FOOTNOTE_LABEL_BYTES: usize = 999;
+
 fn text_inlines(text: &str, state: &WalkState) -> Vec<Inline> {
     let mut inlines = Vec::new();
-    let mut cursor = 0;
-    while let Some(relative) = text[cursor..].find("[^") {
-        let start = cursor + relative;
+    let (mut pending, mut search) = (0, 0);
+    while let Some(relative) = text[search..].find("[^") {
+        let start = search + relative;
         let label_start = start + 2;
-        let Some(relative_end) = text[label_start..].find(']') else {
+        let Some(relative_end) = text[label_start..].find(['[', ']']) else {
             break;
         };
         let end = label_start + relative_end;
         let label = &text[label_start..end];
+        if text.as_bytes()[end] != b']'
+            || label.is_empty()
+            || label.len() > MAX_FOOTNOTE_LABEL_BYTES
+        {
+            search = end;
+            continue;
+        }
         let normalized = normalize_footnote(label);
-        if label.is_empty()
-            || !state.footnote_references.contains(&normalized)
+        if !state.footnote_references.contains(&normalized)
             || state.footnote_definitions.contains(&normalized)
         {
-            cursor = label_start;
+            search = end + 1;
             continue;
         }
 
-        if start > cursor {
+        if start > pending {
             inlines.push(Inline::Text {
-                text: nfc(&text[cursor..start]),
+                text: nfc(&text[pending..start]),
             });
         }
         inlines.push(Inline::FootnoteRef {
             id: label.to_owned(),
         });
-        cursor = end + 1;
+        pending = end + 1;
+        search = pending;
     }
 
-    if cursor < text.len() {
+    if pending < text.len() {
         inlines.push(Inline::Text {
-            text: nfc(&text[cursor..]),
+            text: nfc(&text[pending..]),
         });
     }
     inlines
@@ -543,6 +562,9 @@ fn scan_footnotes(markdown: &str) -> (BTreeSet<String>, BTreeSet<String>) {
             continue;
         }
 
+        if line.trim().is_empty() {
+            inline_code_ticks = 0;
+        }
         let trimmed = line.trim_start_matches([' ', '\t']);
         if let Some((fence_char, fence_len)) = fence {
             if is_closing_fence(trimmed, fence_char, fence_len) {
@@ -572,9 +594,12 @@ fn footnote_definition_label(line: &str) -> Option<&str> {
         return None;
     }
     let remainder = trimmed.strip_prefix("[^")?;
-    let end = remainder.find("]:")?;
+    let end = remainder.find(['[', ']'])?;
     let label = &remainder[..end];
-    (!label.is_empty()).then_some(label)
+    (!label.is_empty()
+        && label.len() <= MAX_FOOTNOTE_LABEL_BYTES
+        && remainder[end..].starts_with("]:"))
+    .then_some(label)
 }
 
 fn scan_footnote_references(
@@ -583,6 +608,7 @@ fn scan_footnote_references(
     references: &mut BTreeSet<String>,
 ) {
     let bytes = line.as_bytes();
+    let last_close = line.rfind(']');
     let mut cursor = 0;
     while cursor < bytes.len() {
         if bytes[cursor] == b'\\' {
@@ -605,16 +631,22 @@ fn scan_footnote_references(
             cursor += length;
             continue;
         }
+        // Once no closing bracket remains, only track escapes and backticks.
         if *inline_code_ticks == 0
             && line[cursor..].starts_with("[^")
-            && let Some(relative_end) = line[cursor + 2..].find(']')
+            && last_close.is_some_and(|close| close > cursor + 1)
         {
-            let end = cursor + 2 + relative_end;
-            let label = &line[cursor + 2..end];
-            if !label.is_empty() {
+            let label_start = cursor + 2;
+            let Some(relative_end) = line[label_start..].find(['[', ']']) else {
+                break;
+            };
+            let end = label_start + relative_end;
+            let label = &line[label_start..end];
+            if bytes[end] == b']' && !label.is_empty() && label.len() <= MAX_FOOTNOTE_LABEL_BYTES {
                 references.insert(normalize_footnote(label));
             }
-            cursor = end + 1;
+            // A '[' can begin the next candidate; labels never contain brackets.
+            cursor = end + usize::from(bytes[end] == b']');
             continue;
         }
         cursor += line[cursor..].chars().next().map_or(1, char::len_utf8);
@@ -669,8 +701,6 @@ fn front_matter_content(markdown: &str) -> Option<&str> {
 
 fn prescan_nesting(markdown: &str, limit: u16) -> Result<(), ReadError> {
     let mut fence: Option<(char, usize)> = None;
-    let mut bracket_depth = 0_u16;
-    let mut emphasis_depth = 0_u16;
 
     for line in markdown.lines() {
         let trimmed = line.trim_start_matches([' ', '\t']);
@@ -685,8 +715,13 @@ fn prescan_nesting(markdown: &str, limit: u16) -> Result<(), ReadError> {
             continue;
         }
 
+        if trimmed
+            .chars()
+            .all(|ch| matches!(ch, '*' | '_' | ' ' | '\t'))
+        {
+            continue;
+        }
         check_container_depth(line, limit)?;
-        check_inline_depth(line, limit, &mut bracket_depth, &mut emphasis_depth)?;
     }
     Ok(())
 }
@@ -767,79 +802,6 @@ fn after_list_marker(bytes: &[u8], start: usize) -> Option<usize> {
         return None;
     }
     Some(cursor + 1)
-}
-
-fn check_inline_depth(
-    line: &str,
-    limit: u16,
-    bracket_depth: &mut u16,
-    emphasis_depth: &mut u16,
-) -> Result<(), ReadError> {
-    let chars: Vec<_> = line.chars().collect();
-    let mut cursor = 0;
-    let mut inline_code_ticks = 0_usize;
-    while cursor < chars.len() {
-        if chars[cursor] == '\\' {
-            cursor = (cursor + 2).min(chars.len());
-            continue;
-        }
-        if chars[cursor] == '`' {
-            let length = run_length(&chars, cursor, '`');
-            if inline_code_ticks == 0 {
-                inline_code_ticks = length;
-            } else if inline_code_ticks == length {
-                inline_code_ticks = 0;
-            }
-            cursor += length;
-            continue;
-        }
-        if inline_code_ticks != 0 {
-            cursor += 1;
-            continue;
-        }
-
-        match chars[cursor] {
-            '[' => {
-                *bracket_depth = bracket_depth.saturating_add(1);
-                if *bracket_depth > limit {
-                    return Err(ReadError::NestingTooDeep { limit });
-                }
-                cursor += 1;
-            }
-            ']' => {
-                *bracket_depth = bracket_depth.saturating_sub(1);
-                cursor += 1;
-            }
-            '*' | '_' => {
-                let marker = chars[cursor];
-                let length = run_length(&chars, cursor, marker);
-                if length > usize::from(limit) {
-                    return Err(ReadError::NestingTooDeep { limit });
-                }
-                let previous_space = cursor == 0 || chars[cursor - 1].is_whitespace();
-                let after = cursor + length;
-                let next_space = after == chars.len() || chars[after].is_whitespace();
-                if previous_space && !next_space {
-                    *emphasis_depth = emphasis_depth.saturating_add(1);
-                    if *emphasis_depth > limit {
-                        return Err(ReadError::NestingTooDeep { limit });
-                    }
-                } else if !previous_space && next_space {
-                    *emphasis_depth = emphasis_depth.saturating_sub(1);
-                }
-                cursor += length;
-            }
-            _ => cursor += 1,
-        }
-    }
-    Ok(())
-}
-
-fn run_length(chars: &[char], start: usize, marker: char) -> usize {
-    chars[start..]
-        .iter()
-        .take_while(|character| **character == marker)
-        .count()
 }
 
 #[cfg(test)]
@@ -1104,12 +1066,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_hostile_nesting_before_calling_the_parser() {
+    fn rejects_hostile_block_nesting_before_calling_the_parser() {
         let cases = [
             format!("{} text", ">".repeat(100_000)),
             format!("{}item", "- ".repeat(100_000)),
-            "[".repeat(50_000),
-            "*".repeat(50_000),
         ];
         for input in cases {
             let start = Instant::now();
@@ -1147,5 +1107,215 @@ mod tests {
             Err(ReadError::TooManyBlocks { limit: 128 })
         ));
         assert!(start.elapsed().as_secs_f64() < 1.0);
+    }
+    /// Deepest chain of emphasis-like inlines in a paragraph.
+    fn inline_depth(block: &Block) -> usize {
+        let Block::Paragraph { content } = block else {
+            return 0;
+        };
+        let mut deepest = 0;
+        let mut stack: Vec<(&Inline, usize)> = content.iter().map(|inline| (inline, 1)).collect();
+        while let Some((inline, depth)) = stack.pop() {
+            if let Inline::Emph { content }
+            | Inline::Strong { content }
+            | Inline::Strikeout { content } = inline
+            {
+                deepest = deepest.max(depth);
+                stack.extend(content.iter().map(|inline| (inline, depth + 1)));
+            }
+        }
+        deepest
+    }
+
+    /// `depth` openers that follow `(` and closers that precede `)`. Each inner opener is only
+    /// left-flanking and each closer only right-flanking, so comrak nests them all.
+    /// Punctuation between markers must not hide their actual AST depth.
+    fn punctuated_nesting(marker: &str, depth: usize) -> String {
+        let open = format!("{marker}a(");
+        let close = format!("a{marker})");
+        format!("{}x{}\n", open.repeat(depth), close.repeat(depth))
+    }
+
+    #[test]
+    fn inline_nesting_counts_toward_the_limit_when_the_prescan_misses_it() {
+        let limit = Limits::local().max_nesting_depth;
+        let depth = usize::from(limit);
+        for marker in ["*", "**"] {
+            let at_limit = read(&punctuated_nesting(marker, depth), &Limits::local())
+                .expect("nesting at the limit is accepted");
+            assert_eq!(
+                inline_depth(&at_limit.document.body[0]),
+                depth,
+                "marker: {marker}"
+            );
+            assert_eq!(
+                read(&punctuated_nesting(marker, depth + 1), &Limits::local()),
+                Err(ReadError::NestingTooDeep { limit }),
+                "marker: {marker}"
+            );
+        }
+        // If comrak also nests `~~`, it must be bounded the same way.
+        match read(&punctuated_nesting("~~", depth + 1), &Limits::local()) {
+            Ok(output) => assert!(inline_depth(&output.document.body[0]) <= depth),
+            Err(error) => assert_eq!(error, ReadError::NestingTooDeep { limit }),
+        }
+    }
+
+    #[test]
+    fn deep_inline_nesting_is_rejected_on_a_wasm_sized_stack() {
+        // The browser module runs with a 1 MiB stack; dropping, printing or serialising
+        // 50,000 nested inlines recurses far past it.
+        std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(|| {
+                let input = punctuated_nesting("*", 50_000);
+                let start = Instant::now();
+                let rejected = matches!(
+                    read(&input, &Limits::local()),
+                    Err(ReadError::NestingTooDeep { limit: 64 })
+                );
+                assert!(rejected, "50,000 nested inlines must be rejected");
+                eprintln!("debug elapsed: {:?}", start.elapsed());
+                assert!(start.elapsed().as_secs_f64() < 10.0);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn rejected_footnote_labels_are_scanned_in_linear_time() {
+        // `\[^` is an escaped bracket, so no candidate is a known reference, and comrak
+        // coalesces the run into one Text node that `text_inlines` rescanned from every `[^`.
+        let input = format!("{}x\\]\n", "\\[^".repeat(100_000));
+        let start = Instant::now();
+        let output = read(&input, &Limits::local()).unwrap();
+        eprintln!("debug elapsed: {:?}", start.elapsed());
+        assert!(start.elapsed().as_secs_f64() < 5.0);
+        assert_eq!(
+            paragraph_text(&output.document.body[0]).chars().count(),
+            200_002
+        );
+    }
+
+    #[test]
+    fn unterminated_footnote_candidates_are_scanned_in_linear_time() {
+        // A blank line ends the open code span. The next backtick must not expose
+        // a million unclosed candidates to repeated scans of the same suffix.
+        // Comrak reads that indented line as a code block.
+        let input = format!("`\n\n    `{}\n", "[^".repeat(1_000_000));
+        let start = Instant::now();
+        let result = read(&input, &Limits::local());
+        assert!(
+            matches!(result, Ok(_) | Err(ReadError::NestingTooDeep { .. })),
+            "{:?}",
+            result.as_ref().err()
+        );
+        eprintln!("debug elapsed: {:?}", start.elapsed());
+        assert!(start.elapsed().as_secs_f64() < 2.0);
+    }
+
+    #[test]
+    fn rejected_footnote_labels_keep_all_pending_text() {
+        for text in ["a [^] b", "a [^outer [^inner] b", "a [^bad] b [^ok]"] {
+            let output = read(text, &Limits::local()).unwrap();
+            let Block::Paragraph { content } = &output.document.body[0] else {
+                panic!("expected paragraph");
+            };
+            let reconstructed: String = content
+                .iter()
+                .map(|inline| match inline {
+                    Inline::Text { text } => text.clone(),
+                    Inline::FootnoteRef { id } => format!("[^{id}]"),
+                    other => panic!("unexpected inline: {other:?}"),
+                })
+                .collect();
+            assert_eq!(reconstructed, text);
+        }
+    }
+
+    #[test]
+    fn flat_markdown_does_not_accumulate_inline_depth() {
+        for input in [
+            "*".repeat(70),
+            "_".repeat(70),
+            "* ".repeat(70),
+            "_ ".repeat(70),
+            "*args, **kwargs\n\n".repeat(65),
+            format!("Name: {}", "_".repeat(70)),
+            "[".repeat(50_000),
+            "*".repeat(50_000),
+            "[0, 1) ".repeat(65),
+            "[ordinary paragraph\n\n".repeat(65),
+            format!("`{}`", "[".repeat(100)),
+            format!("${}$", "[".repeat(100)),
+        ] {
+            assert!(read(&input, &Limits::local()).is_ok(), "input: {input}");
+        }
+    }
+
+    #[test]
+    fn inline_containers_share_the_block_nesting_budget() {
+        for limit in [1, 2, 64] {
+            let mut limits = Limits::local();
+            limits.max_nesting_depth = limit;
+            for depth in [limit - 1, limit] {
+                let nested = punctuated_nesting("*", usize::from(depth));
+                let nested = nested.trim_end();
+                for input in [
+                    format!("> {nested}\n"),
+                    format!("[{nested}](https://example.test)\n"),
+                    format!("![{nested}](image.png)\n"),
+                    format!("~~{nested}~~\n"),
+                ] {
+                    assert_eq!(read(&input, &limits).is_ok(), depth < limit, "{input}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn footnote_label_byte_limit_preserves_unicode_text() {
+        for (label, accepted) in [
+            (format!("{}a", "é".repeat(499)), true),
+            ("é".repeat(500), false),
+        ] {
+            let input = format!("before [^{label}] after");
+            let output = read(&input, &Limits::local()).unwrap();
+            assert_eq!(
+                output
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.code == WarningCode::FootnoteMissing),
+                accepted
+            );
+            if !accepted {
+                assert_eq!(paragraph_text(&output.document.body[0]), input);
+            }
+        }
+    }
+
+    #[test]
+    fn footnote_code_spans_end_at_paragraph_boundaries() {
+        let same_paragraph = read("`line\n[^inside]` outside[^outside]", &Limits::local()).unwrap();
+        assert_eq!(same_paragraph.warnings.len(), 1);
+        assert!(same_paragraph.warnings[0].message.contains("outside"));
+        let unclosed_label_before_code =
+            read("[^unclosed `code\n[^inside]`", &Limits::local()).unwrap();
+        assert!(unclosed_label_before_code.warnings.is_empty());
+        let separate_paragraphs = read("`\n\n[^visible]", &Limits::local()).unwrap();
+        assert_eq!(separate_paragraphs.warnings.len(), 1);
+        assert!(separate_paragraphs.warnings[0].message.contains("visible"));
+    }
+
+    #[test]
+    fn footnote_reference_scanner_stops_after_an_unclosed_label() {
+        let input = "[^".repeat(1_000_000);
+        let mut references = std::collections::BTreeSet::new();
+        let start = Instant::now();
+        super::scan_footnote_references(&input, &mut 0, &mut references);
+        eprintln!("debug elapsed: {:?}", start.elapsed());
+        assert!(references.is_empty());
+        assert!(start.elapsed().as_secs_f64() < 2.0);
     }
 }
