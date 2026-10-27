@@ -1,102 +1,64 @@
-# Cloud E2E rework verification
+# Cloud E2E verification after label-cancellation rework
 
-All four requested workflow corrections are implemented. The static gate and exercised workflow cases passed on implementation commit `815af932761690c3b742027310d6b5bad8e63158`. This report supersedes the earlier delivery's label-scope and pack-provenance claims. Nothing was pushed, no workflow was dispatched, and no PR was opened. The local branch awaits ACCEPT.
+Both requested corrections are implemented on `feat/cloud-product--e2e-docling`. Label events preserve a running conversion, and the documentation accurately describes polling deadlines and runner queue limits. No push, workflow dispatch or PR creation was performed. The branch awaits ACCEPT.
 
-- Branch: `feat/cloud-product--e2e-docling`.
-- Verified implementation HEAD: `815af932761690c3b742027310d6b5bad8e63158`.
-- Raw rework gate: [t3-rework-032049.log](/home/vchun/Codes/ariadshift-logs/t3-rework-032049.log).
-- Raw gate last line: `=== 03:20:57 ALL GREEN`.
-- Exact commands: [rework-gate.zsh](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework-gate.zsh).
-- Executed case driver: [rework-proof.py](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework-proof.py).
-- Machine-readable case results: [rework-cases.json](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework-cases.json).
+- Verified implementation HEAD: `e775a158ffee5f9b731785c229775b83245540ce`.
+- Static gate: [d2120-t3-rework2-static.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-rework2-static.log).
+- Gate last line: `=== e775a158ffee5f9b731785c229775b83245540ce ALL GREEN`.
+- Exact gate drivers: [rework2-gate.zsh](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-gate.zsh) and [rework2-gate.py](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-gate.py).
+- Executed cases: [rework2-proof.py](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-proof.py), with [JSON results](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-cases.json).
 
-## Corrections and verification
+## Changes and case evidence
 
-| Review requirement | Final behavior | Exercised evidence |
+The conversion job retains its PR concurrency group. Its cancellation expression now requires a PR event whose action is neither `labeled` nor `unlabeled`. A new commit's `synchronize` event still permits cancellation. The workflow currently triggers `labeled`; the `unlabeled` guard also protects a future trigger addition.
+
+| Configured event | Cancel a running conversion? | Local evidence |
 |---|---|---|
-| Unrelated labels cannot create a skipped green cloud check | Every PR label event recomputes changed-path scope; an existing or newly added `cloud-e2e` label forces conversion. Concurrency remains on the actual conversion job. | Real git diffs cover cloud and documentation-only changes. An unrelated label on a cloud change produces `run=true`; skipped or failed conversion then makes the required check fail. |
-| Failed or empty scope must fail the required check | The always-run final job retains the exact required name `Compose stack (core, office, docling)`. It validates scope success and a boolean decision before accepting conversion success or an intentional nonmatching decision. | Failed, cancelled and skipped scope; failed scope with a false output; missing and invalid output; intentional omission; successful, failed, skipped and cancelled conversion. |
-| Deadline covers the dependency chain and queues | A single absolute 540-minute deadline covers request overhead, pack scope, engine tests, the 350-minute Linux pack build and queue time. A 300-minute polling window hands off to a 240-minute window without resetting the deadline. Job limits are 310 and 250 minutes. | The driver executes the real deadline assignment, derives the dependency budgets from `pack-docling.yml`, and checks that 385 minutes plus a 10-minute request and a 120-minute queue scenario fits in 540 minutes. Handoff succeeds; an expired deadline fails clearly in both windows. Failed, cancelled, timed-out and skipped Linux pack jobs fail. |
-| Pack and E2E use the same source | Scope records the PR head SHA; E2E checks out that exact SHA. Only push or dispatch pack runs for that SHA are accepted. PR artifacts are rejected because their API head SHA does not identify the synthetic merge tree. The download step validates its own checkout, artifact run SHA and event before downloading. | Exact-source push and dispatch metadata pass. Same-head PR metadata, a stale PR merge after base advancement, another pack commit and another E2E checkout are rejected with explanations. The actual resolver selector excludes PR runs before selecting dispatch. |
+| PR `labeled` | No | The extracted expression evaluates false. |
+| PR `unlabeled` | No | The extracted expression evaluates false. |
+| PR `synchronize` | Yes | The extracted expression evaluates true. |
+| PR `reopened` | Yes | The extracted expression evaluates true. |
+| Push, schedule or manual dispatch | No | All three expression cases evaluate false. |
+| Surviving conversion fails after unrelated labels | Required status FAIL | The actual final-status shell exits 1 with `Required Compose run did not succeed: failure`. |
 
-The 540-minute deadline is finite and includes queue delay after the request begins. The 120-minute queue value is an exercised budget scenario, not a promise about GitHub runner availability. Both polling jobs remain below GitHub's six-hour per-job limit and leave ten minutes beyond their polling windows for reporting. They share the same YAML-anchored polling script. Only the request job has `actions: write`; polling and conversion use `actions: read`.
+Under GitHub's default [one-running, one-pending policy](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), a label arrival preserves running conversion A while it waits. A later arrival can replace pending job B; it does not cancel A through the label policy. Pending jobs are not guaranteed to survive. A cancelled pending conversion cannot pass this workflow's final required status, and A's final status fails if A fails. A label-triggered conversion must itself succeed before its required status can pass. Actual scheduling, same-name required-check selection and cross-run cancellation need a live PR; the local expression and shell cases do not reproduce GitHub's scheduler.
 
-## Scope and required-check case tables
+The new regression case was first run against the previous expression and failed because a label produced `cancel=true`; see [d2120-t3-rework2-red.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-rework2-red.log). After repair, all 44 cases passed. The driver evaluates the configured conjunction using Bash's equivalent boolean operators and executes the workflow's actual final-status shell. The other 36 cases retain scope, failure, deadline, pack-state and source-provenance coverage from the previous rework.
 
-These cases execute the actual workflow shell against existing git history. Cloud changes use `d197cae..9c682bc`; documentation-only changes use `9c682bc..183c390`.
+The workflow comments and `docs/ci.md` now explain that the request shell creates the 540-minute timestamp only after obtaining a runner. A polling shell enforces that timestamp only once a waiter has a runner; a waiter queued past it fails when it starts. Time spent queued before the request or a waiter starts is bounded only by GitHub's queue limits. The timestamp is not a hard 540-minute wall-clock bound, and there is no independent watchdog. GitHub's [`timeout-minutes`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes) limits execution rather than runner queue time. The two polling windows and their 310/250-minute job limits are unchanged. Both existing expired-timestamp cases still fail clearly after their shell starts.
 
-| Event | Changed paths / label state | Scope result |
-|---|---|---|
-| Unrelated label | Cloud paths | `true` |
-| Unrelated label | Nonmatching paths | `false` |
-| Unrelated label | Nonmatching paths, existing `cloud-e2e` label | `true` |
-| `cloud-e2e` label | Nonmatching paths | `true` |
-| PR synchronize | Cloud paths | `true` |
-| PR synchronize | Nonmatching paths | `false` |
-| Push | Cloud paths | `true` |
-| Schedule | No path restriction | `true` |
-| Manual dispatch | No path restriction | `true` |
+## Validation and commits
 
-| Scope state / decision | Conversion state | Required Compose result |
-|---|---|---|
-| Failed, cancelled or skipped | Skipped | FAIL |
-| Failed with `run=false` | Skipped | FAIL |
-| Successful with missing or invalid output | Skipped | FAIL |
-| Successful with explicit `run=false` | Skipped intentionally | PASS |
-| Successful with `run=true` | Success | PASS |
-| Successful with `run=true` | Failed, skipped or cancelled | FAIL |
-| Unrelated label on a cloud change (`run=true`) | Failed or skipped | FAIL |
-
-All 36 exercised shell cases passed, including expected nonzero exits. Additional assertions check the resolver's actual jq selection, pinned-checkout wiring, shared deadline, job timeout margins and job-only concurrency. Explicit metadata inputs are unit cases; they are not live GitHub runs and do not substitute for a remote artifact handoff.
-
-## Gate commands and outcome
-
-The detached runner used PID 139932 and held the shared build lock only when admitted to the queue. The saved driver invokes `flock /home/vchun/Codes/01-AriadShift/.run/build.lock nice -n 19 zsh /home/vchun/Codes/ariadshift-ops/asus-build.sh`. It uses `CARGO_BUILD_JOBS=4`, UV `0.12.23`, pnpm `12.9.1` and Node from `.node-version`. The standard runner prepares a separate verification worktree, then the first supplied command explicitly changes to this authorized local worktree to verify the unpushed implementation commit.
-
-The complete command list is preserved in the driver. The checks were:
+The original queued PID 344171 was cancelled before acquiring a lock, as instructed by the Mac master. The detached replacement used PID 606025 and `zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 python3 /home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-gate.py`. The slot wrapper waits on `build.lock.2`, requires load below 12 and available memory above 8 GB, and runs at priority 19. It checked this local worktree directly, preserving the no-push constraint. The driver exported `CARGO_BUILD_JOBS=4`, UV `0.12.23`, pnpm `12.9.1` and Node from `.node-version`, used this worktree's own Cargo target directory, checked load and ran:
 
 ```sh
-just pandoc
+git show --no-patch --format=Verified-head:%H HEAD
 .tools/bin/actionlint .github/workflows/cloud-e2e.yml
 bash scripts/test-ci-scope.sh
-python3 /home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework-proof.py
-typos docs/ci.md .github/workflows/cloud-e2e.yml plans/reports/d2120-t3-cloud-e2e.md
+python3 /home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-proof.py
+typos docs/ci.md .github/workflows/cloud-e2e.yml
 just lint-commits
-just lint-commits a25f05abc4e4ab1e0e05793c621bcc67269f5cac..HEAD
-git diff --check
-git diff --exit-code a25f05abc4e4ab1e0e05793c621bcc67269f5cac..HEAD -- infra/test/e2e/run.sh
-git rev-parse HEAD
+just lint-commits ac0314d7627ade2e0f115f22ff3faf0247ddec32..HEAD
+git diff --check ac0314d7627ade2e0f115f22ff3faf0247ddec32..HEAD
+git diff --exit-code ac0314d7627ade2e0f115f22ff3faf0247ddec32..HEAD -- infra/test/e2e/run.sh
 ```
 
-Actionlint, all 76 classifier tests, all 36 workflow cases, typos, both commit-lint ranges and whitespace checks passed. `run.sh` was unchanged, so the rework brief's Compose rerun exemption applies. No full `just ci` run is claimed. Review against the four requirements found no remaining high issue in the inspected local implementation; GitHub orchestration remains an explicit verification limit below.
-
-## Retained real conversion evidence
-
-The earlier real Compose proof remains valid for the unchanged runner. Its raw log is [t3-proof-011908.log](/home/vchun/Codes/ariadshift-logs/t3-proof-011908.log), ending `=== 01:47:40 ALL GREEN`. It used image-only Vietnamese fixture `fixtures/pdf/vi-garden-image-only.pdf`, SHA-256 `048930c263e1b5aefe30990d74a207fbec3ce275abfda6fd402ead05ee7170fb`; `pdftotext` emitted only `0c`. The final GET reported a succeeded Docling route without `ocr_required`; the 10,595-byte DOCX passed size, hash and ZIP checks and contained “Khu vườn đọc sách”. Missing tessdata and a mismatched expected pack head each failed their real preflight.
-
-That local conversion deliberately used the existing pack specified by the original brief: [run 40462719557](https://github.com/bavanchun/AriadShift/actions/runs/40462719557), head `796c83ea6faaa820996d4107847862ae00f704d2`. It proves conversion, not a pack built from the reworked workflow's pinned source. The new workflow rejects those PR artifacts when resolving a future source-matched CI build.
-
-The original journey also verified output deletion, `429 quota_exceeded` for a fifth pending upload, invalidation of both keys after account deletion, and continued access for the other account. Its containers, volumes and networks were removed and ports 18086, 13006, 18336 and 13016 were released. The original runner exited. The rework started no service, container or listener and used no sudo or process suspension.
-
-The original B9 public Turnstile environment guidance and B11 shared cloud path classifier remain unchanged. The original implementation gate is [d2120-t3-final-green.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-final-green.log), ending `=== fa294e3dbcf9b6cb88c2007c3616534bab0be7f4 ALL GREEN`.
-
-## Commits
+Actionlint, all 76 classifier cases, all 44 workflow cases, typos, both commit-lint ranges and whitespace checks passed. Review of the final diff confirmed that only the cancellation policy and its documentation changed. No conversion code, pack resolver behavior or `run.sh` was changed, so Compose was not rerun. No full `just ci` run is claimed.
 
 | SHA | Subject |
 |---|---|
-| `d197caeccfd8f2da79d91d29e6f3a28f12a51997` | `chore: merge dev into cloud e2e` |
-| `9c682bca0a0925945159840188a96f912a743933` | `test(cloud): prove docling OCR with matching CI packs` |
-| `183c3907078aa7713735edf6b7d575058ef90f5e` | `docs(ci): explain pack dispatch before workflow promotion` |
-| `fa294e3dbcf9b6cb88c2007c3616534bab0be7f4` | `ci(cloud): avoid changing the image context during pack setup` |
-| `a25f05abc4e4ab1e0e05793c621bcc67269f5cac` | `docs: record cloud OCR verification results` |
-| `815af932761690c3b742027310d6b5bad8e63158` | `fix(ci): require verified cloud conversion checks` |
+| `e775a158ffee5f9b731785c229775b83245540ce` | `fix(ci): preserve conversions across label events` |
 
-The rework implementation changes only `.github/workflows/cloud-e2e.yml` and `docs/ci.md`. A separate documentation commit records this report; the canonical operations copy records the resulting branch head without a self-referencing commit hash in the repository report.
+A separate report-only commit records this result. The canonical operations copy records its final branch HEAD and subsequent report checks without introducing a self-referencing commit hash into this repository report. No service, container or listener was started, and no sudo or process suspension was used. The detached gate exited after its checks.
 
-## Remaining concerns
+## Retained evidence and open concerns
 
-- GitHub must still exercise Actions-token dispatch, the new always-run required status, actual cancellation, fork prerequisites and source-matched artifact handoff on a revised remote head. This worker made no push or remote dispatch under the rework brief. Local shell decisions and static wiring passed; no green remote Compose check is claimed.
-- Nightly still uses signed-release installation and requires a published compatible pack. The development override does not prove signed installation.
-- The original Compose proof exceeded the shared ASUS load ceiling transiently (51.42 during toolchain installation and 24.42 during web export). Docker executor processes retained priority 0 despite a serialized priority-19 runner. The [historical resource record](/home/vchun/Codes/ariadshift-logs/d2120-t3-resource.log) preserves that limitation. No new Docker build, sudo attempt, priority change to another process, or suspension was performed during rework.
+The prior gate [t3-rework-032049.log](/home/vchun/Codes/ariadshift-logs/t3-rework-032049.log) verified implementation `815af93` and ended `=== 03:20:57 ALL GREEN`. Its four fixes remain in place: recomputed label scope, the always-run final required status, the extended polling budget and exact-source pack selection.
+
+The unchanged real OCR journey is recorded in [t3-proof-011908.log](/home/vchun/Codes/ariadshift-logs/t3-proof-011908.log), ending `=== 01:47:40 ALL GREEN`. It converted the image-only Vietnamese PDF through Docling to a validated DOCX, enforced quota and deletion, and used the older pack explicitly requested by the original brief. It does not prove artifact handoff for this revised head. The original B9 environment guidance and B11 classifier remain unchanged.
+
+- A live PR must still prove label preservation, new-commit cancellation, replacement of a pending run, final required-check behavior and exact-source artifact handoff. No green remote Compose run is claimed.
+- Automatic dispatch cost and fork prerequisites remain operational decisions from the review. This small rework does not change the pack workflow's platform matrix or its permissions. Nightly signed installation still needs a compatible published pack.
+- The historical Docker executor load overrun remains documented in [d2120-t3-resource.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-resource.log). This rework started no build or Docker executor and did not alter another worker's processes.
 
 Status: DONE_WITH_CONCERNS
