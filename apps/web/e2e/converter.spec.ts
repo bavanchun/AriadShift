@@ -22,6 +22,10 @@ const ENGINE_BOOT = { timeout: 60_000 };
 async function openConverter(page: Page, query = "") {
   await page.goto(`/app${query}`);
   await expect(page.getByRole("heading", { name: "Convert a document" })).toBeVisible();
+  await expect(page.getByTestId("device-indicator")).toContainText(
+    /browser storage|In memory/,
+    ENGINE_BOOT,
+  );
 }
 
 async function chooseFile(page: Page, name: string, mimeType: string, content: string | Buffer) {
