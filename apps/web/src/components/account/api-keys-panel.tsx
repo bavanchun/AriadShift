@@ -259,7 +259,7 @@ function ApiKeys() {
                 </select>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={closeCreate}>
+                <Button type="button" variant="ghost" onClick={closeCreate}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={busy}>

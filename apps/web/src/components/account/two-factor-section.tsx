@@ -183,7 +183,7 @@ export function TwoFactorSection({ user }: { user: AccountUser }) {
               error={dialogError}
             />
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setDialog(null)}>
+              <Button type="button" variant="ghost" onClick={() => setDialog(null)}>
                 Cancel
               </Button>
               <Button
@@ -233,7 +233,7 @@ export function TwoFactorSection({ user }: { user: AccountUser }) {
               error={dialogError}
             />
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setDialog(null)}>
+              <Button type="button" variant="ghost" onClick={() => setDialog(null)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={busy}>

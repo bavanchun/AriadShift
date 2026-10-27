@@ -324,6 +324,71 @@ describe("account page", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/sign-in"));
     expect(auth.signOut).toHaveBeenCalled();
   });
+
+  it("does not submit account forms when Cancel is clicked", async () => {
+    const auth = fakeAuth();
+    renderInShell(<AccountPage />, auth);
+
+    // 1. Passkey creation form
+    fireEvent.click(await screen.findByRole("button", { name: "Add a passkey" }));
+    const passkeyDialog = screen.getByRole("dialog", { name: "Add a passkey" });
+    fill("Passkey name", "Phone", passkeyDialog);
+    const passkeyCancel = within(passkeyDialog).getByRole("button", {
+      name: "Cancel",
+    }) as HTMLButtonElement;
+    expect(passkeyCancel.type).toBe("button");
+    fireEvent.click(passkeyCancel);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(auth.addPasskey).not.toHaveBeenCalled();
+
+    // 2. Two-factor password form
+    const twoFactorSection = screen.getByRole("region", { name: "Two-factor authentication" });
+    fireEvent.click(
+      within(twoFactorSection).getByRole("button", { name: "Turn on two-factor authentication" }),
+    );
+    const twoFactorPasswordDialog = screen.getByRole("dialog", {
+      name: "Turn on two-factor authentication",
+    });
+    fill("Password", "secret password", twoFactorPasswordDialog);
+    const twoFactorPasswordCancel = within(twoFactorPasswordDialog).getByRole("button", {
+      name: "Cancel",
+    }) as HTMLButtonElement;
+    expect(twoFactorPasswordCancel.type).toBe("button");
+    fireEvent.click(twoFactorPasswordCancel);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(auth.enableTwoFactor).not.toHaveBeenCalled();
+
+    // 3. Two-factor verification form
+    fireEvent.click(
+      within(twoFactorSection).getByRole("button", { name: "Turn on two-factor authentication" }),
+    );
+    const passwordDialogAgain = screen.getByRole("dialog", {
+      name: "Turn on two-factor authentication",
+    });
+    fill("Password", "secret password", passwordDialogAgain);
+    fireEvent.click(within(passwordDialogAgain).getByRole("button", { name: "Continue" }));
+    const verifyDialog = await screen.findByRole("dialog", { name: "Set up your authenticator" });
+    fill("Authentication code", "654321", verifyDialog);
+    const verifyCancel = within(verifyDialog).getByRole("button", {
+      name: "Cancel",
+    }) as HTMLButtonElement;
+    expect(verifyCancel.type).toBe("button");
+    fireEvent.click(verifyCancel);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(auth.verifyTotp).not.toHaveBeenCalled();
+
+    // 4. Delete account form
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    const deleteDialog = screen.getByRole("alertdialog", { name: "Delete your account?" });
+    fill("Password", "secret password", deleteDialog);
+    const deleteCancel = within(deleteDialog).getByRole("button", {
+      name: "Cancel",
+    }) as HTMLButtonElement;
+    expect(deleteCancel.type).toBe("button");
+    fireEvent.click(deleteCancel);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(auth.deleteAccount).not.toHaveBeenCalled();
+  });
 });
 
 describe("API keys", () => {
@@ -414,5 +479,18 @@ describe("API keys", () => {
     fireEvent.click(within(form).getByRole("button", { name: "Create key" }));
     expect(await within(form).findByText("Too many keys")).toBeTruthy();
     expect(within(form).getByLabelText("Name").getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("does not submit the API key creation form when Cancel is clicked", async () => {
+    const auth = fakeAuth();
+    renderInShell(<ApiKeysPanel />, auth);
+    fireEvent.click(await screen.findByRole("button", { name: "Create API key" }));
+    const form = screen.getByRole("dialog", { name: "Create an API key" });
+    fill("Name", "Deploy", form);
+    const cancel = within(form).getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+    expect(cancel.type).toBe("button");
+    fireEvent.click(cancel);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(auth.createApiKey).not.toHaveBeenCalled();
   });
 });

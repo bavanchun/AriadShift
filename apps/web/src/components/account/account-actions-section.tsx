@@ -105,7 +105,7 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
               error={error}
             />
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setDeleting(false)}>
+              <Button type="button" variant="ghost" onClick={() => setDeleting(false)}>
                 Cancel
               </Button>
               <Button type="submit" variant="destructive" disabled={busy}>
