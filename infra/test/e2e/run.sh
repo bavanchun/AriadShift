@@ -24,6 +24,8 @@
 #   E2E_WAIT_TIMEOUT     seconds to wait for healthy services (default 900)
 #   E2E_JOB_TIMEOUT      seconds to wait for the conversion (default 900)
 #   E2E_LOG_TAIL         log lines per service printed on failure (default 400)
+#   E2E_DOCLING_PACK_DIR unpacked local Docling pack with pack.toml, runtime,
+#                        models and tessdata (test-only; skips release download)
 
 set -eu
 set -o pipefail
@@ -67,9 +69,19 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/ariadshift-e2e.XXXXXX")
 ENV_FILE="$WORK/env"
 BODY="$WORK/body"
 STACK_STARTED=0
+COMPOSE_ARGS=(-f "$COMPOSE_FILE")
+if [ -n "${E2E_DOCLING_PACK_DIR:-}" ]; then
+	E2E_DOCLING_PACK_DIR=$(cd "$E2E_DOCLING_PACK_DIR" && pwd)
+	export E2E_DOCLING_PACK_DIR
+	for item in pack.toml runtime models tessdata; do
+		[ -e "$E2E_DOCLING_PACK_DIR/$item" ] || fail "local Docling pack lacks $item"
+	done
+	COMPOSE_ARGS+=(-f "$ROOT/infra/test/e2e/compose.local-pack.yml")
+	log "using the local test pack at $E2E_DOCLING_PACK_DIR"
+fi
 
 compose() {
-	docker compose -p "$PROJECT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" \
+	docker compose -p "$PROJECT" --env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}" \
 		--profile core --profile office --profile docling "$@"
 }
 
@@ -163,8 +175,11 @@ fi
 
 STACK_STARTED=1
 log "building images"
-compose build
+COMPOSE_PARALLEL_LIMIT=1 compose build --build-arg CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
 log "starting the stack (waiting up to ${WAIT_TIMEOUT}s for health)"
+# Snapshot the new database before bootstrap and migration change its schema.
+compose up -d --wait --wait-timeout "$WAIT_TIMEOUT" postgres
+compose exec -T postgres pg_dump -U postgres -d ariadshift -Fc >"$WORK/before-bootstrap.dump"
 compose up -d --wait --wait-timeout "$WAIT_TIMEOUT"
 
 # Health checks run inside the containers; confirm the published ports too.
