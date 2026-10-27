@@ -75,8 +75,6 @@ jobs:
               {target: "aarch64-unknown-linux-gnu", os: "ubuntu-26.04", exe: "", primary: false,
                input: "", expect: ""},
               {target: "aarch64-apple-darwin", os: "macos-26", exe: "", primary: false,
-               input: "fixtures/pdf/en-map-room.pdf", expect: "Notes from the Map Room"},
-              {target: "x86_64-pc-windows-msvc", os: "windows-2025", exe: ".exe", primary: false,
                input: "fixtures/pdf/en-map-room.pdf", expect: "Notes from the Map Room"}
             ] | if $all == "true" then . else map(select(.primary)) end
           ' <<< 'null')
@@ -163,7 +161,7 @@ jobs:
       - name: Cache models and OCR data
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
-          path: ~/.cache/ariadshift/docling
+          path: ~/.cache/ariadshift/docling/blobs
           key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
 
       - name: Install Pandoc
@@ -179,7 +177,8 @@ jobs:
     name: Pack (${{ matrix.target }})
     needs: [scope, engine]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    # Bootstrap builds include the CPU torch toolchain until release pins exist.
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
@@ -188,8 +187,13 @@ jobs:
       run:
         shell: bash
     env:
+      CARGO_BUILD_JOBS: 3
+      NEXTEST_TEST_THREADS: 3
       PACK_OUT: ${{ github.workspace }}/pack-out
       ASHIFT_BIN: ${{ github.workspace }}/target/debug/ashift${{ matrix.exe }}
+      SCCACHE_DIR: ${{ github.workspace }}/.tools/sccache
+      SCCACHE_CACHE_SIZE: 3G
+      SCCACHE_IDLE_TIMEOUT: 0
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -207,13 +211,60 @@ jobs:
           version: 0.12.23
           python-version: "3.14"
 
+      - name: Install command-line tools
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: just@1.58.0,sccache@0.19.0
+
       # fetch.py checks the size and SHA-256 of every cached blob before it uses it, so a
       # poisoned cache entry cannot change what goes into a pack.
       - name: Cache models and OCR data
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
         with:
-          path: ~/.cache/ariadshift/docling
+          path: ~/.cache/ariadshift/docling/blobs
           key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
+
+      # Source pins, target, tool lock and flags determine the cache namespace.
+      # Restored files are rehashed, probed and inspected before packaging.
+      - name: Cache native source builds
+        if: startsWith(matrix.target, 'x86_64-')
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ~/.cache/ariadshift/docling/native
+          key: docling-native-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/native_build.py', 'engines/docling/pack/torch_build.py', 'engines/docling/pack/torch-build.toml', 'engines/docling/pack/vcomp-*.cpp', 'engines/docling/pack/pins.toml', '.github/workflows/torch-docling.yml', 'uv.lock') }}
+
+      - name: Restore native compiler work
+        if: startsWith(matrix.target, 'x86_64-')
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: .tools/sccache
+          key: pack-compiler-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/torch-build.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            pack-compiler-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/torch-build.toml') }}-
+
+      - name: Set up MSVC for native source builds
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      # Git Bash prepends its Unix tools, including a different link.exe.
+      # rustc recognizes MSVC's informational output only with the bare name.
+      - name: Select the MSVC linker for Rust
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: |
+          msvc_bin="$(cygpath -u "$VCToolsInstallDir")/bin/Hostx64/x64"
+          test -f "$msvc_bin/link.exe"
+          linker_env="$(cygpath -u "$RUNNER_TEMP")/msvc-linker-env.sh"
+          printf "export PATH=%q:\"\$PATH\"\n" "$msvc_bin" > "$linker_env"
+          echo "BASH_ENV=$linker_env" >> "$GITHUB_ENV"
+          echo 'CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=link.exe' >> "$GITHUB_ENV"
+
+      - name: Free Linux build space
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h .
 
       # The scanned fixture needs the Tesseract program, which the pack does not bundle.
       - name: Install Tesseract
@@ -223,15 +274,33 @@ jobs:
           sudo apt-get install --yes --no-install-recommends tesseract-ocr
           tesseract --version
 
+      - name: Install Windows Tesseract
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        run: |
+          choco install tesseract --yes --no-progress
+          echo 'C:\Program Files\Tesseract-OCR' >> "$GITHUB_PATH"
+
+      - name: Install Pandoc for pack conformance
+        if: startsWith(matrix.target, 'x86_64-')
+        run: just pandoc
+
       - name: Build ashift
         run: cargo build -p ariad-cli --bin ashift
 
       - name: Build the pack
+        id: build
         env:
           TARGET: ${{ matrix.target }}
         run: >-
           uv run --no-project --python 3.14 python engines/docling/pack/build.py build
           --target "$TARGET" --out "$PACK_OUT"
+
+      - name: Save native compiler work
+        if: always() && startsWith(matrix.target, 'x86_64-') && steps.build.outcome != 'skipped' && steps.build.outcome != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: .tools/sccache
+          key: pack-compiler-${{ matrix.target }}-${{ hashFiles('engines/docling/pack/torch-build.toml') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Rebuild and compare component hashes
         if: matrix.primary
@@ -271,6 +340,23 @@ jobs:
         run: >-
           cargo test -p ariad-cli --features test-probe --test docling_pack
           -- --ignored --nocapture
+
+      - name: Run engine conformance with the packaged runtime
+        if: startsWith(matrix.target, 'x86_64-')
+        env:
+          TARGET: ${{ matrix.target }}
+        run: >-
+          uv run --no-project --python 3.14 python engines/docling/pack/build.py conformance
+          --target "$TARGET" --out "$PACK_OUT"
+
+      - name: Upload original and replacement conversion comparisons
+        if: startsWith(matrix.target, 'x86_64-')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docling-comparison-${{ matrix.target }}
+          path: ${{ env.PACK_OUT }}/comparison-*.json
+          retention-days: 14
+          if-no-files-found: error
 
       # The models and OCR data are the same for every target, so only one build uploads them.
       - name: Upload the shared components
@@ -337,7 +423,7 @@ jobs:
         run: >-
           uv run --no-project --python 3.14 python engines/docling/pack/build.py manifest
           --out "$PACK_OUT" x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
-          aarch64-apple-darwin x86_64-pc-windows-msvc
+          aarch64-apple-darwin
 
       - name: Upload the unsigned manifest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

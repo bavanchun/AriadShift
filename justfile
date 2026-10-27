@@ -263,6 +263,10 @@ docling-test:
 docling-engine-test:
     ASHIFT_DOCLING_ENGINE='"{{docling_python}}" -I -m ariad_docling' cargo nextest run -p ariad-cli --features ariad-host/test-probe --run-ignored ignored-only --test-threads 2 -E 'binary(docling_engine)'
 
+# Build MKL-free CPU torch on a matching native x86_64 host (Linux uses Docker).
+docling-torch-build target out="torch-out":
+    uv run {{ if os() == "windows" { "--package ariad-docling --group torch-build --frozen" } else { "--no-project --python 3.14" } }} python engines/docling/pack/torch_build.py build --target "{{target}}" --out "{{out}}"
+
 # Build the unsigned docling engine pack for this host into target/pack-docling (needs uv).
 pack-docling out="target/pack-docling":
     cargo build -p ariad-cli --bin ashift
@@ -271,6 +275,10 @@ pack-docling out="target/pack-docling":
 # Convert a document with the pack that `just pack-docling` built, offline on Linux.
 pack-docling-verify out="target/pack-docling" input="fixtures/scan/vi-garden-300dpi.png" expect="Khu vườn đọc sách":
     uv run --no-project --python 3.14 python engines/docling/pack/build.py verify --out "{{out}}" --input "{{input}}" --expect "{{expect}}" {{ if os() == "linux" { "--offline" } else { "" } }} --ashift "{{justfile_directory()}}/target/debug/ashift{{ if os() == "windows" { ".exe" } else { "" } }}"
+
+# Run real-engine protocol, table and OCR tests against the built pack (needs Tesseract).
+pack-docling-test out="target/pack-docling":
+    uv run --no-project --python 3.14 python engines/docling/pack/build.py conformance --out "{{out}}"
 
 # Run fuzz targets on Linux (default: all targets, 60 s each)
 [linux]

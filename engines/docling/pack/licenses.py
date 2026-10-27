@@ -8,16 +8,20 @@ an allow-list; anything unrecognised fails until it is reviewed and listed here.
 Usage::
 
     python licenses.py --site SITE_PACKAGES [--notices DIR]
+    python licenses.py --wheels WHEEL [WHEEL ...] [--openmp-dll PATH] [--allow-itt]
+    python licenses.py --render-toolchain-pins DIR --release-tag TAG
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import shutil
 import sys
 import tomllib
+import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
@@ -348,6 +352,277 @@ def check_runtime_files(runtime: Path, libraries: list[dict], target: str) -> No
         raise SystemExit("runtime inventory check failed:\n" + "\n".join(errors))
 
 
+_INTEL_LIBRARIES = ("iomp", "ippicv", "libipp", "libmkl", "mkl_rt", "mkl_core")
+_ITT_LIBRARIES = ("ittnotify", "libitt")
+_INTEL_MARKERS = (
+    b"ippicvgetlibversion",
+    b"ippicv_",
+    b"ippgetlibversion",
+    b"intel(r) openmp",
+    b"@(#) intel(r) omp",
+    b"intel(r) oneapi math kernel library",
+    b"mkl_get_version_string",
+    b"mkl_blas_",
+    b"mkl_lapack_",
+    b"mkl_serv_",
+    "Intel(R) OpenMP".encode("utf-16le").lower(),
+)
+_ITT_MARKERS = (b"__itt_", b"ittnotify", b"ijit_notifyevent")
+_IPP_NOTICE_HEADING = (
+    "Intel(R) IPP ICV library statically linked within x86 and x86_64 opencv-python packages."
+)
+_NOTICE_SEPARATOR = "------------------------------------------------------------------------------"
+
+
+def _strip_reviewed_opencv_ipp_notice(text: str, label: str) -> str:
+    sections = text.split(_NOTICE_SEPARATOR)
+    matches = [s for s in sections if s.strip().startswith(_IPP_NOTICE_HEADING)]
+    if len(matches) != 1 or "Intel Simplified Software License" not in matches[0]:
+        raise SystemExit(f"unreviewed OpenCV IPP notice layout: {label}")
+    return _NOTICE_SEPARATOR.join(s for s in sections if s != matches[0])
+
+
+def _scan_stream(
+    handle,
+    relative: str,
+    name: str,
+    approved_openmp: dict[str, str],
+    errors: list[str],
+    *,
+    allow_itt: bool = True,
+    strip_opencv_ipp_notice: bool = False,
+) -> None:
+    native = any(
+        fnmatchcase(name, p)
+        for p in ("*.so*", "*.dll", "*.pyd", "*.dylib", "*.exe", "*.a", "*.lib")
+    )
+    libraries = _INTEL_LIBRARIES if allow_itt else (*_INTEL_LIBRARIES, *_ITT_LIBRARIES)
+    if any(word in name for word in libraries):
+        data = handle.read()
+        if relative not in approved_openmp or (
+            hashlib.sha256(data).hexdigest() != approved_openmp[relative]
+        ):
+            errors.append(f"unapproved Intel library: {relative}")
+            return
+        chunks = [data]
+    else:
+        chunks = None
+    if native:
+        # Inspect even approved files: a poisoned native-build cache must
+        # not bless the original vendor DLL by supplying its digest.
+        markers = _INTEL_MARKERS if allow_itt else (*_INTEL_MARKERS, *_ITT_MARKERS)
+        tail = b""
+        iterator = iter(chunks) if chunks is not None else iter(lambda: handle.read(1 << 20), b"")
+        for chunk in iterator:
+            data = (tail + chunk).lower()
+            if any(marker in data for marker in markers):
+                errors.append(f"proprietary Intel binary content: {relative}")
+                break
+            tail = data[-128:]
+    elif any(word in name for word in ("license", "licence", "notice", "copying")):
+        raw = b"".join(chunks) if chunks is not None else handle.read()
+        if strip_opencv_ipp_notice and name == "license-3rd-party.txt":
+            raw = _strip_reviewed_opencv_ipp_notice(raw.decode("utf-8"), relative).encode("utf-8")
+        data = raw.lower()
+        # ONNX Runtime's common notices list MKL even in CPU ARM builds
+        # without MKL. A license title alone does not identify shipped code.
+        # The explicit IPP/ICV section and native markers remain forbidden.
+        if any(
+            marker in data
+            for marker in (
+                b"ipp icv library",
+                b"intel(r) integrated performance primitives",
+            )
+        ):
+            errors.append(f"proprietary IPP ICV notice: {relative}")
+
+
+def check_vendor_files(
+    root: Path,
+    approved_openmp: dict[str, str] | None = None,
+    *,
+    allow_itt: bool = True,
+) -> None:
+    """Reject proprietary wheel contents, independently of distribution metadata.
+
+    The Windows LLVM replacement retains PyTorch's expected DLL name. Only the
+    exact file produced by the verified source build is accepted at that path.
+    The caller keeps its digest outside the runtime being checked.
+    """
+    approved_openmp = approved_openmp or {}
+    errors: list[str] = []
+    present: set[str] = set()
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        present.add(relative)
+        name = path.name.lower()
+        if name.endswith(".whl"):
+            is_opencv = name.startswith("opencv_python_headless-")
+            with zipfile.ZipFile(path) as archive:
+                for info in sorted(archive.infolist(), key=lambda item: item.filename):
+                    if info.is_dir():
+                        continue
+                    member_rel = f"{relative}!/{info.filename}"
+                    present.add(member_rel)
+                    member_name = Path(info.filename).name.lower()
+                    with archive.open(info) as handle:
+                        _scan_stream(
+                            handle,
+                            member_rel,
+                            member_name,
+                            approved_openmp,
+                            errors,
+                            allow_itt=allow_itt,
+                            strip_opencv_ipp_notice=is_opencv,
+                        )
+            continue
+        with path.open("rb") as handle:
+            _scan_stream(
+                handle,
+                relative,
+                name,
+                approved_openmp,
+                errors,
+                allow_itt=allow_itt,
+            )
+    missing = set(approved_openmp) - present
+    errors.extend(f"missing LLVM OpenMP replacement: {name}" for name in sorted(missing))
+    if errors:
+        raise SystemExit("vendor library check failed:\n" + "\n".join(errors))
+
+
+def check_wheel_files(
+    wheels: Iterable[Path],
+    approved_openmp: dict[str, str] | None = None,
+    *,
+    allow_itt: bool = False,
+    openmp_dll: Path | None = None,
+) -> None:
+    """Audit built wheel archives and optional OpenMP sidecars for forbidden Intel components.
+
+    Source-built toolchain wheels disable ITT instrumentation (``USE_ITT=0``,
+    ``-DWITH_ITT=OFF``, ``-DLIBOMP_USE_ITT_NOTIFY=OFF``), so ``allow_itt``
+    defaults to ``False`` here.
+    """
+    approved = dict(approved_openmp or {})
+    wheel_list = [Path(wheel) for wheel in wheels]
+    if not wheel_list:
+        raise SystemExit("no wheels provided to check_wheel_files")
+    openmp_digest = None
+    if openmp_dll is not None:
+        if not openmp_dll.is_file():
+            raise SystemExit(f"missing LLVM OpenMP sidecar: {openmp_dll}")
+        openmp_digest = hashlib.sha256(openmp_dll.read_bytes()).hexdigest()
+    errors: list[str] = []
+    present: set[str] = set()
+    if openmp_dll is not None and openmp_digest is not None:
+        label = openmp_dll.name
+        present.add(label)
+        approved[label] = openmp_digest
+        with openmp_dll.open("rb") as handle:
+            _scan_stream(
+                handle,
+                label,
+                openmp_dll.name.lower(),
+                approved,
+                errors,
+                allow_itt=allow_itt,
+            )
+    for path in wheel_list:
+        if not path.is_file():
+            raise SystemExit(f"missing wheel or artifact file: {path}")
+        name = path.name.lower()
+        if name.endswith(".whl"):
+            is_opencv = name.startswith("opencv_python_headless-")
+            with zipfile.ZipFile(path) as archive:
+                for info in sorted(archive.infolist(), key=lambda item: item.filename):
+                    if info.is_dir():
+                        continue
+                    member_rel = f"{path.name}!/{info.filename}"
+                    present.add(member_rel)
+                    member_name = Path(info.filename).name.lower()
+                    if openmp_digest is not None and "iomp" in member_name:
+                        approved.setdefault(member_rel, openmp_digest)
+                    with archive.open(info) as handle:
+                        _scan_stream(
+                            handle,
+                            member_rel,
+                            member_name,
+                            approved,
+                            errors,
+                            allow_itt=allow_itt,
+                            strip_opencv_ipp_notice=is_opencv,
+                        )
+        else:
+            label = path.name
+            present.add(label)
+            if openmp_digest is not None and "iomp" in name:
+                approved.setdefault(label, openmp_digest)
+            with path.open("rb") as handle:
+                _scan_stream(
+                    handle,
+                    label,
+                    name,
+                    approved,
+                    errors,
+                    allow_itt=allow_itt,
+                )
+    missing = set(approved) - present
+    errors.extend(f"missing LLVM OpenMP replacement: {name}" for name in sorted(missing))
+    if errors:
+        raise SystemExit("vendor library check failed:\n" + "\n".join(errors))
+
+
+def render_toolchain_pins(
+    artifacts: Path,
+    release_tag: str,
+    *,
+    repo: str = "bavanchun/AriadShift",
+) -> str:
+    """Render the ``[toolchain]`` TOML table from build records.
+
+    The records were downloaded from a ``toolchain-wheels-*`` release.
+    """
+    if not re.fullmatch(r"toolchain-wheels-[A-Za-z0-9][A-Za-z0-9._-]*", release_tag):
+        raise SystemExit("toolchain release tag must be named toolchain-wheels-<version>")
+    prefix = f"https://github.com/{repo}/releases/download/{release_tag}/"
+    records = sorted(artifacts.rglob("*-build-*.json"))
+    if not records:
+        raise SystemExit(f"no *-build-*.json provenance records found in {artifacts}")
+    lines = [
+        "[toolchain]",
+        f'release = "{release_tag}"',
+        f'source = "https://github.com/{repo}/releases/tag/{release_tag}"',
+    ]
+    by_target: dict[str, dict[str, dict]] = {}
+    for record_path in records:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        target = record["target"]
+        kind = record.get("kind", "opencv" if record_path.name.startswith("opencv-") else "torch")
+        by_target.setdefault(target, {})[kind] = record
+    for target in sorted(by_target):
+        for kind in sorted(by_target[target]):
+            record = by_target[target][kind]
+            lines.extend(
+                [
+                    "",
+                    f"[toolchain.targets.{target}.{kind}]",
+                    f'build_key = "{record["build_key"]}"',
+                    "files = [",
+                ]
+            )
+            for name, meta in sorted(record["files"].items()):
+                asset = meta.get("asset", name)
+                lines.append(
+                    f'    {{ name = "{name}", url = "{prefix}{asset}", '
+                    f'sha256 = "{meta["sha256"]}", size = {meta["size"]} }},'
+                )
+            lines.append("]")
+    return "\n".join(lines) + "\n"
+
+
 def write_runtime_notices(notices: Path, libraries: list[dict]) -> None:
     """Copy the upstream release texts, verifying their recorded digests, and list their sources."""
     destination = notices / "runtime"
@@ -379,9 +654,29 @@ def _is_licence_name(name: str) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--site", type=Path, required=True)
+    parser.add_argument("--site", type=Path)
     parser.add_argument("--notices", type=Path)
+    parser.add_argument("--wheels", type=Path, nargs="+")
+    parser.add_argument("--openmp-dll", type=Path)
+    parser.add_argument("--allow-itt", action="store_true")
+    parser.add_argument("--render-toolchain-pins", type=Path)
+    parser.add_argument("--release-tag")
     args = parser.parse_args(argv)
+    if args.render_toolchain_pins is not None:
+        if not args.release_tag:
+            parser.error("--render-toolchain-pins requires --release-tag")
+        sys.stdout.write(render_toolchain_pins(args.render_toolchain_pins, args.release_tag))
+        return 0
+    if args.wheels is not None:
+        check_wheel_files(
+            args.wheels,
+            allow_itt=args.allow_itt,
+            openmp_dll=args.openmp_dll,
+        )
+        print(f"{len(args.wheels)} wheel artifact(s) passed the vendor library gate")
+        return 0
+    if args.site is None:
+        parser.error("one of --site, --wheels, or --render-toolchain-pins is required")
     distributions = list(metadata.distributions(path=[str(args.site)]))
     findings = check(distributions)
     for finding in findings:

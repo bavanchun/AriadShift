@@ -28,7 +28,7 @@ name = "docling"
 version = "0.2.0"
 description = "Docling with OCR"
 license = "MIT AND Apache-2.0 AND BSD-3-Clause"
-requires_ashift = ">=0.2.0, <0.3.0"
+requires_ashift = ">=0.2.0, <2.0.0"
 notices = ["notices/THIRD_PARTY_NOTICES.txt"]
 
 [[targets]]
@@ -68,6 +68,22 @@ entries = 23456
 | `components[].executable` | For `unpack = "file"`: install the file with the executable bit. |
 
 `{root}` is replaced with the absolute install root. A manifest from a newer schema fails with a schema error rather than an unknown-field error, and an `ashift` outside `requires_ashift` refuses the pack before parsing the rest.
+
+### Compatibility
+
+The Docling 0.2.0 pack supports `ashift >=0.2.0, <2.0.0`. Compatibility rests
+on the frozen `ariad-engine/1` protocol and `ariad-pack/1` manifest schema,
+which the 1.x host line keeps. The host checks `requires_ashift` at install
+time and validates the manifest schema separately. The engine protocol is
+checked only when an engine parses a host request; installation does not
+perform an engine handshake or compare an advertised protocol version.
+
+A protocol break must ship together with the 2.0 major release. The
+`<2.0.0` bound then refuses that host at installation. An install-time
+`engine_protocol` manifest check is planned for v1.x. Before approving
+v1.0.0, release conformance must install the actual 0.2.0 pack on a
+1.0.0-versioned host and complete a Docling conversion with the shipped
+manifest range unchanged.
 
 ### Targets
 
@@ -156,13 +172,36 @@ ashift __pack manifest --name docling --version 0.2.0 \
 | `models` | `models/`: the Docling layout (Heron) and TableFormer models and the RapidOCR PP-OCR models, at pinned revisions | shared |
 | `tessdata` | `tessdata/`: `tessdata_best` `vie`, `eng`, `osd` and `configs/tsv`, at a pinned commit | shared |
 
-On Linux x86_64 the components are about 455 MB, 383 MB and 29 MB (1.9 GB of files in `runtime`). The entrypoint is `runtime/bin/python3 -I -m ariad_docling` (`runtime/python.exe` on Windows) and the default options are `artifacts_path = "{root}/models"` and `tessdata_path = "{root}/tessdata"`. The pack does not bundle the Tesseract program; the engine reports it in `describe` and `ashift doctor` explains how to install it. `requires_ashift` is `>=0.2.0, <0.3.0`, the line whose engine protocol the pack speaks.
+In 1.0, Docling packs ship for macOS arm64 (`aarch64-apple-darwin`), Linux x86_64 (`x86_64-unknown-linux-gnu`) and Linux arm64 (`aarch64-unknown-linux-gnu`). The Windows `x86_64-pc-windows-msvc` Docling pack is planned for v1.x ([#83](https://github.com/bavanchun/AriadShift/issues/83)). On Linux x86_64 the components are about 455 MB, 383 MB and 29 MB (1.9 GB of files in `runtime`). The entrypoint is `runtime/bin/python3 -I -m ariad_docling` (`runtime/python.exe` on Windows) and the default options are `artifacts_path = "{root}/models"` and `tessdata_path = "{root}/tessdata"`. The pack does not bundle the Tesseract program; the engine reports it in `describe` and `ashift doctor` explains how to install it. `requires_ashift` is `>=0.2.0, <2.0.0`, following the [frozen protocol and schema compatibility policy](#compatibility).
 
 For byte-identical builds, run `build.py` with the same uv-managed python-build-standalone CPython 3.14 patch release on both builds, as the Pack CI jobs do through `setup-uv`. The builder uses that interpreter's `tarfile` and bundled zstd; a system Python linked to another zstd version can produce different archive bytes. Keep `SOURCE_DATE_EPOCH` and all pinned inputs identical. The Linux x86_64 Pack job builds again in a separate directory and checks SHA-256 for all three components and `pack.toml`.
 
 The build prunes unused runtime modules and requires every remaining native file outside `site-packages` to match the platform's licence inventory before installing the locked wheels. Unlisted native files and inventory entries with no matching file fail the build. The merged manifest deduplicates licence obligations across targets while retaining nonredundant alternatives and exceptions.
 
 Windows packs use the system Microsoft runtime; see [Docling prerequisites](docling.md#what-it-needs). The build removes `vcruntime*` and `msvcp*` DLLs before and after wheel installation, and the archive writer rejects any remaining copy, including those under `site-packages`. Wheels can refer to hash-suffixed runtime names; their PE import tables are retargeted to the corresponding system DLL names before those copies are removed, without relocating image data.
+
+Docling packs exclude Intel IPP ICV and Intel's OpenMP binaries. On x86_64,
+OpenCV is built from the hash-pinned sdist with IPP/ITT and proprietary backends
+disabled; Linux uses a pinned manylinux 2.28 build container. Windows replaces
+PyTorch's Intel OpenMP with a source-built LLVM runtime and Apache-2.0 MSVC
+compatibility wrappers, retaining the DLL name its import table requires.
+The stubs DLL is removed and LLVM's licence and wrapper source are included in
+the notices. The final gate checks wheel binaries and notice contents as well
+as distribution metadata. Build prerequisites, ARM notice handling and real
+conversion comparisons are described in [the Docling build](docling.md#the-pack).
+Linux and Windows x86_64 also replace the MKL-bearing PyTorch wheels with
+source-built OpenBLAS CPU wheels, retaining Apache-2.0 oneDNN. Once a
+`toolchain-wheels-v*` release is published by
+[`.github/workflows/toolchain-wheels.yml`](../.github/workflows/toolchain-wheels.yml)
+and pinned under `[toolchain]` in `engines/docling/pack/pins.toml`, the pack
+consumes those hash-verified release wheels and sidecars (falling back to the
+pinned source build only while a target's `[toolchain]` entry is omitted during
+bootstrap). Official ARM PyTorch wheels remain; BSD-3-Clause ITT is permitted
+there and its license is included in the third-party notices, while source-built
+toolchain wheels disable ITT (`USE_ITT=0`, `-DWITH_ITT=OFF`,
+`-DLIBOMP_USE_ITT_NOTIFY=OFF`). The gate distinguishes ITT/oneDNN from
+proprietary MKL, IPP and Intel OpenMP. The owning build and update route is in
+the [Docling guide](docling.md#the-pack).
 
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 

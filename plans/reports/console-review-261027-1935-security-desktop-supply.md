@@ -1,0 +1,73 @@
+# Security audit: desktop, engine runner and supply chain
+
+Date: 2026-10-27 (Asia/Saigon). Reviewer: read-only console review.
+Refs audited: `origin/dev` @ `e6bd29b`, `origin/feat/v1-hardening` @ `dcb34bc` (three-dot vs dev, base `68ac304`), `origin/feat/v1-distribution` @ `2e860da` (three-dot vs dev, base `e0f68a8`).
+Scope: `apps/desktop` (Tauri config, capabilities, IPC, deep links, updater, OS file associations), `crates/ariad-host` engine runner, sandboxes, packs and temp files, every workflow under `.github/workflows`, desktop and CLI release signing, Docling pack build downloads and hash pinning.
+
+## 1. Verdict
+
+Needs fixes before v1 ships: nothing here is critical and the desktop/IPC and engine-runner code is sound, but the distribution branch's new release-signing flow signs release assets it never verified with the key that also authorizes executable engine packs, and that key enters CI for the first time without documentation.
+
+## 2. Findings
+
+Severity is my judgement after reading the code. "Unverified" marks items whose outcome depends on GitHub behaviour or live settings I could not inspect read-only.
+
+| # | Severity | Location (branch) | Defect | Failure scenario | Suggested fix |
+|---|---|---|---|---|---|
+| 1 | Medium | `.github/workflows/desktop.yml:326-352` (dist); `scripts/desktop-release-sums.mjs:104-147`; `apps/desktop/scripts/verify-release.mjs:7-26` | `sign-release` downloads whatever desktop-named assets are attached to the GitHub release at signing time and signs each one, plus `SHA256SUMS`, with the project Minisign key. Before that, `verify-release` checks only the three updater artifacts against the updater key. `.deb`, `.rpm`, `.dmg` and `.msi` are never bound to a build output. The GitHub `asset.digest` comparison only detects a corrupt download, not a replaced asset. | Every desktop release matrix leg holds `contents: write` (`:139-140`) and passes `GITHUB_TOKEN` into `tauri-action` (`:268-269`), which runs `pnpm tauri build` and with it the whole JS and Rust build toolchain. A compromised build dependency in one leg, or any other `contents: write` holder, can replace another platform's `.msi` or `.deb` with `gh release upload --clobber` before `sign-release` runs. That job waits for `release` environment approval, so the window can be long. The malicious installer then gets a valid `.minisig` from the same key `ashift` trusts for packs. | Have each release leg upload its bundle digests with `actions/upload-artifact`. In `sign-release`, refuse to sign unless every downloaded asset matches those build-time digests. Alternatively, sign inside the producing leg or add `actions/attest-build-provenance` so signatures attest the workflow and commit, not just presence on the release. |
+| 2 | Medium | `.github/workflows/desktop.yml:347-352` (dist); `docs/releasing.md:187-200` (dist) | This is the first workflow use of `secrets.PACK_MINISIGN_KEY` and `PACK_MINISIGN_KEY_PASSWORD`, which are the private half of the only compiled-in pack trust anchor (`crates/ariad-host/data/pack-keys/d87b0e33f55ea02b.pub`). On `dev`, packs are signed outside CI (`pack-docling.yml:3-5`). Neither secret is documented. The releasing guide lists only `HOMEBREW_TAP_TOKEN` and `CARGO_REGISTRY_TOKEN`, and says the environment is gated only by a `v*` tag pattern. Domain separation itself is correct: the verifier requires `pack:<name> version:<v>` tokens (`crates/ariad-host/src/packs/signature.rs:139-161`), and desktop signatures carry `desktop:… file:…` with no colon allowed in file names (`scripts/desktop-release-sign.sh:40,51`). | Anyone who can push a `v*` tag can run a modified workflow at that tag, enter `release` and read the pack key unless tag rulesets or required reviewers stop them. With the key they can sign a malicious Docling pack, which `ashift engines install docling` and the desktop Engine packs tab would install and execute. Today that requires stealing an offline key. | Present this to the maintainer as a trade-off, because "Minisign signatures from the project key" is a recorded decision (ARCHITECTURE.md decision log, desktop release trust row on dist). Options: (a) generate a separate desktop-release Minisign key, publish its public half in `install.md`, and keep the pack key offline; (b) keep one key, but require reviewers on `release`, add a tag ruleset for `v*`, and document both secrets in `releasing.md`. |
+| 3 | Medium (unverified) | `.github/workflows/toolchain-wheels.yml:357` (dev); `apps/desktop/src-tauri/tauri.conf.json:54` (all three); `docs/install.md:28,36` (dist); `crates/ariad-host/src/packs/index.rs:27` | Non-app releases are published on the same repository: `toolchain-wheels-v*` from the workflow, and `pack-docling-v*` by hand, since the pack index points at `releases/download/pack-docling-v…`. `gh release create` is called without `--latest=false`. The desktop updater and the CLI one-liners resolve `releases/latest/download/...`. `docs/releasing.md:260` covers only the "newer CLI-only release" case. | `pins.toml` says `toolchain-wheels-v0.2.0` is about to be cut. If GitHub marks that release, or the next pack release, as Latest, `latest.json` returns 404. Installed desktops then stop receiving security updates and the `curl … | sh` and `irm … | iex` installers fail until the next app release. I could not confirm how GitHub's automatic Latest selection ranks non-semver tags. | Pass `--latest=false` in `toolchain-wheels.yml` and document it in the pack release steps. A more durable option is to point the updater at a fixed tag or asset URL that only desktop releases update. |
+| 4 | Low | `.github/workflows/images.yml:10-12,219-228` (dev) | The image publish job (`packages: write`, `id-token: write`) has no `environment:`, unlike crates, Homebrew and desktop publishing. Every `v*` tag publishes keyless-cosign-signed GHCR images. | A `v*` tag pushed from an unreviewed branch publishes images whose cosign identity (`images.yml@refs/tags/vX`) passes the documented `cosign verify` command. | Add `environment: release` to `publish`, and protect `v*` with a tag ruleset. |
+| 5 | Low | `dist-workspace.toml` (`installers = ["shell","powershell","homebrew"]`); `docs/install.md:11,28,36,52-94` (dist) | CLI archives, the primary channel, ship only `.sha256` sidecars from the same release, with no signature and no build provenance. Desktop assets get Minisign signatures and images get cosign plus provenance. | Anyone who can modify release assets can swap an archive and its sidecar together. Users of the documented manual verification cannot detect the swap. | Add `actions/attest-build-provenance` to `build-local-artifacts`, or include the CLI archives in the signed `SHA256SUMS`, and document `gh attestation verify`. |
+| 6 | Low | `.github/workflows/release.yml:392-431,434-490` (dist) | `prepare-homebrew-formula` runs an unpinned `brew update` and then `brew style --fix` on the formula. `publish-homebrew-formula` pushes the result to the tap with `HOMEBREW_TAP_TOKEN` without rerunning `scripts/release/verify-homebrew.py`, which only checked the pre-formatting formula (`:294-295`). Commits are authored as `axo bot <admin+bot@axo.dev>` (`:446-447`), a third party's identity. | A compromised or buggy Homebrew upstream rewrites `url` or `sha256` during "formatting", and the altered formula is published unverified. Tap history also attributes commits to axo.dev. | Rerun `verify-homebrew.py`, or diff `url`/`sha256` lines, on the prepared formula in the publish job before pushing. Set a project-owned bot identity. |
+| 7 | Low (unverified) | `.github/workflows/release.yml:56-58` (dev and dist) | The tag filter `'**[0-9]+.[0-9]+.[0-9]+*'` also matches `pack-docling-v1.2.3` and `toolchain-wheels-v0.2.0`. | Each pack or toolchain tag starts the CLI Release workflow and `dist host --steps=create --tag=<pack tag>`. dist most likely fails at plan, which leaves red runs; I did not confirm dist's behaviour for an unknown tag prefix. | Narrow the filter to `'v[0-9]+.[0-9]+.[0-9]+*'`. |
+| 8 | Low | `.github/workflows/desktop.yml:214-219` (dev only) | `dev` passes all `APPLE_*` secrets to the Linux and Windows release legs as well. | Signing material is exposed to two extra build environments that never use it. | Already fixed on `feat/v1-distribution` (`:272-277`, macOS only). Merging dist resolves it. |
+| 9 | Low (documented) | `crates/ariad-host/src/sandbox/macos_profile.rs:30-39` (hardening) | The Seatbelt profile grants `file-read* file-map-executable process-exec` on all of `/opt/homebrew` and `/usr`, which on Intel Macs includes `/usr/local`. Those trees contain Homebrew `var/` (service data such as PostgreSQL, MySQL and Redis files) and `etc/` configuration. | An engine exploited by a crafted document can read those files and embed them in the converted output. Network access is denied, so the output document is the only exfiltration path. `docs/SECURITY.md:21` (dist) already lists this as a known limitation. | Narrow the grants to `{/opt/homebrew,/usr/local}/{bin,lib,opt,Cellar,share,Frameworks}` and keep `/usr/{bin,lib,libexec,share}` explicit. |
+
+### Verified sound (no finding)
+
+- **Desktop IPC and capabilities.** The ACL is generated from one command table (`command_table.rs`). The capability lists only the `main` window with no remote origins. The CSP is `script-src 'self'` with no asset protocol, and the desktop frontend contains no HTML sinks such as `innerHTML` or `dangerouslySetInnerHTML`. Every path argument goes through `regular_file` (rejects symlinks), `directory` (canonicalized) and route validation. Output can never replace the input.
+- **Deep links.** `deep_link.rs:25-75` accepts only `ariadshift://open?route=&profile=`. It rejects credentials, ports, fragments, duplicate parameters and any path parameter.
+- **File associations (hardening).**
+  - Windows verbs quote `"%1"`.
+  - Dolphin and Nautilus pass `--`.
+  - The Quick Action uses `open -b … "$@"`.
+  - `file_open.rs` drops option-like arguments before `--`, ignores non-`file` URLs, caps input at 1000 files, and only stages files without converting them.
+  - `main.rs` dispatches `__sandbox` and `__engine` only on an exact `argv[1]`, which no OS verb can produce.
+- **Updater.** The Minisign pubkey (`CDEBF0BE86A5D2A5`) is distinct from the pack key, and the endpoint is HTTPS. `verify-release.mjs` checks all three platform signatures against the committed key. The `tauri-action` v1.0.0 SHA matches Dependabot's independent pin.
+- **Engine runner.**
+  - Pandoc runs with `--sandbox` and a cleared environment, and its input and output paths are validated against the workspace (`engines/pandoc.rs:494-509,533-541,641-646`).
+  - LibreOffice gets a per-job profile with macros, OLE and active content off, link updates set to never and `BlockUntrustedRefererLinks` on, and the input is copied to a fixed source name.
+  - The Docling pack entrypoint uses `python -I`.
+  - Workspaces are 0700 `tempfile` directories. The stale sweep skips symlinks and entries owned by other users.
+  - Output is published with no-clobber rename or hard-link through directory handles.
+  - Seatbelt paths are passed as `-D` parameters, never inlined into profile text. The bash limit script inlines only integers.
+- **Packs.** The manifest signature is verified before parsing and binds name and version. Components are pinned by SHA-256 and size from the signed manifest. Transport is HTTPS-only (plain HTTP only to loopback) with bounded reads. Extra trusted keys are accepted only in `test-probe` builds. No minisign secret key is committed on any audited branch; the fuzz seeds contain only signatures and public keys.
+- **Docling pack build.** `fetch.py` enforces HTTPS, SHA-256 and exact size. Wheels install with `--require-hashes --only-binary`, which makes the mixed PyTorch index safe. The manylinux image is digest-pinned.
+- **Workflows.**
+  - Every `uses:` on all three branches is pinned to a full commit SHA.
+  - No workflow uses `pull_request_target`, `workflow_run` or `issue_comment`.
+  - No untrusted `github.event.*` expression is interpolated into `run:`.
+  - The top-level token is `contents: read` or `{}`, and checkouts use `persist-credentials: false`.
+  - Tool downloads (dist, cyclonedx) are SHA-256 checked, and Docker base images are digest-pinned.
+  - Pull requests from forks receive no secrets.
+
+## 3. Contract or architecture violations
+
+- No AGENTS.md boundary is broken. `file_open.rs` is input plumbing and carries no conversion code. Engines stay out of process, and Pandoc is still invoked as a separate process.
+- On the documentation side, ARCHITECTURE.md (dist) records "Minisign signatures from the project key" but not the custody change: the pack trust anchor's private key now lives in a GitHub environment secret. `docs/releasing.md` omits `PACK_MINISIGN_KEY*`, `TAURI_SIGNING_*`, `APPLE_*` and `WINDOWS_*` from its secrets section. The documentation rule treats a credential source as docs impact, so this needs a docs update whichever option is chosen for finding 2.
+
+## 4. Test gaps that matter
+
+- No test or guard asserts that `sign-release` signs only artifacts produced by the same run. `scripts/check-release-workflow.sh` validates structure, not provenance (finding 1).
+- No guard ensures that non-app releases are created with `--latest=false` (finding 3). A `check-release-workflow`-style grep would catch regressions cheaply.
+- `sandbox_macos.rs` proves that ungranted document contents are unreadable, but nothing proves that `/opt/homebrew/var` or `/usr/local/etc` are unreadable, because they are currently granted (finding 9).
+- No test checks that the Homebrew formula pushed to the tap still matches the verified archive checksums (finding 6).
+- `generate.test.mjs` checks that the generated OS-integration files are current, but no test feeds a path containing spaces, quotes or `%` through the generated Windows command line and back through `file_open::parse_args`.
+
+## 5. Unresolved questions
+
+1. Does the `release` environment have required reviewers, and is there a tag ruleset restricting who may create `v*` tags? `docs/releasing.md:191` mentions only the `v*` tag pattern. This decides the real severity of findings 2 and 4.
+2. Which option does the maintainer want for the pack key: a separate desktop release key, or one key with stronger gating?
+3. Does any `toolchain-wheels-v*` or `pack-docling-v*` release already exist, and which release does GitHub currently mark as Latest?
+4. Is the `v1.0.0` tag planned from `main` only? dist's version bump and release notes assume a single coordinated tag that drives `release.yml`, `desktop.yml` and `images.yml` together.
