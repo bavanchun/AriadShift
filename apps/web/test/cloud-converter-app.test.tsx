@@ -73,6 +73,8 @@ function renderApp(inspection: object = RTF) {
 describe("ConverterApp with cloud mode configured", () => {
   beforeEach(() => {
     requests.length = 0;
+    // jsdom has no scrolling API; verify the hand-off's browser action below.
+    HTMLElement.prototype.scrollIntoView = vi.fn();
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -125,6 +127,9 @@ describe("ConverterApp with cloud mode configured", () => {
       "Cloud conversion selected.",
     );
     await waitFor(() => expect(requests).toContain("GET /v1/capabilities"));
+    await waitFor(() =>
+      expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }),
+    );
     expect(requests.some((request) => request.startsWith("POST"))).toBe(false);
 
     fireEvent.click(screen.getByRole("radio", { name: /On this device/ }));
