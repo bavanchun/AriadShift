@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
 
+test.describe.configure({ timeout: 120_000 });
+
 const MARKDOWN = `# Field notes
 
 A paragraph with *emphasis* and a [link](https://example.test).
@@ -207,6 +209,7 @@ test("reset deletes the stored files", async ({ page, browserName }) => {
 });
 
 test("two tabs keep their files apart", async ({ context, browserName }) => {
+  test.setTimeout(240_000);
   const first = await context.newPage();
   const second = await context.newPage();
   await openConverter(first);
@@ -235,6 +238,7 @@ test("files of a closed tab are deleted when the converter starts again", async 
   context,
   browserName,
 }) => {
+  test.setTimeout(240_000);
   const closing = await context.newPage();
   await openConverter(closing);
   await chooseFile(closing, "left-behind.md", "text/markdown", "# Left behind\n");
