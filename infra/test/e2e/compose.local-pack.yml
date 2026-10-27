@@ -4,5 +4,5 @@ services:
     image: ${E2E_PROJECT:-ariadshift-e2e}-docling:local
     build:
       dockerfile: infra/test/e2e/worker-docling-local.Dockerfile
-      additional_contexts:
-        docling-pack: ${E2E_DOCLING_PACK_DIR:?set an unpacked local Docling pack}
+    volumes:
+      - ${E2E_DOCLING_PACK_DIR:?set an unpacked local Docling pack}:/opt/ariadshift/test-docling:ro

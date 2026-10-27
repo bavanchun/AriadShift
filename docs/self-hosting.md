@@ -71,7 +71,8 @@ The docling image installs the signed Docling engine pack during its build, so t
 For disposable integration tests before publication, run
 `E2E_DOCLING_PACK_DIR=/absolute/path/to/unpacked-pack bash infra/test/e2e/run.sh`.
 The directory must contain `pack.toml`, `runtime`, `models` and `tessdata` from a
-locally built or CI-built pack. This test-only override uses the documented
+locally built or CI-built pack, readable by container UID 10001. Compose mounts
+the directory read-only. This test-only override uses the documented
 `ASHIFT_PACK_DOCLING` development resolution; it does not verify a release
 signature. The production image continues to require a signed published pack.
 The runner snapshots the disposable database before bootstrap and the account

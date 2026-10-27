@@ -6,7 +6,6 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=docling-pack / /opt/ariadshift/test-docling/
-RUN chmod -R a+rX,go-w /opt/ariadshift/test-docling
+# Compose mounts the unpacked pack read-only; keep its files out of image layers.
 ENV ASHIFT_PACK_DOCLING=/opt/ariadshift/test-docling
 CMD ["worker", "--packs", "docling"]

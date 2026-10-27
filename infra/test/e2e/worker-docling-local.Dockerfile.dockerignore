@@ -1,2 +1,2 @@
-# The unpacked test pack arrives through its named build context.
+# The image copies nothing from the repository; Compose mounts the test pack.
 *
