@@ -1,7 +1,7 @@
 name: Docling toolchain wheels
 
-# Builds, caches, audits and publishes the Intel-free native OpenCV, PyTorch and
-# Windows LLVM OpenMP wheels/sidecars for the docling engine pack.
+# Builds and publishes Intel-free OpenCV and CPU PyTorch wheels for Linux x86_64,
+# and verifies ARM wheels. Windows LLVM OpenMP wheels are deferred to v1.x (#83).
 # Tagged runs (`toolchain-wheels-v*`) publish the audited wheels and SHA256SUMS to a
 # GitHub Release on this repository so `engines/docling/pack/pins.toml` can pin them by SHA-256.
 on:
@@ -356,6 +356,6 @@ jobs:
           if ! gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GH_REPO" \
               --title "$TAG" \
-              --notes "Audited Intel-free OpenCV, CPU PyTorch and Windows LLVM OpenMP toolchain wheels and SHA256SUMS."
+              --notes "Audited Intel-free Linux x86_64 OpenCV and CPU PyTorch wheels and SHA256SUMS; ARM wheels verified. Windows LLVM OpenMP wheels are deferred to v1.x (#83)."
           fi
           gh release upload "$TAG" release-out/* --repo "$GH_REPO" --clobber
