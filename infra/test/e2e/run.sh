@@ -175,7 +175,11 @@ fi
 
 STACK_STARTED=1
 log "building images"
-COMPOSE_PARALLEL_LIMIT=1 compose build --build-arg CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
+# Bake may parallelize separate targets despite COMPOSE_PARALLEL_LIMIT.
+# The API, migration and core worker share the migration service's image.
+for service in migrate worker-office worker-docling auth web; do
+	COMPOSE_PARALLEL_LIMIT=1 compose build --build-arg CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}" "$service"
+done
 log "starting the stack (waiting up to ${WAIT_TIMEOUT}s for health)"
 # Snapshot the new database before bootstrap and migration change its schema.
 compose up -d --wait --wait-timeout "$WAIT_TIMEOUT" postgres
