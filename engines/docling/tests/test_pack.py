@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import re
+import shutil
 import struct
+import subprocess
 import sys
+import tomllib
+from argparse import Namespace
 from base64 import urlsafe_b64encode
 
 import pytest
@@ -13,7 +20,443 @@ from conftest import REPOSITORY
 sys.path.insert(0, str(REPOSITORY / "engines" / "docling" / "pack"))
 
 import build
+import fetch
+import licenses
+import native_build
+import torch_build
 import windows_imports
+
+
+def test_pack_manifest_keeps_the_frozen_protocol_host_range():
+    manifest = tomllib.loads(build.pack_fields("0.2.0", "Apache-2.0"))
+    assert manifest["requires_ashift"] == ">=0.2.0, <2.0.0"
+    assert manifest["schema"] == "ariad-pack/1"
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "changed upstream probe",
+        torch_build.SLEEF_BUILTIN_MATH_CHECK * 2,
+        torch_build.SLEEF_BUILTIN_MATH_CHECK + torch_build.SLEEF_MSVC_GUARD,
+    ),
+)
+def test_sleef_compiler_patch_refuses_unreviewed_source(tmp_path, source):
+    configure = tmp_path / "third_party/sleef/Configure.cmake"
+    configure.parent.mkdir(parents=True)
+    configure.write_text(source)
+    with pytest.raises(SystemExit, match="review upstream SLEEF's changed"):
+        torch_build.patch_sleef_msvc(tmp_path)
+    assert configure.read_text() == source
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux" or not shutil.which("cmake") or not shutil.which("cc"),
+    reason="real CMake compiler-check proof needs Linux CMake and a C compiler",
+)
+@pytest.mark.parametrize("msvc_version,expected", ((None, "1"), (1951, ""), (1952, "1")))
+def test_sleef_compiler_patch_only_rejects_the_affected_version(tmp_path, msvc_version, expected):
+    configure = tmp_path / "third_party/sleef/Configure.cmake"
+    configure.parent.mkdir(parents=True)
+    configure.write_text(torch_build.SLEEF_BUILTIN_MATH_CHECK)
+    torch_build.patch_sleef_msvc(tmp_path)
+    (tmp_path / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\n"
+        "project(SleefProbe C)\n"
+        "include(CheckCSourceCompiles)\n"
+        "include(third_party/sleef/Configure.cmake)\n"
+        'file(WRITE "${CMAKE_BINARY_DIR}/result.txt" "${COMPILER_SUPPORTS_BUILTIN_MATH}")\n'
+    )
+    command = ["cmake", "-S", str(tmp_path), "-B", str(tmp_path / "build")]
+    if msvc_version is not None:
+        command.append(f"-DCMAKE_REQUIRED_DEFINITIONS=-D_MSC_VER={msvc_version}")
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "build/result.txt").read_text() == expected
+
+
+@pytest.mark.skipif(
+    not os.environ.get("ASHIFT_VCOMP_ABI_LIBRARY"),
+    reason="native wrapper ABI proof needs a source-built LLVM runtime",
+)
+def test_msvc_fork_abi_against_real_llvm_runtime():
+    code = (
+        "import ctypes, runpy, sys\n"
+        "runpy.run_path(sys.argv[1])['vcomp_abi'](ctypes.CDLL(sys.argv[2]))\n"
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            code,
+            str(native_build.PACK / "probe-runtime.py"),
+            os.environ["ASHIFT_VCOMP_ABI_LIBRARY"],
+        ],
+        check=True,
+        timeout=120,
+    )
+
+
+def test_llvm_export_map_preserves_upstream_and_exports_every_msvc_wrapper(tmp_path):
+    source = tmp_path / "openmp/runtime/src"
+    source.mkdir(parents=True)
+    original = "# Existing LLVM exports\nomp_get_num_threads 718\n"
+    (source / "dllexports").write_text(original)
+    (source / "CMakeLists.txt").write_text("# Existing LLVM build\n")
+    native_build.configure_llvm_openmp(tmp_path, tmp_path / "build/libiomp5md.lib")
+    exports = (source / "dllexports").read_text()
+    assert exports.startswith(original)
+    wrappers = set(
+        re.findall(
+            r"__declspec\(dllexport\) void (_vcomp_\w+)\(",
+            (native_build.PACK / "vcomp-compat.cpp").read_text(),
+        )
+    )
+    assert set(exports[len(original) :].split()) == wrappers
+
+
+@pytest.mark.parametrize("name", native_build.VCOMP_EXPORTS)
+def test_llvm_export_changes_require_review_if_upstream_adds_a_wrapper(tmp_path, name):
+    source = tmp_path / "openmp/runtime/src"
+    source.mkdir(parents=True)
+    original = f"{name} 123\n"
+    (source / "dllexports").write_text(original)
+    with pytest.raises(SystemExit, match="review upstream LLVM's existing MSVC export"):
+        native_build.configure_llvm_openmp(tmp_path, tmp_path / "build/libiomp5md.lib")
+    assert (source / "dllexports").read_text() == original
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux"
+    or not all(shutil.which(tool) for tool in ("clang-cl", "llvm-dlltool", "llvm-lib", "llvm-nm")),
+    reason="Linux COFF archive proof needs the system LLVM tools",
+)
+def test_msvc_marker_requires_an_object_in_the_import_archive(tmp_path):
+    marker = "_You_must_link_with_Microsoft_OpenMP_library"
+    definition = tmp_path / "libiomp5md.def"
+    definition.write_text(
+        "LIBRARY libiomp5md.dll\nEXPORTS\n"
+        + "\n".join(native_build.VCOMP_EXPORTS)
+        + f"\n{marker} DATA\n"
+    )
+    raw = tmp_path / "raw.lib"
+    obj = tmp_path / "markers.obj"
+    corrected = tmp_path / "libiomp5md.lib"
+    subprocess.run(
+        ["llvm-dlltool", "-m", "i386:x86-64", "-d", str(definition), "-l", str(raw)],
+        check=True,
+    )
+    raw_symbols = subprocess.check_output(["llvm-nm", "--defined-only", str(raw)], text=True)
+    assert f"__imp_{marker}" in raw_symbols.split()
+    assert marker not in raw_symbols.split()
+    subprocess.run(
+        ["clang-cl", "/nologo", "/c", f"/Fo{obj}", str(native_build.PACK / "vcomp-import.cpp")],
+        check=True,
+    )
+    subprocess.run(["llvm-lib", f"/out:{corrected}", str(raw), str(obj)], check=True)
+    symbols = subprocess.check_output(
+        ["llvm-nm", "--defined-only", str(corrected)], text=True
+    ).split()
+    assert marker in symbols
+    assert "_You_must_link_with_exactly_one_OpenMP_library" in symbols
+    assert set(native_build.VCOMP_EXPORTS) <= set(symbols)
+
+
+def test_torch_source_build_requires_a_matching_native_runner():
+    target = "x86_64-unknown-linux-gnu" if sys.platform == "win32" else "x86_64-pc-windows-msvc"
+    with pytest.raises(SystemExit, match="matching native x86_64 runner"):
+        torch_build.build(Namespace(target=target))
+
+
+def test_opencv_source_pin_matches_the_locked_distribution():
+    pins = fetch.load_pins()
+    native_build.check_opencv_pin(pins)
+    pins["opencv"]["version"] = "0.0.0"
+    with pytest.raises(SystemExit, match="review the OpenCV source pin"):
+        native_build.check_opencv_pin(pins)
+
+
+def release_pin(tmp_path, *, kind="opencv"):
+    target = "x86_64-unknown-linux-gnu"
+    name = "opencv_python_headless-5.0.0.93-cp314-cp314-manylinux_2_28_x86_64.whl"
+    content = b"release artifact"
+    digest = hashlib.sha256(content).hexdigest()
+    cache = tmp_path / "cache"
+    blob = cache / "blobs" / digest
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(content)
+    pin = {
+        "name": name,
+        "url": f"https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-1/{name}",
+        "sha256": digest,
+        "size": len(content),
+    }
+    entry = {"build_key": "source-key", "files": [pin]}
+    pins = {"toolchain": {"release": "toolchain-wheels-1", "targets": {target: {kind: entry}}}}
+    return target, pins, cache, blob, pin
+
+
+def test_pinned_release_files_are_rehashed_before_they_are_used(tmp_path, monkeypatch):
+    target, pins, cache, blob, pin = release_pin(tmp_path)
+    output = tmp_path / "out"
+    files = native_build.release_files("opencv", target, pins, cache, output, "source-key")
+    assert files[pin["name"]].read_bytes() == b"release artifact"
+    blob.write_bytes(b"damaged artifact")
+    monkeypatch.setattr(fetch, "ATTEMPTS", 1)
+    monkeypatch.setattr(fetch.time, "sleep", lambda _: None)
+
+    def unavailable(*_):
+        raise OSError("release unavailable")
+
+    monkeypatch.setattr(fetch, "_download", unavailable)
+    with pytest.raises(SystemExit, match="could not download"):
+        native_build.release_files("opencv", target, pins, cache, output, "source-key")
+
+
+def test_only_unpinned_toolchains_select_source_build_fallback(tmp_path):
+    target, pins, cache, _, _ = release_pin(tmp_path)
+    assert native_build.release_files("torch", target, pins, cache, tmp_path / "out", "key") is None
+    with pytest.raises(SystemExit, match="rebuild and repin"):
+        native_build.release_files("opencv", target, pins, cache, tmp_path / "out", "stale")
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("name", "../wheel.whl", "unique single file names"),
+        ("name", r"C:\wheel.whl", "unique single file names"),
+        ("url", "https://example.com/wheel.whl", "pinned repository release"),
+        (
+            "url",
+            "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-2/wheel.whl",
+            "pinned repository release",
+        ),
+        ("sha256", "unverified", "SHA-256 and positive size"),
+        ("size", 0, "SHA-256 and positive size"),
+    ],
+)
+def test_release_pins_reject_unreviewed_locations_and_missing_hashes(
+    tmp_path, field, value, message
+):
+    target, pins, cache, _, pin = release_pin(tmp_path)
+    pin[field] = value
+    with pytest.raises(SystemExit, match=message):
+        native_build.release_files("opencv", target, pins, cache, tmp_path / "out", "source-key")
+
+
+def test_release_pins_require_nonempty_unique_files(tmp_path):
+    target, pins, cache, _, pin = release_pin(tmp_path)
+    entry = pins["toolchain"]["targets"][target]["opencv"]
+    entry["files"].append(pin)
+    with pytest.raises(SystemExit, match="unique single file names"):
+        native_build.release_files("opencv", target, pins, cache, tmp_path / "out", "source-key")
+    entry["files"] = []
+    with pytest.raises(SystemExit, match="has no files"):
+        native_build.release_files("opencv", target, pins, cache, tmp_path / "out", "source-key")
+
+
+def test_torch_bootstrap_requires_a_native_runner(tmp_path, monkeypatch):
+    target = "x86_64-unknown-linux-gnu"
+    monkeypatch.setattr(build, "host_target", lambda: "aarch64-apple-darwin")
+    monkeypatch.setattr(torch_build, "key", lambda _: "key")
+    monkeypatch.setattr(fetch, "load_pins", lambda: {})
+    with pytest.raises(SystemExit, match="matching native runner"):
+        build.install_torch_toolchain(tmp_path, tmp_path / "runtime", target, tmp_path / "cache")
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_torch_bootstrap_builds_once_then_verifies_cached_outputs(tmp_path, monkeypatch, cached):
+    target = "x86_64-unknown-linux-gnu"
+    cache = tmp_path / "cache"
+    output = cache / "native/torch-key"
+    output.mkdir(parents=True)
+    if cached:
+        (output / "build.json").write_text(json.dumps({"build_key": "key"}))
+    version = torch_build.load_config()["torch"]["version"]
+    wheel = output / f"torch-{version}-cp314-cp314-manylinux_2_28_x86_64.whl"
+    wheel.write_bytes(b"wheel")
+    (output / "OpenBLAS-LICENSE.txt").write_text("BSD-3-Clause")
+    monkeypatch.setattr(build, "host_target", lambda: target)
+    monkeypatch.setattr(torch_build, "key", lambda _: "key")
+    monkeypatch.setattr(fetch, "load_pins", lambda: {})
+    commands = []
+    monkeypatch.setattr(build, "run", lambda command, **_: commands.append(list(map(str, command))))
+    files = build.install_torch_toolchain(tmp_path, tmp_path / "runtime", target, cache)
+    assert files[wheel.name].read_bytes() == b"wheel"
+    assert ("verify" if cached else "build") in commands[0]
+    assert str(files[wheel.name]) in commands[1]
+    assert "--reinstall" in commands[1]
+
+
+def test_pinned_opencv_is_consumed_without_starting_a_source_build(tmp_path, monkeypatch):
+    target, pins, cache, _, pin = release_pin(tmp_path)
+    pins["opencv"] = {"version": "5.0.0.93"}
+    monkeypatch.setattr(native_build, "cache_key", lambda *_: "source-key")
+    wheel = native_build.opencv(target, pins, cache)
+    assert wheel.name == pin["name"]
+    assert wheel.read_bytes() == b"release artifact"
+
+
+@pytest.mark.parametrize("target", ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"])
+def test_pinned_torch_installs_without_building_and_requires_its_license_sidecars(
+    tmp_path, monkeypatch, target
+):
+    version = torch_build.load_config()["torch"]["version"]
+    platform = "win_amd64" if build.is_windows(target) else "manylinux_2_28_x86_64"
+    name = f"torch-{version}-cp314-cp314-{platform}.whl"
+    files = {name: tmp_path / name, "OpenBLAS-LICENSE.txt": tmp_path / "OpenBLAS-LICENSE.txt"}
+    if build.is_windows(target):
+        files.update(
+            {name: tmp_path / name for name in ("libiomp5md.dll", "LLVM-OpenMP-LICENSE.txt")}
+        )
+    monkeypatch.setattr(native_build, "release_files", lambda *_: files)
+    monkeypatch.setattr(torch_build, "key", lambda _: "key")
+    commands = []
+    monkeypatch.setattr(build, "run", lambda command, **_: commands.append(list(map(str, command))))
+    result = build.install_torch_toolchain(
+        tmp_path, tmp_path / "runtime", target, tmp_path / "cache"
+    )
+    assert result == files
+    assert len(commands) == 1
+    assert str(files[name]) in commands[0]
+    assert "--reinstall" in commands[0]
+    del files["OpenBLAS-LICENSE.txt"]
+    with pytest.raises(SystemExit, match="missing required sidecars"):
+        build.install_torch_toolchain(tmp_path, tmp_path / "runtime", target, tmp_path / "cache")
+    assert len(commands) == 1
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "libiomp5md.dll",
+        "libiompstubs5md.dll",
+        "libiomp5-abcdef.dll",
+        "libippicv.so",
+        "libmkl_rt.so",
+        "libippcore.so",
+    ],
+)
+def test_vendor_gate_rejects_intel_libraries_inside_wheels(tmp_path, name):
+    path = tmp_path / "runtime/Lib/site-packages/vendor" / name
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"native code")
+    with pytest.raises(SystemExit, match="unapproved Intel library"):
+        licenses.check_vendor_files(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"Intel(R) IPP ICV library\nIntel Simplified Software License",
+        b"Intel(R) IPP ICV library statically linked",
+        b"Intel(R) Integrated Performance Primitives",
+    ],
+)
+def test_vendor_gate_rejects_ipp_notices_even_with_permissive_wheel_metadata(tmp_path, content):
+    info = tmp_path / "opencv-1.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text("Name: opencv-python-headless\nLicense-Expression: Apache-2.0\n")
+    (info / "LICENSE-3RD-PARTY.txt").write_bytes(content)
+    with pytest.raises(SystemExit, match="proprietary IPP ICV notice"):
+        licenses.check_vendor_files(tmp_path)
+
+
+def test_vendor_gate_admits_only_the_exact_llvm_build_and_rejects_tampering(tmp_path):
+    path = tmp_path / "runtime/Lib/site-packages/torch/lib/libiomp5md.dll"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"LLVM OpenMP")
+    approved = {
+        path.relative_to(tmp_path).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+    }
+    licenses.check_vendor_files(tmp_path, approved)
+    path.write_bytes(b"another OpenMP runtime")
+    with pytest.raises(SystemExit, match="unapproved Intel library"):
+        licenses.check_vendor_files(tmp_path, approved)
+    path.unlink()
+    with pytest.raises(SystemExit, match="missing LLVM OpenMP replacement"):
+        licenses.check_vendor_files(tmp_path, approved)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"ippicvGetLibVersion",
+        b"@(#) Intel(R) OMP Fortran support",
+        b"Intel(R) oneAPI Math Kernel Library Version 2024.2",
+        b"MKL_Get_Version_String",
+        b"mkl_blas_sgemm",
+        b"ippGetLibVersion",
+        "Intel(R) OpenMP* Runtime Library".encode("utf-16le"),
+    ],
+)
+def test_vendor_gate_rejects_renamed_proprietary_binaries(tmp_path, content):
+    (tmp_path / "renamed.dll").write_bytes(b"MZ" + content)
+    with pytest.raises(SystemExit, match="proprietary Intel binary content"):
+        licenses.check_vendor_files(tmp_path)
+
+
+def test_vendor_gate_allows_permissive_itt_and_onednn_symbols(tmp_path):
+    (tmp_path / "libtorch_cpu.so").write_bytes(
+        b"__itt_sync_create_init_3_0\0iJIT_NotifyEvent\0dnnl_get_version\0mkldnn_convolution"
+    )
+    (tmp_path / "libittnotify.so").write_bytes(b"BSD-3-Clause ITT API __itt_api_init")
+    licenses.check_vendor_files(tmp_path)
+
+
+def test_vendor_gate_preserves_common_notices_for_components_not_in_the_binary(tmp_path):
+    (tmp_path / "ThirdPartyNotices.txt").write_text(
+        "Intel Math Kernel Library (Intel MKL)\n"
+        "Intel Simplified Software License (Version April 2018)"
+    )
+    (tmp_path / "onnxruntime.so").write_bytes(b"CPUExecutionProvider MLAS")
+    licenses.check_vendor_files(tmp_path)
+    (tmp_path / "onnxruntime.so").write_bytes(b"MKL_Get_Version_String")
+    with pytest.raises(SystemExit, match="proprietary Intel binary content"):
+        licenses.check_vendor_files(tmp_path)
+
+
+def test_vendor_gate_rejects_intel_even_if_the_cache_claims_its_digest(tmp_path):
+    path = tmp_path / "libiomp5md.dll"
+    path.write_bytes("Intel(R) OpenMP* Runtime Library".encode("utf-16le"))
+    approved = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()}
+    with pytest.raises(SystemExit, match="proprietary Intel binary content"):
+        licenses.check_vendor_files(tmp_path, approved)
+
+
+def test_only_the_reviewed_inapplicable_ipp_notice_is_removed(tmp_path):
+    path = tmp_path / "LICENSE-3RD-PARTY.txt"
+    separator = native_build.NOTICE_SEPARATOR
+    prefix, suffix = "OpenCV Apache-2.0\n", "\nOrbbec MIT licence\n"
+    path.write_text(
+        prefix
+        + separator
+        + "\n"
+        + native_build.IPP_HEADING
+        + "\nIntel Simplified Software License\n"
+        + separator
+        + suffix
+    )
+    native_build.remove_inapplicable_ipp_notice(path)
+    assert path.read_text() == prefix + separator + suffix
+    with pytest.raises(SystemExit, match="unreviewed OpenCV IPP notice layout"):
+        native_build.remove_inapplicable_ipp_notice(path)
+
+
+def test_replaced_openmp_and_notice_records_match_the_distributed_bytes(tmp_path):
+    site = tmp_path / "site-packages"
+    info = site / "torch-1.dist-info"
+    info.mkdir(parents=True)
+    dll = site / "libiomp5md.dll"
+    dll.write_bytes(b"LLVM OpenMP")
+    record = info / "RECORD"
+    record.write_text(
+        "libiomp5md.dll,sha256=old,0\nlibiompstubs5md.dll,sha256=old,0\n"
+        "torch-1.dist-info/RECORD,,\n"
+    )
+    build.refresh_wheel_records(site)
+    digest = urlsafe_b64encode(hashlib.sha256(dll.read_bytes()).digest()).decode().rstrip("=")
+    assert record.read_text() == f"libiomp5md.dll,sha256={digest},11\ntorch-1.dist-info/RECORD,,\n"
 
 
 @pytest.mark.parametrize("installer_records", [False, True])

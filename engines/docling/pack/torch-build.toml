@@ -1,0 +1,46 @@
+# Source-only toolchain inputs. Published wheel digests are maintained separately.
+# Do not change these inputs without rebuilding and repinning the output wheels.
+schema = 1
+
+[torch]
+version = "2.14.1+cpu"
+source = "https://github.com/pytorch/pytorch/releases/tag/v2.14.1"
+url = "https://github.com/pytorch/pytorch/releases/download/v2.14.1/torch-2.14.1.tar.gz"
+sha256 = "58cacad12fb09ae9cc2fb31412cb09d83c288e50ed06fd3eb48d3dcab427db87"
+size = 778544118
+license = "BSD-3-Clause"
+
+[torch.options]
+USE_MKL = "0"
+CMAKE_DISABLE_FIND_PACKAGE_MKL = "ON"
+BLAS = "OpenBLAS"
+USE_MKLDNN = "1"
+USE_OPENMP = "1"
+MKLDNN_CPU_RUNTIME = "OMP"
+USE_CUDA = "0"
+USE_CUDNN = "0"
+USE_ROCM = "0"
+USE_XPU = "0"
+USE_DISTRIBUTED = "0"
+USE_KINETO = "0"
+USE_ITT = "0"
+BUILD_TEST = "0"
+BUILD_BINARY = "0"
+USE_NATIVE_ARCH = "0"
+USE_NUMPY = "1"
+
+[openblas]
+version = "0.3.34"
+source = "https://github.com/OpenMathLib/OpenBLAS/releases/tag/v0.3.34"
+url = "https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.34/OpenBLAS-0.3.34.tar.gz"
+sha256 = "cd7e129868320cc2d033afa920e31202dfe0b8066a5b66661900ccc0f197dfed"
+size = 25326686
+license = "BSD-3-Clause"
+
+[vision]
+version = "0.29.1+cpu"
+source = "https://github.com/pytorch/vision/releases/tag/v0.29.1"
+url = "https://codeload.github.com/pytorch/vision/tar.gz/1f1a920d685d46dfbe187934b785b7ecb7a182f2"
+sha256 = "5d46895e0a59baa604db29e24b93104c965acbb07f34da4890b767b3053952e0"
+size = 14447310
+license = "BSD-3-Clause"

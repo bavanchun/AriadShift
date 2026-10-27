@@ -27,9 +27,12 @@ fn installed_pack_converts_and_reuses_bounded_sessions() {
     fs::create_dir(&signed).unwrap();
     let text = fs::read_to_string(source.join("pack.toml")).unwrap();
     let mut manifest = packs::Manifest::parse(&text).unwrap();
-    // The source tree is still 0.1.0 until release preparation bumps it to 0.2.0.
-    // Change only this test copy's compatibility range before signing it.
-    manifest.requires_ashift = ">=0.1.0, <0.3.0".to_owned();
+    assert_eq!(manifest.requires_ashift, ">=0.2.0, <2.0.0");
+    // Only the unreleased 0.1.0 source-tree test needs an exact-version copy.
+    // Released hosts exercise the shipped compatibility range unchanged.
+    if env!("CARGO_PKG_VERSION") == "0.1.0" {
+        manifest.requires_ashift = "=0.1.0".to_owned();
+    }
     let text = toml::to_string(&manifest).unwrap();
     fs::write(signed.join("pack.toml"), &text).unwrap();
     for component in &manifest
