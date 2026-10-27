@@ -19,8 +19,8 @@ retained by 1.x. A protocol break must accompany the 2.0 major release,
 which this range refuses at install time. See the [compatibility policy](packs.md#compatibility)
 for the current request-time protocol check and planned install-time check.
 
-- The `docling` pack (`ashift engines install docling`), or a development engine (below). Without either, a route that needs Docling exits with code 5 and says how to get it.
-- **Windows:** install the [Microsoft Visual C++ Redistributable x64](https://aka.ms/vc14/vc_redist.x64.exe) (2015–2022 family, latest supported v14) before running the Docling pack. The latest x64 redistributable is a hard requirement; check the installed version in the `Version` value under `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64` and update using the linked installer if needed. The pack uses the system runtime and excludes `vcruntime*` and `msvcp*` DLLs, including copies from wheels. The distributed `ashift.exe` uses static CRT; this prerequisite applies to Docling, not the standalone host.
+- The `docling` pack (`ashift engines install docling`), or a development engine (below). In 1.0, Docling packs ship for macOS arm64 (`aarch64-apple-darwin`), Linux x86_64 (`x86_64-unknown-linux-gnu`) and Linux arm64 (`aarch64-unknown-linux-gnu`); the Windows (`x86_64-pc-windows-msvc`) Docling pack is planned for v1.x ([#83](https://github.com/bavanchun/AriadShift/issues/83)). Without an installed pack or development engine, a route that needs Docling exits with code 5 and says how to get it.
+- **Windows (planned v1.x pack, [#83](https://github.com/bavanchun/AriadShift/issues/83)):** install the [Microsoft Visual C++ Redistributable x64](https://aka.ms/vc14/vc_redist.x64.exe) (2015–2022 family, latest supported v14) before running the Docling pack. The latest x64 redistributable is a hard requirement; check the installed version in the `Version` value under `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64` and update using the linked installer if needed. The pack uses the system runtime and excludes `vcruntime*` and `msvcp*` DLLs, including copies from wheels. The distributed `ashift.exe` uses static CRT; this prerequisite applies to Docling, not the standalone host.
 - **Tesseract 5** on `PATH` for OCR of Vietnamese and mixed Vietnamese-English text. The pack ships the `vie`, `eng` and `osd` data and `configs/tsv`, not the program: `apt install tesseract-ocr`, `brew install tesseract`, or the UB Mannheim installer on Windows. Without it, digital documents still convert. Installation prints the Tesseract prerequisite and, on Windows, the Visual C++ Redistributable prerequisite; `ashift doctor` explains what is missing.
 - On Linux, the sandbox grants the canonical Tesseract binary execution access. For a binary under `<prefix>/bin/`, only `<prefix>/{lib,lib64,libexec,share/tessdata,etc}` receives read access; reading the whole prefix is refused. A binary in `/bin`, `~/bin` or `~/.local/bin` therefore cannot grant access to all of `/`, the home directory or `~/.local`. The Tesseract grant does not include `~/.local/share`; only its `tessdata` subdirectory is allowed. Libraries and data must live in those subdirectories or the base system paths (`/usr`, `/lib`, `/lib64`, `/nix/store`). Dependencies spread across other prefixes, such as separate Linuxbrew Cellar packages, need a system installation or a self-contained prefix.
 - No network. The engine sets the Hugging Face and Transformers offline switches, disables remote services and external plugins, and keeps temporary files, caches and its home directory inside the job workspace.
@@ -138,9 +138,10 @@ An explicit IPP/ICV notice section remains forbidden independently of metadata.
 
 The [toolchain wheels workflow](../.github/workflows/toolchain-wheels.yml) and
 [torch toolchain workflow](../.github/workflows/torch-docling.yml) own source
-builds. They run natively on Linux and Windows x86_64 and verify the retained
-ARM wheels on Linux aarch64 and macOS arm64; the Mac arm64 development machine
-does not emulate x86_64 source builds. Compiler caches preserve completed work
+builds. In 1.0 they run the source build natively on Linux x86_64 and verify the
+retained ARM wheels on Linux aarch64 and macOS arm64 (the Windows x86_64 CPU
+torch and pack CI rows are deferred to v1.x in [#83](https://github.com/bavanchun/AriadShift/issues/83));
+the Mac arm64 development machine does not emulate x86_64 source builds. Compiler caches preserve completed work
 across bounded jobs, and wheel caches avoid rebuilding unchanged toolchains.
 The build key covers source, options, target and frozen build tools, excluding
 model pins and the published wheel manifest. Restored wheels are rehashed and
@@ -177,7 +178,7 @@ they are replaced before the distribution gate and archive writer run.
 
 `build.py verify --out <dir> --input <file> --expect <text> [--offline]` unpacks the archives into a new directory, uses it as `ASHIFT_PACK_DOCLING`, and converts `<input>` to Markdown with `ashift`, so the manifest, engine, models and OCR data all take part. With `--offline` on Linux the conversion runs under `unshare -rn`, which proves that nothing is downloaded. `build.py manifest --out <dir> <triple>...` merges the targets built into `<dir>` into one `pack.toml`.
 
-Targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-apple-darwin` and `x86_64-pc-windows-msvc`. The macOS pack needs macOS 14 or later, because `docling-parse` ships no older wheels (`MACOS_DEPLOYMENT_TARGET` in `build.py`).
+In 1.0, shipped pack targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` and `aarch64-apple-darwin`; the Windows `x86_64-pc-windows-msvc` Docling pack is planned for v1.x ([#83](https://github.com/bavanchun/AriadShift/issues/83)). The macOS pack needs macOS 14 or later, because `docling-parse` ships no older wheels (`MACOS_DEPLOYMENT_TARGET` in `build.py`).
 
 ### CI
 
@@ -185,7 +186,7 @@ Targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `aarch64-ap
 
 - **Engine tests** on `ubuntu-26.04` and `windows-2025`: ruff and pytest.
 - **Engine conformance** on Linux with cached models and Tesseract: `just docling-engine-test`.
-- **Pack** builds the Linux x86_64 pack twice in separate directories, compares the component and manifest hashes, and converts the scanned Vietnamese page with it offline. Tags, and pull requests that change `engines/docling/pack/` or the workflow, also build `aarch64` Linux (not run), macOS and Windows (each converts a digital PDF) and merge their manifests. Linux and Windows x86_64 jobs additionally run the conformance/acceptance tests with the packaged interpreter and upload the original/replacement conversion comparisons. Native OpenCV/LLVM caches are separate from downloaded source/model blobs.
+- **Pack** builds the Linux x86_64 pack twice in separate directories, compares the component and manifest hashes, and converts the scanned Vietnamese page with it offline. Tags, and pull requests that change `engines/docling/pack/` or the workflow, also build `aarch64` Linux (not run) and macOS (which converts a digital PDF) and merge their manifests. The Linux x86_64 job additionally runs the conformance/acceptance tests with the packaged interpreter and uploads the original/replacement conversion comparisons. Native OpenCV/LLVM caches are separate from downloaded source/model blobs. The Windows `x86_64-pc-windows-msvc` pack row is deferred to v1.x ([#83](https://github.com/bavanchun/AriadShift/issues/83)).
 
 For a failed matrix job while its sibling is still running, obtain the job ID
 with `gh run view <run-id> --json jobs`. Download only that completed job's logs
