@@ -59,9 +59,9 @@ def test_installed_distributions_pass_the_gate():
         ),
         (
             FakeDistribution("k", License_Expression="MIT AND (Apache-2.0 OR LicenseRef-Other)"),
-            True,
+            False,
         ),
-        (FakeDistribution("l", License_Expression="MIT OR LicenseRef-Other"), True),
+        (FakeDistribution("l", License_Expression="MIT OR LicenseRef-Other"), False),
         (FakeDistribution("m", License_Expression="Apache-2.0 WITH Unreviewed-exception"), False),
         (FakeDistribution("n", License_Expression="(MIT"), False),
         (FakeDistribution("o", License_Expression="MIT AND"), False),

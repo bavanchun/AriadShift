@@ -2,6 +2,16 @@
 
 AGPL and unreviewed copyleft or non-OSI code are refused. Named GNU runtime and permissive
 attribution-only native exceptions carry complete notices; CC0 covers data or metadata only.
+CI builds from wheels whose bytes are fixed by uv.lock hashes. This gate detects accidental
+licensing mistakes after dependency/lock changes, including new libraries, hidden forbidden
+licences and missing notices. It does not defend against malicious wheels with forged RECORD files.
+Default notice discovery requires a nonempty file, including any file under dist-info/licenses;
+it does not validate its content. Explicit inventory notice sources are separately hash-checked.
+Archive rejection covers .zip/.egg/.whl suffixes and matching .pth references, plus ZIP local-header
+magic in non-native files outside known NPZ/DOCX/PPTX/XLSX data files. Data archive contents
+and other archive magic are not inspected. RECORD refresh rewrites every DLL/PYD digest and
+the third-party notice record; this can mask accidental post-install changes on Windows, whose
+pack target remains deferred.
 Each Python distribution's licence is read from its metadata (License-Expression, License and
 trove classifiers) and checked against an allow-list. Unknown fields or classifiers fail until
 their exact metadata is reviewed.
@@ -16,6 +26,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import re
@@ -101,28 +112,79 @@ def canonical(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+def _licence_classifiers(distribution: metadata.Distribution) -> list[str]:
+    return [
+        item
+        for item in distribution.metadata.get_all("Classifier") or []
+        if item.split("::", 1)[0].strip().casefold() == "license"
+    ]
+
+
+def _duplicate_licence_fields(distribution: metadata.Distribution) -> bool:
+    return any(
+        len(distribution.metadata.get_all(field) or []) > 1
+        for field in ("License", "License-Expression")
+    )
+
+
+def _empty_licence_fields(distribution: metadata.Distribution) -> bool:
+    return any(
+        not value.strip()
+        for key, value in distribution.metadata.items()
+        if key.casefold() in {"license", "license-expression"}
+        or key.casefold().startswith("license-file")
+    )
+
+
+def _licence_signature(expression: str) -> frozenset[frozenset[str]]:
+    """Compare known declarations independent of operand order and parentheses."""
+    alternatives = _split_expression(expression, "OR")
+    if len(alternatives) > 1:
+        return frozenset(term for part in alternatives for term in _licence_signature(part))
+    terms = _split_expression(expression, "AND")
+    if len(terms) > 1:
+        result = frozenset({frozenset()})
+        for term in terms:
+            result = frozenset(a | b for a in result for b in _licence_signature(term))
+        return result
+    return frozenset({frozenset(terms)})
+
+
 def license_of(distribution: metadata.Distribution) -> str | None:
-    """The SPDX expression for a distribution, or ``None`` when it cannot be determined."""
+    """Resolve every declared field; unknown, duplicate or conflicting claims fail."""
+    if _duplicate_licence_fields(distribution) or _empty_licence_fields(distribution):
+        return None
     name = canonical(distribution.metadata["Name"])
     field = (distribution.metadata.get("License") or "").strip()
-    classifiers = [
-        item.split("::")[-1].strip().lower()
-        for item in distribution.metadata.get_all("Classifier") or []
-        if item.startswith("License ::") and item.strip() != "License :: OSI Approved"
-    ]
-    if any(item not in _KNOWN for item in classifiers):
-        return None
     reviewed = _reviewed_license_field(distribution)
     if field and field.lower() not in _KNOWN and not reviewed:
         return None
-    expression = distribution.metadata.get("License-Expression")
-    if expression:
-        return expression.strip()
-    if reviewed:
-        return OVERRIDES[name]
+    expression = (distribution.metadata.get("License-Expression") or "").strip()
+    claims = [expression] if expression else []
     if field:
-        return _KNOWN[field.lower()]
-    return " OR ".join(dict.fromkeys(_KNOWN[item] for item in classifiers)) or None
+        claims.append(OVERRIDES[name] if reviewed else _KNOWN[field.lower()])
+    for classifier in _licence_classifiers(distribution):
+        parts = [part.strip().casefold() for part in classifier.split("::")]
+        if parts == ["license", "osi approved"]:
+            continue
+        if len(parts) < 2 or parts[-1] not in _KNOWN:
+            return None
+        claims.append(_KNOWN[parts[-1]])
+    if not claims or any(
+        verdict(name, claim, metadata_only=_cc0_metadata_only(distribution)) is not None
+        for claim in claims
+    ):
+        return None
+    signatures = {_licence_signature(claim) for claim in claims}
+    if reviewed and name == "python-dateutil":
+        # Only this reviewed dual-licence declaration resolves its two classifiers.
+        expected = _licence_signature(OVERRIDES[name])
+        if expression and _licence_signature(expression) != expected:
+            return None
+        if any(not signature <= expected for signature in signatures):
+            return None
+        return OVERRIDES[name]
+    return claims[0] if len(signatures) == 1 else None
 
 
 def _reviewed_license_field(distribution: metadata.Distribution) -> bool:
@@ -156,7 +218,7 @@ def verdict(name: str, expression: str, *, metadata_only: bool = False) -> str |
 class _Expression:
     """Evaluates an SPDX expression against the allow-list.
 
-    ``OR`` lets the distributor pick any alternative, ``AND`` needs every operand, and
+    Every ``OR`` alternative must be known and allowed; ``AND`` needs every operand, and
     ``WITH`` accepts only the reviewed exceptions. Anything the grammar does not cover is an
     error, which the gate treats as a refusal.
     """
@@ -188,7 +250,7 @@ class _Expression:
         while self._peek() == "OR":
             self._take()
             results.append(self._and())
-        return any(results)
+        return all(results)
 
     def _and(self) -> bool:
         results = [self._operand()]
@@ -224,16 +286,15 @@ def check(distributions: Iterable[metadata.Distribution]) -> list[Finding]:
     findings = []
     for distribution in distributions:
         name = canonical(distribution.metadata["Name"])
-        raw = [distribution.metadata.get("License") or ""]
-        # Only the exact reviewed field may contain unrelated, separately gated notices.
+        if _duplicate_licence_fields(distribution):
+            findings.append(Finding(name, "unknown", "duplicate single-value licence field"))
+            continue
+        raw = list(distribution.metadata.get_all("License") or [])
+        # Only the exact reviewed field may contain separately gated runtime notices.
         if _reviewed_license_field(distribution):
-            raw[0] = OVERRIDES[name]
-        raw += [
-            item
-            for item in distribution.metadata.get_all("Classifier") or []
-            if item.startswith("License ::")
-        ]
-        raw.append(distribution.metadata.get("License-Expression") or "")
+            raw = [OVERRIDES[name]]
+        raw += _licence_classifiers(distribution)
+        raw += list(distribution.metadata.get_all("License-Expression") or [])
         excluded = next(
             (item for item in raw if _DENIED.search(item) or _RAW_DENIED.search(item)), None
         )
@@ -242,7 +303,9 @@ def check(distributions: Iterable[metadata.Distribution]) -> list[Finding]:
             continue
         expression = license_of(distribution)
         if expression is None:
-            findings.append(Finding(name, "unknown", "licence could not be determined"))
+            findings.append(
+                Finding(name, "unknown", "unknown or inconsistent licence declarations")
+            )
             continue
         reason = verdict(name, expression, metadata_only=_cc0_metadata_only(distribution))
         if reason is not None:
@@ -279,12 +342,65 @@ def _cc0_metadata_only(distribution: metadata.Distribution) -> bool:
     return hashlib.sha256("\n".join(paths).encode()).hexdigest() in _NUMPY_FILE_INVENTORIES
 
 
-def write_notices(distributions: Iterable[metadata.Distribution], notices: Path) -> None:
+def _distribution_notices(distribution: metadata.Distribution) -> list[Path]:
+    return [
+        Path(item.locate())
+        for item in distribution.files or []
+        if len(item.parts) > 1
+        and item.parts[0].endswith(".dist-info")
+        and (
+            item.parts[1].casefold() == "licenses"
+            or re.match(r"(LICEN[CS]E|COPYING|NOTICE)", item.name, re.I)
+        )
+        and Path(item.locate()).is_file()
+        and Path(item.locate()).read_bytes().strip()
+    ]
+
+
+def _inventory_notices(site: Path, item: dict) -> list[Path]:
+    root, source = _native_notice(site, item)
+    sources = [source]
+    for extra in item.get("additional_notices", []):
+        path = root / extra["path"]
+        if (
+            not path.resolve().is_relative_to(root.resolve())
+            or not path.is_file()
+            or not path.read_bytes().strip()
+            or hashlib.sha256(path.read_bytes()).hexdigest() != extra["sha256"]
+        ):
+            raise SystemExit(f"missing or changed reviewed native notice: {extra['path']}")
+        sources.append(path)
+    return sources
+
+
+def write_notices(
+    distributions: Iterable[metadata.Distribution], notices: Path, inventory: Iterable[dict] = ()
+) -> None:
     """Copies every distribution's licence files and writes a summary table."""
+    distributions = list(distributions)
+    by_name = {canonical(item.metadata["Name"]): item for item in distributions}
     root = notices / "python"
     rows = []
+    reviewed_owners = set()
+    for item in inventory:
+        owner = by_name[item["distribution"]]
+        for source in _inventory_notices(Path(owner.locate_file("")), item):
+            if not source.is_file() or not source.read_bytes().strip():
+                raise SystemExit(
+                    f"native owner has no nonempty licence notice: {item['distribution']}"
+                )
+        _, source = _native_notice(Path(owner.locate_file("")), item)
+        if hashlib.sha256(source.read_bytes()).hexdigest() != item.get("notice_sha256"):
+            raise SystemExit(f"changed reviewed native notice: {item['notice']}")
+        reviewed_owners.add(item["distribution"])
     for distribution in sorted(distributions, key=lambda item: canonical(item.metadata["Name"])):
         name = canonical(distribution.metadata["Name"])
+        has_native = any(
+            Path(item.locate()).is_file() and _native_file(Path(item.locate()))
+            for item in distribution.files or []
+        )
+        if has_native and not _distribution_notices(distribution) and name not in reviewed_owners:
+            raise SystemExit(f"native owner has no nonempty licence notice: {name}")
         version = distribution.version
         rows.append(f"{name} {version}: {license_of(distribution)}")
         target = root / f"{name}-{version}"
@@ -292,7 +408,7 @@ def write_notices(distributions: Iterable[metadata.Distribution], notices: Path)
             parts = item.parts
             if not parts or not parts[0].endswith(".dist-info") or len(parts) < 2:
                 continue
-            if not (parts[1] == "licenses" or _is_licence_name(parts[-1])):
+            if not (parts[1].casefold() == "licenses" or _is_licence_name(parts[-1])):
                 continue
             source = Path(str(item.locate()))
             if source.is_file():
@@ -401,7 +517,7 @@ def check_runtime_files(runtime: Path, libraries: list[dict], target: str) -> No
         if library["name"] == "cpython":
             # The interpreter has the same upstream notice as libpython. It is now
             # detected by magic even when it has no shared-library suffix.
-            patterns += ["bin/python3", "bin/python3.14", "python.exe", "pythonw.exe"]
+            patterns += ["bin/python", "bin/python3", "bin/python3.14", "python.exe", "pythonw.exe"]
         matches = {name for name in files if any(fnmatchcase(name, p) for p in patterns)}
         if not matches:
             errors.append(f"{library['name']}: inventory patterns match no native files")
@@ -423,6 +539,7 @@ _NATIVE_MAGIC = (
     b"\xca\xfe\xba\xbf",
     b"\xbf\xba\xfe\xca",
     b"!<arch>\n",
+    b"!<thin>\n",
 )
 _GCC_RUNTIME = "GPL-3.0-or-later WITH GCC-exception-3.1"
 # Native exceptions are bound to library and distribution, never Python classifiers.
@@ -452,6 +569,11 @@ NATIVE_LIBRARIES = {
     "libzstd": ("BSD-3-Clause", {"pillow"}),
     "libz": ("Zlib", {"pillow", "torchvision"}),
 }
+with Path(__file__).with_name("native-components.toml").open("rb") as _handle:
+    _NATIVE_COMPONENTS = {item["name"]: item for item in tomllib.load(_handle)["components"]}
+NATIVE_LIBRARIES.update(
+    {name: (item["license"], {item["distribution"]}) for name, item in _NATIVE_COMPONENTS.items()}
+)
 _NATIVE_VERSIONS = {
     "numpy": {"2.5.4"},
     "scipy": {"1.18.1"},
@@ -460,8 +582,12 @@ _NATIVE_VERSIONS = {
     "torchvision": {"0.29.1"},
     "opencv-python-headless": {"5.0.0.93"},
 }
+for _component in _NATIVE_COMPONENTS.values():
+    _NATIVE_VERSIONS.setdefault(_component["distribution"], set()).add(
+        _component["version"].split("+")[0]
+    )
 
-# Complete upstream notices reviewed in the hash-locked wheel artifacts.
+# Hash-bound complete notices from locked wheels or matching upstream releases.
 _NATIVE_NOTICES = {
     ("numpy", "2.5.4"): (
         "licenses/LICENSE.txt",
@@ -504,6 +630,38 @@ _NATIVE_NOTICES = {
 }
 
 
+# Exact shared objects from the hash-locked wheels. A changed or static payload
+# cannot inherit an exception meant for unmodified dynamically loaded libraries.
+_REVIEWED_SHARED_SOURCES = {}
+_REVIEWED_SHARED_FILES = {}
+
+
+def _native_notice(site: Path, item: dict) -> tuple[Path, Path]:
+    root = Path(__file__).with_name("licenses") if item.get("notice_scope") == "upstream" else site
+    return root, root / item["notice"]
+
+
+def _native_family(owner: str, filename: str) -> str | None:
+    filename = Path(filename.replace("\\", "/")).name.casefold()
+    return next(
+        (
+            name
+            for name, (_, owners) in NATIVE_LIBRARIES.items()
+            if owner in owners
+            and re.match(re.escape(name.casefold()) + r"(?:[-_.0-9]|$)", filename)
+        ),
+        None,
+    ) or next(
+        (
+            name
+            for name, item in _NATIVE_COMPONENTS.items()
+            if item["distribution"] == owner
+            and filename in {Path(p).name.casefold() for p in item["files"]}
+        ),
+        None,
+    )
+
+
 def _native_file(path: Path) -> bool:
     if any(fnmatchcase(path.name.lower(), p) for p in ("*.so*", "*.dylib", "*.dll", "*.pyd")):
         return True
@@ -511,52 +669,152 @@ def _native_file(path: Path) -> bool:
         return handle.read(8).startswith(_NATIVE_MAGIC)
 
 
+def _native_files(site: Path) -> set[str]:
+    """Suffix and magic detection covers every file in site-packages."""
+    files = set()
+    for path in site.rglob("*"):
+        relative = path.relative_to(site).as_posix()
+        if path.is_symlink() and (
+            path.is_dir() or not path.resolve().is_relative_to(site.resolve())
+        ):
+            raise SystemExit(f"unsafe site-packages symlink: {relative}")
+        if not path.is_file():
+            continue
+        if path.suffix.casefold() in {".zip", ".egg", ".whl"}:
+            raise SystemExit(f"uninspected site-packages archive: {relative}")
+        if path.suffix.casefold() == ".pth" and any(
+            re.search(r"\.(zip|egg|whl)(?:[/\\]|$)", line.strip(), re.I)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith("#")
+        ):
+            raise SystemExit(f"archive reference in site-packages path file: {relative}")
+        if _native_file(path):
+            if path.is_symlink():
+                raise SystemExit(f"native file is a symlink: {relative}")
+            if path.stat().st_nlink != 1:
+                raise SystemExit(f"native file is a hard link: {relative}")
+            files.add(relative)
+        elif path.suffix.casefold() not in {".npz", ".docx", ".pptx", ".xlsx"}:
+            with path.open("rb") as handle:
+                if handle.read(4) == b"PK\x03\x04":
+                    raise SystemExit(f"uninspected site-packages ZIP archive: {relative}")
+    return files
+
+
+def _vendor_path(relative: str) -> bool:
+    path = Path(relative)
+    return any(
+        part.casefold().endswith(".libs") or part.casefold() == ".dylibs" for part in path.parts
+    ) or any(
+        _native_family(owner, path.name) is not None
+        for _, owners in NATIVE_LIBRARIES.values()
+        for owner in owners
+    )
+
+
 def _vendored_files(site: Path) -> set[str]:
-    return {
-        path.relative_to(site).as_posix()
-        for path in site.rglob("*")
-        if path.is_file()
-        and (
-            any(
-                part.endswith(".libs") or part == ".dylibs" for part in path.relative_to(site).parts
-            )
-            or fnmatchcase(path.relative_to(site).as_posix(), "torch/lib/libgomp*")
-        )
-        and _native_file(path)
-    }
+    return {name for name in _native_files(site) if _vendor_path(name)}
+
+
+def _native_record_owners(site: Path, files: set[str]) -> dict[str, list[metadata.Distribution]]:
+    owners: dict[str, list[metadata.Distribution]] = {}
+    for distribution in metadata.distributions(path=[str(site)]):
+        for item in distribution.files or []:
+            relative = Path(str(item)).as_posix()
+            if relative in files:
+                path = site / relative
+                digest = (
+                    base64.urlsafe_b64encode(hashlib.sha256(path.read_bytes()).digest())
+                    .decode()
+                    .rstrip("=")
+                )
+                if (
+                    item.hash is None
+                    or item.hash.mode != "sha256"
+                    or item.hash.value != digest
+                    or item.size != path.stat().st_size
+                ):
+                    raise SystemExit(f"native RECORD SHA-256/size mismatch: {relative}")
+                owners.setdefault(relative, []).append(distribution)
+    return owners
+
+
+_GNU_SHARED_FILES = {
+    "numpy.libs/libgfortran-83c28eba-468e71e5.so.5.0.0": (
+        "a6a368328d02a5d8a149746f13f6268f8cc9192df5c18777b25c3c9b5ef52160"
+    ),
+    "numpy.libs/libquadmath-2284e583-a9307bba.so.0.0.0": (
+        "6bc3069003caec1f075be3c51ae8355332f081fa9465910c4b5724e7fe7d8ad4"
+    ),
+    "scipy.libs/libgfortran-040039e1-0352e75f.so.5.0.0": (
+        "c6090048eccc763522c12ef016f81da6b627cb3a044f55cf0479a839c41c0980"
+    ),
+    "scipy.libs/libgfortran-83c28eba.so.5.0.0": (
+        "468e71e59e1d784821a76702e5ecd1e0dbcfc024499f74a552d1bea4b26f27ad"
+    ),
+    "scipy.libs/libquadmath-2284e583.so.0.0.0": (
+        "a9307bbaa353623fa014e8b682d50c4629f5e5c7d61daa9a8652f7d165cd421a"
+    ),
+    "scipy.libs/libquadmath-96973f99-934c22de.so.0.0.0": (
+        "6ed5137f412781ad7863439fb543613f620b43c32b63292a0029246162f5bbc6"
+    ),
+    "torch.libs/libgomp-6a29c32d.so.1.0.0": (
+        "2aa037784caec5079de4f23a7d526a62bcc03a3fb98ac94031345daabe21c465"
+    ),
+}
+_GNU_FAMILIES = frozenset({"libgomp", "libgfortran", "libquadmath"})
+
+
+def _elf_shared_object(path: Path) -> bool:
+    with path.open("rb") as handle:
+        header = handle.read(20)
+    return (
+        len(header) == 20
+        and header.startswith(b"\x7fELF")
+        and header[4] in {1, 2}
+        and header[5] in {1, 2}
+        and int.from_bytes(header[16:18], "little" if header[5] == 1 else "big") == 3
+    )
 
 
 def vendored_libraries(site: Path, target: str) -> list[dict]:
-    """Select reviewed families in *.libs/.dylibs and the GNU runtime in torch/lib.
-
-    Each selected entry names its actual file, owning distribution, SPDX licence and
-    complete upstream notice. Unknown files remain uncovered and fail the inventory check.
-    """
+    """Select named vendor libraries, using actual RECORD ownership in every directory."""
+    files = _native_files(site)
+    owners = _native_record_owners(site, files)
+    platform = _target_platform(target)
+    inventory = []
     distributions = {
         canonical(item.metadata["Name"]): item for item in metadata.distributions(path=[str(site)])
     }
-    platform = _target_platform(target)
-    inventory = []
-    for relative in sorted(_vendored_files(site)):
-        path = Path(relative)
-        prefix = path.parts[0]
-        owner = {"PIL": "pillow", "scipy": "scipy", "torch": "torch"}.get(
-            prefix, canonical(prefix.removesuffix(".libs"))
-        )
-        distribution = distributions.get(owner)
-        if distribution is None or distribution.version.split("+")[0] not in _NATIVE_VERSIONS.get(
-            owner, set()
-        ):
+    for relative in sorted(name for name in files if _vendor_path(name)):
+        matches = owners.get(relative, [])
+        if len(matches) != 1:
+            raise SystemExit(f"native file requires exactly one RECORD owner: {relative}")
+        distribution = matches[0]
+        owner = canonical(distribution.metadata["Name"])
+        if distribution.version.split("+")[0] not in _NATIVE_VERSIONS.get(owner, set()):
             raise SystemExit(f"review vendored library licences for {owner}: {relative}")
-        family = next(
-            (
-                name
-                for name, (_, owners) in NATIVE_LIBRARIES.items()
-                if (owner in owners and re.match(re.escape(name) + r"(?:[-_.0-9]|$)", path.name))
-            ),
-            None,
-        )
+        family = _native_family(owner, Path(relative).name)
         if family is None:
+            raise SystemExit(f"review vendored library licences for {owner}: {relative}")
+        component = _NATIVE_COMPONENTS.get(family)
+        if component is not None:
+            if distribution.version != component["version"] or relative not in component["files"]:
+                raise SystemExit(f"unlisted native component for {owner}: {relative}")
+            sources = component["notices"]
+            item = {
+                "name": family,
+                "distribution": owner,
+                "license": component["license"],
+                "notice": sources[0]["path"],
+                "notice_sha256": sources[0]["sha256"],
+                "notice_scope": component.get("notice_scope", "wheel"),
+                "additional_notices": sources[1:],
+                "native_files": {platform: [relative]},
+            }
+            if component.get("source"):
+                item.update(version=component["version"], source=component["source"])
+            inventory.append(item)
             continue
         # The source-built torch/OpenCV wheels may only carry their own notices.
         # SciPy supplies OpenBLAS/GNU runtime terms; Pillow supplies the complete
@@ -575,8 +833,13 @@ def vendored_libraries(site: Path, target: str) -> list[dict]:
         reviewed = _NATIVE_NOTICES.get((notice_name, notice_version))
         if reviewed is None:
             raise SystemExit(f"review native licence notice for {notice_name} {notice_version}")
-        notice = f"{notice_name.replace('-', '_')}-{notice_version}.dist-info/{reviewed[0]}"
-        source = site / notice
+        scope = "upstream" if owner == "rtree" else "wheel"
+        notice = (
+            reviewed[0]
+            if scope == "upstream"
+            else f"{notice_name.replace('-', '_')}-{notice_version}.dist-info/{reviewed[0]}"
+        )
+        _, source = _native_notice(site, {"notice": notice, "notice_scope": scope})
         if (
             not source.is_file()
             or hashlib.sha256(source.read_bytes()).hexdigest() not in reviewed[1]
@@ -589,9 +852,13 @@ def vendored_libraries(site: Path, target: str) -> list[dict]:
                 "license": NATIVE_LIBRARIES[family][0],
                 "notice": notice,
                 "notice_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "notice_scope": scope,
                 "native_files": {platform: [relative]},
             }
         )
+        if owner in _REVIEWED_SHARED_SOURCES:
+            version, source_url = _REVIEWED_SHARED_SOURCES[owner]
+            inventory[-1].update(version=version, source=source_url)
     return inventory
 
 
@@ -606,7 +873,11 @@ def _target_platform(target: str) -> str:
 def check_vendored_native_files(site: Path, inventory: list[dict], target: str) -> list[dict]:
     """Reject unlisted native files, stale/overlapping entries and missing notices."""
     platform = _target_platform(target)
-    files = _vendored_files(site)
+    files = _native_files(site)
+    owners = _native_record_owners(site, files)
+    distributions = {id(owner): owner for records in owners.values() for owner in records}
+    licensed = {key: not check([owner]) for key, owner in distributions.items()}
+    notice_owners = {key for key, owner in distributions.items() if _distribution_notices(owner)}
     covered = set()
     errors = []
     for item in inventory:
@@ -614,7 +885,7 @@ def check_vendored_native_files(site: Path, inventory: list[dict], target: str) 
         if reviewed is not None:
             allowed = item["license"] == reviewed[0] and item["distribution"] in reviewed[1]
         else:
-            allowed = verdict(item["distribution"], item["license"]) is None
+            allowed = False
         if not allowed:
             errors.append(f"{item['name']}: excluded or unreviewed native licence")
         patterns = item.get("native_files", {}).get(platform, [])
@@ -624,8 +895,46 @@ def check_vendored_native_files(site: Path, inventory: list[dict], target: str) 
         if covered & matches:
             errors.append(f"{item['name']}: native file matches multiple inventory entries")
         covered.update(matches)
-        notice = site / item["notice"]
-        if not notice.resolve().is_relative_to(site.resolve()) or not notice.is_file():
+        component = _NATIVE_COMPONENTS.get(item["name"])
+        if component is not None and (
+            item["notice"] != component["notices"][0]["path"]
+            or item.get("notice_scope", "wheel") != component.get("notice_scope", "wheel")
+            or item.get("notice_sha256") != component["notices"][0]["sha256"]
+            or item.get("additional_notices", []) != component["notices"][1:]
+            or any(name not in component["files"] for name in matches)
+        ):
+            errors.append(f"{item['name']}: unreviewed component file or notices")
+        for relative in matches:
+            records = owners.get(relative, [])
+            if (
+                len(records) != 1
+                or canonical(records[0].metadata["Name"]) != item["distribution"]
+                or not licensed[id(records[0])]
+                or (component is not None and records[0].version != component["version"])
+                or not (site / relative).resolve().is_relative_to(site.resolve())
+            ):
+                errors.append(f"native file requires one licensed RECORD owner: {relative}")
+            if _native_family(item["distribution"], Path(relative).name) != item["name"]:
+                errors.append(f"native file does not match its named library: {relative}")
+        if item["name"] in _GNU_FAMILIES and any(
+            not _elf_shared_object(site / relative)
+            or hashlib.sha256((site / relative).read_bytes()).hexdigest()
+            != _GNU_SHARED_FILES.get(relative)
+            for relative in matches
+        ):
+            errors.append(f"{item['name']}: requires an unmodified reviewed ELF shared object")
+        shared = _REVIEWED_SHARED_SOURCES.get(item["distribution"])
+        if shared is not None:
+            if (item.get("version"), item.get("source")) != shared:
+                errors.append(f"{item['name']}: missing exact upstream version/source")
+            if any(
+                hashlib.sha256((site / name).read_bytes()).hexdigest()
+                != _REVIEWED_SHARED_FILES.get(name)
+                for name in matches
+            ):
+                errors.append(f"{item['name']}: requires an unmodified reviewed shared object")
+        notice_root, notice = _native_notice(site, item)
+        if not notice.resolve().is_relative_to(notice_root.resolve()) or not notice.is_file():
             errors.append(f"{item['name']}: missing or unsafe native licence notice")
         elif not notice.read_bytes():
             errors.append(f"{item['name']}: empty native licence notice")
@@ -634,19 +943,79 @@ def check_vendored_native_files(site: Path, inventory: list[dict], target: str) 
             and hashlib.sha256(notice.read_bytes()).hexdigest() != item["notice_sha256"]
         ):
             errors.append(f"{item['name']}: native licence notice digest mismatch")
-        elif item["license"] in {_GCC_RUNTIME, "LGPL-2.1-or-later"}:
+        elif not notice.read_bytes().strip():
+            errors.append(f"{item['name']}: empty native licence notice")
+        elif item["license"] in {_GCC_RUNTIME, "LGPL-2.1-or-later", "LGPL-2.1-only"}:
             text = notice.read_text(encoding="utf-8").lower()
+            if item["name"] == "libquadmath":
+                text += _libquadmath_licence_text().read_text(encoding="utf-8").lower()
             required = (
                 ("gnu lesser general public license",)
-                if item["name"] == "libquadmath"
+                if item["license"].startswith("LGPL-")
                 else ("gnu general public license", "gcc runtime library exception")
             )
             if any(term not in text for term in required):
                 errors.append(f"{item['name']}: incomplete GNU runtime licence notice")
-    errors.extend(f"unlisted native wheel file: {name}" for name in sorted(files - covered))
+        for source in _inventory_notices(site, item):
+            if not source.is_file() or not source.read_bytes().strip():
+                errors.append(f"{item['name']}: missing native licence notice")
+        notice_owners.update(
+            key
+            for key, owner in distributions.items()
+            if canonical(owner.metadata["Name"]) == item["distribution"]
+        )
+    for relative in sorted(files - covered):
+        records = owners.get(relative, [])
+        if (
+            _vendor_path(relative)
+            or not _extension_module(site / relative)
+            or len(records) != 1
+            or not (site / relative).resolve().is_relative_to(site.resolve())
+        ):
+            errors.append(f"unlisted native wheel file: {relative}")
+        elif not licensed[id(records[0])]:
+            errors.append(f"native module has no licensed RECORD owner: {relative}")
+        elif id(records[0]) not in notice_owners:
+            errors.append(f"native owner has no nonempty licence notice: {relative}")
+
     if errors:
         raise SystemExit("vendored inventory check failed:\n" + "\n".join(errors))
     return inventory
+
+
+def _extension_module(path: Path) -> bool:
+    if re.search(r"(\.cpython-[^.]+\.so|\.abi3\.so|\.pyd)$", path.name, re.I):
+        return True
+    # Mach-O extension bundles may use a plain .so basename.
+    with path.open("rb") as handle:
+        header = handle.read(16)
+    endian = {
+        b"\xfe\xed\xfa\xce": "big",
+        b"\xce\xfa\xed\xfe": "little",
+        b"\xfe\xed\xfa\xcf": "big",
+        b"\xcf\xfa\xed\xfe": "little",
+    }.get(header[:4])
+    return (
+        path.suffix.casefold() == ".so"
+        and endian is not None
+        and int.from_bytes(header[12:16], endian) == 8
+    )
+
+
+# The wheel aggregates carry libquadmath attribution and a licence reference,
+# but omit the full LGPL document. Ship it too, normalizing trailing whitespace.
+_LGPL_21_SHA256 = "43285937a0e9b75b13eb12fdd35ac3101f7fa92cb0a950d18e4dbf90c7a15c4f"
+_LGPL_21_SOURCE = (
+    "https://raw.githubusercontent.com/gcc-mirror/gcc/refs/tags/"
+    "releases/gcc-14.2.0/libquadmath/COPYING.LIB"
+)
+
+
+def _libquadmath_licence_text() -> Path:
+    source = Path(__file__).with_name("licenses") / "lgpl-2.1.txt"
+    if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != _LGPL_21_SHA256:
+        raise SystemExit("libquadmath: missing or changed full LGPL-2.1 text")
+    return source
 
 
 def write_vendored_notices(site: Path, notices: Path, inventory: list[dict]) -> None:
@@ -655,15 +1024,27 @@ def write_vendored_notices(site: Path, notices: Path, inventory: list[dict]) -> 
     root.mkdir(parents=True, exist_ok=True)
     rows = []
     for item in inventory:
-        source = site / item["notice"]
-        destination = root / f"{hashlib.sha256(source.read_bytes()).hexdigest()}-{source.name}"
-        if not destination.exists():
-            shutil.copyfile(source, destination)
+        sources = _inventory_notices(site, item)
+        if item["name"] == "libquadmath":
+            sources.append(_libquadmath_licence_text())
+        text_rows = []
+        for text_source in sources:
+            destination = root / (
+                f"{hashlib.sha256(text_source.read_bytes()).hexdigest()}-{text_source.name}"
+            )
+            if not destination.exists():
+                shutil.copyfile(text_source, destination)
+            text_rows.append(f"  Text: notices/{destination.relative_to(notices).as_posix()}")
+        if item["name"] == "libquadmath":
+            text_rows.append(f"  Licence text source: {_LGPL_21_SOURCE}")
         rows.extend(
             [
-                f"{item['distribution']}: {item['name']}: {item['license']}",
-                f"  Text: notices/{destination.relative_to(notices).as_posix()}",
-                "  GNU runtime source: https://gcc.gnu.org/git/"
+                f"{item['distribution']}: {item['name']}: {item['license']}"
+                + (f"; upstream version {item['version']}" if item.get("version") else ""),
+                *text_rows,
+                f"  Source: {item['source']}"
+                if item.get("source")
+                else "  GNU runtime source: https://gcc.gnu.org/git/"
                 if item["license"] in {_GCC_RUNTIME, "LGPL-2.1-or-later"}
                 else f"  Source: https://pypi.org/project/{item['distribution']}/",
                 f"  Native files: {item['native_files']}",

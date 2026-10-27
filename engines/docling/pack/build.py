@@ -185,6 +185,30 @@ def prune_runtime(runtime: Path, target: str) -> None:
             shutil.rmtree(path)
     if is_windows(target):
         prune_microsoft_runtime(runtime)
+    prune_foreign_launchers(site_packages(runtime, target), target)
+
+
+def prune_foreign_launchers(site: Path, target: str) -> None:
+    """Drop Windows installer resources that Unix runtime packs never use."""
+    if is_windows(target):
+        return
+    removed = set()
+    for package, patterns in (
+        (site / "pip/_vendor/distlib", ("*.exe",)),
+        (site / "setuptools", ("cli*.exe", "gui*.exe")),
+    ):
+        for pattern in patterns:
+            for path in package.glob(pattern):
+                removed.add(path.relative_to(site).as_posix())
+                path.unlink()
+    if removed:
+        for record in site.glob("*.dist-info/RECORD"):
+            with record.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.reader(handle))
+            with record.open("w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle, lineterminator="\n").writerows(
+                    row for row in rows if row[0] not in removed
+                )
 
 
 def is_microsoft_runtime(path: Path) -> bool:
@@ -382,7 +406,7 @@ def install_torch_toolchain(work: Path, runtime: Path, target: str, cache: Path)
 
 
 def refresh_wheel_records(site: Path) -> None:
-    """Rehash replaced libraries/notices and remove the deleted Intel stubs row."""
+    """Rehash all DLL/PYD and third-party notice rows; drop deleted Intel stubs."""
     for record in site.glob("*.dist-info/RECORD"):
         with record.open(newline="", encoding="utf-8") as handle:
             rows = list(csv.reader(handle))
@@ -480,7 +504,7 @@ def write_notices(root: Path, runtime: Path, target: str, pins: dict) -> str:
         ],
     )
     notices = root / "notices"
-    licenses.write_notices(distributions, notices)
+    licenses.write_notices(distributions, notices, vendored)
     licenses.write_runtime_notices(notices, libraries)
     licenses.write_vendored_notices(site, notices, vendored)
 
@@ -705,6 +729,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         raise SystemExit("unreviewed OpenCV third-party notice location")
     for notice in notices:
         native_build.remove_inapplicable_ipp_notice(notice)
+    prune_foreign_launchers(site, target)
     refresh_wheel_records(site)
     if native:
         compile_bytecode(runtime, target)

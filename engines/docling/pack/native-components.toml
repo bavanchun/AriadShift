@@ -1,0 +1,89 @@
+# Native companions shipped by the reviewed distributions, beyond ABI-tagged modules.
+# Every listed file still requires its installed RECORD SHA-256 and size.
+# Notices outside dist-info are explicit, hash-bound sources, not inferred attribution.
+
+[[components]]
+name = "tokenizers-native"
+distribution = "tokenizers"
+version = "0.23.3"
+license = "Apache-2.0"
+notice_scope = "upstream"
+source = "https://github.com/huggingface/tokenizers/tree/v0.23.3"
+files = ["tokenizers/tokenizers.abi3.so"]
+notices = [
+  { path = "tokenizers-0.23.3.txt", sha256 = "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4" },
+]
+
+[[components]]
+name = "numpy-native"
+distribution = "numpy"
+version = "2.5.4"
+license = "BSD-3-Clause"
+files = [
+  "numpy/_core/lib/libnpymath.a",
+  "numpy/random/lib/libnpyrandom.a",
+]
+notices = [
+  { path = "numpy-2.5.4.dist-info/licenses/LICENSE.txt", sha256 = "4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488" },
+  { path = "numpy-2.5.4.dist-info/licenses/numpy/random/LICENSE.md", sha256 = "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f" },
+]
+
+[[components]]
+name = "onnxruntime-native"
+distribution = "onnxruntime"
+version = "1.31.0"
+license = "MIT"
+files = [
+  "onnxruntime/capi/libonnxruntime.so.1.31.0",
+  "onnxruntime/capi/libonnxruntime_providers_shared.so",
+]
+notices = [
+  { path = "onnxruntime/LICENSE", sha256 = "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c" },
+  { path = "onnxruntime/ThirdPartyNotices.txt", sha256 = "143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3" },
+]
+
+[[components]]
+name = "pypdfium2-native"
+distribution = "pypdfium2"
+version = "5.14.0"
+license = "Apache-2.0 AND BSD-3-Clause"
+files = [
+  "pypdfium2_raw/libpdfium.so",
+]
+notices = [
+  { path = "pypdfium2-5.14.0.dist-info/licenses/LICENSES/Apache-2.0.txt", sha256 = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30" },
+  { path = "pypdfium2-5.14.0.dist-info/licenses/LICENSES/BSD-3-Clause.txt", sha256 = "a6d11f0694c0137e9b02924b9d33a159f6c72f220fa4655bb2e1ea3654377d39" },
+]
+
+[[components]]
+name = "torch-native"
+distribution = "torch"
+version = "2.14.1+cpu"
+license = "Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND MIT"
+files = [
+  "torch/bin/protoc",
+  "torch/bin/protoc-3.21.12.0",
+  "torch/bin/torch_shm_manager",
+  "torch/lib/libc10.so",
+  "torch/lib/libshm.so",
+  "torch/lib/libtorch.so",
+  "torch/lib/libtorch_cpu.so",
+  "torch/lib/libtorch_global_deps.so",
+  "torch/lib/libtorch_python.so",
+]
+notices = [
+  { path = "torch-2.14.1+cpu.dist-info/licenses/LICENSE", sha256 = "bd018feef8825e88181c84eb7e3aa4eafb8f08a20d9fd6ef948569610c4a3e43" },
+]
+
+[[components]]
+name = "torchvision-native"
+distribution = "torchvision"
+version = "0.29.1+cpu"
+license = "BSD-3-Clause"
+files = [
+  "torchvision/_C_stable.so",
+  "torchvision/image_stable.so",
+]
+notices = [
+  { path = "torchvision-0.29.1+cpu.dist-info/LICENSE", sha256 = "6502f676851cfe25f8af75531dfb32375b7325b73c37e7b43741fa422893e71d" },
+]

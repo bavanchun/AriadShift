@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -14,6 +16,19 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 FIXTURES = REPOSITORY / "fixtures"
 PROTOCOL = "ariad-engine/1"
 TIMEOUT_S = 600
+
+
+def native_record_rows(site: Path, paths) -> str:
+    rows = []
+    for relative in paths:
+        source = site / relative
+        digest = (
+            base64.urlsafe_b64encode(hashlib.sha256(source.read_bytes()).digest())
+            .decode()
+            .rstrip("=")
+        )
+        rows.append(f"{relative},sha256={digest},{source.stat().st_size}\n")
+    return "".join(rows)
 
 
 def clean_env() -> dict[str, str]:

@@ -7,11 +7,19 @@ import sys
 from importlib import metadata
 
 import pytest
-from conftest import REPOSITORY
+from conftest import REPOSITORY, native_record_rows
 
 sys.path.insert(0, str(REPOSITORY / "engines/docling/pack"))
 
 import licenses
+
+
+def _record_owner(site, owner, paths, version="1.0"):
+    info = site / f"{owner}-{version}.dist-info"
+    info.mkdir(exist_ok=True)
+    (info / "METADATA").write_text(f"Name: {owner}\nVersion: {version}\nLicense-Expression: MIT\n")
+    (info / "LICENSE").write_text("MIT License\n")
+    (info / "RECORD").write_text(native_record_rows(site, [*paths, f"{info.name}/LICENSE"]))
 
 
 @pytest.mark.parametrize(
@@ -34,7 +42,9 @@ def test_conflicting_or_unknown_metadata_fails_closed(
 ):
     info = tmp_path / "demo-1.0.dist-info"
     info.mkdir()
-    lines = ["Name: demo", "Version: 1.0", f"License: {field}"]
+    lines = ["Name: demo", "Version: 1.0"]
+    if field:
+        lines.append(f"License: {field}")
     lines += [f"Classifier: License :: {item}" for item in classifiers]
     if expression:
         lines.append(f"License-Expression: {expression}")
@@ -43,20 +53,21 @@ def test_conflicting_or_unknown_metadata_fails_closed(
 
 
 def test_vendored_native_inventory_rejects_unknown_files_and_stale_entries(tmp_path):
-    native = tmp_path / "torch.libs/libgomp-abc.so.1"
+    native = tmp_path / "pillow.libs/libXau-abc.so.6"
     native.parent.mkdir()
     native.write_bytes(b"\x7fELF")
+    _record_owner(tmp_path, "pillow", ["pillow.libs/libXau-abc.so.6"])
     inventory = [
         {
-            "name": "libgomp",
-            "distribution": "torch",
-            "license": "GPL-3.0-or-later WITH GCC-exception-3.1",
-            "notice": "torch.dist-info/licenses/COPYING.RUNTIME",
-            "native_files": {"linux": ["torch.libs/libgomp-*.so.1"]},
+            "name": "libXau",
+            "distribution": "pillow",
+            "license": "MIT",
+            "notice": "COPYING",
+            "native_files": {"linux": ["pillow.libs/libXau-*.so.6"]},
         }
     ]
     notice = tmp_path / inventory[0]["notice"]
-    notice.parent.mkdir(parents=True)
+    notice.parent.mkdir(parents=True, exist_ok=True)
     notice.write_text("GNU GENERAL PUBLIC LICENSE\nGCC RUNTIME LIBRARY EXCEPTION\n")
     with pytest.raises(SystemExit, match="unlisted native"):
         licenses.check_vendored_native_files(tmp_path, [], "x86_64-unknown-linux-gnu")
@@ -145,8 +156,9 @@ def test_numpy_cc0_exception_requires_reviewed_metadata_only(
     assert (licenses.check([metadata.PathDistribution(info)]) == []) is allowed
 
 
-def test_runtime_magic_uses_python_notice_and_rejects_unknown_executables(tmp_path):
-    binary = tmp_path / "bin/python3.14"
+@pytest.mark.parametrize("interpreter", ["python", "python3", "python3.14"])
+def test_runtime_magic_uses_python_notice_and_rejects_unknown_executables(tmp_path, interpreter):
+    binary = tmp_path / f"bin/{interpreter}"
     binary.parent.mkdir()
     binary.write_bytes(b"\x7fELF")
     inventory = [{"name": "cpython", "native_files": {"linux": ["lib/libpython*.so"]}}]
@@ -191,7 +203,8 @@ def test_wheel_notice_content_changes_require_review(tmp_path):
     (info / "METADATA").write_text("Name: pillow\nVersion: 13.0.0\n")
     (info / "licenses/LICENSE").write_text("Unrelated MIT licence text.\n")
     (info / "RECORD").write_text(
-        "pillow.libs/libavif-abc.so.16,,\npillow-13.0.0.dist-info/licenses/LICENSE,,\n"
+        native_record_rows(tmp_path, ["pillow.libs/libavif-abc.so.16"])
+        + "pillow-13.0.0.dist-info/licenses/LICENSE,,\n"
     )
     with pytest.raises(SystemExit, match="native licence notice digest mismatch"):
         licenses.vendored_libraries(tmp_path, "x86_64-unknown-linux-gnu")
@@ -208,6 +221,7 @@ def test_freetype_exception_is_bound_to_pillow_and_the_permissive_alternative(
     native.parent.mkdir()
     native.write_bytes(b"\x7fELF")
     (tmp_path / "COPYING").write_text("FreeType licence text fixture.\n")
+    _record_owner(tmp_path, owner, ["pillow.libs/libfreetype-abc.so.6"])
     inventory = [
         {
             "name": "libfreetype",
@@ -232,3 +246,38 @@ def test_native_freetype_exception_does_not_allow_python_distributions(tmp_path)
     info.mkdir()
     (info / "METADATA").write_text("Name: pillow\nVersion: 13.0.0\nLicense-Expression: FTL\n")
     assert licenses.check([metadata.PathDistribution(info)])
+
+
+def test_quadmath_bundles_full_lgpl_and_retains_wheel_attribution(tmp_path):
+    reference = metadata.distribution("numpy")
+    relative = next(
+        str(p)
+        for p in reference.files
+        if str(p) in licenses._GNU_SHARED_FILES and "libquadmath" in str(p)
+    )
+    native = tmp_path / relative
+    native.parent.mkdir()
+    shutil.copyfile(reference.locate_file(relative), native)
+    _record_owner(tmp_path, "numpy", [relative], reference.version)
+    attribution = "libquadmath: Copyright Free Software Foundation; LGPL-2.1-or-later.\n"
+    (tmp_path / "COPYING").write_text(attribution)
+    inventory = [
+        {
+            "name": "libquadmath",
+            "distribution": "numpy",
+            "license": "LGPL-2.1-or-later",
+            "notice": "COPYING",
+            "native_files": {"linux": [relative]},
+        }
+    ]
+    licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
+    notices = tmp_path / "notices"
+    licenses.write_vendored_notices(tmp_path, notices, inventory)
+    copied = [p.read_bytes() for p in (notices / "vendored").iterdir()]
+    assert attribution.encode() in copied
+    full_text = licenses._libquadmath_licence_text().read_bytes()
+    assert full_text in copied
+    assert b"GNU LESSER GENERAL PUBLIC LICENSE" in full_text
+    summary = (notices / "vendored-libraries.txt").read_text()
+    assert summary.count("  Text:") == 2
+    assert licenses._LGPL_21_SOURCE in summary
