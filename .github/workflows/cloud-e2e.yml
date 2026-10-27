@@ -221,6 +221,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PACK_RUN_ID: ${{ needs.pack.outputs.run-id }}
+          # Keep Python cache files out of the Docker source context.
+          PYTHONDONTWRITEBYTECODE: "1"
           PACK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
