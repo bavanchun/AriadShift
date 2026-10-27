@@ -16,22 +16,9 @@ on:
   workflow_dispatch:
   push:
     branches: [dev, main]
-    paths:
-      - "infra/**"
-      - "crates/ariad-server/**"
-      - "services/**"
-      - "packages/sdk/**"
-      - ".env.example"
-      - "fixtures/scan/en-alice-p3.pdf"
-      - ".github/workflows/cloud-e2e.yml"
   pull_request:
     branches: [dev, main]
     types: [opened, synchronize, reopened, labeled]
-
-# A new push to a pull request cancels its older run.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions: {}
 
@@ -50,9 +37,9 @@ jobs:
       run: ${{ steps.scope.outputs.run }}
     steps:
       - name: Check out source
-        if: github.event_name == 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || '' }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -65,35 +52,131 @@ jobs:
           HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'cloud-e2e') }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
           run=false
-          if [[ "$EVENT_NAME" != pull_request ]]; then
-            run=true
-          elif [[ "$ACTION" == labeled ]]; then
-            # Adding any other label must not start a run.
-            [[ "$LABEL" == cloud-e2e ]] && run=true
-          elif [[ "$HAS_LABEL" == true ]]; then
-            run=true
-          else
-            git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed"
-            if grep -Eq '^(infra/|crates/ariad-server/|services/|packages/sdk/|\.env\.example$|fixtures/scan/en-alice-p3\.pdf$|\.github/workflows/cloud-e2e\.yml$)' "$RUNNER_TEMP/changed"; then
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            if [[ "$ACTION" == labeled ]]; then
+              # Other labels neither start nor cancel an expensive job.
+              [[ "$LABEL" == cloud-e2e ]] && run=true
+            elif [[ "$HAS_LABEL" == true ]]; then
               run=true
+            else
+              git diff --name-only "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed"
+              run=$(sh scripts/ci-scope.sh --classify-cloud < "$RUNNER_TEMP/changed")
             fi
+          elif [[ "$EVENT_NAME" == push ]] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            git diff --name-only "$PUSH_BEFORE" HEAD > "$RUNNER_TEMP/changed"
+            run=$(sh scripts/ci-scope.sh --classify-cloud < "$RUNNER_TEMP/changed")
+          else
+            run=true
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "Cloud E2E runs: $run"
 
+  pack:
+    name: Resolve same-head CI pack
+    needs: scope
+    if: needs.scope.outputs.run == 'true' && github.event_name != 'schedule'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 360
+    # This job executes no checked-out code. Only dispatch needs write access.
+    permissions:
+      actions: write
+      contents: read
+    outputs:
+      run-id: ${{ steps.pack.outputs.run-id }}
+    steps:
+      - name: Find or request the Docling pack for this head
+        id: pack
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PACK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PACK_REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          PACK_REPO: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+        run: |
+          set -euo pipefail
+          endpoint="repos/$GH_REPO/actions/workflows/pack-docling.yml/runs?head_sha=$PACK_SHA&per_page=100"
+          find_run() {
+            gh api "$endpoint" --jq '.workflow_runs | first | .id // empty'
+          }
+          run_id=$(find_run)
+          if [[ -n "$run_id" ]]; then
+            state=$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.status + ":" + (.conclusion // "")')
+            if [[ "$state" == completed:* ]]; then
+              available=$(gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts?per_page=100" \
+                --jq '[.artifacts[] | select(.expired == false) | .name]')
+              if [[ "$state" != completed:success ]] || ! jq -e 'index("docling-pack-shared") != null and index("docling-pack-x86_64-unknown-linux-gnu") != null' <<< "$available" >/dev/null; then
+                run_id=""
+              fi
+            fi
+          fi
+          if [[ -z "$run_id" ]]; then
+            if [[ "$PACK_REPO" != "$GH_REPO" ]]; then
+              echo '::error::No same-head Docling pack run. A maintainer must enable the pack workflow for this fork head; a read-only fork token cannot dispatch it.'
+              exit 1
+            fi
+            # Dispatch accepts a ref; reject a branch that has already moved.
+            ref_sha=$(gh api "repos/$GH_REPO/commits/$PACK_REF" --jq .sha)
+            [[ "$ref_sha" == "$PACK_SHA" ]] || { echo '::error::Pack ref has moved; rerun Cloud E2E on its new head.'; exit 1; }
+            # Do not mistake an older completed run for the new dispatch.
+            previous_id=$(gh api "$endpoint" --jq '.workflow_runs | first | .id // 0')
+            gh workflow run pack-docling.yml --ref "$PACK_REF"
+          else
+            previous_id=0
+          fi
+          deadline=$((SECONDS + 21000))
+          while (( SECONDS < deadline )); do
+            run_id=$(find_run)
+            if [[ -n "$run_id" && "$run_id" != "$previous_id" ]]; then
+              job=$(gh api --paginate "repos/$GH_REPO/actions/runs/$run_id/jobs?per_page=100" \
+                --jq '.jobs[] | select(.name == "Pack (x86_64-unknown-linux-gnu)") | .conclusion // .status')
+              if [[ "$job" == success ]]; then
+                artifacts=$(gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts?per_page=100" \
+                  --jq '[.artifacts[] | select(.expired == false) | .name]')
+                if jq -e 'index("docling-pack-shared") != null and index("docling-pack-x86_64-unknown-linux-gnu") != null' <<< "$artifacts" >/dev/null; then
+                  echo "Using Docling pack run $run_id for $PACK_SHA"
+                  echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
+              elif [[ "$job" =~ ^(failure|cancelled|timed_out|skipped)$ ]]; then
+                echo "::error::Linux pack job failed in run $run_id: $job"
+                exit 1
+              fi
+              state=$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq .status)
+              if [[ "$state" == completed ]]; then
+                echo "::error::Pack run $run_id completed without usable Linux components."
+                exit 1
+              fi
+            fi
+            echo "Waiting for the Linux pack and shared components at $PACK_SHA"
+            sleep 60
+          done
+          echo "::error::Timed out waiting for a same-head Docling pack; see docs/ci.md."
+          exit 1
+
   e2e:
     name: Compose stack (core, office, docling)
-    needs: scope
-    if: needs.scope.outputs.run == 'true'
+    needs: [scope, pack]
+    if: always() && !cancelled() && needs.scope.outputs.run == 'true'
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-26.04
-    # Every image builds from source, including the docling image.
+    # Image builds start only after the matching Linux CI pack is available.
     timeout-minutes: 180
     permissions:
       contents: read
+      actions: read
     steps:
+      - name: Require the CI pack dependency
+        if: github.event_name != 'schedule' && needs.pack.result != 'success'
+        run: |
+          echo '::error::The same-head Docling pack dependency failed; see Resolve same-head CI pack.'
+          exit 1
+
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -124,6 +207,56 @@ jobs:
           jq --version
           unzip -v | head -n 1
           free -h
+
+      - name: Set up Python for pack extraction
+        if: github.event_name != 'schedule'
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      - name: Download and unpack the same-head CI pack
+        if: github.event_name != 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PACK_RUN_ID: ${{ needs.pack.outputs.run-id }}
+          PACK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha=$(gh run view "$PACK_RUN_ID" --json headSha --jq .headSha)
+          [[ "$actual_sha" == "$PACK_SHA" ]] || { echo '::error::Docling pack head mismatch'; exit 1; }
+          archives="$RUNNER_TEMP/docling-archives"
+          gh run download "$PACK_RUN_ID" --name docling-pack-x86_64-unknown-linux-gnu --dir "$archives"
+          gh run download "$PACK_RUN_ID" --name docling-pack-shared --dir "$archives"
+          # Reuse this image in Compose; its ashift generates the test manifest.
+          docker build -f infra/docker/server.Dockerfile --build-arg CARGO_BUILD_JOBS=4 -t ariadshift-server:local .
+          cat > "$RUNNER_TEMP/ashift-pack" <<'SH'
+          #!/bin/bash
+          exec docker run --rm --network none --user "$(id -u):$(id -g)" \
+            --volume "$RUNNER_TEMP:$RUNNER_TEMP" --entrypoint /usr/local/bin/ashift \
+            ariadshift-server:local "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/ashift-pack"
+          uv run --no-project --python 3.14 python engines/docling/pack/build.py manifest \
+            --out "$archives" --ashift "$RUNNER_TEMP/ashift-pack" x86_64-unknown-linux-gnu
+          uv run --no-project --python 3.14 python - <<'PYTHON'
+          import hashlib, os, sys
+          from pathlib import Path
+          sys.path.insert(0, "engines/docling/pack")
+          import build
+          archives = Path(os.environ["RUNNER_TEMP"]) / "docling-archives"
+          for archive in sorted(archives.glob("*.tar.zst")):
+              with archive.open("rb") as stream:
+                  print(archive.name, hashlib.file_digest(stream, "sha256").hexdigest(), flush=True)
+          root = archives.parent / "docling-pack"
+          build.unpack_pack(archives, "x86_64-unknown-linux-gnu", root)
+          # UID 10001 reads the bind mount. Preserve executable bits.
+          for path in [root, *root.rglob("*")]:
+              if not path.is_symlink():
+                  path.chmod((path.stat().st_mode | 0o444 | (0o111 if path.is_dir() else 0)) & ~0o022)
+          PYTHON
+          echo "E2E_DOCLING_PACK_DIR=$RUNNER_TEMP/docling-pack" >> "$GITHUB_ENV"
 
       - name: Run the end-to-end test
         env:

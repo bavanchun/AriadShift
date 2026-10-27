@@ -17,7 +17,7 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | [`dependabot.yml`](../.github/dependabot.yml) | Weekly (Monday, Asia/Saigon) | Update pull requests into `dev` for GitHub Actions, Cargo, pnpm and uv |
 | [`release.yml`](../.github/workflows/release.yml) | Tag push `'**[0-9]+.[0-9]+.[0-9]+*'`, pull requests touching release paths (build-only rehearsal) | Builds 5 targets on 3 OSes, one CycloneDX SBOM per crate, Homebrew formula, and invokes `publish-crates.yml` (pull requests scoped via `paths:` filter) |
 | [`desktop.yml`](../.github/workflows/desktop.yml) | Desktop/shared/Rust changes in pull requests, `v*` tags, manual | Builds installers on three OSes, checks generated bindings and runs the real Linux WebDriver conversion; tag jobs attach signed updates to the CLI-owned release (see [desktop.md](desktop.md)) |
-| [`cloud-e2e.yml`](../.github/workflows/cloud-e2e.yml) | Daily at 04:00 UTC on `dev`, manual, pushes to `dev` or `main` and pull requests that touch `infra/`, `crates/ariad-server/`, `services/`, `packages/sdk/`, `.env.example`, the scanned fixture or the workflow, and pull requests that carry the `cloud-e2e` label | Builds the compose stack with the `core`, `office` and `docling` profiles through [`infra/test/e2e/run.sh`](../infra/test/e2e/run.sh), converts a scanned PDF to DOCX through `/v1` and the docling worker, and checks deletion and quota enforcement |
+| [`cloud-e2e.yml`](../.github/workflows/cloud-e2e.yml) | Daily at 04:00 UTC on `dev`, manual, path-matched pushes and pull requests, or the `cloud-e2e` PR label | Builds all three Compose profiles, proves image-only Vietnamese PDF OCR through the completed Docling route, then checks DOCX content, deletion and quotas |
 | [`release-smoke.yml`](../.github/workflows/release-smoke.yml) | Manual dispatch (`workflow_dispatch`) | Multi-channel smoke test verifying binary installation across Homebrew, shell, PowerShell, and cargo-binstall |
 | [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | Called by `release.yml` | Publishes crates (`ariad-core`, `ariad-host`, `ariad-cli`) to crates.io with API version polling and idempotence |
 
@@ -65,6 +65,51 @@ CodeQL is the one deliberate repeat: GitHub computes pull request alerts against
 CI disables development/test debug information and incremental compilation to bound Typst and package-verification artifact sizes. Every native Verify job also runs `cargo check -p ariad-cli --no-default-features` to keep the slim CLI build working.
 
 The Rust cache is written only by pushes to `dev` and `main` (the web job shares this rule, and saves the Playwright browser cache on pushes only); pull requests read it but never save their own, so they cannot evict the base branch's cache. The fuzz caches (cargo-fuzz binary, `fuzz/target`, and corpus) follow the same policy: saved on pushes to `dev` and `main`, while pull requests restore caches without saving. The nightly workflow (`fuzz-nightly.yml`) saves caches on schedule, dispatch and its own pull request runs (PR-scoped entries are not visible to `dev` or `main`); crash artifacts upload on failure or cancellation.
+
+## Cloud E2E pack dependency
+
+Pushes and pull requests use the single cloud path list in
+[`ci-scope.sh`](../scripts/ci-scope.sh) (`--classify-cloud`). It covers the web,
+shared Rust crates, workspace/toolchain inputs, image and service sources, the
+image-only fixture and its manifest. [`test-ci-scope.sh`](../scripts/test-ci-scope.sh)
+checks both included and excluded paths. Unrelated label events skip expensive
+jobs and cannot cancel an active Compose job; cancellation is scoped to that job.
+
+For PR, push and manual runs, the isolated **Resolve same-head CI pack** job
+queries `pack-docling.yml` runs by the PR head SHA (push/manual: workflow SHA).
+It reuses an active or successful run with unexpired artifacts. If none is
+usable, it dispatches **Docling pack** on the matching branch after checking
+that the ref still points to that SHA. Only this job has `actions: write`; it
+executes no checked-out code. The Compose job has `actions: read` and waits for
+**Pack (x86_64-unknown-linux-gnu)** to succeed and publish both
+`docling-pack-x86_64-unknown-linux-gnu` and `docling-pack-shared`.
+A failed pack job or missing components fails E2E rather than skipping it.
+
+The Compose job rechecks the run's head SHA and uses
+[`gh run download`](https://cli.github.com/manual/gh_run_download) for both
+artifacts. It generates the unsigned manifest with the built server image's
+`ashift __pack manifest`, safely extracts components through the pack builder,
+and sets `E2E_DOCLING_PACK_DIR`. The worker uses the existing read-only bind
+mount override. This development route skips signature installation and its
+`requires_ashift` host-range check; it proves runtime conversion, not release
+installation. No component is borrowed from another head or a release.
+
+Fork tokens cannot dispatch repository workflows. A fork run can consume an
+already approved same-head pack run; otherwise it fails with a maintainer
+prerequisite. Maintainers must approve the fork's **Docling pack** run, or bring
+the reviewed head into a repository branch and run both workflows there.
+The pack wait is bounded to 350 minutes; Compose then has 180 minutes.
+Expired one-day PR artifacts are rebuilt through the same dispatch mechanism.
+
+The nightly deliberately retains the production Dockerfile's signed-release
+installer. It requires a published signed pack compatible with the host version;
+a passing PR override does not establish that release prerequisite.
+
+For local proof, set `E2E_DOCLING_PACK_DIR` to a real unpacked CI pack and run
+`bash infra/test/e2e/run.sh`. The script checks the fixture hash, the final
+`GET /v1/jobs/{id}` route (`docling`), absence of `ocr_required`, and the OCR
+words “Khu vườn đọc sách” in the downloaded DOCX. Removing `tessdata` from a
+separate test copy must make the same script fail before starting the stack.
 
 ## Commit rules
 
