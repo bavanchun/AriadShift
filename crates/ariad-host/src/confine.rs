@@ -503,8 +503,20 @@ pub(crate) fn open_dir_nofollow(
                 "path component is not a plain name",
             ));
         };
-        let file = open_entry_nofollow(&current, Path::new(name), true)?;
-        let opened = file.metadata()?;
+        // Retain Unix search-only/O_PATH directory access; inode checks below bind
+        // the opened handle to the checked entry. Windows requires an atomic reparse open.
+        #[cfg(unix)]
+        let next = {
+            let directory = current.open_dir(name)?;
+            #[cfg(test)]
+            test_open_hook("directory-after");
+            directory
+        };
+        #[cfg(not(unix))]
+        let next = cap_std::fs::Dir::from_std_file(
+            open_entry_nofollow(&current, Path::new(name), true)?.into_std(),
+        );
+        let opened = next.dir_metadata()?;
         let entry = current.symlink_metadata(name)?;
         if is_reparse_point(&entry) || !entry.is_dir() || !opened.is_dir() {
             return Err(io::Error::other("path component is not a directory"));
@@ -513,7 +525,7 @@ pub(crate) fn open_dir_nofollow(
         if !same_inode(&entry, &opened) {
             return Err(io::Error::from_raw_os_error(libc::ELOOP));
         }
-        current = cap_std::fs::Dir::from_std_file(file.into_std());
+        current = next;
     }
     Ok(current)
 }
@@ -1134,6 +1146,25 @@ pub(crate) fn test_open_hook(point: &str) {
 #[cfg(all(test, any(unix, windows)))]
 mod nofollow_tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn search_only_directory_still_opens_a_regular_input() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let child = temp.path().join("search-only");
+        fs::create_dir(&child).unwrap();
+        fs::write(child.join("note.md"), "# Search permission").unwrap();
+        let root =
+            cap_std::fs::Dir::open_ambient_dir(temp.path(), cap_std::ambient_authority()).unwrap();
+        fs::set_permissions(&child, fs::Permissions::from_mode(0o111)).unwrap();
+        let opened = open_file_nofollow(&root, Path::new("search-only/note.md"));
+        fs::set_permissions(&child, fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(
+            opened.is_ok(),
+            "search-only directory access regressed: {opened:?}"
+        );
+    }
 
     #[test]
     fn a_directory_link_swapped_back_after_open_is_refused() {
