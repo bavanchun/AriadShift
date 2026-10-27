@@ -237,7 +237,7 @@ test-server-container:
     bash scripts/test-server-container.sh
 
 package-check:
-    cargo package --workspace --exclude ariad-server --exclude ariad-desktop --allow-dirty --config 'patch.crates-io.ariad-core.path="crates/ariad-core"' --config 'patch.crates-io.ariad-host.path="crates/ariad-host"' --config 'patch.crates-io.ariad-typst.path="crates/ariad-typst"'
+    CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/package-check" cargo package --workspace --exclude ariad-server --exclude ariad-desktop --allow-dirty --config 'patch.crates-io.ariad-core.path="crates/ariad-core"' --config 'patch.crates-io.ariad-host.path="crates/ariad-host"' --config 'patch.crates-io.ariad-typst.path="crates/ariad-typst"'
 
 ci: static clippy wasm test bench-test bench-check package-check web-ci desktop-ci
 

@@ -99,7 +99,7 @@ The throwaway PostgreSQL in `just test-server` allows 180 seconds for `pg_ctl` o
 
 `just lint-tools` installs `actionlint` and `committed` into `.tools/bin`, verified against SHA-256 checksums pinned in [`scripts/install-lint-tools.sh`](../scripts/install-lint-tools.sh). `zizmor` runs through `uvx` at the version pinned in the `justfile`.
 
-`just package-check` builds each generated crate archive with sibling dependencies from this checkout through Cargo configuration patches. [Cargo removes path dependencies when packaging](https://doc.rust-lang.org/cargo/commands/cargo-package.html), so verification would otherwise select the published `0.1.0` siblings while new APIs await the next release. Archive extraction and build verification remain enabled.
+`just package-check` builds each generated crate archive with sibling dependencies from this checkout through Cargo configuration patches. [Cargo removes path dependencies when packaging](https://doc.rust-lang.org/cargo/commands/cargo-package.html), so verification would otherwise select the published `0.1.0` siblings while new APIs await the next release. Archive extraction and build verification remain enabled. The recipe uses a separate `package-check` target directory under the workspace target directory (or `CARGO_TARGET_DIR`) so verification builds cannot overwrite the workspace's native library artifacts.
 
 ## Maintaining the pipeline
 
