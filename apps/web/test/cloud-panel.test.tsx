@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import CloudPanel, { type CloudPanelProps } from "@/components/cloud/cloud-panel";
 import type { PlanLimits } from "@/lib/cloud/api";
 import type { DiscardOutcome } from "@/lib/cloud/cloud-job";
@@ -169,5 +169,119 @@ describe("CloudPanel", () => {
     expect(dialog.hasAttribute("open")).toBe(true);
     expect(screen.getByLabelText("Email")).toBeDefined();
     expect(screen.getByLabelText("Password")).toBeDefined();
+  });
+
+  it("keeps anonymous cloud conversion working when the auth service is unreachable or 5xx", async () => {
+    for (const authFailure of ["network", "503"] as const) {
+      const requests: string[] = [];
+      const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(request.url);
+        requests.push(`${request.method} ${url.pathname}`);
+        if (url.pathname.startsWith("/api/auth/")) {
+          if (authFailure === "network") {
+            throw new TypeError("Failed to fetch");
+          }
+          return new Response("unavailable", { status: 503 });
+        }
+        if (url.pathname === "/v1/capabilities") {
+          return Response.json(CAPABILITIES);
+        }
+        return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+      }) as typeof fetch;
+
+      const { unmount } = render(
+        <CloudPanel
+          config={CONFIG}
+          file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+          sourceFormat="markdown"
+          preferredTarget="docx"
+          profile="editable"
+          onUseDevice={vi.fn()}
+          cleanup={{ current: null }}
+          onServerCopy={vi.fn()}
+          apiOptions={{
+            fetch: fetchImpl,
+            operations: {
+              getLimits: async () => ({
+                data: limits(),
+                response: new Response(null, { status: 200 }),
+              }),
+            },
+          }}
+        />,
+      );
+
+      const start = await screen.findByRole("button", { name: "Upload and convert" });
+      await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+      expect(requests).not.toContain("GET /api/auth/token");
+      unmount();
+    }
+  });
+
+  it("fails closed with sign-in service unavailable when token refresh 5xxs for a signed-in user", async () => {
+    const requests: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      requests.push(`${request.method} ${url.pathname}`);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json(null);
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        return Response.json({
+          redirect: false,
+          token: "session",
+          user: { id: "u1", email: "ada@example.com", name: "Ada" },
+        });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return new Response("unavailable", { status: 503 });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{
+          fetch: fetchImpl,
+          operations: {
+            getLimits: async () => ({
+              data: limits(),
+              response: new Response(null, { status: 200 }),
+            }),
+          },
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    await screen.findByText("Signed in as ada@example.com");
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.click(start);
+    expect(await screen.findByText("Sign-in service unavailable")).toBeDefined();
+    expect(requests.filter((entry) => entry === "POST /v1/uploads")).toHaveLength(0);
   });
 });

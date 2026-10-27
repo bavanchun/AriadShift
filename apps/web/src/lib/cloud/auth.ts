@@ -56,8 +56,11 @@ export class CloudAuth {
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
   #token: { value: string; until: number } | null = null;
+  #user: AccountUser | null = null;
   /** Known to have no session, so `bearer` skips asking for a token. */
   #anonymous = false;
+  #pendingSession: Promise<AccountUser | null> | null = null;
+  #pendingToken: Promise<string | undefined> | null = null;
 
   constructor(baseUrl: string, fetchImpl?: typeof fetch) {
     this.#baseUrl = baseUrl.replace(/\/+$/, "");
@@ -109,13 +112,33 @@ export class CloudAuth {
 
   /** The signed-in user, or `null` without a session. */
   async session(): Promise<AccountUser | null> {
-    const data = (await this.#json("get-session")) as { user?: unknown } | null;
-    const user = asUser(data?.user);
-    this.#anonymous = user === null;
-    if (!user) {
-      this.#token = null;
+    this.#pendingSession ??= this.#fetchSession().finally(() => {
+      this.#pendingSession = null;
+    });
+    return this.#pendingSession;
+  }
+
+  async #fetchSession(): Promise<AccountUser | null> {
+    try {
+      const data = (await this.#json("get-session")) as { user?: unknown } | null;
+      const user = asUser(data?.user);
+      this.#user = user;
+      this.#anonymous = user === null;
+      if (!user) {
+        this.#token = null;
+      }
+      return user;
+    } catch (error) {
+      if (error instanceof AuthError && error.status === 401) {
+        this.#user = null;
+        this.#anonymous = true;
+        this.#token = null;
+      } else if (!this.#user) {
+        this.#anonymous = true;
+        this.#token = null;
+      }
+      throw error;
     }
-    return user;
   }
 
   async signIn(email: string, password: string): Promise<SignInResult> {
@@ -130,7 +153,7 @@ export class CloudAuth {
     if (!user) {
       throw new AuthError(500, "no_session", "Signed in, but the account service sent no session.");
     }
-    this.#signedIn();
+    this.#signedIn(user);
     return { status: "signed-in", user };
   }
 
@@ -142,7 +165,7 @@ export class CloudAuth {
     if (!user) {
       throw new AuthError(500, "no_session", "The account was created, but no session started.");
     }
-    this.#signedIn();
+    this.#signedIn(user);
     return user;
   }
 
@@ -154,17 +177,19 @@ export class CloudAuth {
     if (!user) {
       throw new AuthError(500, "no_session", "The code was accepted, but no session started.");
     }
-    this.#signedIn();
+    this.#signedIn(user);
     return user;
   }
 
   async signOut(): Promise<void> {
     this.#token = null;
     await this.#json("sign-out", {});
+    this.#user = null;
     this.#anonymous = true;
   }
 
-  #signedIn() {
+  #signedIn(user: AccountUser) {
+    this.#user = user;
     this.#token = null;
     this.#anonymous = false;
   }
@@ -179,23 +204,74 @@ export class CloudAuth {
    * case requests go out anonymously.
    */
   readonly bearer = async (): Promise<string | undefined> => {
+    if (this.#pendingSession) {
+      await this.#pendingSession.catch(() => null);
+    }
     if (this.#token && Date.now() < this.#token.until) {
       return this.#token.value;
     }
     if (this.#anonymous) {
       return undefined;
     }
-    const response = await this.#request("token");
-    if (!response.ok) {
+    this.#pendingToken ??= this.#fetchToken().finally(() => {
+      this.#pendingToken = null;
+    });
+    return this.#pendingToken;
+  };
+
+  async #fetchToken(): Promise<string | undefined> {
+    let response: Response;
+    try {
+      response = await this.#request("token");
+    } catch {
       this.#token = null;
-      this.#anonymous = response.status === 401;
+      if (this.#user) {
+        throw new AuthError(
+          503,
+          "auth_unavailable",
+          "The sign-in service is unavailable right now. Try again, or convert on this device.",
+        );
+      }
+      this.#anonymous = true;
       return undefined;
     }
-    const { token } = (await response.json()) as { token?: unknown };
+    if (!response.ok) {
+      this.#token = null;
+      if (response.status === 401) {
+        this.#user = null;
+        this.#anonymous = true;
+        return undefined;
+      }
+      if (this.#user) {
+        throw new AuthError(
+          response.status,
+          "auth_unavailable",
+          "The sign-in service is unavailable right now. Try again, or convert on this device.",
+        );
+      }
+      this.#anonymous = true;
+      return undefined;
+    }
+    let data: { token?: unknown } | null = null;
+    try {
+      data = (await response.json()) as { token?: unknown };
+    } catch {
+      data = null;
+    }
+    const token = data?.token;
     if (typeof token !== "string" || !token) {
+      this.#token = null;
+      if (this.#user) {
+        throw new AuthError(
+          502,
+          "auth_unavailable",
+          "The sign-in service is unavailable right now. Try again, or convert on this device.",
+        );
+      }
+      this.#anonymous = true;
       return undefined;
     }
     this.#remember(token);
     return token;
-  };
+  }
 }

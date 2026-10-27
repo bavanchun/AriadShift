@@ -101,4 +101,55 @@ describe("CloudAuth", () => {
     expect(requests[1]?.url).toBe("https://auth.example.com/api/auth/sign-out");
     await expect(auth.bearer()).resolves.toBeUndefined();
   });
+
+  it("marks the client anonymous when session() fails without a known user", async () => {
+    const { fetch, requests } = scripted(
+      () => {
+        throw new TypeError("Failed to fetch");
+      },
+      () => new Response("unavailable", { status: 503 }),
+    );
+    const unreachableAuth = new CloudAuth("https://auth.example.com", fetch);
+    await expect(unreachableAuth.session()).rejects.toThrow("Failed to fetch");
+    await expect(unreachableAuth.bearer()).resolves.toBeUndefined();
+
+    const errorAuth = new CloudAuth("https://auth.example.com", fetch);
+    await expect(errorAuth.session()).rejects.toBeInstanceOf(AuthError);
+    await expect(errorAuth.bearer()).resolves.toBeUndefined();
+    expect(requests.map((r) => new URL(r.url).pathname)).toEqual([
+      "/api/auth/get-session",
+      "/api/auth/get-session",
+    ]);
+  });
+
+  it("fails closed when /token is unreachable or returns 5xx for a signed-in user", async () => {
+    const { fetch, requests } = scripted(
+      () => Response.json({ redirect: false, token: "session", user: USER }),
+      () => new Response("bad gateway", { status: 502 }),
+      () => {
+        throw new TypeError("Failed to fetch");
+      },
+      () => Response.json({ token: "jwt-recovered" }),
+    );
+    const auth = new CloudAuth("https://auth.example.com", fetch);
+    await auth.signIn("ada@example.com", "secret");
+
+    await expect(auth.bearer()).rejects.toThrow(/sign-in service is unavailable/i);
+    await expect(auth.bearer()).rejects.toThrow(/sign-in service is unavailable/i);
+    await expect(auth.bearer()).resolves.toBe("jwt-recovered");
+    expect(requests.filter((r) => r.url.endsWith("/api/auth/token"))).toHaveLength(3);
+  });
+
+  it("deduplicates concurrent /token fetches", async () => {
+    const { fetch, requests } = scripted(
+      () => Response.json({ redirect: false, token: "session", user: USER }),
+      () => Response.json({ token: "jwt-shared" }),
+    );
+    const auth = new CloudAuth("https://auth.example.com", fetch);
+    await auth.signIn("ada@example.com", "secret");
+
+    const tokens = await Promise.all([auth.bearer(), auth.bearer(), auth.bearer()]);
+    expect(tokens).toEqual(["jwt-shared", "jwt-shared", "jwt-shared"]);
+    expect(requests.filter((r) => r.url.endsWith("/api/auth/token"))).toHaveLength(1);
+  });
 });

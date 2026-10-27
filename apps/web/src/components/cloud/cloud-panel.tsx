@@ -21,7 +21,7 @@ import {
   formatFromName,
   type PlanLimits,
 } from "@/lib/cloud/api";
-import { type AccountUser, CloudAuth } from "@/lib/cloud/auth";
+import { type AccountUser, AuthError, CloudAuth } from "@/lib/cloud/auth";
 import { CloudJob, type DiscardOutcome, type ServerCopy } from "@/lib/cloud/cloud-job";
 import type { CloudConfig } from "@/lib/cloud/config";
 import { type CloudAction, describeCloudError } from "@/lib/cloud/errors";
@@ -154,7 +154,7 @@ export default function CloudPanel({
 
   const [user, setUser] = useState<AccountUser | null | undefined>(auth ? undefined : null);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [capabilitiesError, setCapabilitiesError] = useState(false);
+  const [capabilitiesError, setCapabilitiesError] = useState<"api" | "auth" | null>(null);
   const [limits, setLimits] = useState<PlanLimits | null>(null);
   const [target, setTarget] = useState<string | null>(null);
   const [profile, setProfile] = useState<CloudProfile>(
@@ -261,9 +261,13 @@ export default function CloudPanel({
       .capabilities(controller.signal)
       .then((value) => {
         setCapabilities(value);
-        setCapabilitiesError(false);
+        setCapabilitiesError(null);
       })
-      .catch(() => !controller.signal.aborted && setCapabilitiesError(true));
+      .catch(
+        (error) =>
+          !controller.signal.aborted &&
+          setCapabilitiesError(error instanceof AuthError ? "auth" : "api"),
+      );
     return () => controller.abort();
   }, [api]);
 
@@ -351,19 +355,21 @@ export default function CloudPanel({
     ? "You are offline. Cloud conversion needs a connection; converting on this device still works."
     : user === undefined || (!capabilities && !capabilitiesError)
       ? "Connecting to the server…"
-      : capabilitiesError
-        ? `${config.apiHost} cannot be reached right now. Converting on this device still works.`
-        : !source
-          ? `${config.apiHost} does not recognise this file type.`
-          : targets.length === 0
-            ? `${config.apiHost} cannot convert ${formatLabel(source)} files.`
-            : !target
-              ? "Choose a target format first."
-              : refusalView
-                ? refusalView.message
-                : needsTurnstile && !token
-                  ? "Complete the check that you are not a bot first."
-                  : null;
+      : capabilitiesError === "auth"
+        ? "The sign-in service is unavailable right now. Converting on this device still works."
+        : capabilitiesError
+          ? `${config.apiHost} cannot be reached right now. Converting on this device still works.`
+          : !source
+            ? `${config.apiHost} does not recognise this file type.`
+            : targets.length === 0
+              ? `${config.apiHost} cannot convert ${formatLabel(source)} files.`
+              : !target
+                ? "Choose a target format first."
+                : refusalView
+                  ? refusalView.message
+                  : needsTurnstile && !token
+                    ? "Complete the check that you are not a bot first."
+                    : null;
 
   const consumeToken = () => {
     setToken(null);

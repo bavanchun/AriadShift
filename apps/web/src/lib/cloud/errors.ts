@@ -5,6 +5,7 @@ import { AriadApiError } from "@ariadshift/sdk";
 import { formatBytes } from "@/lib/format-bytes";
 import { formatLabel } from "@/lib/formats";
 import type { PlanLimits } from "./api";
+import { AuthError } from "./auth";
 import { formatClock } from "./steps";
 
 /** What the user can do next; the panel renders one control per action. */
@@ -80,6 +81,18 @@ function withSignIn(context: CloudErrorContext, actions: CloudAction[]): CloudAc
 export function describeCloudError(error: unknown, context: CloudErrorContext): CloudErrorView {
   const onServer = serverCopy(context);
   const base = { serverCopy: onServer, retryAfter: null as number | null };
+
+  if (error instanceof AuthError) {
+    return {
+      ...base,
+      code: error.code,
+      title: "Sign-in service unavailable",
+      message: error.message,
+      serverCopy: null,
+      actions: ["retry", "use-device"],
+      technical: technical(error.code, error.message),
+    };
+  }
 
   if (!(error instanceof AriadApiError)) {
     const offline = typeof navigator !== "undefined" && navigator.onLine === false;
