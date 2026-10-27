@@ -344,4 +344,70 @@ describe("CloudPanel", () => {
     expect(screen.queryByTestId("cloud-sign-out-error")).toBeNull();
     expect(signOutAttempts).toBe(2);
   });
+
+  it("resets a pre-job refusal after signing in so the user can retry", async () => {
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json(null);
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        return Response.json(
+          {
+            redirect: false,
+            token: "session",
+            user: { id: "u1", email: "ada@example.com", name: "Ada" },
+          },
+          { headers: { "set-auth-jwt": "jwt-1" } },
+        );
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(start);
+
+    const errorBox = await screen.findByTestId("cloud-error");
+    expect(errorBox.textContent).toContain("Cloud allowance used up");
+
+    fireEvent.click(within(errorBox).getByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    await screen.findByText("Signed in as ada@example.com");
+    expect(screen.queryByTestId("cloud-error")).toBeNull();
+    const retryUpload = await screen.findByRole("button", { name: "Upload and convert" });
+    expect(retryUpload.getAttribute("aria-disabled")).toBeNull();
+  });
 });

@@ -710,7 +710,11 @@ export default function CloudPanel({
           onClose={() => setDialogOpen(false)}
           onSignedIn={(signedIn) => {
             setUser(signedIn);
+            setSignOutError(null);
             setDialogOpen(false);
+            if (state.phase === "error" && !state.job) {
+              job.reset();
+            }
             queueMicrotask(() => accountRef.current?.focus());
           }}
         />
