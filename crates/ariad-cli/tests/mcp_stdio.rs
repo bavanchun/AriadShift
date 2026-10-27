@@ -8,7 +8,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, Write},
     path::PathBuf,
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
 };
 
 use ariad_host::confine::path_to_file_uri;
@@ -52,7 +52,9 @@ enum RootsFailure {
 struct McpTestClient {
     child: Option<Child>,
     stdin: Option<ChildStdin>,
-    reader: BufReader<ChildStdout>,
+    reader: std::sync::mpsc::Receiver<std::io::Result<String>>,
+    pending_roots: Vec<Value>,
+    read_timeout: std::time::Duration,
     recorded_stdout: Vec<String>,
     advertised_roots: Vec<String>,
     roots_queries_count: usize,
@@ -95,12 +97,32 @@ impl McpTestClient {
         let mut child = cmd.spawn().expect("failed to spawn ashift mcp");
         let stdin = child.stdin.take().expect("stdin pipe");
         let stdout = child.stdout.take().expect("stdout pipe");
-        let reader = BufReader::new(stdout);
+        let (sender, reader) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut stdout = BufReader::new(stdout);
+            loop {
+                let mut line = String::new();
+                match stdout.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        if sender.send(Ok(line)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = sender.send(Err(error));
+                        break;
+                    }
+                }
+            }
+        });
 
         Self {
             child: Some(child),
             stdin: Some(stdin),
             reader,
+            pending_roots: Vec::new(),
+            read_timeout: std::time::Duration::from_secs(60),
             recorded_stdout: Vec::new(),
             advertised_roots,
             roots_queries_count: 0,
@@ -149,16 +171,17 @@ impl McpTestClient {
     }
 
     /// Reads next JSON message, automatically handling server-to-client `roots/list` requests.
-    fn read_message(&mut self) -> Value {
+    fn read_message_until(&mut self, deadline: std::time::Instant) -> Value {
         loop {
-            let mut line = String::new();
-            let bytes_read = self
+            assert!(
+                std::time::Instant::now() < deadline,
+                "server response deadline elapsed"
+            );
+            let line = self
                 .reader
-                .read_line(&mut line)
-                .expect("read line from stdout");
-            if bytes_read == 0 {
-                panic!("unexpected EOF on stdout");
-            }
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .expect("bounded read from server stdout")
+                .expect("read server stdout");
 
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -183,6 +206,8 @@ impl McpTestClient {
                             })
                             .to_string(),
                         );
+                    } else {
+                        self.pending_roots.push(req_id.clone());
                     }
                     continue;
                 }
@@ -212,7 +237,7 @@ impl McpTestClient {
         }
     }
 
-    /// Wait for server to refresh roots by completing a roots/list request cycle.
+    /// Assert a new roots request arrived; successful replies must become observable grants.
     fn wait_for_roots_refresh(&mut self) {
         let initial = self.roots_queries_count;
         for req_id in 900..950 {
@@ -223,12 +248,56 @@ impl McpTestClient {
             let _ = self.read_response(req_id);
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+        assert!(
+            self.roots_queries_count > initial,
+            "server never requested refreshed roots"
+        );
+        if self.roots_failure.is_none()
+            && let Some(root) = self.advertised_roots.iter().find_map(|uri| {
+                ariad_host::confine::parse_file_uri(uri)
+                    .ok()
+                    .filter(|path| path.is_dir())
+            })
+        {
+            let mut probe = tempfile::Builder::new()
+                .prefix("roots-ready-")
+                .suffix(".md")
+                .tempfile_in(root)
+                .unwrap();
+            probe.write_all(b"# Roots ready").unwrap();
+            self.wait_for_input_state(probe.path(), true);
+        }
+    }
+
+    /// Waits for an observable authorization decision, including asynchronous roots installation.
+    fn wait_for_input_state(&mut self, input: &std::path::Path, allowed: bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(13);
+        loop {
+            self.send_request(
+                899,
+                "tools/call",
+                json!({"name":"inspect", "arguments":{"input":input}}),
+            );
+            let response = self.read_response_until(899, deadline);
+            if response["result"]["isError"] == !allowed {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "authorization state was not installed: {response}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     /// Reads messages until a response matching `expected_id` is found.
     fn read_response(&mut self, expected_id: u64) -> Value {
+        self.read_response_until(expected_id, std::time::Instant::now() + self.read_timeout)
+    }
+
+    fn read_response_until(&mut self, expected_id: u64, deadline: std::time::Instant) -> Value {
         loop {
-            let msg = self.read_message();
+            let msg = self.read_message_until(deadline);
             if msg.get("id").and_then(Value::as_u64) == Some(expected_id) {
                 return msg;
             }
@@ -285,14 +354,11 @@ impl McpTestClient {
 
         // Read remaining lines until EOF
         loop {
-            let mut line = String::new();
-            let bytes_read = self
-                .reader
-                .read_line(&mut line)
-                .expect("read remaining stdout");
-            if bytes_read == 0 {
-                break;
-            }
+            let line = match self.reader.recv_timeout(std::time::Duration::from_secs(5)) {
+                Ok(line) => line.expect("read remaining stdout"),
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(error) => panic!("server did not close stdout promptly: {error}"),
+            };
             let trimmed = line.trim();
             if !trimmed.is_empty() {
                 self.recorded_stdout.push(trimmed.to_string());
@@ -1777,17 +1843,11 @@ mod limits_and_roots {
         client.send_notification("notifications/roots/list_changed", json!({}));
         client.wait_for_roots_refresh();
         let start = Instant::now();
-        loop {
-            let inspected = tool(&mut client, "inspect", json!({"input": input}));
-            if inspected["result"]["isError"] == true {
-                break;
-            }
-            assert!(
-                start.elapsed() < Duration::from_secs(if unanswered { 12 } else { 2 }),
-                "failed roots refresh kept the old root authorized: {inspected}"
-            );
-            std::thread::sleep(Duration::from_millis(50));
-        }
+        client.wait_for_input_state(&input, false);
+        assert!(
+            start.elapsed() < Duration::from_secs(if unanswered { 12 } else { 2 }),
+            "roots revocation deadline elapsed"
+        );
         client.send_request(702, "resources/read", json!({"uri": uri}));
         assert!(client.read_response(702).get("error").is_some());
         if keep_allow_dir {
@@ -1797,6 +1857,7 @@ mod limits_and_roots {
         client.roots_failure = None;
         client.send_notification("notifications/roots/list_changed", json!({}));
         client.wait_for_roots_refresh();
+        client.wait_for_input_state(&input, true);
         let restored = tool(&mut client, "inspect", json!({"input": input}));
         assert_eq!(restored["result"]["isError"], false, "{restored}");
         client.close_and_assert_purity();
@@ -1816,4 +1877,212 @@ mod limits_and_roots {
     fn roots_timeout_revokes_tools_and_resources() {
         failed_refresh_revokes_root(true, true);
     }
+}
+
+mod concurrent_roots {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn stale_completion(
+        initialization: bool,
+        newer_timeout: bool,
+        newer_success: bool,
+        older_error: bool,
+    ) {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("note.md");
+        fs::write(&input, "# Authorized").unwrap();
+        let newest = TempDir::new().unwrap();
+        let newest_input = newest.path().join("newest.md");
+        fs::write(&newest_input, "# Newest root").unwrap();
+        let new_grant = older_error || initialization;
+        let root = path_to_file_uri(dir.path());
+        let mut client = McpTestClient::spawn(&[], vec![root.clone()]);
+        if initialization {
+            client.roots_failure = Some(RootsFailure::Timeout);
+        }
+        client.initialize();
+        if !initialization {
+            client.wait_for_input_state(&input, true);
+            client.roots_failure = Some(RootsFailure::Timeout);
+            client.send_notification("notifications/roots/list_changed", json!({}));
+            client.wait_for_roots_refresh();
+        }
+        let old_id = client
+            .pending_roots
+            .pop()
+            .expect("older roots request is outstanding");
+        client.roots_failure = if newer_timeout {
+            Some(RootsFailure::Timeout)
+        } else if newer_success || new_grant {
+            None
+        } else {
+            Some(RootsFailure::Error)
+        };
+        if new_grant {
+            client.update_roots(vec![path_to_file_uri(newest.path())]);
+        } else if newer_success {
+            client.update_roots(vec![]);
+        }
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        let observed_input = if new_grant { &newest_input } else { &input };
+        client.wait_for_input_state(observed_input, new_grant);
+        client.wait_for_input_state(&input, false);
+        let response = if older_error {
+            json!({"jsonrpc":"2.0", "id":old_id, "error":{"code":-32603,"message":"old failure"}})
+        } else {
+            json!({"jsonrpc":"2.0", "id":old_id, "result":{"roots":[{"uri":root}]}})
+        };
+        client.write_line(&response.to_string());
+        let deadline = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < deadline {
+            client.send_request(
+                880,
+                "tools/call",
+                json!({"name":"inspect", "arguments":{"input":observed_input}}),
+            );
+            let response = client.read_response(880);
+            assert_eq!(
+                response["result"]["isError"], !new_grant,
+                "stale roots completion changed authorization: {response}"
+            );
+        }
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn late_initial_roots_success_cannot_restore_a_revoked_grant() {
+        stale_completion(true, false, false, false);
+    }
+    #[test]
+    fn older_roots_success_cannot_restore_after_a_newer_error() {
+        stale_completion(false, false, false, false);
+    }
+    #[test]
+    fn older_roots_success_cannot_restore_after_a_newer_timeout() {
+        stale_completion(false, true, false, false);
+    }
+    #[test]
+    fn older_roots_success_cannot_override_newer_empty_roots() {
+        stale_completion(false, false, true, false);
+    }
+    #[test]
+    fn older_roots_error_cannot_revoke_newer_success() {
+        stale_completion(false, false, true, true);
+    }
+}
+
+#[cfg(feature = "test-probe")]
+mod staging_responsiveness {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn slow_staging(name: &str, unanswered: bool) {
+        let root = TempDir::new().unwrap();
+        let input = root.path().join("slow.md");
+        let marker = root.path().join("started");
+        let file = fs::File::create(&input).unwrap();
+        file.set_len(16 * 1024 * 1024).unwrap();
+        let mut client = McpTestClient::spawn_with_env(
+            &[],
+            vec![path_to_file_uri(root.path())],
+            &[
+                ("ASHIFT_TEST_STAGE_DELAY_MS", std::ffi::OsStr::new("100")),
+                ("ASHIFT_TEST_STAGE_STARTED", marker.as_os_str()),
+            ],
+        );
+        client.initialize();
+        let probe = root.path().join("ready.md");
+        fs::write(&probe, "# Ready").unwrap();
+        client.wait_for_input_state(&probe, true);
+        fs::remove_file(&marker).unwrap();
+        client.send_request(
+            810,
+            "tools/call",
+            json!({"name":name,"arguments":{"input":input,"to":"html"}}),
+        );
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !marker.exists() {
+            assert!(Instant::now() < deadline, "staging never began");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        client.read_timeout = Duration::from_secs(2);
+        client.roots_failure = Some(if unanswered {
+            RootsFailure::Timeout
+        } else {
+            RootsFailure::Error
+        });
+        let refresh_start = Instant::now();
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        assert!(
+            client.roots_queries_count >= 2,
+            "refresh was not processed during staging"
+        );
+        client.wait_for_input_state(&probe, false);
+        assert!(
+            refresh_start.elapsed() < Duration::from_secs(12),
+            "roots deadline was delayed by staging"
+        );
+        let start = Instant::now();
+        client.close_and_assert_purity();
+        assert!(
+            start.elapsed() < Duration::from_secs(3),
+            "shutdown did not cancel staging"
+        );
+    }
+    #[test]
+    fn slow_inspect_staging_allows_roots_refresh_and_shutdown() {
+        slow_staging("inspect", false);
+    }
+    #[test]
+    fn slow_plan_staging_allows_roots_refresh_and_shutdown() {
+        slow_staging("plan", false);
+    }
+    #[test]
+    fn slow_convert_staging_allows_roots_refresh_and_shutdown() {
+        slow_staging("convert", false);
+    }
+    #[test]
+    fn roots_timeout_keeps_its_deadline_during_slow_staging() {
+        slow_staging("inspect", true);
+    }
+}
+
+#[test]
+fn an_older_roots_timeout_cannot_revoke_a_newer_success() {
+    let root = TempDir::new().unwrap();
+    let input = root.path().join("note.md");
+    fs::write(&input, "# Root").unwrap();
+    let mut client = McpTestClient::spawn(&[], vec![path_to_file_uri(root.path())]);
+    client.initialize();
+    client.wait_for_input_state(&input, true);
+    client.roots_failure = Some(RootsFailure::Timeout);
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    let newest = TempDir::new().unwrap();
+    let newest_input = newest.path().join("newest.md");
+    fs::write(&newest_input, "# Newest root").unwrap();
+    client.update_roots(vec![path_to_file_uri(newest.path())]);
+    client.roots_failure = None;
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    client.wait_for_input_state(&newest_input, true);
+    client.wait_for_input_state(&input, false);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(11);
+    while std::time::Instant::now() < deadline {
+        client.send_request(
+            879,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":newest_input}}),
+        );
+        let response = client.read_response(879);
+        assert_eq!(
+            response["result"]["isError"], false,
+            "an older timeout revoked newer roots: {response}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    client.close_and_assert_purity();
 }

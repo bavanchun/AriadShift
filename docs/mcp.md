@@ -100,7 +100,11 @@ Each job has its own temporary workspace under the session directory. Cancellati
 
 ### Protocol Version Compatibility (2024-11-05, 2025-11-25, 2026-07-28)
 
-`ashift mcp` supports standard MCP protocol versions (including `2024-11-05`, `2025-11-25`, and `2026-07-28`). Under `2026-07-28` (or stateless sessions without an `initialize` handshake), roots are dynamically queried via `context.peer.list_roots()` upon each tool invocation. If a client does not support client roots or `roots/list`, `--allow-dir <PATH>` must be specified when launching the server.
+`ashift mcp` supports MCP protocol versions `2024-11-05`, `2025-11-25`, and `2026-07-28`. The server requests `roots/list` after initialization and when it receives `notifications/roots/list_changed`; it does not query roots on each tool call. Tools and resources check the currently installed authorization set.
+
+Each refresh has a ten-second response deadline. Refreshes receive increasing generations, and only the newest requested refresh may install its result: an older success, failure, or timeout cannot overwrite a newer decision. A failed or timed-out notification refresh revokes client-provided roots while retaining valid explicit `--allow-dir` grants. Initialization failure preserves the initial explicit grants. A later successful refresh restores the roots it returns. Clients without roots support must launch the server with `--allow-dir <PATH>`.
+
+Input staging runs on blocking workers, with cancellation checks between chunks, so a large or growing input does not block roots handling or shutdown. Inspect and plan stage the complete input; convert uses the host's local input limits. Temporary staging requires disk space proportional to the input. Confined sidecar reads retain the input directory handle and reject symlinks and Windows reparse points, including entry swaps during opening.
 
 ---
 

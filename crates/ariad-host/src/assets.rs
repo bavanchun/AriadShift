@@ -9,8 +9,6 @@ use ariad_core::{
     limits::Limits,
     warning::{Warning, WarningCode},
 };
-#[cfg(unix)]
-use cap_std::fs::OpenOptionsExt;
 use cap_std::{ambient_authority, fs::Dir};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -407,23 +405,15 @@ fn read_image_nofollow(
     if !entry.is_file() {
         return Err(ReadImageError::NotRegularFile);
     }
-    let mut options = cap_std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        // A swapped-in FIFO must not block before the opened file is validated.
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    }
-    let file = parent
-        .open_with(file_name, &options)
-        .map_err(|_| ReadImageError::Io)?;
+    let file = crate::confine::open_entry_nofollow(&parent, Path::new(file_name), false)
+        .map_err(open_error)?;
     let opened = file.metadata().map_err(|_| ReadImageError::Io)?;
     let entry = parent.symlink_metadata(file_name).map_err(open_error)?;
-    if entry.is_symlink()
-        || !entry.is_file()
-        || !opened.is_file()
-        || !crate::confine::same_inode(&entry, &opened)
-    {
+    if crate::confine::is_reparse_point(&entry) || !entry.is_file() || !opened.is_file() {
+        return Err(ReadImageError::NotRegularFile);
+    }
+    #[cfg(unix)]
+    if !crate::confine::same_inode(&entry, &opened) {
         return Err(ReadImageError::NotRegularFile);
     }
     read_open_image(file, max_asset_bytes)
@@ -478,5 +468,50 @@ pub(crate) fn sniff_image_type(bytes: &[u8]) -> Option<String> {
         Some("image/webp".to_owned())
     } else {
         None
+    }
+}
+
+#[cfg(all(test, any(unix, windows)))]
+mod nofollow_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_link_swapped_back_after_open_never_reads_hidden_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = Dir::open_ambient_dir(temp.path(), ambient_authority()).unwrap();
+        let hidden = temp.path().join(".private.png");
+        let visible = temp.path().join("visible.png");
+        let saved = temp.path().join("saved.png");
+        fs::write(&hidden, b"\x89PNG\r\n\x1a\nprivate").unwrap();
+        fs::write(&visible, b"\x89PNG\r\n\x1a\npublic").unwrap();
+        let restore_visible = visible.clone();
+        let restore_saved = saved.clone();
+        crate::confine::TEST_OPEN_HOOKS.with(|hooks| {
+            hooks.borrow_mut().extend([
+                (
+                    "file-before",
+                    Box::new(move || {
+                        fs::rename(&visible, saved).unwrap();
+                        #[cfg(unix)]
+                        std::os::unix::fs::symlink(hidden, visible).unwrap();
+                        #[cfg(windows)]
+                        std::os::windows::fs::symlink_file(hidden, visible).unwrap();
+                    }) as Box<dyn FnOnce()>,
+                ),
+                (
+                    "file-after",
+                    Box::new(move || {
+                        fs::remove_file(&restore_visible).unwrap();
+                        fs::rename(restore_saved, restore_visible).unwrap();
+                    }) as Box<dyn FnOnce()>,
+                ),
+            ])
+        });
+        let read = read_image_nofollow(&root, Path::new("visible.png"), None);
+        crate::confine::TEST_OPEN_HOOKS.with(|hooks| hooks.borrow_mut().clear());
+        assert!(
+            read.is_err(),
+            "a swapped-in link to hidden bytes was accepted"
+        );
     }
 }

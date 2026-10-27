@@ -296,8 +296,7 @@ fn refuses_a_fifo_without_blocking() {
         Err(mpsc::RecvTimeoutError::Timeout) => {
             // If a regression blocks while opening the FIFO, provide a writer so the worker can
             // unwind before failing the test.
-            let _writer = fs::OpenOptions::new().write(true).open(&fifo).unwrap();
-            worker.join().unwrap();
+            let _writer = release_fifo_reader(&fifo);
             panic!("asset resolver blocked while opening a FIFO");
         }
         Err(error) => panic!("asset resolver worker stopped unexpectedly: {error}"),
@@ -440,8 +439,7 @@ fn confined_base_refuses_a_fifo_without_blocking() {
             worker.join().unwrap();
         }
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            let _writer = fs::OpenOptions::new().write(true).open(&fifo).unwrap();
-            worker.join().unwrap();
+            let _writer = release_fifo_reader(&fifo);
             panic!("confined asset resolver blocked while opening a FIFO");
         }
         Err(error) => panic!("confined asset resolver worker stopped unexpectedly: {error}"),
@@ -500,4 +498,54 @@ fn image_target_in_inline(inline: &Inline) -> &AssetRef {
         panic!("expected image inline");
     };
     target
+}
+
+#[cfg(unix)]
+fn release_fifo_reader(fifo: &Path) -> std::io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(fifo)
+}
+
+#[cfg(unix)]
+#[test]
+fn fifo_failure_cleanup_is_bounded_without_a_reader() {
+    if std::env::var_os("ARIAD_FIFO_CLEANUP_CHILD").is_some() {
+        let temp = tempdir().unwrap();
+        let fifo = temp.path().join("pipe");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(release_fifo_reader(&fifo).is_err());
+        return;
+    }
+    let mut child = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "fifo_failure_cleanup_is_bounded_without_a_reader",
+        ])
+        .env("ARIAD_FIFO_CLEANUP_CHILD", "1")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("FIFO cleanup blocked without a reader");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
 }

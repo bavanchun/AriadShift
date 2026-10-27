@@ -7,7 +7,7 @@ use std::{
     path::PathBuf,
     pin::Pin,
     process::ExitCode,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     task::{Context, Poll},
     time::Duration,
 };
@@ -71,6 +71,15 @@ impl McpServer {
         peer: &rmcp::service::Peer<RoleServer>,
         fail_closed: bool,
     ) {
+        // Allocation and installation share this mutex, including on multithreaded runtimes.
+        let generation = {
+            let mut current = self
+                .roots_generation
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *current = current.wrapping_add(1);
+            *current
+        };
         let roots_uris = match tokio::time::timeout(ROOTS_LIST_TIMEOUT, peer.list_roots()).await {
             Ok(Ok(result)) => result.roots.into_iter().map(|root| root.uri).collect(),
             // Initialization can involve a client without roots support. A failed refresh
@@ -85,10 +94,23 @@ impl McpServer {
             .cloned()
             .collect();
         let new_allowed = AllowedDirs::new(&existing_allow_dirs, &roots_uris).unwrap_or_default();
-        *self
+        self.replace_allowed_dirs(generation, new_allowed);
+    }
+
+    fn replace_allowed_dirs(&self, generation: u64, new_allowed: AllowedDirs) {
+        let current = self
+            .roots_generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if *current != generation {
+            return;
+        }
+        let mut allowed = self
             .allowed_dirs
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = new_allowed;
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *allowed = new_allowed;
+        self.allowed_dirs.clear_poison();
     }
 }
 
@@ -186,6 +208,7 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
         allow_overwrite: args.allow_overwrite,
         allowed_dirs: Arc::new(RwLock::new(initial_allowed)),
         cli_allow_dirs: args.allow_dir,
+        roots_generation: Arc::new(Mutex::new(0)),
         resources: SessionResources::new(),
         engine_program,
         cancel_token: server_cancel.clone(),
@@ -256,5 +279,67 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replaced_poisoned_roots_support_revocation_and_recovery() {
+        let explicit = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let explicit_input = explicit.path().join("note.md");
+        let root_input = root.path().join("note.md");
+        std::fs::write(&explicit_input, "# Explicit").unwrap();
+        std::fs::write(&root_input, "# Root").unwrap();
+        let cli_allow_dirs = vec![explicit.path().to_path_buf()];
+        let allowed_dirs = Arc::new(RwLock::new(
+            AllowedDirs::new(
+                &cli_allow_dirs,
+                &[ariad_host::confine::path_to_file_uri(root.path())],
+            )
+            .unwrap(),
+        ));
+        let poisoned = allowed_dirs.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoned.write().unwrap();
+            panic!("poison roots lock");
+        })
+        .join();
+        let server = McpServer {
+            roots_generation: Arc::new(Mutex::new(0)),
+            allowed_dirs,
+            cli_allow_dirs: cli_allow_dirs.clone(),
+            allow_overwrite: false,
+            resources: SessionResources::new(),
+            engine_program: std::env::current_exe().unwrap(),
+            pool: SessionPool::new(PoolConfig::default()),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            in_flight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        server.replace_allowed_dirs(0, AllowedDirs::new(&cli_allow_dirs, &[]).unwrap());
+        assert!(
+            !server.allowed_dirs.is_poisoned(),
+            "replacement must clear poisoned state"
+        );
+        {
+            let allowed = server.allowed_dirs.read().unwrap();
+            assert!(ariad_host::confine::confine_input(&explicit_input, &allowed).is_ok());
+            assert!(ariad_host::confine::confine_input(&root_input, &allowed).is_err());
+        }
+        server.replace_allowed_dirs(
+            0,
+            AllowedDirs::new(
+                &cli_allow_dirs,
+                &[ariad_host::confine::path_to_file_uri(root.path())],
+            )
+            .unwrap(),
+        );
+        assert!(
+            ariad_host::confine::confine_input(&root_input, &server.allowed_dirs.read().unwrap())
+                .is_ok()
+        );
     }
 }

@@ -915,7 +915,7 @@ fn test_confined_input_parent_dir_is_the_input_directory() {
 fn test_parent_swap_after_input_copy_never_embeds_a_private_image() {
     use ariad_host::{
         assets::AssetBase,
-        convert::{ConvertRequest, convert_confined_in},
+        convert::{ConvertRequest, convert_confined_assets_in},
         session::{PoolConfig, SessionPool},
     };
     use sha2::{Digest, Sha256};
@@ -965,7 +965,7 @@ fn test_parent_swap_after_input_copy_never_embeds_a_private_image() {
         reader_engine: None,
     };
     let pool = SessionPool::new(PoolConfig::default());
-    convert_confined_in(
+    convert_confined_assets_in(
         &pool,
         &request,
         &output.parent_dir,
@@ -984,5 +984,44 @@ fn test_parent_swap_after_input_copy_never_embeds_a_private_image() {
     assert!(
         ir.contains(&hex::encode(Sha256::digest(PUBLIC_PNG))),
         "the image from the authorized directory must still be embedded"
+    );
+}
+
+#[test]
+fn pooled_confined_conversion_keeps_the_existing_call_signature() {
+    use ariad_host::{
+        convert::{ConvertRequest, convert_confined_in},
+        session::{PoolConfig, SessionPool},
+    };
+    let temp = tempdir().unwrap();
+    let input = temp.path().join("note.md");
+    fs::write(&input, "# Compatible").unwrap();
+    let parent =
+        cap_std::fs::Dir::open_ambient_dir(temp.path(), cap_std::ambient_authority()).unwrap();
+    let request = ConvertRequest {
+        input,
+        output: temp.path().join("note.json"),
+        target_format: "json".into(),
+        profile: ariad_core::planner::Profile::Editable,
+        overwrite: false,
+        engine_program: std::env::current_exe().unwrap(),
+        title_fallback: None,
+        asset_base_dir: None,
+        reader_engine: None,
+    };
+    let pool = SessionPool::new(PoolConfig::default());
+    convert_confined_in(
+        &pool,
+        &request,
+        &parent,
+        Path::new("note.json"),
+        tokio_util::sync::CancellationToken::new(),
+        |_| {},
+    )
+    .unwrap();
+    assert!(
+        fs::read_to_string(request.output)
+            .unwrap()
+            .contains("Compatible")
     );
 }

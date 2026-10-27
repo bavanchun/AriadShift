@@ -560,9 +560,41 @@ where
 
 /// Converts like [`convert_confined`], taking engine processes from `pool`.
 ///
+/// Retains the original image resolution policy and call signature. Call
+/// [`convert_confined_assets_in`] to bind image reads to a confined directory handle.
+pub fn convert_confined_in<F>(
+    pool: &SessionPool,
+    request: &ConvertRequest,
+    destination_parent: &cap_std::fs::Dir,
+    file_name: &Path,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let invocation = EngineInvocation::new(&request.engine_program);
+    convert_executor(
+        request,
+        Some(Confinement {
+            destination_parent,
+            file_name,
+            asset_base: None,
+        }),
+        &invocation,
+        None,
+        Limits::local(),
+        Engines::Pool(pool),
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts like [`convert_confined`], taking engine processes from `pool`.
+///
 /// Images referenced by a Markdown or HTML input resolve beneath `asset_base`, never through
 /// `request.asset_base_dir` or the input's path, so they stay within the authorized directory.
-pub fn convert_confined_in<F>(
+pub fn convert_confined_assets_in<F>(
     pool: &SessionPool,
     request: &ConvertRequest,
     destination_parent: &cap_std::fs::Dir,

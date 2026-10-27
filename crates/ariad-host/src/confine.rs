@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use cap_std::fs::OpenOptionsExt;
 
 use ariad_core::format::Format;
@@ -240,12 +240,39 @@ impl Clone for ConfinedInput {
 impl ConfinedInput {
     /// Copies the opened file into a destination file, bounded by `max_bytes`.
     pub fn copy_to_file(&mut self, dest: &mut fs::File, max_bytes: Option<u64>) -> io::Result<u64> {
+        self.copy_to_file_cancellable(dest, max_bytes, &tokio_util::sync::CancellationToken::new())
+    }
+
+    /// Copies chunks from the authorized handle, stopping when cancellation is observed.
+    pub fn copy_to_file_cancellable(
+        &mut self,
+        dest: &mut fs::File,
+        max_bytes: Option<u64>,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> io::Result<u64> {
         use std::io::{Read, Seek, SeekFrom, Write};
         self.file.seek(SeekFrom::Start(0))?;
         let mut buffer = [0u8; 64 * 1024];
         let mut total = 0u64;
+        #[cfg(feature = "test-probe")]
+        if let Some(marker) = std::env::var_os("ASHIFT_TEST_STAGE_STARTED") {
+            fs::write(marker, b"started")?;
+        }
         loop {
+            if cancel.is_cancelled() {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            #[cfg(feature = "test-probe")]
+            if let Some(delay) = std::env::var("ASHIFT_TEST_STAGE_DELAY_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+            {
+                std::thread::sleep(std::time::Duration::from_millis(delay.min(1000)));
+            }
             let n = self.file.read(&mut buffer)?;
+            if cancel.is_cancelled() {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
             if n == 0 {
                 break;
             }
@@ -273,13 +300,27 @@ impl ConfinedInput {
         file_name: Option<&str>,
         max_bytes: Option<u64>,
     ) -> io::Result<(tempfile::TempDir, PathBuf)> {
+        self.create_isolated_copy_cancellable(
+            file_name,
+            max_bytes,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+    }
+
+    /// Stages the full authorized input, retaining the byte ceiling and per-chunk cancellation.
+    pub fn create_isolated_copy_cancellable(
+        &mut self,
+        file_name: Option<&str>,
+        max_bytes: Option<u64>,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> io::Result<(tempfile::TempDir, PathBuf)> {
         let temp_dir = tempfile::tempdir()?;
         let stem = file_name
             .or_else(|| self.path.file_name().and_then(|f| f.to_str()))
             .unwrap_or("input.bin");
         let dest_path = temp_dir.path().join(stem);
         let mut dest_file = fs::File::create(&dest_path)?;
-        self.copy_to_file(&mut dest_file, max_bytes)?;
+        self.copy_to_file_cancellable(&mut dest_file, max_bytes, cancel)?;
         Ok((temp_dir, dest_path))
     }
 }
@@ -436,45 +477,20 @@ fn open_file_and_parent_nofollow(
 
     let parent_dir = open_dir_nofollow(root_dir, parent)?;
 
-    let mut options = cap_std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        // A replaced FIFO must not block before the opened file is validated.
-        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let cap_file = open_entry_nofollow(&parent_dir, Path::new(file_name), false)?;
+    let post_meta = parent_dir.symlink_metadata(file_name)?;
+    if is_reparse_point(&post_meta) {
+        return Err(io::Error::other("symlink entry is refused"));
     }
-
     #[cfg(unix)]
-    if parent_dir
-        .symlink_metadata(file_name)
-        .is_ok_and(|m| m.is_symlink())
-    {
+    if !same_inode(&post_meta, &cap_file.metadata()?) {
         return Err(io::Error::from_raw_os_error(libc::ELOOP));
-    }
-
-    let cap_file = parent_dir.open_with(file_name, &options)?;
-
-    #[cfg(unix)]
-    {
-        use cap_std::fs::MetadataExt;
-        let post_meta = parent_dir.symlink_metadata(file_name)?;
-        if post_meta.is_symlink() {
-            return Err(io::Error::from_raw_os_error(libc::ELOOP));
-        }
-        let file_meta = cap_file.metadata()?;
-        if post_meta.dev() != file_meta.dev() || post_meta.ino() != file_meta.ino() {
-            return Err(io::Error::from_raw_os_error(libc::ELOOP));
-        }
     }
 
     Ok((parent_dir, cap_file.into_std()))
 }
 
-/// Opens the directory `relative` beneath `root_dir` one component at a time.
-///
-/// Every component must be a real directory: after each open the entry is checked again and,
-/// on Unix, compared by device and inode with the opened handle, so a component that is or is
-/// concurrently swapped for a symlink is refused rather than followed.
+/// Opens each directory component without accepting a symlink or reparse-point handle.
 pub(crate) fn open_dir_nofollow(
     root_dir: &cap_std::fs::Dir,
     relative: &Path,
@@ -487,30 +503,86 @@ pub(crate) fn open_dir_nofollow(
                 "path component is not a plain name",
             ));
         };
-        let next = current.open_dir(name)?;
+        let file = open_entry_nofollow(&current, Path::new(name), true)?;
+        let opened = file.metadata()?;
         let entry = current.symlink_metadata(name)?;
-        let opened = next.dir_metadata()?;
-        if entry.is_symlink() || !entry.is_dir() || !same_inode(&entry, &opened) {
+        if is_reparse_point(&entry) || !entry.is_dir() || !opened.is_dir() {
             return Err(io::Error::other("path component is not a directory"));
         }
-        current = next;
+        #[cfg(unix)]
+        if !same_inode(&entry, &opened) {
+            return Err(io::Error::from_raw_os_error(libc::ELOOP));
+        }
+        current = cap_std::fs::Dir::from_std_file(file.into_std());
     }
     Ok(current)
 }
 
-/// Reports whether two metadata records describe the same file; always true off Unix, where
-/// the caller's symlink checks are the remaining guard.
-pub(crate) fn same_inode(left: &cap_std::fs::Metadata, right: &cap_std::fs::Metadata) -> bool {
+/// Opens one plain entry beneath an authorized handle. Windows opens the reparse point itself
+/// atomically, then rejects the opened handle's attributes, independent of later path swaps.
+pub(crate) fn open_entry_nofollow(
+    parent: &cap_std::fs::Dir,
+    name: &Path,
+    directory: bool,
+) -> io::Result<cap_std::fs::File> {
+    let mut options = cap_std::fs::OpenOptions::new();
+    options.read(true);
     #[cfg(unix)]
+    options.custom_flags(
+        libc::O_NOFOLLOW | libc::O_NONBLOCK | if directory { libc::O_DIRECTORY } else { 0 },
+    );
+    #[cfg(windows)]
+    {
+        // CreateFileW flags; BACKUP_SEMANTICS permits directory handles. No new platform
+        // dependency is needed for these documented Win32 constants.
+        // https://learn.microsoft.com/en-us/windows/win32/fileio/reparse-point-operations
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    #[cfg(test)]
+    test_open_hook(if directory {
+        "directory-before"
+    } else {
+        "file-before"
+    });
+    let file = parent.open_with(name, &options)?;
+    #[cfg(test)]
+    test_open_hook(if directory {
+        "directory-after"
+    } else {
+        "file-after"
+    });
+    let metadata = file.metadata()?;
+    if is_reparse_point(&metadata)
+        || (directory && !metadata.is_dir())
+        || (!directory && !metadata.is_file())
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "symlinks and non-regular entries are refused",
+        ));
+    }
+    Ok(file)
+}
+
+pub(crate) fn is_reparse_point(metadata: &cap_std::fs::Metadata) -> bool {
+    #[cfg(windows)]
     {
         use cap_std::fs::MetadataExt;
-        left.dev() == right.dev() && left.ino() == right.ino()
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
     }
-    #[cfg(not(unix))]
+    #[cfg(not(windows))]
     {
-        let _ = (left, right);
-        true
+        metadata.is_symlink()
     }
+}
+
+#[cfg(unix)]
+pub(crate) fn same_inode(left: &cap_std::fs::Metadata, right: &cap_std::fs::Metadata) -> bool {
+    use cap_std::fs::MetadataExt;
+    left.dev() == right.dev() && left.ino() == right.ino()
 }
 
 /// Validated output target with capability handle to the parent directory.
@@ -1031,4 +1103,69 @@ fn encode_uri_path(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+type OpenHook = (&'static str, Box<dyn FnOnce()>);
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_OPEN_HOOKS: std::cell::RefCell<Vec<OpenHook>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+pub(crate) fn test_open_hook(point: &str) {
+    let hook = TEST_OPEN_HOOKS.with(|hooks| {
+        let mut hooks = hooks.borrow_mut();
+        if hooks
+            .first()
+            .is_some_and(|(expected, _)| *expected == point)
+        {
+            Some(hooks.remove(0).1)
+        } else {
+            None
+        }
+    });
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+#[cfg(all(test, any(unix, windows)))]
+mod nofollow_tests {
+    use super::*;
+
+    #[test]
+    fn a_directory_link_swapped_back_after_open_is_refused() {
+        let temp = tempfile::tempdir().unwrap();
+        let root =
+            cap_std::fs::Dir::open_ambient_dir(temp.path(), cap_std::ambient_authority()).unwrap();
+        let hidden = temp.path().join(".private");
+        let saved = temp.path().join("saved");
+        let visible = temp.path().join("visible");
+        fs::create_dir(&hidden).unwrap();
+        fs::create_dir(&saved).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&hidden, &visible).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&hidden, &visible).unwrap();
+        TEST_OPEN_HOOKS.with(|hooks| {
+            hooks.borrow_mut().push((
+                "directory-after",
+                Box::new(move || {
+                    #[cfg(unix)]
+                    fs::remove_file(&visible).unwrap();
+                    #[cfg(windows)]
+                    fs::remove_dir(&visible).unwrap();
+                    fs::rename(saved, visible).unwrap();
+                }),
+            ))
+        });
+        let opened = open_dir_nofollow(&root, Path::new("visible"));
+        TEST_OPEN_HOOKS.with(|hooks| hooks.borrow_mut().clear());
+        assert!(
+            opened.is_err(),
+            "a handle reached through a link was accepted after entry restoration"
+        );
+    }
 }
