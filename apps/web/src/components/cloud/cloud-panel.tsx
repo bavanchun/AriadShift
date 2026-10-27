@@ -21,7 +21,7 @@ import {
   formatFromName,
   type PlanLimits,
 } from "@/lib/cloud/api";
-import { type AccountUser, AuthError, CloudAuth } from "@/lib/cloud/auth";
+import { type AccountUser, AuthError, CloudAuth, type CloudAuthState } from "@/lib/cloud/auth";
 import { CloudJob, type DiscardOutcome, type ServerCopy } from "@/lib/cloud/cloud-job";
 import type { CloudConfig } from "@/lib/cloud/config";
 import { type CloudAction, describeCloudError } from "@/lib/cloud/errors";
@@ -71,6 +71,22 @@ const SELECT =
 const CLOUD_PROFILES = PROFILES.filter(
   (item): item is (typeof PROFILES)[number] & { id: CloudProfile } => item.id !== "private",
 );
+
+const UNRESOLVED_AUTH_STATE: CloudAuthState = {
+  user: null,
+  anonymous: false,
+  sessionExpired: false,
+  epoch: 0,
+  resolved: false,
+};
+
+const NO_AUTH_STATE: CloudAuthState = {
+  user: null,
+  anonymous: true,
+  sessionExpired: false,
+  epoch: 0,
+  resolved: true,
+};
 
 function useOnline(): boolean {
   return useSyncExternalStore(
@@ -154,13 +170,18 @@ export default function CloudPanel({
     [auth, config, testFetch, testOperations],
   );
   const online = useOnline();
+  const authState = useSyncExternalStore(
+    useCallback((notify: () => void) => (auth ? auth.subscribe(notify) : () => undefined), [auth]),
+    () => (auth ? auth.state : NO_AUTH_STATE),
+    () => (auth ? UNRESOLVED_AUTH_STATE : NO_AUTH_STATE),
+  );
+  const user: AccountUser | null | undefined = authState.resolved ? authState.user : undefined;
+  const sessionExpired = authState.sessionExpired;
 
-  const [user, setUser] = useState<AccountUser | null | undefined>(auth ? undefined : null);
-  const [sessionExpired, setSessionExpired] = useState(false);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
   const [capabilitiesError, setCapabilitiesError] = useState<"api" | "auth" | null>(null);
   const [limits, setLimits] = useState<PlanLimits | null>(null);
-  const [target, setTarget] = useState<string | null>(null);
+  const [selectedTarget, setTarget] = useState<string | null>(null);
   const [profile, setProfile] = useState<CloudProfile>(
     localProfile === "private" ? "editable" : localProfile,
   );
@@ -168,7 +189,12 @@ export default function CloudPanel({
   const [turnstileKey, setTurnstileKey] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [signOutFailure, setSignOutFailure] = useState<{
+    epoch: number;
+    message: string;
+  } | null>(null);
+  const signOutError =
+    signOutFailure && signOutFailure.epoch === authState.epoch ? signOutFailure.message : null;
   const [now, setNow] = useState(() => Date.now());
   const [retryUntil, setRetryUntil] = useState(0);
   const [polite, setPolite] = useState("");
@@ -189,6 +215,12 @@ export default function CloudPanel({
     () => (capabilities && source ? cloudTargets(capabilities, source) : []),
     [capabilities, source],
   );
+  const target =
+    selectedTarget && targets.includes(selectedTarget)
+      ? selectedTarget
+      : preferredTarget && targets.includes(preferredTarget)
+        ? preferredTarget
+        : (targets[0] ?? null);
 
   // The latest values the job needs when it builds error copy.
   const context = useRef({ limits, user, source, target });
@@ -259,10 +291,6 @@ export default function CloudPanel({
     if (!auth) {
       return;
     }
-    const unsubscribe = auth.subscribe(() => {
-      setUser(auth.user);
-      setSessionExpired(auth.sessionExpired);
-    });
     const onFocus = () => {
       if (auth.user) {
         void auth.session().catch(() => undefined);
@@ -272,7 +300,6 @@ export default function CloudPanel({
     void auth.session().catch(() => undefined);
     return () => {
       window.removeEventListener("focus", onFocus);
-      unsubscribe();
     };
   }, [auth]);
 
@@ -306,18 +333,6 @@ export default function CloudPanel({
       .catch(() => !controller.signal.aborted && setLimits(null));
     return () => controller.abort();
   }, [api, sessionExpired, user]);
-
-  useEffect(() => {
-    setTarget((current) => {
-      if (current && targets.includes(current)) {
-        return current;
-      }
-      if (preferredTarget && targets.includes(preferredTarget)) {
-        return preferredTarget;
-      }
-      return targets[0] ?? null;
-    });
-  }, [preferredTarget, targets]);
 
   // One tick per second while a step's elapsed time shows, otherwise every
   // 30 seconds for the expiry line.
@@ -404,8 +419,6 @@ export default function CloudPanel({
 
   const continueAnonymously = () => {
     auth?.continueAnonymously();
-    setUser(null);
-    setSessionExpired(false);
     if (state.phase === "error" && !state.job) {
       job.reset();
     }
@@ -437,15 +450,20 @@ export default function CloudPanel({
     if (!auth || signingOut) {
       return;
     }
+    const startEpoch = auth.epoch;
     setSigningOut(true);
-    setSignOutError(null);
+    setSignOutFailure(null);
     try {
-      await auth.signOut();
-      setUser(null);
+      const outcome = await auth.signOut();
+      if (outcome === "stale") {
+        return;
+      }
     } catch {
-      const message = "Could not sign out right now. Try again.";
-      setSignOutError(message);
-      setAssertive(message);
+      if (auth.epoch === startEpoch) {
+        const message = "Could not sign out right now. Try again.";
+        setSignOutFailure({ epoch: startEpoch, message });
+        setAssertive(message);
+      }
     } finally {
       setSigningOut(false);
     }
@@ -790,9 +808,7 @@ export default function CloudPanel({
             if (auth.user?.id !== signedIn.id) {
               return;
             }
-            setUser(signedIn);
-            setSessionExpired(false);
-            setSignOutError(null);
+            setSignOutFailure(null);
             setDialogOpen(false);
             if (state.phase === "error" && !state.job) {
               job.reset();

@@ -11,6 +11,16 @@ export interface AccountUser {
 
 export type SignInResult = { status: "signed-in"; user: AccountUser } | { status: "two-factor" };
 
+export type SignOutResult = "signed-out" | "stale";
+
+export interface CloudAuthState {
+  readonly user: AccountUser | null;
+  readonly anonymous: boolean;
+  readonly sessionExpired: boolean;
+  readonly epoch: number;
+  readonly resolved: boolean;
+}
+
 /** A refused auth request, with the service's message when it sent one. */
 export class AuthError extends Error {
   override readonly name = "AuthError";
@@ -55,11 +65,44 @@ function asUser(value: unknown): AccountUser | null {
 const SESSION_EXPIRED_MESSAGE =
   "Your session has ended. Sign in again; the file you chose stays here.";
 
+const SESSION_CHANGED_MESSAGE =
+  "The signed-in account changed. Review the account shown above and try again.";
+
+function decodeBase64Url(segment: string): string | null {
+  try {
+    const base64 = segment.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** Extracts the `sub` claim from a JWT without verifying the signature. */
+export function jwtSubject(token: string): string | null {
+  const parts = token.split(".");
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+    return null;
+  }
+  const decoded = decodeBase64Url(parts[1]);
+  if (!decoded) {
+    return null;
+  }
+  try {
+    const payload = JSON.parse(decoded) as Record<string, unknown>;
+    return typeof payload?.sub === "string" && payload.sub.length > 0 ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 export class CloudAuth {
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
   readonly #listeners = new Set<() => void>();
-  #token: { value: string; until: number; userId: string | null; epoch: number } | null = null;
+  #token: { value: string; until: number; userId: string; epoch: number } | null = null;
   #user: AccountUser | null = null;
   /** Known to have no session, so `bearer` skips asking for a token. */
   #anonymous = false;
@@ -67,6 +110,13 @@ export class CloudAuth {
   #sessionExpired = false;
   /** Incremented on every auth state transition to invalidate in-flight requests. */
   #epoch = 0;
+  #state: CloudAuthState = {
+    user: null,
+    anonymous: false,
+    sessionExpired: false,
+    epoch: 0,
+    resolved: false,
+  };
   #pendingSession: Promise<AccountUser | null> | null = null;
   #pendingToken: Promise<string | undefined> | null = null;
 
@@ -79,13 +129,35 @@ export class CloudAuth {
     return this.#user;
   }
 
+  get anonymous(): boolean {
+    return this.#anonymous;
+  }
+
   get sessionExpired(): boolean {
     return this.#sessionExpired;
+  }
+
+  get epoch(): number {
+    return this.#epoch;
+  }
+
+  get state(): CloudAuthState {
+    return this.#state;
   }
 
   subscribe(listener: () => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  #syncState() {
+    this.#state = {
+      user: this.#user,
+      anonymous: this.#anonymous,
+      sessionExpired: this.#sessionExpired,
+      epoch: this.#epoch,
+      resolved: this.#user !== null || this.#anonymous || this.#sessionExpired,
+    };
   }
 
   #notify() {
@@ -111,6 +183,7 @@ export class CloudAuth {
     if (next.user && next.token) {
       this.#remember(next.token, this.#epoch, next.user.id);
     }
+    this.#syncState();
     if (next.notify !== false) {
       this.#notify();
     }
@@ -159,15 +232,17 @@ export class CloudAuth {
     token: string | null | undefined,
     expectedEpoch = this.#epoch,
     userId = this.#user?.id ?? null,
-  ) {
+  ): boolean {
     if (
       !token ||
+      !userId ||
       this.#epoch !== expectedEpoch ||
-      (this.#user?.id ?? null) !== userId ||
+      this.#user?.id !== userId ||
       this.#anonymous ||
-      this.#sessionExpired
+      this.#sessionExpired ||
+      jwtSubject(token) !== userId
     ) {
-      return;
+      return false;
     }
     this.#token = {
       value: token,
@@ -175,6 +250,7 @@ export class CloudAuth {
       userId,
       epoch: this.#epoch,
     };
+    return true;
   }
 
   #expireSession() {
@@ -215,9 +291,10 @@ export class CloudAuth {
         this.#transition({ user, anonymous: false, sessionExpired: false, token: jwt });
       } else {
         this.#user = user;
-        if (jwt) {
-          this.#remember(jwt, epoch, user.id);
+        if (jwt && !this.#remember(jwt, epoch, user.id)) {
+          this.#token = null;
         }
+        this.#syncState();
         this.#notify();
       }
       return user;
@@ -265,11 +342,12 @@ export class CloudAuth {
     if (!fetched) {
       throw new AuthError(500, "no_session", noSessionMessage);
     }
+    const validSessionJwt = sessionJwt && jwtSubject(sessionJwt) === fetched.id ? sessionJwt : null;
     this.#transition({
       user: fetched,
       anonymous: false,
       sessionExpired: false,
-      token: sessionJwt ?? jwt,
+      token: validSessionJwt ?? jwt,
     });
     return fetched;
   }
@@ -322,12 +400,21 @@ export class CloudAuth {
     return user ?? { id: "", email: "", name: "" };
   }
 
-  async signOut(): Promise<void> {
+  async signOut(): Promise<SignOutResult> {
     const epoch = this.#epoch;
-    await this.#json("sign-out", {});
-    if (this.#epoch === epoch) {
-      this.#transition({ user: null, anonymous: true, sessionExpired: false });
+    try {
+      await this.#json("sign-out", {});
+    } catch (error) {
+      if (this.#epoch !== epoch) {
+        return "stale";
+      }
+      throw error;
     }
+    if (this.#epoch !== epoch) {
+      return "stale";
+    }
+    this.#transition({ user: null, anonymous: true, sessionExpired: false });
+    return "signed-out";
   }
 
   /** Explicitly opts into anonymous mode after a signed-in session expired or was canceled. */
@@ -340,11 +427,19 @@ export class CloudAuth {
     this.#epoch += 1;
     this.#pendingSession = null;
     this.#pendingToken = null;
-    if (this.#token && this.#user && !this.#anonymous && !this.#sessionExpired) {
+    if (
+      this.#token &&
+      this.#user &&
+      !this.#anonymous &&
+      !this.#sessionExpired &&
+      this.#token.userId === this.#user.id &&
+      jwtSubject(this.#token.value) === this.#user.id
+    ) {
       this.#token = { ...this.#token, epoch: this.#epoch };
     } else {
       this.#token = null;
     }
+    this.#syncState();
   }
 
   /** Forgets the cached JWT, for example after the API answered 401. */
@@ -352,6 +447,7 @@ export class CloudAuth {
     this.#epoch += 1;
     this.#token = null;
     this.#pendingToken = null;
+    this.#syncState();
   }
 
   /**
@@ -359,26 +455,31 @@ export class CloudAuth {
    * case requests go out anonymously.
    */
   readonly bearer = async (): Promise<string | undefined> => {
+    if (!this.#pendingSession && !this.#user && !this.#anonymous && !this.#sessionExpired) {
+      void this.session().catch(() => null);
+    }
     while (this.#pendingSession) {
       await this.#pendingSession.catch(() => null);
     }
     if (this.#sessionExpired) {
       throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
     }
+    const currentUser = this.#user;
+    if (this.#anonymous || !currentUser) {
+      return undefined;
+    }
     if (
       this.#token &&
       this.#token.epoch === this.#epoch &&
-      this.#token.userId === (this.#user?.id ?? null) &&
+      this.#token.userId === currentUser.id &&
+      jwtSubject(this.#token.value) === currentUser.id &&
       Date.now() < this.#token.until
     ) {
       return this.#token.value;
     }
-    if (this.#anonymous) {
-      return undefined;
-    }
     if (!this.#pendingToken) {
       const epoch = this.#epoch;
-      const userId = this.#user?.id ?? null;
+      const userId = currentUser.id;
       const pending = this.#fetchToken(epoch, userId).finally(() => {
         if (this.#pendingToken === pending) {
           this.#pendingToken = null;
@@ -389,7 +490,7 @@ export class CloudAuth {
     return this.#pendingToken;
   };
 
-  async #fetchToken(epoch: number, userId: string | null): Promise<string | undefined> {
+  async #fetchToken(epoch: number, userId: string): Promise<string | undefined> {
     let response: Response;
     try {
       response = await this.#request("token");
@@ -397,45 +498,39 @@ export class CloudAuth {
       if (this.#pendingSession) {
         await this.#pendingSession.catch(() => null);
       }
-      if (this.#epoch !== epoch || (this.#user?.id ?? null) !== userId) {
+      if (this.#user && this.#user.id !== userId) {
+        throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
+      }
+      if (this.#epoch !== epoch || !this.#user) {
         return this.bearer();
       }
       this.#token = null;
-      if (this.#user) {
-        throw new AuthError(
-          503,
-          "auth_unavailable",
-          "The sign-in service is unavailable right now. Try again, or convert on this device.",
-        );
-      }
-      this.#transition({ user: null, anonymous: true, sessionExpired: false });
-      return undefined;
+      throw new AuthError(
+        503,
+        "auth_unavailable",
+        "The sign-in service is unavailable right now. Try again, or convert on this device.",
+      );
     }
     if (this.#pendingSession) {
       await this.#pendingSession.catch(() => null);
     }
-    if (this.#epoch !== epoch || (this.#user?.id ?? null) !== userId) {
+    if (this.#user && this.#user.id !== userId) {
+      throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
+    }
+    if (this.#epoch !== epoch || !this.#user) {
       return this.bearer();
     }
     if (!response.ok) {
       this.#token = null;
       if (response.status === 401) {
-        if (this.#user) {
-          this.#expireSession();
-          throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
-        }
-        this.#transition({ user: null, anonymous: true, sessionExpired: false });
-        return undefined;
+        this.#expireSession();
+        throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
       }
-      if (this.#user) {
-        throw new AuthError(
-          response.status,
-          "auth_unavailable",
-          "The sign-in service is unavailable right now. Try again, or convert on this device.",
-        );
-      }
-      this.#transition({ user: null, anonymous: true, sessionExpired: false });
-      return undefined;
+      throw new AuthError(
+        response.status,
+        "auth_unavailable",
+        "The sign-in service is unavailable right now. Try again, or convert on this device.",
+      );
     }
     let data: { token?: unknown } | null = null;
     try {
@@ -446,23 +541,45 @@ export class CloudAuth {
     if (this.#pendingSession) {
       await this.#pendingSession.catch(() => null);
     }
-    if (this.#epoch !== epoch || (this.#user?.id ?? null) !== userId) {
+    if (this.#user && this.#user.id !== userId) {
+      throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
+    }
+    if (this.#epoch !== epoch || !this.#user) {
       return this.bearer();
     }
     const token = data?.token;
     if (typeof token !== "string" || !token) {
       this.#token = null;
-      if (this.#user) {
-        throw new AuthError(
-          502,
-          "auth_unavailable",
-          "The sign-in service is unavailable right now. Try again, or convert on this device.",
-        );
-      }
-      this.#transition({ user: null, anonymous: true, sessionExpired: false });
-      return undefined;
+      throw new AuthError(
+        502,
+        "auth_unavailable",
+        "The sign-in service is unavailable right now. Try again, or convert on this device.",
+      );
     }
-    this.#remember(token, epoch, userId);
+    const subject = jwtSubject(token);
+    if (!subject) {
+      this.#token = null;
+      throw new AuthError(
+        502,
+        "auth_unavailable",
+        "The sign-in service is unavailable right now. Try again, or convert on this device.",
+      );
+    }
+    if (subject !== userId) {
+      this.#token = null;
+      await this.session().catch(() => null);
+      if (this.#sessionExpired) {
+        throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
+      }
+      if (this.#user?.id === userId) {
+        this.#expireSession();
+        throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
+      }
+      throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
+    }
+    if (!this.#remember(token, epoch, userId)) {
+      return this.bearer();
+    }
     return token;
   }
 }

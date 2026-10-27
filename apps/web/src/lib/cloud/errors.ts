@@ -84,6 +84,17 @@ export function describeCloudError(error: unknown, context: CloudErrorContext): 
   const base = { serverCopy: onServer, retryAfter: null as number | null };
 
   if (error instanceof AuthError) {
+    if (error.code === "session_changed") {
+      return {
+        ...base,
+        code: error.code,
+        title: "The signed-in account changed",
+        message: error.message,
+        serverCopy: null,
+        actions: ["retry", "use-device"],
+        technical: technical(error.code, error.message),
+      };
+    }
     if (error.status === 401 || error.code === "session_expired") {
       return {
         ...base,
