@@ -312,7 +312,7 @@ ashift engines <install|remove|verify> ...
 
 ```text
 ENGINE       VERSION   LICENSE            STATUS                             ROUTES
-ariad-core   0.2.0     Apache-2.0         ready                              ariad-ir+json -> html, ariad-ir+json -> markdown, html -> ariad-ir+json, markdown -> ariad-ir+json
+ariad-core   1.0.0     Apache-2.0         ready                              ariad-ir+json -> html, ariad-ir+json -> markdown, html -> ariad-ir+json, markdown -> ariad-ir+json
 pandoc       3.12      GPL-2.0-or-later   ready                              ariad-ir+json -> docx, ariad-ir+json -> epub, docx -> ariad-ir+json, epub -> ariad-ir+json
 docling      0.2.0     MIT                ready                              docx -> ariad-ir+json
 
@@ -331,7 +331,7 @@ An array of engine rows. `pack` appears only on rows backed by an engine pack:
 [
   {
     "id": "ariad-core",
-    "version": "0.2.0",
+    "version": "1.0.0",
     "license": "Apache-2.0",
     "status": "ready",
     "routes": [

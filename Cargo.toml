@@ -4,7 +4,7 @@ exclude = ["fuzz", "vendor/tauri-plugin-deep-link"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.99"
 license = "Apache-2.0"
@@ -13,8 +13,8 @@ publish = false
 
 [workspace.dependencies]
 ammonia = "4.2.1"
-ariad-core = { path = "crates/ariad-core", version = "0.1.0", default-features = false }
-ariad-host = { path = "crates/ariad-host", version = "0.1.0", default-features = false }
+ariad-core = { path = "crates/ariad-core", version = "1.0.0", default-features = false }
+ariad-host = { path = "crates/ariad-host", version = "1.0.0", default-features = false }
 assert_cmd = "2.2.2"
 async-trait = "0.1.92"
 axum = { version = "0.8.9", default-features = false }
