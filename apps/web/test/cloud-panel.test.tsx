@@ -594,4 +594,157 @@ describe("CloudPanel", () => {
     expect(screen.queryByTestId("cloud-session-expired")).toBeNull();
     expect(uploadButton.getAttribute("aria-disabled")).toBeNull();
   });
+
+  it("clears the previous account's JWT when focus refresh switches to another user without set-auth-jwt", async () => {
+    let sessionCalls = 0;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "a", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": "jwt-a" } },
+          );
+        }
+        return Response.json({ user: { id: "b", email: "bob@example.com", name: "Bob" } });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return Response.json({ token: "jwt-b" });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.focus(window);
+    await screen.findByText("Signed in as bob@example.com");
+
+    fireEvent.click(start);
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual(["Bearer jwt-b"]);
+  });
+
+  it("stays anonymous when the user cancels a pending sign-in and chooses Continue without an account", async () => {
+    let sessionCalls = 0;
+    let resolveSignIn: ((response: Response) => void) | undefined;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "u1", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": "jwt-1" } },
+          );
+        }
+        return new Response("expired", { status: 401 });
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        return new Promise<Response>((resolve) => {
+          resolveSignIn = resolve;
+        });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    fireEvent.focus(window);
+    const expiredAlert = await screen.findByTestId("cloud-session-expired");
+
+    fireEvent.click(within(expiredAlert).getByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(resolveSignIn).toBeTypeOf("function"));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("account-dialog")).toBeNull();
+
+    fireEvent.click(
+      within(expiredAlert).getByRole("button", { name: "Continue without an account" }),
+    );
+    expect(screen.queryByTestId("cloud-session-expired")).toBeNull();
+
+    resolveSignIn?.(
+      Response.json(
+        {
+          redirect: false,
+          token: "session",
+          user: { id: "u1", email: "ada@example.com", name: "Ada" },
+        },
+        { headers: { "set-auth-jwt": "jwt-late" } },
+      ),
+    );
+    await Promise.resolve();
+
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDefined();
+
+    const start = screen.getByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(start);
+
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual([null]);
+  });
 });

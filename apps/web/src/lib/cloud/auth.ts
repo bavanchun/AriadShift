@@ -59,7 +59,7 @@ export class CloudAuth {
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
   readonly #listeners = new Set<() => void>();
-  #token: { value: string; until: number } | null = null;
+  #token: { value: string; until: number; userId: string | null; epoch: number } | null = null;
   #user: AccountUser | null = null;
   /** Known to have no session, so `bearer` skips asking for a token. */
   #anonymous = false;
@@ -94,6 +94,28 @@ export class CloudAuth {
     }
   }
 
+  #transition(next: {
+    user: AccountUser | null;
+    anonymous: boolean;
+    sessionExpired: boolean;
+    token?: string | null;
+    notify?: boolean;
+  }) {
+    this.#epoch += 1;
+    this.#user = next.user;
+    this.#anonymous = next.anonymous;
+    this.#sessionExpired = next.sessionExpired;
+    this.#token = null;
+    this.#pendingSession = null;
+    this.#pendingToken = null;
+    if (next.user && next.token) {
+      this.#remember(next.token, this.#epoch, next.user.id);
+    }
+    if (next.notify !== false) {
+      this.#notify();
+    }
+  }
+
   async #request(path: string, body?: unknown): Promise<Response> {
     return this.#fetch(`${this.#baseUrl}/api/auth/${path}`, {
       method: body === undefined ? "GET" : "POST",
@@ -103,12 +125,15 @@ export class CloudAuth {
     });
   }
 
-  async #json(path: string, body?: unknown, expectedEpoch = this.#epoch): Promise<unknown> {
+  async #json<T = unknown>(
+    path: string,
+    body?: unknown,
+  ): Promise<{ data: T | null; jwt: string | null }> {
     const response = await this.#request(path, body);
-    let data: unknown = null;
+    let data: T | null = null;
     try {
       const text = await response.text();
-      data = text ? JSON.parse(text) : null;
+      data = text ? (JSON.parse(text) as T) : null;
     } catch {
       data = null;
     }
@@ -127,60 +152,74 @@ export class CloudAuth {
             : "The account service refused the request.");
       throw new AuthError(response.status, code, message);
     }
-    if (path !== "sign-out" && this.#epoch === expectedEpoch) {
-      this.#remember(response.headers.get("set-auth-jwt"));
-    }
-    return data;
+    return { data, jwt: response.headers.get("set-auth-jwt") };
   }
 
-  #remember(token: string | null) {
-    if (token) {
-      this.#token = { value: token, until: Date.now() + TOKEN_REUSE_MS };
+  #remember(
+    token: string | null | undefined,
+    expectedEpoch = this.#epoch,
+    userId = this.#user?.id ?? null,
+  ) {
+    if (
+      !token ||
+      this.#epoch !== expectedEpoch ||
+      (this.#user?.id ?? null) !== userId ||
+      this.#anonymous ||
+      this.#sessionExpired
+    ) {
+      return;
     }
+    this.#token = {
+      value: token,
+      until: Date.now() + TOKEN_REUSE_MS,
+      userId,
+      epoch: this.#epoch,
+    };
   }
 
   #expireSession() {
-    this.#epoch += 1;
-    this.#user = null;
-    this.#token = null;
-    this.#pendingToken = null;
-    this.#anonymous = false;
-    this.#sessionExpired = true;
-    this.#notify();
+    this.#transition({ user: null, anonymous: false, sessionExpired: true });
   }
 
   /** The signed-in user, or `null` without a session. */
   async session(): Promise<AccountUser | null> {
-    this.#pendingSession ??= this.#fetchSession().finally(() => {
-      this.#pendingSession = null;
-    });
+    if (!this.#pendingSession) {
+      const epoch = this.#epoch;
+      const pending = this.#fetchSession(epoch).finally(() => {
+        if (this.#pendingSession === pending) {
+          this.#pendingSession = null;
+        }
+      });
+      this.#pendingSession = pending;
+    }
     return this.#pendingSession;
   }
 
-  async #fetchSession(): Promise<AccountUser | null> {
-    const epoch = this.#epoch;
+  async #fetchSession(epoch: number): Promise<AccountUser | null> {
     const hadUser = this.#user !== null || this.#sessionExpired;
     try {
-      const data = (await this.#json("get-session", undefined, epoch)) as { user?: unknown } | null;
+      const { data, jwt } = await this.#json<{ user?: unknown }>("get-session");
       if (this.#epoch !== epoch) {
         return this.#user;
       }
       const user = asUser(data?.user);
-      if (!user && hadUser) {
-        this.#expireSession();
-        throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
-      }
-      if (this.#user?.id !== user?.id) {
-        this.#epoch += 1;
-        this.#pendingToken = null;
-      }
-      this.#user = user;
-      this.#anonymous = user === null;
-      this.#sessionExpired = false;
       if (!user) {
-        this.#token = null;
+        if (hadUser) {
+          this.#expireSession();
+          throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
+        }
+        this.#transition({ user: null, anonymous: true, sessionExpired: false });
+        return null;
       }
-      this.#notify();
+      if (this.#user?.id !== user.id || this.#anonymous || this.#sessionExpired) {
+        this.#transition({ user, anonymous: false, sessionExpired: false, token: jwt });
+      } else {
+        this.#user = user;
+        if (jwt) {
+          this.#remember(jwt, epoch, user.id);
+        }
+        this.#notify();
+      }
       return user;
     } catch (error) {
       if (this.#epoch !== epoch) {
@@ -191,95 +230,121 @@ export class CloudAuth {
           this.#expireSession();
           throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
         }
-        this.#user = null;
-        this.#anonymous = true;
-        this.#sessionExpired = false;
-        this.#token = null;
-        this.#notify();
+        this.#transition({ user: null, anonymous: true, sessionExpired: false });
       } else if (!this.#user && !this.#sessionExpired) {
-        this.#anonymous = true;
-        this.#token = null;
-        this.#notify();
+        this.#transition({ user: null, anonymous: true, sessionExpired: false });
       }
       throw error;
     }
   }
 
+  async #completeAuth(
+    rawUser: unknown,
+    jwt: string | null,
+    epoch: number,
+    noSessionMessage: string,
+  ): Promise<AccountUser | null> {
+    // If another transition (such as continueAnonymously, signOut, or dialog
+    // cancel) occurred while the auth request was in flight, discard its result
+    // and any Set-Cookie / set-auth-jwt headers it returned. The API only ever
+    // accepts short-lived bearer JWTs from `bearer()`, so an unused cookie on
+    // the auth origin never authenticates API calls during this session.
+    if (this.#epoch !== epoch) {
+      return asUser(rawUser);
+    }
+    const direct = asUser(rawUser);
+    if (direct) {
+      this.#transition({ user: direct, anonymous: false, sessionExpired: false, token: jwt });
+      return direct;
+    }
+    const { data, jwt: sessionJwt } = await this.#json<{ user?: unknown }>("get-session");
+    if (this.#epoch !== epoch) {
+      return asUser(data?.user);
+    }
+    const fetched = asUser(data?.user);
+    if (!fetched) {
+      throw new AuthError(500, "no_session", noSessionMessage);
+    }
+    this.#transition({
+      user: fetched,
+      anonymous: false,
+      sessionExpired: false,
+      token: sessionJwt ?? jwt,
+    });
+    return fetched;
+  }
+
   async signIn(email: string, password: string): Promise<SignInResult> {
-    const data = (await this.#json("sign-in/email", { email, password })) as {
+    const epoch = this.#epoch;
+    const { data, jwt } = await this.#json<{
       twoFactorRedirect?: unknown;
       user?: unknown;
-    } | null;
-    if (data?.twoFactorRedirect === true) {
+    }>("sign-in/email", { email, password });
+    if (data?.twoFactorRedirect === true && this.#epoch === epoch) {
       return { status: "two-factor" };
     }
-    this.#sessionExpired = false;
-    const user = asUser(data?.user) ?? (await this.session());
-    if (!user) {
-      throw new AuthError(500, "no_session", "Signed in, but the account service sent no session.");
-    }
-    this.#signedIn(user);
-    return { status: "signed-in", user };
+    const user = await this.#completeAuth(
+      data?.user,
+      jwt,
+      epoch,
+      "Signed in, but the account service sent no session.",
+    );
+    return { status: "signed-in", user: user ?? { id: "", email, name: "" } };
   }
 
   async signUp(name: string, email: string, password: string): Promise<AccountUser> {
-    const data = (await this.#json("sign-up/email", { name, email, password })) as {
-      user?: unknown;
-    } | null;
-    this.#sessionExpired = false;
-    const user = asUser(data?.user) ?? (await this.session());
-    if (!user) {
-      throw new AuthError(500, "no_session", "The account was created, but no session started.");
-    }
-    this.#signedIn(user);
-    return user;
+    const epoch = this.#epoch;
+    const { data, jwt } = await this.#json<{ user?: unknown }>("sign-up/email", {
+      name,
+      email,
+      password,
+    });
+    const user = await this.#completeAuth(
+      data?.user,
+      jwt,
+      epoch,
+      "The account was created, but no session started.",
+    );
+    return user ?? { id: "", email, name };
   }
 
   /** Finishes a sign-in that needs two-factor authentication. */
   async verifyCode(code: string, kind: "totp" | "backup" = "totp"): Promise<AccountUser> {
+    const epoch = this.#epoch;
     const path = kind === "totp" ? "two-factor/verify-totp" : "two-factor/verify-backup-code";
-    const data = (await this.#json(path, { code })) as { user?: unknown } | null;
-    this.#sessionExpired = false;
-    const user = asUser(data?.user) ?? (await this.session());
-    if (!user) {
-      throw new AuthError(500, "no_session", "The code was accepted, but no session started.");
-    }
-    this.#signedIn(user);
-    return user;
+    const { data, jwt } = await this.#json<{ user?: unknown }>(path, { code });
+    const user = await this.#completeAuth(
+      data?.user,
+      jwt,
+      epoch,
+      "The code was accepted, but no session started.",
+    );
+    return user ?? { id: "", email: "", name: "" };
   }
 
   async signOut(): Promise<void> {
+    const epoch = this.#epoch;
     await this.#json("sign-out", {});
-    this.#epoch += 1;
-    this.#token = null;
-    this.#user = null;
-    this.#anonymous = true;
-    this.#sessionExpired = false;
-    this.#pendingToken = null;
-    this.#pendingSession = null;
-    this.#notify();
+    if (this.#epoch === epoch) {
+      this.#transition({ user: null, anonymous: true, sessionExpired: false });
+    }
   }
 
-  /** Explicitly opts into anonymous mode after a signed-in session expired. */
+  /** Explicitly opts into anonymous mode after a signed-in session expired or was canceled. */
   continueAnonymously() {
-    this.#epoch += 1;
-    this.#token = null;
-    this.#user = null;
-    this.#anonymous = true;
-    this.#sessionExpired = false;
-    this.#pendingToken = null;
-    this.#pendingSession = null;
-    this.#notify();
+    this.#transition({ user: null, anonymous: true, sessionExpired: false });
   }
 
-  #signedIn(user: AccountUser) {
+  /** Invalidates any in-flight sign-in, sign-up, or verification request when the dialog closes. */
+  cancelPendingAuth() {
     this.#epoch += 1;
-    this.#user = user;
-    this.#token = null;
+    this.#pendingSession = null;
     this.#pendingToken = null;
-    this.#anonymous = false;
-    this.#sessionExpired = false;
-    this.#notify();
+    if (this.#token && this.#user && !this.#anonymous && !this.#sessionExpired) {
+      this.#token = { ...this.#token, epoch: this.#epoch };
+    } else {
+      this.#token = null;
+    }
   }
 
   /** Forgets the cached JWT, for example after the API answered 401. */
@@ -294,33 +359,45 @@ export class CloudAuth {
    * case requests go out anonymously.
    */
   readonly bearer = async (): Promise<string | undefined> => {
-    if (this.#pendingSession) {
+    while (this.#pendingSession) {
       await this.#pendingSession.catch(() => null);
     }
     if (this.#sessionExpired) {
       throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
     }
-    if (this.#token && Date.now() < this.#token.until) {
+    if (
+      this.#token &&
+      this.#token.epoch === this.#epoch &&
+      this.#token.userId === (this.#user?.id ?? null) &&
+      Date.now() < this.#token.until
+    ) {
       return this.#token.value;
     }
     if (this.#anonymous) {
       return undefined;
     }
-    const epoch = this.#epoch;
-    this.#pendingToken ??= this.#fetchToken(epoch).finally(() => {
-      if (this.#epoch === epoch) {
-        this.#pendingToken = null;
-      }
-    });
+    if (!this.#pendingToken) {
+      const epoch = this.#epoch;
+      const userId = this.#user?.id ?? null;
+      const pending = this.#fetchToken(epoch, userId).finally(() => {
+        if (this.#pendingToken === pending) {
+          this.#pendingToken = null;
+        }
+      });
+      this.#pendingToken = pending;
+    }
     return this.#pendingToken;
   };
 
-  async #fetchToken(epoch: number): Promise<string | undefined> {
+  async #fetchToken(epoch: number, userId: string | null): Promise<string | undefined> {
     let response: Response;
     try {
       response = await this.#request("token");
     } catch {
-      if (this.#epoch !== epoch) {
+      if (this.#pendingSession) {
+        await this.#pendingSession.catch(() => null);
+      }
+      if (this.#epoch !== epoch || (this.#user?.id ?? null) !== userId) {
         return this.bearer();
       }
       this.#token = null;
@@ -331,10 +408,13 @@ export class CloudAuth {
           "The sign-in service is unavailable right now. Try again, or convert on this device.",
         );
       }
-      this.#anonymous = true;
+      this.#transition({ user: null, anonymous: true, sessionExpired: false });
       return undefined;
     }
-    if (this.#epoch !== epoch) {
+    if (this.#pendingSession) {
+      await this.#pendingSession.catch(() => null);
+    }
+    if (this.#epoch !== epoch || (this.#user?.id ?? null) !== userId) {
       return this.bearer();
     }
     if (!response.ok) {
@@ -344,8 +424,7 @@ export class CloudAuth {
           this.#expireSession();
           throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
         }
-        this.#user = null;
-        this.#anonymous = true;
+        this.#transition({ user: null, anonymous: true, sessionExpired: false });
         return undefined;
       }
       if (this.#user) {
@@ -355,7 +434,7 @@ export class CloudAuth {
           "The sign-in service is unavailable right now. Try again, or convert on this device.",
         );
       }
-      this.#anonymous = true;
+      this.#transition({ user: null, anonymous: true, sessionExpired: false });
       return undefined;
     }
     let data: { token?: unknown } | null = null;
@@ -364,7 +443,10 @@ export class CloudAuth {
     } catch {
       data = null;
     }
-    if (this.#epoch !== epoch) {
+    if (this.#pendingSession) {
+      await this.#pendingSession.catch(() => null);
+    }
+    if (this.#epoch !== epoch || (this.#user?.id ?? null) !== userId) {
       return this.bearer();
     }
     const token = data?.token;
@@ -377,10 +459,10 @@ export class CloudAuth {
           "The sign-in service is unavailable right now. Try again, or convert on this device.",
         );
       }
-      this.#anonymous = true;
+      this.#transition({ user: null, anonymous: true, sessionExpired: false });
       return undefined;
     }
-    this.#remember(token);
+    this.#remember(token, epoch, userId);
     return token;
   }
 }

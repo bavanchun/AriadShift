@@ -787,6 +787,9 @@ export default function CloudPanel({
           open={dialogOpen}
           onClose={() => setDialogOpen(false)}
           onSignedIn={(signedIn) => {
+            if (auth.user?.id !== signedIn.id) {
+              return;
+            }
             setUser(signedIn);
             setSessionExpired(false);
             setSignOutError(null);

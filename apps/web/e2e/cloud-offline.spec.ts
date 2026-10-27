@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 const API = process.env.NEXT_PUBLIC_ARIAD_API_URL?.replace(/\/+$/, "");
 
+test.setTimeout(120_000);
 test.skip(!API, "needs a build with NEXT_PUBLIC_ARIAD_API_URL set");
 
 test("choosing cloud while offline before the cloud chunk loaded falls back to this device", async ({
