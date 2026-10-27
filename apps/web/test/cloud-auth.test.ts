@@ -1,6 +1,6 @@
 import { AuthError, CloudAuth } from "@/lib/cloud/auth";
 
-type Handler = (request: Request) => Response;
+type Handler = (request: Request) => Response | Promise<Response>;
 
 function scripted(...handlers: Handler[]) {
   const requests: Request[] = [];
@@ -151,5 +151,75 @@ describe("CloudAuth", () => {
     const tokens = await Promise.all([auth.bearer(), auth.bearer(), auth.bearer()]);
     expect(tokens).toEqual(["jwt-shared", "jwt-shared", "jwt-shared"]);
     expect(requests.filter((r) => r.url.endsWith("/api/auth/token"))).toHaveLength(1);
+  });
+
+  it("ignores a late /token response that resolves after sign-out succeeds", async () => {
+    let resolveToken: ((response: Response) => void) | undefined;
+    const tokenPromise = new Promise<Response>((resolve) => {
+      resolveToken = resolve;
+    });
+    const { fetch, requests } = scripted(
+      () => Response.json({ redirect: false, token: "session", user: USER }),
+      () => tokenPromise,
+      () => Response.json({ success: true }),
+    );
+    const auth = new CloudAuth("https://auth.example.com", fetch);
+    await auth.signIn("ada@example.com", "secret");
+
+    const pendingBearer = auth.bearer();
+    expect(requests.map((r) => new URL(r.url).pathname)).toEqual([
+      "/api/auth/sign-in/email",
+      "/api/auth/token",
+    ]);
+
+    await auth.signOut();
+    resolveToken?.(Response.json({ token: "jwt-late" }));
+
+    await expect(pendingBearer).resolves.toBeUndefined();
+    await expect(auth.bearer()).resolves.toBeUndefined();
+    expect(requests.map((r) => new URL(r.url).pathname)).toEqual([
+      "/api/auth/sign-in/email",
+      "/api/auth/token",
+      "/api/auth/sign-out",
+    ]);
+  });
+
+  it("fails closed on 401 from /token or a refreshed session for a known signed-in user", async () => {
+    const { fetch: tokenFetch } = scripted(
+      () => Response.json({ redirect: false, token: "session", user: USER }),
+      () => new Response("expired", { status: 401 }),
+    );
+    const tokenAuth = new CloudAuth("https://auth.example.com", tokenFetch);
+    await tokenAuth.signIn("ada@example.com", "secret");
+    await expect(tokenAuth.bearer()).rejects.toMatchObject({
+      status: 401,
+      code: "session_expired",
+    });
+    expect(tokenAuth.user).toBeNull();
+    expect(tokenAuth.sessionExpired).toBe(true);
+    await expect(tokenAuth.bearer()).rejects.toMatchObject({
+      status: 401,
+      code: "session_expired",
+    });
+    tokenAuth.continueAnonymously();
+    expect(tokenAuth.sessionExpired).toBe(false);
+    await expect(tokenAuth.bearer()).resolves.toBeUndefined();
+
+    const { fetch: sessionFetch } = scripted(
+      () => Response.json({ user: USER }, { headers: { "set-auth-jwt": "jwt-1" } }),
+      () => new Response("expired", { status: 401 }),
+    );
+    const sessionAuth = new CloudAuth("https://auth.example.com", sessionFetch);
+    await expect(sessionAuth.session()).resolves.toEqual(USER);
+    await expect(sessionAuth.session()).rejects.toMatchObject({
+      status: 401,
+      code: "session_expired",
+    });
+    expect(sessionAuth.user).toBeNull();
+    expect(sessionAuth.sessionExpired).toBe(true);
+    await expect(sessionAuth.bearer()).rejects.toMatchObject({
+      status: 401,
+      code: "session_expired",
+    });
   });
 });

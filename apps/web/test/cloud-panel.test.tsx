@@ -410,4 +410,188 @@ describe("CloudPanel", () => {
     const retryUpload = await screen.findByRole("button", { name: "Upload and convert" });
     expect(retryUpload.getAttribute("aria-disabled")).toBeNull();
   });
+
+  it("does not restore credentials when an in-flight /token response arrives after sign-out", async () => {
+    let resolveToken: ((response: Response) => void) | undefined;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json({ user: { id: "u1", email: "ada@example.com", name: "Ada" } });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return new Promise<Response>((resolve) => {
+          resolveToken = resolve;
+        });
+      }
+      if (url.pathname === "/api/auth/sign-out") {
+        return Response.json({ success: true });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    await waitFor(() => expect(resolveToken).toBeTypeOf("function"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByRole("button", { name: "Sign in" });
+
+    resolveToken?.(Response.json({ token: "jwt-stale" }));
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(start);
+
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual([null]);
+  });
+
+  it("blocks upload and syncs user state when /token or a refreshed session returns 401 for a signed-in user", async () => {
+    const tokenRequests: string[] = [];
+    const tokenFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      tokenRequests.push(`${request.method} ${url.pathname}`);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json(null);
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        return Response.json({
+          redirect: false,
+          token: "session",
+          user: { id: "u1", email: "ada@example.com", name: "Ada" },
+        });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return new Response("expired", { status: 401 });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    const { unmount } = render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: tokenFetch, operations: {} }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    await screen.findByText("Signed in as ada@example.com");
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.click(start);
+    const errorBox = await screen.findByTestId("cloud-error");
+    expect(errorBox.textContent).toContain("Your session has ended");
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(tokenRequests.filter((entry) => entry === "POST /v1/uploads")).toHaveLength(0);
+
+    fireEvent.click(within(errorBox).getByRole("button", { name: "Continue without an account" }));
+    expect(screen.queryByTestId("cloud-error")).toBeNull();
+    unmount();
+
+    let sessionCalls = 0;
+    const sessionRequests: string[] = [];
+    const sessionFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      sessionRequests.push(`${request.method} ${url.pathname}`);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "u1", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": "jwt-1" } },
+          );
+        }
+        return new Response("expired", { status: 401 });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: sessionFetch, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    const uploadButton = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(uploadButton.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.focus(window);
+    const expiredAlert = await screen.findByTestId("cloud-session-expired");
+    expect(expiredAlert.textContent).toContain("Your session has ended");
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(uploadButton.getAttribute("aria-disabled")).toBe("true");
+
+    fireEvent.click(uploadButton);
+    expect(sessionRequests.filter((entry) => entry === "POST /v1/uploads")).toHaveLength(0);
+
+    fireEvent.click(
+      within(expiredAlert).getByRole("button", { name: "Continue without an account" }),
+    );
+    expect(screen.queryByTestId("cloud-session-expired")).toBeNull();
+    expect(uploadButton.getAttribute("aria-disabled")).toBeNull();
+  });
 });

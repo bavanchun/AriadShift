@@ -12,6 +12,7 @@ import { formatClock } from "./steps";
 export type CloudAction =
   | "retry"
   | "sign-in"
+  | "use-anonymous"
   | "use-device"
   | "turnstile"
   | "pick-target"
@@ -83,6 +84,19 @@ export function describeCloudError(error: unknown, context: CloudErrorContext): 
   const base = { serverCopy: onServer, retryAfter: null as number | null };
 
   if (error instanceof AuthError) {
+    if (error.status === 401 || error.code === "session_expired") {
+      return {
+        ...base,
+        code: error.code,
+        title: "Your session has ended",
+        message: error.message,
+        serverCopy: null,
+        actions: context.signInOffered
+          ? ["sign-in", "use-anonymous", "use-device"]
+          : ["use-device"],
+        technical: technical(error.code, error.message),
+      };
+    }
     return {
       ...base,
       code: error.code,

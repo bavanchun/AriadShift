@@ -52,19 +52,46 @@ function asUser(value: unknown): AccountUser | null {
   };
 }
 
+const SESSION_EXPIRED_MESSAGE =
+  "Your session has ended. Sign in again; the file you chose stays here.";
+
 export class CloudAuth {
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
+  readonly #listeners = new Set<() => void>();
   #token: { value: string; until: number } | null = null;
   #user: AccountUser | null = null;
   /** Known to have no session, so `bearer` skips asking for a token. */
   #anonymous = false;
+  /** Known signed-in user whose session later expired; fails closed until resolved. */
+  #sessionExpired = false;
+  /** Incremented on every auth state transition to invalidate in-flight requests. */
+  #epoch = 0;
   #pendingSession: Promise<AccountUser | null> | null = null;
   #pendingToken: Promise<string | undefined> | null = null;
 
   constructor(baseUrl: string, fetchImpl?: typeof fetch) {
     this.#baseUrl = baseUrl.replace(/\/+$/, "");
     this.#fetch = fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
+  }
+
+  get user(): AccountUser | null {
+    return this.#user;
+  }
+
+  get sessionExpired(): boolean {
+    return this.#sessionExpired;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  #notify() {
+    for (const listener of this.#listeners) {
+      listener();
+    }
   }
 
   async #request(path: string, body?: unknown): Promise<Response> {
@@ -76,7 +103,7 @@ export class CloudAuth {
     });
   }
 
-  async #json(path: string, body?: unknown): Promise<unknown> {
+  async #json(path: string, body?: unknown, expectedEpoch = this.#epoch): Promise<unknown> {
     const response = await this.#request(path, body);
     let data: unknown = null;
     try {
@@ -100,7 +127,9 @@ export class CloudAuth {
             : "The account service refused the request.");
       throw new AuthError(response.status, code, message);
     }
-    this.#remember(response.headers.get("set-auth-jwt"));
+    if (path !== "sign-out" && this.#epoch === expectedEpoch) {
+      this.#remember(response.headers.get("set-auth-jwt"));
+    }
     return data;
   }
 
@@ -108,6 +137,16 @@ export class CloudAuth {
     if (token) {
       this.#token = { value: token, until: Date.now() + TOKEN_REUSE_MS };
     }
+  }
+
+  #expireSession() {
+    this.#epoch += 1;
+    this.#user = null;
+    this.#token = null;
+    this.#pendingToken = null;
+    this.#anonymous = false;
+    this.#sessionExpired = true;
+    this.#notify();
   }
 
   /** The signed-in user, or `null` without a session. */
@@ -119,23 +158,48 @@ export class CloudAuth {
   }
 
   async #fetchSession(): Promise<AccountUser | null> {
+    const epoch = this.#epoch;
+    const hadUser = this.#user !== null || this.#sessionExpired;
     try {
-      const data = (await this.#json("get-session")) as { user?: unknown } | null;
+      const data = (await this.#json("get-session", undefined, epoch)) as { user?: unknown } | null;
+      if (this.#epoch !== epoch) {
+        return this.#user;
+      }
       const user = asUser(data?.user);
+      if (!user && hadUser) {
+        this.#expireSession();
+        throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
+      }
+      if (this.#user?.id !== user?.id) {
+        this.#epoch += 1;
+        this.#pendingToken = null;
+      }
       this.#user = user;
       this.#anonymous = user === null;
+      this.#sessionExpired = false;
       if (!user) {
         this.#token = null;
       }
+      this.#notify();
       return user;
     } catch (error) {
+      if (this.#epoch !== epoch) {
+        throw error;
+      }
       if (error instanceof AuthError && error.status === 401) {
+        if (hadUser) {
+          this.#expireSession();
+          throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
+        }
         this.#user = null;
         this.#anonymous = true;
+        this.#sessionExpired = false;
         this.#token = null;
-      } else if (!this.#user) {
+        this.#notify();
+      } else if (!this.#user && !this.#sessionExpired) {
         this.#anonymous = true;
         this.#token = null;
+        this.#notify();
       }
       throw error;
     }
@@ -149,6 +213,7 @@ export class CloudAuth {
     if (data?.twoFactorRedirect === true) {
       return { status: "two-factor" };
     }
+    this.#sessionExpired = false;
     const user = asUser(data?.user) ?? (await this.session());
     if (!user) {
       throw new AuthError(500, "no_session", "Signed in, but the account service sent no session.");
@@ -161,6 +226,7 @@ export class CloudAuth {
     const data = (await this.#json("sign-up/email", { name, email, password })) as {
       user?: unknown;
     } | null;
+    this.#sessionExpired = false;
     const user = asUser(data?.user) ?? (await this.session());
     if (!user) {
       throw new AuthError(500, "no_session", "The account was created, but no session started.");
@@ -173,6 +239,7 @@ export class CloudAuth {
   async verifyCode(code: string, kind: "totp" | "backup" = "totp"): Promise<AccountUser> {
     const path = kind === "totp" ? "two-factor/verify-totp" : "two-factor/verify-backup-code";
     const data = (await this.#json(path, { code })) as { user?: unknown } | null;
+    this.#sessionExpired = false;
     const user = asUser(data?.user) ?? (await this.session());
     if (!user) {
       throw new AuthError(500, "no_session", "The code was accepted, but no session started.");
@@ -183,20 +250,43 @@ export class CloudAuth {
 
   async signOut(): Promise<void> {
     await this.#json("sign-out", {});
+    this.#epoch += 1;
     this.#token = null;
     this.#user = null;
     this.#anonymous = true;
+    this.#sessionExpired = false;
+    this.#pendingToken = null;
+    this.#pendingSession = null;
+    this.#notify();
+  }
+
+  /** Explicitly opts into anonymous mode after a signed-in session expired. */
+  continueAnonymously() {
+    this.#epoch += 1;
+    this.#token = null;
+    this.#user = null;
+    this.#anonymous = true;
+    this.#sessionExpired = false;
+    this.#pendingToken = null;
+    this.#pendingSession = null;
+    this.#notify();
   }
 
   #signedIn(user: AccountUser) {
+    this.#epoch += 1;
     this.#user = user;
     this.#token = null;
+    this.#pendingToken = null;
     this.#anonymous = false;
+    this.#sessionExpired = false;
+    this.#notify();
   }
 
   /** Forgets the cached JWT, for example after the API answered 401. */
   forgetToken() {
+    this.#epoch += 1;
     this.#token = null;
+    this.#pendingToken = null;
   }
 
   /**
@@ -207,23 +297,32 @@ export class CloudAuth {
     if (this.#pendingSession) {
       await this.#pendingSession.catch(() => null);
     }
+    if (this.#sessionExpired) {
+      throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
+    }
     if (this.#token && Date.now() < this.#token.until) {
       return this.#token.value;
     }
     if (this.#anonymous) {
       return undefined;
     }
-    this.#pendingToken ??= this.#fetchToken().finally(() => {
-      this.#pendingToken = null;
+    const epoch = this.#epoch;
+    this.#pendingToken ??= this.#fetchToken(epoch).finally(() => {
+      if (this.#epoch === epoch) {
+        this.#pendingToken = null;
+      }
     });
     return this.#pendingToken;
   };
 
-  async #fetchToken(): Promise<string | undefined> {
+  async #fetchToken(epoch: number): Promise<string | undefined> {
     let response: Response;
     try {
       response = await this.#request("token");
     } catch {
+      if (this.#epoch !== epoch) {
+        return this.bearer();
+      }
       this.#token = null;
       if (this.#user) {
         throw new AuthError(
@@ -235,9 +334,16 @@ export class CloudAuth {
       this.#anonymous = true;
       return undefined;
     }
+    if (this.#epoch !== epoch) {
+      return this.bearer();
+    }
     if (!response.ok) {
       this.#token = null;
       if (response.status === 401) {
+        if (this.#user) {
+          this.#expireSession();
+          throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
+        }
         this.#user = null;
         this.#anonymous = true;
         return undefined;
@@ -257,6 +363,9 @@ export class CloudAuth {
       data = (await response.json()) as { token?: unknown };
     } catch {
       data = null;
+    }
+    if (this.#epoch !== epoch) {
+      return this.bearer();
     }
     const token = data?.token;
     if (typeof token !== "string" || !token) {

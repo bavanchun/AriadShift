@@ -47,6 +47,7 @@ const BAR = "h-2 w-full accent-primary";
 
 const ACTION_LABELS: Record<Exclude<CloudAction, "retry" | "delete">, string> = {
   "sign-in": "Sign in",
+  "use-anonymous": "Continue without an account",
   "use-device": "Convert on this device",
   turnstile: "Show the check again",
   "pick-target": "Pick another target",
