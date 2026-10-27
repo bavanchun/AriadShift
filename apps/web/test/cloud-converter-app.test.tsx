@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { type ComponentType, lazy } from "react";
+import type { CloudPanelProps } from "@/components/cloud/cloud-panel";
 import { ConverterApp } from "@/components/converter/converter-app";
 import { ConverterClient } from "@/converter/client";
 import type { RequestEnvelope, WorkerResponse } from "@/converter/protocol";
@@ -61,9 +63,9 @@ const RTF = {
   warnings: [],
 };
 
-function renderApp(inspection: object = RTF) {
+function renderApp(inspection: object = RTF, cloudPanel?: ComponentType<CloudPanelProps>) {
   const client = new ConverterClient(() => new FakeWorker(inspection) as unknown as Worker);
-  render(<ConverterApp client={client} />);
+  render(<ConverterApp client={client} cloudPanel={cloudPanel} />);
   const input = document.querySelector("input[type=file]") as HTMLInputElement;
   fireEvent.change(input, {
     target: { files: [new File(["{\\rtf1 Hello}"], "page.rtf", { type: "application/rtf" })] },
@@ -134,5 +136,24 @@ describe("ConverterApp with cloud mode configured", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: /On this device/ }));
     expect(screen.queryByTestId("cloud-panel")).toBeNull();
+  });
+
+  it("catches a failed lazy CloudPanel chunk load and offers Convert on this device", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const BrokenCloudPanel = lazy<ComponentType<CloudPanelProps>>(() =>
+        Promise.reject(new TypeError("Failed to fetch dynamically imported module")),
+      );
+      renderApp(RTF, BrokenCloudPanel);
+      fireEvent.click(await screen.findByRole("button", { name: "Process in Cloud" }));
+
+      const fallback = await screen.findByTestId("cloud-load-error");
+      expect(fallback.textContent).toContain("Cloud mode could not load");
+      fireEvent.click(screen.getByRole("button", { name: "Convert on this device" }));
+      expect(screen.queryByTestId("cloud-load-error")).toBeNull();
+      expect(screen.getByRole("radio", { name: /On this device/ })).toHaveProperty("checked", true);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

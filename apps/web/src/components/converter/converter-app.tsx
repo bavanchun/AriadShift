@@ -29,7 +29,19 @@ import {
   ShieldCheckIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  Component,
+  type ComponentType,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
+import type { CloudPanelProps } from "@/components/cloud/cloud-panel";
 import { type Destination, DestinationChoice } from "@/components/cloud/destination-choice";
 import { ServerCopyNotice } from "@/components/cloud/server-copy-notice";
 import { RouteSummary } from "@/components/route-summary";
@@ -53,6 +65,44 @@ type Phase = "idle" | "ingesting" | "ready" | "converting" | "done";
 // Cloud mode loads only when the user picks the cloud for a file, so local
 // conversion never downloads the upload code and keeps working offline.
 const CloudPanel = lazy(() => import("@/components/cloud/cloud-panel"));
+
+interface CloudErrorBoundaryProps {
+  onUseDevice: () => void;
+  children: ReactNode;
+}
+
+interface CloudErrorBoundaryState {
+  hasError: boolean;
+}
+
+class CloudErrorBoundary extends Component<CloudErrorBoundaryProps, CloudErrorBoundaryState> {
+  override state: CloudErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): CloudErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  override render() {
+    if (this.state.hasError) {
+      return (
+        <Alert variant="destructive" data-testid="cloud-load-error">
+          <TriangleAlertIcon aria-hidden="true" />
+          <AlertTitle>Cloud mode could not load</AlertTitle>
+          <AlertDescription className="flex flex-col items-start gap-3">
+            <p>
+              The cloud converter could not be loaded (for example, because you are offline). Your
+              file has not left this device.
+            </p>
+            <Button variant="outline" onClick={this.props.onUseDevice}>
+              Convert on this device
+            </Button>
+          </AlertDescription>
+        </Alert>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type ConvertedSummary = Omit<ConvertedFile, "location">;
 
@@ -83,9 +133,13 @@ const COUNT_LABELS: Array<[keyof NonNullable<IngestResult["inspection"]["counts"
 
 export interface ConverterAppProps {
   client?: ConverterClient;
+  cloudPanel?: ComponentType<CloudPanelProps>;
 }
 
-export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
+export function ConverterApp({
+  client: customClient,
+  cloudPanel: CloudPanelComponent = CloudPanel,
+}: ConverterAppProps = {}) {
   const clientRef = useRef<ConverterClient | null>(customClient ?? null);
   const outputRef = useRef<OutputLocation | null>(null);
   const initRef = useRef<Promise<InitResult> | null>(null);
@@ -570,18 +624,22 @@ export function ConverterApp({ client: customClient }: ConverterAppProps = {}) {
 
       {onCloud && CLOUD && staged && (
         <div ref={cloudPanelRef}>
-          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading cloud mode…</p>}>
-            <CloudPanel
-              config={CLOUD}
-              file={staged}
-              sourceFormat={inspection?.format ?? null}
-              preferredTarget={target ?? preselected.current.to}
-              profile={profile}
-              onUseDevice={() => setDestination("device")}
-              cleanup={cloudCleanup}
-              onServerCopy={keepServerCopy}
-            />
-          </Suspense>
+          <CloudErrorBoundary onUseDevice={() => setDestination("device")}>
+            <Suspense
+              fallback={<p className="text-sm text-muted-foreground">Loading cloud mode…</p>}
+            >
+              <CloudPanelComponent
+                config={CLOUD}
+                file={staged}
+                sourceFormat={inspection?.format ?? null}
+                preferredTarget={target ?? preselected.current.to}
+                profile={profile}
+                onUseDevice={() => setDestination("device")}
+                cleanup={cloudCleanup}
+                onServerCopy={keepServerCopy}
+              />
+            </Suspense>
+          </CloudErrorBoundary>
         </div>
       )}
 
