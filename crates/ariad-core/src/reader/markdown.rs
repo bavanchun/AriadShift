@@ -1,11 +1,13 @@
 use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap},
+    sync::Arc,
 };
 
 use comrak::{
-    Arena, Options,
+    Arena, Options, ResolvedReference,
     nodes::{AstNode, ListType, NodeValue, TableAlignment},
+    options::BrokenLinkReference,
 };
 use thiserror::Error;
 
@@ -68,6 +70,14 @@ struct WalkState {
 /// Reads CommonMark and GFM Markdown into the shared document IR.
 /// Nesting limits count both block and inline containers.
 pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
+    read_impl(markdown, limits, true)
+}
+
+fn read_impl(
+    markdown: &str,
+    limits: &Limits,
+    share_reference_data: bool,
+) -> Result<ReadOutput, ReadError> {
     limits.validate()?;
     if let Some(limit) = limits.max_input_bytes
         && markdown.len() as u64 > limit
@@ -98,11 +108,25 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
     options.extension.shortcodes = true;
     options.parse.leave_footnote_definitions = true;
 
-    let (parser_input, shared_data_urls) = intern_reference_data_urls(&markdown, &options);
+    let shared = if share_reference_data {
+        intern_reference_data_urls(&markdown, &options)
+    } else {
+        ReferenceData {
+            input: Cow::Borrowed(markdown.as_str()),
+            ..ReferenceData::default()
+        }
+    };
     let arena = Arena::new();
-    let root = comrak::parse_document(&arena, &parser_input, &options);
+    let root = comrak::parse_document(&arena, &shared.input, &options);
+    let line_offsets: Vec<_> = if shared.definitions.is_empty() {
+        Vec::new()
+    } else {
+        std::iter::once(0)
+            .chain(markdown.match_indices('\n').map(|(offset, _)| offset + 1))
+            .collect()
+    };
     let mut state = WalkState {
-        shared_data_urls,
+        shared_data_urls: shared.destinations,
         shared_url_bytes_remaining: markdown.len().min(100_000),
         footnote_references,
         footnote_definitions,
@@ -169,7 +193,16 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
                             .unwrap_or(ConvertedNode::Skip)
                     })
                     .collect::<Vec<_>>();
-                let output = convert_node(node, children, &mut state, limits);
+                // Provenance checks run only after the existing nesting/block
+                // checks have accepted this node and every child.
+                let shared_reference = is_shared_reference_node(
+                    node,
+                    &markdown,
+                    &line_offsets,
+                    &shared.definitions,
+                    &options,
+                );
+                let output = convert_node(node, children, &mut state, limits, shared_reference);
                 converted.insert(node_key(node), output);
             }
         }
@@ -213,12 +246,19 @@ fn node_key(node: &AstNode<'_>) -> usize {
 // that expansion path, then decode each destination once during IR conversion.
 // The first parse identifies consumed definitions: visible blocks (including
 // code and raw HTML) must never be rewritten as reference definitions.
-fn intern_reference_data_urls<'a>(
-    markdown: &'a str,
-    options: &Options<'_>,
-) -> (Cow<'a, str>, HashMap<String, String>) {
+#[derive(Default)]
+struct ReferenceData<'a> {
+    input: Cow<'a, str>,
+    destinations: HashMap<String, String>,
+    definitions: HashMap<String, String>,
+}
+
+fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> ReferenceData<'a> {
     if !markdown.contains("data:") {
-        return (Cow::Borrowed(markdown), HashMap::new());
+        return ReferenceData {
+            input: Cow::Borrowed(markdown),
+            ..ReferenceData::default()
+        };
     }
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, markdown, options);
@@ -227,21 +267,41 @@ fn intern_reference_data_urls<'a>(
         let position = node.data().sourcepos;
         visible_lines[position.start.line..=position.end.line].fill(true);
     }
-    let reserved: BTreeSet<usize> = markdown
-        .match_indices("a:")
-        .filter_map(|(offset, _)| markdown[offset + 2..].split_once(':')?.0.parse().ok())
-        .collect();
-    let namespace = (0..).find(|index| !reserved.contains(index)).unwrap();
-    let prefix = format!("a:{namespace}:");
+    // Intern only when every ordinary definition can be associated with its
+    // consumed source line. Otherwise a definition hidden in a paragraph or
+    // container could win before a duplicate, and source positions may shift.
+    // Literal and unsupported definition syntax keeps the original parser path.
+    for (index, line) in markdown.lines().enumerate() {
+        if line.contains("]:") {
+            let declarations = line.matches("]:").count();
+            if declarations == 1 && footnote_definition_label(line).is_some() {
+                continue;
+            }
+            let definition = reference_definition(line.trim_start_matches(' '));
+            if visible_lines[index + 1] || definition.is_none() || declarations != 1 {
+                return ReferenceData {
+                    input: Cow::Borrowed(markdown),
+                    ..ReferenceData::default()
+                };
+            }
+        }
+    }
+    let prefix = "a:0:";
     let mut tokens = HashMap::<&str, String>::new();
     let mut destinations = HashMap::new();
+    let mut definitions = HashMap::new();
+    let mut seen_labels = BTreeSet::new();
     let mut input = String::with_capacity(markdown.len());
     for (index, line) in markdown.split_inclusive('\n').enumerate() {
         let trimmed = line.trim_start_matches(' ');
-        let destination = (!visible_lines[index + 1] && trimmed.starts_with('['))
-            .then(|| trimmed.split_once("]:"))
-            .flatten()
-            .map(|(_, tail)| tail.trim_start_matches([' ', '\t']));
+        let definition = (!visible_lines[index + 1])
+            .then(|| reference_definition(trimmed))
+            .flatten();
+        let destination = definition.map(|(_, tail)| tail.trim_start_matches([' ', '\t']));
+        let label = definition.and_then(|(label, _)| normalized_reference_label(label, options));
+        let first_definition = label
+            .as_ref()
+            .is_some_and(|label| seen_labels.insert(label.clone()));
         let uri = destination.and_then(|destination| {
             if let Some(angled) = destination.strip_prefix('<') {
                 angled.split_once('>').map(|(uri, _)| uri)
@@ -249,16 +309,20 @@ fn intern_reference_data_urls<'a>(
                 Some(destination.split_whitespace().next().unwrap_or_default())
             }
         });
-        if let Some(uri) =
-            uri.filter(|uri| uri.starts_with("data:") && uri.len() > prefix.len() + 20)
-        {
+        if let Some(uri) = uri.filter(|uri| {
+            first_definition && uri.starts_with("data:") && uri.len() > prefix.len() + 20
+        }) {
+            let Some(normalized) = normalized_definition_destination(destination.unwrap(), options)
+            else {
+                input.push_str(line);
+                continue;
+            };
             let next = tokens.len();
             let token = tokens
                 .entry(uri)
                 .or_insert_with(|| format!("{prefix}{next}"));
-            destinations
-                .entry(token.clone())
-                .or_insert_with(|| uri.to_owned());
+            destinations.entry(token.clone()).or_insert(normalized);
+            definitions.insert(label.unwrap(), token.clone());
             let start = line.len() - destination.unwrap().len();
             let angled = line.as_bytes()[start] == b'<';
             let end = start + uri.len() + if angled { 2 } else { 0 };
@@ -271,11 +335,130 @@ fn intern_reference_data_urls<'a>(
             input.push_str(line);
         }
     }
-    if destinations.is_empty() {
-        (Cow::Borrowed(markdown), destinations)
-    } else {
-        (Cow::Owned(input), destinations)
+    ReferenceData {
+        input: if destinations.is_empty() {
+            Cow::Borrowed(markdown)
+        } else {
+            Cow::Owned(input)
+        },
+        destinations,
+        definitions,
     }
+}
+
+fn reference_definition(line: &str) -> Option<(&str, &str)> {
+    let bytes = line.strip_prefix('[')?.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 2,
+            b']' if bytes.get(index + 1) == Some(&b':') => {
+                return Some((&line[1..index + 1], &line[index + 3..]));
+            }
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn normalized_reference_label(label: &str, options: &Options<'_>) -> Option<String> {
+    let mut options = options.clone();
+    options.parse.broken_link_callback = Some(Arc::new(|reference: BrokenLinkReference<'_>| {
+        Some(ResolvedReference {
+            url: reference.normalized.to_owned(),
+            title: String::new(),
+        })
+    }));
+    let arena = Arena::new();
+    let root = comrak::parse_document(&arena, &format!("![x][{label}]"), &options);
+    match &root.first_child()?.first_child()?.data().value {
+        NodeValue::Image(link) => Some(link.url.clone()),
+        _ => None,
+    }
+}
+
+fn normalized_definition_destination(destination: &str, options: &Options<'_>) -> Option<String> {
+    let arena = Arena::new();
+    let root = comrak::parse_document(&arena, &format!("[x]({})", destination.trim_end()), options);
+    match &root.first_child()?.first_child()?.data().value {
+        NodeValue::Link(link) => Some(link.url.clone()),
+        _ => None,
+    }
+}
+
+// A token string alone is never proof of origin: inline and unrelated reference
+// destinations can normalize to the same bytes. Reparse the exact original use
+// with only the consumed definitions bound, then require the same whole node.
+fn is_shared_reference_node(
+    node: &AstNode<'_>,
+    markdown: &str,
+    line_offsets: &[usize],
+    definitions: &HashMap<String, String>,
+    options: &Options<'_>,
+) -> bool {
+    if definitions.is_empty() {
+        return false;
+    }
+    let data = node.data();
+    let (url, image) = match &data.value {
+        NodeValue::Link(link) => (&link.url, false),
+        NodeValue::Image(link) => (&link.url, true),
+        _ => return false,
+    };
+    if !url.starts_with("a:0:") {
+        return false;
+    }
+    let position = data.sourcepos;
+    let start = position
+        .start
+        .line
+        .checked_sub(1)
+        .and_then(|line| line_offsets.get(line))
+        .and_then(|offset| offset.checked_add(position.start.column.checked_sub(1)?));
+    let end = position
+        .end
+        .line
+        .checked_sub(1)
+        .and_then(|line| line_offsets.get(line))
+        .and_then(|offset| offset.checked_add(position.end.column));
+    let (Some(start), Some(end)) = (start, end) else {
+        return false;
+    };
+    let Some(source) = markdown
+        .get(start..end)
+        .filter(|source| source.ends_with(']'))
+    else {
+        return false;
+    };
+    let mut options = options.clone();
+    options.parse.broken_link_callback = Some(Arc::new(|reference: BrokenLinkReference<'_>| {
+        definitions
+            .get(reference.normalized)
+            .map(|token| ResolvedReference {
+                url: token.clone(),
+                title: String::new(),
+            })
+    }));
+    let arena = Arena::new();
+    let parsed = comrak::parse_document(&arena, source, &options);
+    let Some(candidate) = parsed
+        .first_child()
+        .and_then(|paragraph| paragraph.first_child())
+    else {
+        return false;
+    };
+    let candidate = candidate.data();
+    let candidate_end = candidate.sourcepos.end;
+    let entire_source = candidate.sourcepos.start.line == 1
+        && candidate.sourcepos.start.column == 1
+        && candidate_end.line == source.lines().count()
+        && candidate_end.column == source.lines().last().unwrap_or_default().len();
+    let matches = match &candidate.value {
+        NodeValue::Image(link) if image => link.url == *url,
+        NodeValue::Link(link) if !image => link.url == *url,
+        _ => false,
+    };
+    entire_source && matches
 }
 
 // Non-image uses and failed decodes still carry their original URLs in the IR.
@@ -303,6 +486,7 @@ fn convert_node(
     children: Vec<ConvertedNode>,
     state: &mut WalkState,
     limits: &Limits,
+    shared_reference: bool,
 ) -> ConvertedNode {
     let data = node.data();
     match &data.value {
@@ -473,7 +657,7 @@ fn convert_node(
             text: html.clone(),
         }),
         NodeValue::Link(link) => {
-            let url = if state.shared_data_urls.contains_key(&link.url) {
+            let url = if shared_reference {
                 let Some(url) = shared_url(&link.url, state) else {
                     return ConvertedNode::Inlines(inlines(children));
                 };
@@ -489,38 +673,39 @@ fn convert_node(
         }
         NodeValue::Image(link) => {
             let alt = nfc(&inline_text(&inlines(children)));
-            let target = if let Some(url) = state.shared_data_urls.get(&link.url) {
-                let target = state
-                    .shared_image_targets
-                    .entry(link.url.clone())
-                    .or_insert_with(|| {
-                        common::decode_data_uri_image(
-                            url,
-                            limits,
-                            &mut state.assets,
-                            &mut state.warnings,
-                        )
-                    })
-                    .clone();
-                if let Some(target) = target {
-                    target
+            let target =
+                if shared_reference && let Some(url) = state.shared_data_urls.get(&link.url) {
+                    let target = state
+                        .shared_image_targets
+                        .entry(link.url.clone())
+                        .or_insert_with(|| {
+                            common::decode_data_uri_image(
+                                url,
+                                limits,
+                                &mut state.assets,
+                                &mut state.warnings,
+                            )
+                        })
+                        .clone();
+                    if let Some(target) = target {
+                        target
+                    } else {
+                        let Some(href) = shared_url(&link.url, state) else {
+                            return inline(Inline::Text { text: alt });
+                        };
+                        AssetRef::Url { href }
+                    }
                 } else {
-                    let Some(href) = shared_url(&link.url, state) else {
-                        return inline(Inline::Text { text: alt });
-                    };
-                    AssetRef::Url { href }
-                }
-            } else {
-                common::decode_data_uri_image(
-                    &link.url,
-                    limits,
-                    &mut state.assets,
-                    &mut state.warnings,
-                )
-                .unwrap_or_else(|| AssetRef::Url {
-                    href: link.url.clone(),
-                })
-            };
+                    common::decode_data_uri_image(
+                        &link.url,
+                        limits,
+                        &mut state.assets,
+                        &mut state.warnings,
+                    )
+                    .unwrap_or_else(|| AssetRef::Url {
+                        href: link.url.clone(),
+                    })
+                };
             inline(Inline::Image {
                 target,
                 alt,
@@ -1084,6 +1269,91 @@ mod tests {
                 .iter()
                 .any(|warning| warning.code == WarningCode::UnsupportedNode)
         );
+    }
+
+    #[test]
+    fn escaped_internal_urls_match_the_original_reader() {
+        for url in [
+            "a&#58;0:0",
+            r"a\:0:0",
+            "&#97;&#58;0&#58;0",
+            "a:&#48;:0",
+            "a:0:0",
+        ] {
+            for image in ["", "!"] {
+                for body in [
+                    format!("{image}[link]({url})"),
+                    format!("{image}[link][other]\n\n[other]: {url}"),
+                    format!("{image}[other][]\n\n[other]: {url}"),
+                    format!("{image}[other]\n\n[other]: {url}"),
+                ] {
+                    let markdown =
+                        format!("{body}\n\n[pixel]: data:image/png;base64,iVBORw0KGgo=\n");
+                    assert_eq!(
+                        read(&markdown, &Limits::local()),
+                        super::read_impl(&markdown, &Limits::local(), false),
+                        "{markdown}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn normalized_reference_destinations_match_the_original_reader() {
+        for url in [
+            "data:image/png;base64,iVBORw0KGgo&#61;",
+            r"data:image/png;base64,iVBORw0KGgo\=",
+            r"data:image/png\;base64\,iVBORw0KGgo\=",
+            "data:text/plain;base64,YQ&#61;&#61;",
+            r"data:application/foo\;bar\,baz\=qux",
+            r"https://example.test/a\(b\)?x&#61;1",
+        ] {
+            for image in ["", "!"] {
+                let markdown = format!("{image}[p][p]\n\n[p]: {url}\n");
+                assert_eq!(
+                    read(&markdown, &Limits::local()),
+                    super::read_impl(&markdown, &Limits::local(), false),
+                    "{markdown}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn literal_reference_definitions_match_the_original_reader() {
+        let definition = "[pixel]: data:image/png;base64,iVBORw0KGgo=";
+        for literal in [
+            format!("`{definition}`"),
+            format!("```md\n{definition}\n```"),
+            format!("    {definition}"),
+            format!("> `{definition}`"),
+        ] {
+            let markdown = format!(
+                "{literal}\n\n[link](a&#58;0:0)\n\n[unused]: data:image/png;base64,iVBORw0KGgo=\n"
+            );
+            assert_eq!(
+                read(&markdown, &Limits::local()),
+                super::read_impl(&markdown, &Limits::local(), false),
+                "{markdown}"
+            );
+        }
+        for prefix in [
+            "[pixel]: a&#58;0:0\nParagraph",
+            "> [pixel]: a&#58;0:0",
+            "[^note]: [pixel]: a&#58;0:0",
+            "[pi\n xel]: a&#58;0:0",
+            "[pixel]: a&#58;0:0",
+        ] {
+            let markdown = format!(
+                "{prefix}\n\n[link][pixel]\n\n[pixel]: data:image/png;base64,iVBORw0KGgo=\n"
+            );
+            assert_eq!(
+                read(&markdown, &Limits::local()),
+                super::read_impl(&markdown, &Limits::local(), false),
+                "{markdown}"
+            );
+        }
     }
 
     #[test]

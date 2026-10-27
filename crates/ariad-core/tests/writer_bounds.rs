@@ -292,6 +292,57 @@ fn shared_markdown_images_keep_their_common_title() {
 }
 
 #[test]
+fn shared_markdown_images_warn_and_keep_the_first_conflicting_title() {
+    assert_shared_image_titles(Some("first"), Some("second"));
+}
+
+#[test]
+fn shared_markdown_images_warn_when_a_title_is_missing() {
+    assert_shared_image_titles(None, Some("second"));
+    assert_shared_image_titles(Some("first"), None);
+}
+
+fn assert_shared_image_titles(first: Option<&str>, second: Option<&str>) {
+    let mut doc = document_with_repeated_image(b"\x89PNG\r\n\x1a\n".to_vec(), 2);
+    for (index, title) in [first, second].into_iter().enumerate() {
+        if let Block::Paragraph { content } = &mut doc.body[index]
+            && let Inline::Image {
+                alt,
+                title: image_title,
+                ..
+            } = &mut content[0]
+        {
+            *alt = format!("alt {index}");
+            *image_title = title.map(str::to_owned);
+        }
+    }
+    let output = writer::markdown::write(&doc);
+    let title = first
+        .map(|title| format!(" \"{title}\""))
+        .unwrap_or_default();
+    assert_eq!(
+        output.content,
+        format!(
+            "![alt 0][ariad-asset-0]\n\n![alt 1][ariad-asset-0]\n\n[ariad-asset-0]: data:image/png;base64,iVBORw0KGgo={title}\n"
+        )
+    );
+    assert_eq!(output.warnings.len(), 1);
+    assert_eq!(output.warnings[0].code, WarningCode::UnsupportedNode);
+    assert_eq!(
+        output.warnings[0].message,
+        "different titles on repeated embedded images were reduced to the first title"
+    );
+    let parsed = markdown::read(&output.content, &Limits::local()).unwrap();
+    assert_eq!(parsed.document.assets.len(), 1);
+    assert_eq!(parsed.document.body.len(), 2);
+    for (index, block) in parsed.document.body.iter().enumerate() {
+        assert!(matches!(block, Block::Paragraph { content }
+            if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, alt, title }]
+                if alt == &format!("alt {index}") && title.as_deref() == first)));
+    }
+}
+
+#[test]
 fn html_repeated_assets_keep_escaped_alt_text_and_warn_once() {
     let mut doc = document_with_repeated_image(vec![0x5a; 32], 3);
     if let Block::Paragraph { content } = &mut doc.body[1]

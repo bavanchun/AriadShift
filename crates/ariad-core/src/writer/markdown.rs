@@ -1284,6 +1284,8 @@ fn render_image(
     if let AssetRef::Asset { id } = target
         && let Some(index) = ctx.shared_assets.get(id).copied()
     {
+        // One definition per asset keeps output linear. Conflicting or missing
+        // per-occurrence titles deliberately use the first title and warn.
         let first_title = ctx
             .shared_titles
             .entry(id.clone())
