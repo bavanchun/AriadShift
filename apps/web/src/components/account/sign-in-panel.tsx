@@ -20,7 +20,25 @@ export function safeNextPath(value: string | null): string {
   if (!value?.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
     return "/account";
   }
-  return value;
+  const origin =
+    typeof location === "object" && location?.origin ? location.origin : "http://localhost";
+  try {
+    const url = new URL(value, origin);
+    const decodedPath = decodeURIComponent(url.pathname);
+    if (
+      url.origin !== origin ||
+      url.pathname.startsWith("//") ||
+      url.pathname.includes("\\") ||
+      decodedPath.startsWith("//") ||
+      decodedPath.includes("\\") ||
+      new URL(decodedPath, origin).origin !== origin
+    ) {
+      return "/account";
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return "/account";
+  }
 }
 
 type Mode = "sign-in" | "sign-up" | "two-factor";

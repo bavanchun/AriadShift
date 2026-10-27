@@ -266,10 +266,23 @@ describe("sign-in helpers", () => {
   it("returns only to same-origin paths", () => {
     expect(safeNextPath("/jobs")).toBe("/jobs");
     expect(safeNextPath("/api-keys?x=1")).toBe("/api-keys?x=1");
+    expect(safeNextPath("/jobs?status=running#top")).toBe("/jobs?status=running#top");
     expect(safeNextPath(null)).toBe("/account");
     expect(safeNextPath("https://evil.example")).toBe("/account");
     expect(safeNextPath("//evil.example")).toBe("/account");
     expect(safeNextPath("/\\evil.example")).toBe("/account");
+    expect(safeNextPath("/\t/evil.example")).toBe("/account");
+    expect(safeNextPath("/\n/evil.example")).toBe("/account");
+    expect(safeNextPath("/\r/evil.example")).toBe("/account");
+    expect(safeNextPath(new URLSearchParams("next=%2F%09%2Fevil.example").get("next"))).toBe(
+      "/account",
+    );
+    expect(safeNextPath("/%09/evil.example")).toBe("/account");
+    expect(safeNextPath("/%0a/evil.example")).toBe("/account");
+    expect(safeNextPath("/%0d/evil.example")).toBe("/account");
+    expect(safeNextPath("/%2f/evil.example")).toBe("/account");
+    expect(safeNextPath("/%5cevil.example")).toBe("/account");
+    expect(safeNextPath("/..//evil.example")).toBe("/account");
   });
 
   it("extracts the TOTP setup key in groups of four", () => {
