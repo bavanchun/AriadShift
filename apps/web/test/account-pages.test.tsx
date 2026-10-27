@@ -7,12 +7,12 @@ import { AccountShell } from "@/components/account/account-shell";
 import { ApiKeysPanel } from "@/components/account/api-keys-panel";
 import type { AccountUser, AuthApi } from "@/components/account/auth-api";
 import { AuthError } from "@/components/account/auth-api";
-import type { CloudConfig } from "@/components/account/cloud-config";
 import { SignInPanel } from "@/components/account/sign-in-panel";
+import type { AccountCloudConfig } from "@/lib/cloud/config";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/account" }));
 
-const CONFIG: CloudConfig = {
+const CONFIG: AccountCloudConfig = {
   apiUrl: "http://localhost:3902",
   authUrl: "http://localhost:3901",
 };
