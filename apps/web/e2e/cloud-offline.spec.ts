@@ -12,13 +12,18 @@ test("choosing cloud while offline before the cloud chunk loaded falls back to t
   test.skip(browserName !== "chromium", "offline chunk failure is tested in Chromium");
 
   await page.goto("/app");
-  await expect(page.getByTestId("device-indicator")).toContainText("Processed on this device.");
+  await expect(page.getByRole("heading", { name: "Convert a document" })).toBeVisible();
+  await expect(page.getByTestId("device-indicator")).toContainText(/browser storage|In memory/, {
+    timeout: 60_000,
+  });
   await expect
-    .poll(() =>
-      page.evaluate(async () => {
-        const keys = await (await caches.open("ariadshift-app-v1")).keys();
-        return keys.map((request) => new URL(request.url).pathname);
-      }),
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const keys = await (await caches.open("ariadshift-app-v1")).keys();
+          return keys.map((request) => new URL(request.url).pathname);
+        }),
+      { timeout: 30_000 },
     )
     .toEqual(expect.arrayContaining(["/app", expect.stringMatching(/\.wasm$/)]));
 

@@ -34,6 +34,7 @@ import {
   type ComponentType,
   lazy,
   type ReactNode,
+  type RefObject,
   Suspense,
   useCallback,
   useEffect,
@@ -67,6 +68,7 @@ type Phase = "idle" | "ingesting" | "ready" | "converting" | "done";
 const CloudPanel = lazy(() => import("@/components/cloud/cloud-panel"));
 
 interface CloudErrorBoundaryProps {
+  transferred: RefObject<boolean>;
   onUseDevice: () => void;
   children: ReactNode;
 }
@@ -84,14 +86,18 @@ class CloudErrorBoundary extends Component<CloudErrorBoundaryProps, CloudErrorBo
 
   override render() {
     if (this.state.hasError) {
+      const transferred = this.props.transferred.current;
       return (
         <Alert variant="destructive" data-testid="cloud-load-error">
           <TriangleAlertIcon aria-hidden="true" />
-          <AlertTitle>Cloud mode could not load</AlertTitle>
+          <AlertTitle>
+            {transferred ? "Cloud mode stopped unexpectedly" : "Cloud mode could not load"}
+          </AlertTitle>
           <AlertDescription className="flex flex-col items-start gap-3">
             <p>
-              The cloud converter could not be loaded (for example, because you are offline). Your
-              file has not left this device.
+              {transferred
+                ? "Cloud mode encountered an error after the upload started. Any server copy is deleted automatically when its retention period ends, or you can convert on this device."
+                : "The cloud converter could not be loaded (for example, because you are offline). You can still convert on this device."}
             </p>
             <Button variant="outline" onClick={this.props.onUseDevice}>
               Convert on this device
@@ -163,6 +169,7 @@ export function ConverterApp({
   const [staged, setStaged] = useState<File | null>(null);
   const [destination, setDestination] = useState<Destination>("device");
   const cloudCleanup = useRef<(() => Promise<DiscardOutcome>) | null>(null);
+  const cloudTransferred = useRef(false);
   const cloudPanelRef = useRef<HTMLDivElement>(null);
   const cloudHost = CLOUD?.apiHost;
   // Server copies that "Start over" or leaving cloud mode could not delete; each
@@ -266,6 +273,7 @@ export function ConverterApp({
       setRouteError(null);
       outputRef.current = null;
       // Every file starts on this device; the cloud is chosen per file.
+      cloudTransferred.current = false;
       setStaged(CLOUD ? file : null);
       setDestination("device");
       setPhase("ingesting");
@@ -380,6 +388,7 @@ export function ConverterApp({
     setError(null);
     setPhase("idle");
     const cloudFiles = cloudCleanup.current;
+    cloudTransferred.current = false;
     setStaged(null);
     setDestination("device");
     try {
@@ -624,7 +633,10 @@ export function ConverterApp({
 
       {onCloud && CLOUD && staged && (
         <div ref={cloudPanelRef}>
-          <CloudErrorBoundary onUseDevice={() => setDestination("device")}>
+          <CloudErrorBoundary
+            transferred={cloudTransferred}
+            onUseDevice={() => setDestination("device")}
+          >
             <Suspense
               fallback={<p className="text-sm text-muted-foreground">Loading cloud mode…</p>}
             >
@@ -637,6 +649,9 @@ export function ConverterApp({
                 onUseDevice={() => setDestination("device")}
                 cleanup={cloudCleanup}
                 onServerCopy={keepServerCopy}
+                onTransferStart={() => {
+                  cloudTransferred.current = true;
+                }}
               />
             </Suspense>
           </CloudErrorBoundary>
