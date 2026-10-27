@@ -372,7 +372,9 @@ describe("jobs page with the account's job list", () => {
     renderJobs(api);
     expect(await row("local.pdf")).toBeTruthy();
     expect(screen.getByText(/cannot list your account's jobs yet/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Remove from this list (local.pdf)" })).toBeTruthy();
+    expect(
+      await screen.findByRole("button", { name: "Remove from this list (local.pdf)" }),
+    ).toBeTruthy();
   });
 
   it("explains a failed list, keeps this browser's jobs and tries again", async () => {

@@ -297,8 +297,10 @@ describe("account page", () => {
       within(section).getByRole("button", { name: "Turn off two-factor authentication" }),
     ).toBeTruthy();
     // The opening button is gone, so focus lands on the section heading.
-    expect(document.activeElement).toBe(
-      within(section).getByRole("heading", { name: "Two-factor authentication" }),
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(section).getByRole("heading", { name: "Two-factor authentication" }),
+      ),
     );
   });
 
