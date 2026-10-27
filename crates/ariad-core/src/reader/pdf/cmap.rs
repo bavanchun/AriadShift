@@ -166,6 +166,27 @@ impl CMap {
         !self.codespace.is_empty()
     }
 
+    /// Approximate heap retained by codespace ranges, mappings and their UTF-16 targets.
+    pub(super) fn heap_bytes(&self) -> usize {
+        let unit = std::mem::size_of::<u16>();
+        let target = std::mem::size_of::<Vec<u16>>();
+        let singles = self.singles.capacity() * (std::mem::size_of::<(u8, u32)>() + target)
+            + self.singles.values().map(Vec::capacity).sum::<usize>() * unit;
+        let ranges = self.ranges.capacity() * std::mem::size_of::<Range>()
+            + self
+                .ranges
+                .iter()
+                .map(|range| match &range.target {
+                    RangeTarget::Increment(units) => units.capacity() * unit,
+                    RangeTarget::List(targets) => {
+                        targets.capacity() * target
+                            + targets.iter().map(Vec::capacity).sum::<usize>() * unit
+                    }
+                })
+                .sum::<usize>();
+        self.codespace.capacity() * std::mem::size_of::<CodespaceRange>() + singles + ranges
+    }
+
     /// Splits the next character code off `bytes` by the codespace ranges.
     ///
     /// Returns the code and its byte length, or `None` when the CMap has no codespace. Bytes
