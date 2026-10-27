@@ -1,6 +1,8 @@
 //! Font dictionaries: character code splitting, Unicode decoding and glyph widths.
 
-use lopdf::{Dictionary, Document, Object};
+use std::{collections::HashMap, rc::Rc};
+
+use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use super::{
     ReadError,
@@ -16,13 +18,16 @@ const MAX_CID_WIDTH_ENTRIES: usize = 131_072;
 /// Bytes of a Type 1 font program scanned for its built-in encoding.
 const MAX_TYPE1_HEADER_BYTES: usize = 64 * 1024;
 
+/// Parsed CMaps shared by every font that names the same stream object.
+pub(super) type CMapCache = HashMap<ObjectId, Rc<CMap>>;
+
 /// How character codes are split off a string.
 #[derive(Debug)]
 enum Codes {
     OneByte,
     TwoByte,
     /// Codespace ranges of the font's encoding CMap.
-    Encoding(CMap),
+    Encoding(Rc<CMap>),
     /// Codespace ranges of the font's ToUnicode CMap.
     ToUnicodeCodespace,
 }
@@ -50,7 +55,7 @@ enum Family {
 #[derive(Debug)]
 pub(super) struct Font {
     codes: Codes,
-    to_unicode: Option<CMap>,
+    to_unicode: Option<Rc<CMap>>,
     /// Unicode text per code for simple fonts, from the encoding and glyph names.
     simple: Vec<Option<Box<str>>>,
     /// The codes of a composite font are Unicode (UCS-2 or UTF-16 CMaps).
@@ -88,6 +93,7 @@ impl Font {
     }
 
     /// Retained width/encoding allocations plus cache overhead, charged for every font.
+    /// Parsed CMaps are charged once by `load_cmap`.
     pub(super) fn work_bytes(&self) -> usize {
         let widths = match &self.widths {
             Widths::Simple { values, .. } => values.capacity() * std::mem::size_of::<f64>(),
@@ -175,23 +181,19 @@ impl Font {
         code == 32 && len == 1
     }
 
-    /// Loads a font dictionary. Only exhausting the decompression budget is an error; anything
+    /// Loads a font dictionary. Only exhausting the decoded/work budget is an error; anything
     /// unreadable degrades to a font without that information.
     pub(super) fn load(
         doc: &Document,
         dict: &Dictionary,
         budget: &mut Budget,
         encodings: &mut Encodings,
+        cmaps: &mut CMapCache,
     ) -> Result<Self, ReadError> {
         let mut font = Self::unknown();
         let subtype = get_name(doc, dict, b"Subtype").unwrap_or_default();
         let base_name = get_name(doc, dict, b"BaseFont").map(strip_subset_tag);
-        if let Some(stream) =
-            get(doc, dict, b"ToUnicode").and_then(|object| object.as_stream().ok())
-            && let Some(data) = budget.decode(stream)?
-        {
-            font.to_unicode = Some(CMap::parse(&data));
-        }
+        font.to_unicode = load_cmap(doc, dict, b"ToUnicode", budget, cmaps)?;
 
         let descriptor;
         if subtype == b"Type0" {
@@ -200,7 +202,7 @@ impl Font {
                 .and_then(|object| resolve(doc, object))
                 .and_then(|object| object.as_dict().ok());
             descriptor = descendant.and_then(|cid| get_dict(doc, cid, b"FontDescriptor"));
-            font.load_composite(doc, dict, descendant, budget)?;
+            font.load_composite(doc, dict, descendant, budget, cmaps)?;
         } else {
             descriptor = get_dict(doc, dict, b"FontDescriptor");
             font.load_simple(doc, dict, subtype, descriptor, base_name, budget, encodings)?;
@@ -226,6 +228,7 @@ impl Font {
         dict: &Dictionary,
         descendant: Option<&Dictionary>,
         budget: &mut Budget,
+        cmaps: &mut CMapCache,
     ) -> Result<(), ReadError> {
         self.codes = Codes::TwoByte;
         match get(doc, dict, b"Encoding") {
@@ -234,17 +237,16 @@ impl Font {
                 self.unicode_codes = contains(name, b"UCS2") || contains(name, b"UTF16");
                 if !identity
                     && !self.unicode_codes
-                    && self.to_unicode.as_ref().is_some_and(CMap::has_codespace)
+                    && self.to_unicode.as_deref().is_some_and(CMap::has_codespace)
                 {
                     self.codes = Codes::ToUnicodeCodespace;
                 }
             }
             Some(Object::Stream(stream)) => {
-                if let Some(data) = budget.decode(stream)? {
-                    let cmap = CMap::parse(&data);
-                    if cmap.has_codespace() {
-                        self.codes = Codes::Encoding(cmap);
-                    }
+                if let Some(cmap) = load_cmap(doc, dict, b"Encoding", budget, cmaps)?
+                    && cmap.has_codespace()
+                {
+                    self.codes = Codes::Encoding(cmap);
                 }
                 self.unicode_codes = get_name(doc, &stream.dict, b"CMapName")
                     .is_some_and(|name| contains(name, b"UCS2") || contains(name, b"UTF16"));
@@ -259,7 +261,7 @@ impl Font {
             self.default_width = width;
         }
         if let Some(array) = get_array(doc, descendant, b"W") {
-            self.widths = Widths::Cid(cid_widths(doc, array));
+            self.widths = Widths::Cid(cid_widths(doc, array, budget)?);
         }
         Ok(())
     }
@@ -364,6 +366,7 @@ impl Font {
             simple[usize::from(code)] = encodings.glyph(doc, &name).map(Box::from);
         }
         if let Some(differences) = differences {
+            budget.charge_items(differences.len())?;
             let mut code = 0_usize;
             for object in differences {
                 match resolve(doc, object) {
@@ -452,8 +455,42 @@ fn family_width(family: Family, ch: Option<char>) -> f64 {
     }
 }
 
-/// Parses a CID font `/W` array into sorted ranges.
-fn cid_widths(doc: &Document, array: &[Object]) -> Vec<(u32, u32, f64)> {
+/// Parses a CMap once per stream object, charging its decoded bytes and retained heap.
+fn load_cmap(
+    doc: &Document,
+    dict: &Dictionary,
+    key: &[u8],
+    budget: &mut Budget,
+    cmaps: &mut CMapCache,
+) -> Result<Option<Rc<CMap>>, ReadError> {
+    let Ok(object) = dict.get(key) else {
+        return Ok(None);
+    };
+    let id = object.as_reference().ok();
+    if let Some(cmap) = id.and_then(|id| cmaps.get(&id)) {
+        return Ok(Some(Rc::clone(cmap)));
+    }
+    let Some(stream) = resolve(doc, object).and_then(|object| object.as_stream().ok()) else {
+        return Ok(None);
+    };
+    let Some(data) = budget.decode(stream)? else {
+        return Ok(None);
+    };
+    let cmap = Rc::new(CMap::parse(&data));
+    budget.charge_work(cmap.heap_bytes())?;
+    if let Some(id) = id {
+        cmaps.insert(id, Rc::clone(&cmap));
+    }
+    Ok(Some(cmap))
+}
+
+/// Parses a CID font `/W` array into sorted ranges, charging outer and inner array walks.
+fn cid_widths(
+    doc: &Document,
+    array: &[Object],
+    budget: &mut Budget,
+) -> Result<Vec<(u32, u32, f64)>, ReadError> {
+    budget.charge_items(array.len())?;
     let mut ranges = Vec::new();
     let mut index = 0;
     while index < array.len() && ranges.len() < MAX_CID_WIDTH_ENTRIES {
@@ -464,6 +501,7 @@ fn cid_widths(doc: &Document, array: &[Object]) -> Vec<(u32, u32, f64)> {
         let first = first.clamp(0.0, f64::from(u32::MAX)) as u32;
         match array.get(index + 1).and_then(|object| resolve(doc, object)) {
             Some(Object::Array(widths)) => {
+                budget.charge_items(widths.len())?;
                 for (offset, width) in widths.iter().enumerate() {
                     if ranges.len() >= MAX_CID_WIDTH_ENTRIES {
                         break;
@@ -509,7 +547,7 @@ fn cid_widths(doc: &Document, array: &[Object]) -> Vec<(u32, u32, f64)> {
             _ => merged.push(range),
         }
     }
-    merged
+    Ok(merged)
 }
 
 /// Reads `dup <code> /<name> put` entries from the cleartext part of a Type 1 font program.
@@ -585,7 +623,9 @@ pub(super) fn normalize_into(text: &str, out: &mut String) {
 mod tests {
     use lopdf::{Dictionary, Document, Object, Stream, dictionary};
 
-    use super::{Font, normalize_into, strip_subset_tag, style_from_name, type1_builtin_encoding};
+    use super::{
+        CMapCache, Font, normalize_into, strip_subset_tag, style_from_name, type1_builtin_encoding,
+    };
     use crate::reader::pdf::{encoding::Encodings, objects::Budget};
 
     fn load(doc: &Document, dict: &Dictionary) -> Font {
@@ -594,6 +634,7 @@ mod tests {
             dict,
             &mut Budget::new(1 << 20, 1 << 20),
             &mut Encodings::default(),
+            &mut CMapCache::new(),
         )
         .unwrap()
     }

@@ -1,4 +1,4 @@
-//! Lenient accessors over the `lopdf` object model and the decompression budget.
+//! Lenient accessors over the `lopdf` object model and the PDF work budgets.
 
 use lopdf::{DecompressError, Dictionary, Document, Object, Stream};
 
@@ -77,8 +77,9 @@ pub(super) fn rectangle(doc: &Document, object: &Object) -> Option<[f64; 4]> {
 /// Work charged for each glyph the interpreter records, in bytes, on top of its text.
 pub(super) const GLYPH_WORK: u64 = 16;
 
-/// Charges decoded stream bytes against the configured decompression limit, and decoded bytes
-/// plus glyph work against an amplification limit that grows with the input size.
+/// Charges decoded stream bytes against the configured decompression limit, and decoded bytes,
+/// glyph work, font array walks and retained font allocations against an amplification limit
+/// that grows with the input size.
 #[derive(Debug)]
 pub(super) struct Budget {
     decoded: u64,
@@ -133,6 +134,14 @@ impl Budget {
     /// Records one glyph with `text_bytes` of decoded text.
     pub(super) fn charge_glyph(&mut self, text_bytes: usize) -> Result<(), ReadError> {
         self.work = self.work.saturating_add(GLYPH_WORK + text_bytes as u64);
+        self.exceeded()
+    }
+
+    /// Charges every walk over font array elements, including shared arrays.
+    pub(super) fn charge_items(&mut self, items: usize) -> Result<(), ReadError> {
+        self.work = self
+            .work
+            .saturating_add((items as u64).saturating_mul(GLYPH_WORK));
         self.exceeded()
     }
 

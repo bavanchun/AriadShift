@@ -579,6 +579,9 @@ fn vocabulary(pages: &[PageBlocks], furniture: &HashSet<(usize, usize)>) -> Hash
 
 const HYPHENS: [char; 3] = ['-', '\u{00AD}', '\u{2010}'];
 
+/// Longest word read to the left of a line-end hyphen. Longer runs keep their hyphens.
+const MAX_JOIN_WORD: usize = 64;
+
 /// How two lines meet.
 #[derive(Debug, Eq, PartialEq)]
 enum Join {
@@ -595,14 +598,16 @@ fn line_join(previous: &str, next: &str, vocabulary: &HashSet<String>) -> Join {
     let Some(stem) = previous.strip_suffix(HYPHENS) else {
         return Join::Space;
     };
-    let left = stem.rsplit(char::is_whitespace).next().unwrap_or_default();
-    let left = left.trim_start_matches(|ch: char| !ch.is_alphanumeric());
-    if !left.chars().last().is_some_and(char::is_alphanumeric) {
+    if !stem.chars().next_back().is_some_and(char::is_alphanumeric) {
         return Join::Space;
     }
     if previous.ends_with('\u{00AD}') {
         return Join::Merge;
     }
+    let Some(left) = last_word(stem) else {
+        return Join::Hyphen;
+    };
+    let left = left.trim_start_matches(|ch: char| !ch.is_alphanumeric());
     let right = next.split_whitespace().next().unwrap_or_default();
     let right = right.trim_end_matches(|ch: char| !ch.is_alphanumeric());
     let Some(head) = right.chars().next().filter(|ch| ch.is_alphanumeric()) else {
@@ -622,6 +627,21 @@ fn line_join(previous: &str, next: &str, vocabulary: &HashSet<String>) -> Join {
     } else {
         Join::Hyphen
     }
+}
+
+/// Returns the last word, reading at most `MAX_JOIN_WORD + 1` characters.
+fn last_word(text: &str) -> Option<&str> {
+    let mut start = text.len();
+    for (count, (index, ch)) in text.char_indices().rev().enumerate() {
+        if ch.is_whitespace() {
+            break;
+        }
+        if count == MAX_JOIN_WORD {
+            return None;
+        }
+        start = index;
+    }
+    Some(&text[start..])
 }
 
 /// Appends a line (or a continued block) to spans, joining across the line break.
@@ -797,7 +817,10 @@ fn inlines(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{
+        collections::HashSet,
+        time::{Duration, Instant},
+    };
 
     use super::{Join, PageBlocks, assemble, is_page_number, join_lines, line_join};
     use crate::{
@@ -1056,5 +1079,38 @@ mod tests {
         for text in ["Chapter 2", "2024 Report", "12345", "Civil", "mix", "dim"] {
             assert!(!is_page_number(text), "{text}");
         }
+    }
+
+    #[test]
+    fn hyphen_joins_read_at_most_64_characters_of_the_left_word() {
+        let words = HashSet::new();
+        let word = "a".repeat(64);
+        assert_eq!(line_join(&format!("x {word}-"), "b", &words), Join::Merge);
+        assert_eq!(line_join(&format!("{word}a-"), "b", &words), Join::Hyphen);
+        assert_eq!(
+            line_join(&format!("{word}a\u{00AD}"), "b", &words),
+            Join::Merge
+        );
+        assert_eq!(line_join(&format!("{word}a -"), "b", &words), Join::Space);
+        let word = "ế".repeat(64);
+        assert_eq!(line_join(&format!("{word}-"), "b", &words), Join::Merge);
+        assert_eq!(line_join(&format!("{word}ế-"), "b", &words), Join::Hyphen);
+    }
+
+    #[test]
+    fn long_runs_of_hyphenated_lines_join_in_linear_time() {
+        // Every `ab-` line merged into the one before, so each join rescanned, copied and
+        // lowercased the whole accumulated word: quadratic in the number of lines.
+        const LINES: usize = 20_000;
+        let lines = vec![vec![span("ab-")]; LINES];
+        let started = Instant::now();
+        let joined = join_lines(&lines, &HashSet::new());
+        let elapsed = started.elapsed();
+        eprintln!("hyphen join debug elapsed: {elapsed:?}");
+        assert!(elapsed < Duration::from_secs(1), "joining took {elapsed:?}");
+        // Merging stops once the word passes 64 characters; later joins keep their hyphens.
+        let expected = format!("{}{}-", "ab".repeat(33), "-ab".repeat(LINES - 33));
+        assert_eq!(joined.len(), 1);
+        assert_eq!(joined[0].text, expected);
     }
 }
