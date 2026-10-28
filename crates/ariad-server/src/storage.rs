@@ -597,10 +597,11 @@ impl Storage {
                         break;
                     }
                 }
-                // EOF is explicit so the producer can retain admission until
-                // the consumer drains/drops its body, or the deadline fires.
+                // Retain admission while the consumer drains/drops its body,
+                // bounded by the same idle limit as a stalled data chunk.
+                // The final data and EOF remain queued after admission ends.
                 if matches!(timeout(idle, sender.send(None)).await, Ok(Ok(()))) {
-                    sender.closed().await;
+                    let _ = timeout(idle, sender.closed()).await;
                 }
             };
             let _ = timeout_at(deadline, transfer).await;
