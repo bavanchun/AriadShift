@@ -437,21 +437,12 @@ fn write_block(block: &Block, ctx: &mut MarkdownContext, out: &mut String) {
             );
         }
         Block::Table {
-            caption,
             columns,
             head,
             body,
-            footnotes,
+            ..
         } => {
-            if let Some(caption) = caption.as_ref().filter(|caption| !caption.is_empty()) {
-                out.push_str(&render_inlines(caption, false, false, ctx));
-                out.push_str("\n\n");
-            }
             write_table(columns, head, body, ctx, out);
-            if !footnotes.is_empty() {
-                out.push_str(&render_inlines(footnotes, false, false, ctx));
-                out.push_str("\n\n");
-            }
         }
         Block::Figure { asset, caption } => {
             let alt = plain_text(caption);

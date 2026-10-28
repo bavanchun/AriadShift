@@ -202,6 +202,71 @@ fn cell(text: &str) -> TableCell {
 }
 
 #[test]
+fn compact_table_rows_read_back_with_empty_trailing_cells() {
+    let columns = vec![
+        ColumnSpec {
+            align: Alignment::Left,
+        },
+        ColumnSpec {
+            align: Alignment::Center,
+        },
+        ColumnSpec {
+            align: Alignment::Right,
+        },
+    ];
+    let head = vec![vec![cell("First"), cell("Second"), cell("Third")]];
+    let doc = Document {
+        body: vec![Block::Table {
+            caption: None,
+            columns: columns.clone(),
+            head: head.clone(),
+            body: vec![
+                vec![],
+                vec![cell("Short")],
+                vec![cell("Two"), cell("Cells")],
+                vec![cell("Full"), cell("Middle"), cell("Last")],
+            ],
+            footnotes: vec![],
+        }],
+        ..Document::default()
+    };
+    let written = writer::markdown::write(&doc);
+    assert!(written.warnings.is_empty());
+    assert_eq!(
+        written.content,
+        "| First | Second | Third |\n| :--- | :---: | ---: |\n|  |\n| Short |\n| Two | Cells |\n| Full | Middle | Last |\n\n"
+    );
+
+    // GFM fills missing trailing cells, preserving the same IR as padded rows.
+    let padded = "| First | Second | Third |\n| :--- | :---: | ---: |\n|  |  |  |\n| Short |  |  |\n| Two | Cells |  |\n| Full | Middle | Last |\n\n";
+    let compact_read = markdown::read(&written.content, &Limits::local()).unwrap();
+    let padded_read = markdown::read(padded, &Limits::local()).unwrap();
+    assert!(compact_read.warnings.is_empty());
+    assert!(padded_read.warnings.is_empty());
+    assert_eq!(compact_read.document.body, padded_read.document.body);
+
+    let empty = TableCell {
+        blocks: vec![],
+        ..cell("")
+    };
+    assert_eq!(
+        compact_read.document.body,
+        vec![Block::Table {
+            caption: None,
+            columns,
+            head,
+            body: vec![
+                vec![empty.clone(); 3],
+                vec![cell("Short"), empty.clone(), empty.clone()],
+                vec![cell("Two"), cell("Cells"), empty],
+                vec![cell("Full"), cell("Middle"), cell("Last")],
+            ],
+            footnotes: vec![],
+        }]
+    );
+}
+
+#[test]
 fn table_annotations_are_preserved_and_header_loss_warns() {
     let doc = Document {
         body: vec![Block::Table {
@@ -219,17 +284,28 @@ fn table_annotations_are_preserved_and_header_loss_warns() {
         }],
         ..Document::default()
     };
-    for output in [writer::markdown::write(&doc), writer::html::write(&doc)] {
-        assert!(output.content.contains("Table caption"));
-        assert!(output.content.contains("Table note"));
-        assert!(
-            output.content.contains("Second header")
-                || output
-                    .warnings
-                    .iter()
-                    .any(|w| w.code == WarningCode::UnsupportedNode)
-        );
-    }
+    let markdown = writer::markdown::write(&doc);
+    // Markdown historically omits table annotations; HTML preserves them.
+    assert_eq!(
+        markdown.content,
+        "| First header |\n| --- |\n| Body cell |\n\n"
+    );
+    assert!(
+        markdown
+            .warnings
+            .iter()
+            .any(|w| w.code == WarningCode::UnsupportedNode)
+    );
+    let html = writer::html::write(&doc);
+    assert!(html.content.contains("Table caption"));
+    assert!(html.content.contains("Table note"));
+    assert!(
+        html.content.contains("Second header")
+            || html
+                .warnings
+                .iter()
+                .any(|w| w.code == WarningCode::UnsupportedNode)
+    );
 }
 
 #[test]
