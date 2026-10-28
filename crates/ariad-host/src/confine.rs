@@ -713,6 +713,7 @@ pub fn confine_input(
     })
 }
 
+/// Opens a confined file, preserving native `ELOOP` errors for detected Unix leaf symlinks.
 pub fn open_file_nofollow(root_dir: &cap_std::fs::Dir, relative: &Path) -> io::Result<fs::File> {
     open_file_and_parent_nofollow(root_dir, relative).map(|(_, file)| file)
 }
@@ -730,9 +731,22 @@ fn open_file_and_parent_nofollow(
 
     let parent_dir = open_dir_nofollow(root_dir, parent)?;
 
+    // The manual capability resolver may follow a link despite raw O_NOFOLLOW flags.
+    // Retain both checks and the native error contract independently of that backend.
+    #[cfg(unix)]
+    if parent_dir
+        .symlink_metadata(file_name)
+        .is_ok_and(|metadata| metadata.is_symlink())
+    {
+        return Err(io::Error::from_raw_os_error(libc::ELOOP));
+    }
+
     let cap_file = open_entry_nofollow(&parent_dir, Path::new(file_name), false)?;
     let post_meta = parent_dir.symlink_metadata(file_name)?;
     if is_reparse_point(&post_meta) {
+        #[cfg(unix)]
+        return Err(io::Error::from_raw_os_error(libc::ELOOP));
+        #[cfg(not(unix))]
         return Err(io::Error::other("symlink entry is refused"));
     }
     #[cfg(unix)]
@@ -1399,6 +1413,59 @@ pub(crate) fn test_open_hook(point: &str) {
 mod nofollow_tests {
     use super::*;
 
+    #[cfg(unix)]
+    #[test]
+    fn leaf_symlinks_preserve_native_loop_errors() {
+        use std::io::Read;
+        let temp = tempfile::tempdir().unwrap();
+        let root =
+            cap_std::fs::Dir::open_ambient_dir(temp.path(), cap_std::ambient_authority()).unwrap();
+        fs::write(temp.path().join("note.md"), "authorized bytes").unwrap();
+        fs::create_dir(temp.path().join("directory")).unwrap();
+        for (name, target) in [
+            ("file-link", "note.md"),
+            ("directory-link", "directory"),
+            ("dangling-link", "missing"),
+            ("loop-link", "loop-link"),
+        ] {
+            std::os::unix::fs::symlink(target, temp.path().join(name)).unwrap();
+            let error = open_file_nofollow(&root, Path::new(name)).unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(libc::ELOOP), "{name}: {error:?}");
+        }
+        let error = open_file_nofollow(&root, Path::new("missing")).unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::ENOENT));
+        let mut contents = String::new();
+        open_file_nofollow(&root, Path::new("note.md"))
+            .unwrap()
+            .read_to_string(&mut contents)
+            .unwrap();
+        assert_eq!(contents, "authorized bytes");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_leaf_symlink_installed_after_open_preserves_the_loop_error() {
+        let temp = tempfile::tempdir().unwrap();
+        let root =
+            cap_std::fs::Dir::open_ambient_dir(temp.path(), cap_std::ambient_authority()).unwrap();
+        let visible = temp.path().join("note.md");
+        let saved = temp.path().join("saved.md");
+        fs::write(&visible, "authorized bytes").unwrap();
+        TEST_OPEN_HOOKS.with(|hooks| {
+            hooks.borrow_mut().push((
+                "file-after",
+                Box::new(move || {
+                    fs::rename(&visible, saved).unwrap();
+                    std::os::unix::fs::symlink("saved.md", visible).unwrap();
+                }),
+            ));
+        });
+        let opened = open_file_nofollow(&root, Path::new("note.md"));
+        TEST_OPEN_HOOKS.with(|hooks| hooks.borrow_mut().clear());
+        let error = opened.unwrap_err();
+        assert_eq!(error.raw_os_error(), Some(libc::ELOOP), "{error:?}");
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn search_only_directory_still_opens_a_regular_input() {
@@ -1467,6 +1534,25 @@ mod root_and_sweep_race_tests {
     }
 
     #[test]
+    fn directory_identity_compares_real_directory_handles() {
+        let first = tempfile::tempdir().unwrap();
+        let second = tempfile::tempdir().unwrap();
+        let open = |path: &Path| {
+            cap_std::fs::Dir::open_ambient_dir(path, cap_std::ambient_authority()).unwrap()
+        };
+        let first_handle = open(first.path());
+        let reopened_first = open(first.path());
+        let second_handle = open(second.path());
+        assert!(same_directory(&first_handle, &first_handle.try_clone().unwrap()).unwrap());
+        assert!(same_directory(&first_handle, &reopened_first).unwrap());
+        assert!(!same_directory(&first_handle, &second_handle).unwrap());
+        assert!(!same_directory(&second_handle, &first_handle).unwrap());
+    }
+
+    // Windows ambient directory handles deny delete-sharing, so the startup rename
+    // fixtures are Unix-only. Real-directory identity above needs no rename or symlink privilege.
+    #[cfg(unix)]
+    #[test]
     fn startup_refuses_a_directory_replaced_between_canonicalization_and_open() {
         let temp = tempfile::tempdir().unwrap();
         let original = temp.path().join("allowed");
@@ -1496,6 +1582,7 @@ mod root_and_sweep_race_tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn startup_refuses_a_symlink_swap_between_canonicalization_and_open() {
         let temp = tempfile::tempdir().unwrap();
@@ -1507,17 +1594,11 @@ mod root_and_sweep_race_tests {
         let (path, backup) = (original.clone(), saved.clone());
         install_hook("root-canonicalized", move || {
             fs::rename(&path, &backup).unwrap();
-            #[cfg(unix)]
             std::os::unix::fs::symlink(&other, &path).unwrap();
-            #[cfg(windows)]
-            std::os::windows::fs::symlink_dir(&other, &path).unwrap();
         });
         let path = original.clone();
         install_hook("root-opened", move || {
-            #[cfg(unix)]
             fs::remove_file(&path).unwrap();
-            #[cfg(windows)]
-            fs::remove_dir(&path).unwrap();
             fs::rename(&saved, &path).unwrap();
         });
         let opened = AllowedDirs::new(&[original], &[]);
