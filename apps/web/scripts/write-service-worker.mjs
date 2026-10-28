@@ -1,7 +1,8 @@
 // Embed the current deployment's assets so activation retires old engine downloads.
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pandocUrl } from "../engine-assets.mjs";
+import { serviceWorkerSource } from "./service-worker-source.mjs";
 
 const web = path.resolve(import.meta.dirname, "..");
 const urls = process.argv.includes("--dev")
@@ -12,8 +13,4 @@ const urls = process.argv.includes("--dev")
         .filter((file) => /\.(?:js|wasm)$/.test(file))
         .map((file) => `/_next/static/${file.split(path.sep).join("/")}`),
     ].sort();
-const source = await readFile(path.join(web, "src/converter/service-worker.js"), "utf8");
-await writeFile(
-  path.join(web, "public/sw.js"),
-  `self.ENGINE_URLS = ${JSON.stringify(urls)};\n${source}`,
-);
+await writeFile(path.join(web, "public/sw.js"), await serviceWorkerSource(urls));

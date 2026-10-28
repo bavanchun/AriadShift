@@ -14,7 +14,7 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 use super::{
     ReadError,
     encoding::Encodings,
-    font::{Font, normalize_into},
+    font::{CMapCache, Font, normalize_into},
     lexer::{Token, next_token, skip_array, skip_dict, skip_inline_image},
     objects::{Budget, get_array, get_dict, get_name, number, resolve},
 };
@@ -40,6 +40,10 @@ const MAX_ARRAY_ITEMS: usize = 65_536;
 
 /// Deepest array nesting kept in one operand.
 const MAX_ARRAY_DEPTH: usize = 16;
+
+/// Most array elements kept across every nesting level of one operator's operands.
+/// Excess elements are parsed and dropped to bound peak operand memory.
+const MAX_OPERAND_ITEMS: usize = 2 * MAX_ARRAY_ITEMS;
 
 /// Most font-name lookups remembered per content stream.
 const MAX_FONT_NAMES: usize = 1_024;
@@ -151,6 +155,7 @@ pub(super) struct DocState<'d> {
     pub(super) doc: &'d Document,
     pub(super) budget: Budget,
     encodings: Encodings,
+    cmaps: CMapCache,
     font_keys: HashMap<FontKey, u32>,
     fonts: Vec<Rc<Font>>,
     pub(super) styles: Vec<FontStyle>,
@@ -165,6 +170,7 @@ impl<'d> DocState<'d> {
             doc,
             budget,
             encodings: Encodings::default(),
+            cmaps: CMapCache::new(),
             font_keys: HashMap::new(),
             fonts: Vec::new(),
             styles: Vec::new(),
@@ -209,7 +215,13 @@ impl<'d> DocState<'d> {
             return Ok(index);
         }
         let font = match dict {
-            Some(dict) => Font::load(self.doc, dict, &mut self.budget, &mut self.encodings)?,
+            Some(dict) => Font::load(
+                self.doc,
+                dict,
+                &mut self.budget,
+                &mut self.encodings,
+                &mut self.cmaps,
+            )?,
             None => Font::unknown(),
         };
         self.budget.charge_work(font.work_bytes())?;
@@ -324,6 +336,7 @@ pub(super) fn interpret_page<'d>(
         tlm: Matrix::IDENTITY,
         chunk_start: true,
         operands: Vec::new(),
+        operand_items: 0,
         out: PageContent::default(),
         operators: 0,
         scratch: String::new(),
@@ -341,6 +354,8 @@ struct Interpreter<'s, 'd> {
     tlm: Matrix,
     chunk_start: bool,
     operands: Vec<Operand>,
+    /// Array elements retained across all operands and nesting levels.
+    operand_items: usize,
     out: PageContent,
     operators: u64,
     scratch: String,
@@ -359,10 +374,10 @@ impl Interpreter<'_, '_> {
                 let operator = match token {
                     Token::Keyword(operator) => operator,
                     other => {
-                        let operand = read_operand(other, &data, &mut pos);
                         if self.operands.len() >= MAX_OPERANDS {
-                            self.operands.clear();
+                            self.clear_operands();
                         }
+                        let operand = read_operand(other, &data, &mut pos, &mut self.operand_items);
                         self.operands.push(operand);
                         continue;
                     }
@@ -375,14 +390,14 @@ impl Interpreter<'_, '_> {
                 if operator == b"BI" {
                     skip_inline_image(&data, &mut pos);
                     self.out.images += 1;
-                    self.operands.clear();
+                    self.clear_operands();
                     continue;
                 }
                 if let Some(frame) = self.frames.last_mut() {
                     frame.pos = pos;
                 }
                 let pushed = self.execute(operator)?;
-                self.operands.clear();
+                self.clear_operands();
                 if self.out.truncated {
                     return Ok(());
                 }
@@ -392,6 +407,11 @@ impl Interpreter<'_, '_> {
             }
         }
         Ok(())
+    }
+
+    fn clear_operands(&mut self) {
+        self.operands.clear();
+        self.operand_items = 0;
     }
 
     fn pop_frame(&mut self) {
@@ -762,12 +782,12 @@ fn matrix_from_objects(doc: &Document, values: &[Object]) -> Option<Matrix> {
 }
 
 /// Builds an operand from a token, reading a whole array or skipping a whole dictionary.
-fn read_operand(token: Token<'_>, data: &[u8], pos: &mut usize) -> Operand {
+fn read_operand(token: Token<'_>, data: &[u8], pos: &mut usize, kept: &mut usize) -> Operand {
     match token {
         Token::Number(value) => Operand::Number(value),
         Token::Name(name) => Operand::Name(name),
         Token::String(bytes) => Operand::String(bytes),
-        Token::ArrayStart => read_array(data, pos),
+        Token::ArrayStart => read_array(data, pos, kept),
         Token::DictStart => {
             skip_dict(data, pos);
             Operand::Other
@@ -777,8 +797,9 @@ fn read_operand(token: Token<'_>, data: &[u8], pos: &mut usize) -> Operand {
 }
 
 /// Reads an array whose `[` was consumed. An operator inside the array closes it, so a missing
-/// `]` cannot swallow the rest of the stream.
-fn read_array(data: &[u8], pos: &mut usize) -> Operand {
+/// `]` cannot swallow the rest of the stream. `kept` counts elements across all operands;
+/// elements past `MAX_OPERAND_ITEMS` are parsed and dropped.
+fn read_array(data: &[u8], pos: &mut usize, kept: &mut usize) -> Operand {
     let mut stack: Vec<Vec<Operand>> = vec![Vec::new()];
     loop {
         let before = *pos;
@@ -798,8 +819,9 @@ fn read_array(data: &[u8], pos: &mut usize) -> Operand {
                 let done = stack.pop().unwrap_or_default();
                 match stack.last_mut() {
                     Some(parent) => {
-                        if parent.len() < MAX_ARRAY_ITEMS {
+                        if parent.len() < MAX_ARRAY_ITEMS && *kept < MAX_OPERAND_ITEMS {
                             parent.push(Operand::Array(done));
+                            *kept += 1;
                         }
                         continue;
                     }
@@ -822,14 +844,19 @@ fn read_array(data: &[u8], pos: &mut usize) -> Operand {
         };
         if let Some(top) = stack.last_mut()
             && top.len() < MAX_ARRAY_ITEMS
+            && *kept < MAX_OPERAND_ITEMS
         {
             top.push(item);
+            *kept += 1;
         }
     }
     // Close arrays left open at the end of the data or before an operator.
     let mut done = stack.pop().unwrap_or_default();
     while let Some(mut parent) = stack.pop() {
-        parent.push(Operand::Array(done));
+        if parent.len() < MAX_ARRAY_ITEMS && *kept < MAX_OPERAND_ITEMS {
+            parent.push(Operand::Array(done));
+            *kept += 1;
+        }
         done = parent;
     }
     Operand::Array(done)
@@ -992,5 +1019,181 @@ mod tests {
         let shift = Matrix([1.0, 0.0, 0.0, 1.0, 5.0, 0.0]);
         assert_eq!(scale.then(&shift).apply(1.0, 1.0), (7.0, 2.0));
         assert_eq!(shift.then(&scale).apply(1.0, 1.0), (12.0, 2.0));
+    }
+
+    #[test]
+    fn shared_differences_arrays_are_charged_for_every_font_that_walks_them() {
+        let mut doc = Document::new();
+        let differences = (0..100_000)
+            .flat_map(|_| [Object::Integer(0), Object::Name(b"a".to_vec())])
+            .collect::<Vec<_>>();
+        let differences = doc.add_object(Object::Array(differences));
+        let ids = (0..16)
+            .map(|_| {
+                doc.add_object(dictionary! {
+                    "Type" => "Font",
+                    "Subtype" => "Type1",
+                    "BaseFont" => "Helvetica",
+                    "Encoding" => dictionary! { "Differences" => differences },
+                })
+            })
+            .collect::<Vec<_>>();
+        let limit = 1 << 20;
+        let mut state = DocState::new(&doc, Budget::new(1 << 20, limit));
+        let error = ids
+            .iter()
+            .find_map(|id| state.font_index(doc.get_object(*id).unwrap()).err());
+        assert_eq!(
+            error,
+            Some(super::ReadError::DecompressedTooLarge { limit })
+        );
+    }
+
+    #[test]
+    fn rejected_cid_width_triplets_are_charged_for_every_font_that_walks_them() {
+        let mut doc = Document::new();
+        // `last < first` in every triplet, so nothing is kept and no width memory is charged.
+        let widths = (0..100_000)
+            .flat_map(|_| {
+                [
+                    Object::Integer(10),
+                    Object::Integer(5),
+                    Object::Integer(500),
+                ]
+            })
+            .collect::<Vec<_>>();
+        let widths = doc.add_object(Object::Array(widths));
+        let descendant = doc.add_object(dictionary! { "Subtype" => "CIDFontType2", "W" => widths });
+        let ids = (0..16)
+            .map(|_| {
+                doc.add_object(dictionary! {
+                    "Subtype" => "Type0",
+                    "Encoding" => "Identity-H",
+                    "DescendantFonts" => vec![Object::Reference(descendant)],
+                })
+            })
+            .collect::<Vec<_>>();
+        let limit = 1 << 20;
+        let mut state = DocState::new(&doc, Budget::new(1 << 20, limit));
+        let error = ids
+            .iter()
+            .find_map(|id| state.font_index(doc.get_object(*id).unwrap()).err());
+        assert_eq!(
+            error,
+            Some(super::ReadError::DecompressedTooLarge { limit })
+        );
+    }
+
+    #[test]
+    fn distinct_tounicode_cmaps_charge_their_parsed_size() {
+        let mut program = b"1 begincodespacerange <0000> <FFFF> endcodespacerange \
+            1 beginbfrange <0000> <FFFF> ["
+            .to_vec();
+        program.extend(b"<>".repeat(65_536));
+        program.extend_from_slice(b"] endbfrange");
+        let mut doc = Document::new();
+        let ids = (0..16)
+            .map(|_| {
+                let cmap = doc.add_object(Stream::new(Dictionary::new(), program.clone()));
+                doc.add_object(dictionary! {
+                    "Type" => "Font",
+                    "Subtype" => "Type1",
+                    "BaseFont" => "Helvetica",
+                    "ToUnicode" => cmap,
+                })
+            })
+            .collect::<Vec<_>>();
+        // Each CMap decodes about 131 KB but keeps 65,536 empty targets, about 1.5 MiB.
+        let limit = 8 << 20;
+        let mut state = DocState::new(&doc, Budget::new(1 << 30, limit));
+        let error = ids
+            .iter()
+            .find_map(|id| state.font_index(doc.get_object(*id).unwrap()).err());
+        assert_eq!(
+            error,
+            Some(super::ReadError::DecompressedTooLarge { limit })
+        );
+    }
+
+    #[test]
+    fn cid_width_entries_naming_one_inner_array_charge_every_walk() {
+        let mut doc = Document::new();
+        // 1,000 `first [widths]` entries of one /W array all name the same 100,000-element inner
+        // array. Names are not widths, so nothing is kept and the entry cap never stops the walk.
+        let inner = doc.add_object(Object::Array(vec![Object::Name(b"w".to_vec()); 100_000]));
+        let widths = (0..1_000)
+            .flat_map(|_| [Object::Integer(0), Object::Reference(inner)])
+            .collect::<Vec<_>>();
+        let descendant = doc.add_object(dictionary! { "Subtype" => "CIDFontType2", "W" => widths });
+        let font = doc.add_object(dictionary! {
+            "Subtype" => "Type0",
+            "Encoding" => "Identity-H",
+            "DescendantFonts" => vec![Object::Reference(descendant)],
+        });
+        let limit = 1 << 20;
+        let mut state = DocState::new(&doc, Budget::new(1 << 20, limit));
+        assert_eq!(
+            state.font_index(doc.get_object(font).unwrap()).err(),
+            Some(super::ReadError::DecompressedTooLarge { limit })
+        );
+    }
+
+    #[test]
+    fn fonts_sharing_one_tounicode_stream_parse_it_once() {
+        let mut program = b"1 begincodespacerange <0000> <FFFF> endcodespacerange \
+            1 beginbfrange <0000> <FFFF> ["
+            .to_vec();
+        program.extend(b"<>".repeat(65_536));
+        program.extend_from_slice(b"] endbfrange");
+        let mut doc = Document::new();
+        let cmap = doc.add_object(Stream::new(Dictionary::new(), program));
+        let ids = (0..16)
+            .map(|_| {
+                doc.add_object(dictionary! {
+                    "Type" => "Font",
+                    "Subtype" => "Type1",
+                    "BaseFont" => "Helvetica",
+                    "ToUnicode" => cmap,
+                })
+            })
+            .collect::<Vec<_>>();
+        // One parse keeps about 1.5 MiB and every font about 21 KB. Parsing the shared stream
+        // again for each font would keep 16 copies, about 27 MB.
+        let mut state = DocState::new(&doc, Budget::new(1 << 30, 4 << 20));
+        for id in ids {
+            assert!(state.font_index(doc.get_object(id).unwrap()).is_ok());
+        }
+    }
+
+    #[test]
+    fn array_elements_past_the_operator_allowance_are_dropped() {
+        // Three arrays of 65,536 empty arrays stay under the per-level cap, yet one operator held
+        // about 196,600 operands. Elements past the allowance are dropped, including the later
+        // `[(x)]`, and the next operator starts with a fresh allowance.
+        let mut content = b"BT /F1 10 Tf [".to_vec();
+        for _ in 0..3 {
+            content.push(b'[');
+            content.extend(b"[]".repeat(super::MAX_ARRAY_ITEMS));
+            content.push(b']');
+        }
+        content.extend_from_slice(b"] [(x)] TJ [(y)] TJ ET");
+        assert_eq!(texts(&run(&content, |_, _| {})), "y");
+    }
+
+    #[test]
+    fn encoding_and_unicode_cmaps_share_one_stream_decode() {
+        let program = b"1 begincodespacerange <0000> <FFFF> endcodespacerange \
+            1 beginbfchar <0001> <0041> endbfchar"
+            .to_vec();
+        let decoded_limit = program.len() as u64;
+        let mut doc = Document::new();
+        let cmap = doc.add_object(Stream::new(Dictionary::new(), program));
+        let font = doc.add_object(dictionary! {
+            "Subtype" => "Type0",
+            "Encoding" => cmap,
+            "ToUnicode" => cmap,
+        });
+        let mut state = DocState::new(&doc, Budget::new(decoded_limit, 1 << 20));
+        assert!(state.font_index(doc.get_object(font).unwrap()).is_ok());
     }
 }

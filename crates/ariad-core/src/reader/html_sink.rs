@@ -106,6 +106,7 @@ pub struct HtmlSink {
     pub limit_hit: Rc<Cell<Option<LimitExceeded>>>,
     pub max_dom_depth: usize,
     pub max_nodes: usize,
+    charged: Cell<usize>,
 }
 
 impl HtmlSink {
@@ -123,11 +124,14 @@ impl HtmlSink {
             limit_hit,
             max_dom_depth,
             max_nodes,
+            charged: Cell::new(1), // The root document is already allocated.
         }
     }
 
-    fn check_node_limit(&self, arena_len: usize) {
-        if arena_len > self.max_nodes && self.limit_hit.get().is_none() {
+    fn charge(&self, units: usize) {
+        let total = self.charged.get().saturating_add(units);
+        self.charged.set(total);
+        if total > self.max_nodes && self.limit_hit.get().is_none() {
             self.limit_hit.set(Some(LimitExceeded::TooManyNodes {
                 limit: self.max_nodes,
             }));
@@ -202,13 +206,21 @@ impl TreeSink for HtmlSink {
         attrs: Vec<Attribute>,
         flags: ElementFlags,
     ) -> Self::Handle {
+        // Charge the parser's full attribute vector, including attributes that
+        // are not retained. Formatting reconstruction can clone it repeatedly.
+        self.charge(1usize.saturating_add(attrs.len()));
+        let mut attrs: Vec<_> = attrs.into_iter().filter(mapper_reads_attribute).collect();
+        // In-place collection can keep the original allocation even after all
+        // attributes were filtered out.
+        attrs.shrink_to_fit();
         let mut arena = self.arena.borrow_mut();
         let template_contents = if flags.template {
+            self.charge(1);
             Some(arena.alloc(NodeData::Document, 0))
         } else {
             None
         };
-        let handle = arena.alloc(
+        arena.alloc(
             NodeData::Element {
                 name,
                 attrs,
@@ -217,11 +229,7 @@ impl TreeSink for HtmlSink {
                     .mathml_annotation_xml_integration_point,
             },
             0,
-        );
-        let len = arena.nodes.len();
-        drop(arena);
-        self.check_node_limit(len);
-        handle
+        )
     }
 
     fn create_comment(&self, text: StrTendril) -> Self::Handle {
@@ -232,9 +240,7 @@ impl TreeSink for HtmlSink {
             },
             0,
         );
-        let len = arena.nodes.len();
-        drop(arena);
-        self.check_node_limit(len);
+        self.charge(1);
         handle
     }
 
@@ -247,9 +253,7 @@ impl TreeSink for HtmlSink {
             },
             0,
         );
-        let len = arena.nodes.len();
-        drop(arena);
-        self.check_node_limit(len);
+        self.charge(1);
         handle
     }
 
@@ -276,9 +280,7 @@ impl TreeSink for HtmlSink {
                 );
                 arena.nodes[child_handle].parent = Some(*parent);
                 arena.nodes[*parent].children.push(child_handle);
-                let len = arena.nodes.len();
-                drop(arena);
-                self.check_node_limit(len);
+                self.charge(1);
             }
             NodeOrText::AppendNode(child_handle) => {
                 if let Some(old_parent) = arena.nodes[child_handle].parent {
@@ -323,9 +325,7 @@ impl TreeSink for HtmlSink {
         );
         arena.nodes[doctype].parent = Some(self.document_handle);
         arena.nodes[self.document_handle].children.push(doctype);
-        let len = arena.nodes.len();
-        drop(arena);
-        self.check_node_limit(len);
+        self.charge(1);
     }
 
     fn get_template_contents(&self, target: &Self::Handle) -> Self::Handle {
@@ -381,9 +381,7 @@ impl TreeSink for HtmlSink {
                 arena.nodes[parent]
                     .children
                     .insert(sibling_idx, child_handle);
-                let len = arena.nodes.len();
-                drop(arena);
-                self.check_node_limit(len);
+                self.charge(1);
             }
             NodeOrText::AppendNode(child_handle) => {
                 if let Some(old_parent) = arena.nodes[child_handle].parent {
@@ -405,13 +403,14 @@ impl TreeSink for HtmlSink {
     }
 
     fn add_attrs_if_missing(&self, target: &Self::Handle, attrs: Vec<Attribute>) {
+        self.charge(attrs.len());
         let mut arena = self.arena.borrow_mut();
         if let NodeData::Element {
             attrs: ref mut existing,
             ..
         } = arena.nodes[*target].data
         {
-            for attr in attrs {
+            for attr in attrs.into_iter().filter(mapper_reads_attribute) {
                 if !existing.iter().any(|e| e.name == attr.name) {
                     existing.push(attr);
                 }
@@ -485,4 +484,33 @@ impl TreeSink for HtmlSink {
             _ => false,
         }
     }
+}
+
+/// Keep the sink's copies limited to attributes used by the IR mapper.
+fn mapper_reads_attribute(attr: &Attribute) -> bool {
+    matches!(
+        &*attr.name.local,
+        "role"
+            | "epub:type"
+            | "id"
+            | "start"
+            | "reversed"
+            | "rowspan"
+            | "colspan"
+            | "src"
+            | "alt"
+            | "title"
+            | "href"
+            | "class"
+            | "display"
+            | "mode"
+            | "type"
+            | "checked"
+            | "encoding"
+            | "align"
+            | "style"
+            | "lang"
+            | "name"
+            | "content"
+    )
 }

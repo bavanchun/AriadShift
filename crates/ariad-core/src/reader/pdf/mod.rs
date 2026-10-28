@@ -5,14 +5,17 @@
 //! headers and footers from glyph positions. Pages without a text layer produce an
 //! `ocr_required` warning.
 //!
-//! Work is bounded: the page count by [`Limits::max_pages`], the object count by
-//! [`MAX_OBJECTS`], decoded stream bytes by [`Limits::max_decompressed_bytes`] (every use of a
-//! shared stream is charged again), each page by [`MAX_PAGE_OPERATORS`] operators and
-//! [`MAX_PAGE_GLYPHS`] glyphs, and form XObject nesting by [`MAX_FORM_DEPTH`]. An amplification
-//! cap of [`CONTENT_BUDGET_BASE`] plus [`CONTENT_BUDGET_PER_INPUT_BYTE`] per input byte bounds
-//! decoded bytes plus 16 bytes and the decoded text of every glyph, so a small file cannot
-//! expand into unbounded work or output. Exceeding either limit is
-//! [`ReadError::DecompressedTooLarge`].
+//! Work is bounded: the page count by [`Limits::max_pages`], decoded stream bytes by
+//! [`Limits::max_decompressed_bytes`] (every use of a shared content stream is charged again),
+//! each page by [`MAX_PAGE_OPERATORS`] operators and [`MAX_PAGE_GLYPHS`] glyphs, the array
+//! elements one content operator keeps by a fixed cap, and form XObject nesting by
+//! [`MAX_FORM_DEPTH`]. An amplification budget of [`CONTENT_BUDGET_BASE`] plus
+//! [`CONTENT_BUDGET_PER_INPUT_BYTE`] per input byte is charged for decoded bytes, 16 bytes plus
+//! the decoded text of every glyph, every element a font walks in its `/Differences` and `/W`
+//! arrays, and the widths, encodings and parsed CMaps fonts keep. Exceeding either limit is
+//! [`ReadError::DecompressedTooLarge`]. Documents declaring more than [`MAX_OBJECTS`] objects
+//! are refused once `lopdf` has parsed them; that parse is bounded per stream by the
+//! decompression limit, not by the amplification budget.
 
 mod assemble;
 mod cmap;
@@ -54,8 +57,8 @@ pub const PROVENANCE_KEY: &str = "pdf";
 /// Most indirect objects a document may declare.
 pub const MAX_OBJECTS: usize = 2_000_000;
 
-/// Amplification budget, in bytes of decoded streams and glyph work, every document may use
-/// regardless of its size.
+/// Amplification budget for decoded streams, retained fonts, font array walks and glyph work,
+/// available to every document regardless of its size.
 pub const CONTENT_BUDGET_BASE: u64 = 32 * 1024 * 1024;
 
 /// Additional amplification budget per input byte.
