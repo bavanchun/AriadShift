@@ -221,3 +221,45 @@ def test_total_scan_detects_thin_archives_without_an_extension(tmp_path):
     distribution(tmp_path)
     with pytest.raises(SystemExit, match=relative):
         licenses.check_vendored_native_files(tmp_path, [], TARGET)
+
+
+def test_gnu_notices_bundle_source_offer_and_all_licence_texts(tmp_path):
+    attribution = "Original GNU runtime attribution remains bundled.\n"
+    (tmp_path / "COPYING").write_text(attribution)
+    inventory = [
+        {
+            "name": "libquadmath",
+            "distribution": "numpy",
+            "license": "LGPL-2.1-or-later",
+            "notice": "COPYING",
+            "native_files": {
+                "linux": [next(p for p in licenses._GNU_SHARED_FILES if "libquadmath" in p)]
+            },
+        }
+    ]
+    notices = tmp_path / "notices"
+    licenses.write_vendored_notices(tmp_path, notices, inventory)
+    copied = [p.read_text() for p in (notices / "vendored").iterdir()]
+    assert attribution in copied
+    assert any(
+        t.lstrip().startswith("GNU GENERAL PUBLIC LICENSE") and "Version 3," in t for t in copied
+    )
+    assert any(
+        t.startswith("GCC RUNTIME LIBRARY EXCEPTION") and "Version 3.1," in t for t in copied
+    )
+    assert any("GNU LESSER GENERAL PUBLIC LICENSE" in t and "Version 2.1," in t for t in copied)
+    source = next(t for t in copied if t.startswith("GNU runtime source pointers"))
+    for path, digest in licenses._GNU_SHARED_FILES.items():
+        assert path in source and digest in source
+    assert "https://ftp.gnu.org/gnu/gcc/" in source
+    assert "not a claim" in source
+    for project, tag, config in [
+        ("numpy/numpy", "v2.5.4", "pyproject.toml"),
+        ("scipy/scipy", "v1.18.1", "pyproject.toml"),
+        ("pytorch/pytorch", "v2.14.1", ".ci/docker/manywheel/Dockerfile_2_28"),
+    ]:
+        assert f"https://github.com/{project}/tree/{tag}" in source
+        assert f"https://github.com/{project}/blob/{tag}/{config}" in source
+    offer = next(t for t in copied if t.startswith("GNU runtime corresponding-source offer"))
+    assert "at least three years" in offer
+    assert "complete" in offer and "corresponding source" in offer

@@ -185,8 +185,8 @@ def test_vendored_notices_preserve_full_text_and_manifest_obligations(tmp_path):
     notices = tmp_path / "notices"
     licenses.write_vendored_notices(site, notices, inventory)
     copied = list((notices / "vendored").iterdir())
-    assert len(copied) == 1
-    assert copied[0].read_text() == text
+    assert len(copied) == 6
+    assert text in [p.read_text() for p in copied]
     summary = (notices / "vendored-libraries.txt").read_text()
     assert "torch/lib/libgomp.so.1" in summary
     assert "GCC-exception-3.1" in summary
@@ -328,5 +328,5 @@ def test_quadmath_bundles_full_lgpl_and_retains_wheel_attribution(tmp_path):
     assert full_text in copied
     assert b"GNU LESSER GENERAL PUBLIC LICENSE" in full_text
     summary = (notices / "vendored-libraries.txt").read_text()
-    assert summary.count("  Text:") == 2
+    assert summary.count("  Text:") == 6
     assert licenses._LGPL_21_SOURCE in summary

@@ -1015,8 +1015,10 @@ def check_vendored_native_files(site: Path, inventory: list[dict], target: str) 
             errors.append(f"{item['name']}: empty native licence notice")
         elif item["license"] in {_GCC_RUNTIME, "LGPL-2.1-or-later", "LGPL-2.1-only"}:
             text = notice.read_text(encoding="utf-8").lower()
-            if item["name"] == "libquadmath":
-                text += _libquadmath_licence_text().read_text(encoding="utf-8").lower()
+            if item["name"] in _GNU_FAMILIES:
+                text += "\n".join(
+                    p.read_text(encoding="utf-8").lower() for p in _gnu_notice_texts()
+                )
             required = (
                 ("gnu lesser general public license",)
                 if item["license"].startswith("LGPL-")
@@ -1086,6 +1088,32 @@ def _libquadmath_licence_text() -> Path:
     return source
 
 
+_GNU_NOTICE_TEXTS = {
+    "gpl-3.0.txt": ("8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"),
+    "gcc-runtime-exception-3.1.txt": (
+        "28e85c5aa4af9b4f1dfe6b4817aa3eefb3eaaee7fd735045016f29ccf50276a1"
+    ),
+    "lgpl-2.1.txt": ("43285937a0e9b75b13eb12fdd35ac3101f7fa92cb0a950d18e4dbf90c7a15c4f"),
+    "gnu-runtime-source-pointers.txt": (
+        "ddc750eb7dff8b33233118c41d29b5e2c0f4a751a1011079fb6f562f71ddf9ba"
+    ),
+    "gnu-runtime-source-offer.txt": (
+        "20b795b27debe132e63c1c7153504444831bfd9c35fbf0d73dd470f431953fcf"
+    ),
+}
+
+
+def _gnu_notice_texts() -> list[Path]:
+    root = Path(__file__).with_name("licenses")
+    paths = []
+    for name, digest in _GNU_NOTICE_TEXTS.items():
+        source = root / name
+        if not source.is_file() or hashlib.sha256(source.read_bytes()).hexdigest() != digest:
+            raise SystemExit(f"GNU runtime notice is missing or changed: {name}")
+        paths.append(source)
+    return paths
+
+
 def write_vendored_notices(site: Path, notices: Path, inventory: list[dict]) -> None:
     """Copy complete upstream texts once and attribute every native library/file."""
     root = notices / "vendored"
@@ -1093,8 +1121,8 @@ def write_vendored_notices(site: Path, notices: Path, inventory: list[dict]) -> 
     rows = []
     for item in inventory:
         sources = _inventory_notices(site, item)
-        if item["name"] == "libquadmath":
-            sources.append(_libquadmath_licence_text())
+        if item["name"] in _GNU_FAMILIES:
+            sources.extend(_gnu_notice_texts())
         text_rows = []
         for text_source in sources:
             destination = root / (
@@ -1105,6 +1133,11 @@ def write_vendored_notices(site: Path, notices: Path, inventory: list[dict]) -> 
             text_rows.append(f"  Text: notices/{destination.relative_to(notices).as_posix()}")
         if item["name"] == "libquadmath":
             text_rows.append(f"  Licence text source: {_LGPL_21_SOURCE}")
+        if item["name"] in _GNU_FAMILIES:
+            text_rows.append(
+                "  Exact GCC source release: not established; see bundled ABI/source pointers "
+                "and corresponding-source offer."
+            )
         rows.extend(
             [
                 f"{item['distribution']}: {item['name']}: {item['license']}"
@@ -1112,7 +1145,7 @@ def write_vendored_notices(site: Path, notices: Path, inventory: list[dict]) -> 
                 *text_rows,
                 f"  Source: {item['source']}"
                 if item.get("source")
-                else "  GNU runtime source: https://gcc.gnu.org/git/"
+                else "  GNU runtime source archive: https://ftp.gnu.org/gnu/gcc/"
                 if item["license"] in {_GCC_RUNTIME, "LGPL-2.1-or-later"}
                 else f"  Source: https://pypi.org/project/{item['distribution']}/",
                 f"  Native files: {item['native_files']}",

@@ -1,0 +1,140 @@
+GNU runtime source pointers and ABI evidence
+
+Upstream GCC source archive: https://ftp.gnu.org/gnu/gcc/
+
+The libraries below are unmodified ELF shared objects copied from reviewed,
+hash-verified wheels. Their exact GCC source release and compiler build are
+not established: their .comment sections were stripped. The ABI series below
+is the earliest upstream release series evidenced by the exported versioned
+interfaces, not a claim that these exact binaries were built from that release.
+Backports and vendor builds can preserve or introduce the same interfaces.
+Imported GCC or GLIBC version requirements identify required runtime ABIs;
+they do not identify the GCC source release of the importing library.
+
+The accompanying GNU source offer covers the corresponding sources for the
+actual redistributed objects, including any provider changes and build scripts.
+A compatible upstream ABI baseline alone is not corresponding-source proof.
+See the bundled gnu-runtime-source-offer.txt for the request route and term.
+
+ABI baseline evidence from upstream source maps:
+
+GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8: GCC 8 series ABI.
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-8.1.0/libgfortran/gfortran.map
+QUADMATH_1.1: GCC 6 series ABI (not in the GCC 5.5.0 source map).
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-6.1.0/libquadmath/quadmath.map
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-5.5.0/libquadmath/quadmath.map
+QUADMATH_1.0: GCC 4.6 series ABI.
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-4.6.4/libquadmath/quadmath.map
+GOMP_5.0 and OMP_5.0: GCC 9 series ABI (not in the GCC 8.1.0 source map).
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-9.1.0/libgomp/libgomp.map
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-8.1.0/libgomp/libgomp.map
+
+Per-object evidence (readelf --version-info and objdump -T):
+
+Object: numpy.libs/libgfortran-83c28eba-468e71e5.so.5.0.0
+SHA-256: a6a368328d02a5d8a149746f13f6268f8cc9192df5c18777b25c3c9b5ef52160
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.3.0, GLIBC_2.14, GLIBC_2.17, GLIBC_2.2.5, GLIBC_2.27, GLIBC_2.3, GLIBC_2.4, GLIBC_2.6, GLIBC_2.7, QUADMATH_1.0
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+
+Object: numpy.libs/libquadmath-2284e583-a9307bba.so.0.0.0
+SHA-256: 6bc3069003caec1f075be3c51ae8355332f081fa9465910c4b5724e7fe7d8ad4
+Upstream ABI baseline: GCC 6 series
+Defined interfaces: QUADMATH_1.0, QUADMATH_1.1
+Required interfaces: GLIBC_2.10, GLIBC_2.14, GLIBC_2.2.5, GLIBC_2.23, GLIBC_2.3, GLIBC_2.4
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+
+Object: scipy.libs/libgfortran-040039e1-0352e75f.so.5.0.0
+SHA-256: c6090048eccc763522c12ef016f81da6b627cb3a044f55cf0479a839c41c0980
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.3.0, GCC_4.8.0, GLIBC_2.14, GLIBC_2.17, GLIBC_2.2.5, GLIBC_2.3, GLIBC_2.4, GLIBC_2.6, GLIBC_2.7, QUADMATH_1.0
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+
+Object: scipy.libs/libgfortran-83c28eba.so.5.0.0
+SHA-256: 468e71e59e1d784821a76702e5ecd1e0dbcfc024499f74a552d1bea4b26f27ad
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.3.0, GLIBC_2.14, GLIBC_2.17, GLIBC_2.2.5, GLIBC_2.27, GLIBC_2.3, GLIBC_2.4, GLIBC_2.6, GLIBC_2.7, QUADMATH_1.0
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+
+Object: scipy.libs/libquadmath-2284e583.so.0.0.0
+SHA-256: a9307bbaa353623fa014e8b682d50c4629f5e5c7d61daa9a8652f7d165cd421a
+Upstream ABI baseline: GCC 6 series
+Defined interfaces: QUADMATH_1.0, QUADMATH_1.1
+Required interfaces: GLIBC_2.10, GLIBC_2.14, GLIBC_2.2.5, GLIBC_2.23, GLIBC_2.3, GLIBC_2.4
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+
+Object: scipy.libs/libquadmath-96973f99-934c22de.so.0.0.0
+SHA-256: 6ed5137f412781ad7863439fb543613f620b43c32b63292a0029246162f5bbc6
+Upstream ABI baseline: GCC 4.6 series
+Defined interfaces: QUADMATH_1.0
+Required interfaces: GLIBC_2.10, GLIBC_2.14, GLIBC_2.2.5, GLIBC_2.3, GLIBC_2.4
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+
+Object: torch.libs/libgomp-6a29c32d.so.1.0.0
+SHA-256: 2aa037784caec5079de4f23a7d526a62bcc03a3fb98ac94031345daabe21c465
+Upstream ABI baseline: GCC 9 series
+Defined interfaces: GOACC_2.0, GOACC_2.0.1, GOMP_1.0, GOMP_2.0, GOMP_3.0, GOMP_4.0, GOMP_4.0.1, GOMP_4.5, GOMP_5.0, GOMP_PLUGIN_1.0, GOMP_PLUGIN_1.1, GOMP_PLUGIN_1.2, OACC_2.0, OACC_2.0.1, OACC_2.5, OMP_1.0, OMP_2.0, OMP_3.0, OMP_3.1, OMP_4.0, OMP_4.5, OMP_5.0
+Required interfaces: GLIBC_2.14, GLIBC_2.16, GLIBC_2.17, GLIBC_2.2.5, GLIBC_2.3, GLIBC_2.3.4, GLIBC_2.4, GLIBC_2.6
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+
+The Torch libgomp object also contains annobin strings naming GCC 8.5.0
+20210514. Those identify a compiler annotation, not the GNU runtime source
+release; they do not replace the per-object ABI evidence or source offer.
+
+Wheel provenance for the reviewed objects:
+
+NumPy objects above came from the locked NumPy 2.5.4 wheel:
+numpy-2.5.4-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+Wheel SHA-256: d549420b8858885cea8838a727842249218b9c1da24dd517e25c9c7a948310a3
+Release tag: https://github.com/numpy/numpy/tree/v2.5.4
+Wheel-build configuration at that tag:
+https://github.com/numpy/numpy/blob/v2.5.4/pyproject.toml
+Its tool.cibuildwheel.linux section selects manylinux_2_28 for x86_64;
+tool.cibuildwheel.before-build invokes tools/wheels/cibw_before_build.sh.
+This records the upstream wheel-build configuration, not an exact source
+release for each copied GNU runtime dependency.
+
+SciPy objects above came from the locked SciPy 1.18.1 wheel:
+scipy-1.18.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+Wheel SHA-256: ac0333bdf38309aa3dcbe7e3fa7ea29e7a2c37c6ea306a757b700ded8e4596ad
+Release tag: https://github.com/scipy/scipy/tree/v1.18.1
+Wheel-build configuration at that tag:
+https://github.com/scipy/scipy/blob/v1.18.1/pyproject.toml
+Its tool.cibuildwheel.linux section selects manylinux_2_28 for x86_64;
+tool.cibuildwheel.before-build invokes tools/wheels/cibw_before_build.sh.
+This does not assign a compiler or source version to its copied GNU runtimes.
+
+PyTorch libgomp above came from the reviewed AriadShift native-cache wheel:
+torch-2.14.1+cpu-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+Wheel SHA-256: ded7771f615fb7207a90904849a4972b747b7b1aff201e4e583bd55eef19d7ed
+Release tag: https://github.com/pytorch/pytorch/tree/v2.14.1
+Upstream wheel-build configuration at that tag:
+https://github.com/pytorch/pytorch/blob/v2.14.1/.github/workflows/_binary-build-linux.yml
+https://github.com/pytorch/pytorch/blob/v2.14.1/.ci/docker/manywheel/Dockerfile_2_28
+The upstream reusable workflow executes the manywheel build in its selected
+container. The Dockerfile uses quay.io/pypa/manylinux_2_28_x86_64 as its base
+stage and amd64/almalinux:8 for the common stage, with GCC toolset 13 by default.
+These are upstream configuration pointers, not proof that this cached wheel
+used that container or that its copied libgomp came from GCC 13.
+The local cache build record binds this wheel to PyTorch v2.14.1 source:
+https://github.com/pytorch/pytorch/releases/download/v2.14.1/torch-2.14.1.tar.gz
+Source SHA-256: 58cacad12fb09ae9cc2fb31412cb09d83c288e50ed06fd3eb48d3dcab427db87
+Recorded build options include USE_OPENMP=1, USE_CUDA=0, USE_MKL=0,
+BLAS=OpenBLAS and USE_ITT=0. Those options are not per-runtime source proof.
+
+Complete GPL version 3, GCC Runtime Library Exception version 3.1 and LGPL
+version 2.1 documents accompany every named GNU runtime entry. Their legal
+text provenance is independent of the source provenance of the binaries:
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/COPYING3
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/COPYING.RUNTIME
+https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/libquadmath/COPYING.LIB

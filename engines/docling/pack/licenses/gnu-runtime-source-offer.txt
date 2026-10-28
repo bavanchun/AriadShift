@@ -1,0 +1,25 @@
+GNU runtime corresponding-source offer
+
+For the libgomp, libgfortran and libquadmath object code redistributed in an
+AriadShift Docling engine pack, AriadShift offers to provide the complete
+corresponding source code to anyone who possesses that object code. This offer
+is valid for at least three years after the last distribution of the pack.
+
+The source includes the preferred form for modification, provider or local
+changes, and the scripts and instructions needed to build and install the
+corresponding runtime objects. It is supplied under the applicable GNU General
+Public License or GNU Lesser General Public License, including the GCC Runtime
+Library Exception where applicable. There is no charge for electronic delivery;
+a physical copy is available for no more than the reasonable cost of physically
+performing source distribution.
+
+To request source, contact the AriadShift release maintainers through:
+https://github.com/bavanchun/AriadShift/issues
+Identify the pack release, target platform, library path and SHA-256 from the
+bundled GNU runtime source-pointers notice so that the exact objects can be
+matched. This offer is made by AriadShift, independently of the wheel providers.
+
+The shared libraries may be replaced with compatible modified versions under
+their applicable licences; the pack does not prohibit such replacement or
+reverse engineering for debugging those modifications. Unmodified, reviewed
+objects are the distributor's packaging policy, not a restriction on recipients.
