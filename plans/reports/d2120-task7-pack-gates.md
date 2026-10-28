@@ -1,186 +1,129 @@
-# Docling pack gates: Windows and benchmark repair
+# Docling pack gates: complete pywin32 payload binding
 
-The Windows test fixtures and the two benchmark regressions are repaired.
-The generic licence gate remains fail-closed. No push or release was performed.
+The pywin32 exception now binds every original wheel payload file, including
+`win32/lib/win32con.py`, to the reviewed wheel RECORD. Generic licence rules,
+approved notices/source pointers, dependency locks and fixtures are unchanged.
 
-- Tested code/artifact head: `23390f00f6a24878f376c444b2649cffd8f550ec`.
-- Code repair: `eb775d7008d642a3783f1cb863ca7672640cf2ae` (`fix: make pack and benchmark licence tests portable`).
-- Separate artifact repair: `23390f00f6a24878f376c444b2649cffd8f550ec` (`test(fixtures): regenerate scan PDFs with Pillow 13`).
-- Gate: `/home/vchun/Codes/ariadshift-logs/d2120-t7-rework3-final-gate.log`.
-- Last gate line: `=== PACK GATE ALL GREEN HEAD=23390f00f6a24878f376c444b2649cffd8f550ec`.
-- A report-only successor records this result. The original six commits through
-  `7cf3e7ecdd6c64ca88ba61558e83a0dbe7751cf2` were not rewritten.
-- Previous completed work, approved native licence entries, source provenance,
-  ABI-tag evidence, earlier HEAD~1 refusal and limitations remain in
-  [the archived report](d2120-task7-before-rework3.md).
+- Tested code head: `f34a7574bc33d9eb89e5b1ff8c8d33cedb19b7ea`.
+- Code commit: `fix(docling): bind complete reviewed wheel payloads`.
+- Gate: `/home/vchun/Codes/ariadshift-logs/d2120-t7-rework4-final-gate.log`.
+- Last line: `=== PACK GATE ALL GREEN HEAD=f34a7574bc33d9eb89e5b1ff8c8d33cedb19b7ea`.
+- A report-only successor records this result; no previous commit was rewritten.
+- [Previous Windows/bench repair](/home/vchun/Codes/01-AriadShift-wt-t7-pack/plans/reports/archive-261028-1213-pack-gates-rework3.md)
+  preserves the accepted fixture, UTF-8, licence and earlier gate evidence.
+- [Execution record](/home/vchun/Codes/01-AriadShift-wt-t7-pack/plans/reports/execution-261028-1213-pywin32-record-binding.md).
 
-## Changes and reproduction
+## Binding and installation handling
 
-1. **pywin32:** all three locked CPython 3.14 Windows wheels were downloaded,
-   checked against their uv.lock SHA-256 values and inspected. Each declares
-   `License: PSF` with the PSF classifier, but its eight notices also cover BSD,
-   HPND, MIT, historical Python terms and adodbapi 2.6.2.0 LGPL-2.1-or-later.
-   A PSF-only override would omit actual obligations. A-0245 paragraph 4 already
-   authorizes named, unmodified dynamically loaded LGPL libraries; this includes
-   the unmodified Python library imported inside the separate pack. The initial
-   interim stop was premature and is superseded by this complete review.
+Each original RECORD is committed unchanged under
+`engines/docling/pack/reviewed-records/` and SHA-256-bound in the existing named
+review entry. Every installed RECORD payload entry must match its actual
+SHA-256 and byte size, using the same helper as the total native inventory.
+The self-referential RECORD row remains unhashed, as in the original wheel.
 
-   The exact composite is `BSD-3-Clause AND HPND AND LGPL-2.1-or-later AND MIT AND PSF-2.0 AND Python-2.0`.
-   Acceptance binds version 312, normalized UTF-8 METADATA, all eight complete
-   notice digests and the full 21-file adodbapi source payload. Only generated
-   bytecode caches are excluded. Changed/added source, static payloads, changed
-   metadata/notices, missing notice RECORD entries and unreviewed versions fail.
-   Specifically noticed permissive components include Scintilla (HPND),
-   MAPIStubLibrary (MIT), IDLE (Python-2.0/PSF-2.0), and the BSD notices of the
-   win32/pythonwin/com code. The eight exact notice paths and hashes are in the
-   preserved wheel-review JSON and the production review entry.
-   No LGPL identifier was added to the generic allow-list. The writer bundles
-   all notices and `adodbapi-source.txt`, identifying the included complete
-   library source, its full LGPL text and this immutable upstream source:
-   <https://github.com/mhammond/pywin32/archive/2a277cb5552756c2b4d42b524dc36d25e0bb6354.tar.gz>.
-   Upstream tag b312 resolves to that commit. AGENTS Licensing, architecture and
-   a Decision Log row record the same scope. The new by-name weak-copyleft
-   library in this rework is **adodbapi 2.6.2.0**, carried by **pywin32 312**.
+The check reconstructs original wheel RECORD rows from the installed payload,
+restoring the receipt row order and CSV serialization, then requires their
+SHA-256 to equal the reviewed original digest.
+Changing another source file fails its installed hash check; editing RECORD to
+hide the change still changes the reconstructed digest and fails. Missing rows,
+duplicate rows, missing files and unreviewed payload entries fail. The check
+also refuses unlisted files inside the distribution's owned directories.
 
-2. **UTF-8:** test text I/O now explicitly chooses UTF-8. The production pack
-   already passed explicit UTF-8 arguments; the audit covers both positional
-   and keyword encodings, with importlib metadata's UTF-8 API and binary archive
-   calls distinguished from filesystem text I/O. A corrected cp1252-default
-   probe reproduces four old failures; after repair all five selected tests
-   pass. A separate `PYTHONUTF8=0 PYTHONCOERCECLOCALE=0 LC_ALL=C` run also passes.
+Raw installed RECORD bytes differ legitimately from the wheel: uv moves the two
+`.data/scripts` files, generates launchers beside them and adds installer
+metadata. Only those two script names at known script destinations, their
+launchers, and `INSTALLER`, `REQUESTED`, `direct_url.json`, `uv_cache.json` are
+recognized. Their installed hashes/sizes are still verified. Installer-created
+metadata/launchers are not asserted to be original wheel bytes. Derived
+`__pycache__/*.cpython-314[.opt-N].pyc` files are tolerated only when their source
+is in the reviewed payload; bytecode for an unlisted source fails. Root
+site-packages and shared bin/Scripts directories also hold other distributions,
+so the pywin32-owned tree census does not claim to own them wholesale.
 
-3. **Platform fixtures:** the relocated-GEOS, ONNX external-notice and Tokenizers
-   notice tests use explicit synthetic payloads instead of assuming Linux
-   artifacts in the installed Windows environment. Tokenizers still checks its
-   real hash-bound upstream Apache notice. GNU/GEOS tests needing reviewed real
-   objects retain the real bytes and mandatory coverage on Linux; absent paths
-   off Linux skip with package/version/platform and the reason Linux is mandatory.
+This is the deliberate installation normalization; comparing a raw installed
+RECORD digest directly would reject ordinary uv installations. No arbitrary
+wheel byte replacement or licensing override is normalized away. Existing
+metadata, eight-notice and adodbapi source bindings remain in place. AGENTS
+Licensing, the owning architecture paragraph and its Decision Log row describe
+the strengthened scope. A type-specific typos rule skips URL-safe digest tokens
+in the unchanged upstream RECORD receipts, while still checking their paths.
 
-4. **Bench NumPy:** its lock entry did not change. Bench inherited the pack's
-   removal of generic CC0 permission but did not inherit the reviewed NumPy
-   metadata/source-inventory exception. Only NumPy now reuses the pack's scoped
-   check; other bench dependencies retain their existing exact matching.
-   Regression assertions retain generic CC0 refusal. A separate bench environment
-   matches CI and avoids unrelated Docling distributions contaminating that test.
+## Three locked wheel records
 
-5. **Pillow artifacts:** isolated Pillow 12.3.0 and 13.0.0 environments generated
-   all 135 files from all eleven generator families. Version 12 reproduces every
-   stored file; version 13 changes exactly four PDFs, with all other files
-   byte-identical. A frozen audit of the isolated old version reports 44
-   advisories fixed by 13.0.0, so the project retains the existing safe Pillow 13
-   lock rather than reintroducing 12. Four PDFs and their manifest digests were
-   regenerated in a separate commit:
+uv.lock contains exactly these three pywin32 312 wheels, all CPython 3.14;
+there are no CPython 3.12/3.13 pywin32 wheels in this lock.
 
-   - `fixtures/heavy/en-map-scan.pdf`
-   - `fixtures/heavy/vi-garden-scan.pdf`
-   - `fixtures/pdf/vi-garden-image-only.pdf`
-   - `fixtures/scan/vi-garden-300dpi.pdf`
-
-   All four retain identical embedded encoded image streams, page dimensions
-   and full PDFium-rendered RGB pixels at scale 1.5. Only PDF serialization
-   changes; file lengths are unchanged. Both heavy benchmark records retain the
-   original measured input under `measured_sha256`, explicitly describe the
-   serialization update and identify the new fixture digest. Scores, timings,
-   samples and measurement timestamp were not changed or rerun. Strict fixture
-   reproducibility tests were not weakened. Two current-environment runs of all
-   generators reproduce all 135 stored files and their manifest SHA-256 values.
-
-## Verification
-
-All test/build drivers ran detached through `gate-slot.sh`, at nice 19.
-Preliminary checks used slot 2; the final gate uses slot 1 after cancelling
-its still-queued slot-2 waiter when slot 1 became free.
-The final gate sets one Cargo/test/BLAS/Rayon job. No process tree was paused. Final commands and
-results at the tested head are recorded in the gate script and log:
-
-```sh
-export UV_PROJECT_ENVIRONMENT=/home/vchun/Codes/t7-docling-test-env
-export UV_FROZEN=true
-just pandoc
-uv run --package ariad-docling --frozen pytest engines/docling/tests/test_pywin32_license_review.py engines/docling/tests/test_pack_inventory_integrity.py engines/docling/tests/test_pack_gate_validation.py engines/docling/tests/test_pack_license_gates.py engines/docling/tests/test_licenses.py
-uv run --package ariad-docling --frozen pytest engines/docling/tests
-uv run --package ariad-docling --frozen python /tmp/t7-rework3-check-pywin32-wheels.py
-uv run --package ariad-docling --frozen python /tmp/t7-rework3-encoding-probe.py
-PYTHONUTF8=0 PYTHONCOERCECLOCALE=0 LC_ALL=C uv run --package ariad-docling --frozen pytest engines/docling/tests/test_pack_license_gates.py -k 'numpy_cc0 or shared_library_exception'
-uv run --package ariad-docling --frozen python /tmp/t7-rework3-total-native-inventory.py
-uv lock --check
-uv audit --frozen
-python /tmp/t7-rework3-text-audit.py
-# Ruff check and format --check cover the pack and all changed engine test files.
-cargo build -p ariad-cli --bin ashift
-binary_dir=$(cargo metadata --no-deps --format-version 1 | python -c 'import json,sys; from pathlib import Path; print(Path(json.load(sys.stdin)["target_directory"]) / "debug")')
-export PATH="$binary_dir:$PATH"
-ashift --version
-UV_PROJECT_ENVIRONMENT=/home/vchun/Codes/t7-bench-python-env just bench-test
-UV_PROJECT_ENVIRONMENT=/home/vchun/Codes/t7-bench-python-env uv run --package ariad-bench --frozen python /tmp/t7-rework3-generator-check.py
-typos
-just lint-commits
-git diff --exit-code
-```
-
-| Check | Result |
+| Wheel suffix | Original RECORD SHA-256 |
 | --- | --- |
-| Focused pack licence/inventory tests | 162 passed |
-| Whole engines/docling/tests | 253 passed, 4 skipped |
-| Actual Windows wheel metadata/source/notices | All three locked wheels pass |
-| CP1252-default and C-locale probes | 5 passed in each run |
-| Real Linux wheel inventory | 256 files pass, 52 named and 204 extensions |
-| uv lock --check | 113 packages resolved; no lock change |
-| uv audit --frozen | 109 packages, no known vulnerabilities or adverse statuses |
-| UTF-8 I/O audit | 19 source/test files, zero implicit text encodings |
-| Ruff check and format --check | Passed, 9 files formatted |
-| Current-head CLI prerequisite | Built and discovered through Cargo's actual output path |
+| `cp314-cp314-win32.whl` | `7af03355b008f5487ef350e846aa68c989505cf9ee8afd975e8f8b71ab66c07a` |
+| `cp314-cp314-win_amd64.whl` | `65762feb4074c3a4f4f1b7eeca7db60ad1c741f40dca1bf7efcdc7f13217019c` |
+| `cp314-cp314-win_arm64.whl` | `c2b5405aef6630c27ac46625bf227671d386538a7a9e545b6e8b74419411230d` |
+
+Each original wheel has 611 RECORD entries. The inspected direct-wheel uv
+installations have 617 entries after the known transformations. At the final
+head, the verification helper checks the wheel SHA-256 against uv.lock, proves
+that the committed receipt equals the original ZIP member byte-for-byte, checks
+each complete extraction and uv installation, and refuses a modified outside
+source both before and after rewriting its installed RECORD hash/size.
+
+## Tests and exact-head gate
+
+The new regression suite failed on the old implementation: **10 failed,
+11 passed**, including the modified outside source, rewritten RECORD,
+missing/extra file, wrong hash/size, duplicate row, unknown cache, changed
+receipt and altered installer file. All focused tests pass with the repair.
+The unchanged fixture and intentional installation transformations remain valid.
+
+| Final check | Result |
+| --- | --- |
+| Focused licence/inventory suites | 172 passed |
+| Whole engines/docling/tests | 263 passed, 4 skipped |
+| Three locked complete wheel and uv installations | Passed; changed outside source and rewritten installed RECORD refused |
+| CP1252 / C-locale probes | 5 passed each |
+| Real native inventory | 256 files pass: 52 named objects and 204 extensions |
+| uv lock --check | 113 packages; lock unchanged |
+| uv audit --frozen | 109 packages; no known vulnerabilities or adverse statuses |
+| UTF-8 audit | 19 files, no implicit encodings |
+| Ruff check / format --check | Passed |
 | just bench-test | 75 passed |
-| All fixture generators | Two runs match 135 stored files and manifest hashes |
-| typos / just lint-commits / git diff --exit-code | Passed |
+| Fixture generators | 135 files match stored bytes/manifests in two runs |
+| typos / just lint-commits / tracked diff | Passed |
 
 
-The real Linux fixture inventory passes at the final tested head. It contains
-256 native files: 52 explicitly named objects and 204 extension modules. The
-seven GNU runtime objects and existing GEOS/libspatialindex entries and full
-source/notices policy remain unchanged. All SHA-256/size, ownership, notice and
-ELF requirements still apply. No manifest or uv.lock was hand-edited; no
-lockfile change was needed in this rework.
+The full gate runs detached through `gate-slot.sh 1`, nice 19, with one Cargo,
+test, BLAS and Rayon job. It runs the five focused licence/inventory test files,
+the whole engine suite, all three complete wheel/uv-install checks, both encoding
+probes, the real 256-file Linux native inventory, `uv lock --check`,
+`uv audit --frozen`, UTF-8 audit, Ruff check/format, `just bench-test`, all fixture
+generators twice, typos, `just lint-commits` and `git diff --exit-code`.
+The cached current-head CLI build supplies the actual bench integration binary;
+Cargo metadata selects its output directory for PATH. No full Rust matrix or
+`just ci` was added to the scoped gate.
 
-Evidence under `/home/vchun/Codes/ariadshift-logs/`:
+The exact command is `zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 1 /bin/bash /tmp/t7-rework4-final-pack-gate.sh`, launched detached. The full commands are in the [preserved gate script](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework4-final-pack-gate.sh).
 
-- `d2120-t7-rework3-windows-ci.log`: original Windows CI failures.
-- `d2120-t7-rework3-encoding-proof-2.log`: four pre-fix cp1252 failures and
-  isolated Pillow 12 audit. The earlier first probe was nondiscriminating.
-- `d2120-t7-rework3-pywin32-proof.log`: new binding regressions on the old head,
-  **4 failed, 7 passed**, before the exact review.
-- `d2120-t7-rework3-focused-3.log`: **162 focused tests**, both encoding probes,
-  four bench licence tests and all three locked wheels pass; the generator
-  comparison correctly stopped when its initial three-file expectation found
-  the fourth image-only PDF. The subsequent artifact proof covers all four.
-- `d2120-t7-rework3-artifact-proof.log`: identical image/render proofs, full
-  generation checks and strict heavy reproduction/evidence tests.
-- `d2120-t7-rework3-scan-equivalence.json`: original/current PDF hashes and
-  identical image/render hashes for all four files.
-- Final gate script, source helpers, wheel-review JSON and total-native
-  inventory JSON are preserved beside the final log for reproducibility.
-- Local execution notes are archived there as `d2120-t7-rework3-execution-plan.md`
-  and `d2120-t7-rework3-execution-notes.md`.
+Evidence in `/home/vchun/Codes/ariadshift-logs/`:
 
-The first full gate built the current-head CLI successfully but two bench integration tests could not discover it: the inherited `CARGO_TARGET_DIR` was outside the verification worktree. Its log is `d2120-t7-rework3-final-gate-setup.log` (72 bench tests passed, 1 skipped, 2 failed). The final runner uses Cargo metadata to add that actual build directory to PATH and reruns the entire unchanged-head gate. No source or test assertion changed for this setup correction.
+- `d2120-t7-rework4-red.log`: old implementation, 10 failed/11 passed.
+- `d2120-t7-rework4-install-probe.log`: exact uv RECORD transformations.
+- `d2120-t7-rework4-focused.log` and `...-focused-2.log`: passing focused suites
+  and actual wheels; the second adds the direct reconstructed RECORD digest check.
+- `d2120-t7-rework4-wheel-record-review.json`: exact wheel/RECORD digests and counts.
+- `d2120-t7-rework4-final-gate.log`: complete final gate at the tested code head.
+- The gate script, wheel checker, native inventory JSON and other source helpers
+  are preserved beside that log.
 
-Two earlier focused attempts failed because the old shared environment mixed
-Docling, bench and fixture workspace distributions. They are retained as
-`d2120-t7-rework3-focused.log` and `...-focused-2.log`; separate fresh environments
-fixed that setup issue. No licence gate was weakened to hide those packages.
+## Remaining limits
 
-## Limits and handoff
+Windows runtime behavior and a complete Windows native pack still require the
+Windows runner and the separately deferred pack work. The local cross-platform
+uv installations exercise real wheel content and relocation on Linux, without
+executing Windows binaries. The previously documented broad Windows RECORD
+refresh, non-semantic default notice discovery and limited archive recognition
+remain unchanged. The accepted image-equivalent fixture serialization and
+original measured benchmark inputs remain as recorded in the previous report.
 
-This Linux gate verifies actual locked Windows wheel content and portable
-synthetic tests; Windows runtime behavior still requires Windows CI. It does
-not certify a complete Windows native pack, whose broader RECORD refresh is
-still deferred. The existing non-semantic default notice discovery and limited
-archive recognition remain documented limitations. No full Rust test matrix
-or `just ci` was run, per the lead's scoped gate; the narrow CLI build supplies
-only the real binary needed by bench integration tests. GitHub CI owns the
-full Rust/platform matrix. The retained benchmark measurements describe the
-original PDFs, with an explicit image-identical serialization mapping.
-
-The result is ready for the lead's delta review and gitsync; nothing was pushed.
+No approval is pending, no further review round is required by the brief, and
+nothing was pushed. The result is ready for the lead's gitsync.
 
 Status: DONE_WITH_CONCERNS
