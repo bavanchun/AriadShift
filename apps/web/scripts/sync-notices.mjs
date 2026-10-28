@@ -799,7 +799,7 @@ export function checkNotices({
     rootDir,
     pagePath,
     verifyWasmBinary: isDefaultNoticesDir,
-    checkBundle: isDefaultNoticesDir,
+    checkBundle: checkFiles && isDefaultNoticesDir,
   });
   if (!checkFiles) {
     return;

@@ -94,7 +94,7 @@ web-export: wasm-build
 web-browsers *flags:
     pnpm --filter @ariadshift/web exec playwright install {{flags}} chromium firefox webkit
 
-# Playwright on Chromium, Firefox and WebKit against `next start`; run `just web-build` first.
+# Playwright on Chromium, Firefox and WebKit; run `just web-ci` first for build and export.
 web-e2e:
     pnpm --filter @ariadshift/web e2e
 

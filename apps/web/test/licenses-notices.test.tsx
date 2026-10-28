@@ -35,6 +35,19 @@ function noticeLinks(html: string): string[] {
   );
 }
 
+function createCleanNoticeWorkspace(directory: string) {
+  mkdirSync(path.join(directory, "apps/web/src/app/licenses"), { recursive: true });
+  for (const name of ["NOTICE", "THIRD_PARTY_LICENSES", "crates", "node_modules"]) {
+    symlinkSync(path.join(rootDir, name), path.join(directory, name));
+  }
+  for (const name of ["package.json", "node_modules", "src/app/licenses/page.tsx"]) {
+    symlinkSync(path.join(webDir, name), path.join(directory, "apps/web", name));
+  }
+  for (const name of ["Cargo.lock", "pnpm-lock.yaml"]) {
+    writeFileSync(path.join(directory, name), readFileSync(path.join(rootDir, name)));
+  }
+}
+
 describe("web licence notices", () => {
   it("renders relative notice links, Pandoc 3.12 recipe/toolchain/inventory, MPL-2.0 crate sources and verbatim WASI shim licence on /licenses", () => {
     const html = renderToStaticMarkup(<LicensesPage />);
@@ -371,6 +384,47 @@ describe("web licence notices", () => {
     );
   });
 
+  it("checks the default production graph without generated notices or build analysis", {
+    timeout: 30_000,
+  }, () => {
+    const fixtureDir = mkdtempSync(path.join(tmpdir(), "ariad-clean-notice-graph-"));
+    try {
+      createCleanNoticeWorkspace(fixtureDir);
+      const env = { ...process.env, ARIADSHIFT_ROOT_DIR: fixtureDir };
+      const generatedPaths = [".next", "out", "public/notices", "public/wasm/pandoc"].map((name) =>
+        path.join(fixtureDir, "apps/web", name),
+      );
+      for (const target of generatedPaths) expect(existsSync(target), target).toBe(false);
+
+      // The root override makes this the CLI's default notices directory, without
+      // --out-dir or --root-dir bypassing the normal production validation path.
+      const graph = spawnSync(process.execPath, [syncNoticesScript, "--check-graph"], {
+        cwd: path.join(fixtureDir, "apps/web"),
+        env,
+        encoding: "utf8",
+      });
+      expect(graph.status, graph.stderr).toBe(0);
+      for (const target of generatedPaths) expect(existsSync(target), target).toBe(false);
+
+      // Full post-build validation still requires actual current-build evidence.
+      const generate = spawnSync(process.execPath, [syncNoticesScript], {
+        cwd: path.join(fixtureDir, "apps/web"),
+        env,
+        encoding: "utf8",
+      });
+      expect(generate.status, generate.stderr).toBe(0);
+      const full = spawnSync(process.execPath, [syncNoticesScript, "--check"], {
+        cwd: path.join(fixtureDir, "apps/web"),
+        env,
+        encoding: "utf8",
+      });
+      expect(full.status).not.toBe(0);
+      expect(full.stderr).toContain("Cannot read Next.js bundle analysis");
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true });
+    }
+  });
+
   it("fails the real sync-notices.mjs script on stale notice files or stale lockfile fixtures", {
     timeout: 90_000,
   }, () => {
@@ -421,32 +475,10 @@ describe("web licence notices", () => {
       // Create a workspace fixture with a deliberately stale pnpm-lock.yaml and Cargo.lock
       // and verify that both the default generation entry and --check fail rather than silently overwriting.
       const rootFixture = path.join(fixtureDir, "root");
-      mkdirSync(path.join(rootFixture, "apps/web/src/app/licenses"), { recursive: true });
-      mkdirSync(path.join(rootFixture, "apps/web/public/notices"), { recursive: true });
-      symlinkSync(path.join(rootDir, "NOTICE"), path.join(rootFixture, "NOTICE"));
-      symlinkSync(
-        path.join(rootDir, "THIRD_PARTY_LICENSES"),
-        path.join(rootFixture, "THIRD_PARTY_LICENSES"),
-      );
-      symlinkSync(path.join(rootDir, "crates"), path.join(rootFixture, "crates"));
-      symlinkSync(path.join(rootDir, "node_modules"), path.join(rootFixture, "node_modules"));
-      symlinkSync(
-        path.join(webDir, "package.json"),
-        path.join(rootFixture, "apps/web/package.json"),
-      );
-      symlinkSync(
-        path.join(webDir, "node_modules"),
-        path.join(rootFixture, "apps/web/node_modules"),
-      );
-      symlinkSync(
-        path.join(webDir, "src/app/licenses/page.tsx"),
-        path.join(rootFixture, "apps/web/src/app/licenses/page.tsx"),
-      );
+      createCleanNoticeWorkspace(rootFixture);
 
       const realCargoLock = readFileSync(path.join(rootDir, "Cargo.lock"), "utf8");
       const realPnpmLock = readFileSync(path.join(rootDir, "pnpm-lock.yaml"), "utf8");
-      writeFileSync(path.join(rootFixture, "Cargo.lock"), realCargoLock, "utf8");
-      writeFileSync(path.join(rootFixture, "pnpm-lock.yaml"), realPnpmLock, "utf8");
       const cleanFixture = spawnSync(
         process.execPath,
         [syncNoticesScript, "--root-dir", rootFixture],
