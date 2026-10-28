@@ -24,6 +24,8 @@ test("cancels a conversion and converts another file with a fresh worker", async
     ),
   });
   await expect(page.getByTestId("input-name")).toHaveText("large.md");
+  await page.getByTestId("target-select").click();
+  await page.getByRole("option", { name: "DOCX" }).click();
   const convert = page.getByRole("button", { name: "Convert", exact: true });
   await expect(convert).toBeEnabled();
   const before = await page.locator("html").getAttribute("data-converter-workers");
