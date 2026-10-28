@@ -1,120 +1,122 @@
-# MCP native CI resource URI repair
+# Native symlink errors and Windows race fixtures
+
+The source repair restores the previous Unix leaf-symlink `ELOOP` contract
+and makes startup race fixtures platform-aware. Unix swap coverage remains;
+Windows gains a real-handle identity test requiring no rename or symlink.
 
 Branch: `fix/mcp-limits-and-parity`.
-Baseline: `36820c5e05f71dc6d25f433c913d412bc184aca9`.
-Verified source head: `943bc22b2b6fdf163cf5da0d35253739f1bcc3eb`
-(`test(mcp): read registered canonical resource URIs`).
+Baseline: `522be7e10441caa6365dcb0de722bf03a62fbc9e`.
+Source head: `6262e09d58e12bf4697c768db7c3d07def4281d7`
+(`fix(host): preserve symlink errors across Unix backends`).
+Only `crates/ariad-host/src/confine.rs` changes in the source commit.
 No push, PR mutation, merge or rebase was performed.
 
-## Cause and repair
+## Complete native failure inventory
 
-Read both complete logs from GitHub run `40631397259`, PR #90:
-macOS job `122628398576` and Windows job `122628398624`.
-The macOS job stopped at 114 passed / 2 failed / 10 skipped; Windows at
-108 passed / 1 failed / 9 skipped. Both jobs used PR merge ref `047722d` (36820c5 into 5b73609).
-Both failed at the initial resource read,
-before a roots refresh. The earlier conversion and explicit-root startup
-checks had already succeeded. Remaining tests were cancelled by fail-fast.
+Read all 1,657 macOS and 1,493 Windows log lines from run `40635337753`.
+Both jobs tested merge ref `93e9e360dbe197a4034435857846c8766934f540`
+(522be7e into 5b73609). These are every failing test in those complete logs:
 
-The root identity checks are not the cause of the reproduced failure.
-`tools.rs` records `path_to_file_uri(final_dest)` after output confinement
-canonicalizes its parent. `resources.rs` looks up the exact registered URI.
-`docs/mcp.md` documents the canonical absolute resource URI. In contrast,
-`failed_refresh_revokes_root` and the overlapping-refresh helper constructed
-the URI from the caller's original temporary path. These strings differ
-through a symlink, parent components, or native path canonicalization.
+- macOS job `122640945552`: `ariad-host::confine`
+  `test_input_symlink_guards_isolated`. The assertion expected native
+  `ELOOP` (62) but received `raw_os_error() == None`.
+- Windows job `122640945553`: `ariad-host`
+  `confine::root_and_sweep_race_tests::startup_refuses_a_directory_replaced_between_canonicalization_and_open`.
+  The first rename returned OS error 32, sharing violation.
+- The same Windows job:
+  `confine::root_and_sweep_race_tests::startup_refuses_a_symlink_swap_between_canonicalization_and_open`.
+  The first rename also returned OS error 32.
 
-On Linux, a real symlinked TMPDIR reproduces both named failing tests and
-the overlapping-refresh test: conversion advertises `real/.../note.html`,
-the test requests `alias/.../note.html`, and receives error -32002 with
-`Resource was not produced by this server session`. The proving copy added
-only assertion diagnostics; product behavior and fixtures were unchanged.
-Native logs do not include the rejected URI, so the precise macOS/Windows
-path spelling still requires a native rerun. They do establish that this
-failure happens after conversion, rather than during root startup.
+macOS stopped at 776 passed / 1 failed / 10 skipped; Windows at 605 passed /
+2 failed / 9 skipped. Fail-fast left 244 and 366 cases unrun respectively.
+Complete ANSI-stripped logs are `t6-rework7-macos-ci.log` and
+`t6-rework7-windows-ci.log` under `/home/vchun/Codes/ariadshift-logs/`.
+Retrieved with `gh api repos/bavanchun/AriadShift/actions/jobs/<job>/logs --allow-escape-sequences`.
 
-Only `crates/ariad-cli/tests/mcp_stdio.rs` changes in this source commit:
+## Causes and changes
 
-- Both helpers now consume the advertised resource link and independently
-  assert that it equals the URI of the canonical output file. Resource-read,
-  revocation, timeout, restoration and explicit-root assertions remain.
-- The three failed-refresh cases use existing `nested/..` paths for both
-  client roots and explicit grants. This makes the original URI assumption
-  fail deterministically on Linux without depending on the system TMPDIR.
-- A Unix integration case grants `alias/documents/nested/..`, reads the
-  allowed input, denies a sibling outside that subdirectory, converts and
-  reads canonical resource content, and rejects the unregistered lexical
-  alias URI. Its staging directory also goes through a real symlink, and
-  normal shutdown leaves that directory empty.
-- Read failures now include their JSON response in assertion diagnostics.
+The errno integration test is byte-identical to `origin/dev`; this branch
+did not introduce or weaken it. Commit `1673a2c` removed its Unix symlink
+pre-check and changed the post-open rejection to `io::Error::other`.
+cap-primitives 4.0.3 uses its manual resolver on macOS. Raw `O_NOFOLLOW`
+flags do not change that resolver's `FollowSymlinks` option: it can follow
+the link, then our post-open check rejects it with a custom error losing
+native errno. Linux's usual openat2 backend returns native ELOOP earlier.
+This explains the native error difference without blaming a new test.
 
-Production code, dependencies, the host manifest, lockfile, original
-workspace code/tests, roots deadlines, root identity checks and swap tests
-are unchanged. No canonical URI alias registration or weaker root checks
-were introduced. Local full-diff review found no additional issues.
+Restored the previous Unix pre-check and post-check returning
+`io::Error::from_raw_os_error(libc::ELOOP)`. Atomic flags, nonblocking opens,
+metadata/inode guards and unrelated I/O error propagation remain intact.
+New Unix tests cover file, directory, dangling and cyclic leaf links, missing
+file ENOENT, normal file bytes, and a deterministic link installed after
+opening. The last regression fails on the old code, including ordinary Linux.
 
-## Temporary allow-dir audit
+Windows ambient directory handles intentionally omit FILE_SHARE_DELETE in
+cap-primitives. The two startup fixtures attempted to rename those open
+directories before exercising the production identity comparison. Both are
+now explicitly Unix-only, with the reason in a comment. Their Unix rename
+steps, hooks and assertions remain. The new identity test opens two real
+directories, reopens and clones the first, verifies matching identities,
+and rejects the other directory in both directions. It compiles on Windows
+and needs no symlink privilege or rename of an open directory.
 
-Reviewed all 29 pre-existing temporary `--allow-dir` call sites, including
-helpers that serve multiple tests. Locations below refer to baseline HEAD.
+## Native-assumption audit
 
-| File | Baseline lines reviewed | Outcome |
-| --- | --- | --- |
-| `crates/ariad-cli/tests/mcp_stdio.rs` | 408, 469, 521, 605, 697, 753, 832, 863, 941, 991, 1102, 1147, 1471, 1503, 1592, 1718, 1749, 1777, 1802, 1819, 1835, 2108, 2258, 2356, 2416 | The two helper sites at 1835/2108 contain the incorrect resource URI assumption; fixed. Other resource reads use canonical fixture paths. Tool-only checks do not require lexical/canonical equality. |
-| `crates/ariad-cli/tests/termination.rs` | 380, 420, 467 | Two signal tests pass raw temp roots without URI equality checks; hanging conversion uses a canonical fixture root. |
-| `crates/ariad-cli/tests/packs_cli.rs` | 369 | Startup/list-engines test has no resource/path equality assumption. |
+Reviewed all branch-added confinement/MCP test families against origin/dev,
+including the dependent asset swap test. The preceding canonical-resource
+repair remains intact; there are no new case-only filename pairs or hardcoded
+Unix errno numbers. Temporary-path aliases are handled by canonical fixture
+paths or the independently asserted resource-link helper.
 
-Also reviewed staging responsiveness and all staging cleanup tests, including
-startup sweep without explicit grants: their existence, contents, permission
-and cleanup assertions work through path aliases. The additional Unix case
-covers a symlinked staging base explicitly. The full feature-enabled MCP
-suite runs with TMPDIR/TMP/TEMP pointing to a real directory via symlink.
+| Test family | Native assumption and disposition |
+| --- | --- |
+| Startup root swaps | Open-directory rename requires Unix; cfg corrected, all Unix checks kept. New real-directory identity case covers Windows without that assumption. |
+| Sweep replacement race | Kept on both systems. Candidate handles come from entry opens with delete-sharing. This exact test passed natively on Windows in the supplied log (600/973), unlike ambient-root startup fixtures. |
+| File/directory link swap-back units | Both passed natively on Windows (589/973 and 599/973). Their entry handles permit delete-sharing. They use real Windows symlinks and require Developer Mode or symlink privilege; no silent skip or fake substitute was added. |
+| Parent replacement, pinned symlink grants, FIFO | Already cfg Unix. Fixture roots are canonical; no Windows open-directory rename is attempted. The original FIFO test remains unchanged. |
+| Umask and foreign owner | Umask checks are Unix-only; mapped UID ownership is Linux-only. Required owner mode remains enforced. |
+| MCP limits, roots ordering/deadlines, resource revocation | No errno or case-only path assumption. Canonical advertised URIs are verified. Parent-component grant fixtures remain portable. |
+| MCP staging shutdown, cancellation, sweep | No retained artifact handle at deletion; timestamp setup uses Windows directory flags. Base cleanup cases passed natively. Full feature suite is also run locally through a real symlinked TMPDIR. |
+| Poisoned roots-lock recovery and sidecar fixtures | Use real files and canonical roots or confinement handles; no new rename/privilege assumption. |
 
-## Focused proof
+Production cleanup, root identity, explicit grants, resource identity and
+refresh timing were not redesigned. The host manifest, lockfile, original
+workspace source/tests, CLI code/tests and `docs/mcp.md` are unchanged.
+Local full-diff review found no additional critical/high issue.
 
-Logs are under `/home/vchun/Codes/ariadshift-logs/`.
-All heavy commands use the detached slot-2 launcher, nice 19, with
-`CARGO_BUILD_JOBS=1`, `NEXTEST_TEST_THREADS=1` and
-`RUSTFLAGS='-C link-arg=-Wl,--threads=1'`. Parallelism stays at one after
-previous shared-load peaks. No process was paused or stopped on a lock.
+## Focused proof and verification setup
 
-`t6-rework6-proof.log`: three expected old-test failures under a symlinked
-TMPDIR, including the exact JSON error and advertised/requested URI pair.
-The runner invokes the following with each exact name and `--nocapture`:
+`t6-rework7-proof.log` first proves the unchanged errno test passes with
+ordinary Linux openat2, then reproduces its missing errno with the real
+manual resolver. The child-only seccomp filter returns ENOSYS for openat2;
+it changes no filesystem data, dependency source or global process policy.
+The new deterministic post-open regression also fails on old product code.
+Both expected failures report None versus native Linux ELOOP (40).
+Last line: `=== seventh rework original native and manual errno paths reproduced ALL GREEN`.
+This denotes successful negative reproduction.
 
-```sh
-cargo test --locked -p ariad-cli --features test-probe --test mcp_stdio limits_and_roots::roots_error_revokes_tools_and_resources -- --exact --nocapture
-cargo test --locked -p ariad-cli --features test-probe --test mcp_stdio limits_and_roots::roots_error_preserves_explicit_allow_dirs -- --exact --nocapture
-cargo test --locked -p ariad-cli --features test-probe --test mcp_stdio overlapping_refreshes_keep_client_access_until_the_first_deadline -- --exact --nocapture
-```
+The first broad manual-resolver run passed 30/31 integration tests, but
+seccomp's required no_new_privs blocked newuidmap capabilities for the
+foreign-owner fixture. `t6-rework7-preflight.log` preserves this setup
+failure. The corrected launcher enters the real mapped-root user namespace
+before applying its child-only filter. No product change or test weakening
+was needed for this correction.
 
-Last line:
-`=== sixth rework original URI assumption reproduced ALL GREEN`.
-This denotes successful negative reproduction, not passing original tests.
+`t6-rework7-preflight-final.log` passed the original test (1), confinement
+units (9), manual-resolver nofollow units (5), and all manual-resolver
+integration tests (31), including strict foreign ownership.
+Last line: `=== seventh rework focused native and manual confinement paths ALL GREEN`.
 
-`t6-rework6-preflight.log`: **3 roots cases + 1 new symlink case passed**.
-Commands:
-
-```sh
-cargo fmt --all
-cargo test --locked -p ariad-cli --features test-probe --test mcp_stdio limits_and_roots::roots_ -- --test-threads=1 --nocapture
-cargo test --locked -p ariad-cli --features test-probe --test mcp_stdio pinned_explicit_grants::explicit_symlink_root_with_trailing_components_reads_canonical_resource -- --exact --nocapture
-cargo fmt --all --check
-```
-
-Last line:
-`=== sixth rework focused canonical URI and explicit symlink fixtures ALL GREEN`.
-
-## Exact source gate
+## Exact-head gate
 
 Detached launcher:
-`gate-slot.sh 2 zsh /tmp/t6-rework6-final-gate.zsh 943bc22b2b6fdf163cf5da0d35253739f1bcc3eb`.
-Worktree: `/home/vchun/Codes/01-AriadShift-wt-t6-verify`.
-Environment additionally sets `CARGO_TARGET_DIR=$PWD/target`,
-`ARIAD_REQUIRE_FOREIGN_OWNER_TEST=1`,
-`MISE_UV_VERSION=0.12.23 MISE_PNPM_VERSION=12.9.1 MISE_NODE_VERSION=$(cat .node-version)`.
-
-Exact command sequence:
+`gate-slot.sh 2 zsh /tmp/t6-rework7-final-gate.zsh 6262e09d58e12bf4697c768db7c3d07def4281d7`.
+Worktree: `/home/vchun/Codes/01-AriadShift-wt-t6-verify`, nice 19.
+Environment: `CARGO_BUILD_JOBS=1`, `NEXTEST_TEST_THREADS=1`,
+`CARGO_TARGET_DIR=$PWD/target`, `RUSTFLAGS='-C link-arg=-Wl,--threads=1'`,
+`ARIAD_REQUIRE_FOREIGN_OWNER_TEST=1`.
+Pins: `MISE_UV_VERSION=0.12.23 MISE_PNPM_VERSION=12.9.1 MISE_NODE_VERSION=$(cat .node-version)`.
+Exact commands:
 
 ```sh
 just pandoc
@@ -124,7 +126,9 @@ cargo fmt --all --check
 cargo clippy --locked -p ariad-host -p ariad-cli --all-targets -- -D warnings
 cargo build --locked -p ariad-host --no-default-features --features test-probe --bin engine-probe
 cargo nextest run --locked -p ariad-host -p ariad-cli
-python3 /tmp/t6-rework6-symlink-temp.py cargo test --locked -p ariad-cli --features test-probe --test mcp_stdio -- --test-threads=1
+python3 /tmp/t6-rework7-manual-open.py cargo test --locked -p ariad-host --lib nofollow_tests -- --test-threads=1
+unshare --user --map-auto --map-root-user python3 /tmp/t6-rework7-manual-open.py cargo test --locked -p ariad-host --test confine -- --test-threads=1
+python3 /tmp/t6-rework7-symlink-temp.py cargo test --locked -p ariad-cli --features test-probe --test mcp_stdio -- --test-threads=1
 export CC_x86_64_pc_windows_gnu=/tmp/t6-zig-cc.sh
 export AR_x86_64_pc_windows_gnu=/tmp/t6-zig-ar.sh
 cargo check --locked -p ariad-host -p ariad-cli --target x86_64-pc-windows-gnu --all-targets --features test-probe
@@ -132,47 +136,42 @@ just deny
 just lint-commits
 ```
 
-The Python wrapper creates real/alias temporary directories, makes alias a
-real filesystem symlink, and runs its argument command with TMPDIR/TMP/TEMP
-set to alias. It removes the fixture after the command exits.
-`just deny` runs Node crypto-bigint tests, the lockfile crypto-bigint check
-and `cargo deny check`.
+The symlink wrapper sets TMPDIR/TMP/TEMP to a real directory alias.
+`just deny` runs Node crypto-bigint tests, the lockfile check and cargo deny.
 
-All commands passed on the exact source head. Full nextest: **470 passed,
-10 skipped**, 245.262 seconds. Feature-enabled MCP under the symlinked temp
-root: **47 passed, 0 failed**, 107.98 seconds. The mandatory foreign-owner
-fixture executed and passed, as did both startup swap tests, the stale-sweep
-replacement test and the protected workspace FIFO/non-regular-file test.
+Every command passed on the exact source head. Full nextest: **473 passed,
+10 skipped**, 243.519 seconds. Manual-resolver nofollow units: **5 passed**;
+manual-resolver integration: **31 passed**, 0.27 seconds, including required
+foreign ownership. Feature-enabled MCP through the symlinked temp root:
+**47 passed, 0 failed**, 108.79 seconds.
 
-Fmt, clippy, probe build and Windows GNU all-targets compilation passed.
-The cargo-deny recipe passed **3 Node tests, 0 failures**, the crypto-bigint
-lockfile check, and `advisories ok, bans ok, licenses ok, sources ok`.
-Duplicate-version warnings were non-fatal; no dependency or policy changed.
-Commit lint passed. Final source-gate line:
-`=== 943bc22b2b6fdf163cf5da0d35253739f1bcc3eb ALL GREEN`.
+Both Unix startup swaps, the real-directory identity case, the unchanged
+original errno test and protected workspace FIFO/type test passed. Fmt,
+clippy, probe build and Windows GNU all-targets checking passed. The deny
+recipe passed **3 Node tests**, the lockfile check and
+`advisories ok, bans ok, licenses ok, sources ok`. Duplicate-version warnings
+were non-fatal; no dependency or policy exception changed. Commit lint passed.
+Final line: `=== 6262e09d58e12bf4697c768db7c3d07def4281d7 ALL GREEN`.
 
-The subsequent delivery commit changes only this report. The operations
-copy records its exact SHA and the separate source-identity/commit-lint log.
-That check proves the delivered code is identical to the tested source;
-it is not a second build/test gate.
+The subsequent delivery commit changes only this report. Its exact SHA and
+separate source-identity/commit-lint log are recorded in the operations copy;
+that check establishes identical delivered code without another build gate.
 
-## Limits and remaining native verification
+## Native verification and accepted limits
 
-The repaired tests remove an invalid test assumption; local Linux results
-cannot prove macOS case-insensitive paths, /var or /tmp aliases, native
-Windows handle identity, reparse points, drive casing or 8.3 names. The GNU
-cross-check proves compilation only. GitHub macOS/Windows runtime reruns and
-full three-OS CI on the delivered PR head remain merge conditions. No remote rerun or push was performed here.
+Linux exercises both real Unix resolver paths, preserved swap detection and
+strict foreign ownership. Windows GNU checking proves compilation only.
+Native macOS errno and Windows same-file runtime checks still need the next
+GitHub run; full three-OS CI remains a merge condition. Existing Windows
+symlink swap-back tests require the same privilege that the supplied native
+run demonstrably had; the new identity test does not require it.
 
-Accepted earlier decisions remain intact: Windows stale cleanup is finally
-path-based under the private temp-root ACL; Unix cleanup uses handles but
-is not atomic against concurrent rename. The Windows-only same-file 1.0.6
-edge is an accepted manifest edge to an existing resolved package, with
-permissive licensing. `docs/mcp.md` is unchanged in this delta; its earlier
-edits still require the maintainer's shared-document ownership coordination.
+Earlier accepted cleanup limits and the permissive Windows same-file 1.0.6
+manifest edge remain intact. `docs/mcp.md` is unchanged in this delta; prior
+edits remain subject to shared-document ownership coordination.
 
-Source head: `943bc22b2b6fdf163cf5da0d35253739f1bcc3eb`.
-Gate log: `/home/vchun/Codes/ariadshift-logs/t6-rework6-final-gate.log`.
-Last line: `=== 943bc22b2b6fdf163cf5da0d35253739f1bcc3eb ALL GREEN`.
+Source head: `6262e09d58e12bf4697c768db7c3d07def4281d7`.
+Gate log: `/home/vchun/Codes/ariadshift-logs/t6-rework7-final-gate.log`.
+Last line: `=== 6262e09d58e12bf4697c768db7c3d07def4281d7 ALL GREEN`.
 
 Status: DONE
