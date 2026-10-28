@@ -157,7 +157,12 @@ an allowed SPDX licence and all hash-verified notices bundled. Wheel-scoped
 notices retain their reviewed paths; upstream notices go inside the wheel at
 `notices/<path>`. Loose artifacts require those files beside the artifact.
 Renaming an object, a generated output checksum or an OpenMP sidecar hash cannot
-create an approval. The five initial BSD OpenEXR/Imath receipts identify only
+create an approval. ZIP directory entries must have zero declared/compressed
+size and no readable bytes; payloads still reach content scanning and are refused.
+Only genuine empty directories may skip scanning. All member names must be
+canonical relative POSIX paths; traversal, backslashes, control characters,
+duplicate/case-colliding paths and file/directory conflicts fail.
+The five initial BSD OpenEXR/Imath receipts identify only
 those objects; they do not approve the containing upstream GPL wheel or new
 source-build outputs. Review and record actual new object identities and full
 notices before attempting toolchain publication. Missing reviews stop the

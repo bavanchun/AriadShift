@@ -19,6 +19,8 @@ licence markers. Every native export additionally requires a positive component 
 from reviewed SHA-256 receipts and its allowed licence and bundled hash-verified notices.
 Generated output checksums cannot create a review. Permissive component wheel receipts force
 a new review on lock drift; they are not independently reviewed per-object hashes.
+Export ZIP members require unique, case-insensitive relative POSIX paths. Directory entries
+must have zero declared/compressed size and no readable bytes; payloads still reach scanning.
 Installed RECORD checks still apply.
 Native GPL/AGPL runtime self-declarations and GPL build flags are refused; absence of a
 matching string does not establish a binary's complete licence provenance.
@@ -1685,6 +1687,14 @@ def check_vendor_files(
         raise SystemExit("vendor library check failed:\n" + "\n".join(errors))
 
 
+def _export_directory(info: zipfile.ZipInfo) -> bool:
+    return (
+        info.is_dir()
+        or bool(info.external_attr & 0x10)
+        or (info.external_attr >> 16) & 0o170000 == 0o040000
+    )
+
+
 def check_wheel_files(
     wheels: Iterable[Path],
     approved_openmp: dict[str, str] | None = None,
@@ -1736,19 +1746,41 @@ def check_wheel_files(
         if name.endswith(".whl"):
             is_opencv = name.startswith("opencv_python_headless-")
             with zipfile.ZipFile(path) as archive:
-                names = [info.filename for info in archive.infolist() if not info.is_dir()]
-                if len(names) != len(set(names)):
+                members = archive.infolist()
+                names = [info.filename.removesuffix("/").casefold() for info in members]
+                files = {
+                    name
+                    for info, name in zip(members, names, strict=True)
+                    if not _export_directory(info)
+                }
+                parents = {
+                    "/".join(name.split("/")[:index])
+                    for name in names
+                    for index in range(1, len(name.split("/")))
+                }
+                if len(names) != len(set(names)) or files & parents:
                     errors.append(f"duplicate native export archive paths: {path.name}")
-                    continue
-                for info in sorted(archive.infolist(), key=lambda item: item.filename):
-                    if info.is_dir():
-                        continue
+                for info in sorted(members, key=lambda item: item.filename):
                     member_rel = f"{path.name}!/{info.filename}"
-                    present.add(member_rel)
-                    member_name = Path(info.filename).name.lower()
-                    if openmp_digest is not None and "iomp" in member_name:
-                        approved.setdefault(member_rel, openmp_digest)
+                    member_path = info.filename.removesuffix("/")
+                    if (
+                        info.orig_filename != info.filename
+                        or "\\" in member_path
+                        or ":" in member_path
+                        or any(ord(char) < 32 or ord(char) == 127 for char in info.orig_filename)
+                        or any(part in ("", ".", "..") for part in member_path.split("/"))
+                    ):
+                        errors.append(f"unsafe native export archive path: {member_rel!r}")
+                    member_name = Path(member_path).name.lower()
                     with archive.open(info) as handle:
+                        if _export_directory(info):
+                            if not (info.file_size or info.compress_size or handle.read(1)):
+                                continue
+                            errors.append(f"native export directory payload: {member_rel}")
+                            handle.seek(0)
+                        present.add(member_rel)
+                        if openmp_digest is not None and "iomp" in member_name:
+                            approved.setdefault(member_rel, openmp_digest)
                         digest = _scan_stream(
                             handle,
                             member_rel,

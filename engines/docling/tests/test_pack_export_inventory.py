@@ -181,3 +181,108 @@ def test_every_native_member_requires_review_even_beside_an_identified_component
         archive.writestr("codec/payload.data", b"\x7fELF" + bytes(64))
     with pytest.raises(SystemExit, match="unreviewed native export"):
         licenses.check_wheel_files([wheel])
+
+
+@pytest.mark.parametrize("filename", ["libcodec.dylib/", "libx264.164.dylib/", "payload.data/"])
+@pytest.mark.parametrize("payload", [b"not native, still a directory payload", PAYLOAD])
+def test_directory_members_cannot_carry_payloads(tmp_path, monkeypatch, filename, payload):
+    review(monkeypatch)
+    with pytest.raises(SystemExit, match="directory payload"):
+        licenses.check_wheel_files([export_wheel(tmp_path, payload, filename)])
+
+
+@pytest.mark.parametrize(
+    ("filename", "reason"),
+    [("libcodec.dylib/", "unreviewed native export"), ("libx264.164.dylib/", "forbidden video")],
+)
+def test_native_directory_payloads_still_reach_content_and_video_checks(tmp_path, filename, reason):
+    with pytest.raises(SystemExit, match=reason):
+        licenses.check_wheel_files(
+            [export_wheel(tmp_path, b"\xcf\xfa\xed\xfe" + bytes(64), filename)]
+        )
+
+
+def test_genuine_empty_directory_members_remain_allowed(tmp_path):
+    wheel = tmp_path / "python-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("codec/", b"")
+        archive.writestr("codec/assets/", b"")
+        archive.writestr("codec/module.py", b"# No native payload\n")
+    licenses.check_wheel_files([wheel])
+
+
+def test_empty_directory_with_compressed_payload_bytes_is_refused(tmp_path):
+    wheel = export_wheel(tmp_path, b"", "empty/")
+    with zipfile.ZipFile(wheel, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("codec/empty/", b"")
+    with zipfile.ZipFile(wheel) as archive:
+        assert archive.infolist()[0].compress_size > 0
+    with pytest.raises(SystemExit, match="directory payload"):
+        licenses.check_wheel_files([wheel])
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../payload.data",
+        "/codec/payload.data",
+        "C:/payload.data",
+        "codec\\payload.data",
+        "codec/../payload.data",
+        "codec/./payload.data",
+        "codec//payload.data",
+        "codec/payload.data\0hidden",
+        "codec/payload.data\n",
+        "codec/payload.data\x7f",
+    ],
+)
+def test_ambiguous_export_member_paths_are_refused_before_licence_approval(tmp_path, name):
+    wheel = tmp_path / "paths-1.0-py3-none-any.whl"
+    # ZipInfo strips NULs before writing; patch both stored names to exercise
+    # an actual archive containing the original unsafe bytes instead.
+    stored_name = name.replace("\0", "!")
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(stored_name, b"plain data")
+    if stored_name != name:
+        wheel.write_bytes(wheel.read_bytes().replace(stored_name.encode(), name.encode()))
+    with pytest.raises(SystemExit, match="unsafe native export archive path"):
+        licenses.check_wheel_files([wheel])
+
+
+@pytest.mark.parametrize(
+    "names",
+    [
+        ("codec/file", "codec/file"),
+        ("codec/", "codec/"),
+        ("codec/File", "codec/file"),
+        ("Codec/", "codec/"),
+        ("codec", "codec/"),
+        ("codec", "codec/payload.data"),
+        ("Codec", "codec/payload.data"),
+    ],
+)
+def test_export_paths_cannot_duplicate_or_disagree_about_file_directory_identity(tmp_path, names):
+    wheel = tmp_path / "paths-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        for name in names:
+            archive.writestr(name, b"")
+    with pytest.raises(SystemExit, match="duplicate native export archive paths"):
+        licenses.check_wheel_files([wheel])
+
+
+@pytest.mark.parametrize("attributes", [0o040755 << 16, 0x10])
+def test_directory_attributes_cannot_hide_payload_without_a_trailing_slash(tmp_path, attributes):
+    wheel = tmp_path / "paths-1.0-py3-none-any.whl"
+    member = zipfile.ZipInfo("codec/payload.data")
+    member.external_attr = attributes
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(member, b"plain directory payload")
+    with pytest.raises(SystemExit, match="directory payload"):
+        licenses.check_wheel_files([wheel])
+
+
+def test_empty_directory_cannot_satisfy_an_expected_openmp_replacement(tmp_path):
+    wheel = export_wheel(tmp_path, b"", "libiomp5md.dll/")
+    expected = {f"{wheel.name}!/codec/libiomp5md.dll/": hashlib.sha256(PAYLOAD).hexdigest()}
+    with pytest.raises(SystemExit, match="missing LLVM OpenMP replacement"):
+        licenses.check_wheel_files([wheel], approved_openmp=expected)
