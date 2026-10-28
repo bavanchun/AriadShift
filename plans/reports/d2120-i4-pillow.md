@@ -149,4 +149,93 @@ The lead has acknowledged the actual CI scope above. The native Pandoc
 integration test, four existing native-proof skips, full pack construction,
 and cross-platform checks remain outside this narrowed local verification.
 
+## E2E hash fix
+
+The Cloud E2E upload check now pins the regenerated image-only PDF's actual
+SHA-256, which equals its entry in `fixtures/manifest.toml`. The existing
+file-integrity assertion and upload payload remain intact. Updating the one
+constant avoids adding a TOML parser or a new host dependency to this shell
+script.
+
+The first review and local gate missed the stale duplicate because
+`infra/test/e2e/run.sh` runs only in Cloud E2E. The local Pillow gate checked
+fixture integrity, regeneration and benchmark provenance, but did not execute
+the Cloud E2E script's separate hash assertion.
+
+Consumers found by searching the four old manifest digests and byte sizes
+across all tracked repository files, including `.github/`, `infra/`, scripts,
+tests, benchmark results, docs, packs, `engines/` and `apps/`:
+
+- `infra/test/e2e/run.sh`: the stale `FIXTURE_SHA256` was the only incorrect
+  active pin. It is now the verified manifest/PDF hash.
+- `bench/results/heavy-routes.json`: the two `measured_sha256` fields for the
+  English and Vietnamese heavy scan PDFs retain the actual original benchmark
+  input digests. Both records already map their current `sha256` to the
+  regenerated PDF and explain the Pillow serialization change. These historical
+  measurements remain accurate and were preserved rather than relabeled.
+- No other old-hash consumer or old-size pin was found. All four PDF byte
+  lengths are unchanged. Tests, pack checks and the browser E2E read the fixture
+  paths directly; the fixture manifest and current benchmark hashes already
+  match the regenerated files.
+
+The search commands, old/new hashes, unchanged byte lengths and matching lines
+are recorded in
+`/home/vchun/Codes/ariadshift-logs/d2120-i4-e2e-hash-consumer-search.log`.
+The narrowed gate also independently checks every tracked file for these old
+values.
+
+Implementation commit and exact gated head:
+`24142e203e2eb76092bdc46c783f788545b86c7d`
+(`fix: align cloud E2E hash with regenerated scan PDF`).
+
+Failing-first evidence is recorded in
+`/home/vchun/Codes/ariadshift-logs/d2120-i4-e2e-hash-red.log`.
+Before changing the script, the committed script pin was compared with the
+committed PDF at `c4de1a7c3c996f1432f50e242f8dad676a304e4c`. The original
+assertion failed with `e2e: FAIL: fixture hash differs from the manifest` and
+exit code 1.
+
+The detached narrowed gate uses slot 2, the helper's load threshold below 12,
+nice 19 and `CARGO_BUILD_JOBS=2`:
+
+```sh
+/home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 bash /tmp/d2120-i4-e2e-hash-gate.sh
+```
+
+The runner checks that the tracked tree is clean and the head equals the exact
+implementation SHA before and after executing these commands:
+
+```sh
+bash -n infra/test/e2e/run.sh
+python3 /tmp/d2120-i4-e2e-hash-verify.py
+cargo test --locked -p ariad-cli --no-default-features --test fixture_manifest
+typos
+just lint-commits c4de1a7c3c996f1432f50e242f8dad676a304e4c..HEAD
+git diff --check c4de1a7c3c996f1432f50e242f8dad676a304e4c..HEAD
+```
+
+Gate log:
+`/home/vchun/Codes/ariadshift-logs/d2120-i4-e2e-hash-gate.log`.
+Its final line is exactly `=== d2120-i4 E2E hash ALL GREEN`.
+The runner started at load 11.62 with two build jobs and nice 19, and exited
+cleanly. Only the original gate ran; no second gate was started.
+
+All commands passed. The actual E2E hash function and assertion accept the
+committed PDF and reject an incorrect pin. All 160 fixture and companion
+hashes match the manifest. The old-value audit covered all 1,263 tracked files.
+The existing Rust manifest tests passed with `2 passed, 0 failed, 0 ignored`.
+Shell syntax, typos, commit lint and whitespace checks passed. No assertion
+was weakened, and the historical benchmark data was not changed.
+
+This report is a separate documentation commit. Its exact delivery SHA and
+post-report spelling, whitespace and commit-message checks are recorded in
+`/home/vchun/Codes/ariadshift-logs/d2120-i4-e2e-hash-report-checks.log`.
+The implementation head tested above remains unchanged by that commit.
+
+Full Compose E2E was not run in this narrowed local gate. The repaired hash
+failure path was exercised directly; the remaining Cloud E2E journey is left
+to its existing CI workflow. No unresolved concern remains within the
+requested fix. No branch was pushed, and all processes started for this task
+have ended.
+
 Status: DONE
