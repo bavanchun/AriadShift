@@ -55,6 +55,9 @@ fuzz_target!(|data: &[u8]| {
                 }
             }
         }
+        Err(ReadError::Validation(error)) => {
+            panic!("generic bounded JSON parsing must not validate IR: {error}");
+        }
         Err(ReadError::ByteLimitExceeded { .. })
         | Err(ReadError::DepthExceeded(_))
         | Err(ReadError::Json(_))

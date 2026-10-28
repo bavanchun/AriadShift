@@ -1,0 +1,54 @@
+{
+  "version": "ariad-ir/1",
+  "body": [
+    {
+      "type": "quote",
+      "blocks": [
+        {
+          "type": "quote",
+          "blocks": [
+            {
+              "type": "quote",
+              "blocks": [
+                {
+                  "type": "quote",
+                  "blocks": [
+                    {
+                      "type": "quote",
+                      "blocks": [
+                        {
+                          "type": "quote",
+                          "blocks": [
+                            {
+                              "type": "quote",
+                              "blocks": [
+                                {
+                                  "type": "quote",
+                                  "blocks": [
+                                    {
+                                      "type": "quote",
+                                      "blocks": [
+                                        {
+                                          "type": "paragraph",
+                                          "content": []
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

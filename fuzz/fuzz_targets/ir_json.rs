@@ -3,6 +3,7 @@
 use ariad_core::{
     json_depth::{json_depth_budget_for_nesting, prescan_json_depth},
     limits::Limits,
+    pipeline::PipelineError,
 };
 use ariad_host::ir_io::{ReadError, read};
 use libfuzzer_sys::fuzz_target;
@@ -68,6 +69,16 @@ fuzz_target!(|data: &[u8]| {
         Err(ReadError::BlockLimitExceeded { count, limit }) => {
             assert_eq!(limit, small_limits.max_blocks);
             assert!(count > limit as usize);
+        }
+        Err(ReadError::Validation(error)) => {
+            // Valid limits may reject semantic depth or malformed document invariants.
+            assert!(
+                matches!(
+                    error,
+                    PipelineError::LimitExceeded { .. } | PipelineError::InvalidIr { .. }
+                ),
+                "unexpected IR validation error: {error}"
+            );
         }
         Err(ReadError::Json(_)) | Err(ReadError::Io(_)) => {
             // Standard syntax/IO errors on malformed inputs

@@ -1,0 +1,9 @@
+{
+  "version": "ariad-ir/1",
+  "assets": {
+    "wrong": {
+      "media_type": "image/png",
+      "bytes": "AQIDBA=="
+    }
+  }
+}
