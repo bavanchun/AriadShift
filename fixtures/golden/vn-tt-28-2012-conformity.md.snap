@@ -844,8 +844,8 @@ Sản phẩm/hàng hóa/dịch vụ/quá trình/môi trường: ……………�
 
 |  |  |  |  |  |  |  |  |
 | :---: | --- | --- | --- | --- | --- | --- | --- |
-| **Các quá trình sản xuất cụ thể** | **Kế hoạch kiểm soát chất lượng** |  |  |  |  |  |  |
-| **Các chỉ tiêu giám sát/kiểm soát** | **Tiêu chuẩn/quy chuẩn kỹ thuật** | **Tần suất lấy mẫu/cỡ mẫu** | **Thiết bị thử nghiệm/kiểm tra** | **Phương pháp thử/kiểm tra** | **Biểu ghi chép** | **Ghi chú** |  |
+| **Các quá trình sản xuất cụ thể** | **Kế hoạch kiểm soát chất lượng** |
+| **Các chỉ tiêu giám sát/kiểm soát** | **Tiêu chuẩn/quy chuẩn kỹ thuật** | **Tần suất lấy mẫu/cỡ mẫu** | **Thiết bị thử nghiệm/kiểm tra** | **Phương pháp thử/kiểm tra** | **Biểu ghi chép** | **Ghi chú** |
 | **(1)** | **(2)** | **(3)** | **(4)** | **(5)** | **(6)** | **(7)** | **(8)** |
 |  |  |  |  |  |  |  |  |
 
@@ -901,8 +901,8 @@ Thông báo này ghi nhận sự cam kết của tổ chức, cá nhân. Thông 
 
 |  |  |  |  |  |  |  |  |
 | :---: | --- | --- | --- | --- | --- | --- | --- |
-| **STT** | **Số tiếp nhận** | **Tên tổ chức, cá nhân công bố** | **Tên sản phẩm, hàng hóa, dịch vụ, quá trình, môi trường** | **Tiêu chuẩn/quy chuẩn** | **Loại hình đánh giá** | **Ghi chú** |  |
-| **Bên thứ nhất (tên tổ chức chứng nhận đã đăng ký/được chỉ định)** | **Bên thứ ba (tự đánh giá)** |  |  |  |  |  |  |
+| **STT** | **Số tiếp nhận** | **Tên tổ chức, cá nhân công bố** | **Tên sản phẩm, hàng hóa, dịch vụ, quá trình, môi trường** | **Tiêu chuẩn/quy chuẩn** | **Loại hình đánh giá** | **Ghi chú** |
+| **Bên thứ nhất (tên tổ chức chứng nhận đã đăng ký/được chỉ định)** | **Bên thứ ba (tự đánh giá)** |  |
 | 1 |  |  |  |  |  |  |  |
 | 2 |  |  |  |  |  |  |  |
 | .... |  |  |  |  |  |  |  |
