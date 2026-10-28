@@ -15,8 +15,11 @@ other archive magic is not inspected. RECORD refresh rewrites every DLL/PYD dige
 the third-party notice record; this can mask accidental post-install changes on Windows, whose
 pack target remains deferred.
 Exported toolchain wheels also refuse video-library names, including FFmpeg, even without
-licence markers. Permissive component wheel receipts force a new review on lock drift;
-they are not independently reviewed per-object hashes. Installed RECORD checks still apply.
+licence markers. Every native export additionally requires a positive component identity
+from reviewed SHA-256 receipts and its allowed licence and bundled hash-verified notices.
+Generated output checksums cannot create a review. Permissive component wheel receipts force
+a new review on lock drift; they are not independently reviewed per-object hashes.
+Installed RECORD checks still apply.
 Native GPL/AGPL runtime self-declarations and GPL build flags are refused; absence of a
 matching string does not establish a binary's complete licence provenance.
 Each Python distribution's licence is read from its metadata (License-Expression, License and
@@ -1517,12 +1520,18 @@ def _scan_stream(
     allow_itt: bool = True,
     strip_opencv_ipp_notice: bool = False,
     reject_video: bool = False,
-) -> None:
-    header = handle.read(8)
+) -> str | None:
+    header = handle.read(20)
     native = header.startswith(_NATIVE_MAGIC) or any(
         fnmatchcase(name, p)
         for p in ("*.so*", "*.dll", "*.pyd", "*.dylib", "*.exe", "*.a", "*.lib")
     )
+    if reject_video:
+        native |= header.startswith((b"BC\xc0\xde", b"\xde\xc0\x17\x0b", b"\0\0\xff\xff")) or (
+            len(header) == 20
+            and header[:2] in (b"\x64\x86", b"\x4c\x01", b"\x64\xaa", b"\xc0\x01", b"\xc4\x01")
+            and int.from_bytes(header[2:4], "little") > 0
+        )
     if native and reject_video and not re.match(r"libavif(?:[._-]|$)", name):
         for family, reason in _VIDEO_LIBRARIES.items():
             if name.startswith(family):
@@ -1544,16 +1553,20 @@ def _scan_stream(
         # not bless the original vendor DLL by supplying its digest.
         markers = _INTEL_MARKERS if allow_itt else (*_INTEL_MARKERS, *_ITT_MARKERS)
         tail = b""
+        digest = hashlib.sha256() if reject_video else None
         iterator = iter(chunks) if chunks is not None else _stream_chunks(header, handle)
         for chunk in iterator:
+            if digest is not None:
+                digest.update(chunk)
             data = (tail + chunk).lower()
             if _GPL_RUNTIME.search(data) or (reject_video and b"--enable-nonfree" in data):
                 errors.append(f"forbidden GPL runtime declaration: {relative}")
-                break
+                return None
             if any(marker in data for marker in markers):
                 errors.append(f"proprietary Intel binary content: {relative}")
-                break
+                return None
             tail = data[-128:]
+        return digest.hexdigest() if digest is not None else None
     elif any(word in name for word in ("license", "licence", "notice", "copying")):
         raw = b"".join(chunks) if chunks is not None else header + handle.read()
         if strip_opencv_ipp_notice and name == "license-3rd-party.txt":
@@ -1570,6 +1583,50 @@ def _scan_stream(
             )
         ):
             errors.append(f"proprietary IPP ICV notice: {relative}")
+    return None
+
+
+def _export_native_review(digest: str, label: str, archive, artifact: Path, errors: list[str]):
+    """Identify actual bytes using trusted reviews, never candidate output checksums.
+
+    Paths in receipts document the reviewed originals; identity follows the hash
+    through renames. Notices must accompany these bytes in the artifact itself.
+    Installed-pack wheel-input reviews do not constitute export object approvals.
+    """
+    matches = [
+        component
+        for component in _NATIVE_COMPONENTS.values()
+        if digest in component.get("export_objects", {}).values()
+    ]
+    if len(matches) != 1:
+        errors.append(f"unreviewed native export: {label}: sha256={digest}; matches={len(matches)}")
+        return
+    component = matches[0]
+    if (
+        not all(component.get(key) for key in ("name", "distribution", "version", "license"))
+        or verdict(component["distribution"], component["license"]) is not None
+        or not component.get("notices")
+        or any(path not in component["files"] for path in component["export_objects"])
+    ):
+        errors.append(f"native export lacks an allowed component licence/review: {label}")
+        return
+    for notice in component["notices"]:
+        path = Path(notice["path"])
+        if path.is_absolute() or ".." in path.parts or "\\" in notice["path"]:
+            errors.append(f"native export notice path is unsafe: {label}")
+            continue
+        if component.get("notice_scope") == "upstream":
+            path = Path("notices") / path
+        try:
+            raw = (
+                archive.read(path.as_posix())
+                if archive is not None
+                else (artifact.parent / path).read_bytes()
+            )
+        except KeyError, FileNotFoundError:
+            raw = b""
+        if not raw.strip() or hashlib.sha256(raw).hexdigest() != notice["sha256"]:
+            errors.append(f"native export lacks its reviewed notice: {label}: {path}")
 
 
 def check_vendor_files(
@@ -1635,12 +1692,15 @@ def check_wheel_files(
     allow_itt: bool = False,
     openmp_dll: Path | None = None,
 ) -> None:
-    """Audit exported wheels and OpenMP sidecars for forbidden Intel/video components.
+    """Require reviewed native bytes/licences/notices and refuse Intel/video exports.
 
     Source-built toolchain wheels disable ITT instrumentation (``USE_ITT=0``,
     ``-DWITH_ITT=OFF``, ``-DLIBOMP_USE_ITT_NOTIFY=OFF``), so ``allow_itt``
     defaults to ``False`` here. Video-library names are refused independently of
     GPL self-declarations/flags. The installed pack keeps its named LGPL FFmpeg review.
+    Every native payload also requires one explicit export-object SHA-256 review
+    and complete reviewed notices inside its wheel (or beside a loose artifact).
+    No candidate hash, OpenMP sidecar or Python extension bypasses this requirement.
     """
     approved = dict(approved_openmp or {})
     wheel_list = [Path(wheel) for wheel in wheels]
@@ -1658,7 +1718,7 @@ def check_wheel_files(
         present.add(label)
         approved[label] = openmp_digest
         with openmp_dll.open("rb") as handle:
-            _scan_stream(
+            digest = _scan_stream(
                 handle,
                 label,
                 openmp_dll.name.lower(),
@@ -1667,6 +1727,8 @@ def check_wheel_files(
                 allow_itt=allow_itt,
                 reject_video=True,
             )
+        if digest is not None:
+            _export_native_review(digest, label, None, openmp_dll, errors)
     for path in wheel_list:
         if not path.is_file():
             raise SystemExit(f"missing wheel or artifact file: {path}")
@@ -1674,6 +1736,10 @@ def check_wheel_files(
         if name.endswith(".whl"):
             is_opencv = name.startswith("opencv_python_headless-")
             with zipfile.ZipFile(path) as archive:
+                names = [info.filename for info in archive.infolist() if not info.is_dir()]
+                if len(names) != len(set(names)):
+                    errors.append(f"duplicate native export archive paths: {path.name}")
+                    continue
                 for info in sorted(archive.infolist(), key=lambda item: item.filename):
                     if info.is_dir():
                         continue
@@ -1683,7 +1749,7 @@ def check_wheel_files(
                     if openmp_digest is not None and "iomp" in member_name:
                         approved.setdefault(member_rel, openmp_digest)
                     with archive.open(info) as handle:
-                        _scan_stream(
+                        digest = _scan_stream(
                             handle,
                             member_rel,
                             member_name,
@@ -1693,13 +1759,15 @@ def check_wheel_files(
                             reject_video=True,
                             strip_opencv_ipp_notice=is_opencv,
                         )
+                    if digest is not None:
+                        _export_native_review(digest, member_rel, archive, path, errors)
         else:
             label = path.name
             present.add(label)
             if openmp_digest is not None and "iomp" in name:
                 approved.setdefault(label, openmp_digest)
             with path.open("rb") as handle:
-                _scan_stream(
+                digest = _scan_stream(
                     handle,
                     label,
                     name,
@@ -1708,6 +1776,8 @@ def check_wheel_files(
                     allow_itt=allow_itt,
                     reject_video=True,
                 )
+            if digest is not None:
+                _export_native_review(digest, label, None, path, errors)
     missing = set(approved) - present
     errors.extend(f"missing LLVM OpenMP replacement: {name}" for name in sorted(missing))
     if errors:

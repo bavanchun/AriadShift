@@ -576,14 +576,6 @@ def test_exported_wheels_refuse_video_families_even_without_markers(tmp_path, na
         licenses.check_wheel_files([wheel])
 
 
-@pytest.mark.parametrize("name", ["libclean.1.dylib", "libavif.16.dylib"])
-def test_exported_clean_image_libraries_remain_allowed(tmp_path, name):
-    wheel = tmp_path / "native-1.0-py3-none-any.whl"
-    with zipfile.ZipFile(wheel, "w") as archive:
-        archive.writestr(f"cv2/.dylibs/{name}", b"\xcf\xfa\xed\xfe" + bytes(16))
-    licenses.check_wheel_files([wheel])
-
-
 def test_exported_wheel_refuses_nonfree_configuration_in_an_unlisted_library(tmp_path):
     wheel = tmp_path / "native-1.0-py3-none-any.whl"
     with zipfile.ZipFile(wheel, "w") as archive:

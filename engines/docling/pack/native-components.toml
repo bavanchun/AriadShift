@@ -21,6 +21,13 @@ notices = [
   { path = "openexr-3.3.4.txt", sha256 = "84853c91d4c2e0310741d4773469d98bb93e61029608e0ba0882a3fffdf330bd" },
 ]
 
+# Reviewed original bytes; export also requires the complete notices in its wheel.
+[components.export_objects]
+"cv2/.dylibs/libOpenEXRCore-3_3.32.3.3.4.dylib" = "4ece54c65206a77f891019446d93a8ac3ebbeea8af4c1c0561c2b0c613e29718"
+"cv2/.dylibs/libIlmThread-3_3.32.3.3.4.dylib" = "fb8b20381ed5c52c96c74f0972d0b51741339d2d6ee8fde3e68997baf55f7b01"
+"cv2/.dylibs/libOpenEXR-3_3.32.3.3.4.dylib" = "f1df5d2dbaf3e38c0ba2649e36a5af1fe1a76621346f8e78484bbdac828b906a"
+"cv2/.dylibs/libIex-3_3.32.3.3.4.dylib" = "df9f5aa8542d0e7a9bd2a6461a9894024a41bd2f8c81f2a0e11f94086b7f4550"
+
 [[components]]
 name = "opencv-imath"
 distribution = "opencv-python-headless"
@@ -33,6 +40,10 @@ files = [
 notices = [
   { path = "imath-3.1.11.txt", sha256 = "c20236d3b39fd20eba8e3d1fb3b892a5483df2e7d8d61bf43f165d3fac22f601" },
 ]
+
+# Reviewed original bytes; export also requires the complete notices in its wheel.
+[components.export_objects]
+"cv2/.dylibs/libImath-3_1.29.11.0.dylib" = "1f20d905051a125d8aa4e481b9f0c1c42e2cc0d4a08ae9ddedf88e451a09ef01"
 
 [[components]]
 name = "tokenizers-native"

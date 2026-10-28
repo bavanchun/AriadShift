@@ -211,9 +211,9 @@ jobs:
               json.dumps(torch_record, indent=2) + "\n", encoding="utf-8"
           )
 
-          wheels = sorted(out.glob("*.whl"))
+          artifacts = sorted(path for path in out.rglob("*") if path.is_file())
           openmp = out / "libiomp5md.dll" if target.endswith("windows-msvc") else None
-          licenses.check_wheel_files(wheels, allow_itt=False, openmp_dll=openmp)
+          licenses.check_wheel_files(artifacts, allow_itt=False, openmp_dll=openmp)
 
       - name: Upload toolchain wheels and provenance
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -316,10 +316,12 @@ jobs:
               '--no-deps', '--reinstall', str(wheel),
           ], check=True)
           native_build.verify_opencv(sys.executable, target=target)
-          licenses.check_wheel_files([wheel], allow_itt=False)
           out = Path('wheels-out')
           shutil.rmtree(out, ignore_errors=True)
           native_build.export_opencv(wheel, target, pins, out)
+          licenses.check_wheel_files(
+              sorted(path for path in out.rglob('*') if path.is_file()), allow_itt=False,
+          )
           """], check=True)
 
       - name: Upload audited OpenCV wheel and provenance

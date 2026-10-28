@@ -149,6 +149,19 @@ requires arm64 and macOS 14 compatibility, checks the import/build information
 and absence of `VideoCapture`, and audits every wheel payload for forbidden
 components. Native macOS validation and actual wheel SHA-256 pinning must finish
 before that target ships; no upstream GPL dylib is removed to make a wheel pass.
+Every detected native payload in an exported toolchain wheel or loose native
+sidecar must additionally match one component's reviewed `export_objects`
+SHA-256 receipt in
+[`native-components.toml`](../engines/docling/pack/native-components.toml), with
+an allowed SPDX licence and all hash-verified notices bundled. Wheel-scoped
+notices retain their reviewed paths; upstream notices go inside the wheel at
+`notices/<path>`. Loose artifacts require those files beside the artifact.
+Renaming an object, a generated output checksum or an OpenMP sidecar hash cannot
+create an approval. The five initial BSD OpenEXR/Imath receipts identify only
+those objects; they do not approve the containing upstream GPL wheel or new
+source-build outputs. Review and record actual new object identities and full
+notices before attempting toolchain publication. Missing reviews stop the
+workflow before upload; do not refresh approvals automatically from candidates.
 The build key covers source, options, target and frozen build tools, excluding
 model pins and the published wheel manifest. Restored wheels are rehashed and
 run through CPU/torchvision and OpenCV probes. Linux uses the pinned manylinux
