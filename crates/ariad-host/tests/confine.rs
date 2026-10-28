@@ -1219,31 +1219,31 @@ mod staging_privacy {
         };
         if std::env::var_os(CHILD).is_none() {
             let executable = std::env::current_exe().unwrap();
-            let probe = Command::new("unshare")
-                .args(["--user", "--map-auto", "--map-root-user", "true"])
-                .output();
-            let unavailable = match probe {
-                Ok(output) if output.status.success() => None,
-                Ok(output) => Some(format!(
-                    "unshare --user --map-auto --map-root-user true: {}; {}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stderr).trim()
-                )),
-                Err(error) => Some(format!(
-                    "unshare --user --map-auto --map-root-user true: {error}"
-                )),
-            };
-            if let Some(reason) = unavailable {
-                assert!(
-                    std::env::var("ARIAD_REQUIRE_FOREIGN_OWNER_TEST").as_deref() != Ok("1"),
-                    "foreign-owner regression is required but unavailable: {reason}"
-                );
-                eprintln!("SKIP foreign-owner integration regression: {reason}");
-                return;
-            }
             let command = if nix::unistd::geteuid().is_root() {
                 Command::new(executable)
             } else {
+                let probe = Command::new("unshare")
+                    .args(["--user", "--map-auto", "--map-root-user", "true"])
+                    .output();
+                let unavailable = match probe {
+                    Ok(output) if output.status.success() => None,
+                    Ok(output) => Some(format!(
+                        "unshare --user --map-auto --map-root-user true: {}; {}",
+                        output.status,
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    )),
+                    Err(error) => Some(format!(
+                        "unshare --user --map-auto --map-root-user true: {error}"
+                    )),
+                };
+                if let Some(reason) = unavailable {
+                    assert!(
+                        std::env::var("ARIAD_REQUIRE_FOREIGN_OWNER_TEST").as_deref() != Ok("1"),
+                        "foreign-owner regression is required but unavailable: {reason}"
+                    );
+                    eprintln!("SKIP foreign-owner integration regression: {reason}");
+                    return;
+                }
                 // A mapped user namespace creates a real foreign owner without host-root access.
                 let mut command = Command::new("unshare");
                 command

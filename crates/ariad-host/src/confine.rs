@@ -379,7 +379,6 @@ impl ProcessStagingDirectory {
             if old && process_is_dead(pid) {
                 #[cfg(test)]
                 test_open_hook("staging-checked");
-                // Refuse replacement entries, and remove only through the checked handle.
                 let Ok(current) = open_entry_nofollow(&base_dir, Path::new(&name), true) else {
                     continue;
                 };
@@ -388,6 +387,9 @@ impl ProcessStagingDirectory {
                     continue;
                 }
                 drop(current);
+                // Windows final removal is path-based and relies on the private temp-root ACL;
+                // Unix removal is handle-based but not atomic against a concurrent rename
+                // of the checked directory.
                 let _ = candidate.remove_open_dir_all();
             }
         }
