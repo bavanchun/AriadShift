@@ -3,7 +3,7 @@
 - **Date:** 2026-10-28 (Asia/Saigon)
 - **Worktree:** `/home/vchun/Codes/01-AriadShift-wt-i13-notices`
 - **Branch:** `fix/web-licence-notices`
-- **Base SHA:** `47afeb445fee2692724e392f3ae1aad5fc7cd414` (`origin/dev`)
+- **Base SHA:** `47afeb445fee2692724e392f3ae1aad5fc7cd414` (`origin/dev` at task start)
 - **Implementation HEAD:** `bb6b1001029db2c19f30b5759c27760211a2d93c` (`bb6b100`)
 - **Commits:**
   1. `5400da46a31cfc6009a893504b5116f340b37aec` — `fix(web): serve third-party licence notices and check staleness`
@@ -12,7 +12,7 @@
   4. `bb6b1001029db2c19f30b5759c27760211a2d93c` — `fix(web): verify browser notices against emitted dependencies`
 - **Push / PR:** None (local commits only, per brief).
 
-Current outcome: **BLOCKED on final verification**. The sol continuation section below supersedes the historical gate and handoff records.
+Current outcome: **DONE_WITH_CONCERNS**. The full gate passed on exact implementation HEAD `bb6b1001029db2c19f30b5759c27760211a2d93c`. The lead-directed rerun below supersedes the earlier blocked attempts; the remaining concerns are recorded compiler/cache warnings and the earlier load-dependent test flake.
 
 ## Rework Summary (Addressing `reports/r-i13-terra.md`)
 
@@ -468,12 +468,83 @@ Commands and outcomes on the implementation tree:
 - `git diff --check` and `git diff --cached --check`: passed.
 - The independent online probe: 156 successful URLs (106 HTTP 200 and 50 HTTP 206); zero missing sources.
 
-### Remaining work and limits
+### Earlier verification blocker (resolved below)
 
-There is **no ALL GREEN log for this implementation head**. The exact implementation head is `bb6b1001029db2c19f30b5759c27760211a2d93c`; the final report-only commit follows it without changing implementation. The previously recorded ALL GREEN at `378256b` does not validate this continuation.
+At this earlier attempt there was no ALL GREEN log for `bb6b100`, and the old `378256b` gate did not validate the continuation. Build/export, current-build module evidence, notices checks and prefix e2e were still pending. The lead-directed rerun below completed all of those steps and classified the earlier account-jobs failure as a load-dependent flake. The original failed and cancelled-run logs remain preserved.
 
-The manager must arrange a build slot and resolve or assign the unchanged account-jobs race outside this brief's ownership. Then run the full retry script, including `just web-ci`, `just web-licenses-check`, `CI=1 pnpm --filter @ariadshift/web exec playwright test e2e/licenses.spec.ts --project=chromium`, Biome, `typos`, and `just lint-commits`. Clean real build/export, current-build module evidence, the standalone notices check and prefix-hosting e2e remain unverified on the new implementation. The stale-lock real-entry tests themselves passed. The earlier standalone analyzer's 32-package result is historical evidence, not a validated current production build.
+## Lead-directed exact-head rerun
 
-The two upstream uncertainties accepted by A-1635 remain explicitly disclosed: the exact GHC fork commit for bindist job 2600313 and the stripped packages' exact Cabal solver versions. No Docker image build was run. No branch was pushed and no PR was opened. The result is blocked on verification, not approved for integration.
+The full retry gate passed on **`bb6b1001029db2c19f30b5759c27760211a2d93c`**, with no implementation or test edits. The worktree was temporarily detached at that exact commit, then returned to `fix/web-licence-notices` after completion. The branch's subsequent commits contain reports only. Nothing was pushed and no PR was opened.
 
-Status: BLOCKED
+The detached launcher was `setsid nohup zsh -lic '/home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 zsh -li /tmp/i13-lead-controller.zsh'`, with output redirected to the controller log and stdin from `/dev/null`. Confirmed PID: 2429628. It retained its place through the load guard and started the gate at 20:14 on 2026-10-28 (Asia/Saigon). All heavy commands ran in slot 2 at nice 19, with `CARGO_BUILD_JOBS=4`, `VITEST_MAX_WORKERS=4`, and the common pinned Node/pnpm/uv environment. The slot was released after completion, all owned gate processes exited, and Playwright closed its server on port 3100.
+
+- Full command transcript: `/tmp/i13-lead-full-gate.zsh`, invoked by `/tmp/i13-lead-controller.zsh`.
+- Full gate log: `/home/vchun/Codes/ariadshift-logs/i13-lead-full4.log`.
+- Controller log: `/home/vchun/Codes/ariadshift-logs/i13-lead-controller.log`.
+- Controller recorded: `Full gate (4 workers) rc=0`.
+- Both logs end with:
+
+```text
+=== bb6b1001029db2c19f30b5759c27760211a2d93c ALL GREEN
+```
+
+| Exact command | Outcome |
+| --- | --- |
+| `pnpm --filter @ariadshift/web exec vitest run test/account-jobs.test.tsx` | Passed all 20 tests in isolation. |
+| `pnpm --filter @ariadshift/web exec vitest run test/licenses-notices.test.tsx` | Passed all 6 notices tests, including both stale-lock production entry points. |
+| `pnpm --filter @ariadshift/web test` | Passed 24 files and 261 tests. |
+| `just web-ci` | Passed workspace typechecking, all 34 files and 356 workspace tests, static export, production build and notices check. |
+| `just web-licenses-check` | Passed, including actual WASM digest/unit IDs, Rust closure, pnpm lock and emitted client module versions. |
+| `CI=1 pnpm --filter @ariadshift/web exec playwright test e2e/licenses.spec.ts --project=chromium` | Passed both next-start and root/prefix static-export tests. |
+| `pnpm exec biome check apps/web/ packages/` | Passed; 174 files checked. |
+| `typos` | Passed across the workspace. |
+| `just lint-commits` | Passed, using `scripts/check-commits.sh origin/dev..HEAD`. |
+
+The gate also asserted that HEAD remained the expected exact SHA and that the seven implementation files had no diff from it.
+
+### Flake handling and compiler warnings
+
+The previous account-jobs failure did not recur in the isolated file, the app suite or the workspace suite with four workers. Before the run, `git diff bb6b100 origin/dev -- apps/web/test/account-jobs.test.tsx apps/web/src/components/account/job-row.tsx` was empty, with `origin/dev` at `be297272be0c41051407a4ff35ed95e8398d1cf2`. Per the lead's direction, the earlier failure is recorded as a load-dependent flake. The conditional three head isolation runs, fresh dev checkout test and two-worker full rerun were not triggered because there was no new account-jobs failure. No test was edited, skipped or weakened.
+
+During static export, Next 16.4.2 printed internal Turbopack panics at `crates/next-api/src/nft.rs:50:76` (`Option::unwrap()` on `None`). The export nevertheless completed and its post-export notices validation passed. The subsequent production build reported that the filesystem cache was deleted after the detected internal error, then completed with successful module evidence and post-build checks. These messages remain in the full log; they are an unresolved upstream/cache concern, not a hidden failing gate. No dependency or configuration workaround was applied. The two public-data uncertainties accepted by A-1635 remain disclosed; no full Docker image build was requested or run in this rerun.
+
+### Evidence from the completed production build
+
+A read-only extraction through `collectBundledNodeModulesPackages` / `next analyze export` found 32 exact client package versions, including `@bjorn3/browser_wasi_shim@0.4.2`. `computeWasmRustProductionClosure` resolved 351 third-party crate/version pairs for the browser target. The full versioned sets are saved in `/home/vchun/Codes/ariadshift-logs/i13-lead-dependency-evidence.json`. The gate compared these sets against the generated notices; this is current-build evidence, replacing the earlier standalone-analyzer limitation.
+
+```text
+@base-ui/react@1.9.0
+@base-ui/utils@0.5.0
+@better-auth/api-key@1.7.12
+@better-auth/core@1.7.12
+@better-auth/passkey@1.7.12
+@better-fetch/fetch@1.3.2
+@bjorn3/browser_wasi_shim@0.4.2
+@floating-ui/core@1.8.0
+@floating-ui/dom@1.8.0
+@floating-ui/react-dom@2.1.9
+@floating-ui/utils@0.2.12
+@noble/hashes@2.4.0
+@simplewebauthn/browser@13.3.0
+@swc/helpers@0.5.23
+@transloadit/prettier-bytes@2.0.0
+@uppy/aws-s3@6.3.0
+@uppy/core@6.3.0
+better-auth@1.7.12
+better-call@1.4.4
+class-variance-authority@0.7.1
+clsx@2.1.1
+defu@6.1.7
+lodash@4.18.1
+lucide-react@1.61.0
+mime-match@1.0.2
+namespace-emitter@2.0.1
+nanoid@6.0.2
+nanostores@1.5.5
+next@16.4.2
+tailwind-merge@3.7.0
+use-sync-external-store@1.7.0
+wildcard@1.1.2
+```
+
+Status: DONE_WITH_CONCERNS
