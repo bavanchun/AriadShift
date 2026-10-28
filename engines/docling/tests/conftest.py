@@ -21,6 +21,7 @@ TIMEOUT_S = 600
 def native_record_rows(site: Path, paths) -> str:
     rows = []
     for relative in paths:
+        relative = Path(relative).as_posix()
         source = site / relative
         digest = (
             base64.urlsafe_b64encode(hashlib.sha256(source.read_bytes()).digest())

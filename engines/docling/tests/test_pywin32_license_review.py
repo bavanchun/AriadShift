@@ -4,7 +4,7 @@ import hashlib
 import shutil
 import sys
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 from conftest import REPOSITORY, native_record_rows
@@ -196,7 +196,8 @@ def test_reviewed_record_receipt_cannot_change(reviewed):
     assert licenses.check([dist])
 
 
-def test_installer_relocation_and_metadata_preserve_original_payload_binding(reviewed):
+@pytest.mark.parametrize("path_type", [PurePosixPath, PureWindowsPath])
+def test_installer_relocation_and_metadata_preserve_original_payload_binding(reviewed, path_type):
     dist, info, _, _ = reviewed
     site = info.parent
     rows = (info / "RECORD").read_text(encoding="utf-8").splitlines(keepends=True)
@@ -208,7 +209,9 @@ def test_installer_relocation_and_metadata_preserve_original_payload_binding(rev
         rows = [row.replace(f"pywin32-312.data/scripts/{name},", f"bin/{name},") for row in rows]
         launcher = relocated.with_suffix("")
         launcher.write_text("# Installer-generated launcher\n", encoding="utf-8")
-        rows.append(native_record_rows(site, [launcher.relative_to(site)]))
+        launcher_rows = native_record_rows(site, [path_type(launcher.relative_to(site))])
+        assert launcher_rows.startswith(f"bin/{launcher.name},")
+        rows.append(launcher_rows)
     (info / "INSTALLER").write_bytes(b"uv")
     rows.append(native_record_rows(site, [f"{info.name}/INSTALLER"]))
     (info / "RECORD").write_text("".join(rows), encoding="utf-8")
