@@ -167,13 +167,13 @@ export default function LicensesPage() {
                   <li key={item.name}>
                     <code>{item.name}</code> — {item.version} (
                     <a className="underline" href={item.sourceUrl}>
-                      source
+                      {item.sourceLabel ?? "source"}
                     </a>
                     {item.secondaryUrl ? (
                       <>
                         {", "}
                         <a className="underline" href={item.secondaryUrl}>
-                          release
+                          {item.secondaryLabel ?? "release"}
                         </a>
                       </>
                     ) : null}
@@ -207,6 +207,7 @@ export default function LicensesPage() {
                         {")"}
                       </>
                     ) : null}
+                    {pkg.note ? ` — ${pkg.note}` : null}
                   </li>
                 ))}
                 {pandocSourceInventory.embeddedCSources.map((item) => (

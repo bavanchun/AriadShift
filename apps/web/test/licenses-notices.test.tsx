@@ -18,7 +18,11 @@ import {
   renderPandocSourceTxt,
   verifyPandocSourceInventory,
 } from "../pandoc-source-inventory.mjs";
-import { collectBundledNodeModulesPackages } from "../scripts/sync-notices.mjs";
+import {
+  generateWebRustNotices,
+  parseClientBundleAnalysis,
+  verifyCargoLockAgainstRustNotices,
+} from "../scripts/sync-notices.mjs";
 
 const webDir = path.resolve(import.meta.dirname, "..");
 const rootDir = path.resolve(webDir, "../..");
@@ -69,6 +73,7 @@ describe("web licence notices", () => {
     expect(html).toContain("plan.json");
     expect(html).toContain("index-state");
     expect(html).toContain("not verified from public data");
+    expect(html).toContain("The exact haskell-wasm/ghc fork commit used for the pandoc.wasm build");
     expect(html).toContain("at least three (3) years from the last distribution");
     expect(html).toContain(pandocSourceInventory.writtenOffer.contactUrl);
     expect(html).toContain(pandocSourceInventory.writtenOffer.repositoryUrl);
@@ -136,6 +141,15 @@ describe("web licence notices", () => {
 
     expect(() =>
       verifyPandocSourceInventory({
+        inventory: {
+          ...pandocSourceInventory,
+          archiveUrl: "https://github.com/jgm/pandoc/releases/download/3.11/pandoc-3.11.wasm.zip",
+        },
+      }),
+    ).toThrow(/asset URL/);
+
+    expect(() =>
+      verifyPandocSourceInventory({
         archiveSha256: "0".repeat(64),
       }),
     ).toThrow(/archive SHA-256/);
@@ -179,6 +193,19 @@ describe("web licence notices", () => {
 
     expect(() =>
       verifyPandocSourceInventory({
+        inventory: {
+          ...pandocSourceInventory,
+          embeddedPackages: pandocSourceInventory.embeddedPackages.map((pkg) =>
+            pkg.name === "aeson"
+              ? { ...pkg, sourceUrl: "https://github.com/example/project/tree/feature-123" }
+              : pkg,
+          ),
+        },
+      }),
+    ).toThrow(/Unstable or non-permalink/);
+
+    expect(() =>
+      verifyPandocSourceInventory({
         version: pandocSourceInventory.version,
         wasmBytes: Buffer.from("pandoc-3.12-inplace:Main\x00", "latin1"),
       }),
@@ -200,6 +227,9 @@ describe("web licence notices", () => {
     expect(sourceTxt).toContain("plan.json");
     expect(sourceTxt).toContain("index-state");
     expect(sourceTxt).toContain("not verified from public data");
+    expect(sourceTxt).toContain(
+      "The exact haskell-wasm/ghc fork commit used for the pandoc.wasm build",
+    );
     expect(sourceTxt).toContain("Compiler, WASI Libc, and Toolchain Sources");
     expect(sourceTxt).toContain("Linked Haskell Packages Verified in pandoc.wasm");
     expect(sourceTxt).toContain(
@@ -300,17 +330,49 @@ describe("web licence notices", () => {
     expect(jsNotices).toContain("sharp@0.35.5");
     expect(jsNotices).toContain("next@16.4.2");
     expect(jsNotices).toContain("react@19.3.1");
+  });
 
-    const bundledPackages = collectBundledNodeModulesPackages(webDir);
-    for (const pkgName of bundledPackages) {
-      expect(jsNotices, `bundled package ${pkgName} must be in JS notices`).toMatch(
-        new RegExp(`^${pkgName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}@\\d+`, "m"),
-      );
-    }
+  it("rejects an omitted transitive Rust dependency and an empty bundle graph", () => {
+    const notices = generateWebRustNotices(rootDir);
+    expect(notices).toContain("  - dtoa-short 0.3.5");
+    expect(() =>
+      verifyCargoLockAgainstRustNotices(
+        rootDir,
+        notices.replace(/^ {2}- dtoa-short 0\.3\.5.*\n/m, ""),
+      ),
+    ).toThrow(/dtoa-short 0\.3\.5/);
+    expect(() =>
+      verifyCargoLockAgainstRustNotices(rootDir, `${notices}\n  - unrelated-crate 1.0.0\n`),
+    ).toThrow(/unrelated-crate 1\.0\.0/);
+    expect(() =>
+      parseClientBundleAnalysis('{"type":"meta","schema_version":1,"selected_routes":1}\n'),
+    ).toThrow(/Empty or unrecognized/);
+    const evidence = [
+      { type: "meta", schema_version: 1, selected_routes: 1 },
+      {
+        type: "part",
+        filename: "[client-fs]/_next/static/chunks/test.js",
+        source_path:
+          "[project]/node_modules/.pnpm/@bjorn3+browser_wasi_shim@0.4.2/node_modules/@bjorn3/browser_wasi_shim/dist/index.js",
+      },
+    ]
+      .map((record) => JSON.stringify(record))
+      .join("\n");
+    expect(parseClientBundleAnalysis(evidence)).toEqual(["@bjorn3/browser_wasi_shim@0.4.2"]);
+    expect(() => parseClientBundleAnalysis("not JSON")).toThrow(/invalid JSON Lines/);
+    expect(() =>
+      parseClientBundleAnalysis(evidence.replace('"schema_version":1', '"schema_version":2')),
+    ).toThrow(/Empty or unrecognized/);
+    expect(() => parseClientBundleAnalysis(evidence.replace(".pnpm/", "unknown-layout/"))).toThrow(
+      /Unrecognized bundled package path/,
+    );
+    expect(() => parseClientBundleAnalysis(evidence.replace("@0.4.2/", "@unknown/"))).toThrow(
+      /Unrecognized package version/,
+    );
   });
 
   it("fails the real sync-notices.mjs script on stale notice files or stale lockfile fixtures", {
-    timeout: 20_000,
+    timeout: 90_000,
   }, () => {
     const fixtureDir = mkdtempSync(path.join(tmpdir(), "ariad-web-notices-"));
     try {
@@ -383,9 +445,17 @@ describe("web licence notices", () => {
 
       const realCargoLock = readFileSync(path.join(rootDir, "Cargo.lock"), "utf8");
       const realPnpmLock = readFileSync(path.join(rootDir, "pnpm-lock.yaml"), "utf8");
+      writeFileSync(path.join(rootFixture, "Cargo.lock"), realCargoLock, "utf8");
+      writeFileSync(path.join(rootFixture, "pnpm-lock.yaml"), realPnpmLock, "utf8");
+      const cleanFixture = spawnSync(
+        process.execPath,
+        [syncNoticesScript, "--root-dir", rootFixture],
+        { cwd: webDir, encoding: "utf8" },
+      );
+      expect(cleanFixture.status, cleanFixture.stderr).toBe(0);
+      expect(existsSync(path.join(rootFixture, "apps/web/public/notices/NOTICE.txt"))).toBe(true);
 
       // 1. Stale pnpm-lock.yaml (missing clsx@2.1.1 from snapshots -> drifts from installed node_modules)
-      writeFileSync(path.join(rootFixture, "Cargo.lock"), realCargoLock, "utf8");
       writeFileSync(
         path.join(rootFixture, "pnpm-lock.yaml"),
         realPnpmLock.replace("  clsx@2.1.1: {}", "  clsx@9.9.9: {}"),
@@ -398,6 +468,16 @@ describe("web licence notices", () => {
       );
       expect(stalePnpmSync.status).not.toBe(0);
       expect(stalePnpmSync.stderr).toMatch(/pnpm-lock\.yaml/);
+
+      for (const script of ["build", "export"]) {
+        const result = spawnSync("pnpm", ["run", script], {
+          cwd: webDir,
+          encoding: "utf8",
+          env: { ...process.env, ARIADSHIFT_ROOT_DIR: rootFixture },
+        });
+        expect(result.status, `${script}: ${result.stderr}`).not.toBe(0);
+        expect(result.stderr).toMatch(/JavaScript notices cannot be checked: pnpm-lock\.yaml/);
+      }
 
       // 2. Stale Cargo.lock (version bump in Cargo.lock not reflected in THIRD_PARTY_LICENSES)
       writeFileSync(path.join(rootFixture, "pnpm-lock.yaml"), realPnpmLock, "utf8");

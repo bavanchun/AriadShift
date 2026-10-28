@@ -4,7 +4,7 @@ import { copyFileSync } from "node:fs";
 import path from "node:path";
 
 const web = path.join(import.meta.dirname, "..");
-const build = spawnSync("pnpm", ["exec", "next", "build"], {
+const build = spawnSync("pnpm", ["exec", "next", "build", "--analyze"], {
   cwd: web,
   stdio: "inherit",
   shell: process.platform === "win32",

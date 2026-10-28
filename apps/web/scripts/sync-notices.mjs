@@ -1,6 +1,8 @@
-// Copies NOTICE and THIRD_PARTY_LICENSES into public/notices/, generates the
-// web JavaScript dependency notices from the installed production graph, and
-// validates notices, /licenses, Pandoc SOURCE.txt, and bundles against lockfiles.
+// Copies NOTICE and filters THIRD_PARTY_LICENSES to the browser-WASM production
+// closure in public/notices/, generates the web JavaScript dependency notices
+// from the installed production graph, and validates notices, /licenses, Pandoc
+// SOURCE.txt, and Turbopack module graph evidence against lockfiles.
+import { execFileSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -20,9 +22,12 @@ import {
 } from "../pandoc-source-inventory.mjs";
 
 const defaultWebDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const defaultRootDir = path.resolve(defaultWebDir, "../..");
-const defaultOutDir = path.join(defaultWebDir, "public/notices");
-const defaultPagePath = path.join(defaultWebDir, "src/app/licenses/page.tsx");
+const repoRootDir = path.resolve(defaultWebDir, "../..");
+const defaultRootDir = process.env.ARIADSHIFT_ROOT_DIR
+  ? path.resolve(process.env.ARIADSHIFT_ROOT_DIR)
+  : repoRootDir;
+const defaultOutDir = path.join(defaultRootDir, "apps/web/public/notices");
+const defaultPagePath = path.join(defaultRootDir, "apps/web/src/app/licenses/page.tsx");
 
 // Monorepo subpackages whose published tarballs omit the root LICENSE file
 // that accompanies the main package in the same dependency graph.
@@ -298,7 +303,9 @@ export function parsePnpmLockProdPackages(lockText) {
     visitedSnapshots.add(key);
     const snap = snapshots.get(key);
     if (!snap) {
-      throw new Error(`pnpm-lock.yaml is missing snapshot for ${key}`);
+      throw new Error(
+        `JavaScript notices cannot be checked: pnpm-lock.yaml is missing snapshot for ${key}`,
+      );
     }
     const atIdx = key.indexOf("@", key.startsWith("@") ? 1 : 0);
     const name = key.slice(0, atIdx);
@@ -326,7 +333,9 @@ export function parsePnpmLockProdPackages(lockText) {
     visitedImporters.add(impPath);
     const imp = importers.get(impPath);
     if (!imp) {
-      throw new Error(`pnpm-lock.yaml is missing importer ${impPath}`);
+      throw new Error(
+        `JavaScript notices cannot be checked: pnpm-lock.yaml is missing importer ${impPath}`,
+      );
     }
     for (const [depName, depVer] of [
       ...Object.entries(imp.dependencies),
@@ -362,57 +371,130 @@ export function verifyPnpmLockAgainstJsNotices(rootDir, jsNoticesText) {
   }
 }
 
-function parseDevCargoTomlDeps(tomlText) {
-  const deps = new Set();
-  let inDev = false;
-  for (const line of tomlText.split(/\r?\n/)) {
-    const sec = /^\[([^\]]+)\]/.exec(line)?.[1];
-    if (sec) {
-      inDev = sec === "dev-dependencies" || sec.endsWith(".dev-dependencies");
-      continue;
-    }
-    if (inDev) {
-      const match = /^([a-zA-Z0-9_-]+)(?:\.workspace)?\s*=/.exec(line);
-      if (match) {
-        deps.add(match[1]);
-      }
+export function computeWasmRustProductionClosure(rootDir = defaultRootDir) {
+  const manifestPath = existsSync(path.join(rootDir, "Cargo.toml"))
+    ? path.join(rootDir, "Cargo.toml")
+    : path.join(repoRootDir, "Cargo.toml");
+  const treeOutput = execFileSync(
+    "cargo",
+    [
+      "tree",
+      "--manifest-path",
+      manifestPath,
+      "--locked",
+      "-p",
+      "ariad-wasm",
+      "-p",
+      "ariad-typst",
+      "--target",
+      "wasm32-unknown-unknown",
+      "--edges",
+      "normal",
+      "--prefix",
+      "none",
+      "--format",
+      "{p}",
+    ],
+    { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+  );
+  const closure = new Set();
+  for (const line of treeOutput.split(/\r?\n/)) {
+    const match = /^([a-zA-Z0-9_-]+) v(\d+\.\d+\.\d+[^\s]*)/.exec(line.trim());
+    if (match && !["ariad-core", "ariad-wasm", "ariad-typst"].includes(match[1])) {
+      closure.add(`${match[1]} ${match[2]}`);
     }
   }
-  return deps;
-}
-
-export function verifyCargoLockAgainstRustNotices(rootDir, rustNoticesText) {
+  if (closure.size === 0) {
+    throw new Error("cargo tree returned an empty wasm32-unknown-unknown production closure");
+  }
   const cargoLock = readFileSync(path.join(rootDir, "Cargo.lock"), "utf8");
-  const devDeps = new Set();
-  for (const rel of [
-    "crates/ariad-core/Cargo.toml",
-    "crates/ariad-wasm/Cargo.toml",
-    "crates/ariad-typst/Cargo.toml",
-  ]) {
-    const full = path.join(rootDir, rel);
-    if (existsSync(full)) {
-      for (const dep of parseDevCargoTomlDeps(readFileSync(full, "utf8"))) {
-        devDeps.add(dep);
-      }
-    }
-  }
-
-  const byName = new Map();
   const lockPackages = new Set();
   for (const block of cargoLock.split(/\r?\n\[\[package\]\]\r?\n/).slice(1)) {
     const name = /^name = "([^"]+)"/m.exec(block)?.[1];
     const version = /^version = "([^"]+)"/m.exec(block)?.[1];
-    const depsMatch = /^dependencies = \[([\s\S]*?)^\]/m.exec(block);
-    const deps = depsMatch ? [...depsMatch[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
     if (name && version) {
       lockPackages.add(`${name} ${version}`);
-      if (!byName.has(name)) {
-        byName.set(name, []);
-      }
-      byName.get(name).push({ name, version, deps });
     }
   }
+  const missingInCargoLock = [...closure].filter((entry) => !lockPackages.has(entry)).sort();
+  if (missingInCargoLock.length > 0) {
+    throw new Error(
+      `Cargo.lock disagrees with wasm32-unknown-unknown production dependency closure (missing from Cargo.lock: ${missingInCargoLock.slice(0, 10).join(", ")})`,
+    );
+  }
+  return closure;
+}
 
+export function generateWebRustNotices(rootDir = defaultRootDir) {
+  const wasmClosure = computeWasmRustProductionClosure(rootDir);
+  const raw = readFileSync(path.join(rootDir, "THIRD_PARTY_LICENSES"), "utf8");
+  const separator =
+    "================================================================================";
+  const parts = raw.split(separator);
+  const keptSections = [];
+  const tocOrder = [];
+  const tocCounts = new Map();
+
+  for (let index = 1; index < parts.length; index += 1) {
+    const section = parts[index];
+    if (!section?.trim()) {
+      continue;
+    }
+    const licMatch = /License:\s*([^\n]+)\s*\(([^)]+)\)/.exec(section);
+    const usedByMatches = [
+      ...section.matchAll(/^ {2}- ([a-zA-Z0-9_-]+ \d+\.\d+\.\d+[^\s(]*).*$/gm),
+    ];
+    const keptLines = usedByMatches.filter((m) => wasmClosure.has(m[1])).map((m) => m[0]);
+    if (keptLines.length === 0) {
+      continue;
+    }
+    if (licMatch) {
+      const label = `${licMatch[1].trim()} (${licMatch[2].trim()})`;
+      if (!tocCounts.has(label)) {
+        tocOrder.push(label);
+        tocCounts.set(label, 0);
+      }
+      tocCounts.set(label, tocCounts.get(label) + keptLines.length);
+    }
+    const updatedSection = section.replace(
+      /Used by:\r?\n(?: {2}- [^\r\n]+\r?\n)+/,
+      `Used by:\n${keptLines.join("\n")}\n`,
+    );
+    keptSections.push(updatedSection);
+  }
+
+  const tocLines = tocOrder
+    .sort((left, right) => {
+      const diff = (tocCounts.get(right) ?? 0) - (tocCounts.get(left) ?? 0);
+      return diff !== 0 ? diff : left.localeCompare(right, "en");
+    })
+    .map((label) => `- ${label}: ${tocCounts.get(label)} component(s)`);
+
+  const header = [
+    "Third-Party Licenses for AriadShift (Browser WebAssembly Crates)",
+    "================================================================",
+    "",
+    "This document contains licensing notices and terms for third-party Rust",
+    "crates in the wasm32-unknown-unknown production dependency closure of",
+    "ariad-wasm and ariad-typst, including their dependencies.",
+    "",
+    "Table of Contents",
+    "-----------------",
+    ...tocLines,
+    "",
+    separator,
+  ].join("\n");
+
+  const output = normalize(`${header}${keptSections.join(separator)}${separator}\n`);
+  verifyCargoLockAgainstRustNotices(rootDir, output, wasmClosure);
+  return output;
+}
+
+export function verifyCargoLockAgainstRustNotices(
+  rootDir,
+  rustNoticesText,
+  wasmClosure = computeWasmRustProductionClosure(rootDir),
+) {
   const listedSet = new Set(
     [...rustNoticesText.matchAll(/^ {2}- ([a-zA-Z0-9_-]+ \d+\.\d+\.\d+[^\s(]*)/gm)].map(
       (match) => match[1],
@@ -421,117 +503,83 @@ export function verifyCargoLockAgainstRustNotices(rootDir, rustNoticesText) {
   if (listedSet.size === 0) {
     throw new Error("THIRD_PARTY_LICENSES contains no crate entries");
   }
-  const notInLock = [...listedSet].filter((entry) => !lockPackages.has(entry)).sort();
-  if (notInLock.length > 0) {
+  const missingFromNotices = [...wasmClosure].filter((entry) => !listedSet.has(entry)).sort();
+  const extraInNotices = [...listedSet].filter((entry) => !wasmClosure.has(entry)).sort();
+  if (missingFromNotices.length > 0 || extraInNotices.length > 0) {
     throw new Error(
-      `THIRD_PARTY_LICENSES disagrees with Cargo.lock (entries not in Cargo.lock: ${notInLock.slice(0, 10).join(", ")})`,
-    );
-  }
-
-  const missingWasmDeps = [];
-  for (const rootName of ["ariad-core", "ariad-wasm", "ariad-typst"]) {
-    const pkgs = byName.get(rootName) ?? [];
-    if (pkgs.length === 0) {
-      throw new Error(`Cargo.lock is missing workspace crate ${rootName}`);
-    }
-    for (const pkg of pkgs) {
-      for (const depSpec of pkg.deps) {
-        const [depName, depVer] = depSpec.split(" ");
-        if (depName.startsWith("ariad-") || devDeps.has(depName)) {
-          continue;
-        }
-        const candidates = (byName.get(depName) ?? []).filter(
-          (cand) => !depVer || cand.version === depVer || cand.version.startsWith(`${depVer}.`),
-        );
-        if (candidates.length === 0) {
-          throw new Error(`Cargo.lock is missing dependency ${depSpec} of ${rootName}`);
-        }
-        for (const cand of candidates) {
-          const id = `${cand.name} ${cand.version}`;
-          if (!listedSet.has(id)) {
-            missingWasmDeps.push(id);
-          }
-        }
-      }
-    }
-  }
-  if (missingWasmDeps.length > 0) {
-    throw new Error(
-      `THIRD_PARTY_LICENSES is missing Cargo.lock dependencies for browser WASM crates: ${missingWasmDeps.join(", ")}`,
+      `Web Rust notices disagree with wasm32-unknown-unknown production dependency closure and Cargo.lock (missing: ${missingFromNotices.slice(0, 10).join(", ") || "none"}; extra: ${extraInNotices.slice(0, 10).join(", ") || "none"})`,
     );
   }
 }
 
 export function collectBundledNodeModulesPackages(webDir) {
+  let output;
+  try {
+    output = execFileSync("pnpm", ["exec", "next", "analyze", "export"], {
+      cwd: webDir,
+      encoding: "utf8",
+      maxBuffer: 128 * 1024 * 1024,
+    });
+  } catch (error) {
+    throw new Error(
+      `Cannot read Next.js bundle analysis; run next build --analyze: ${error.message}`,
+    );
+  }
+  return parseClientBundleAnalysis(output);
+}
+
+export function parseClientBundleAnalysis(output) {
   const bundled = new Set();
-  const pnpmPathRe =
-    /node_modules\/\.pnpm\/[^/]+\/node_modules\/((?:@[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+)|(?:[a-zA-Z0-9._-]+))\//g;
-
-  function isExcludedBundleReference(pkgName) {
-    if (pkgName === "shared" || pkgName.startsWith("@ariadshift/")) {
-      return true;
+  let schema = false;
+  let clientParts = 0;
+  for (const line of output.split(/\r?\n/)) {
+    if (!line) continue;
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      throw new Error("Unrecognized Next.js bundle analysis: invalid JSON Lines");
     }
-    // Host-OS-specific native Node add-on binaries traced into .nft.json for server image optimization.
-    if (
-      pkgName.startsWith("@img/sharp-libvips-") ||
-      pkgName.startsWith("@img/sharp-linux-") ||
-      pkgName.startsWith("@img/sharp-darwin-") ||
-      pkgName.startsWith("@img/sharp-win32-") ||
-      pkgName.startsWith("@img/sharp-wasm32") ||
-      pkgName.startsWith("@next/swc-")
-    ) {
-      return true;
+    if (record.type === "meta") {
+      schema = record.schema_version === 1 && record.selected_routes > 0;
     }
-    return false;
+    if (record.type !== "part" || !record.filename?.startsWith("[client-fs]/")) continue;
+    clientParts += 1;
+    const source = record.source_path;
+    if (typeof source !== "string") {
+      throw new Error("Unrecognized client module in Next.js bundle analysis");
+    }
+    if (!source.includes("/node_modules/")) continue;
+    const match = /\/node_modules\/\.pnpm\/([^/]+)\/node_modules\/(@[^/]+\/[^/]+|[^/]+)\//.exec(
+      source,
+    );
+    if (!match) throw new Error(`Unrecognized bundled package path: ${source}`);
+    const [, folder, name] = match;
+    const prefix = `${name.replace("/", "+")}@`;
+    if (!folder.startsWith(prefix)) throw new Error(`Unrecognized package version: ${source}`);
+    const version = folder.slice(prefix.length).split("_")[0];
+    if (!/^\d+\.\d+\.\d+/.test(version)) {
+      throw new Error(`Unrecognized package version: ${source}`);
+    }
+    bundled.add(`${name}@${version}`);
   }
-
-  function walk(dir) {
-    if (!existsSync(dir)) {
-      return;
-    }
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (
-          entry.name === "cache" ||
-          entry.name === "dev" ||
-          entry.name === "build" ||
-          entry.name === "types"
-        ) {
-          continue;
-        }
-        walk(fullPath);
-      } else if (
-        entry.name.endsWith(".nft.json") ||
-        entry.name.endsWith(".map") ||
-        entry.name.endsWith("_client-reference-manifest.js") ||
-        entry.name.endsWith(".js")
-      ) {
-        const text = readFileSync(fullPath, "utf8");
-        for (const match of text.matchAll(pnpmPathRe)) {
-          const pkgName = match[1];
-          if (pkgName && !isExcludedBundleReference(pkgName)) {
-            bundled.add(pkgName);
-          }
-        }
-      }
-    }
+  const result = [...bundled].sort();
+  if (
+    !schema ||
+    !clientParts ||
+    !result.some((pkg) => pkg.startsWith("@bjorn3/browser_wasi_shim@"))
+  ) {
+    throw new Error("Empty or unrecognized Next.js client bundle analysis, or WASI shim missing");
   }
-
-  walk(path.join(webDir, ".next"));
-  walk(path.join(webDir, "out/_next"));
-  return [...bundled].sort();
+  return result;
 }
 
 export function verifyBundleAgainstJsNotices(webDir, jsNoticesText) {
   const bundledPackages = collectBundledNodeModulesPackages(webDir);
-  if (bundledPackages.length === 0) {
-    return;
-  }
-  const noticePackageNames = new Set(
-    [...jsNoticesText.matchAll(/^([^\n=]+)@\d+[^\n]*\n=+/gm)].map((match) => match[1]),
+  const noticePackages = new Set(
+    [...jsNoticesText.matchAll(/^([^\n=]+@\d+[^\n]*)\n=+/gm)].map((match) => match[1]),
   );
-  const missing = bundledPackages.filter((pkg) => !noticePackageNames.has(pkg));
+  const missing = bundledPackages.filter((pkg) => !noticePackages.has(pkg));
   if (missing.length > 0) {
     throw new Error(
       `Production bundle references node_modules packages missing from THIRD_PARTY_JS_LICENSES.txt: ${missing.join(", ")}`,
@@ -564,9 +612,7 @@ export function generateWebNoticeTxt(rootDir = defaultRootDir, inventory = pando
 export function expectedNotices(rootDir = defaultRootDir) {
   return {
     "NOTICE.txt": generateWebNoticeTxt(rootDir),
-    "THIRD_PARTY_LICENSES.txt": normalize(
-      readFileSync(path.join(rootDir, "THIRD_PARTY_LICENSES"), "utf8"),
-    ),
+    "THIRD_PARTY_LICENSES.txt": generateWebRustNotices(rootDir),
     "THIRD_PARTY_JS_LICENSES.txt": generateWebJsNotices(rootDir),
   };
 }
@@ -709,15 +755,17 @@ export function validateNoticesAndLockfiles({
   rootDir = defaultRootDir,
   pagePath = defaultPagePath,
   verifyWasmBinary = false,
+  checkBundle = false,
 } = {}) {
   verifyLicensesPage(rootDir, pagePath, { verifyWasmBinary });
   const notices = expectedNotices(rootDir);
-  verifyCargoLockAgainstRustNotices(rootDir, notices["THIRD_PARTY_LICENSES.txt"]);
   verifyPnpmLockAgainstJsNotices(rootDir, notices["THIRD_PARTY_JS_LICENSES.txt"]);
-  verifyBundleAgainstJsNotices(
-    path.join(rootDir, "apps/web"),
-    notices["THIRD_PARTY_JS_LICENSES.txt"],
-  );
+  if (checkBundle) {
+    verifyBundleAgainstJsNotices(
+      path.join(rootDir, "apps/web"),
+      notices["THIRD_PARTY_JS_LICENSES.txt"],
+    );
+  }
   return notices;
 }
 
@@ -751,6 +799,7 @@ export function checkNotices({
     rootDir,
     pagePath,
     verifyWasmBinary: isDefaultNoticesDir,
+    checkBundle: isDefaultNoticesDir,
   });
   if (!checkFiles) {
     return;

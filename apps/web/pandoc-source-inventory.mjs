@@ -129,8 +129,8 @@ export const pandocSourceInventory = {
       "Cabal index-state pin — not published in cabal.project or Makefile at tag 3.12",
     ],
     unverifiedFacts: [
-      "Exact wasm32-wasi-cabal solver versions for the 16 direct build-depends declared in pandoc.cabal and pandoc-lua-engine.cabal whose GHC unit-id strings were stripped by wasm-opt -Oz: not verified from public data because upstream publishes no cabal.project.freeze, plan.json, or Cabal index-state pin for the wasm32-wasi build.",
-      "Exact haskell-wasm/ghc fork commit SHA for GitLab CI job 2600313 (ghc-9.14.1.20260731-wasm32-wasi in bindist 20260731T193144): not verified from public data because ghc-wasm-bindists/meta.json records only the GitLab CI job ID (2600313) and bindist tag (20260731T193144), and gitlab.haskell.org's job detail API requires authentication.",
+      "The exact haskell-wasm/ghc fork commit used for the pandoc.wasm build (bindist job 2600313, ghc-9.14.1.20260731-wasm32-wasi in bindist 20260731T193144) is not verified from public data: ghc-wasm-bindists/meta.json records only the GitLab CI job ID (2600313) and bindist tag (20260731T193144), and gitlab.haskell.org's job detail API requires authentication. The ghc-9.14.1-release link below points to the upstream GHC 9.14.1 release tree (and its libraries/base and libraries/deepseq boot libraries), not the unverified haskell-wasm/ghc fork commit.",
+      "The exact wasm32-wasi-cabal solver versions for the 16 direct build-depends declared in pandoc.cabal and pandoc-lua-engine.cabal whose GHC unit-id strings were stripped by wasm-opt -Oz are not verified from public data because upstream publishes no cabal.project.freeze, plan.json, or Cabal index-state pin for the wasm32-wasi build.",
     ],
   },
   writtenOffer: {
@@ -145,16 +145,21 @@ export const pandocSourceInventory = {
       name: "ghc-wasm-meta",
       version:
         "commit ded427a58615ce21597f945af25c778f9107e5f7 (pinned in jgm/pandoc 3.12 flake.lock)",
+      sourceLabel: "pinned commit source",
       sourceUrl:
         "https://gitlab.haskell.org/haskell-wasm/ghc-wasm-meta/-/tree/ded427a58615ce21597f945af25c778f9107e5f7",
+      secondaryLabel: "bindist metadata",
       secondaryUrl:
         "https://github.com/haskell-wasm/ghc-wasm-bindists/blob/24b983e1eb21c2be725c114d13c4d044a67751a3/meta.json",
     },
     {
       name: "wasm32-wasi-ghc (GHC + RTS + boot libraries)",
       version:
-        "9.14.1.20260731 (boot library base-4.22.1.0-d986 verified in pandoc.wasm; bindist 20260731T193144, GitLab CI job 2600313; exact haskell-wasm/ghc fork commit SHA not verified from public data)",
+        "9.14.1.20260731 (boot library base-4.22.1.0-d986 verified in pandoc.wasm; bindist 20260731T193144, GitLab CI job 2600313; exact haskell-wasm/ghc fork commit used for the pandoc.wasm build in bindist job 2600313 is not verified from public data)",
+      sourceLabel:
+        "upstream GHC 9.14.1 release tree (not the unverified haskell-wasm/ghc fork commit)",
       sourceUrl: "https://gitlab.haskell.org/ghc/ghc/-/tree/ghc-9.14.1-release",
+      secondaryLabel: "wasm32-wasi bindist release 20260731T193144",
       secondaryUrl:
         "https://github.com/haskell-wasm/ghc-wasm-bindists/releases/tag/20260731T193144",
     },
@@ -162,45 +167,57 @@ export const pandocSourceInventory = {
       name: "wasi-sdk",
       version:
         "29.0 (haskell-wasm/wasi-sdk commit e0f951c97ebf7aa3b31cc6fd4b472e54c42f4061; bindist 20251219T213239)",
+      sourceLabel: "pinned commit source",
       sourceUrl:
         "https://gitlab.haskell.org/haskell-wasm/wasi-sdk/-/tree/e0f951c97ebf7aa3b31cc6fd4b472e54c42f4061",
+      secondaryLabel: "upstream release tag",
       secondaryUrl: "https://github.com/WebAssembly/wasi-sdk/releases/tag/wasi-sdk-29",
     },
     {
       name: "wasi-libc",
       version: "commit ccb6b3d394fdfdfc0fdf855a4d2c99268842de30 (wasi-sdk-29.0 submodule)",
+      sourceLabel: "pinned commit source",
       sourceUrl:
         "https://gitlab.haskell.org/haskell-wasm/wasi-libc/-/tree/ccb6b3d394fdfdfc0fdf855a4d2c99268842de30",
+      secondaryLabel: "bindist release",
       secondaryUrl:
         "https://github.com/haskell-wasm/ghc-wasm-bindists/releases/tag/20251219T213239",
     },
     {
       name: "llvm-project (clang / wasm-ld / compiler-rt)",
       version: "commit 153c21c0d8f33889a0b4d8e7b6944830b50bf012 (wasi-sdk-29.0 submodule)",
+      sourceLabel: "pinned commit source",
       sourceUrl:
         "https://gitlab.haskell.org/haskell-wasm/llvm-project/-/tree/153c21c0d8f33889a0b4d8e7b6944830b50bf012",
+      secondaryLabel: "bindist release",
       secondaryUrl:
         "https://github.com/haskell-wasm/ghc-wasm-bindists/releases/tag/20251219T213239",
     },
     {
       name: "libffi-wasm",
       version: "commit e2dbdd8ded953e7a4df42c192da65ab36b9f0345 (bindist 20250310T060803)",
+      sourceLabel: "pinned commit source",
       sourceUrl:
         "https://gitlab.haskell.org/haskell-wasm/libffi-wasm/-/tree/e2dbdd8ded953e7a4df42c192da65ab36b9f0345",
+      secondaryLabel: "bindist release",
       secondaryUrl:
         "https://github.com/haskell-wasm/ghc-wasm-bindists/releases/tag/20250310T060803",
     },
     {
       name: "cabal-install (wasm32-wasi-cabal)",
       version: "3.14.2.0",
+      sourceLabel: "release tag",
       sourceUrl: "https://github.com/haskell/cabal/releases/tag/cabal-install-v3.14.2.0",
+      secondaryLabel: "Hackage tarball",
       secondaryUrl:
         "https://hackage.haskell.org/package/cabal-install-3.14.2.0/cabal-install-3.14.2.0.tar.gz",
     },
     {
       name: "binaryen (wasm-opt -Oz)",
       version: "version_133",
+      sourceLabel: "release tag",
       sourceUrl: "https://github.com/WebAssembly/binaryen/releases/tag/version_133",
+      secondaryLabel: "bindist release",
       secondaryUrl: "https://github.com/haskell-wasm/binaryen/releases/tag/version_133",
     },
   ],
@@ -247,7 +264,8 @@ export const pandocSourceInventory = {
       name: "base",
       version: "4.22.1.0",
       unitIds: ["base-4.22.1.0-d986"],
-      sourceUrl: "https://hackage.haskell.org/package/base-4.22.1.0/base-4.22.1.0.tar.gz",
+      sourceUrl: "https://gitlab.haskell.org/ghc/ghc/-/tree/ghc-9.14.1-release/libraries/base",
+      note: "GHC 9.14.1 boot library in upstream ghc-9.14.1-release/libraries/base; exact haskell-wasm/ghc fork commit used for bindist job 2600313 is not verified from public data",
     },
     {
       name: "base64-bytestring",
@@ -869,13 +887,13 @@ export const pandocSourceInventory = {
     },
     {
       name: "blaze-html",
-      constraint: ">= 0.9 && < 0.10",
-      sourceUrl: "https://hackage.haskell.org/package/blaze-html",
+      constraint: ">= 0.9 && < 0.10 (declared in pandoc.cabal at tag 3.12)",
+      sourceUrl: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
     },
     {
       name: "data-default",
-      constraint: ">= 0.4 && < 0.9",
-      sourceUrl: "https://hackage.haskell.org/package/data-default",
+      constraint: ">= 0.4 && < 0.9 (declared in pandoc.cabal at tag 3.12)",
+      sourceUrl: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
     },
     {
       name: "deepseq",
@@ -888,33 +906,33 @@ export const pandocSourceInventory = {
     },
     {
       name: "network",
-      constraint: ">= 2.6 && < 3.3",
-      sourceUrl: "https://hackage.haskell.org/package/network",
+      constraint: ">= 2.6 && < 3.3 (declared in pandoc.cabal at tag 3.12)",
+      sourceUrl: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
     },
     {
       name: "random",
-      constraint: ">= 1.2 && < 1.4",
-      sourceUrl: "https://hackage.haskell.org/package/random",
+      constraint: ">= 1.2 && < 1.4 (declared in pandoc.cabal at tag 3.12)",
+      sourceUrl: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
     },
     {
       name: "syb",
-      constraint: ">= 0.1 && < 0.8",
-      sourceUrl: "https://hackage.haskell.org/package/syb",
+      constraint: ">= 0.1 && < 0.8 (declared in pandoc.cabal at tag 3.12)",
+      sourceUrl: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
     },
     {
       name: "text-builder",
-      constraint: ">= 1.0 && < 1.1",
-      sourceUrl: "https://hackage.haskell.org/package/text-builder",
+      constraint: ">= 1.0 && < 1.1 (declared in pandoc.cabal at tag 3.12)",
+      sourceUrl: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
     },
     {
       name: "text-conversions",
-      constraint: ">= 0.3 && < 0.4",
-      sourceUrl: "https://hackage.haskell.org/package/text-conversions",
+      constraint: ">= 0.3 && < 0.4 (declared in pandoc.cabal at tag 3.12)",
+      sourceUrl: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
     },
     {
       name: "unicode-data",
-      constraint: ">= 0.6 && < 0.10",
-      sourceUrl: "https://hackage.haskell.org/package/unicode-data",
+      constraint: ">= 0.6 && < 0.10 (declared in pandoc.cabal at tag 3.12)",
+      sourceUrl: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
     },
   ],
 };
@@ -1020,12 +1038,36 @@ export function verifyPandocSourceInventory({
     "plan.json",
     "index-state",
     "not verified from public data",
+    "haskell-wasm/ghc fork commit",
+    "2600313",
   ]) {
     if (!freezeSummary.includes(requiredToken)) {
       throw new Error(
         `Pandoc freezeAndLockFiles disclosure is missing required token: ${requiredToken}`,
       );
     }
+  }
+
+  const ghcToolchain = inventory.toolchain.find((item) => item.name.startsWith("wasm32-wasi-ghc"));
+  if (
+    !ghcToolchain?.version.includes("not verified from public data") ||
+    !ghcToolchain?.sourceLabel?.includes("not the unverified haskell-wasm/ghc fork commit")
+  ) {
+    throw new Error(
+      "Pandoc wasm32-wasi-ghc toolchain entry must qualify the upstream GHC release link and state that the exact haskell-wasm/ghc fork commit is not verified from public data",
+    );
+  }
+
+  const basePkg = inventory.embeddedPackages.find((pkg) => pkg.name === "base");
+  if (
+    !basePkg ||
+    basePkg.sourceUrl.includes("hackage.haskell.org/package/base-4.22.1.0") ||
+    !basePkg.sourceUrl.includes("ghc-9.14.1-release/libraries/base") ||
+    !basePkg.note?.includes("not verified from public data")
+  ) {
+    throw new Error(
+      "Pandoc base-4.22.1.0 boot-library entry must link the verified GHC release libraries/base tree with fork qualification",
+    );
   }
 
   const offerText = inventory.writtenOffer?.text ?? "";
@@ -1040,7 +1082,10 @@ export function verifyPandocSourceInventory({
     );
   }
 
-  const allUrls = [
+  const stableSourceUrlRe =
+    /^https:\/\/(?:github\.com\/[^/]+\/[^/]+\/(?:releases\/(?:tag|download)\/|(?:blob|tree|commit)\/|archive\/refs\/tags\/)|gitlab\.haskell\.org\/[^/]+\/[^/]+\/-\/(?:tree|blob|commit)\/|hackage\.haskell\.org\/package\/[A-Za-z0-9-]+-\d+(?:\.\d+)*\/[A-Za-z0-9-]+-\d+(?:\.\d+)*\.tar\.gz$)/;
+
+  const sourcePermalinks = [
     inventory.releaseTagUrl,
     inventory.archiveUrl,
     ...Object.values(inventory.sourceUrls),
@@ -1048,9 +1093,6 @@ export function verifyPandocSourceInventory({
     ...inventory.freezeAndLockFiles.publishedFiles.flatMap((item) =>
       [item.url, item.commitUrl].filter(Boolean),
     ),
-    inventory.writtenOffer.contactUrl,
-    inventory.writtenOffer.repositoryUrl,
-    inventory.writtenOffer.securityAdvisoriesUrl,
     ...inventory.toolchain.flatMap((item) => [item.sourceUrl, item.secondaryUrl].filter(Boolean)),
     ...inventory.embeddedPackages.flatMap((item) =>
       [item.sourceUrl, item.patchUrl].filter(Boolean),
@@ -1058,13 +1100,32 @@ export function verifyPandocSourceInventory({
     ...inventory.embeddedCSources.map((item) => item.sourceUrl),
     ...inventory.unfrozenCabalDependencies.map((item) => item.sourceUrl),
   ];
-  for (const url of allUrls) {
+
+  for (const url of sourcePermalinks) {
+    const ref = /\/(?:blob|tree|commit|tag|download|tags)\/([^/]+)/.exec(url)?.[1];
+    const versionedRef =
+      ref &&
+      /^(?:[0-9a-f]{40}|v?\d+(?:\.\d+)+(?:[-+][\w.-]+)?|(?:ghc-|lua-|cabal-install-v|wasi-sdk-|version_)\d[\w.-]*|\d{8}T\d{6})$/i.test(
+        ref.replace(/\.tar\.gz$/, ""),
+      );
+    const versionedXmlTag = ref === "xml-conduit" && /\/xml-conduit\/\d/.test(url);
     if (
       typeof url !== "string" ||
-      !url.startsWith("https://") ||
-      /\/(?:blob|tree)\/(?:main|master|dev|HEAD)\b/.test(url)
+      !stableSourceUrlRe.test(url) ||
+      (ref && !versionedRef && !versionedXmlTag) ||
+      /\/(?:blob|tree|commit|tag|download)\/(?:main|master|dev|HEAD)(?:\/|$)/i.test(url)
     ) {
-      throw new Error(`Unstable or non-HTTPS URL in Pandoc source inventory: ${url}`);
+      throw new Error(`Unstable or non-permalink source URL in Pandoc source inventory: ${url}`);
+    }
+  }
+
+  for (const url of [
+    inventory.writtenOffer.contactUrl,
+    inventory.writtenOffer.repositoryUrl,
+    inventory.writtenOffer.securityAdvisoriesUrl,
+  ]) {
+    if (typeof url !== "string" || !url.startsWith("https://")) {
+      throw new Error(`Invalid contact URL in Pandoc written offer: ${url}`);
     }
   }
 
@@ -1126,14 +1187,14 @@ export function renderPandocSourceTxt(inventory = pandocSourceInventory) {
     "==========================================",
     ...inventory.toolchain.map(
       (item) =>
-        `- ${item.name}: ${item.version}\n  Source: ${item.sourceUrl}${item.secondaryUrl ? `\n  Bindist / release: ${item.secondaryUrl}` : ""}`,
+        `- ${item.name}: ${item.version}\n  ${item.sourceLabel ?? "Source"}: ${item.sourceUrl}${item.secondaryUrl ? `\n  ${item.secondaryLabel ?? "Bindist / release"}: ${item.secondaryUrl}` : ""}`,
     ),
     "",
     `Linked Haskell Packages Verified in pandoc.wasm (${inventory.embeddedPackages.length} packages, ${inventory.embeddedPackages.reduce((acc, pkg) => acc + pkg.unitIds.length, 0)} GHC units)`,
     "====================================================================================",
     ...inventory.embeddedPackages.map(
       (pkg) =>
-        `- ${pkg.name}-${pkg.version} [units: ${pkg.unitIds.join(", ")}]: ${pkg.sourceUrl}${pkg.patchUrl ? ` (patch: ${pkg.patchUrl})` : ""}`,
+        `- ${pkg.name}-${pkg.version} [units: ${pkg.unitIds.join(", ")}]: ${pkg.sourceUrl}${pkg.patchUrl ? ` (patch: ${pkg.patchUrl})` : ""}${pkg.note ? ` — ${pkg.note}` : ""}`,
     ),
     "",
     "Linked C Sources Verified in pandoc.wasm",
