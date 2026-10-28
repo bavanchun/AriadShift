@@ -132,7 +132,9 @@ def test_archived_payloads_are_refused(tmp_path, suffix):
         licenses.check_vendored_native_files(tmp_path, [], TRIPLE)
 
 
-@pytest.mark.parametrize("filename", ["payload", "payload.bin", "payload.data"])
+@pytest.mark.parametrize(
+    "filename", ["payload", "payload.bin", "payload.data", "payload.jar", "payload.pyz"]
+)
 def test_zip_magic_refuses_renamed_archives(tmp_path, filename):
     path = tmp_path / filename
     with zipfile.ZipFile(path, "w") as archive:
@@ -146,6 +148,81 @@ def test_known_zip_data_formats_remain_allowed(tmp_path, suffix):
     with zipfile.ZipFile(tmp_path / ("data." + suffix), "w") as archive:
         archive.writestr("data.txt", "Document or array data")
     assert licenses._native_files(tmp_path) == set()
+
+
+@pytest.fixture
+def reviewed_data_archive(tmp_path, monkeypatch):
+    relative = "torch/bin/model.ptl"
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("archive/data.pkl", b"Reviewed model data")
+    info = tmp_path / "torch-2.14.1.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(
+        "Name: torch\nVersion: 2.14.1\nLicense-Expression: BSD-3-Clause\n", encoding="utf-8"
+    )
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]), encoding="utf-8")
+    monkeypatch.setattr(
+        licenses,
+        "_REVIEWED_DATA_ARCHIVES",
+        [
+            {
+                "distribution": "torch",
+                "version": "2.14.1",
+                "path": relative,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        ],
+        raising=False,
+    )
+    return path, info
+
+
+def test_reviewed_model_archive_requires_exact_bytes_and_record(tmp_path, reviewed_data_archive):
+    path, info = reviewed_data_archive
+    assert licenses._native_files(tmp_path) == set()
+    path.write_bytes(path.read_bytes() + b"changed model data")
+    (info / "RECORD").write_text(
+        native_record_rows(tmp_path, [path.relative_to(tmp_path)]), encoding="utf-8"
+    )
+    with pytest.raises(SystemExit, match=r"uninspected.*model\.ptl"):
+        licenses._native_files(tmp_path)
+
+
+@pytest.mark.parametrize("change", ["owner", "version", "record", "duplicate-owner"])
+def test_reviewed_model_archive_requires_its_unique_record_owner(
+    tmp_path, reviewed_data_archive, change
+):
+    _, info = reviewed_data_archive
+    if change in {"owner", "version"}:
+        text = (info / "METADATA").read_text(encoding="utf-8")
+        text = (
+            text.replace("Name: torch", "Name: other")
+            if change == "owner"
+            else text.replace("Version: 2.14.1", "Version: 2.14.2")
+        )
+        (info / "METADATA").write_text(text, encoding="utf-8")
+    elif change == "record":
+        (info / "RECORD").write_text("torch/bin/model.ptl,sha256=wrong,1\n", encoding="utf-8")
+    else:
+        other = tmp_path / "other-1.dist-info"
+        other.mkdir()
+        (other / "METADATA").write_text("Name: other\nVersion: 1\n", encoding="utf-8")
+        (other / "RECORD").write_bytes((info / "RECORD").read_bytes())
+    with pytest.raises(SystemExit, match=r"uninspected.*model\.ptl"):
+        licenses._native_files(tmp_path)
+
+
+@pytest.mark.parametrize("relative", ["torch/bin/unknown.ptl", "other/model.ptl"])
+def test_unreviewed_model_archive_paths_are_refused(tmp_path, reviewed_data_archive, relative):
+    path, info = reviewed_data_archive
+    destination = tmp_path / relative
+    destination.parent.mkdir(exist_ok=True)
+    path.rename(destination)
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]), encoding="utf-8")
+    with pytest.raises(SystemExit, match="uninspected"):
+        licenses._native_files(tmp_path)
 
 
 def test_pth_reference_to_an_external_archive_is_refused(tmp_path):

@@ -8,8 +8,10 @@ licences and missing notices. It does not defend against malicious wheels with f
 Default notice discovery requires a nonempty file, including any file under dist-info/licenses;
 it does not validate its content. Explicit inventory notice sources are separately hash-checked.
 Archive rejection covers .zip/.egg/.whl suffixes and matching .pth references, plus ZIP local-header
-magic in non-native files outside known NPZ/DOCX/PPTX/XLSX data files. Data archive contents
-and other archive magic are not inspected. RECORD refresh rewrites every DLL/PYD digest and
+magic in non-native files outside known NPZ/DOCX/PPTX/XLSX data formats
+or exact distribution/version/path/SHA-256 model archive reviews. Reviewed model archives
+also require one matching RECORD owner. Archive contents are not parsed at runtime, and
+other archive magic is not inspected. RECORD refresh rewrites every DLL/PYD digest and
 the third-party notice record; this can mask accidental post-install changes on Windows, whose
 pack target remains deferred.
 Each Python distribution's licence is read from its metadata (License-Expression, License and
@@ -932,6 +934,34 @@ def _native_file(path: Path) -> bool:
         return handle.read(8).startswith(_NATIVE_MAGIC)
 
 
+with Path(__file__).with_name("reviewed-data-archives.toml").open("rb") as _archive_handle:
+    _REVIEWED_DATA_ARCHIVES = tomllib.load(_archive_handle)["archives"]
+
+
+def _reviewed_data_archive(site: Path, path: Path, relative: str) -> bool:
+    rules = [rule for rule in _REVIEWED_DATA_ARCHIVES if rule["path"] == relative]
+    if not rules:
+        return False
+    owners = [
+        (distribution, item)
+        for distribution in metadata.distributions(path=[str(site)])
+        for item in distribution.files or []
+        if item.as_posix() == relative
+    ]
+    if len(owners) != 1:
+        return False
+    owner, item = owners[0]
+    if not _record_file_matches(item, path):
+        return False
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return any(
+        canonical(owner.metadata["Name"] or "") == rule["distribution"]
+        and owner.version == rule["version"]
+        and digest == rule["sha256"]
+        for rule in rules
+    )
+
+
 def _native_files(site: Path) -> set[str]:
     """Suffix and magic detection covers every file in site-packages."""
     files = set()
@@ -959,8 +989,9 @@ def _native_files(site: Path) -> set[str]:
             files.add(relative)
         elif path.suffix.casefold() not in {".npz", ".docx", ".pptx", ".xlsx"}:
             with path.open("rb") as handle:
-                if handle.read(4) == b"PK\x03\x04":
-                    raise SystemExit(f"uninspected site-packages ZIP archive: {relative}")
+                is_zip = handle.read(4) == b"PK\x03\x04"
+            if is_zip and not _reviewed_data_archive(site, path, relative):
+                raise SystemExit(f"uninspected site-packages ZIP archive: {relative}")
     return files
 
 

@@ -1,0 +1,76 @@
+# Bundled PyTorch regression models are read by explicit TorchScript/mobile loaders.
+# They contain serialized model code/data, not modules on a Python import path.
+# These entries review wheel bytes from uv.lock; installed RECORD hashes also apply.
+# Format: https://github.com/pytorch/pytorch/blob/main/torch/csrc/jit/docs/serialization.md
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/script_module_v4.ptl"
+sha256 = "dead49900e21bb04339bf06c14968de7d2a651a3739ccb1c8e88a9209f6e82ad"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/test_interpreter_async.pt"
+sha256 = "549d04b98a683b79f1c5831a5ad922b563311a4216b5a2c28226182790368b21"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_scalar_float_v2.ptl"
+sha256 = "91360dfdc505de05fac69b971ef8a06a2b75b468e0a66cf2db404fc50f210281"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_scalar_inplace_float_v2.ptl"
+sha256 = "4f4711f0639598ebd2275ffd98a32ddd0108bc4cc85f46c133957ab77f8faa29"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_scalar_inplace_int_v2.ptl"
+sha256 = "5013d856a255346ad71c4b462be3ab05cccd9443c6978819624197300be8220b"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_scalar_int_v2.ptl"
+sha256 = "b1d850caddbab0c8804529321ffb93fd8a5a63637304d85634c94befde8cb094"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_scalar_reciprocal_float_v2.ptl"
+sha256 = "7eeb7829a439737b2a09d21a8e18fb32cc0fd0fcce77b652eec352f7c603abcb"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_scalar_reciprocal_int_v2.ptl"
+sha256 = "64b56ee0a2c5efeb6744a731286006adae747d6e9b54d65e701c292ad17ff3a0"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_scalar_scalar_v2.ptl"
+sha256 = "321da0d43e96138be4bd102b2bd5fde6b836c0814ca754533f0246e2f030a74f"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_tensor_inplace_v2.ptl"
+sha256 = "87a7c59d41d047fa1bc45578143f6c6a1577cee159a9094cc2bb80e12603017c"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_tensor_out_v2.ptl"
+sha256 = "ccbcc0954174e817a7789194ea30e99b09e17de14d089ffed7e67c3e883195fd"
+
+[[archives]]
+distribution = "torch"
+version = "2.14.1+cpu"
+path = "torch/bin/upgrader_models/test_versioned_div_tensor_v2.ptl"
+sha256 = "3cbb7834ee5e0479468a29d91189e6413c81186e25d03c1210d8cfb16db77c74"
