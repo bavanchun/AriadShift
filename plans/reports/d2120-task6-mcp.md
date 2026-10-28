@@ -1,51 +1,52 @@
-# MCP rework verification
+# MCP revocation deadline and staging recovery
 
-Branch: `fix/mcp-limits-and-parity`. Rework baseline:
-`e4ad84039e80847097c0446a745c8228ce8cf562`.
-Verified source head: `218f9b9a968a1ab5e7183db66559e5b5b8e0e78a`.
-No push performed; the existing PR was left untouched.
+Branch: `fix/mcp-limits-and-parity`. Baseline delivery:
+`ecd3925a62097c2d1ef5b6bd62f76d657dee746d`.
+Verified source head: `197ba5a312bc379c1318657012c485e01e282188`.
+No push performed; the existing draft PR was left untouched.
 
-## Changes
+## Repair
 
-- `1673a2ce10229fd85fecc302cd30f5ae39a5de33` orders every roots refresh
-  by generation, clears replaced roots-lock poison, moves all three staging
-  paths into cancellable blocking jobs, preserves the original host API,
-  hardens Windows reparse opens, and bounds/synchronizes regression tests.
-- `bc6698cb94a98b4fdaa5db02e1f529cdb7371226` restores Unix search-only
-  directory access. Its Linux regression failed before the fix.
-- `218f9b9a968a1ab5e7183db66559e5b5b8e0e78a` restores caller-owned leaf
-  type classification without removing no-follow or nonblocking flags.
-  A bounded FIFO regression in the owned confinement suite failed on
-  `bc6698c`, then passed. The original workspace source and test are unchanged.
+- `dd988d735da595b8a5e7d95e900fb5992f5e66e3` guards only successful
+  roots installations by generation. Every failure/timeout revokes client
+  roots, including stale responses. Overlapping notifications and stale
+  successes retain the first pending deadline. A newest request can restore
+  access after revocation while its own response timeout remains open.
+- The same commit stages all three tools beneath private
+  `ashift-mcp-stage-<pid>-<random>` directories. Normal shutdown removes the
+  process directory; completed/cancelled workers remove their individual
+  copies. Startup sweeps matching directories older than 24 hours only after
+  proving the owner process is gone. Live processes, unrelated/malformed names,
+  links/reparse points and foreign Unix owners are refused.
+- `197ba5a312bc379c1318657012c485e01e282188` gives the Windows timestamp
+  fixture the required `FILE_WRITE_ATTRIBUTES` access. The requirement is
+  documented by [SetFileTime](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime).
 
-`docs/mcp.md` now documents refresh triggers, ordering, the ten-second deadline,
-explicit-directory fallback, recovery and cancellable staging. Its ownership
-concern is resolved. No dependencies or architecture changes were introduced.
+The stale-error/timeout tests intentionally assert revocation under the new
+owner policy. The test client's shutdown wait is bounded. `docs/mcp.md` now
+states the cancellation boundary and requires absolute paths or file URIs.
+Existing host copy signatures, input limits and full-file staging remain.
+No dependencies, architecture changes or original workspace source/test edits.
 
-## Evidence
+## Tests first and focused verification
 
-Logs are under `/home/vchun/Codes/ariadshift-logs/`:
+Logs are under `/home/vchun/Codes/ariadshift-logs/`.
+`t6-rework2-proof.log` records five expected old-product failures: two
+first-deadline cases (unanswered overlap and stale success), normal staging
+shutdown, cancellation cleanup and startup sweep. Its last line is
+`=== second rework old-product proof complete ALL GREEN`.
 
-- `t6-rework-proving.log` and `t6-rework-ordered-proof.log`: old-product
-  failures for roots ordering, blocking staging, poison recovery, legacy API
-  compilation and FIFO cleanup. Unix swap guards already passed on the base.
-- `t6-search-only-proof.log`: reproduced the introduced Unix permission
-  regression; `t6-search-only-check.log` verifies its repair.
-- `t6-rework-fifo-regression.log`: preserves the failed full gate on `bc6698c`
-  (438 passed, one failed, ten skipped; stopped at workspace FIFO handling).
-- `t6-fifo-artifact-proof.log`: new FIFO test fails at the expected
-  `ArtifactNotFile` assertion on the old product. Its continuation stopped on
-  formatting; after correction, `t6-fifo-artifact-fixed.log` ends
-  `=== FIFO artifact repair check ALL GREEN`, including the untouched
-  workspace regression and scoped clippy.
+`t6-rework2-preflight.log` then passed MCP **43**, poisoned-roots unit **1**,
+assets **18**, confinement **26**, scoped clippy and Windows checking; it ends
+`=== second rework preflight ALL GREEN`.
 
 ## Final source gate
 
-Detached launcher: `gate-slot.sh 2 zsh /tmp/t6-rework-final-gate.zsh
-218f9b9a968a1ab5e7183db66559e5b5b8e0e78a`, running in
-`/home/vchun/Codes/01-AriadShift-wt-t6-verify`, nice 19, with
-`CARGO_BUILD_JOBS=4`, `NEXTEST_TEST_THREADS=1`, its own `CARGO_TARGET_DIR`,
-and `RUSTFLAGS='-C link-arg=-Wl,--threads=1'`.
+Detached `gate-slot.sh 2 zsh /tmp/t6-rework2-final-gate.zsh
+197ba5a312bc379c1318657012c485e01e282188` ran in
+`/home/vchun/Codes/01-AriadShift-wt-t6-verify`, nice 19, with its own
+`CARGO_TARGET_DIR`, `CARGO_BUILD_JOBS=2`, `NEXTEST_TEST_THREADS=1` and
+`RUSTFLAGS='-C link-arg=-Wl,--threads=1'`.
 
 Exact commands, all successful:
 
@@ -64,23 +65,26 @@ cargo check -p ariad-host -p ariad-cli --target x86_64-pc-windows-gnu --all-targ
 just lint-commits
 ```
 
-Pandoc was 3.12. Nextest: **453 passed, 10 skipped**. Feature-enabled MCP:
-**38 passed**. The nextest pass includes assets 18, confinement 26, workspace
-15, and all three Unix no-follow unit regressions. Windows cross-check uses
-Zig from the user cache, without project dependency changes.
+Pandoc was 3.12. Full nextest: **457 passed, 10 skipped**. Feature-enabled
+MCP: **43 passed**. The unchanged workspace FIFO regression passed.
+Log: `/home/vchun/Codes/ariadshift-logs/t6-rework2-final-gate.log`.
+Last line: `=== 197ba5a312bc379c1318657012c485e01e282188 ALL GREEN`.
 
-Log: `/home/vchun/Codes/ariadshift-logs/t6-rework-final-gate.log`.
-Last line:
-`=== 218f9b9a968a1ab5e7183db66559e5b5b8e0e78a ALL GREEN`.
+An obsolete queued snapshot was replaced for the Windows fixture correction
+before any build. A running gate was later cancelled for sustained load above
+24 and requeued with two Cargo jobs under the lead's high-load rule; no process
+was paused. Interrupted logs are `t6-rework2-superseded-gate.log` and
+`t6-rework2-load-cancelled-gate.log`; neither is verification evidence.
 
-Only this report changes after that source gate. The operations result records
-its delivery SHA and the separate source-identity/commit-lint verification;
-that final check is not a second build/test gate. All task runners have exited.
+Only this report changes after the source gate. The operations result records
+the delivery SHA and separate source-identity/commit-lint check, which is not
+another build/test gate. All task-owned gate processes have exited.
 
 ## Remaining verification
 
-Native Windows race tests cannot run on this Linux box; their Windows target
-compiles. Full GitHub CI on the eventual PR head across Linux, macOS and
-Windows remains a merge condition, as directed by the coordinator.
+Cancellation cannot preempt a blocked filesystem syscall. Cleanup waits up to
+three seconds; leftover prefixed staging becomes eligible on a later startup
+once older than 24 hours and its owner is dead. Native Windows/macOS tests and
+full GitHub CI on the eventual PR head remain required before merging.
 
 Status: DONE
