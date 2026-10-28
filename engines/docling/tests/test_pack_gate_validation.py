@@ -116,6 +116,21 @@ def test_native_record_ownership_must_not_overlap(tmp_path):
         licenses.check_vendored_native_files(tmp_path, [], TARGET)
 
 
+def test_moving_a_listed_library_cannot_hide_it_as_a_python_module(tmp_path):
+    reference = metadata.distribution("shapely")
+    relative = next(str(p) for p in reference.files if str(p).startswith("shapely.libs/libgeos_c"))
+    moved = "shapely/relocated/" + Path(relative).name
+    native = tmp_path / moved
+    native.parent.mkdir(parents=True)
+    shutil.copyfile(reference.locate_file(relative), native)
+    info = tmp_path / f"shapely-{reference.version}.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(reference.read_text("METADATA"))
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [moved]))
+    with pytest.raises(SystemExit, match=moved):
+        licenses.check_vendored_native_files(tmp_path, [], TARGET)
+
+
 @pytest.mark.parametrize("family", ["libgfortran", "libquadmath"])
 @pytest.mark.parametrize("payload", [b"!<arch>\nstatic", b"\x7fELF" + b"modified"])
 def test_gnu_runtime_entries_refuse_static_and_changed_payloads(tmp_path, family, payload):

@@ -544,6 +544,9 @@ _NATIVE_MAGIC = (
 _GCC_RUNTIME = "GPL-3.0-or-later WITH GCC-exception-3.1"
 # Native exceptions are bound to library and distribution, never Python classifiers.
 NATIVE_LIBRARIES = {
+    "libgeos_c": ("LGPL-2.1-only", {"shapely"}),
+    "libgeos": ("LGPL-2.1-only", {"shapely"}),
+    "libspatialindex": ("MIT", {"rtree"}),
     "libgomp": (_GCC_RUNTIME, {"torch"}),
     "libgfortran": (_GCC_RUNTIME, {"numpy", "scipy", "opencv-python-headless"}),
     "libquadmath": ("LGPL-2.1-or-later", {"numpy", "scipy", "opencv-python-headless"}),
@@ -575,6 +578,8 @@ NATIVE_LIBRARIES.update(
     {name: (item["license"], {item["distribution"]}) for name, item in _NATIVE_COMPONENTS.items()}
 )
 _NATIVE_VERSIONS = {
+    "shapely": {"2.2.0"},
+    "rtree": {"1.4.1"},
     "numpy": {"2.5.4"},
     "scipy": {"1.18.1"},
     "pillow": {"12.3.0", "13.0.0"},
@@ -589,6 +594,19 @@ for _component in _NATIVE_COMPONENTS.values():
 
 # Hash-bound complete notices from locked wheels or matching upstream releases.
 _NATIVE_NOTICES = {
+    ("rtree", "1.4.1"): (
+        "libspatialindex.txt",
+        frozenset({"6c4a6221066c0f5ff3244f36dfdfd627e274ee871d87f82c7da40168c53745e2"}),
+    ),
+    ("shapely", "2.2.0"): (
+        "licenses/LICENSE_GEOS",
+        frozenset(
+            {
+                "7233baa9a7d4a17257b357706b7dbdc4b675e5ca45425b3418673b16990cf239",
+                "81d9aaf9ab7e3e6184568a70f27ee3e138d8d1e543b46dad5af88cff61cf1b36",
+            }
+        ),
+    ),
     ("numpy", "2.5.4"): (
         "licenses/LICENSE.txt",
         frozenset(
@@ -632,8 +650,54 @@ _NATIVE_NOTICES = {
 
 # Exact shared objects from the hash-locked wheels. A changed or static payload
 # cannot inherit an exception meant for unmodified dynamically loaded libraries.
-_REVIEWED_SHARED_SOURCES = {}
-_REVIEWED_SHARED_FILES = {}
+_REVIEWED_SHARED_SOURCES = {
+    "shapely": ("3.14.1", "https://download.osgeo.org/geos/geos-3.14.1.tar.bz2"),
+    "rtree": ("2.1.0", "https://github.com/libspatialindex/libspatialindex/archive/2.1.0.zip"),
+}
+_REVIEWED_SHARED_FILES = {
+    "shapely.libs/libgeos-d1e818bb.so.3.14.1": (
+        "1e9192b9f1b9f43cd7adbb9999d23d9efda34695cc057bb1911bfc1f9c1d1c9d"
+    ),
+    "shapely.libs/libgeos_c-ac38a227.so.1.20.5": (
+        "47a714ef803c586c8ec85473efe42fab96dadc1fe51663fc7123dd4743acb9a8"
+    ),
+    "shapely.libs/libgeos-bf1df61c.so.3.14.1": (
+        "7e7306267b0cd693c3b40770dcf42df53a4f0ee5041011e47f0d9cf9a0be9344"
+    ),
+    "shapely.libs/libgeos_c-f518db6b.so.1.20.5": (
+        "9ef62ec5e9134b0d1abb1d97e5f6bd4ce0a8f9c9e422cfdb89b3063f8df931f2"
+    ),
+    "shapely/.dylibs/libgeos.3.14.1.dylib": (
+        "032ed33655a02fb281ffc56db46626664c4827cecf7b99df1c1375d0988133d1"
+    ),
+    "shapely/.dylibs/libgeos_c.1.20.5.dylib": (
+        "6a1886cf6bd5b6decb596429479a8846b117578528f59e29681547e728e28b18"
+    ),
+    "shapely.libs/geos-bf067cd6ff74ee0ad5f3ff52c7ef08c9.dll": (
+        "0948bdb5c70b82e5055b55e9419b78d68372b1d0ec877277fa6e79276f6299b9"
+    ),
+    "shapely.libs/geos_c-6dd9fd915eef8a7928285416bef1e666.dll": (
+        "6e65985b30831761887de3217853a720147626b18cb41668cd2bdc43d1bcded1"
+    ),
+    "rtree.libs/libspatialindex-e5350069.so": (
+        "e4eec0695dee7d3864e5d6e6ec3b3ba80a5adf8e65e7586bf0d8ed4584b91449"
+    ),
+    "rtree.libs/libspatialindex-8598ee94.so": (
+        "9cfa808c9cfafeea6725c277085d3144bb29972e911066c191aa893aa147a300"
+    ),
+    "rtree/lib/libspatialindex.dylib": (
+        "70108e4f07ccd87c724f28b0e14fa26b9603ef61a45653087df89b1fc26665b3"
+    ),
+    "rtree/lib/libspatialindex_c.dylib": (
+        "a4c2282d8ba7f63562b0631370f4e6fbd2b078e3841b5081d77b535b11af7676"
+    ),
+    "rtree/lib/spatialindex-64.dll": (
+        "4a0116d384b1a6cf0ca74a0366d82359e6211e89933ec37dd18eedb537f619c2"
+    ),
+    "rtree/lib/spatialindex_c-64.dll": (
+        "b08c8672a7cbec64abaabdfcabc40b8e090e2a06eab85569b1a87aef82dd33de"
+    ),
+}
 
 
 def _native_notice(site: Path, item: dict) -> tuple[Path, Path]:
@@ -643,6 +707,10 @@ def _native_notice(site: Path, item: dict) -> tuple[Path, Path]:
 
 def _native_family(owner: str, filename: str) -> str | None:
     filename = Path(filename.replace("\\", "/")).name.casefold()
+    if owner == "shapely" and filename.startswith("geos"):
+        filename = "lib" + filename
+    if owner == "rtree" and re.match(r"(?:lib)?spatialindex(?:_c)?(?:[-_.0-9]|$)", filename):
+        return "libspatialindex"
     return next(
         (
             name

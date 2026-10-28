@@ -248,6 +248,55 @@ def test_native_freetype_exception_does_not_allow_python_distributions(tmp_path)
     assert licenses.check([metadata.PathDistribution(info)])
 
 
+@pytest.mark.parametrize("owner", ["shapely", "rtree"])
+def test_shared_library_exception_requires_unchanged_objects_and_exact_source(tmp_path, owner):
+    reference = metadata.distribution(owner)
+    relative = next(
+        str(item) for item in reference.files if str(item) in licenses._REVIEWED_SHARED_FILES
+    )
+    native = tmp_path / relative
+    native.parent.mkdir(parents=True)
+    shutil.copyfile(reference.locate_file(relative), native)
+    info = tmp_path / f"{owner}-{reference.version}.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(reference.read_text("METADATA"))
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    if owner == "shapely":
+        notice = "licenses/LICENSE_GEOS"
+        (info / "licenses").mkdir()
+        shutil.copyfile(reference.locate_file(f"{info.name}/{notice}"), info / notice)
+    inventory = licenses.vendored_libraries(tmp_path, "x86_64-unknown-linux-gnu")
+    licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
+    notices = tmp_path / "notices"
+    licenses.write_vendored_notices(tmp_path, notices, inventory)
+    summary = (notices / "vendored-libraries.txt").read_text()
+    version, source = licenses._REVIEWED_SHARED_SOURCES[owner]
+    assert version in summary and source in summary
+    if owner == "rtree":
+        full_text = next((notices / "vendored").iterdir()).read_text()
+        assert "Marios Hadjieleftheriou" in full_text and "Howard Butler" in full_text
+    item = inventory[0]
+    item.pop("source")
+    with pytest.raises(SystemExit, match="missing exact upstream version/source"):
+        licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
+    item["source"] = source
+    native.write_bytes(native.read_bytes() + b"modified")
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    with pytest.raises(SystemExit, match="requires an unmodified reviewed shared object"):
+        licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
+    native.write_bytes(b"!<arch>\nstatic library")
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    with pytest.raises(SystemExit, match="requires an unmodified reviewed shared object"):
+        licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
+
+
+@pytest.mark.parametrize("relative", licenses._REVIEWED_SHARED_FILES)
+def test_reviewed_shared_files_have_a_named_library_and_owner(relative):
+    owner = "shapely" if relative.startswith("shapely") else "rtree"
+    family = licenses._native_family(owner, relative.rsplit("/", 1)[-1])
+    assert family is not None and owner in licenses.NATIVE_LIBRARIES[family][1]
+
+
 def test_quadmath_bundles_full_lgpl_and_retains_wheel_attribution(tmp_path):
     reference = metadata.distribution("numpy")
     relative = next(
