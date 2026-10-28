@@ -1,9 +1,11 @@
 # Storage and SDK worker result
 
 Completed locally on `fix/v1-security-reland--storage-sdk`.
-Final tested code/test SHA: `7351377fba2674fa66ce60cba2a8b911c9cf93b4`.
-Final gate: 125 server tests passed, 0 skipped, including all three real-DB
-upload tests. Independent fresh review: zero critical/high findings.
+Final tested code/test SHA: `6d873ba2ff78ddd10c8e42f966b15b7e1a8d13fc`.
+Latest SDK/web gate: 70 SDK tests and 255 web tests passed; typecheck,
+contract drift, Biome and documentation spelling passed. Fresh independent
+review: zero critical, high or medium findings. The earlier real-DB gate
+remains valid for unchanged server source: 125 passed, 0 skipped.
 Base: `bcfac8c2c07ee3b0162d57ef7b21ec654fed166f` (`origin/dev` at dispatch).
 The lead's A-1845 instruction replaces the unavailable replay base. No push
 or merge was performed; tracked changes remain inside assigned ownership.
@@ -59,8 +61,10 @@ on the combined head rather than hand-merging hashes.
 ## Implementation and commits
 
 Actual base: `bcfac8c2c07ee3b0162d57ef7b21ec654fed166f`.
-Production implementation head: `9ac0c3ae9310359f79e06ddac63c7b43ab916f7d`.
-Exact final code/test head: `7351377fba2674fa66ce60cba2a8b911c9cf93b4`.
+Original production implementation head: `9ac0c3ae9310359f79e06ddac63c7b43ab916f7d`.
+Exact final code/test head: `6d873ba2ff78ddd10c8e42f966b15b7e1a8d13fc`.
+Storage test checkpoint: `7351377fba2674fa66ce60cba2a8b911c9cf93b4`.
+Retry rework base/report head: `66d1c848ff920ade2b6128c52fba1ad58482d9d2`.
 This verification record is a report-only successor to the final code/test
 head; no production or test source changes follow that tested head. Replay
 has not been merged and nothing was pushed.
@@ -73,8 +77,80 @@ has not been merged and nothing was pushed.
 | `2d8354bbf1704b734bbed9fbcc377a738eb23244` | Retry reusable SDK transfers on 429/408, three attempts maximum, preserving request properties and cancellation. |
 | `9ac0c3ae9310359f79e06ddac63c7b43ab916f7d` | Add shared per-key claims, four owned digest permits, cancellation-safe cleanup and post-wait revalidation; include real-DB tests and regenerated contracts. |
 | `7351377fba2674fa66ce60cba2a8b911c9cf93b4` | Align the test backend with the client's existing single-object deletion option; retain the real file-removal assertion. |
+| `6d873ba2ff78ddd10c8e42f966b15b7e1a8d13fc` | Validate safe Retry-After values, bound cumulative transfer retry waits and signed-URL validity, preserve refused HTTP errors, and document/test the policy. |
 
-## Test-first evidence
+## Retry-After rework after fresh lead review
+
+The fresh review of report head `66d1c848ff920ade2b6128c52fba1ad58482d9d2`
+returned REWORK for one medium finding: unchecked decimal conversion and
+multiplication could schedule a seven-day upload wait or overflow Node's
+timer into a premature retry. That finding is closed by
+`6d873ba2ff78ddd10c8e42f966b15b7e1a8d13fc`.
+
+The shared `retryAfterSeconds` parser now rejects negative/non-decimal,
+non-finite, unsafe integer and oversized digit-string values. It bounds the
+trimmed decimal input to 16 digits before converting, then requires
+`Number.isSafeInteger`. Normal valid values remain available on
+`AriadApiError.retryAfter`; unsafe values never appear as Infinity/NaN.
+
+`transfer` allows at most 60,000 ms of total scheduled retry waiting per
+call, below both the timer limit and the signed PUT's 15-minute lifetime.
+Each requested minimum must also end strictly before the actual
+`presigned.expires_at`. Budget/expiry checks precede seconds-to-milliseconds
+multiplication. An absent header still defaults to one second. A present
+invalid header, invalid/expired expiry, or valid minimum outside the remaining
+budget causes the current 429/408 response to be parsed and surfaced with its
+original status, code, message and valid retryAfter metadata. No timer or
+premature/clamped retry is used in those cases. Cancellation, reusable-body
+requirements, request properties and the three-attempt cap remain intact.
+
+Updated both the upload-flow and SDK Helpers sections of `docs/api.md`,
+including the previously unbounded manual retry example, and public SDK
+comments. The user's follow-up explicitly authorized the root parser change
+in `packages/sdk/src/errors.ts`; no server or shared-harness file changed.
+
+Tests were added before the implementation fix. The new transfer fixtures
+use a currently valid signed expiry; separate fake-clock cases exercise
+expiring, expired and invalid expiry. Regressions cover 604800 seconds,
+2147484 seconds and 400 digits converting to Infinity on both 429 and 408;
+invalid/unsafe numeric input; the accepted 60-second boundary; and a 40-second
+wait followed by a refused 21-second minimum. Existing valid/default delays,
+abort-during-wait, same-request/body and three-attempt tests remain.
+
+The existing queued controller PID `3256252` stayed in `gate-slot.sh 1` for
+all stages, with one lock, nice 19, load threshold 12, Cargo jobs 2 and
+nextest threads 2. Bounded five-minute handoffs allowed the manual repair
+and commit between checks; no other slot was acquired. All stages completed
+and the process exited. No server, container or DB gate was started.
+
+| Stage and exact command | Outcome and log |
+|---|---|
+| Before repair: `pnpm --filter @ariadshift/sdk exec vitest run test/transfer-retry.test.ts` | On code head 66d1c84: 13 failed, 17 passed. `/home/vchun/Codes/ariadshift-logs/ws4-retry-bounds-red.log` ends `STOPPED: expected-red-retry-bounds rc=1`. All three reported excessive-value cases fail as behavior assertions. |
+| `pnpm exec biome check --write packages/sdk/src/client.ts packages/sdk/src/errors.ts packages/sdk/test/transfer-retry.test.ts` | Passed; formatted the test file. |
+| After repair: `pnpm --filter @ariadshift/sdk exec vitest run test/transfer-retry.test.ts` | 30 passed. `/home/vchun/Codes/ariadshift-logs/ws4-retry-bounds-focused.log` ends `=== ws4-retry-bounds-focused ALL GREEN`. |
+| `pnpm --filter @ariadshift/sdk test` | 70 passed across four files on exact code/test head 6d873ba. |
+| `pnpm --filter @ariadshift/sdk typecheck` | Passed. |
+| `just sdk-check` | Passed; generated contracts and lock unchanged. |
+| `pnpm --filter @ariadshift/web test` | 255 passed across 23 files. |
+| `pnpm exec biome check packages/sdk/src/client.ts packages/sdk/src/errors.ts packages/sdk/test/transfer-retry.test.ts` | Passed without changes. |
+| `typos docs/api.md` | Passed in focused and final stages. |
+| `git diff --exit-code HEAD -- packages/sdk docs/api.md` | Passed before and after final checks. |
+| `git diff --exit-code 7351377fba2674fa66ce60cba2a8b911c9cf93b4 HEAD -- crates` | Passed: server/Rust source is unchanged; DB rerun was explicitly unnecessary. |
+
+Final rework log:
+`/home/vchun/Codes/ariadshift-logs/ws4-retry-bounds-gate.log`.
+It identifies the full code/test SHA
+`6d873ba2ff78ddd10c8e42f966b15b7e1a8d13fc`, resource limits 2/2 and nice 19.
+Its exact last line is `=== ws4-retry-bounds ALL GREEN`.
+
+Fresh independent review used the configured `gpt-6.1-sol`, high reviewer in
+a separate clean detached worktree at that same SHA. It inspected the whole
+rework diff, shared parser consumers, tests and both documentation sections.
+Result: zero concrete findings, including zero critical, high and medium;
+the timer-overflow finding is closed. The reviewer ran no competing gates
+and changed no files. The temporary review worktree was removed afterward.
+
+## Original storage/SDK test-first evidence
 
 The detached baseline worktree contained only the new tests on the actual
 base, so implementation edits could not change the queued red run.
@@ -92,7 +168,7 @@ Last line: `STOPPED: expected-red-regressions rc=1`.
 No failing behavioral test was fabricated for the accepted documentation-only
 single-tenant policy.
 
-## Verification history and final gate
+## Earlier storage verification history and DB gate
 
 Log: `/home/vchun/Codes/ariadshift-logs/ws4-final-gate.log`.
 The first final-gate attempt passed all non-DB checks but then retained
@@ -140,9 +216,10 @@ and removed afterward. The ignored task-local mise override was removed after
 verification; no tracked configuration changed.
 
 The non-DB source gates below ran at production implementation head
-`9ac0c3ae9310359f79e06ddac63c7b43ab916f7d`. The only later change is the
-two-line test-backend correction, verified separately and included in the
-final full DB gate at `7351377fba2674fa66ce60cba2a8b911c9cf93b4`.
+`9ac0c3ae9310359f79e06ddac63c7b43ab916f7d`. The subsequent storage checkpoint
+adds only the two-line test-backend correction, verified separately and in
+the full DB gate at `7351377fba2674fa66ce60cba2a8b911c9cf93b4`. The later
+SDK-only rework and its new verification are recorded above.
 Historical non-DB environment:
 `CARGO_BUILD_JOBS=4`,
 `CARGO_TARGET_DIR=/home/vchun/Codes/.ariadshift-ws4-build`,
@@ -212,10 +289,12 @@ markers; `cargo fmt --all --check` and
 The actual running Cargo/nextest
 process environments were inspected and both limits were `2`.
 
-Only the two-line test-fixture correction separates final code/test head
+Only the two-line test-fixture correction separates the storage checkpoint
 `7351377fba2674fa66ce60cba2a8b911c9cf93b4` from the already green non-DB
-implementation head. SDK, web, generated contracts and production source are
-identical. The final full DB rerun uses that exact final head, controller
+implementation head. At that checkpoint, SDK, web, generated contracts and
+production source were identical to 9ac0c3a. The later SDK-only rework above
+leaves the server source unchanged. The full DB rerun used this storage SHA,
+controller
 PID `2734960`, Cargo jobs 2, nextest threads 2, nice 19, start load below 12,
 and the same single flat lock fallback required by this base's unlocked
 recipe. Plain `just test-server` is not nested in `gate-slot.sh`. The log
@@ -253,7 +332,7 @@ head: `9ac0c3ae9310359f79e06ddac63c7b43ab916f7d`; zero verified defects,
 including zero critical/high findings. The reviewer ran no competing builds.
 A separate test simplification review found no necessary changes.
 
-Fresh final independent review: the same configured `gpt-6.1-sol`, high
+Fresh storage-checkpoint independent review: the same configured `gpt-6.1-sol`, high
 reviewer inspected the full owned diff in a new clean detached worktree at
 `7351377fba2674fa66ce60cba2a8b911c9cf93b4`. Result: zero verified defects,
 zero critical/high findings. It confirmed the fixture correction selects the
@@ -290,8 +369,9 @@ combined host/CLI regressions and source-matched pack CI. No pack override
 was used. Accepted replay, Sybil and per-replica residuals are documented;
 there is no claim that local storage is safe for untrusted multi-tenancy.
 
-All assigned behavior, documentation, test-first evidence, required local
-checks and independent final-head review are complete. The remaining concerns
+The fresh-review medium finding is resolved. All assigned behavior,
+documentation, test-first evidence, required local checks and independent
+final-head review are complete. The remaining concerns
 are the accepted deployment residuals and the lead-owned replay/integration
 validation described above. No changes were pushed.
 
