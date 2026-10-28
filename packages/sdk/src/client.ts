@@ -229,16 +229,30 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
     },
 
     async transfer(presigned, body, signal) {
-      const response = await fetchImpl(presigned.url, {
-        method: presigned.method,
-        headers: presigned.headers,
-        body,
-        signal,
-      });
-      if (!response.ok) {
-        throw await errorFromResponse(response, "transfer_failed");
+      // Only these reusable byte bodies may be sent again after a refusal.
+      const reusable =
+        body instanceof Blob || body instanceof ArrayBuffer || body instanceof Uint8Array;
+      for (let attempt = 1; ; attempt += 1) {
+        signal?.throwIfAborted();
+        const response = await fetchImpl(presigned.url, {
+          method: presigned.method,
+          headers: presigned.headers,
+          body,
+          signal,
+        });
+        if (response.ok) {
+          await response.body?.cancel();
+          return;
+        }
+        if (!reusable || attempt >= 3 || (response.status !== 429 && response.status !== 408)) {
+          // Parsing drains the error body; cancellation also covers a read error.
+          const error = await errorFromResponse(response, "transfer_failed");
+          if (!response.body?.locked) await response.body?.cancel();
+          throw error;
+        }
+        await response.body?.cancel();
+        await sleep((retryAfterSeconds(response) ?? 1) * 1_000, signal);
       }
-      await response.body?.cancel();
     },
 
     completeUpload(uploadId, signal) {

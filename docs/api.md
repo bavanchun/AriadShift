@@ -148,6 +148,8 @@ curl -sS --fail-with-body -X DELETE "$API/v1/jobs/$JOB_ID" "${AUTHN[@]}"
 
 One upload can feed several jobs, for example one per target format. Browsers upload with Uppy's `@uppy/aws-s3` plugin in single-request mode, using the presigned request as its upload parameters, or with the SDK's `upload` helper.
 
+The SDK's `transfer` retries only `429` (busy) and `408` (transfer timeout), with at most three attempts total for reusable `Blob` (including `File`), `ArrayBuffer` or `Uint8Array` bodies. Each attempt sends the same bytes, method, signed headers and abort signal, without API credentials. It cancels discarded response bodies before retrying and waits for `Retry-After` in whole seconds, or one second when absent or invalid. Aborting during the wait stops further attempts. Other HTTP statuses and network failures are returned without retry; download behavior is unchanged.
+
 ## Endpoints
 
 | Method | Path | Credentials | Purpose |
