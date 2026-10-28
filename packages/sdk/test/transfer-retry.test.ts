@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAriadClient } from "../src/index";
+import { createAriadClient, retryAfterSeconds } from "../src/index";
 import { apiError, BASE_URL, mockFetch, uploadBody } from "./mock-fetch";
 
-const presigned = uploadBody("pending").upload;
-if (!presigned) throw new Error("fixture has no presigned request");
+const signedFixture = uploadBody("pending").upload;
+if (!signedFixture) throw new Error("fixture has no presigned request");
+const presigned = {
+  ...signedFixture,
+  expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+};
 const bytes = () => new TextEncoder().encode("hello");
 const busy = () => apiError(429, "rate_limited", "busy", { "retry-after": "0" });
 afterEach(() => vi.useRealTimers());
@@ -101,6 +105,138 @@ describe("presigned transfer retry", () => {
     await transfer;
     expect(mock.requests).toHaveLength(2);
   });
+
+  it.each([
+    { name: "seven-day minimum", value: "604800", retryAfter: 604800 },
+    { name: "timer-overflow minimum", value: "2147484", retryAfter: 2147484 },
+    { name: "digits converting to Infinity", value: "9".repeat(400), retryAfter: undefined },
+  ])("stops without a timer for $name and preserves the refusal", async ({ value, retryAfter }) => {
+    vi.useFakeTimers();
+    for (const status of [429, 408]) {
+      const mock = mockFetch(
+        () => apiError(status, "storage_busy", "original refusal", { "retry-after": value }),
+        () => new Response(null),
+      );
+      let error: unknown;
+      const transfer = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch })
+        .transfer(presigned, bytes())
+        .catch((cause) => {
+          error = cause;
+        });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(error).toMatchObject({
+        status,
+        code: "storage_busy",
+        message: "original refusal",
+        retryAfter,
+      });
+      expect(mock.requests).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      await transfer;
+    }
+  });
+
+  it.each(["-1", "NaN", "Infinity", "1.5", "9007199254740992", "0".repeat(400)])(
+    "rejects an invalid or unsafe Retry-After value (%#)",
+    async (value) => {
+      vi.useFakeTimers();
+      expect(
+        retryAfterSeconds(apiError(429, "busy", "busy", { "retry-after": value })),
+      ).toBeUndefined();
+      const mock = mockFetch(() =>
+        apiError(429, "busy", "invalid delay", { "retry-after": value }),
+      );
+      let error: unknown;
+      const transfer = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch })
+        .transfer(presigned, bytes())
+        .catch((cause) => {
+          error = cause;
+        });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(error).toMatchObject({ status: 429, code: "busy", retryAfter: undefined });
+      expect(mock.requests).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      await transfer;
+    },
+  );
+
+  it("accepts safe whole seconds including zero and the safe integer boundary", () => {
+    for (const value of ["0", " 2 ", "9007199254740991"]) {
+      expect(retryAfterSeconds(apiError(429, "busy", "busy", { "retry-after": value }))).toBe(
+        Number(value),
+      );
+    }
+  });
+
+  it("allows a sixty-second minimum within the waiting budget", async () => {
+    vi.useFakeTimers();
+    const mock = mockFetch(
+      () => apiError(429, "busy", "busy", { "retry-after": "60" }),
+      () => new Response(null),
+    );
+    const transfer = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch }).transfer(
+      presigned,
+      bytes(),
+    );
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(mock.requests).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await transfer;
+    expect(mock.requests).toHaveLength(2);
+  });
+
+  it("stops when a second minimum exceeds the remaining total waiting budget", async () => {
+    vi.useFakeTimers();
+    const mock = mockFetch(
+      () => apiError(429, "busy", "first refusal", { "retry-after": "40" }),
+      () => apiError(408, "transfer_timeout", "second refusal", { "retry-after": "21" }),
+      () => new Response(null),
+    );
+    let error: unknown;
+    const transfer = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch })
+      .transfer(presigned, bytes())
+      .catch((cause) => {
+        error = cause;
+      });
+    await vi.advanceTimersByTimeAsync(39_999);
+    expect(mock.requests).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(error).toMatchObject({
+      status: 408,
+      code: "transfer_timeout",
+      message: "second refusal",
+      retryAfter: 21,
+    });
+    expect(mock.requests).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+    await transfer;
+  });
+
+  it.each(["expiring", "expired", "invalid"])(
+    "does not wait until or past an %s signed URL's expiry",
+    async (expiry) => {
+      vi.useFakeTimers();
+      const mock = mockFetch(() => apiError(429, "busy", "refused", { "retry-after": "2" }));
+      const request = {
+        ...presigned,
+        expires_at:
+          expiry === "invalid"
+            ? "not a date"
+            : new Date(Date.now() + (expiry === "expiring" ? 2_000 : -1)).toISOString(),
+      };
+      let error: unknown;
+      const transfer = createAriadClient({ baseUrl: BASE_URL, fetch: mock.fetch })
+        .transfer(request, bytes())
+        .catch((cause) => {
+          error = cause;
+        });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(error).toMatchObject({ status: 429, code: "busy", message: "refused", retryAfter: 2 });
+      expect(mock.requests).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      await transfer;
+    },
+  );
 
   it("uses a one-second default delay and cancels during that wait", async () => {
     vi.useFakeTimers();
