@@ -8,7 +8,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, Write},
     path::PathBuf,
-    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    process::{Child, ChildStdin, Command, Stdio},
 };
 
 use ariad_host::confine::path_to_file_uri;
@@ -42,14 +42,40 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
+fn converted_resource_uri(response: &Value, output: &std::path::Path) -> String {
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let uri = response["result"]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|block| block["type"] == "resource_link")
+        .and_then(|block| block["uri"].as_str())
+        .unwrap_or_else(|| panic!("missing resource link: {response}"));
+    assert_eq!(
+        uri,
+        path_to_file_uri(&fs::canonicalize(output).unwrap()),
+        "resource URI must identify the canonical output: {response}"
+    );
+    uri.to_owned()
+}
+
+#[derive(Clone, Copy)]
+enum RootsFailure {
+    Error,
+    Timeout,
+}
+
 /// Helper client for testing `ashift mcp` over stdio.
 struct McpTestClient {
     child: Option<Child>,
     stdin: Option<ChildStdin>,
-    reader: BufReader<ChildStdout>,
+    reader: std::sync::mpsc::Receiver<std::io::Result<String>>,
+    pending_roots: Vec<Value>,
+    read_timeout: std::time::Duration,
     recorded_stdout: Vec<String>,
     advertised_roots: Vec<String>,
     roots_queries_count: usize,
+    roots_failure: Option<RootsFailure>,
 }
 
 impl Drop for McpTestClient {
@@ -88,15 +114,36 @@ impl McpTestClient {
         let mut child = cmd.spawn().expect("failed to spawn ashift mcp");
         let stdin = child.stdin.take().expect("stdin pipe");
         let stdout = child.stdout.take().expect("stdout pipe");
-        let reader = BufReader::new(stdout);
+        let (sender, reader) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut stdout = BufReader::new(stdout);
+            loop {
+                let mut line = String::new();
+                match stdout.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        if sender.send(Ok(line)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = sender.send(Err(error));
+                        break;
+                    }
+                }
+            }
+        });
 
         Self {
             child: Some(child),
             stdin: Some(stdin),
             reader,
+            pending_roots: Vec::new(),
+            read_timeout: std::time::Duration::from_secs(60),
             recorded_stdout: Vec::new(),
             advertised_roots,
             roots_queries_count: 0,
+            roots_failure: None,
         }
     }
 
@@ -141,16 +188,17 @@ impl McpTestClient {
     }
 
     /// Reads next JSON message, automatically handling server-to-client `roots/list` requests.
-    fn read_message(&mut self) -> Value {
+    fn read_message_until(&mut self, deadline: std::time::Instant) -> Value {
         loop {
-            let mut line = String::new();
-            let bytes_read = self
+            assert!(
+                std::time::Instant::now() < deadline,
+                "server response deadline elapsed"
+            );
+            let line = self
                 .reader
-                .read_line(&mut line)
-                .expect("read line from stdout");
-            if bytes_read == 0 {
-                panic!("unexpected EOF on stdout");
-            }
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .expect("bounded read from server stdout")
+                .expect("read server stdout");
 
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -165,6 +213,21 @@ impl McpTestClient {
             if val.get("method").and_then(Value::as_str) == Some("roots/list")
                 && let Some(req_id) = val.get("id")
             {
+                self.roots_queries_count += 1;
+                if let Some(failure) = self.roots_failure {
+                    if matches!(failure, RootsFailure::Error) {
+                        self.write_line(
+                            &json!({
+                                "jsonrpc": "2.0", "id": req_id,
+                                "error": { "code": -32603, "message": "roots unavailable" }
+                            })
+                            .to_string(),
+                        );
+                    } else {
+                        self.pending_roots.push(req_id.clone());
+                    }
+                    continue;
+                }
                 let roots_array: Vec<Value> = self
                     .advertised_roots
                     .iter()
@@ -183,7 +246,6 @@ impl McpTestClient {
                         "roots": roots_array
                     }
                 });
-                self.roots_queries_count += 1;
                 self.write_line(&resp.to_string());
                 continue;
             }
@@ -192,7 +254,7 @@ impl McpTestClient {
         }
     }
 
-    /// Wait for server to refresh roots by completing a roots/list request cycle.
+    /// Assert a new roots request arrived; successful replies must become observable grants.
     fn wait_for_roots_refresh(&mut self) {
         let initial = self.roots_queries_count;
         for req_id in 900..950 {
@@ -203,12 +265,56 @@ impl McpTestClient {
             let _ = self.read_response(req_id);
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+        assert!(
+            self.roots_queries_count > initial,
+            "server never requested refreshed roots"
+        );
+        if self.roots_failure.is_none()
+            && let Some(root) = self.advertised_roots.iter().find_map(|uri| {
+                ariad_host::confine::parse_file_uri(uri)
+                    .ok()
+                    .filter(|path| path.is_dir())
+            })
+        {
+            let mut probe = tempfile::Builder::new()
+                .prefix("roots-ready-")
+                .suffix(".md")
+                .tempfile_in(root)
+                .unwrap();
+            probe.write_all(b"# Roots ready").unwrap();
+            self.wait_for_input_state(probe.path(), true);
+        }
+    }
+
+    /// Waits for an observable authorization decision, including asynchronous roots installation.
+    fn wait_for_input_state(&mut self, input: &std::path::Path, allowed: bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(13);
+        loop {
+            self.send_request(
+                899,
+                "tools/call",
+                json!({"name":"inspect", "arguments":{"input":input}}),
+            );
+            let response = self.read_response_until(899, deadline);
+            if response["result"]["isError"] == !allowed {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "authorization state was not installed: {response}"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     /// Reads messages until a response matching `expected_id` is found.
     fn read_response(&mut self, expected_id: u64) -> Value {
+        self.read_response_until(expected_id, std::time::Instant::now() + self.read_timeout)
+    }
+
+    fn read_response_until(&mut self, expected_id: u64, deadline: std::time::Instant) -> Value {
         loop {
-            let msg = self.read_message();
+            let msg = self.read_message_until(deadline);
             if msg.get("id").and_then(Value::as_u64) == Some(expected_id) {
                 return msg;
             }
@@ -262,17 +368,18 @@ impl McpTestClient {
     /// Complete session, closing stdin, ensuring exit code 0 and verifying stdout purity.
     fn close_and_assert_purity(mut self) {
         drop(self.stdin.take());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
 
-        // Read remaining lines until EOF
+        // Bound the entire drain and process exit, including a child that closes stdout early.
         loop {
-            let mut line = String::new();
-            let bytes_read = self
+            let line = match self
                 .reader
-                .read_line(&mut line)
-                .expect("read remaining stdout");
-            if bytes_read == 0 {
-                break;
-            }
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            {
+                Ok(line) => line.expect("read remaining stdout"),
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(error) => panic!("server did not close stdout promptly: {error}"),
+            };
             let trimmed = line.trim();
             if !trimmed.is_empty() {
                 self.recorded_stdout.push(trimmed.to_string());
@@ -282,8 +389,19 @@ impl McpTestClient {
             }
         }
 
-        let mut child = self.child.take().expect("child exists");
-        let status = child.wait().expect("wait for child");
+        let child = self.child.as_mut().expect("child exists");
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("poll child exit") {
+                break status;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("server closed stdout but did not exit promptly");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        drop(self.child.take());
         assert!(
             status.success(),
             "server process did not exit cleanly: {status:?}"
@@ -805,6 +923,73 @@ fn test_confinement_hidden_path_and_mismatched_extension() {
         .as_str()
         .unwrap();
     assert!(mismatch_err.contains("extension"));
+
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_convert_refuses_hidden_sidecar_images_and_embeds_visible_ones() {
+    use sha2::{Digest, Sha256};
+
+    const VISIBLE_PNG: &[u8] = b"\x89PNG\r\n\x1a\nvisible sibling";
+    const HIDDEN_DIR_PNG: &[u8] = b"\x89PNG\r\n\x1a\nhidden directory";
+    const HIDDEN_FILE_PNG: &[u8] = b"\x89PNG\r\n\x1a\nhidden file";
+
+    let temp_dir = TempDir::new().unwrap();
+    let canonical_temp = fs::canonicalize(temp_dir.path()).unwrap();
+    let input_path = canonical_temp.join("note.md");
+    fs::write(
+        &input_path,
+        "# Note\n\n![visible](photo.png)\n\n![hidden directory](.private/photo.png)\n\n\
+         ![hidden file](.photo.png)\n",
+    )
+    .unwrap();
+    fs::write(canonical_temp.join("photo.png"), VISIBLE_PNG).unwrap();
+    fs::create_dir(canonical_temp.join(".private")).unwrap();
+    fs::write(
+        canonical_temp.join(".private").join("photo.png"),
+        HIDDEN_DIR_PNG,
+    )
+    .unwrap();
+    fs::write(canonical_temp.join(".photo.png"), HIDDEN_FILE_PNG).unwrap();
+    let output_path = canonical_temp.join("note.json");
+
+    let mut client = McpTestClient::spawn(
+        &["--allow-dir", canonical_temp.to_str().unwrap()],
+        Vec::new(),
+    );
+    client.initialize();
+    client.send_request(
+        30,
+        "tools/call",
+        json!({
+            "name": "convert",
+            "arguments": {
+                "input": input_path.to_str().unwrap(),
+                "to": "json",
+                "output": output_path.to_str().unwrap()
+            }
+        }),
+    );
+
+    let response = client.read_response(30);
+    assert_eq!(response["result"]["isError"], false);
+    let warnings = response["result"]["structuredContent"]["warnings"]
+        .as_array()
+        .expect("warnings array");
+    let not_embedded = warnings
+        .iter()
+        .filter(|warning| warning["code"] == "image_not_embedded")
+        .count();
+    assert_eq!(
+        not_embedded, 2,
+        "both hidden image references must be refused"
+    );
+
+    let ir = fs::read_to_string(&output_path).unwrap();
+    assert!(ir.contains(&hex::encode(Sha256::digest(VISIBLE_PNG))));
+    assert!(!ir.contains(&hex::encode(Sha256::digest(HIDDEN_DIR_PNG))));
+    assert!(!ir.contains(&hex::encode(Sha256::digest(HIDDEN_FILE_PNG))));
 
     client.close_and_assert_purity();
 }
@@ -1502,4 +1687,895 @@ fn test_real_request_cancellation_preserves_server_and_cleans_engine() {
     );
 
     client.close_and_assert_purity();
+}
+
+mod limits_and_roots {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn tool(client: &mut McpTestClient, name: &str, args: Value) -> Value {
+        client.send_request(
+            700,
+            "tools/call",
+            json!({ "name": name, "arguments": args }),
+        );
+        client.read_response(700)
+    }
+
+    fn large_analysis_matches_cli(name: &str) {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("large.md");
+        fs::File::create(&input)
+            .unwrap()
+            .set_len(ariad_host::convert::ANALYSIS_MAX_BYTES + 1)
+            .unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ashift"));
+        command
+            .arg(name)
+            .arg(&input)
+            .arg("--json")
+            .env("ASHIFT_PANDOC", pandoc_path())
+            .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path());
+        if name == "plan" {
+            command.args(["--to", "html"]);
+        }
+        let cli = command.output().unwrap();
+        assert!(cli.status.success(), "{cli:?}");
+        let expected: Value = serde_json::from_slice(&cli.stdout).unwrap();
+        if name == "inspect" {
+            assert!(
+                expected["warnings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|w| w["code"] == "document_too_large")
+            );
+        }
+        let mut client =
+            McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
+        client.initialize();
+        let response = tool(&mut client, name, json!({ "input": input, "to": "html" }));
+        assert_eq!(response["result"]["isError"], false, "{response}");
+        assert_eq!(response["result"]["structuredContent"], expected);
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn inspect_above_analysis_limit_matches_cli() {
+        large_analysis_matches_cli("inspect");
+    }
+
+    #[test]
+    fn plan_above_analysis_limit_matches_cli() {
+        large_analysis_matches_cli("plan");
+    }
+
+    #[test]
+    fn convert_above_analysis_limit_succeeds() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("large.md");
+        let mut file = fs::File::create(&input).unwrap();
+        file.write_all(b"# Large document\n\n").unwrap();
+        let spaces = [b' '; 64 * 1024];
+        for _ in 0..512 {
+            file.write_all(&spaces).unwrap();
+        }
+        file.write_all(b"\n").unwrap();
+        assert!(file.metadata().unwrap().len() > ariad_host::convert::ANALYSIS_MAX_BYTES);
+        let mut client =
+            McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
+        client.initialize();
+        let output = dir.path().join("large.html");
+        let response = tool(
+            &mut client,
+            "convert",
+            json!({
+                "input": input, "to": "html", "output": output
+            }),
+        );
+        assert_eq!(response["result"]["isError"], false, "{response}");
+        assert!(
+            fs::read_to_string(output)
+                .unwrap()
+                .contains("Large document")
+        );
+        client.close_and_assert_purity();
+    }
+
+    #[cfg(feature = "test-probe")]
+    #[test]
+    fn invalid_capabilities_uses_host_error_codes() {
+        let dir = TempDir::new().unwrap();
+        let caps = dir.path().join("invalid.json");
+        fs::write(&caps, "invalid json").unwrap();
+        let input = dir.path().join("note.md");
+        fs::write(&input, "# Note").unwrap();
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", dir.path().to_str().unwrap()],
+            vec![],
+            &[("ASHIFT_TEST_CAPABILITIES", caps.as_os_str())],
+        );
+        client.initialize();
+        let error = ariad_host::convert::ConvertError::InvalidCapabilities(String::new());
+        for name in ["list_engines", "inspect", "plan"] {
+            let response = tool(&mut client, name, json!({"input": input, "to": "html"}));
+            let structured = &response["result"]["structuredContent"];
+            assert_eq!(structured["code"], error.code(), "{response}");
+            assert_eq!(structured["exit_code"], error.exit_code(), "{response}");
+        }
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn large_analysis_still_validates_utf8_past_the_limit() {
+        use std::io::{Seek, SeekFrom};
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("invalid.md");
+        let mut file = fs::File::create(&input).unwrap();
+        file.seek(SeekFrom::Start(ariad_host::convert::ANALYSIS_MAX_BYTES))
+            .unwrap();
+        file.write_all(&[0xff]).unwrap();
+        let mut client =
+            McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
+        client.initialize();
+        for name in ["inspect", "plan"] {
+            let response = tool(&mut client, name, json!({"input": input, "to": "html"}));
+            assert_eq!(response["result"]["isError"], true, "{response}");
+            assert_eq!(response["result"]["structuredContent"]["code"], "input_io");
+            assert_eq!(response["result"]["structuredContent"]["exit_code"], 1);
+        }
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn initial_roots_error_keeps_explicit_allow_dirs() {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("note.md");
+        fs::write(&input, "# Explicit directory").unwrap();
+        let mut client =
+            McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], vec![]);
+        client.roots_failure = Some(RootsFailure::Error);
+        client.initialize();
+        let response = tool(&mut client, "inspect", json!({"input": input}));
+        assert_eq!(response["result"]["isError"], false, "{response}");
+        client.close_and_assert_purity();
+    }
+
+    fn failed_refresh_revokes_root(keep_allow_dir: bool, unanswered: bool) {
+        let root = TempDir::new().unwrap();
+        let explicit = TempDir::new().unwrap();
+        // These valid spellings differ from canonical paths even without temp symlinks.
+        fs::create_dir(root.path().join("nested")).unwrap();
+        fs::create_dir(explicit.path().join("nested")).unwrap();
+        let root_path = root.path().join("nested").join("..");
+        let explicit_path = explicit.path().join("nested").join("..");
+        let input = root_path.join("note.md");
+        let other = explicit_path.join("other.md");
+        fs::write(&input, "# Root document").unwrap();
+        fs::write(&other, "# Explicit directory").unwrap();
+        let args = if keep_allow_dir {
+            vec!["--allow-dir", explicit_path.to_str().unwrap()]
+        } else {
+            vec![]
+        };
+        let mut client = McpTestClient::spawn(&args, vec![path_to_file_uri(&root_path)]);
+        client.initialize();
+        let output = root_path.join("note.html");
+        let converted = tool(
+            &mut client,
+            "convert",
+            json!({
+                "input": input, "output": output, "to": "html"
+            }),
+        );
+        assert_eq!(converted["result"]["isError"], false, "{converted}");
+        let uri = converted_resource_uri(&converted, &output);
+        client.send_request(701, "resources/read", json!({"uri": uri}));
+        let read = client.read_response(701);
+        assert!(read.get("result").is_some(), "{read}");
+        client.roots_failure = Some(if unanswered {
+            RootsFailure::Timeout
+        } else {
+            RootsFailure::Error
+        });
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        let start = Instant::now();
+        client.wait_for_input_state(&input, false);
+        assert!(
+            start.elapsed() < Duration::from_secs(if unanswered { 12 } else { 2 }),
+            "roots revocation deadline elapsed"
+        );
+        client.send_request(702, "resources/read", json!({"uri": uri}));
+        assert!(client.read_response(702).get("error").is_some());
+        if keep_allow_dir {
+            let inspected = tool(&mut client, "inspect", json!({"input": other}));
+            assert_eq!(inspected["result"]["isError"], false, "{inspected}");
+        }
+        client.roots_failure = None;
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        client.wait_for_input_state(&input, true);
+        let restored = tool(&mut client, "inspect", json!({"input": input}));
+        assert_eq!(restored["result"]["isError"], false, "{restored}");
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn roots_error_revokes_tools_and_resources() {
+        failed_refresh_revokes_root(false, false);
+    }
+
+    #[test]
+    fn roots_error_preserves_explicit_allow_dirs() {
+        failed_refresh_revokes_root(true, false);
+    }
+
+    #[test]
+    fn roots_timeout_revokes_tools_and_resources() {
+        failed_refresh_revokes_root(true, true);
+    }
+}
+
+mod concurrent_roots {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn stale_completion(
+        initialization: bool,
+        newer_timeout: bool,
+        newer_success: bool,
+        older_error: bool,
+    ) {
+        let dir = TempDir::new().unwrap();
+        let input = dir.path().join("note.md");
+        fs::write(&input, "# Authorized").unwrap();
+        let newest = TempDir::new().unwrap();
+        let newest_input = newest.path().join("newest.md");
+        fs::write(&newest_input, "# Newest root").unwrap();
+        let new_grant = older_error || initialization;
+        let root = path_to_file_uri(dir.path());
+        let mut client = McpTestClient::spawn(&[], vec![root.clone()]);
+        if initialization {
+            client.roots_failure = Some(RootsFailure::Timeout);
+        }
+        client.initialize();
+        if !initialization {
+            client.wait_for_input_state(&input, true);
+            client.roots_failure = Some(RootsFailure::Timeout);
+            client.send_notification("notifications/roots/list_changed", json!({}));
+            client.wait_for_roots_refresh();
+        }
+        let old_id = client
+            .pending_roots
+            .pop()
+            .expect("older roots request is outstanding");
+        client.roots_failure = if newer_timeout {
+            Some(RootsFailure::Timeout)
+        } else if newer_success || new_grant {
+            None
+        } else {
+            Some(RootsFailure::Error)
+        };
+        if new_grant {
+            client.update_roots(vec![path_to_file_uri(newest.path())]);
+        } else if newer_success {
+            client.update_roots(vec![]);
+        }
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        let observed_input = if new_grant { &newest_input } else { &input };
+        client.wait_for_input_state(observed_input, new_grant);
+        client.wait_for_input_state(&input, false);
+        let response = if older_error {
+            json!({"jsonrpc":"2.0", "id":old_id, "error":{"code":-32603,"message":"old failure"}})
+        } else {
+            json!({"jsonrpc":"2.0", "id":old_id, "result":{"roots":[{"uri":root}]}})
+        };
+        client.write_line(&response.to_string());
+        let granted_after_completion = new_grant && !older_error;
+        client.wait_for_input_state(observed_input, granted_after_completion);
+        let deadline = Instant::now() + Duration::from_millis(300);
+        while Instant::now() < deadline {
+            client.send_request(
+                880,
+                "tools/call",
+                json!({"name":"inspect", "arguments":{"input":observed_input}}),
+            );
+            let response = client.read_response(880);
+            assert_eq!(
+                response["result"]["isError"], !granted_after_completion,
+                "roots completion violated the authorization policy: {response}"
+            );
+        }
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn late_initial_roots_success_cannot_restore_a_revoked_grant() {
+        stale_completion(true, false, false, false);
+    }
+    #[test]
+    fn older_roots_success_cannot_restore_after_a_newer_error() {
+        stale_completion(false, false, false, false);
+    }
+    #[test]
+    fn older_roots_success_cannot_restore_after_a_newer_timeout() {
+        stale_completion(false, true, false, false);
+    }
+    #[test]
+    fn older_roots_success_cannot_override_newer_empty_roots() {
+        stale_completion(false, false, true, false);
+    }
+    #[test]
+    fn older_roots_error_revokes_even_after_a_newer_success() {
+        stale_completion(false, false, true, true);
+    }
+}
+
+#[cfg(feature = "test-probe")]
+mod staging_responsiveness {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn slow_staging(name: &str, unanswered: bool) {
+        let root = TempDir::new().unwrap();
+        let input = root.path().join("slow.md");
+        let marker = root.path().join("started");
+        let file = fs::File::create(&input).unwrap();
+        file.set_len(16 * 1024 * 1024).unwrap();
+        let mut client = McpTestClient::spawn_with_env(
+            &[],
+            vec![path_to_file_uri(root.path())],
+            &[
+                ("ASHIFT_TEST_STAGE_DELAY_MS", std::ffi::OsStr::new("100")),
+                ("ASHIFT_TEST_STAGE_STARTED", marker.as_os_str()),
+            ],
+        );
+        client.initialize();
+        let probe = root.path().join("ready.md");
+        fs::write(&probe, "# Ready").unwrap();
+        client.wait_for_input_state(&probe, true);
+        fs::remove_file(&marker).unwrap();
+        client.send_request(
+            810,
+            "tools/call",
+            json!({"name":name,"arguments":{"input":input,"to":"html"}}),
+        );
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !marker.exists() {
+            assert!(Instant::now() < deadline, "staging never began");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        client.read_timeout = Duration::from_secs(2);
+        client.roots_failure = Some(if unanswered {
+            RootsFailure::Timeout
+        } else {
+            RootsFailure::Error
+        });
+        let refresh_start = Instant::now();
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        assert!(
+            client.roots_queries_count >= 2,
+            "refresh was not processed during staging"
+        );
+        client.wait_for_input_state(&probe, false);
+        assert!(
+            refresh_start.elapsed() < Duration::from_secs(12),
+            "roots deadline was delayed by staging"
+        );
+        let start = Instant::now();
+        client.close_and_assert_purity();
+        assert!(
+            start.elapsed() < Duration::from_secs(3),
+            "shutdown did not cancel staging"
+        );
+    }
+    #[test]
+    fn slow_inspect_staging_allows_roots_refresh_and_shutdown() {
+        slow_staging("inspect", false);
+    }
+    #[test]
+    fn slow_plan_staging_allows_roots_refresh_and_shutdown() {
+        slow_staging("plan", false);
+    }
+    #[test]
+    fn slow_convert_staging_allows_roots_refresh_and_shutdown() {
+        slow_staging("convert", false);
+    }
+    #[test]
+    fn roots_timeout_keeps_its_deadline_during_slow_staging() {
+        slow_staging("inspect", true);
+    }
+}
+
+#[test]
+fn an_older_roots_timeout_revokes_even_after_a_newer_success() {
+    let root = TempDir::new().unwrap();
+    let input = root.path().join("note.md");
+    fs::write(&input, "# Root").unwrap();
+    let mut client = McpTestClient::spawn(&[], vec![path_to_file_uri(root.path())]);
+    client.initialize();
+    client.wait_for_input_state(&input, true);
+    client.roots_failure = Some(RootsFailure::Timeout);
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    let newest = TempDir::new().unwrap();
+    let newest_input = newest.path().join("newest.md");
+    fs::write(&newest_input, "# Newest root").unwrap();
+    client.update_roots(vec![path_to_file_uri(newest.path())]);
+    client.roots_failure = None;
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    client.wait_for_input_state(&newest_input, true);
+    client.wait_for_input_state(&input, false);
+    client.wait_for_input_state(&newest_input, false);
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    client.wait_for_input_state(&newest_input, true);
+    client.close_and_assert_purity();
+}
+
+fn overlapping_refreshes_revoke_at_the_first_deadline(answer_older: bool) {
+    use std::time::{Duration, Instant};
+    let root = TempDir::new().unwrap();
+    let explicit = TempDir::new().unwrap();
+    let input = root.path().join("note.md");
+    let output = root.path().join("note.html");
+    let other = explicit.path().join("explicit.md");
+    fs::write(&input, "# Client root").unwrap();
+    fs::write(&other, "# Explicit root").unwrap();
+    let root_uri = path_to_file_uri(root.path());
+    let mut client = McpTestClient::spawn(
+        &["--allow-dir", explicit.path().to_str().unwrap()],
+        vec![root_uri.clone()],
+    );
+    client.initialize();
+    client.send_request(
+        920,
+        "tools/call",
+        json!({
+            "name":"convert", "arguments":{"input":input,"output":output,"to":"html"}
+        }),
+    );
+    let converted = client.read_response(920);
+    let uri = converted_resource_uri(&converted, &output);
+    client.send_request(921, "resources/read", json!({"uri":uri}));
+    let read = client.read_response(921);
+    assert!(read.get("result").is_some(), "{read}");
+
+    client.roots_failure = Some(RootsFailure::Timeout);
+    let first = Instant::now();
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    let older = client.pending_roots.pop().unwrap();
+    client.send_request(
+        926,
+        "tools/call",
+        json!({"name":"inspect","arguments":{"input":input}}),
+    );
+    assert_eq!(
+        client.read_response_until(926, first + Duration::from_secs(2))["result"]["isError"],
+        false
+    );
+    client.send_request(927, "resources/read", json!({"uri":uri}));
+    assert!(
+        client
+            .read_response_until(927, first + Duration::from_secs(2))
+            .get("result")
+            .is_some()
+    );
+    std::thread::sleep((first + Duration::from_secs(9)).saturating_duration_since(Instant::now()));
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    let newest = client.pending_roots.pop().unwrap();
+    assert!(
+        first.elapsed() < Duration::from_secs(10),
+        "refreshes did not overlap"
+    );
+    if answer_older {
+        client.write_line(
+            &json!({
+                "jsonrpc":"2.0", "id":older, "result":{"roots":[{"uri":root_uri}]}
+            })
+            .to_string(),
+        );
+    }
+    let deadline = first + Duration::from_secs(12);
+    loop {
+        client.send_request(
+            922,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":input}}),
+        );
+        let response = client.read_response_until(922, deadline);
+        if response["result"]["isError"] == true {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "first unanswered roots deadline was postponed: {response}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    client.send_request(923, "resources/read", json!({"uri":uri}));
+    assert!(client.read_response(923).get("error").is_some());
+    client.send_request(
+        924,
+        "tools/call",
+        json!({"name":"inspect","arguments":{"input":other}}),
+    );
+    assert_eq!(client.read_response(924)["result"]["isError"], false);
+
+    // The newest request remains answerable after the shared revocation deadline.
+    client.write_line(
+        &json!({
+            "jsonrpc":"2.0", "id":newest, "result":{"roots":[{"uri":root_uri}]}
+        })
+        .to_string(),
+    );
+    client.wait_for_input_state(&input, true);
+    client.send_request(925, "resources/read", json!({"uri":uri}));
+    assert!(client.read_response(925).get("result").is_some());
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn overlapping_refreshes_keep_client_access_until_the_first_deadline() {
+    overlapping_refreshes_revoke_at_the_first_deadline(false);
+}
+
+#[test]
+fn stale_success_does_not_restart_the_pending_revocation_deadline() {
+    overlapping_refreshes_revoke_at_the_first_deadline(true);
+}
+
+mod staging_cleanup {
+    use super::*;
+    use std::{
+        path::Path,
+        time::{Duration, SystemTime},
+    };
+
+    const PREFIX: &str = "ashift-mcp-stage-";
+
+    fn process_directory(base: &Path) -> PathBuf {
+        let entries: Vec<_> = fs::read_dir(base)
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(PREFIX))
+            .map(|entry| entry.path())
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "missing dedicated process staging directory: {entries:?}"
+        );
+        entries[0].clone()
+    }
+
+    fn set_old(path: &Path) {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.access_mode(0x0100); // FILE_WRITE_ATTRIBUTES permits setting timestamps.
+            options.custom_flags(0x0200_0000); // FILE_FLAG_BACKUP_SEMANTICS
+        }
+        options
+            .open(path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(48 * 3600))
+            .unwrap();
+    }
+
+    #[test]
+    fn process_staging_is_removed_after_normal_shutdown() {
+        let temp = TempDir::new().unwrap();
+        let input = temp.path().join("note.md");
+        let base = temp.path().join("staging");
+        fs::create_dir(&base).unwrap();
+        fs::write(&input, "# Normal shutdown").unwrap();
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", temp.path().to_str().unwrap()],
+            vec![],
+            &[
+                ("TMPDIR", base.as_os_str()),
+                ("TMP", base.as_os_str()),
+                ("TEMP", base.as_os_str()),
+            ],
+        );
+        client.initialize();
+        let directory = process_directory(&base);
+        assert!(
+            directory
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&format!("{PREFIX}{}-", client.child.as_ref().unwrap().id()))
+        );
+        client.wait_for_input_state(&input, true);
+        assert!(
+            fs::read_dir(&directory).unwrap().next().is_none(),
+            "completed staging copy remains"
+        );
+        client.close_and_assert_purity();
+        assert!(
+            !directory.exists(),
+            "process staging directory remains after shutdown"
+        );
+    }
+
+    #[test]
+    fn startup_sweeps_only_old_staging_of_dead_processes() {
+        let temp = TempDir::new().unwrap();
+        let mut exited = Command::new(env!("CARGO_BIN_EXE_ashift"))
+            .arg("--version")
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let dead_pid = exited.id();
+        assert!(exited.wait().unwrap().success());
+        let stale = temp.path().join(format!("{PREFIX}{dead_pid}-stale"));
+        let recent = temp.path().join(format!("{PREFIX}{dead_pid}-recent"));
+        let live = temp
+            .path()
+            .join(format!("{PREFIX}{}-live", std::process::id()));
+        let unrelated = temp.path().join("other-application");
+        let malformed = temp.path().join(format!("{PREFIX}invalid-owner"));
+        for path in [&stale, &recent, &live, &unrelated, &malformed] {
+            fs::create_dir(path).unwrap();
+            fs::write(path.join("keep.md"), "private staging bytes").unwrap();
+            if path != &recent {
+                set_old(path);
+            }
+        }
+        #[cfg(unix)]
+        let link = {
+            let link = temp.path().join(format!("{PREFIX}{dead_pid}-link"));
+            std::os::unix::fs::symlink(&unrelated, &link).unwrap();
+            link
+        };
+        let mut client = McpTestClient::spawn_with_env(
+            &[],
+            vec![],
+            &[
+                ("TMPDIR", temp.path().as_os_str()),
+                ("TMP", temp.path().as_os_str()),
+                ("TEMP", temp.path().as_os_str()),
+            ],
+        );
+        client.initialize();
+        assert!(
+            !stale.exists(),
+            "startup did not sweep stale process staging"
+        );
+        for path in [&recent, &live, &unrelated, &malformed] {
+            assert!(
+                path.join("keep.md").exists(),
+                "startup touched protected directory {path:?}"
+            );
+        }
+        #[cfg(unix)]
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        client.close_and_assert_purity();
+    }
+
+    #[cfg(feature = "test-probe")]
+    #[test]
+    fn cancelled_staging_removes_partial_copies_before_shutdown() {
+        use std::time::Instant;
+        let temp = TempDir::new().unwrap();
+        let input = temp.path().join("slow.md");
+        fs::File::create(&input)
+            .unwrap()
+            .set_len(16 * 1024 * 1024)
+            .unwrap();
+        let base = temp.path().join("staging");
+        let marker = temp.path().join("started");
+        fs::create_dir(&base).unwrap();
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", temp.path().to_str().unwrap()],
+            vec![],
+            &[
+                ("TMPDIR", base.as_os_str()),
+                ("TMP", base.as_os_str()),
+                ("TEMP", base.as_os_str()),
+                ("ASHIFT_TEST_STAGE_STARTED", marker.as_os_str()),
+                ("ASHIFT_TEST_STAGE_DELAY_MS", std::ffi::OsStr::new("100")),
+            ],
+        );
+        client.initialize();
+        let directory = process_directory(&base);
+        client.send_request(
+            930,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":input}}),
+        );
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !marker.exists() {
+            assert!(Instant::now() < deadline, "staging did not start");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            fs::read_dir(&directory).unwrap().next().is_some(),
+            "no staged copy to cancel"
+        );
+        client.send_notification("notifications/cancelled", json!({"requestId":930}));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while fs::read_dir(&directory).unwrap().next().is_some() {
+            assert!(Instant::now() < deadline, "cancelled staging copy remains");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        client.send_request(931, "tools/list", json!({}));
+        assert!(client.read_response(931).get("result").is_some());
+        client.close_and_assert_purity();
+        assert!(
+            !directory.exists(),
+            "process staging directory remains after shutdown"
+        );
+    }
+}
+
+#[cfg(unix)]
+mod pinned_explicit_grants {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn explicit_symlink_root_with_trailing_components_reads_canonical_resource() {
+        let temp = TempDir::new().unwrap();
+        let base = fs::canonicalize(temp.path()).unwrap();
+        let real = base.join("real");
+        fs::create_dir_all(real.join("documents/nested")).unwrap();
+        let staging = real.join("staging");
+        fs::create_dir(&staging).unwrap();
+        let alias = base.join("alias");
+        symlink(&real, &alias).unwrap();
+        let grant = alias.join("documents/nested").join("..");
+        let input = grant.join("note.md");
+        let output = grant.join("note.html");
+        fs::write(&input, "# Explicit symlink root").unwrap();
+        let outside = alias.join("outside.md");
+        fs::write(&outside, "# Outside the granted subdirectory").unwrap();
+        let temp_alias = alias.join("staging");
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", grant.to_str().unwrap()],
+            vec![],
+            &[
+                ("TMPDIR", temp_alias.as_os_str()),
+                ("TMP", temp_alias.as_os_str()),
+                ("TEMP", temp_alias.as_os_str()),
+            ],
+        );
+        client.initialize();
+        client.wait_for_input_state(&input, true);
+        client.wait_for_input_state(&outside, false);
+        client.send_request(
+            950,
+            "tools/call",
+            json!({"name":"convert","arguments":{
+                "input":input,"output":output,"to":"html"
+            }}),
+        );
+        let converted = client.read_response(950);
+        let uri = converted_resource_uri(&converted, &output);
+        assert_ne!(uri, path_to_file_uri(&output));
+        client.send_request(951, "resources/read", json!({"uri":uri}));
+        let read = client.read_response(951);
+        assert!(
+            read["result"]["contents"][0]["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("Explicit symlink root")),
+            "{read}"
+        );
+        client.send_request(
+            952,
+            "resources/read",
+            json!({"uri":path_to_file_uri(&output)}),
+        );
+        let alias_read = client.read_response(952);
+        assert_eq!(alias_read["error"]["code"], -32002, "{alias_read}");
+        client.close_and_assert_purity();
+        assert_eq!(fs::read_dir(staging).unwrap().count(), 0);
+    }
+
+    fn symlink_replacement_does_not_change_grants(failure: Option<RootsFailure>) {
+        let temp = TempDir::new().unwrap();
+        let base = fs::canonicalize(temp.path()).unwrap();
+        let original = base.join("original");
+        let replacement = base.join("replacement");
+        let client_root = base.join("client-root");
+        for path in [&original, &replacement, &client_root] {
+            fs::create_dir(path).unwrap();
+            fs::write(path.join("note.md"), "# Authorized fixture").unwrap();
+        }
+        let alias = base.join("explicit-link");
+        symlink(&original, &alias).unwrap();
+        let mut client = McpTestClient::spawn(
+            &["--allow-dir", alias.to_str().unwrap()],
+            vec![
+                path_to_file_uri(&replacement),
+                path_to_file_uri(&client_root),
+            ],
+        );
+        client.initialize();
+        for (id, path) in [(940, &original), (941, &replacement)] {
+            client.send_request(
+                id,
+                "tools/call",
+                json!({"name":"convert","arguments":{
+                    "input":path.join("note.md"),"output":path.join("note.html"),"to":"html"
+                }}),
+            );
+            assert_eq!(client.read_response(id)["result"]["isError"], false);
+            client.send_request(
+                id,
+                "resources/read",
+                json!({"uri":path_to_file_uri(&path.join("note.html"))}),
+            );
+            assert!(client.read_response(id).get("result").is_some());
+        }
+        fs::remove_file(&alias).unwrap();
+        symlink(&replacement, &alias).unwrap();
+        client.update_roots(vec![]);
+        client.roots_failure = failure;
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        // This distinct client root proves that the refresh decision has been installed.
+        client.wait_for_input_state(&client_root.join("note.md"), false);
+        client.send_request(
+            942,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":original.join("note.md")}}),
+        );
+        let original_tool = client.read_response(942);
+        client.send_request(
+            943,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":replacement.join("note.md")}}),
+        );
+        let replacement_tool = client.read_response(943);
+        client.send_request(
+            944,
+            "resources/read",
+            json!({"uri":path_to_file_uri(&original.join("note.html"))}),
+        );
+        let original_resource = client.read_response(944);
+        client.send_request(
+            945,
+            "resources/read",
+            json!({"uri":path_to_file_uri(&replacement.join("note.html"))}),
+        );
+        let replacement_resource = client.read_response(945);
+        assert!(
+            original_tool["result"]["isError"] == false
+                && replacement_tool["result"]["isError"] == true
+                && original_resource.get("result").is_some()
+                && replacement_resource.get("error").is_some(),
+            "explicit grants moved after symlink replacement: original tool={original_tool}, replacement tool={replacement_tool}, original resource={original_resource}, replacement resource={replacement_resource}"
+        );
+        client.send_request(
+            946,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":alias.join("note.md")}}),
+        );
+        assert_eq!(client.read_response(946)["result"]["isError"], true);
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn roots_success_keeps_startup_explicit_grants_after_symlink_replacement() {
+        symlink_replacement_does_not_change_grants(None);
+    }
+    #[test]
+    fn roots_failure_keeps_startup_explicit_grants_after_symlink_replacement() {
+        symlink_replacement_does_not_change_grants(Some(RootsFailure::Error));
+    }
+    #[test]
+    fn roots_timeout_keeps_startup_explicit_grants_after_symlink_replacement() {
+        symlink_replacement_does_not_change_grants(Some(RootsFailure::Timeout));
+    }
 }

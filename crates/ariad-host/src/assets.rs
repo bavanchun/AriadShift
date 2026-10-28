@@ -20,6 +20,39 @@ pub enum AssetError {
     BaseDirectory(#[source] io::Error),
 }
 
+/// How image references beneath an asset base are opened.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AssetPolicy {
+    /// Ordinary local conversion: symlinks that stay inside the base are followed.
+    Standard,
+    /// Confined conversion: hidden components and symlinks are refused.
+    Confined,
+}
+
+/// An already-open image base directory and the rule for reads beneath it.
+///
+/// Holding the handle, rather than a path, keeps image reads tied to the directory that was
+/// authorized even if its path is later renamed or replaced.
+#[derive(Debug)]
+pub struct AssetBase {
+    directory: Dir,
+    policy: AssetPolicy,
+}
+
+impl AssetBase {
+    /// Uses `directory` as a confined image base.
+    ///
+    /// References with a hidden component (a segment starting with `.`) are refused, and no
+    /// path component may be a symlink, matching the confinement rules for the main input.
+    #[must_use]
+    pub fn confined(directory: Dir) -> Self {
+        Self {
+            directory,
+            policy: AssetPolicy::Confined,
+        }
+    }
+}
+
 /// Embeds safe, local image references from the input document's directory.
 ///
 /// External URLs and any path that fails lexical validation remain URLs and produce warnings.
@@ -37,20 +70,31 @@ pub fn resolve(
     let canonical_base = fs::canonicalize(base_dir).map_err(AssetError::BaseDirectory)?;
     let directory = Dir::open_ambient_dir(canonical_base, ambient_authority())
         .map_err(AssetError::BaseDirectory)?;
+    let base = AssetBase {
+        directory,
+        policy: AssetPolicy::Standard,
+    };
+    Ok(resolve_in(document, &base, limits))
+}
+
+/// Embeds safe, local image references relative to an already-open asset base.
+///
+/// Unlike [`resolve`], this never performs a path lookup outside `base`.
+pub fn resolve_in(document: &mut Document, base: &AssetBase, limits: &Limits) -> Vec<Warning> {
     let mut warnings = Vec::new();
     resolve_blocks(
         &mut document.body,
-        &directory,
+        base,
         limits.max_asset_bytes,
         &mut document.assets,
         &mut warnings,
     );
-    Ok(warnings)
+    warnings
 }
 
 fn resolve_blocks(
     blocks: &mut [Block],
-    directory: &Dir,
+    base: &AssetBase,
     max_asset_bytes: Option<u64>,
     assets: &mut ariad_core::ir::AssetStore,
     warnings: &mut Vec<Warning>,
@@ -58,20 +102,14 @@ fn resolve_blocks(
     for block in blocks {
         match block {
             Block::Heading { content, .. } | Block::Paragraph { content } => {
-                resolve_inlines(content, directory, max_asset_bytes, assets, warnings);
+                resolve_inlines(content, base, max_asset_bytes, assets, warnings);
             }
             Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
-                resolve_blocks(blocks, directory, max_asset_bytes, assets, warnings);
+                resolve_blocks(blocks, base, max_asset_bytes, assets, warnings);
             }
             Block::List { items, .. } => {
                 for item in items {
-                    resolve_blocks(
-                        &mut item.blocks,
-                        directory,
-                        max_asset_bytes,
-                        assets,
-                        warnings,
-                    );
+                    resolve_blocks(&mut item.blocks, base, max_asset_bytes, assets, warnings);
                 }
             }
             Block::Table {
@@ -81,23 +119,17 @@ fn resolve_blocks(
                 ..
             } => {
                 if let Some(caption) = caption {
-                    resolve_inlines(caption, directory, max_asset_bytes, assets, warnings);
+                    resolve_inlines(caption, base, max_asset_bytes, assets, warnings);
                 }
                 for row in head.iter_mut().chain(body) {
                     for cell in row {
-                        resolve_blocks(
-                            &mut cell.blocks,
-                            directory,
-                            max_asset_bytes,
-                            assets,
-                            warnings,
-                        );
+                        resolve_blocks(&mut cell.blocks, base, max_asset_bytes, assets, warnings);
                     }
                 }
             }
             Block::Figure { asset, caption } => {
-                resolve_reference(asset, directory, max_asset_bytes, assets, warnings);
-                resolve_inlines(caption, directory, max_asset_bytes, assets, warnings);
+                resolve_reference(asset, base, max_asset_bytes, assets, warnings);
+                resolve_inlines(caption, base, max_asset_bytes, assets, warnings);
             }
             Block::Code { .. } | Block::Math { .. } | Block::PageBreak {} | Block::Raw { .. } => {}
         }
@@ -106,7 +138,7 @@ fn resolve_blocks(
 
 fn resolve_inlines(
     inlines: &mut [Inline],
-    directory: &Dir,
+    base: &AssetBase,
     max_asset_bytes: Option<u64>,
     assets: &mut ariad_core::ir::AssetStore,
     warnings: &mut Vec<Warning>,
@@ -119,10 +151,10 @@ fn resolve_inlines(
             | Inline::Superscript { content }
             | Inline::Subscript { content }
             | Inline::Link { content, .. } => {
-                resolve_inlines(content, directory, max_asset_bytes, assets, warnings);
+                resolve_inlines(content, base, max_asset_bytes, assets, warnings);
             }
             Inline::Image { target, .. } => {
-                resolve_reference(target, directory, max_asset_bytes, assets, warnings);
+                resolve_reference(target, base, max_asset_bytes, assets, warnings);
             }
             Inline::Text { .. }
             | Inline::Code { .. }
@@ -137,7 +169,7 @@ fn resolve_inlines(
 
 fn resolve_reference(
     reference: &mut AssetRef,
-    directory: &Dir,
+    base: &AssetBase,
     max_asset_bytes: Option<u64>,
     assets: &mut ariad_core::ir::AssetStore,
     warnings: &mut Vec<Warning>,
@@ -160,6 +192,10 @@ fn resolve_reference(
             return;
         }
     };
+    if base.policy == AssetPolicy::Confined && has_hidden_component(&path) {
+        warn_not_embedded(warnings, "href contains a hidden path component");
+        return;
+    }
 
     let normalized: String = path
         .to_str()
@@ -175,7 +211,13 @@ fn resolve_reference(
 
     let mut failure_reason = "image file could not be read from the input directory";
     for candidate in candidates {
-        match read_image(directory, &candidate, max_asset_bytes) {
+        let read = match base.policy {
+            AssetPolicy::Standard => read_image(&base.directory, &candidate, max_asset_bytes),
+            AssetPolicy::Confined => {
+                read_image_nofollow(&base.directory, &candidate, max_asset_bytes)
+            }
+        };
+        match read {
             Ok(asset) => {
                 let id = hex::encode(Sha256::digest(&asset.bytes));
                 assets.entry(id.clone()).or_insert(asset);
@@ -283,6 +325,12 @@ pub(crate) fn lexical_path(decoded: &str) -> Result<PathBuf, &'static str> {
     Ok(path.to_path_buf())
 }
 
+fn has_hidden_component(path: &Path) -> bool {
+    path.components().any(|component| {
+        matches!(component, Component::Normal(name) if name.to_string_lossy().starts_with('.'))
+    })
+}
+
 pub(crate) fn has_url_scheme(value: &str) -> bool {
     let Some((scheme, _)) = value.split_once(':') else {
         return false;
@@ -334,9 +382,55 @@ pub(crate) fn read_image(
 
     let mut options = cap_std::fs::OpenOptions::new();
     options.read(true);
-    let mut file = directory
+    let file = directory
         .open_with(path, &options)
         .map_err(|_| ReadImageError::Io)?;
+    read_open_image(file, max_asset_bytes)
+}
+
+/// Reads an image beneath `directory` without following a symlink in any component.
+///
+/// Directory components are opened one at a time from the previous handle, and the file is
+/// rechecked after opening, so a concurrent swap to a symlink is refused rather than followed.
+fn read_image_nofollow(
+    directory: &Dir,
+    path: &Path,
+    max_asset_bytes: Option<u64>,
+) -> Result<Asset, ReadImageError> {
+    let file_name = path.file_name().ok_or(ReadImageError::Missing)?;
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let parent = crate::confine::open_dir_nofollow(directory, parent).map_err(open_error)?;
+
+    let entry = parent.symlink_metadata(file_name).map_err(open_error)?;
+    if !entry.is_file() {
+        return Err(ReadImageError::NotRegularFile);
+    }
+    let file = crate::confine::open_entry_nofollow(&parent, Path::new(file_name), false)
+        .map_err(open_error)?;
+    let opened = file.metadata().map_err(|_| ReadImageError::Io)?;
+    let entry = parent.symlink_metadata(file_name).map_err(open_error)?;
+    if crate::confine::is_reparse_point(&entry) || !entry.is_file() || !opened.is_file() {
+        return Err(ReadImageError::NotRegularFile);
+    }
+    #[cfg(unix)]
+    if !crate::confine::same_inode(&entry, &opened) {
+        return Err(ReadImageError::NotRegularFile);
+    }
+    read_open_image(file, max_asset_bytes)
+}
+
+fn open_error(error: io::Error) -> ReadImageError {
+    if error.kind() == io::ErrorKind::NotFound {
+        ReadImageError::Missing
+    } else {
+        ReadImageError::Io
+    }
+}
+
+fn read_open_image(
+    mut file: cap_std::fs::File,
+    max_asset_bytes: Option<u64>,
+) -> Result<Asset, ReadImageError> {
     let metadata = file.metadata().map_err(|_| ReadImageError::Io)?;
     if !metadata.is_file() {
         return Err(ReadImageError::NotRegularFile);
@@ -374,5 +468,50 @@ pub(crate) fn sniff_image_type(bytes: &[u8]) -> Option<String> {
         Some("image/webp".to_owned())
     } else {
         None
+    }
+}
+
+#[cfg(all(test, any(unix, windows)))]
+mod nofollow_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_link_swapped_back_after_open_never_reads_hidden_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = Dir::open_ambient_dir(temp.path(), ambient_authority()).unwrap();
+        let hidden = temp.path().join(".private.png");
+        let visible = temp.path().join("visible.png");
+        let saved = temp.path().join("saved.png");
+        fs::write(&hidden, b"\x89PNG\r\n\x1a\nprivate").unwrap();
+        fs::write(&visible, b"\x89PNG\r\n\x1a\npublic").unwrap();
+        let restore_visible = visible.clone();
+        let restore_saved = saved.clone();
+        crate::confine::TEST_OPEN_HOOKS.with(|hooks| {
+            hooks.borrow_mut().extend([
+                (
+                    "file-before",
+                    Box::new(move || {
+                        fs::rename(&visible, saved).unwrap();
+                        #[cfg(unix)]
+                        std::os::unix::fs::symlink(hidden, visible).unwrap();
+                        #[cfg(windows)]
+                        std::os::windows::fs::symlink_file(hidden, visible).unwrap();
+                    }) as Box<dyn FnOnce()>,
+                ),
+                (
+                    "file-after",
+                    Box::new(move || {
+                        fs::remove_file(&restore_visible).unwrap();
+                        fs::rename(restore_saved, restore_visible).unwrap();
+                    }) as Box<dyn FnOnce()>,
+                ),
+            ])
+        });
+        let read = read_image_nofollow(&root, Path::new("visible.png"), None);
+        crate::confine::TEST_OPEN_HOOKS.with(|hooks| hooks.borrow_mut().clear());
+        assert!(
+            read.is_err(),
+            "a swapped-in link to hidden bytes was accepted"
+        );
     }
 }
