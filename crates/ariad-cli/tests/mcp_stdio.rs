@@ -2221,6 +2221,7 @@ mod staging_cleanup {
         #[cfg(windows)]
         {
             use std::os::windows::fs::OpenOptionsExt;
+            options.access_mode(0x0100); // FILE_WRITE_ATTRIBUTES permits setting timestamps.
             options.custom_flags(0x0200_0000); // FILE_FLAG_BACKUP_SEMANTICS
         }
         options
