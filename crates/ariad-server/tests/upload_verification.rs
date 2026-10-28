@@ -108,6 +108,8 @@ impl Rig {
             ("ARIAD_STORAGE_URL", "s3://bucket"),
             ("AWS_ENDPOINT", &endpoint),
             ("AWS_ALLOW_HTTP", "true"),
+            // This backend implements single-object DELETE, not batch deletion.
+            ("AWS_DISABLE_BULK_DELETE", "true"),
             ("AWS_REGION", "us-east-1"),
             ("AWS_ACCESS_KEY_ID", "test"),
             ("AWS_SECRET_ACCESS_KEY", "test"),
