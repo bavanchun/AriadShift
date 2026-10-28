@@ -40,7 +40,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'schedule' && 'dev' || github.event.pull_request.head.sha || github.sha }}
+          ref: &source-ref ${{ github.event_name == 'schedule' && 'dev' || github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -248,8 +248,16 @@ jobs:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.scope.outputs.source-sha }}
+          # Use event refs directly; job outputs are not checkout authority.
+          ref: *source-ref
           persist-credentials: false
+
+      - name: Verify the recorded source
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.scope.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE_SHA" ]] || { echo '::error::Checkout differs from the recorded source; rerun on the updated ref'; exit 1; }
 
       # The docling image holds LibreOffice, PyTorch and the Docling models; the
       # preinstalled SDKs below are not needed here.
@@ -282,6 +290,8 @@ jobs:
         with:
           version: 0.12.23
           python-version: "3.14"
+          # This job executes repository code; do not share dependency caches.
+          enable-cache: false
 
       - name: Download and unpack the source-matched CI pack
         if: github.event_name != 'schedule'

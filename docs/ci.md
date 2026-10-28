@@ -93,7 +93,20 @@ pack request or wait failed. The actual conversion job is named **Run Compose**.
 
 For PR, push and manual runs, Scope records one immutable source commit. PRs
 use their head commit rather than GitHub's synthetic merge commit. Compose
-checks out exactly this recorded SHA. The isolated **Request source-matched CI
+uses the same direct event-ref selection as Scope: the PR head for PRs, the
+trusted `dev` branch for schedules, and `github.sha` for push and manual runs.
+It immediately verifies checkout against Scope's recorded SHA before executing
+repository code. If `dev` moves between jobs, the run fails and must be retried;
+the tested tree and pack still have to match the original SHA. Job outputs
+serve as comparison values, not checkout authority.
+
+The Compose job disables setup-uv's shared dependency cache explicitly. It
+uses no Actions cache restore/save, Rust cache, pnpm cache or remote Docker
+cache. Dockerfile cache mounts remain local to the disposable runner's builder.
+Removing dependency caching alone would not protect the default-branch cache
+token from arbitrary code, so the direct event refs and SHA check are required.
+
+The isolated **Request source-matched CI
 pack** job searches `pack-docling.yml` runs for that SHA and accepts only
 `workflow_dispatch` or `push` builds. A PR pack run's API `head_sha` identifies
 the PR head even though checkout built a merge, so those artifacts are rejected.
