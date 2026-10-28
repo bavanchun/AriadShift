@@ -4,6 +4,76 @@
 
 schema = 1
 
+[opencv]
+version = "5.0.0.93"
+license = "Apache-2.0"
+source = "https://pypi.org/project/opencv-python-headless/5.0.0.93/"
+url = "https://files.pythonhosted.org/packages/1d/99/76b7c80252aa83c1af16393454aafd125a0287101afe8deb0a6821af0e30/opencv_python_headless-5.0.0.93.tar.gz"
+sha256 = "b82f9831daab90b725c7c1ee1b36cb5732c367096ac76d119e64e14eb70d5f3c"
+size = 81817738
+
+[llvm]
+version = "23.1.4"
+license = "Apache-2.0 WITH LLVM-exception"
+source = "https://github.com/llvm/llvm-project/releases/tag/llvmorg-23.1.4"
+url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.4/llvm-project-23.1.4.src.tar.xz"
+sha256 = "819ecf7351f1a66f76b2d701d8942faaf5faeb324cb90c9d5b090de142434bb2"
+size = 179272572
+
+[manylinux]
+# Verified against Quay's Docker-Content-Digest for the published build image.
+source = "https://quay.io/repository/pypa/manylinux_2_28_x86_64"
+image = "quay.io/pypa/manylinux_2_28_x86_64@sha256:f6adcfd450f0927a05c66ded9b4c3bb538fbab625b1ca3f35d71ac093b24b57f"
+
+[toolchain]
+# Pre-built MKL-free / IPP-free / ittapi-free native wheels and OpenMP/licence sidecars
+# built by `.github/workflows/toolchain-wheels.yml` and published on this repository's
+# GitHub Releases (`toolchain-wheels-v*`).
+#
+# While `[toolchain.targets.<triple>.<kind>]` (`kind` in `opencv`, `torch`) is omitted
+# during bootstrap (before the first `toolchain-wheels-v*` release is cut),
+# `native_build.release_files()` returns `None` and builds from the pinned sources above.
+# Once a `toolchain-wheels-v*` release is published, render the `build_key` and `files`
+# entries from the downloaded `toolchain-wheels-*` artifacts and paste them below:
+#   uv run --no-project --python 3.14 python engines/docling/pack/licenses.py \
+#     --render-toolchain-pins DIR --release-tag toolchain-wheels-v0.2.0
+release = "toolchain-wheels-v0.2.0"
+source = "https://github.com/bavanchun/AriadShift/releases/tag/toolchain-wheels-v0.2.0"
+
+[toolchain.targets.x86_64-unknown-linux-gnu]
+# Populated after cutting `toolchain-wheels-v0.2.0`:
+# [toolchain.targets.x86_64-unknown-linux-gnu.opencv]
+# build_key = "<64-hex>"
+# files = [
+#     { name = "opencv_python_headless-5.0.0.93-cp314-cp314-manylinux_2_28_x86_64.whl", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/opencv_python_headless-5.0.0.93-cp314-cp314-manylinux_2_28_x86_64.whl", sha256 = "<64-hex>", size = 0 },
+# ]
+# [toolchain.targets.x86_64-unknown-linux-gnu.torch]
+# build_key = "<64-hex>"
+# files = [
+#     { name = "torch-2.14.1+cpu-cp314-cp314-manylinux_2_28_x86_64.whl", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/torch-2.14.1+cpu-cp314-cp314-manylinux_2_28_x86_64.whl", sha256 = "<64-hex>", size = 0 },
+#     { name = "OpenBLAS-LICENSE.txt", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/OpenBLAS-LICENSE-x86_64-unknown-linux-gnu.txt", sha256 = "<64-hex>", size = 0 },
+# ]
+
+[toolchain.targets.aarch64-unknown-linux-gnu]
+
+[toolchain.targets.aarch64-apple-darwin]
+
+[toolchain.targets.x86_64-pc-windows-msvc]
+# Populated after cutting `toolchain-wheels-v0.2.0`:
+# [toolchain.targets.x86_64-pc-windows-msvc.opencv]
+# build_key = "<64-hex>"
+# files = [
+#     { name = "opencv_python_headless-5.0.0.93-cp314-cp314-win_amd64.whl", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/opencv_python_headless-5.0.0.93-cp314-cp314-win_amd64.whl", sha256 = "<64-hex>", size = 0 },
+# ]
+# [toolchain.targets.x86_64-pc-windows-msvc.torch]
+# build_key = "<64-hex>"
+# files = [
+#     { name = "torch-2.14.1+cpu-cp314-cp314-win_amd64.whl", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/torch-2.14.1+cpu-cp314-cp314-win_amd64.whl", sha256 = "<64-hex>", size = 0 },
+#     { name = "OpenBLAS-LICENSE.txt", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/OpenBLAS-LICENSE-x86_64-pc-windows-msvc.txt", sha256 = "<64-hex>", size = 0 },
+#     { name = "libiomp5md.dll", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/libiomp5md.dll", sha256 = "<64-hex>", size = 0 },
+#     { name = "LLVM-OpenMP-LICENSE.txt", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/LLVM-OpenMP-LICENSE.txt", sha256 = "<64-hex>", size = 0 },
+# ]
+
 [python]
 # python-build-standalone, "install_only_stripped" archives.
 release = "20261021"

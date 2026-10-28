@@ -14,6 +14,24 @@ classifiers = [
 ]
 
 [dependency-groups]
+torch-build = [
+    { include-group = "pack-build" },
+    "build==1.6.1",
+    "scikit-build-core==1.1.1",
+    "numpy==2.5.4",
+    "pyyaml==6.0.3",
+    "six==1.17.0",
+    "typing-extensions==4.16.0",
+]
+pack-build = [
+    "auditwheel==6.8.2; sys_platform == 'linux'",
+    "cmake==4.4.4",
+    "ninja==1.13.2",
+    "packaging==26.3",
+    "scikit-build==0.19.1",
+    "setuptools==84.2.1",
+    "wheel==0.48.0",
+]
 dev = [
     "pytest==9.1.1",
     "ruff==0.17.1",

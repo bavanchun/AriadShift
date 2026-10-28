@@ -7,6 +7,7 @@
 # PUSH_BEFORE, REF_NAME, GITHUB_REPOSITORY, GH_TOKEN.
 # Arguments: --classify <path>... or --classify with paths on stdin.
 # Output (GITHUB_OUTPUT): range, heavy, web, reason.
+# --classify-cloud [paths...] prints true if any path needs the cloud E2E.
 set -eu
 
 zero='0000000000000000000000000000000000000000'
@@ -25,6 +26,20 @@ e2e_paths='^infra/test/e2e/|^\.github/workflows/cloud-e2e\.yml$'
 # Everything the web job builds or depends on, including the Rust code compiled to wasm
 # and the OpenAPI document the SDK is generated from.
 web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|wasm|typst)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$|^schemas/openapi\.v1\.json$'
+
+# One path list for cloud push/PR scope; cloud-e2e.yml calls this classifier.
+cloud_paths='^(infra/|apps/web/|crates/ariad-(server|core|host|cli|wasm|typst)/|services/|packages/|brand/)|^(Cargo\.(toml|lock)|rust-toolchain\.toml|pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|\.node-version|\.env\.example|justfile)$|^scripts/(ci-scope\.sh|test-ci-scope\.sh|install-wasm-bindgen\.sh)$|^fixtures/(pdf/vi-garden-image-only\.pdf|manifest\.toml)$|^\.github/workflows/(cloud-e2e|pack-docling)\.yml$'
+
+if [ "${1:-}" = --classify-cloud ]; then
+    shift
+    if [ "$#" -gt 0 ]; then changed=$(printf '%s\n' "$@"); else changed=$(cat); fi
+    if [ -z "$changed" ] || printf '%s\n' "$changed" | grep -E "$cloud_paths" >/dev/null; then
+        echo true
+    else
+        echo false
+    fi
+    exit 0
+fi
 
 # Prints heavy|web|reason.
 decide() {

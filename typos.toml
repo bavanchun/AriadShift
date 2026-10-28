@@ -1,14 +1,19 @@
 [default]
 locale = "en"
+# Abbreviated Git commit hash referenced in review reports.
+extend-ignore-re = ["\\bc234afe\\b"]
 
 [default.extend-words]
 # Correct names and acronyms in the public planning and research files.
 Ba = "Ba"
 Nam = "Nam"
 OER = "OER"
+HSI = "HSI"
 # EPUB package document (content.opf) and the Python CA bundle package.
 opf = "opf"
 certifi = "certifi"
+# macOS wheel shared-library bundler paired with auditwheel and delvewheel.
+delocate = "delocate"
 # OpenDocument Format and the flate2 compression crate.
 ODF = "ODF"
 flate = "flate"

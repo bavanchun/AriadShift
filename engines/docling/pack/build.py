@@ -43,8 +43,11 @@ from dataclasses import asdict, dataclass
 from importlib import metadata
 from pathlib import Path
 
+import conversion_proof
 import fetch
 import licenses
+import native_build
+import torch_build
 import windows_imports
 
 PACK_DIR = Path(__file__).resolve().parent
@@ -52,7 +55,7 @@ ENGINE_DIR = PACK_DIR.parent
 REPOSITORY = ENGINE_DIR.parents[1]
 PYTORCH_INDEX = "https://download.pytorch.org/whl/cpu"
 PACK_NAME = "docling"
-REQUIRES_ASHIFT = ">=0.2.0, <0.3.0"
+REQUIRES_ASHIFT = ">=0.2.0, <2.0.0"
 DESCRIPTION = "Docling: PDF, scanned documents, Office files and images, with OCR"
 NOTICES = (
     "notices/AriadShift-LICENSE",
@@ -60,6 +63,7 @@ NOTICES = (
     "notices/python-distributions.txt",
     "notices/models-and-data.txt",
     "notices/runtime-libraries.txt",
+    "notices/native-libraries.txt",
 )
 MAX_COMPONENT_BYTES = 2 * 1024**3
 PYTHON_VERSION = "3.14"
@@ -304,6 +308,101 @@ def install_wheels(work: Path, runtime: Path, target: str) -> None:
     drop_build_records(site)
 
 
+def install_torch_toolchain(work: Path, runtime: Path, target: str, cache: Path) -> dict:
+    """Install pinned release wheels, or audited native builds during bootstrap."""
+    pins = fetch.load_pins()
+    key = torch_build.key(target)
+    directory = work / "torch-toolchain"
+    files = native_build.release_files("torch", target, pins, cache, directory, key)
+    if files is None:
+        if host_target() != target:
+            raise SystemExit("torch fallback requires a matching native runner")
+        cached = cache.resolve() / "native" / f"torch-{key}"
+        command = native_build.tools(
+            "python",
+            PACK_DIR / "torch_build.py",
+            "verify" if (cached / "build.json").is_file() else "build",
+            "--target",
+            target,
+            "--out",
+            cached,
+            "--cache",
+            cache.resolve(),
+        )
+        # Keep the build interpreter separate from the installed pack interpreter.
+        # The Linux driver supplies its own manylinux environment inside Docker.
+        run(
+            command,
+            cwd=REPOSITORY,
+            env=dict(
+                os.environ, UV_PROJECT_ENVIRONMENT=str(REPOSITORY / ".tools/pack-torch-build-env")
+            ),
+        )
+        directory.mkdir()
+        files = {}
+        for source in sorted(cached.iterdir()):
+            if source.is_file() and source.name != "build.json":
+                destination = directory / source.name
+                shutil.copyfile(source, destination)
+                files[source.name] = destination
+    wheels = [path for name, path in files.items() if name.endswith(".whl")]
+    config = torch_build.load_config()
+    torch_prefix = f"torch-{config['torch']['version']}-"
+    vision_prefix = f"torchvision-{config['vision']['version']}-"
+    if len([path for path in wheels if path.name.startswith(torch_prefix)]) != 1:
+        raise SystemExit("toolchain must contain exactly one matching torch wheel")
+    if any(not path.name.startswith((torch_prefix, vision_prefix)) for path in wheels):
+        raise SystemExit("toolchain contains an unexpected wheel or version")
+    required = {"OpenBLAS-LICENSE.txt"}
+    if is_windows(target):
+        required.update({"libiomp5md.dll", "LLVM-OpenMP-LICENSE.txt"})
+    if missing := required - files.keys():
+        raise SystemExit(f"toolchain is missing required sidecars: {sorted(missing)}")
+    run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--target",
+            site_packages(runtime, target),
+            "--python-platform",
+            PLATFORMS[target],
+            "--python-version",
+            PYTHON_VERSION,
+            "--no-deps",
+            "--reinstall",
+            "--link-mode",
+            "copy",
+            *wheels,
+        ]
+    )
+    drop_build_records(site_packages(runtime, target))
+    return files
+
+
+def refresh_wheel_records(site: Path) -> None:
+    """Rehash replaced libraries/notices and remove the deleted Intel stubs row."""
+    for record in site.glob("*.dist-info/RECORD"):
+        with record.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.reader(handle))
+        kept = []
+        for row in rows:
+            path = site / row[0]
+            if not path.is_file():
+                if path.name.lower() == "libiompstubs5md.dll":
+                    continue
+                kept.append(row)
+                continue
+            if path != record and (
+                path.suffix.lower() in {".dll", ".pyd"} or path.name == "LICENSE-3RD-PARTY.txt"
+            ):
+                digest = urlsafe_b64encode(hashlib.sha256(path.read_bytes()).digest()).decode()
+                row[1:] = [f"sha256={digest.rstrip('=')}", str(path.stat().st_size)]
+            kept.append(row)
+        with record.open("w", newline="", encoding="utf-8") as handle:
+            csv.writer(handle, lineterminator="\n").writerows(kept)
+
+
 def drop_build_records(site: Path) -> None:
     """Removes the installer's records of where and when each wheel was installed.
 
@@ -477,9 +576,18 @@ runpy.run_module('ariad_docling', run_name='__main__')
     print("PDF runtime converted the smoke fixture", flush=True)
 
 
-def archive(root: Path, members: list[str], destination: Path) -> str:
+def archive(
+    root: Path,
+    members: list[str],
+    destination: Path,
+    approved_openmp: dict[str, str] | None = None,
+) -> str:
     """Writes a reproducible tar.zst of ``members`` and returns its file name."""
     epoch = int(os.environ.get("SOURCE_DATE_EPOCH", "0"))
+    for member in members:
+        if member in {"runtime", "notices"}:
+            licenses.check_vendor_files(root, approved_openmp)
+            break
 
     def normalize(info: tarfile.TarInfo) -> tarfile.TarInfo:
         if is_microsoft_runtime(Path(info.name)):
@@ -515,6 +623,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         raise SystemExit(f"unsupported target {target}; known: {', '.join(PLATFORMS)}")
     version = engine_version()
     pins = fetch.load_pins()
+    native_build.check_opencv_pin(pins)
     work = out / "work" / target
     shutil.rmtree(work, ignore_errors=True)
     root = work / "root"
@@ -526,15 +635,135 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         runtime, licenses.runtime_libraries(pins["python"]["release"], target), target
     )
     install_wheels(work, runtime, target)
+    native = host_target() == target
+    proof = native and target.startswith("x86_64-")
+    fetch.install_assets(pins, root, cache, copy=True)
     if is_windows(target):
         prune_microsoft_runtime(runtime)
-    native = host_target() == target
+    baseline = (
+        conversion_proof.capture(python_executable(runtime, target), REPOSITORY) if proof else None
+    )
+    toolchain = (
+        install_torch_toolchain(work, runtime, target, cache)
+        if target.startswith("x86_64-")
+        else {}
+    )
+    if target.startswith("x86_64-"):
+        wheel = native_build.opencv(target, pins, cache)
+        run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--target",
+                site_packages(runtime, target),
+                "--python-platform",
+                PLATFORMS[target],
+                "--python-version",
+                PYTHON_VERSION,
+                "--no-deps",
+                "--reinstall-package",
+                "opencv-python-headless",
+                "--link-mode",
+                "copy",
+                wheel,
+            ]
+        )
+        drop_build_records(site_packages(runtime, target))
+    approved_openmp = {}
+    llvm = None
+    if is_windows(target):
+        llvm = work / "torch-toolchain"
+        torch_lib = site_packages(runtime, target) / "torch/lib"
+        shutil.copyfile(llvm / "libiomp5md.dll", torch_lib / "libiomp5md.dll")
+        (torch_lib / "libiompstubs5md.dll").unlink(missing_ok=True)
+        replacement = torch_lib / "libiomp5md.dll"
+        approved_openmp[replacement.relative_to(root).as_posix()] = fetch._sha256(replacement)
+        prune_microsoft_runtime(runtime)
+    if native:
+        native_build.verify_opencv(python_executable(runtime, target))
+        if target.startswith("x86_64-"):
+            run([python_executable(runtime, target), "-I", "-B", "-c", torch_build.TORCH_PROBE])
+            run([python_executable(runtime, target), "-I", "-B", "-c", torch_build.VISION_PROBE])
+    elif not target.startswith("aarch64-"):
+        raise SystemExit("only audited ARM OpenCV wheels may skip the native IPP probe")
+    # ARM wheels use the same common notice as x86 wheels; its explicit x86-only
+    # scope does not apply. Native targets additionally prove their build configuration.
+    site = site_packages(runtime, target)
+    notices = list(site.rglob("LICENSE-3RD-PARTY.txt"))
+    opencv_info = site / f"opencv_python_headless-{pins['opencv']['version']}.dist-info"
+    if not notices or any(
+        path != site / "cv2/LICENSE-3RD-PARTY.txt" and not path.is_relative_to(opencv_info)
+        for path in notices
+    ):
+        raise SystemExit("unreviewed OpenCV third-party notice location")
+    for notice in notices:
+        native_build.remove_inapplicable_ipp_notice(notice)
+    refresh_wheel_records(site)
     if native:
         compile_bytecode(runtime, target)
     expression = write_notices(root, runtime, target, pins)
-    fetch.install_assets(pins, root, cache, copy=True)
+    shutil.copyfile(PACK_DIR / "licenses/ittapi.txt", root / "notices/ittapi-LICENSE.txt")
+    (root / "notices/native-libraries.txt").write_text(
+        f"OpenCV {pins['opencv']['version']}: {pins['opencv']['license']}\n"
+        f"Source: {pins['opencv']['source']}\n"
+        f"Source SHA-256: {pins['opencv']['sha256']}\n"
+        + (
+            f"Build flags: {' '.join(native_build.OPENCV_FLAGS)}\n"
+            if target.startswith("x86_64-")
+            else "Unmodified upstream ARM wheel binary.\n"
+        )
+        + "The common upstream notice's inapplicable x86 IPP section was removed.\n"
+        + "ITT API / ittnotify: BSD-3-Clause (permitted native instrumentation).\n"
+        + "License text: notices/ittapi-LICENSE.txt\n"
+        + "License source: https://github.com/intel/ittapi/blob/54835bb96f1b85f8f21841ce821487f69d95ecce/LICENSES/BSD-3-Clause.txt\n",
+        "utf-8",
+    )
+    if toolchain:
+        config = torch_build.load_config()
+        shutil.copyfile(toolchain["OpenBLAS-LICENSE.txt"], root / "notices/OpenBLAS-LICENSE.txt")
+        with (root / "notices/native-libraries.txt").open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"PyTorch {config['torch']['version']}: source-built CPU wheel, no MKL.\n"
+                f"Source: {config['torch']['source']}\n"
+                f"OpenBLAS {config['openblas']['version']}: BSD-3-Clause (static, C LAPACK).\n"
+                f"Source: {config['openblas']['source']}\n"
+            )
+    if llvm is not None:
+        shutil.copyfile(llvm / "LLVM-OpenMP-LICENSE.txt", root / "notices/LLVM-OpenMP-LICENSE.txt")
+        shutil.copyfile(PACK_DIR / "vcomp-compat.cpp", root / "notices/vcomp-compat.cpp")
+        (root / "notices/llvm-openmp.txt").write_text(
+            f"LLVM OpenMP {pins['llvm']['version']}: {pins['llvm']['license']}\n"
+            f"Source: {pins['llvm']['source']}\n"
+            "Modified with the bundled Apache-2.0 MSVC compatibility wrappers.\n"
+            f"libiomp5md.dll SHA-256: {next(iter(approved_openmp.values()))}\n",
+            "utf-8",
+        )
+        expression = licenses.combined_expression([expression, pins["llvm"]["license"]])
+        with (root / "notices/native-libraries.txt").open("a", encoding="utf-8") as handle:
+            handle.write((root / "notices/llvm-openmp.txt").read_text("utf-8"))
+    licenses.check_vendor_files(root, approved_openmp)
     if native:
         smoke(runtime, target)
+    if proof:
+        run(
+            [python_executable(runtime, target), "-I", "-B", PACK_DIR / "probe-runtime.py"],
+            timeout=180,
+        )
+        comparison = conversion_proof.compare(
+            baseline, conversion_proof.capture(python_executable(runtime, target), REPOSITORY)
+        )
+        (out / f"comparison-{target}.json").write_text(
+            json.dumps(comparison, indent=2, ensure_ascii=False) + "\n", "utf-8"
+        )
+        print(
+            "Comparison with the original locked wheels:",
+            {
+                name: {key: value for key, value in result.items() if key.endswith("_equal")}
+                for name, result in comparison.items()
+            },
+            flush=True,
+        )
 
     out.mkdir(parents=True, exist_ok=True)
     record = TargetBuild(
@@ -542,7 +771,10 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         license=expression,
         version=version,
         runtime=archive(
-            root, ["runtime", "notices"], out / f"docling-{version}-{target}-runtime.tar.zst"
+            root,
+            ["runtime", "notices"],
+            out / f"docling-{version}-{target}-runtime.tar.zst",
+            approved_openmp,
         ),
         models=archive(root, ["models"], out / f"docling-{version}-models.tar.zst"),
         tessdata=archive(root, ["tessdata"], out / f"docling-{version}-tessdata.tar.zst"),
@@ -635,6 +867,45 @@ def load_build(out: Path, target: str) -> TargetBuild:
     return TargetBuild(**json.loads((out / f"build-{target}.json").read_text(encoding="utf-8")))
 
 
+def unpack_pack(out: Path, target: str, root: Path) -> None:
+    root.mkdir()
+    for file in load_build(out, target).files.values():
+        with tarfile.open(out / file, "r:zst") as tar:
+            tar.extractall(root, filter="data")
+    shutil.copyfile(out / "pack.toml", root / "pack.toml")
+
+
+def conformance(out: Path, target: str) -> None:
+    """Run the existing protocol and acceptance suite against the packaged interpreter."""
+    if host_target() != target:
+        raise SystemExit("pack conformance requires a native target")
+    with tempfile.TemporaryDirectory(prefix="docling-conformance-") as directory:
+        root = Path(directory) / "pack"
+        unpack_pack(out, target, root)
+        env = dict(os.environ)
+        env["ASHIFT_DOCLING_ENGINE"] = (
+            f'"{python_executable(root / "runtime", target)}" -I -m ariad_docling'
+        )
+        run(
+            [
+                "cargo",
+                "test",
+                "-p",
+                "ariad-cli",
+                "--features",
+                "ariad-host/test-probe",
+                "--test",
+                "docling_engine",
+                "--",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=3",
+            ],
+            cwd=REPOSITORY,
+            env=env,
+        )
+
+
 def verify(ashift: str, out: Path, target: str, source: Path, expect: str, offline: bool) -> None:
     """Unpacks the pack into a clean directory and converts ``source`` through ``ashift``.
 
@@ -643,14 +914,9 @@ def verify(ashift: str, out: Path, target: str, source: Path, expect: str, offli
     With ``offline`` the conversion runs in a new network namespace (``unshare -rn``, Linux
     only), which proves the pack needs no downloads.
     """
-    build = load_build(out, target)
     with tempfile.TemporaryDirectory(prefix="docling-pack-") as directory:
         root = Path(directory) / "pack"
-        root.mkdir()
-        for file in build.files.values():
-            with tarfile.open(out / file, "r:zst") as tar:
-                tar.extractall(root, filter="data")
-        shutil.copyfile(out / "pack.toml", root / "pack.toml")
+        unpack_pack(out, target, root)
         result = Path(directory) / f"converted{source.suffix}.md"
         env = {
             "PATH": os.environ.get("PATH", ""),
@@ -729,6 +995,9 @@ def main(argv: list[str] | None = None) -> int:
     verify_parser.add_argument("--expect", required=True)
     verify_parser.add_argument("--offline", action="store_true")
     verify_parser.add_argument("--ashift", default=default_ashift())
+    conformance_parser = commands.add_parser("conformance")
+    conformance_parser.add_argument("--target", default=host_target())
+    conformance_parser.add_argument("--out", type=Path, required=True)
     manifest_parser = commands.add_parser("manifest")
     manifest_parser.add_argument("--out", type=Path, required=True)
     manifest_parser.add_argument("--ashift", default=default_ashift())
@@ -751,6 +1020,8 @@ def main(argv: list[str] | None = None) -> int:
             args.expect,
             args.offline,
         )
+    elif args.command == "conformance":
+        conformance(args.out.resolve(), args.target)
     else:
         out = args.out.resolve()
         write_manifest(args.ashift, out, [load_build(out, target) for target in args.targets])

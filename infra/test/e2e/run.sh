@@ -25,7 +25,8 @@
 #   E2E_JOB_TIMEOUT      seconds to wait for the conversion (default 900)
 #   E2E_LOG_TAIL         log lines per service printed on failure (default 400)
 #   E2E_DOCLING_PACK_DIR unpacked local Docling pack with pack.toml, runtime,
-#                        models and tessdata (test-only; skips release download)
+#                        models and tessdata (test-only; skips release download
+#                        and the signed installer's host-version range check)
 
 set -eu
 set -o pipefail
@@ -35,10 +36,11 @@ COMPOSE_FILE="$ROOT/infra/compose/docker-compose.yml"
 ENV_EXAMPLE="$ROOT/.env.example"
 
 # Scanned page with a recorded source and licence in fixtures/manifest.toml
-# (id pd-en-alice-page-3). The DOCX must contain these words.
-FIXTURE="$ROOT/fixtures/scan/en-alice-p3.pdf"
-FIXTURE_SHA256=a94c88386277168d3ae1fc24cff44130b84ac916bd4cfd2cd29b4807b762f406
-EXPECTED_WORDS="Alice rabbit"
+# (id vi-garden-image-only). It has no text layer, so the DOCX
+# must obtain these words through OCR.
+FIXTURE="$ROOT/fixtures/pdf/vi-garden-image-only.pdf"
+FIXTURE_SHA256=048930c263e1b5aefe30990d74a207fbec3ce275abfda6fd402ead05ee7170fb
+EXPECTED_WORDS="Khu vườn đọc sách"
 
 PROJECT=${E2E_PROJECT:-ariadshift-e2e}
 API_PORT=${E2E_API_PORT:-18080}
@@ -70,15 +72,6 @@ ENV_FILE="$WORK/env"
 BODY="$WORK/body"
 STACK_STARTED=0
 COMPOSE_ARGS=(-f "$COMPOSE_FILE")
-if [ -n "${E2E_DOCLING_PACK_DIR:-}" ]; then
-	E2E_DOCLING_PACK_DIR=$(cd "$E2E_DOCLING_PACK_DIR" && pwd)
-	export E2E_DOCLING_PACK_DIR
-	for item in pack.toml runtime models tessdata; do
-		[ -e "$E2E_DOCLING_PACK_DIR/$item" ] || fail "local Docling pack lacks $item"
-	done
-	COMPOSE_ARGS+=(-f "$ROOT/infra/test/e2e/compose.local-pack.yml")
-	log "using the local test pack at $E2E_DOCLING_PACK_DIR"
-fi
 
 compose() {
 	docker compose -p "$PROJECT" --env-file "$ENV_FILE" "${COMPOSE_ARGS[@]}" \
@@ -104,6 +97,16 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+if [ -n "${E2E_DOCLING_PACK_DIR:-}" ]; then
+	E2E_DOCLING_PACK_DIR=$(cd "$E2E_DOCLING_PACK_DIR" && pwd)
+	export E2E_DOCLING_PACK_DIR
+	for item in pack.toml runtime models tessdata; do
+		[ -e "$E2E_DOCLING_PACK_DIR/$item" ] || fail "local Docling pack lacks $item"
+	done
+	COMPOSE_ARGS+=(-f "$ROOT/infra/test/e2e/compose.local-pack.yml")
+	log "using the local test pack at $E2E_DOCLING_PACK_DIR"
+fi
 
 random_hex() { od -An -N32 -tx1 /dev/urandom | tr -d ' \n'; }
 
@@ -230,7 +233,7 @@ SIZE=$(size_of "$FIXTURE")
 log "creating an upload ($SIZE bytes)"
 code=$(v1 POST /v1/uploads -H 'content-type: application/json' \
 	--data "$(jq -nc --argjson s "$SIZE" --arg h "$FIXTURE_SHA256" \
-		'{filename: "alice-scan.pdf", size: $s, sha256: $h}')")
+		'{filename: "garden-scan.pdf", size: $s, sha256: $h}')")
 expect 201 "$code" "upload creation"
 UPLOAD_ID=$(field '.id')
 [ "$(field '.status')" = pending ] || fail "a new upload is not pending"
@@ -307,6 +310,11 @@ if [ "$final" != succeeded ] || [ "$status" != succeeded ]; then
 	fail "job ended with event '$final' and status '$status': $(jq -c '.error' "$BODY")"
 fi
 
+# The POST response only reserves a pack. Check the route actually executed.
+[ "$(field '.route[0].engine')" = docling ] || fail "the executed route does not start with docling"
+jq -e 'all(.warnings[]?; .code != "ocr_required")' "$BODY" >/dev/null || fail "the job still requires OCR"
+log "completed job used docling with no ocr_required warning"
+
 # --- Output ----------------------------------------------------------------
 
 code=$(v1 GET "/v1/jobs/$JOB_ID/outputs")
@@ -331,7 +339,7 @@ done
 # Strip the markup so words split across runs still match.
 text=$(unzip -p "$DOCX" word/document.xml | sed -e 's/<[^>]*>//g')
 for word in $EXPECTED_WORDS; do
-	grep -Fqi "$word" <<<"$text" || fail "the DOCX text lacks '$word'"
+	grep -Fq "$word" <<<"$text" || fail "the DOCX text lacks '$word'"
 done
 log "the DOCX is valid and contains: $EXPECTED_WORDS"
 
