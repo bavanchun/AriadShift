@@ -81,6 +81,14 @@ export interface RouteOutput {
   warnings: Notice[];
 }
 
+function intermediateOptions(options: ConvertOptions): ConvertOptions {
+  if (!options.limits || !("max_input_bytes" in options.limits)) {
+    return options;
+  }
+  const { max_input_bytes: _, ...limits } = options.limits;
+  return { ...options, limits };
+}
+
 /** Runs a planned route, handing each run of steps to its engine. */
 export async function runRoute(
   core: Core,
@@ -91,7 +99,9 @@ export async function runRoute(
   let current = bytes;
   let last: ConvertResult | null = null;
   const warnings: Notice[] = [];
-  for (const group of groupSteps(steps)) {
+  // Ingest already capped the user's original bytes; intermediate IR is produced in-process.
+  const laterOptions = intermediateOptions(options);
+  for (const [index, group] of groupSteps(steps).entries()) {
     const engine = core.engines.get(group.engine);
     if (!engine) {
       throw {
@@ -100,7 +110,12 @@ export async function runRoute(
         engine: group.engine,
       };
     }
-    last = await engine.convert(current, group.from, group.to, options);
+    last = await engine.convert(
+      current,
+      group.from,
+      group.to,
+      index === 0 ? options : laterOptions,
+    );
     current = last.bytes;
     warnings.push(...last.warnings);
   }
