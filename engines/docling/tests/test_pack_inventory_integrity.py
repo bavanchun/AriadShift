@@ -518,3 +518,29 @@ def test_reviewed_upstream_notice_supplies_a_missing_wheel_licence(tmp_path):
     assert inventory[0]["notice_scope"] == "upstream"
     text = next((notices / "vendored").iterdir()).read_text(encoding="utf-8")
     assert "Apache License" in text and "Version 2.0, January 2004" in text
+
+
+def test_linux_opencv_sidecars_pass_the_final_vendor_notice_gate(tmp_path):
+    notices = {}
+    for name, component in licenses._NATIVE_COMPONENTS.items():
+        if name.startswith("opencv-linux-"):
+            for notice in component["notices"]:
+                notices[notice["path"]] = notice
+    assert notices
+    for relative in notices:
+        source = REPOSITORY / "engines/docling/pack/licenses" / relative
+        (tmp_path / relative).write_bytes(source.read_bytes())
+    licenses.check_vendor_files(tmp_path)
+
+
+def test_reviewed_upstream_sidecar_bytes_match_every_declared_digest():
+    notices = {
+        notice["path"]: notice["sha256"]
+        for component in licenses._NATIVE_COMPONENTS.values()
+        if component.get("notice_scope") == "upstream"
+        for notice in component["notices"]
+    }
+    assert notices
+    for relative, expected in notices.items():
+        notice = REPOSITORY / "engines/docling/pack/licenses" / relative
+        assert hashlib.sha256(notice.read_bytes()).hexdigest() == expected, relative
