@@ -43,11 +43,13 @@ export class ConverterClient {
     const fresh = this.#worker === null;
     const worker = this.#ensure();
     if (fresh && this.#retired.length > 0) {
-      const sessions = this.#retired;
-      this.#retired = [];
-      void this.#send(worker, { type: "retire", sessions }).catch(() => {
-        this.#retired.push(...sessions);
-      });
+      const sessions = [...this.#retired];
+      void this.#send(worker, { type: "retire", sessions }).then(
+        () => {
+          this.#retired = this.#retired.filter((session) => !sessions.includes(session));
+        },
+        () => undefined,
+      );
     }
     return this.#send(worker, message).then((result) => {
       if (typeof result === "object" && result !== null && "recycle" in result && result.recycle) {
@@ -55,6 +57,11 @@ export class ConverterClient {
       }
       return result;
     });
+  }
+
+  /** Stop the current conversion; the next worker cleans up its storage. */
+  cancel() {
+    this.#retire({ code: "cancelled", message: "The conversion was cancelled.", fatal: false });
   }
 
   terminate() {
@@ -76,7 +83,13 @@ export class ConverterClient {
   }
 
   /** Replaces the worker and remembers its storage session for cleanup. */
-  #retire() {
+  #retire(
+    error: ConverterError = {
+      code: "worker_replaced",
+      message: "The converter worker was replaced.",
+      fatal: false,
+    },
+  ) {
     this.#worker?.terminate();
     if (this.#session) {
       this.#retired.push(this.#session);
@@ -84,6 +97,7 @@ export class ConverterClient {
     this.#worker = null;
     this.#session = null;
     this.#recycle = false;
+    this.#failAll(error);
   }
 
   #ensure(): Worker {
@@ -94,6 +108,7 @@ export class ConverterClient {
     worker.addEventListener(
       "message",
       (event: MessageEvent<WorkerResponse | { event: "progress"; message: string }>) => {
+        if (this.#worker !== worker) return;
         const response = event.data;
         if ("event" in response) {
           for (const listener of this.#progress) listener(response.message);
@@ -109,8 +124,7 @@ export class ConverterClient {
         } else {
           pending.reject(response.error);
           if (response.error.fatal && this.#worker === worker) {
-            this.#retire();
-            this.#failAll(response.error);
+            this.#retire(response.error);
           }
         }
       },
@@ -118,13 +132,12 @@ export class ConverterClient {
     worker.addEventListener("error", (event) => {
       event.preventDefault();
       if (this.#worker === worker) {
-        this.#retire();
+        this.#retire({
+          code: "worker_failed",
+          message: "The converter could not start in this browser.",
+          fatal: true,
+        });
       }
-      this.#failAll({
-        code: "worker_failed",
-        message: "The converter could not start in this browser.",
-        fatal: true,
-      });
     });
     this.#worker = worker;
     this.#send(worker, { type: "init" }).then(
