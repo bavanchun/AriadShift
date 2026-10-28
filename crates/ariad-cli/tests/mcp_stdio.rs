@@ -42,6 +42,23 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
+fn converted_resource_uri(response: &Value, output: &std::path::Path) -> String {
+    assert_eq!(response["result"]["isError"], false, "{response}");
+    let uri = response["result"]["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|block| block["type"] == "resource_link")
+        .and_then(|block| block["uri"].as_str())
+        .unwrap_or_else(|| panic!("missing resource link: {response}"));
+    assert_eq!(
+        uri,
+        path_to_file_uri(&fs::canonicalize(output).unwrap()),
+        "resource URI must identify the canonical output: {response}"
+    );
+    uri.to_owned()
+}
+
 #[derive(Clone, Copy)]
 enum RootsFailure {
     Error,
@@ -1827,18 +1844,23 @@ mod limits_and_roots {
     fn failed_refresh_revokes_root(keep_allow_dir: bool, unanswered: bool) {
         let root = TempDir::new().unwrap();
         let explicit = TempDir::new().unwrap();
-        let input = root.path().join("note.md");
-        let other = explicit.path().join("other.md");
+        // These valid spellings differ from canonical paths even without temp symlinks.
+        fs::create_dir(root.path().join("nested")).unwrap();
+        fs::create_dir(explicit.path().join("nested")).unwrap();
+        let root_path = root.path().join("nested").join("..");
+        let explicit_path = explicit.path().join("nested").join("..");
+        let input = root_path.join("note.md");
+        let other = explicit_path.join("other.md");
         fs::write(&input, "# Root document").unwrap();
         fs::write(&other, "# Explicit directory").unwrap();
         let args = if keep_allow_dir {
-            vec!["--allow-dir", explicit.path().to_str().unwrap()]
+            vec!["--allow-dir", explicit_path.to_str().unwrap()]
         } else {
             vec![]
         };
-        let mut client = McpTestClient::spawn(&args, vec![path_to_file_uri(root.path())]);
+        let mut client = McpTestClient::spawn(&args, vec![path_to_file_uri(&root_path)]);
         client.initialize();
-        let output = root.path().join("note.html");
+        let output = root_path.join("note.html");
         let converted = tool(
             &mut client,
             "convert",
@@ -1847,9 +1869,10 @@ mod limits_and_roots {
             }),
         );
         assert_eq!(converted["result"]["isError"], false, "{converted}");
-        let uri = path_to_file_uri(&output);
+        let uri = converted_resource_uri(&converted, &output);
         client.send_request(701, "resources/read", json!({"uri": uri}));
-        assert!(client.read_response(701).get("result").is_some());
+        let read = client.read_response(701);
+        assert!(read.get("result").is_some(), "{read}");
         client.roots_failure = Some(if unanswered {
             RootsFailure::Timeout
         } else {
@@ -2116,10 +2139,11 @@ fn overlapping_refreshes_revoke_at_the_first_deadline(answer_older: bool) {
             "name":"convert", "arguments":{"input":input,"output":output,"to":"html"}
         }),
     );
-    assert_eq!(client.read_response(920)["result"]["isError"], false);
-    let uri = path_to_file_uri(&output);
+    let converted = client.read_response(920);
+    let uri = converted_resource_uri(&converted, &output);
     client.send_request(921, "resources/read", json!({"uri":uri}));
-    assert!(client.read_response(921).get("result").is_some());
+    let read = client.read_response(921);
+    assert!(read.get("result").is_some(), "{read}");
 
     client.roots_failure = Some(RootsFailure::Timeout);
     let first = Instant::now();
@@ -2399,6 +2423,64 @@ mod staging_cleanup {
 mod pinned_explicit_grants {
     use super::*;
     use std::os::unix::fs::symlink;
+
+    #[test]
+    fn explicit_symlink_root_with_trailing_components_reads_canonical_resource() {
+        let temp = TempDir::new().unwrap();
+        let base = fs::canonicalize(temp.path()).unwrap();
+        let real = base.join("real");
+        fs::create_dir_all(real.join("documents/nested")).unwrap();
+        let staging = real.join("staging");
+        fs::create_dir(&staging).unwrap();
+        let alias = base.join("alias");
+        symlink(&real, &alias).unwrap();
+        let grant = alias.join("documents/nested").join("..");
+        let input = grant.join("note.md");
+        let output = grant.join("note.html");
+        fs::write(&input, "# Explicit symlink root").unwrap();
+        let outside = alias.join("outside.md");
+        fs::write(&outside, "# Outside the granted subdirectory").unwrap();
+        let temp_alias = alias.join("staging");
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", grant.to_str().unwrap()],
+            vec![],
+            &[
+                ("TMPDIR", temp_alias.as_os_str()),
+                ("TMP", temp_alias.as_os_str()),
+                ("TEMP", temp_alias.as_os_str()),
+            ],
+        );
+        client.initialize();
+        client.wait_for_input_state(&input, true);
+        client.wait_for_input_state(&outside, false);
+        client.send_request(
+            950,
+            "tools/call",
+            json!({"name":"convert","arguments":{
+                "input":input,"output":output,"to":"html"
+            }}),
+        );
+        let converted = client.read_response(950);
+        let uri = converted_resource_uri(&converted, &output);
+        assert_ne!(uri, path_to_file_uri(&output));
+        client.send_request(951, "resources/read", json!({"uri":uri}));
+        let read = client.read_response(951);
+        assert!(
+            read["result"]["contents"][0]["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("Explicit symlink root")),
+            "{read}"
+        );
+        client.send_request(
+            952,
+            "resources/read",
+            json!({"uri":path_to_file_uri(&output)}),
+        );
+        let alias_read = client.read_response(952);
+        assert_eq!(alias_read["error"]["code"], -32002, "{alias_read}");
+        client.close_and_assert_purity();
+        assert_eq!(fs::read_dir(staging).unwrap().count(), 0);
+    }
 
     fn symlink_replacement_does_not_change_grants(failure: Option<RootsFailure>) {
         let temp = TempDir::new().unwrap();
