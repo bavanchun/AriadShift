@@ -1,166 +1,140 @@
-# Pack gates: positive native identities before toolchain export
+# Pack gates: refuse payload-bearing directories and ambiguous export paths
 
-The export-boundary finding is fixed: every detected native payload must match
-exactly one explicitly reviewed component SHA-256, an allowed SPDX licence and
-all reviewed notices bundled with the artifact. Filename and marker checks are
-additional refusals, never positive licence identities. No push, tag, release,
-workflow dispatch, GPL waiver or stripping of an upstream distribution occurred.
+The ZIP-directory export bypass is fixed. Directory names and directory flags
+cannot exclude payloads from the native scanner. Any directory with a nonzero
+declared/compressed size or readable bytes fails; only genuine empty directories
+may skip content scanning. No push, tag, release, dispatch, GPL waiver or wheel
+stripping occurred.
 
-## Heads and scope
+## Source and report heads
 
-- Starting report head: `13ea8b32b4d41598b005bf77f92834825cf74832`.
-- Tested source head: `f63cca840b82f279d108c34db70e1fd6a2c283e2`.
-- Source commit: `fix(docling): require reviewed identities for native wheel exports`.
-- The report closure is a Markdown-only successor to that tested source head.
-- [Previous report](archive-261028-1927-pack-gates-export-names.md) preserves
-  the CI readiness policy, accepted Linux/native/GNU evidence and the unsent
-  release request. Its filename-only export assurance is superseded here.
+- Starting report head: `896a1748a963ec1a30c7bffe2ab1d43ff8994c91`.
+- Tested source head: `4740b4d5a4be15d576deaccb16de042065707505`.
+- Source commit: `fix(docling): reject ambiguous wheel paths and directory payloads`.
+- Report closure is a Markdown-only successor of that exact tested source head.
+- [Previous report](archive-261028-2305-pack-gates-native-export.md) preserves the
+  native identity/notice receipts, GNU provenance, CI policy and release limits.
+  Its omitted directory-payload coverage is supplied by this rework.
 
-## What changed
+## Behavior and regression evidence
 
-`_scan_stream` hashes the complete original native bytes while scanning them.
-The export checker identifies payloads through `export_objects` in the existing
-native-component inventory. A neutral filename, image-codec filename, extension
-suffix, caller-supplied OpenMP hash or generated output checksum cannot identify
-an unknown object. Zero or multiple component matches fail. Unknown/GPL SPDX
-expressions fail. Missing, empty, changed or escaping notice paths fail; duplicate
-archive paths also fail. Existing Intel/video/GPL/configuration refusals remain.
-The installed-pack LGPL/GNU policy and Linux wheel-input/RECORD bindings remain
-separate and unchanged.
+The former duplicate list and scan loop both skipped `ZipInfo.is_dir()` entries
+based solely on a trailing slash. The checker now validates every member path
+and checks directory sizes/readable bytes before excluding an empty directory.
+Directory attributes are also checked. Nonempty entries still reach native
+identification and the independent video-family denial, even when their path
+is invalid or ends in `/`.
 
-Detection covers ELF, PE, Mach-O, ar/thin archives and common COFF/LLVM bitcode
-headers, including extensionless/neutral data names. The checker does not infer
-licensing from a binary suffix. It requires the reviewed notice bytes inside
-the wheel: original paths for wheel-scoped notices, `notices/<path>` for upstream
-notices. Loose native sidecars require those files beside the artifact at the
-reviewed relative paths. Notice identity is checked by SHA-256; this is not a
-semantic licence-text parser.
+Paths must be canonical relative POSIX names. Backslashes, absolute/drive paths,
+traversal, dot/empty segments, NUL/control characters, duplicate names, case
+collisions and file/directory conflicts fail. Duplicates include directory
+entries and implicit parent-directory conflicts. The installed-pack policy,
+licence exceptions, native receipts, pins and lockfile are unchanged.
+AGENTS.md, ARCHITECTURE.md and its Decision Log, docs/docling.md and the module
+threat-model text describe the actual checks.
 
-Five initial export receipts bind already reviewed BSD-3-Clause OpenEXR/Imath
-objects from the locked OpenCV 5.0.0.93 macOS wheel:
-`libIex-3_3.32.3.3.4.dylib`, `libIlmThread-3_3.32.3.3.4.dylib`,
-`libOpenEXR-3_3.32.3.3.4.dylib`, `libOpenEXRCore-3_3.32.3.3.4.dylib` and
-`libImath-3_1.29.11.0.dylib`. Their exact hashes and complete notice receipts
-are in `engines/docling/pack/native-components.toml`. These approve individual
-BSD objects, never the containing GPL wheel or a new source-built wheel.
+Tests were written first and run against unchanged source `896a174` in the
+owned detached verification worktree. Implementation proceeded separately while
+the frozen-baseline runner waited for its slot. The baseline produced **27
+failed, 57 passed**; the reviewer's unchanged real-object diagnostic accepted
+**all six** GPL directory payload variants and failed its assertion. Each of
+the three original x264/x265/Rubber Band objects was SHA-256 verified against
+the hash-verified locked macOS wheel, then checked under its original name and
+`cv2/.dylibs/libcodec.dylib/`. Neither the objects nor the locked wheel changed.
+Red evidence: `/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-red.log`.
 
-`test_exported_clean_image_libraries_remain_allowed` now requires an explicit
-component/hash/licence/notice review. New cases cover unknown native content
-under neutral names, altered/missing/ambiguous receipts, unknown/GPL licences,
-notice absence/hash/path errors, loose artifacts and the OpenMP sidecar path.
-AGENTS.md, ARCHITECTURE.md, its Decision Log and docs/docling.md describe the
-boundary and the separate release prerequisites.
+After the repair, **84 export tests** and **260 adjacent pack/licence tests**
+passed. The same real directory diagnostic refused all six variants; the
+existing strict probe refused twelve ordinary GPL renames and accepted five
+reviewed real BSD objects only with complete notices. Tests also cover plain
+non-native directory payloads, empty genuine directories, compressed directory
+bytes, both directory attribute forms, unknown native content, unsafe names and
+duplicate/case/file-directory collisions. An empty directory cannot satisfy an
+expected OpenMP replacement. The NUL fixture patches actual ZIP
+names so it tests stored bytes rather than ZipInfo's pre-write truncation.
+Focused log: `/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-focused.log`.
 
-## Verification
+## Exact-head scoped pack gate
 
-Regressions were written first and run against the untouched accepted source
-`149e4cb55dacc7fe1387a4d459bbd94c0a808129` in the owned verification worktree.
-The baseline diagnostic is the reviewer's original script; it checks the three
-unchanged SHA-256-verified real GPL dylibs under original and neutral names.
-The baseline accepted all six neutral-name real GPL variants. The new test
-module produced **49 failed, 5 passed**, confirming the missing positive identity
-boundary; the log ends `=== EXPECTED RED REGRESSIONS rc=1`.
-Red log: `/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-red.log`.
-
-Focused checks: **272 passed, 4 skipped**; strict real-object export probe,
-Ruff check/format, actionlint, typos and whitespace checks passed. Log:
-`/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-focused.log`.
-
-The final scoped pack gate ran detached through slot 2/nice 19 with single-worker
-build/native-math settings, pinned uv 0.12.23 and the real CLI:
+The runner ran detached through slot 2 at nice 19, initially with one
+build/test/native-math worker. The continuation uses CARGO_BUILD_JOBS=2 and
+NEXTEST_TEST_THREADS=2 under A-0240, with native math kept at one worker. It waited for the shared slot and load below 12, never nested locks and
+never paused a slot holder. Baseline, focused checks, the explicit source commit
+and the first gate attempt ran sequentially in one slot acquisition. The gate command was:
 
 ```sh
-zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 bash /tmp/t7-rework10-final-pack-gate.sh
+zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 bash /tmp/t7-rework11-red.sh
+# The runner invokes, without another lock:
+bash /tmp/t7-rework11-final-pack-gate.sh
 ```
 
-The complete command sequence is retained at
-`/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-final-pack-gate.sh`.
-Final results:
+The first attempt stopped at `uv audit --frozen` after three failed OSV TLS
+handshakes (`tls handshake eof`), after all pack tests, real probes, both Linux
+inventories and the lock check had passed. That failed log is retained at
+`/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-final-pack-gate-attempt1.log`.
+The runner had exited before the resource-rule update; no queued job was moved.
+The endpoint then accepted a verified TLS connection. The continuation retried
+the audit and ran the remaining checks through slot 2 at the same source head,
+reusing completed checks with unchanged source/inputs. The canonical log retains
+the failed attempt and the clearly marked successful continuation.
 
-- CI scope fixtures and cloud selection classifier passed; a real current-head
-  CLI was built and used by the manifest integration tests.
-- Focused pack/licence suites: **314 passed**. Whole `engines/docling/tests`:
-  **408 passed, 4 skipped**. All new regressions ran; the four existing
-  conditional native compiler/ABI probes remain skipped.
-- Three original pywin32 312 wheels and real uv installations pass; modified
-  sources and forged installed RECORD files fail. CP1252 and C-locale probes pass.
-- Source-built x86_64 fixture: **256 native files = 54 named + 202 extensions**,
-  exactly one licensed RECORD owner per file, full notices and **7 GNU hash/ELF
-  checks**, with readelf/objdump symbol evidence retained.
-- ARM Torch archive: **146 native objects** accepted. **148 ZIP payloads** in
-  **216 hash-verified locked wheels** checked.
-- Fresh complete Linux input inventories: x86_64 **402 native / 200 named**;
-  aarch64 **403 native / 201 named**. Both global and per-file checks have zero
-  findings, covering all **805 native files**.
-- Linux OpenCV: **31 native objects**; five declared LGPL FFmpeg objects per
-  target and zero GPL/nonfree flags. The installed-pack LGPL rule is preserved.
-- `uv lock --check`, `uv audit --frozen` (**112 packages**, no known
-  vulnerabilities or adverse statuses), explicit encoding audit (**22 files**,
-  zero implicit text encodings), Ruff check/format (**13 files**) passed.
-- `just bench-test`: **75 passed**, including bench licence tests. All fixture
-  generators ran twice: **135 files** byte-identical to each other, the stored
-  fixtures and manifest SHA-256 values.
-- `actionlint` and `zizmor@1.30.1` on both pack/toolchain workflows passed
-  (zero unsuppressed findings); `typos`, `just lint-commits` and clean exact-head
-  source verification passed. The full Rust matrix remains excluded locally
-  under A-0352 and is covered by GitHub CI.
+```sh
+zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 bash /tmp/t7-rework11-resume.sh
+```
 
-Gate log:
-`/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-final-pack-gate.log`.
-Last line: `=== PACK GATE ALL GREEN HEAD=f63cca840b82f279d108c34db70e1fd6a2c283e2`.
+The [first complete command sequence](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-final-pack-gate.sh)
+and [continuation sequence](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-remaining-checks.sh)
+are retained. Results at `4740b4d5a4be15d576deaccb16de042065707505`:
 
-The first detached full-gate launcher disappeared before runner entry and ran
-no checks. Its stopped record is
-`/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-launcher-stopped.log`.
-After confirming no surviving duplicate, the same SHA was requeued in slot 2;
-that completed run supplies every final result above. No slot holder was paused.
+- Focused pack/licence tests: **344 passed**. Whole `engines/docling/tests`:
+  **438 passed, 4 skipped**; the existing conditional native compiler/ABI skips
+  remain. All new regressions and the real CLI manifest integration ran.
+- Six real GPL directory variants refused, twelve ordinary GPL variants refused,
+  five reviewed BSD objects accepted only with their complete reviewed notices.
+- Three real pywin32 wheels/installations and forged RECORD/source negatives;
+  CP1252 and C-locale probes passed.
+- Source-built fixture: **256 native files = 54 named + 202 extensions**,
+  unique licensed RECORD ownership, complete notices, **7 GNU hash/ELF checks**.
+- ARM Torch: **146 native objects**; **148 ZIP payloads** in **216 hash-verified
+  locked wheels** checked. Linux OpenCV: **31 native objects**, five declared
+  LGPL FFmpeg objects per target and zero GPL/nonfree flags.
+- Fresh Linux inventories: x86_64 **402 native / 200 named**, aarch64 **403
+  native / 201 named**, zero global/per-file findings across **805 files**.
+- `uv lock --check`, `uv audit --frozen` (**112 packages**, no vulnerabilities
+  or adverse statuses), explicit encoding audit (**22 files**), Ruff check and
+  format (**13 files**) passed.
+- `just bench-test`: **75 passed**, including licence tests. All fixture
+  generators ran twice; **135 files** matched each other, stored fixtures and
+  manifest SHA-256 values.
+- Both workflows passed actionlint and zizmor 1.30.1 with no unsuppressed
+  findings. `typos`, `just lint-commits` and clean exact-head checks passed.
+  A real current-head CLI was built; the full Rust matrix remains excluded
+  locally under A-0352 and belongs to GitHub CI.
 
-Fresh [805-file census](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-native-census.json)
-SHA-256: `46dc3ebaba299f3a22975c002bdd234de124555490c5184d3a4a30ac020537e5`.
-[Platform summary](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-platform-summary.json)
-SHA-256: `a3ebe73423a8b717a42c7d2d79ea9b8fb9eecbe31b5e4281e09c0e1dae5ef74a`.
-The census data matches the prior accepted bytes; both platform checks were
-freshly executed at this source head. The
-[source-built fixture inventory](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-total-native-inventory.json)
-and [GNU ABI evidence](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-gnu-symbol-tags.log)
-record this head. Full vendor notices are retained at
-`/home/vchun/Codes/t7-native-inventory/notices-rework10`.
+Gate log: `/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-final-pack-gate.log`.
+Last line: `=== PACK GATE ALL GREEN HEAD=4740b4d5a4be15d576deaccb16de042065707505`.
 
-The strict real-object probe verifies the original locked wheel SHA-256, then
-asserts refusal of x264, x265 and Rubber Band under each original name,
-`libcodec.dylib`, `libavif.1.dylib` and `payload.data`: **12 refusals**. It also
-asserts that all five reviewed real BSD objects fail when their full notices
-are absent and pass with the complete hash-checked notices bundled. These ZIPs
-are diagnostic fixtures only; the locked wheel is unchanged and no diagnostic
-archive is exported or published.
+Fresh [805-file census](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-native-census.json),
+[platform summary](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-platform-summary.json),
+[fixture inventory](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-total-native-inventory.json)
+and [GNU ABI evidence](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-gnu-symbol-tags.log)
+are retained separately from earlier evidence. Full notices are at
+`/home/vchun/Codes/t7-native-inventory/notices-rework11`.
+Report closure checks typos, commit lint, tested first parent, clean Git state,
+local links and the byte-identical operations mirror; log:
+`/home/vchun/Codes/ariadshift-logs/d2120-t7-rework11-report-closure.log`.
+AgentWiki publish skipped; the journal is local.
 
-Probe script:
-`/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-real-export-probe.py`.
-Report closure log:
-`/home/vchun/Codes/ariadshift-logs/d2120-t7-rework10-report-closure.log`.
-The closure checks commit lint, typos, tested first parent, clean Git state,
-local evidence links and byte-identical canonical/operations reports.
-AgentWiki publish skipped; the journal is local and no external write was made.
+## Remaining release prerequisites
 
-## Limits and remaining release prerequisites
+The five BSD export receipts still approve individual reviewed objects, never
+the containing GPL wheel or unreviewed new source-build outputs. New native
+outputs require their own component/licence/hash/notice reviews before upload.
+Native macOS compilation, installed-pack/conversion/smoke validation and the
+actual video-disabled OpenCV release pin remain pending. PR macOS readiness
+stays visibly skipped without that pin; both Linux targets remain mandatory.
+Windows packs remain deferred. No release omission or publication is authorized.
 
-Trusted review data records the component identity/licence and notice review;
-candidate output checksums never generate approvals. A new or changed native
-object, including a legitimate new source-build output, remains refused until
-its identity, licence, complete bundled notices and exact bytes are reviewed and
-recorded. The five BSD receipts are not a complete source-built OpenCV/PyTorch
-wheel approval. Both toolchain publication callers scan every final export
-file, including loose artifacts under neutral names, and propagate failures before
-upload. Unreviewed source outputs stop there. No full source-built toolchain
-export or native macOS validation is claimed by this result.
-
-The earlier unsent tag request therefore also needs actual native output review
-and committed export receipts before any authorized publication attempt.
-Native macOS compilation, final installed-pack inventory/conversion/smoke and
-an authoritative video-disabled OpenCV release pin remain pending. PR macOS
-readiness stays visibly skipped while its pin is absent; both Linux pack targets
-remain mandatory. Windows packs remain deferred. GitHub CI owns the full Rust
-matrix, following the lead's scoped local-gate exclusion. No external action is
-pending approval in this worker session; the release request remains unsent.
+Unresolved questions: None.
 
 Status: DONE_WITH_CONCERNS
