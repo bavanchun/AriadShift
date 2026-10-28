@@ -350,6 +350,7 @@ export function ConverterApp({
       setPhase("done");
       setStatus(`${summary.name} is ready to download.`);
     } catch (cause) {
+      if (asError(cause).code === "cancelled") return;
       const failure = {
         ...asError(cause),
         format: input?.inspection.format,
@@ -378,6 +379,10 @@ export function ConverterApp({
   }, [output]);
 
   const reset = useCallback(async () => {
+    if (phase === "converting") {
+      client().cancel();
+      initRef.current = null;
+    }
     planRequest.current += 1;
     outputRef.current = null;
     setInput(null);
@@ -392,12 +397,14 @@ export function ConverterApp({
     setStaged(null);
     setDestination("device");
     try {
-      const fromServer: DiscardOutcome = (await cloudFiles?.()) ?? { status: "none" };
-      if (fromServer.status === "kept") {
-        keepServerCopy(fromServer);
-      }
-      // Always reach a worker: a fresh one first deletes the files of any worker it replaced.
-      await client().request({ type: "reset" });
+      // Queue device cleanup before another file can be selected.
+      const [fromServer] = await Promise.all([
+        (cloudFiles?.() ?? Promise.resolve<DiscardOutcome>({ status: "none" })).then((outcome) => {
+          if (outcome.status === "kept") keepServerCopy(outcome);
+          return outcome;
+        }),
+        client().request({ type: "reset" }),
+      ]);
       setStatus(
         fromServer.status === "deleted"
           ? "Files were removed from this device and from the server."
@@ -408,7 +415,7 @@ export function ConverterApp({
     } catch (cause) {
       setError(asError(cause));
     }
-  }, [client, keepServerCopy]);
+  }, [client, keepServerCopy, phase]);
 
   const busy = phase === "ingesting" || phase === "converting";
   const inspection = input?.inspection;
@@ -754,6 +761,11 @@ export function ConverterApp({
                 )}
                 {phase === "converting" ? "Converting…" : "Convert"}
               </Button>
+              {phase === "converting" && (
+                <Button variant="outline" onClick={reset}>
+                  Cancel
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -796,7 +808,7 @@ export function ConverterApp({
 
       {(input || output || error) && (
         <div>
-          <Button variant="outline" onClick={reset} disabled={busy}>
+          <Button variant="outline" onClick={reset} disabled={phase === "ingesting"}>
             <RotateCcwIcon aria-hidden="true" />
             Start over and delete files
           </Button>

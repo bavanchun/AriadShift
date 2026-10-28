@@ -169,6 +169,54 @@ describe("ConverterApp", () => {
     expect(screen.queryByRole("button", { name: "Download notes.html" })).toBeNull();
   });
 
+  it.each(["Cancel", "Start over and delete files"])("stops conversion with %s", async (action) => {
+    const worker = new FakeWorker();
+    worker.reply = (request) => {
+      if (request.type === "ingest")
+        return worker.ok(request, {
+          name: "notes.md",
+          size: 7,
+          recycle: false,
+          inspection: {
+            format: "markdown",
+            detected_by: "extension",
+            reachable: ["html"],
+            reachable_elsewhere: [],
+            estimated_size_bytes: 7,
+            confidence: "exact",
+            counts: null,
+            warnings: [],
+          },
+        });
+      if (request.type === "plan")
+        return worker.ok(request, {
+          steps: [{ from: "markdown", to: "html", engine: "ariad-core" }],
+          score: { fidelity: 1, editability: 1, estimated_duration_ms: 10 },
+          measured: true,
+          alternatives: [],
+        });
+      if (request.type === "convert") return null;
+      return worker.ok(request);
+    };
+    const client = new ConverterClient(() => worker as unknown as Worker);
+    render(<ConverterApp client={client} />);
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    const fileInput = document.querySelector("input[type=file]") as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["# Hello"], "notes.md")] } });
+    const convertButton = await screen.findByRole("button", { name: "Convert" });
+    await waitFor(() => expect((convertButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(convertButton);
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDefined();
+    expect(
+      (screen.getByRole("button", { name: "Start over and delete files" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: action }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull());
+    expect(worker.terminated).toBe(true);
+    expect(screen.queryByTestId("converter-error")).toBeNull();
+  });
+
   it("shows an integrity failure of the DOCX/EPUB engine and does not offer a result", async () => {
     const worker = new FakeWorker();
     const message = "The DOCX/EPUB engine failed an integrity check. Reload the page to retry.";
