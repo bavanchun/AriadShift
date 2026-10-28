@@ -9,6 +9,7 @@ use crate::{
     ir::{
         Alignment, AssetRef, AssetStore, Block, Document, Inline, ListItem, RawFormat, TableCell,
     },
+    limits::Limits,
     warning::{Warning, WarningCode},
     writer::{WriteOutput, sanitize},
 };
@@ -171,7 +172,7 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
 
     out.push_str("</body>\n</html>\n");
 
-    if out.len() > super::markdown::MAX_OUTPUT_BYTES {
+    if out.len() > Limits::MAX_TEXT_OUTPUT_BYTES {
         return super::markdown::output_ceiling_exceeded();
     }
     WriteOutput {

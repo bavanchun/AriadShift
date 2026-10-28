@@ -920,12 +920,14 @@ where
         let bytes = read_bounded_file(path, Some(self.limits.max_ir_json_bytes))?;
         let document =
             crate::ir_io::read_versioned(&bytes, self.limits).map_err(|err| match err {
-                crate::ir_io::ReadError::ByteLimitExceeded { .. }
-                | crate::ir_io::ReadError::DepthExceeded(_)
-                | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
+                error if error.is_limit_exceeded() => ConvertError::LimitExceeded,
                 crate::ir_io::ReadError::UnsupportedVersion => ConvertError::UnsupportedIrVersion,
                 crate::ir_io::ReadError::Io(_) => ConvertError::InputIo,
-                crate::ir_io::ReadError::Json(_) => ConvertError::Failed,
+                crate::ir_io::ReadError::Json(_)
+                | crate::ir_io::ReadError::Validation(_)
+                | crate::ir_io::ReadError::ByteLimitExceeded { .. }
+                | crate::ir_io::ReadError::DepthExceeded(_)
+                | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::Failed,
             })?;
         Ok(Stage::Ir(Box::new(document)))
     }
@@ -1182,9 +1184,7 @@ fn read_ir_artifact(
 ) -> Result<Document, ConvertError> {
     let file = workspace.open_artifact(path).map_err(map_workspace_error)?;
     crate::ir_io::read(std::io::BufReader::new(file), limits).map_err(|err| match err {
-        crate::ir_io::ReadError::ByteLimitExceeded { .. }
-        | crate::ir_io::ReadError::DepthExceeded(_)
-        | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
+        error if error.is_limit_exceeded() => ConvertError::LimitExceeded,
         _ => ConvertError::Failed,
     })
 }

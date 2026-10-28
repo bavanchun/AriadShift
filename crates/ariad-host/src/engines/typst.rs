@@ -156,11 +156,9 @@ fn convert<W: Write>(
 
     let file = fs::File::open(&paths.input).map_err(|_| EngineFailure::io())?;
     let document = ir_io::read(BufReader::new(file), limits).map_err(|error| match error {
-        ReadError::ByteLimitExceeded { .. }
-        | ReadError::DepthExceeded(_)
-        | ReadError::BlockLimitExceeded { .. } => EngineFailure::limit_exceeded(),
+        error if error.is_limit_exceeded() => EngineFailure::limit_exceeded(),
         ReadError::Io(_) => EngineFailure::io(),
-        ReadError::Json(_) | ReadError::UnsupportedVersion => EngineFailure::invalid_request(),
+        _ => EngineFailure::invalid_request(),
     })?;
 
     let options = TypstOptions {

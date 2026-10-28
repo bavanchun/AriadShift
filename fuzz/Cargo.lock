@@ -146,6 +146,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "ruzstd",
+ "same-file",
  "schemars",
  "seccompiler",
  "semver",
