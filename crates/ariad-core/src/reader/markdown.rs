@@ -699,9 +699,11 @@ fn convert_node(
         NodeValue::Image(link) => {
             let alt = nfc(&inline_text(&inlines(children)));
             let target = if let Some(url) = state.shared_data_urls.get(&link.url) {
+                // Equal normalized destinations already share one token. Cache
+                // hits only copy and hash that short key, never the data URL.
                 let target = state
                     .shared_image_targets
-                    .entry(url.clone())
+                    .entry(link.url.clone())
                     .or_insert_with(|| {
                         common::decode_data_uri_image(
                             url,
@@ -1703,6 +1705,71 @@ mod tests {
                 "{markdown}"
             );
         }
+    }
+
+    #[test]
+    fn large_shared_images_keep_reader_work_linear_in_reference_count() {
+        use base64::Engine as _;
+        use std::time::Duration;
+
+        let fixture = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let iend = &fixture[fixture.len() - 12..];
+        assert_eq!(&iend[4..8], b"IEND");
+        let mut png = fixture[..fixture.len() - 12].to_vec();
+        // Add a valid 1,400,001-byte tEXt chunk before IEND. Its fixed payload
+        // is the keyword "padding", a NUL separator and repeated ASCII 'a'.
+        let mut metadata = b"tEXtpadding\0".to_vec();
+        metadata.resize(4 + 1_400_001, b'a');
+        png.extend_from_slice(&1_400_001_u32.to_be_bytes());
+        png.extend_from_slice(&metadata);
+        png.extend_from_slice(&0x920e534d_u32.to_be_bytes());
+        png.extend_from_slice(iend);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&png);
+        assert!((1024 * 1024..=2 * 1024 * 1024).contains(&encoded.len()));
+
+        let measure = |references: usize| {
+            let markdown = format!(
+                "{}\n[p]: data:image/png;base64,{encoded}\n",
+                "![p]\n\n".repeat(references)
+            );
+            let mut limits = Limits::local();
+            limits.max_asset_bytes = Some(png.len() as u64);
+            let start = Instant::now();
+            let output = read(&markdown, &limits).unwrap();
+            let elapsed = start.elapsed();
+            assert!(output.warnings.is_empty());
+            assert_eq!(output.document.assets.len(), 1);
+            let (id, asset) = output.document.assets.first_key_value().unwrap();
+            assert!(asset.bytes == png);
+            assert_eq!(asset.media_type, "image/png");
+            assert_eq!(output.document.body.len(), references);
+            for block in &output.document.body {
+                assert!(matches!(block, Block::Paragraph { content }
+                    if matches!(content.as_slice(), [Inline::Image {
+                        target: AssetRef::Asset { id: target }, ..
+                    }] if target == id)));
+            }
+            let json_bytes = serde_json::to_vec(&output.document).unwrap().len();
+            assert!(json_bytes <= encoded.len() + references * 256 + 2048);
+            eprintln!(
+                "reader work: references={references}, definition_bytes={}, input_bytes={}, elapsed={elapsed:?}, json_bytes={json_bytes}",
+                encoded.len(),
+                markdown.len()
+            );
+            (elapsed, json_bytes)
+        };
+        let (small, small_bytes) = measure(2_000);
+        let (large, large_bytes) = measure(20_000);
+        eprintln!(
+            "reader work ratio: {:.3}",
+            large.as_secs_f64() / small.as_secs_f64()
+        );
+        // Fixed definition parsing can dominate the small case. Allow a linear
+        // upper bound plus scheduling noise; the absolute bound also rejects
+        // repeatedly copying/hashing the large asset at every reference.
+        assert!(large <= small.mul_f64(15.0) + Duration::from_millis(100));
+        assert!(large < Duration::from_secs(10), "reader work: {large:?}");
+        assert!(large_bytes <= small_bytes + 18_000 * 256);
     }
 
     #[test]
