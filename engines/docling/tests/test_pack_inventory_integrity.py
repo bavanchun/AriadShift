@@ -361,6 +361,114 @@ def test_opencv_upstream_notices_do_not_allow_an_unreviewed_dylib(tmp_path, monk
         licenses.vendored_libraries(tmp_path, "aarch64-apple-darwin")
 
 
+def reviewed_shared_component(site, monkeypatch):
+    relative = "demo/libexample.so.2.0"
+    installed(site, relative)
+    native = site / relative
+    native.write_bytes(b"\x7fELF\x02\x01" + bytes(10) + b"\x03\x00" + bytes(2))
+    info = site / "demo-1.0.dist-info"
+    (info / "RECORD").write_text(native_record_rows(site, [relative]), encoding="utf-8")
+    notice = site / "pack/licenses/lgpl-2.1.txt"
+    notice.parent.mkdir(parents=True)
+    notice.write_bytes((REPOSITORY / "engines/docling/pack/licenses/lgpl-2.1.txt").read_bytes())
+    component = {
+        "name": "demo-native",
+        "distribution": "demo",
+        "version": "1.0",
+        "upstream_version": "2.0",
+        "source": "https://example.invalid/library-2.0.tar.xz",
+        "license": "LGPL-2.1-only",
+        "notice_scope": "upstream",
+        "files": [relative],
+        "shared_objects": {relative: hashlib.sha256(native.read_bytes()).hexdigest()},
+        "notices": [
+            {"path": "lgpl-2.1.txt", "sha256": hashlib.sha256(notice.read_bytes()).hexdigest()}
+        ],
+    }
+    monkeypatch.setattr(licenses, "__file__", str(site / "pack/licenses.py"))
+    monkeypatch.setitem(licenses._NATIVE_COMPONENTS, "demo-native", component)
+    monkeypatch.setitem(licenses.NATIVE_LIBRARIES, "demo-native", ("LGPL-2.1-only", {"demo"}))
+    monkeypatch.setitem(licenses._NATIVE_VERSIONS, "demo", {"1.0"})
+    return component
+
+
+def test_shared_component_records_the_library_version_separately_from_its_wheel(
+    tmp_path, monkeypatch
+):
+    component = reviewed_shared_component(tmp_path, monkeypatch)
+    inventory = licenses.vendored_libraries(tmp_path, TRIPLE)
+    assert inventory[0]["version"] == component["upstream_version"]
+    assert inventory[0]["source"] == component["source"]
+    licenses.check_vendored_native_files(tmp_path, inventory, TRIPLE)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "changed-object",
+        "static-object",
+        "changed-source",
+        "missing-source",
+        "changed-version",
+        "missing-review",
+    ],
+)
+def test_shared_component_requires_original_dynamic_bytes_and_source(tmp_path, monkeypatch, change):
+    component = reviewed_shared_component(tmp_path, monkeypatch)
+    inventory = licenses.vendored_libraries(tmp_path, TRIPLE)
+    relative = component["files"][0]
+    if change in {"changed-object", "static-object"}:
+        data = b"modified" if change == "changed-object" else b"!<arch>\nstatic library"
+        (tmp_path / relative).write_bytes(data)
+        (tmp_path / "demo-1.0.dist-info/RECORD").write_text(
+            native_record_rows(tmp_path, [relative]), encoding="utf-8"
+        )
+    elif change == "changed-source":
+        inventory[0]["source"] = "https://example.invalid/other.tar.xz"
+    elif change == "missing-source":
+        inventory[0].pop("source")
+    elif change == "changed-version":
+        inventory[0]["version"] = "3.0"
+    else:
+        component.pop("shared_objects")
+    with pytest.raises(SystemExit, match=r"reviewed shared object|upstream version/source"):
+        licenses.check_vendored_native_files(tmp_path, inventory, TRIPLE)
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        b"libavcodec license: GPL version 3 or later\x00",
+        b"libavcodec license: AGPL version 3 or later\x00",
+        b"--prefix=/build --enable-gpl --enable-shared\x00",
+    ],
+)
+def test_gpl_runtime_declarations_cannot_hide_in_a_licensed_extension(tmp_path, declaration):
+    installed(tmp_path)
+    native = tmp_path / EXTENSION
+    native.write_bytes(native.read_bytes() + declaration)
+    (tmp_path / "demo-1.0.dist-info/RECORD").write_text(
+        native_record_rows(tmp_path, [EXTENSION, "demo-1.0.dist-info/LICENSE"]), encoding="utf-8"
+    )
+    with pytest.raises(SystemExit, match="GPL runtime"):
+        licenses.check_vendored_native_files(tmp_path, [], TRIPLE)
+    wheel = tmp_path / "demo-1.0.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.write(native, EXTENSION)
+    with pytest.raises(SystemExit, match="GPL runtime"):
+        licenses.check_wheel_files([wheel])
+
+
+def test_lgpl_runtime_declaration_does_not_match_the_gpl_binary_stop(tmp_path):
+    installed(tmp_path)
+    native = tmp_path / EXTENSION
+    native.write_bytes(native.read_bytes() + b"libavcodec license: LGPL version 2.1 or later\x00")
+    (tmp_path / "demo-1.0.dist-info/RECORD").write_text(
+        native_record_rows(tmp_path, [EXTENSION, "demo-1.0.dist-info/LICENSE"]), encoding="utf-8"
+    )
+    licenses.check_vendored_native_files(tmp_path, [], TRIPLE)
+
+
 @pytest.mark.parametrize("triple", [TRIPLE, "aarch64-apple-darwin", "x86_64-pc-windows-msvc"])
 def test_runtime_pruning_drops_only_foreign_launcher_resources(tmp_path, triple):
     runtime = tmp_path / "runtime"

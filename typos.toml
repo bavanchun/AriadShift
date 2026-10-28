@@ -33,6 +33,8 @@ extend-exclude = [
     "THIRD_PARTY_LICENSES",
     "apps/desktop/THIRD_PARTY_JS_LICENSES",
     "vendor/**",
+    # Full upstream notices; the pack checks their reviewed SHA-256 digests.
+    "engines/docling/pack/licenses/*-notice*.txt",
     "fixtures/md/vi-*.md",
     "fixtures/md/mixed-*.md",
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",

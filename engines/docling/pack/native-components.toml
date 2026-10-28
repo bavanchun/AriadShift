@@ -1,10 +1,8 @@
-# Native companions shipped by the reviewed distributions, beyond ABI-tagged modules.
-# Every listed file still requires its installed RECORD SHA-256 and size.
-# Notices outside dist-info are explicit, hash-bound sources, not inferred attribution.
+# Exact native companion reviews. Installed RECORD SHA-256 and size remain mandatory.
+# Upstream scopes supply complete notices omitted by the carrying wheels.
+# OpenEXR notice: https://github.com/AcademySoftwareFoundation/openexr/blob/v3.3.4/LICENSE.md
+# Imath notice: https://github.com/AcademySoftwareFoundation/Imath/blob/v3.1.11/LICENSE.md
 
-# The macOS wheel omits these project notices. Bundle the complete upstream texts:
-# https://github.com/AcademySoftwareFoundation/openexr/blob/v3.3.4/LICENSE.md
-# https://github.com/AcademySoftwareFoundation/Imath/blob/v3.1.11/LICENSE.md
 [[components]]
 name = "opencv-openexr"
 distribution = "opencv-python-headless"
@@ -27,7 +25,9 @@ distribution = "opencv-python-headless"
 version = "5.0.0.93"
 license = "BSD-3-Clause"
 notice_scope = "upstream"
-files = ["cv2/.dylibs/libImath-3_1.29.11.0.dylib"]
+files = [
+  "cv2/.dylibs/libImath-3_1.29.11.0.dylib",
+]
 notices = [
   { path = "imath-3.1.11.txt", sha256 = "c20236d3b39fd20eba8e3d1fb3b892a5483df2e7d8d61bf43f165d3fac22f601" },
 ]
@@ -36,10 +36,12 @@ notices = [
 name = "tokenizers-native"
 distribution = "tokenizers"
 version = "0.23.3"
+source = "https://github.com/huggingface/tokenizers/tree/v0.23.3"
 license = "Apache-2.0"
 notice_scope = "upstream"
-source = "https://github.com/huggingface/tokenizers/tree/v0.23.3"
-files = ["tokenizers/tokenizers.abi3.so"]
+files = [
+  "tokenizers/tokenizers.abi3.so",
+]
 notices = [
   { path = "tokenizers-0.23.3.txt", sha256 = "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4" },
 ]
@@ -66,6 +68,8 @@ license = "MIT"
 files = [
   "onnxruntime/capi/libonnxruntime.so.1.31.0",
   "onnxruntime/capi/libonnxruntime_providers_shared.so",
+  "onnxruntime/capi/onnxruntime_pybind11_state.cpython-314-aarch64-linux-gnu.so",
+  "onnxruntime/capi/onnxruntime_pybind11_state.cpython-314-x86_64-linux-gnu.so",
 ]
 notices = [
   { path = "onnxruntime/LICENSE", sha256 = "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c" },
@@ -90,19 +94,154 @@ name = "torch-native"
 distribution = "torch"
 version = "2.14.1+cpu"
 license = "Apache-2.0 AND Apache-2.0 WITH LLVM-exception AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND MIT"
+notice_scope = "upstream"
 files = [
+  "torch/_C.cpython-314-aarch64-linux-gnu.so",
+  "torch/_C.cpython-314-x86_64-linux-gnu.so",
+  "torch/bin/FileStoreTest",
+  "torch/bin/HashStoreTest",
+  "torch/bin/TCPStoreTest",
   "torch/bin/protoc",
   "torch/bin/protoc-3.21.12.0",
+  "torch/bin/test_aoti_abi_check",
+  "torch/bin/test_api",
+  "torch/bin/test_comms_id",
+  "torch/bin/test_cpp_rpc",
+  "torch/bin/test_dist_autograd",
+  "torch/bin/test_global_state_manager",
+  "torch/bin/test_jit",
+  "torch/bin/test_lazy",
+  "torch/bin/test_privateuse1_profiler",
+  "torch/bin/test_profiler_collection",
+  "torch/bin/test_profiler_global_callback_stale_session",
+  "torch/bin/test_shim",
   "torch/bin/torch_shm_manager",
+  "torch/lib/libaoti_custom_ops.so",
+  "torch/lib/libbackend_with_compiler.so",
   "torch/lib/libc10.so",
+  "torch/lib/libjitbackend_test.so",
   "torch/lib/libshm.so",
   "torch/lib/libtorch.so",
   "torch/lib/libtorch_cpu.so",
   "torch/lib/libtorch_global_deps.so",
   "torch/lib/libtorch_python.so",
+  "torch/lib/libtorchbind_test.so",
+  "torch/test/CppSignature_test",
+  "torch/test/Dict_test",
+  "torch/test/IListRef_test",
+  "torch/test/KernelFunction_test",
+  "torch/test/List_test",
+  "torch/test/MaybeOwned_test",
+  "torch/test/StorageUtils_test",
+  "torch/test/accelerator_graph_test",
+  "torch/test/apply_utils_test",
+  "torch/test/atest",
+  "torch/test/backend_fallback_test",
+  "torch/test/basic",
+  "torch/test/broadcast_test",
+  "torch/test/c10_AllocatorConfig_test",
+  "torch/test/c10_ArrayRef_test",
+  "torch/test/c10_Bitset_test",
+  "torch/test/c10_CompileTimeFunctionPointer_test",
+  "torch/test/c10_ConstexprCrc_test",
+  "torch/test/c10_DeadlockDetection_test",
+  "torch/test/c10_DeviceGuard_test",
+  "torch/test/c10_Device_test",
+  "torch/test/c10_DispatchKeySet_test",
+  "torch/test/c10_Enumerate_test",
+  "torch/test/c10_Half_test",
+  "torch/test/c10_InlineDeviceGuard_test",
+  "torch/test/c10_InlineStreamGuard_test",
+  "torch/test/c10_IntrusiveList_test",
+  "torch/test/c10_LeftRight_test",
+  "torch/test/c10_NetworkFlow_test",
+  "torch/test/c10_Scalar_test",
+  "torch/test/c10_Semaphore_test",
+  "torch/test/c10_SizesAndStrides_test",
+  "torch/test/c10_StreamGuard_test",
+  "torch/test/c10_SymInt_test",
+  "torch/test/c10_Synchronized_test",
+  "torch/test/c10_ThreadLocalDebugInfo_test",
+  "torch/test/c10_ThreadLocal_test",
+  "torch/test/c10_TypeIndex_test",
+  "torch/test/c10_TypeSafeSignMath_test",
+  "torch/test/c10_WaitCounter_test",
+  "torch/test/c10_accumulate_test",
+  "torch/test/c10_bfloat16_test",
+  "torch/test/c10_bit_cast_test",
+  "torch/test/c10_complex_math_test",
+  "torch/test/c10_complex_test",
+  "torch/test/c10_cow_test",
+  "torch/test/c10_error_test",
+  "torch/test/c10_exception_test",
+  "torch/test/c10_flags_test",
+  "torch/test/c10_generic_math_test",
+  "torch/test/c10_intrusive_ptr_benchmark",
+  "torch/test/c10_intrusive_ptr_test",
+  "torch/test/c10_irange_test",
+  "torch/test/c10_lazy_test",
+  "torch/test/c10_logging_test",
+  "torch/test/c10_nofatal_test",
+  "torch/test/c10_optional_test",
+  "torch/test/c10_ordered_preserving_dict_test",
+  "torch/test/c10_overflows_test",
+  "torch/test/c10_registry_test",
+  "torch/test/c10_safe_conv_test",
+  "torch/test/c10_small_vector_test",
+  "torch/test/c10_ssize_test",
+  "torch/test/c10_string_util_test",
+  "torch/test/c10_string_view_test",
+  "torch/test/c10_tempfile_test",
+  "torch/test/c10_typeid_test",
+  "torch/test/cpu_allocator_test",
+  "torch/test/cpu_generator_test",
+  "torch/test/cpu_profiling_allocator_test",
+  "torch/test/cpu_rng_test",
+  "torch/test/dlconvertor_test",
+  "torch/test/extension_backend_test",
+  "torch/test/half_test",
+  "torch/test/index_kernel_utils_test",
+  "torch/test/inline_container_test",
+  "torch/test/ivalue_test",
+  "torch/test/kernel_function_legacy_test",
+  "torch/test/kernel_function_test",
+  "torch/test/kernel_lambda_legacy_test",
+  "torch/test/kernel_lambda_test",
+  "torch/test/kernel_stackbased_test",
+  "torch/test/lazy_tensor_test",
+  "torch/test/legacy_vmap_test",
+  "torch/test/make_boxed_from_unboxed_functor_test",
+  "torch/test/math_kernel_test",
+  "torch/test/memory_format_test",
+  "torch/test/memory_overlapping_test",
+  "torch/test/mobile_memory_cleanup",
+  "torch/test/native_test",
+  "torch/test/op_allowlist_test",
+  "torch/test/op_registration_test",
+  "torch/test/operator_name_test",
+  "torch/test/operators_test",
+  "torch/test/packedtensoraccessor_test",
+  "torch/test/pow_test",
+  "torch/test/quantized_test",
+  "torch/test/reduce_ops_test",
+  "torch/test/reportMemoryUsage_test",
+  "torch/test/scalar_tensor_test",
+  "torch/test/scalar_test",
+  "torch/test/stride_properties_test",
+  "torch/test/tensor_iterator_test",
+  "torch/test/test_parallel",
+  "torch/test/thread_init_test",
+  "torch/test/type_ptr_test",
+  "torch/test/type_test",
+  "torch/test/undefined_tensor_test",
+  "torch/test/verify_api_visibility",
+  "torch/test/weakref_test",
+  "torch/test/wrapdim_test",
+  "torch/test/xla_tensor_test",
 ]
 notices = [
-  { path = "torch-2.14.1+cpu.dist-info/licenses/LICENSE", sha256 = "bd018feef8825e88181c84eb7e3aa4eafb8f08a20d9fd6ef948569610c4a3e43" },
+  { path = "pytorch-2.14.1-native-notices.txt", sha256 = "b7b24c6a7552f7cc36f11fbd401ce5669024b3acd9b45aefb2b158d2891c24a5" },
+  { path = "llvm-openmp-notice.txt", sha256 = "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4" },
 ]
 
 [[components]]
@@ -117,3 +256,246 @@ files = [
 notices = [
   { path = "torchvision-0.29.1+cpu.dist-info/LICENSE", sha256 = "6502f676851cfe25f8af75531dfb32375b7325b73c37e7b43741fa422893e71d" },
 ]
+
+[[components]]
+name = "opencv-linux-aom"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "BSD-2-Clause"
+notice_scope = "upstream"
+files = [
+  "opencv_python_headless.libs/libaom-a0d22147.so.3.14.1",
+  "opencv_python_headless.libs/libaom-f737b1d9.so.3.14.1",
+]
+notices = [
+  { path = "opencv-5.0.0.93-linux-notices.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[[components]]
+name = "opencv-linux-avif"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "BSD-2-Clause AND BSD-3-Clause"
+notice_scope = "upstream"
+files = [
+  "opencv_python_headless.libs/libavif-43e630fc.so.16.4.2",
+  "opencv_python_headless.libs/libavif-96469e55.so.16.4.2",
+]
+notices = [
+  { path = "opencv-5.0.0.93-linux-notices.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[[components]]
+name = "opencv-linux-png"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "libpng-2.0"
+notice_scope = "upstream"
+files = [
+  "opencv_python_headless.libs/libpng16-529cb57a.so.16.58.0",
+  "opencv_python_headless.libs/libpng16-5dd41f4d.so.16.58.0",
+]
+notices = [
+  { path = "opencv-5.0.0.93-linux-notices.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[[components]]
+name = "opencv-linux-vpx"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "BSD-3-Clause"
+notice_scope = "upstream"
+files = [
+  "opencv_python_headless.libs/libvpx-4fb239ff.so.11.0.1",
+  "opencv_python_headless.libs/libvpx-ac54ea65.so.11.0.1",
+]
+notices = [
+  { path = "opencv-5.0.0.93-linux-notices.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[[components]]
+name = "opencv-linux-openssl"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "OpenSSL"
+notice_scope = "upstream"
+files = [
+  "opencv_python_headless.libs/libcrypto-5409cd36.so.1.1.1k",
+  "opencv_python_headless.libs/libcrypto-6aa7cfbd.so.1.1.1k",
+  "opencv_python_headless.libs/libssl-81259c47.so.1.1.1k",
+  "opencv_python_headless.libs/libssl-f4f30056.so.1.1.1k",
+]
+notices = [
+  { path = "opencv-5.0.0.93-linux-notices.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[[components]]
+name = "opencv-linux-drm"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "MIT"
+notice_scope = "upstream"
+files = [
+  "opencv_python_headless.libs/libdrm-7ea97f77.so.2.4.0",
+  "opencv_python_headless.libs/libdrm-b0291a67.so.2.4.0",
+]
+notices = [
+  { path = "libdrm-core-notices.txt", sha256 = "47eac6f894a12100f60bb9eb55dd6974b28298618ecdee6d012f5f2bc0796d31" },
+  { path = "opencv-5.0.0.93-linux-notices.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[[components]]
+name = "opencv-linux-openblas"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "BSD-3-Clause"
+notice_scope = "upstream"
+files = [
+  "opencv_python_headless.libs/libopenblasp-r0-59ffcd50.3.15.so",
+  "opencv_python_headless.libs/libopenblasp-r0-e3ea6fd1.3.15.so",
+]
+notices = [
+  { path = "openblas-0.3.15.txt", sha256 = "fc239da73616d04dce1663d9f789bc822221d7df6a25e4139082d1802af8b1e9" },
+  { path = "opencv-5.0.0.93-linux-notices.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+
+[[components]]
+name = "opencv-linux-ffmpeg"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+upstream_version = "8.1.1"
+source = "https://ffmpeg.org/releases/ffmpeg-8.1.1.tar.gz"
+license = "LGPL-2.1-or-later"
+notice_scope = "upstream"
+files = [
+  "opencv_python_headless.libs/libavcodec-72930352.so.62.28.101",
+  "opencv_python_headless.libs/libavcodec-c4204469.so.62.28.101",
+  "opencv_python_headless.libs/libavformat-3d8eec66.so.62.12.101",
+  "opencv_python_headless.libs/libavformat-4762a711.so.62.12.101",
+  "opencv_python_headless.libs/libavutil-8f5e7298.so.60.26.101",
+  "opencv_python_headless.libs/libavutil-befbbc48.so.60.26.101",
+  "opencv_python_headless.libs/libswresample-2dfded3b.so.6.3.101",
+  "opencv_python_headless.libs/libswresample-4e764699.so.6.3.101",
+  "opencv_python_headless.libs/libswscale-9061c2fd.so.9.5.101",
+  "opencv_python_headless.libs/libswscale-fe215b0b.so.9.5.101",
+]
+notices = [
+  { path = "lgpl-2.1.txt", sha256 = "43285937a0e9b75b13eb12fdd35ac3101f7fa92cb0a950d18e4dbf90c7a15c4f" },
+  { path = "ffmpeg-8.1.1-notice.txt", sha256 = "2e1d16c72fd74e12063776371da757322f8b77589386532f4fd8634bde7de1af" },
+  { path = "opencv-5.0.0.93-linux-notices.txt", sha256 = "2537f5653345db7231ff12f307bcfa4c89807d45ed1c4bb8ebfb6f26f61b160a" },
+]
+[components.shared_objects]
+"opencv_python_headless.libs/libavcodec-72930352.so.62.28.101" = "6dd6da6d2ebc28a8810d2c4b7cabdc33161bf4181056d556ed23aba2e7487056"
+"opencv_python_headless.libs/libavcodec-c4204469.so.62.28.101" = "94401ecabe5cd87f7db30af2843c8ff0674e57947d102f307ebed8788740cbb9"
+"opencv_python_headless.libs/libavformat-3d8eec66.so.62.12.101" = "7c5ebf9c374f1e86f6a6da854ce982f4819f7f276edd537cdcf38d081eb6dec5"
+"opencv_python_headless.libs/libavformat-4762a711.so.62.12.101" = "150705d76b62a20a16cbb131ba5c9e25c086ccb7914bf0b50c084bc66c15c0e1"
+"opencv_python_headless.libs/libavutil-8f5e7298.so.60.26.101" = "eaabd9641a06b7b35fea38ee8bbfe07cf81f6324f6d20afed89fa3b7fe631735"
+"opencv_python_headless.libs/libavutil-befbbc48.so.60.26.101" = "fe9258859653c19d0d4029bbb84622bc5c39707d7936372df757661e6b961b18"
+"opencv_python_headless.libs/libswresample-2dfded3b.so.6.3.101" = "45f1bbfcae84449e2293c07398376c478a9ea1c4190c23e1c9a414a055b46657"
+"opencv_python_headless.libs/libswresample-4e764699.so.6.3.101" = "b49ea4decddd913997d5f9a4af781d2ffdbf26d422f9e80f2d3193f0cd0f8092"
+"opencv_python_headless.libs/libswscale-9061c2fd.so.9.5.101" = "0ad2f960751357d39b1e73023c0cb7927888d1e8f0bb6c82a340b5e47e9d8346"
+"opencv_python_headless.libs/libswscale-fe215b0b.so.9.5.101" = "146094fd188bf8e6585b21acb5946f298efbdbee88690f0134e1e8fa48c44a73"
+
+[[components]]
+name = "torch-arm-compute"
+distribution = "torch"
+version = "2.14.1+cpu"
+upstream_version = "53.2.0"
+source = "https://github.com/ARM-software/ComputeLibrary/archive/7b256bb7965f2fd99cdee790a4b0e56dab438a8c.tar.gz"
+license = "MIT AND Apache-2.0 AND BSD-3-Clause"
+notice_scope = "upstream"
+files = [
+  "torch/lib/libarm_compute.so",
+  "torch/lib/libarm_compute_graph.so",
+]
+notices = [
+  { path = "arm-compute-native-notice.txt", sha256 = "3c8bf1780c0425141f150b14fe9680af6cff00bb371a88360ba75eabcc5537ad" },
+]
+
+[[components]]
+name = "torch-openblas"
+distribution = "torch"
+version = "2.14.1+cpu"
+upstream_version = "0.3.34"
+source = "https://github.com/OpenMathLib/OpenBLAS/archive/v0.3.34.tar.gz"
+license = "BSD-3-Clause"
+notice_scope = "upstream"
+files = [
+  "torch/lib/libopenblas.so.0",
+]
+notices = [
+  { path = "openblas-0.3.34.txt", sha256 = "fc239da73616d04dce1663d9f789bc822221d7df6a25e4139082d1802af8b1e9" },
+]
+
+[[components]]
+name = "torchvision-glibc-loader"
+distribution = "torchvision"
+version = "0.29.1+cpu"
+upstream_version = "2.28"
+source = "https://ftp.gnu.org/gnu/libc/glibc-2.28.tar.xz"
+license = "LGPL-2.1-or-later"
+notice_scope = "upstream"
+files = [
+  "torchvision.libs/ld-linux-aarch64.5cbc5e90.so.1",
+]
+notices = [
+  { path = "lgpl-2.1.txt", sha256 = "43285937a0e9b75b13eb12fdd35ac3101f7fa92cb0a950d18e4dbf90c7a15c4f" },
+  { path = "glibc-2.28-loader-notice.txt", sha256 = "f659e1623cdb0b24053a33397127ec9f294ff4225e8cc7b0f1cc7036a4201b6e" },
+  { path = "glibc-2.28-notices.txt", sha256 = "6cbe3dff9d39f456e2e16a80773a8b19752d07306b4a5fd4fbc4be31e0ae9a4e" },
+]
+[components.shared_objects]
+"torchvision.libs/ld-linux-aarch64.5cbc5e90.so.1" = "88ec4a27977207469cbe73274d31afd41263439dcbd56ea257ad8bd4bb9a9303"
+
+[[gnu_runtimes]]
+distribution = "opencv-python-headless"
+target = "x86_64-unknown-linux-gnu"
+path = "opencv_python_headless.libs/libgfortran-83c28eba.so.5.0.0"
+sha256 = "468e71e59e1d784821a76702e5ecd1e0dbcfc024499f74a552d1bea4b26f27ad"
+
+[[gnu_runtimes]]
+distribution = "opencv-python-headless"
+target = "x86_64-unknown-linux-gnu"
+path = "opencv_python_headless.libs/libquadmath-2284e583.so.0.0.0"
+sha256 = "a9307bbaa353623fa014e8b682d50c4629f5e5c7d61daa9a8652f7d165cd421a"
+
+[[gnu_runtimes]]
+distribution = "torch"
+target = "x86_64-unknown-linux-gnu"
+path = "torch/lib/libgomp.so.1"
+sha256 = "dcb9bd5cc517b0a23cf5923864abeee11ee00ba11abe9b3089388f50f7ba4628"
+
+[[gnu_runtimes]]
+distribution = "numpy"
+target = "aarch64-unknown-linux-gnu"
+path = "numpy.libs/libgfortran-e1b7dfc8-d8198c01.so.5.0.0"
+sha256 = "25899a29a06d3f2927021b4823d858558839fea0e7e759eedb8926fd0a339ea4"
+
+[[gnu_runtimes]]
+distribution = "opencv-python-headless"
+target = "aarch64-unknown-linux-gnu"
+path = "opencv_python_headless.libs/libgfortran-e1b7dfc8.so.5.0.0"
+sha256 = "296e40e3d92d0c4377e1f8b40a929045fee6bc5686226faf940fc824e469a7be"
+
+[[gnu_runtimes]]
+distribution = "scipy"
+target = "aarch64-unknown-linux-gnu"
+path = "scipy.libs/libgfortran-daac5196-038a5e3c.so.5.0.0"
+sha256 = "23ee0d91d5786961b0dfbc201a82e6bc8c832b8bf450b56e918a574269a57400"
+
+[[gnu_runtimes]]
+distribution = "scipy"
+target = "aarch64-unknown-linux-gnu"
+path = "scipy.libs/libgfortran-e1b7dfc8.so.5.0.0"
+sha256 = "296e40e3d92d0c4377e1f8b40a929045fee6bc5686226faf940fc824e469a7be"
+
+[[gnu_runtimes]]
+distribution = "torch"
+target = "aarch64-unknown-linux-gnu"
+path = "torch/lib/libgfortran.so.5"
+sha256 = "272d52d43e6f40ba80ba89a5f7625e323dc0b4daf036d019067b8268c81c01a4"
+
+[[gnu_runtimes]]
+distribution = "torch"
+target = "aarch64-unknown-linux-gnu"
+path = "torch/lib/libgomp.so.1"
+sha256 = "6ea1e242aba9c19f4175d3a44ee2a3f43d4141a244a1a2be04a00af39cf5828c"

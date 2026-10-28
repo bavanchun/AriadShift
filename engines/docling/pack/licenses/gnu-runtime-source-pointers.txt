@@ -138,3 +138,181 @@ text provenance is independent of the source provenance of the binaries:
 https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/COPYING3
 https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/COPYING.RUNTIME
 https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-14.2.0/libquadmath/COPYING.LIB
+
+
+Additional locked Linux runtime objects
+
+The same complete GNU licence texts and three-year corresponding-source offer
+cover these additional unmodified shared objects. The displayed ABI series is
+only the earliest upstream series whose source map contains the defined tags.
+Compiler annotations, imported tags and file basenames do not prove an exact
+GCC source release or provider patch level. The original wheel bytes remain
+bound by SHA-256; static, modified or unlisted runtime objects are refused.
+
+Object: x86_64-unknown-linux-gnu / opencv_python_headless.libs/libgfortran-83c28eba.so.5.0.0
+Distribution: opencv-python-headless 5.0.0.93
+SHA-256: 468e71e59e1d784821a76702e5ecd1e0dbcfc024499f74a552d1bea4b26f27ad
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.3.0, GLIBC_2.14, GLIBC_2.17, GLIBC_2.2.5, GLIBC_2.27, GLIBC_2.3, GLIBC_2.4, GLIBC_2.6, GLIBC_2.7, QUADMATH_1.0
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-8.1.0/libgfortran/gfortran.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: opencv_python_headless-5.0.0.93-cp37-abi3-manylinux_2_28_x86_64.whl
+Wheel SHA-256: ed709fdf9aa0bd1f2ed8549e71d19449b03a675bb581eb292285f6861953be37
+Wheel publisher URL: https://files.pythonhosted.org/packages/9b/21/f6ef335f6e65724aa78b8d792b48d40a48c381715f1e62f5a5049e09d07e/opencv_python_headless-5.0.0.93-cp37-abi3-manylinux_2_28_x86_64.whl
+OpenCV wrapper release: https://pypi.org/project/opencv-python-headless/5.0.0.93/
+Source/build-configuration archive for that exact wrapper release:
+https://files.pythonhosted.org/packages/1d/99/76b7c80252aa83c1af16393454aafd125a0287101afe8deb0a6821af0e30/opencv_python_headless-5.0.0.93.tar.gz
+Source archive SHA-256: b82f9831daab90b725c7c1ee1b36cb5732c367096ac76d119e64e14eb70d5f3c
+Configuration member: opencv_python_headless-5.0.0.93/docker/manylinux_2_28/Dockerfile_x86_64
+This configuration selects quay.io/pypa/manylinux_2_28_x86_64:latest.
+The archive binds the released configuration, not a dated image digest or
+exact source release for the copied GNU runtime.
+
+Object: x86_64-unknown-linux-gnu / opencv_python_headless.libs/libquadmath-2284e583.so.0.0.0
+Distribution: opencv-python-headless 5.0.0.93
+SHA-256: a9307bbaa353623fa014e8b682d50c4629f5e5c7d61daa9a8652f7d165cd421a
+Upstream ABI baseline: GCC 6 series
+Defined interfaces: QUADMATH_1.0, QUADMATH_1.1
+Required interfaces: GLIBC_2.10, GLIBC_2.14, GLIBC_2.2.5, GLIBC_2.23, GLIBC_2.3, GLIBC_2.4
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-6.1.0/libquadmath/quadmath.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: opencv_python_headless-5.0.0.93-cp37-abi3-manylinux_2_28_x86_64.whl
+Wheel SHA-256: ed709fdf9aa0bd1f2ed8549e71d19449b03a675bb581eb292285f6861953be37
+Wheel publisher URL: https://files.pythonhosted.org/packages/9b/21/f6ef335f6e65724aa78b8d792b48d40a48c381715f1e62f5a5049e09d07e/opencv_python_headless-5.0.0.93-cp37-abi3-manylinux_2_28_x86_64.whl
+OpenCV wrapper release: https://pypi.org/project/opencv-python-headless/5.0.0.93/
+Source/build-configuration archive for that exact wrapper release:
+https://files.pythonhosted.org/packages/1d/99/76b7c80252aa83c1af16393454aafd125a0287101afe8deb0a6821af0e30/opencv_python_headless-5.0.0.93.tar.gz
+Source archive SHA-256: b82f9831daab90b725c7c1ee1b36cb5732c367096ac76d119e64e14eb70d5f3c
+Configuration member: opencv_python_headless-5.0.0.93/docker/manylinux_2_28/Dockerfile_x86_64
+This configuration selects quay.io/pypa/manylinux_2_28_x86_64:latest.
+The archive binds the released configuration, not a dated image digest or
+exact source release for the copied GNU runtime.
+
+Object: x86_64-unknown-linux-gnu / torch/lib/libgomp.so.1
+Distribution: torch 2.14.1+cpu
+SHA-256: dcb9bd5cc517b0a23cf5923864abeee11ee00ba11abe9b3089388f50f7ba4628
+Upstream ABI baseline: GCC 9 series
+Defined interfaces: GOACC_2.0, GOACC_2.0.1, GOMP_1.0, GOMP_2.0, GOMP_3.0, GOMP_4.0, GOMP_4.0.1, GOMP_4.5, GOMP_5.0, GOMP_PLUGIN_1.0, GOMP_PLUGIN_1.1, GOMP_PLUGIN_1.2, OACC_2.0, OACC_2.0.1, OACC_2.5, OMP_1.0, OMP_2.0, OMP_3.0, OMP_3.1, OMP_4.0, OMP_4.5, OMP_5.0
+Required interfaces: GLIBC_2.14, GLIBC_2.16, GLIBC_2.17, GLIBC_2.2.5, GLIBC_2.3, GLIBC_2.3.4, GLIBC_2.4, GLIBC_2.6
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-9.1.0/libgomp/libgomp.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: torch-2.14.1+cpu-cp314-cp314-manylinux_2_28_x86_64.whl
+Wheel SHA-256: 35103e180214793207f95d7e12e100ecba3ace6f5fb37e1fcefbb07e096ed180
+Wheel publisher URL: https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp314-cp314-manylinux_2_28_x86_64.whl
+Release tag: https://github.com/pytorch/pytorch/tree/v2.14.1
+Wheel-build configuration:
+https://github.com/pytorch/pytorch/blob/v2.14.1/.github/workflows/_binary-build-linux.yml
+https://github.com/pytorch/pytorch/blob/v2.14.1/.ci/docker/manywheel/Dockerfile_2_28
+These are upstream build configuration pointers, not proof of the exact
+container or compiler used for this wheel or copied runtime dependency.
+
+Object: aarch64-unknown-linux-gnu / numpy.libs/libgfortran-e1b7dfc8-d8198c01.so.5.0.0
+Distribution: numpy 2.5.4
+SHA-256: 25899a29a06d3f2927021b4823d858558839fea0e7e759eedb8926fd0a339ea4
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.5.0, GLIBC_2.17, GLIBC_2.27
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-8.1.0/libgfortran/gfortran.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: numpy-2.5.4-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+Wheel SHA-256: 4054173604cd8658796053f1f3bc0befb68ec1c0762c57fdad61e199256a8617
+Wheel publisher URL: https://files.pythonhosted.org/packages/63/d6/34b0a2b0741386a63025a65a2c09caaaaaad6d0ca95b66cd65c30dd7fcb5/numpy-2.5.4-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+Release tag: https://github.com/numpy/numpy/tree/v2.5.4
+Wheel-build configuration: https://github.com/numpy/numpy/blob/v2.5.4/pyproject.toml
+This records the release cibuildwheel configuration, not an exact GCC release.
+
+Object: aarch64-unknown-linux-gnu / opencv_python_headless.libs/libgfortran-e1b7dfc8.so.5.0.0
+Distribution: opencv-python-headless 5.0.0.93
+SHA-256: 296e40e3d92d0c4377e1f8b40a929045fee6bc5686226faf940fc824e469a7be
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.5.0, GLIBC_2.17, GLIBC_2.27
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-8.1.0/libgfortran/gfortran.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: opencv_python_headless-5.0.0.93-cp37-abi3-manylinux_2_28_aarch64.whl
+Wheel SHA-256: 840bd717c21e5c11cadadc022a823315ea417f961213d06b4df010e019eb16f4
+Wheel publisher URL: https://files.pythonhosted.org/packages/3a/98/1a28a7101e31801042b3098871a74b76c61581d328ef40774ff4edb53a56/opencv_python_headless-5.0.0.93-cp37-abi3-manylinux_2_28_aarch64.whl
+OpenCV wrapper release: https://pypi.org/project/opencv-python-headless/5.0.0.93/
+Source/build-configuration archive for that exact wrapper release:
+https://files.pythonhosted.org/packages/1d/99/76b7c80252aa83c1af16393454aafd125a0287101afe8deb0a6821af0e30/opencv_python_headless-5.0.0.93.tar.gz
+Source archive SHA-256: b82f9831daab90b725c7c1ee1b36cb5732c367096ac76d119e64e14eb70d5f3c
+Configuration member: opencv_python_headless-5.0.0.93/docker/manylinux_2_28/Dockerfile_aarch64
+This configuration selects quay.io/pypa/manylinux_2_28_aarch64:latest.
+The archive binds the released configuration, not a dated image digest or
+exact source release for the copied GNU runtime.
+
+Object: aarch64-unknown-linux-gnu / scipy.libs/libgfortran-daac5196-038a5e3c.so.5.0.0
+Distribution: scipy 1.18.1
+SHA-256: 23ee0d91d5786961b0dfbc201a82e6bc8c832b8bf450b56e918a574269a57400
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.5.0, GLIBC_2.17
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-8.1.0/libgfortran/gfortran.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: scipy-1.18.1-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+Wheel SHA-256: 2d3ab0e8c69a17dd3559eab8cbb88f258e285c94d572c2719033f90f83290c89
+Wheel publisher URL: https://files.pythonhosted.org/packages/0b/56/030af62bea3cf878e0028515dff78c123b01633606a879b63f42d2db99cc/scipy-1.18.1-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+Release tag: https://github.com/scipy/scipy/tree/v1.18.1
+Wheel-build configuration: https://github.com/scipy/scipy/blob/v1.18.1/pyproject.toml
+This records the release cibuildwheel configuration, not an exact GCC release.
+
+Object: aarch64-unknown-linux-gnu / scipy.libs/libgfortran-e1b7dfc8.so.5.0.0
+Distribution: scipy 1.18.1
+SHA-256: 296e40e3d92d0c4377e1f8b40a929045fee6bc5686226faf940fc824e469a7be
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.5.0, GLIBC_2.17, GLIBC_2.27
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-8.1.0/libgfortran/gfortran.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: scipy-1.18.1-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+Wheel SHA-256: 2d3ab0e8c69a17dd3559eab8cbb88f258e285c94d572c2719033f90f83290c89
+Wheel publisher URL: https://files.pythonhosted.org/packages/0b/56/030af62bea3cf878e0028515dff78c123b01633606a879b63f42d2db99cc/scipy-1.18.1-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
+Release tag: https://github.com/scipy/scipy/tree/v1.18.1
+Wheel-build configuration: https://github.com/scipy/scipy/blob/v1.18.1/pyproject.toml
+This records the release cibuildwheel configuration, not an exact GCC release.
+
+Object: aarch64-unknown-linux-gnu / torch/lib/libgfortran.so.5
+Distribution: torch 2.14.1+cpu
+SHA-256: 272d52d43e6f40ba80ba89a5f7625e323dc0b4daf036d019067b8268c81c01a4
+Upstream ABI baseline: GCC 8 series
+Defined interfaces: GFORTRAN_8, GFORTRAN_C99_8, GFORTRAN_F2C_8
+Required interfaces: GCC_3.0, GCC_3.3, GCC_4.2.0, GCC_4.5.0, GLIBC_2.17, GLIBC_2.27
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-8.1.0/libgfortran/gfortran.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: torch-2.14.1+cpu-cp314-cp314-manylinux_2_28_aarch64.whl
+Wheel SHA-256: f56cd23a3bf003bfbed3da0645ba09b3ccc66c0a2f2ac726a9b98f34e0e4926f
+Wheel publisher URL: https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp314-cp314-manylinux_2_28_aarch64.whl
+Release tag: https://github.com/pytorch/pytorch/tree/v2.14.1
+Wheel-build configuration:
+https://github.com/pytorch/pytorch/blob/v2.14.1/.github/workflows/_binary-build-linux.yml
+https://github.com/pytorch/pytorch/blob/v2.14.1/.ci/docker/manywheel/Dockerfile_2_28
+These are upstream build configuration pointers, not proof of the exact
+container or compiler used for this wheel or copied runtime dependency.
+
+Object: aarch64-unknown-linux-gnu / torch/lib/libgomp.so.1
+Distribution: torch 2.14.1+cpu
+SHA-256: 6ea1e242aba9c19f4175d3a44ee2a3f43d4141a244a1a2be04a00af39cf5828c
+Upstream ABI baseline: GCC 13 series
+Defined interfaces: GOACC_2.0, GOACC_2.0.1, GOACC_2.0.2, GOMP_1.0, GOMP_2.0, GOMP_3.0, GOMP_4.0, GOMP_4.0.1, GOMP_4.5, GOMP_5.0, GOMP_5.0.1, GOMP_5.1, GOMP_5.1.1, GOMP_PLUGIN_1.0, GOMP_PLUGIN_1.1, GOMP_PLUGIN_1.2, GOMP_PLUGIN_1.3, GOMP_PLUGIN_1.4, OACC_2.0, OACC_2.0.1, OACC_2.5, OACC_2.5.1, OACC_2.6, OMP_1.0, OMP_2.0, OMP_3.0, OMP_3.1, OMP_4.0, OMP_4.5, OMP_5.0, OMP_5.0.1, OMP_5.0.2, OMP_5.1, OMP_5.1.1, OMP_5.2
+Required interfaces: GLIBC_2.17
+ABI source map: https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-13.1.0/libgomp/libgomp.map
+Exact GCC source release: not established
+Source archive: https://ftp.gnu.org/gnu/gcc/
+Carrying wheel: torch-2.14.1+cpu-cp314-cp314-manylinux_2_28_aarch64.whl
+Wheel SHA-256: f56cd23a3bf003bfbed3da0645ba09b3ccc66c0a2f2ac726a9b98f34e0e4926f
+Wheel publisher URL: https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp314-cp314-manylinux_2_28_aarch64.whl
+Release tag: https://github.com/pytorch/pytorch/tree/v2.14.1
+Wheel-build configuration:
+https://github.com/pytorch/pytorch/blob/v2.14.1/.github/workflows/_binary-build-linux.yml
+https://github.com/pytorch/pytorch/blob/v2.14.1/.ci/docker/manywheel/Dockerfile_2_28
+These are upstream build configuration pointers, not proof of the exact
+container or compiler used for this wheel or copied runtime dependency.

@@ -14,6 +14,8 @@ also require one matching RECORD owner. Archive contents are not parsed at runti
 other archive magic is not inspected. RECORD refresh rewrites every DLL/PYD digest and
 the third-party notice record; this can mask accidental post-install changes on Windows, whose
 pack target remains deferred.
+Native GPL/AGPL runtime self-declarations and GPL build flags are refused; absence of a
+matching string does not establish a binary's complete licence provenance.
 Each Python distribution's licence is read from its metadata (License-Expression, License and
 trove classifiers) and checked against an allow-list. Unknown fields or classifiers fail until
 their exact metadata is reviewed. The pywin32 exception additionally binds every wheel payload
@@ -44,6 +46,7 @@ import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
+from functools import cache
 from importlib import metadata
 from pathlib import Path
 
@@ -74,6 +77,9 @@ ALLOWED_DATA = frozenset({"Apache-2.0", "CDLA-Permissive-2.0", "CC0-1.0", "MIT",
 
 _DENIED = re.compile(r"AGPL|(?<!L)GPL|SSPL|RAIL|BUSL|Commons-Clause|NC-|Proprietary", re.I)
 _RAW_DENIED = re.compile(r"(?<!Lesser )General Public License|Affero", re.I)
+_GPL_RUNTIME = re.compile(
+    rb"lib[\w-]+ licen[sc]e:\s*(?:A?GPL)\b|(?:^|\s)--enable-gpl(?:\s|\x00|$)", re.I
+)
 
 # Free-text ``License`` fields and trove classifiers seen in the locked dependencies.
 _KNOWN = {
@@ -745,7 +751,7 @@ NATIVE_LIBRARIES = {
     "libgeos": ("LGPL-2.1-only", {"shapely"}),
     "libspatialindex": ("MIT", {"rtree"}),
     "libgomp": (_GCC_RUNTIME, {"torch"}),
-    "libgfortran": (_GCC_RUNTIME, {"numpy", "scipy", "opencv-python-headless"}),
+    "libgfortran": (_GCC_RUNTIME, {"numpy", "scipy", "opencv-python-headless", "torch"}),
     "libquadmath": ("LGPL-2.1-or-later", {"numpy", "scipy", "opencv-python-headless"}),
     "libscipy_openblas": ("BSD-3-Clause", {"numpy", "scipy"}),
     "libopenblas": ("BSD-3-Clause", {"opencv-python-headless"}),
@@ -770,7 +776,12 @@ NATIVE_LIBRARIES = {
     "libz": ("Zlib", {"pillow", "torchvision"}),
 }
 with Path(__file__).with_name("native-components.toml").open("rb") as _handle:
-    _NATIVE_COMPONENTS = {item["name"]: item for item in tomllib.load(_handle)["components"]}
+    _native_reviews = tomllib.load(_handle)
+    _NATIVE_COMPONENTS = {item["name"]: item for item in _native_reviews["components"]}
+    _GNU_TARGET_SHARED_FILES = {
+        (item["target"], item["distribution"], item["path"]): item["sha256"]
+        for item in _native_reviews.get("gnu_runtimes", [])
+    }
 NATIVE_LIBRARIES.update(
     {name: (item["license"], {item["distribution"]}) for name, item in _NATIVE_COMPONENTS.items()}
 )
@@ -902,6 +913,11 @@ def _native_notice(site: Path, item: dict) -> tuple[Path, Path]:
     return root, root / item["notice"]
 
 
+@cache
+def _component_basenames(paths: tuple[str, ...]) -> frozenset[str]:
+    return frozenset(Path(path).name.casefold() for path in paths)
+
+
 def _native_family(owner: str, filename: str) -> str | None:
     filename = Path(filename.replace("\\", "/")).name.casefold()
     if owner == "shapely" and filename.startswith("geos"):
@@ -921,7 +937,7 @@ def _native_family(owner: str, filename: str) -> str | None:
             name
             for name, item in _NATIVE_COMPONENTS.items()
             if item["distribution"] == owner
-            and filename in {Path(p).name.casefold() for p in item["files"]}
+            and filename in _component_basenames(tuple(item["files"]))
         ),
         None,
     )
@@ -986,6 +1002,8 @@ def _native_files(site: Path) -> set[str]:
                 raise SystemExit(f"native file is a symlink: {relative}")
             if path.stat().st_nlink != 1:
                 raise SystemExit(f"native file is a hard link: {relative}")
+            if _GPL_RUNTIME.search(path.read_bytes()):
+                raise SystemExit(f"forbidden GPL runtime declaration: {relative}")
             files.add(relative)
         elif path.suffix.casefold() not in {".npz", ".docx", ".pptx", ".xlsx"}:
             with path.open("rb") as handle:
@@ -1105,7 +1123,10 @@ def vendored_libraries(site: Path, target: str) -> list[dict]:
                 "native_files": {platform: [relative]},
             }
             if component.get("source"):
-                item.update(version=component["version"], source=component["source"])
+                item.update(
+                    version=component.get("upstream_version", component["version"]),
+                    source=component["source"],
+                )
             inventory.append(item)
             continue
         # The source-built torch/OpenCV wheels may only carry their own notices.
@@ -1196,6 +1217,22 @@ def check_vendored_native_files(site: Path, inventory: list[dict], target: str) 
             or any(name not in component["files"] for name in matches)
         ):
             errors.append(f"{item['name']}: unreviewed component file or notices")
+        if component is not None and (
+            component["license"].startswith(("LGPL-", "MPL-"))
+            or component.get("shared_objects") is not None
+        ):
+            if (item.get("version"), item.get("source")) != (
+                component.get("upstream_version"),
+                component.get("source"),
+            ) or not all((item.get("version"), item.get("source"))):
+                errors.append(f"{item['name']}: missing exact upstream version/source")
+            if any(
+                not _elf_shared_object(site / relative)
+                or hashlib.sha256((site / relative).read_bytes()).hexdigest()
+                != component.get("shared_objects", {}).get(relative)
+                for relative in matches
+            ):
+                errors.append(f"{item['name']}: requires an unmodified reviewed shared object")
         for relative in matches:
             records = owners.get(relative, [])
             if (
@@ -1211,7 +1248,10 @@ def check_vendored_native_files(site: Path, inventory: list[dict], target: str) 
         if item["name"] in _GNU_FAMILIES and any(
             not _elf_shared_object(site / relative)
             or hashlib.sha256((site / relative).read_bytes()).hexdigest()
-            != _GNU_SHARED_FILES.get(relative)
+            != (
+                _GNU_SHARED_FILES.get(relative)
+                or _GNU_TARGET_SHARED_FILES.get((target, item["distribution"], relative))
+            )
             for relative in matches
         ):
             errors.append(f"{item['name']}: requires an unmodified reviewed ELF shared object")
@@ -1319,7 +1359,7 @@ _GNU_NOTICE_TEXTS = {
     ),
     "lgpl-2.1.txt": ("43285937a0e9b75b13eb12fdd35ac3101f7fa92cb0a950d18e4dbf90c7a15c4f"),
     "gnu-runtime-source-pointers.txt": (
-        "ddc750eb7dff8b33233118c41d29b5e2c0f4a751a1011079fb6f562f71ddf9ba"
+        "7fc1eb329b7c9793720aa04faa2498c086eede2779bf5e8b4e7dccb494116181"
     ),
     "gnu-runtime-source-offer.txt": (
         "20b795b27debe132e63c1c7153504444831bfd9c35fbf0d73dd470f431953fcf"
@@ -1447,6 +1487,9 @@ def _scan_stream(
         iterator = iter(chunks) if chunks is not None else _stream_chunks(header, handle)
         for chunk in iterator:
             data = (tail + chunk).lower()
+            if _GPL_RUNTIME.search(data):
+                errors.append(f"forbidden GPL runtime declaration: {relative}")
+                break
             if any(marker in data for marker in markers):
                 errors.append(f"proprietary Intel binary content: {relative}")
                 break
