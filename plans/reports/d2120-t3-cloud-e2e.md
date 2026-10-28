@@ -1,64 +1,71 @@
-# Cloud E2E verification after label-cancellation rework
+# Cloud E2E cache-poisoning repair
 
-Both requested corrections are implemented on `feat/cloud-product--e2e-docling`. Label events preserve a running conversion, and the documentation accurately describes polling deadlines and runner queue limits. No push, workflow dispatch or PR creation was performed. The branch awaits ACCEPT.
+The reported checkout path is repaired in commit `7f9ffbb6ea7adfd7b436008455bfbc2af8b365ba` (`fix(ci): isolate conversion checkout and dependency caches`). The conversion job disables shared uv caching, uses direct event-authorized checkout refs and verifies the recorded source SHA before executing repository code. Pack SHA and event verification remain intact. No alert was dismissed and nothing was pushed. The fold worker can apply this commit to the PR branch.
 
-- Verified implementation HEAD: `e775a158ffee5f9b731785c229775b83245540ce`.
-- Static gate: [d2120-t3-rework2-static.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-rework2-static.log).
-- Gate last line: `=== e775a158ffee5f9b731785c229775b83245540ce ALL GREEN`.
-- Exact gate drivers: [rework2-gate.zsh](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-gate.zsh) and [rework2-gate.py](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-gate.py).
-- Executed cases: [rework2-proof.py](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-proof.py), with [JSON results](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-cases.json).
+- Branch: `feat/cloud-product--e2e-docling`.
+- Verified implementation HEAD: `7f9ffbb6ea7adfd7b436008455bfbc2af8b365ba`.
+- Gate: [d2120-t3-codeql-static.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-codeql-static.log).
+- Gate last line: `=== 7f9ffbb6ea7adfd7b436008455bfbc2af8b365ba ALL GREEN`.
+- Exact drivers: [codeql-gate.zsh](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/codeql-gate.zsh), [codeql-gate.py](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/codeql-gate.py).
 
-## Changes and case evidence
+## Diagnosis and cache inventory
 
-The conversion job retains its PR concurrency group. Its cancellation expression now requires a PR event whose action is neither `labeled` nor `unlabeled`. A new commit's `synchronize` event still permits cancellation. The workflow currently triggers `labeled`; the `unlabeled` guard also protects a future trigger addition.
+[Alert 2](https://github.com/bavanchun/AriadShift/security/code-scanning/2) is high severity, rule `actions/cache-poisoning/poisonable-step`, at `cloud-e2e.yml:335` for schedule and manual triggers. The [saved alert](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/codeql-alert.json) records the PR merge analysis commit `b1caeef38a3372470be578312ea2375a77434f23`. Before repair, this branch and fold commit `5444c25` had identical cloud and pack workflow files; no merge was needed to reproduce the relevant configuration.
 
-| Configured event | Cancel a running conversion? | Local evidence |
+The conversion job uses only pinned `actions/checkout` and pinned `astral-sh/setup-uv`; it has no nested local/composite action. The complete [action and input inventory](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/codeql-cache-audit.json) includes every cloud job and every pack job.
+
+| Cache mechanism | Before repair | After repair |
 |---|---|---|
-| PR `labeled` | No | The extracted expression evaluates false. |
-| PR `unlabeled` | No | The extracted expression evaluates false. |
-| PR `synchronize` | Yes | The extracted expression evaluates true. |
-| PR `reopened` | Yes | The extracted expression evaluates true. |
-| Push, schedule or manual dispatch | No | All three expression cases evaluate false. |
-| Surviving conversion fails after unrelated labels | Required status FAIL | The actual final-status shell exits 1 with `Required Compose run did not succeed: failure`. |
+| setup-uv dependency cache | Pinned action `1c37ad0` defaults to `enable-cache: auto`, `restore-cache: true`, `save-cache: auto`. On these GitHub-hosted PR, push and manual runs it enables restore/save of the uv cache, normally under `$RUNNER_TEMP/setup-uv-cache`, keyed by platform, Python and dependency hashes. | `enable-cache: false` disables both remote restore and the post-action save. |
+| Scheduled conversion | The entire setup-uv step is skipped, so it already has no explicit dependency-cache action. | Still skips setup-uv. The checkout trust boundary is repaired for this event too. |
+| checkout, Rust, Node/pnpm and Docker | Checkout has no Actions dependency cache. No Rust, setup-node/pnpm, actions/cache or buildx action exists in this job. Dockerfile Cargo registry/target cache mounts are local builder state; no GHA `cache-from` or `cache-to` is configured. | Unchanged; local builder mounts remain available on the disposable runner. |
 
-Under GitHub's default [one-running, one-pending policy](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), a label arrival preserves running conversion A while it waits. A later arrival can replace pending job B; it does not cancel A through the label policy. Pending jobs are not guaranteed to survive. A cancelled pending conversion cannot pass this workflow's final required status, and A's final status fails if A fails. A label-triggered conversion must itself succeed before its required status can pass. Actual scheduling, same-name required-check selection and cross-run cancellation need a live PR; the local expression and shell cases do not reproduce GitHub's scheduler.
+The defaults are verified from the exact pinned [action metadata](https://github.com/astral-sh/setup-uv/blob/1c37ad07a6a961277cf70c0d37d6f313000f5884/action.yml). Its [setup implementation](https://github.com/astral-sh/setup-uv/blob/1c37ad07a6a961277cf70c0d37d6f313000f5884/src/setup-uv.ts) gates restoration on `inputs.enableCache`; its [post action](https://github.com/astral-sh/setup-uv/blob/1c37ad07a6a961277cf70c0d37d6f313000f5884/src/save-cache.ts) gates saving on the same value. The uv executable's runner-local tool cache is separate from this shared dependency cache.
 
-The new regression case was first run against the previous expression and failed because a label produced `cancel=true`; see [d2120-t3-rework2-red.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-rework2-red.log). After repair, all 44 cases passed. The driver evaluates the configured conjunction using Bash's equivalent boolean operators and executes the workflow's actual final-status shell. The other 36 cases retain scope, failure, deadline, pack-state and source-provenance coverage from the previous rework.
+The [query source](https://github.com/github/codeql/blob/fd2bfc8a3da9c73a0c8be05d110efaf14a856445/actions/ql/src/Security/CWE-349/CachePoisoningViaPoisonableStep.ql) does not require an explicit restore/save step. It combines an untrusted checkout, a subsequent executable step and default-branch cache-write context. The [event model](https://github.com/github/codeql/blob/fd2bfc8a3da9c73a0c8be05d110efaf14a856445/actions/ql/lib/codeql/actions/security/CachePoisoningQuery.qll) includes schedule and manual dispatch. This explains the scheduled alert even though setup-uv is skipped. Disabling uv caching alone would leave the reported source path in place; `actions: read` does not restrict the separate cache token.
 
-The workflow comments and `docs/ci.md` now explain that the request shell creates the 540-minute timestamp only after obtaining a runner. A polling shell enforces that timestamp only once a waiter has a runner; a waiter queued past it fails when it starts. Time spent queued before the request or a waiter starts is bounded only by GitHub's queue limits. The timestamp is not a hard 540-minute wall-clock bound, and there is no independent watchdog. GitHub's [`timeout-minutes`](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes) limits execution rather than runner queue time. The two polling windows and their 310/250-minute job limits are unchanged. Both existing expired-timestamp cases still fail clearly after their shell starts.
+## Repair and adjacent audit
 
-## Validation and commits
+Scope and conversion share one event-ref expression through a YAML scalar anchor. PRs check out their immutable head SHA, push/manual runs use `github.sha`, and schedules retain the trusted repository `dev` branch. No cloud job checks out a job-output-derived ref. Immediately after checkout, every event compares `git rev-parse HEAD` with Scope's recorded SHA. A moved `dev` branch, wrong SHA or missing output fails before setup-uv or repository scripts execute. The output is a comparison value rather than checkout authority. The existing pack download guard still checks the checkout SHA, pack SHA and push/dispatch event.
 
-The original queued PID 344171 was cancelled before acquiring a lock, as instructed by the Mac master. The detached replacement used PID 606025 and `zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 python3 /home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-gate.py`. The slot wrapper waits on `build.lock.2`, requires load below 12 and available memory above 8 GB, and runs at priority 19. It checked this local worktree directly, preserving the no-push constraint. The driver exported `CARGO_BUILD_JOBS=4`, UV `0.12.23`, pnpm `12.9.1` and Node from `.node-version`, used this worktree's own Cargo target directory, checked load and ran:
+The other cloud jobs have no cache actions. Only Scope also checks out code, using the same direct event-ref expression. The pack request, both wait jobs and final status do not check out repository code.
+
+All five `pack-docling.yml` jobs use default checkout of their immutable workflow-event source; none consumes `needs.scope.outputs.source-sha` or another dynamic checkout ref. The dispatch branch SHA check and subsequent artifact SHA/event checks are unchanged. Existing pack caches were audited without modification:
+
+| Pack job | Cache configuration |
+|---|---|
+| Scope | No cache action. |
+| Engine | setup-uv automatic dependency caching. |
+| Conformance | setup-uv cache; explicit model/OCR blob cache. Rust toolchain cache is disabled. |
+| Pack | setup-uv cache; explicit model/OCR blobs, native source builds and compiler-work restore/save caches. Rust toolchain cache is disabled. |
+| Manifest | setup-uv cache; artifact download/upload, which are not dependency caches. Rust toolchain cache is disabled. |
+
+These jobs do not have the reported output-derived checkout pattern. Their PR runs retain PR cache scope; manual dispatch uses its own event source. This is a scoped audit of checkout/cache routing, not a new certification of every pack dependency. No query exclusion, alert dismissal or suppression was added. `docs/ci.md` documents the changed checkout and cache rules.
+
+## Verification
+
+The new regression check fails against the original workflow with `output-derived checkout`; see [the expected failure](/home/vchun/Codes/ariadshift-logs/d2120-t3-codeql-red.log). After repair, [codeql-proof.py](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/codeql-proof.py) passes 51 cases: the previous 44 cases, four direct event-ref selections and three executions of the actual SHA guard. The [JSON result](/home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/codeql-cases.json) records the tested commit. It also checks disabled uv caching, absence of output-derived cloud checkouts, guard ordering and unchanged default pack checkouts. These are configuration and shell cases, not a local CodeQL run.
+
+The detached gate used PID 2108995 through `gate-slot.sh 2`, which waits on `build.lock.2`, checks load below 12 and available memory above 8 GB, and runs at priority 19. It exported the prescribed tool pins, `CARGO_BUILD_JOBS=4` and this worktree's own Cargo target directory. The driver records these successful commands:
 
 ```sh
-git show --no-patch --format=Verified-head:%H HEAD
-.tools/bin/actionlint .github/workflows/cloud-e2e.yml
+.tools/bin/actionlint .github/workflows/cloud-e2e.yml .github/workflows/pack-docling.yml
 bash scripts/test-ci-scope.sh
-python3 /home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/rework2-proof.py
+python3 /home/vchun/Codes/ariadshift-ops/d2120-t3-evidence/codeql-proof.py
 typos docs/ci.md .github/workflows/cloud-e2e.yml
 just lint-commits
-just lint-commits ac0314d7627ade2e0f115f22ff3faf0247ddec32..HEAD
-git diff --check ac0314d7627ade2e0f115f22ff3faf0247ddec32..HEAD
-git diff --exit-code ac0314d7627ade2e0f115f22ff3faf0247ddec32..HEAD -- infra/test/e2e/run.sh
+just lint-commits 02f741e704d7f2e6fc23ef26884d06ddb427613a..HEAD
+git diff --check 02f741e704d7f2e6fc23ef26884d06ddb427613a..HEAD
+git diff --exit-code 02f741e704d7f2e6fc23ef26884d06ddb427613a..HEAD -- infra/test/e2e/run.sh .github/workflows/pack-docling.yml
 ```
 
-Actionlint, all 76 classifier cases, all 44 workflow cases, typos, both commit-lint ranges and whitespace checks passed. Review of the final diff confirmed that only the cancellation policy and its documentation changed. No conversion code, pack resolver behavior or `run.sh` was changed, so Compose was not rerun. No full `just ci` run is claimed.
+Actionlint, all 76 scope cases, all 51 workflow cases, typos and commit checks passed. `codeql` is absent from PATH, as recorded in the gate. No CLI installation, local Actions query execution, full `just ci` or Compose rerun is claimed. The rule's documented untrusted-checkout source path has been removed; fresh GitHub analysis is still needed to confirm the alert closes after folding. The existing real OCR proof remains in [t3-proof-011908.log](/home/vchun/Codes/ariadshift-logs/t3-proof-011908.log); conversion code and `run.sh` are unchanged.
 
-| SHA | Subject |
-|---|---|
-| `e775a158ffee5f9b731785c229775b83245540ce` | `fix(ci): preserve conversions across label events` |
+A separate report-only commit records this result. The canonical operations copy records the final branch HEAD and report checks. The gate exited; no service, container or listener was started, and no process was suspended.
 
-A separate report-only commit records this result. The canonical operations copy records its final branch HEAD and subsequent report checks without introducing a self-referencing commit hash into this repository report. No service, container or listener was started, and no sudo or process suspension was used. The detached gate exited after its checks.
+## Remaining concerns
 
-## Retained evidence and open concerns
-
-The prior gate [t3-rework-032049.log](/home/vchun/Codes/ariadshift-logs/t3-rework-032049.log) verified implementation `815af93` and ended `=== 03:20:57 ALL GREEN`. Its four fixes remain in place: recomputed label scope, the always-run final required status, the extended polling budget and exact-source pack selection.
-
-The unchanged real OCR journey is recorded in [t3-proof-011908.log](/home/vchun/Codes/ariadshift-logs/t3-proof-011908.log), ending `=== 01:47:40 ALL GREEN`. It converted the image-only Vietnamese PDF through Docling to a validated DOCX, enforced quota and deletion, and used the older pack explicitly requested by the original brief. It does not prove artifact handoff for this revised head. The original B9 environment guidance and B11 classifier remain unchanged.
-
-- A live PR must still prove label preservation, new-commit cancellation, replacement of a pending run, final required-check behavior and exact-source artifact handoff. No green remote Compose run is claimed.
-- Automatic dispatch cost and fork prerequisites remain operational decisions from the review. This small rework does not change the pack workflow's platform matrix or its permissions. Nightly signed installation still needs a compatible published pack.
-- The historical Docker executor load overrun remains documented in [d2120-t3-resource.log](/home/vchun/Codes/ariadshift-logs/d2120-t3-resource.log). This rework started no build or Docker executor and did not alter another worker's processes.
+- The fold worker must apply `7f9ffbb6ea7adfd7b436008455bfbc2af8b365ba` and rerun CodeQL on PR #84. The latest PR instance is still open on analysis commit `b1caeef`; no remote success is claimed.
+- Live source-matched pack handoff, label concurrency and nightly signed installation retain their previously documented verification limits. This repair does not change their policy.
 
 Status: DONE_WITH_CONCERNS
