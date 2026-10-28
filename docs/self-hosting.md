@@ -68,12 +68,22 @@ docker compose -f infra/compose/docker-compose.yml --profile core --profile docl
 
 The docling image installs the signed Docling engine pack during its build, so that build needs internet access and a published pack ([docling.md](docling.md)).
 
+For disposable integration tests before publication, run
+`E2E_DOCLING_PACK_DIR=/absolute/path/to/unpacked-pack bash infra/test/e2e/run.sh`.
+The directory must contain `pack.toml`, `runtime`, `models` and `tessdata` from a
+locally built or CI-built pack, readable by container UID 10001. Compose mounts
+the directory read-only. This test-only override uses the documented
+`ASHIFT_PACK_DOCLING` development resolution; it does not verify a release
+signature. The production image continues to require a signed published pack.
+The runner snapshots the disposable database before bootstrap and the account
+journey, then removes the test stack and volumes on exit.
+
 ## Configuration
 
 All settings live in `infra/compose/.env`; [`.env.example`](../.env.example) lists them with safe placeholders. The compose file maps them to the server variables documented in [server.md](server.md).
 
 - **Secrets.** `POSTGRES_PASSWORD`, the three service database passwords, `S3_SECRET_ACCESS_KEY`, `ARIAD_SECRET` and `BETTER_AUTH_SECRET`. Compose refuses to start when one is missing. Database passwords go into connection URLs, so use letters and digits only (hex is safe).
-- **Public URLs.** `ARIAD_WEB_ORIGIN`, `ARIAD_PUBLIC_URL`, `BETTER_AUTH_URL` and `ARIAD_S3_PUBLIC_ENDPOINT` are the addresses a browser uses. The API trusts tokens whose `iss` and `aud` are the origin of `BETTER_AUTH_URL` and fetches the signing keys from `http://auth:3000/api/auth/jwks` on the internal network. CORS on the API allows `ARIAD_WEB_ORIGIN` only. The web image bakes the API and auth URLs in at build time, so rebuild `web` after changing them.
+- **Public URLs.** `ARIAD_WEB_ORIGIN`, `ARIAD_PUBLIC_URL`, `BETTER_AUTH_URL` and `ARIAD_S3_PUBLIC_ENDPOINT` are the addresses a browser uses. The API trusts tokens whose `iss` and `aud` are the origin of `BETTER_AUTH_URL` and fetches the signing keys from `http://auth:3000/api/auth/jwks` on the internal network. CORS on the API allows `ARIAD_WEB_ORIGIN` only. The web image bakes the API and auth URLs in at build time, together with `ARIAD_TURNSTILE_SITE_KEY` (the Turnstile site key that pairs with `ARIAD_TURNSTILE_SECRET`) and `ARIAD_OPERATOR` (who runs the server, named in the upload disclosure), so rebuild `web` after changing any of them.
 - **Ports.** Published ports bind to `BIND_ADDRESS` (default `127.0.0.1`), so only the host itself can reach the stack. PostgreSQL and the SeaweedFS master, volume and filer ports are never published.
 - **Sign-in.** Email and password work with no further setup. Set `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` or `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` to add those providers.
 - **Anonymous use.** `ARIAD_ANONYMOUS=true` lets callers without an account convert small files under the `anonymous` plan. `ARIAD_TURNSTILE_SECRET` adds a Cloudflare Turnstile check; it needs outbound internet.

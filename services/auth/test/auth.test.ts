@@ -1,5 +1,5 @@
 import pg from "pg";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   API_KEY_PREFIX,
   BASE_PATH,
@@ -128,6 +128,45 @@ describe("buildAuthOptions", () => {
 
     const tls = buildAuthOptions(config({ BETTER_AUTH_URL: "https://auth.example.com" }), pool);
     expect(tls.advanced.useSecureCookies).toBe(true);
+  });
+
+  it("lets users delete their own account without an emailed confirmation", () => {
+    const options = buildAuthOptions(config(), pool);
+    expect(options.user.deleteUser.enabled).toBe(true);
+  });
+
+  it("revokes every API key of the deleted user without touching other owners", async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 2 });
+    const database = { query } as unknown as pg.Pool;
+    const options = buildAuthOptions(config(), database);
+    await options.user.deleteUser.beforeDelete({
+      id: "user-'1",
+      name: "Ada",
+      email: "ada@example.com",
+      emailVerified: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    expect(query).toHaveBeenCalledExactlyOnceWith(
+      'DELETE FROM "auth"."apikey" WHERE "referenceId" = $1',
+      ["user-'1"],
+    );
+  });
+
+  it("refuses account deletion when API key revocation fails", async () => {
+    const failure = new Error("database unavailable");
+    const database = { query: vi.fn().mockRejectedValue(failure) } as unknown as pg.Pool;
+    const options = buildAuthOptions(config(), database);
+    await expect(
+      options.user.deleteUser.beforeDelete({
+        id: "user-1",
+        name: "Ada",
+        email: "ada@example.com",
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).rejects.toBe(failure);
   });
 
   it("does not require email verification and sends no telemetry", () => {

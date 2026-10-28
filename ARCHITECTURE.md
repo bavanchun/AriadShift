@@ -560,7 +560,7 @@ File ─stream→ OPFS ─→ Web Worker ─→ ariad-wasm / pandoc.wasm / core 
 
 ```mermaid
 sequenceDiagram
-  participant B as Browser
+  participant B as Next.js (Better Auth)
   participant N as Auth service (Better Auth)
   participant A as ariad-server api
   participant S as S3 (R2 / SeaweedFS)
@@ -654,7 +654,7 @@ OpenAPI 3.1 generated via utoipa, written by `just openapi` and committed at `sc
 
 | Flow | Implementation |
 |---|---|
-| Web | Better Auth 1.7 in the separate auth service (`services/auth`, Hono): email/password, GitHub, Google, **passkeys**, 2FA. The web app stays a static export; cloud mode calls the service at its configured base URL with credentials, and local mode needs no account |
+| Web | Next.js (Better Auth) browser client, with Better Auth 1.7 in the separate auth service (`services/auth`, Hono): email/password, GitHub, Google, **passkeys**, 2FA. The web app stays a static export; cloud mode calls the service at its configured base URL with credentials, and local mode needs no account |
 | Web → API | Better Auth JWT plugin issues 15-minute tokens (EdDSA/Ed25519; `iss` and `aud` are the service's `BETTER_AUTH_URL` origin, which the server reads as `ARIAD_AUTH_URL`; `sub` is the user id); Axum verifies against cached JWKS (`/api/auth/jwks`, or `ARIAD_AUTH_JWKS_URL` on an internal network) via `jsonwebtoken`, accepting each key only with the algorithm it declares and refetching on an unknown `kid` |
 | API key | Better Auth API Key plugin (`@better-auth/api-key`): `x-api-key`, stored as `base64url_nopad(sha256(key))`; Axum looks it up in the `apikey` table read-only, honouring `enabled`, `expiresAt`, `configId` and a used-up `remaining` or full rate-limit window, and maps `referenceId` to the user. Keys meant for the API are created with the plugin's rate limit off, because the server never moves its counters |
 | Desktop | System browser OAuth + PKCE → `ariadshift://auth/callback`; tokens stored in OS keychain |

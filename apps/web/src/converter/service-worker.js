@@ -1,8 +1,10 @@
 // Offline support for the in-browser converter. The converter page posts the URLs it
 // and its worker loaded; they are cached here and served when the network is gone.
 // The worker is registered for the whole origin so that the converter's own worker
-// script falls under it, but it only answers /app navigations; content-hashed assets
-// come from the cache first and everything else from the network first.
+// script falls under it, but it only answers /app navigations and the static assets
+// `isOfflineAsset` (offline-policy.mjs, inlined above) accepts; content-hashed assets
+// come from the cache first and the rest from the network first. Auth, API and document
+// requests pass straight to the network and are never stored.
 const CACHE = "ariadshift-app-v1";
 
 self.addEventListener("install", () => {
@@ -15,6 +17,14 @@ self.addEventListener("activate", (event) => {
       for (const name of await caches.keys()) {
         if (name !== CACHE && name !== "ariadshift-engines-v1") {
           await caches.delete(name);
+        }
+      }
+      // Earlier workers stored any same-origin URL the page listed, which could include a
+      // session or JWT response; drop every entry the policy no longer accepts.
+      const app = await caches.open(CACHE);
+      for (const request of await app.keys()) {
+        if (!isOfflineAsset(new URL(request.url), self.location.origin)) {
+          await app.delete(request);
         }
       }
       // The generated script embeds this build's versioned binaries and hashed chunks.
@@ -37,7 +47,7 @@ async function cacheUrls(urls, engineChunks = []) {
   const lazy = new Set(engineChunks);
   const wanted = new Set();
   for (const url of urls) {
-    if (new URL(url).origin !== self.location.origin) {
+    if (!isOfflineAsset(new URL(url), self.location.origin)) {
       continue;
     }
     wanted.add(url);
@@ -102,6 +112,9 @@ self.addEventListener("fetch", (event) => {
         }
       })(),
     );
+    return;
+  }
+  if (!isOfflineAsset(url, self.location.origin)) {
     return;
   }
   event.respondWith(

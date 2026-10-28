@@ -1,6 +1,11 @@
 // Registers the service worker that keeps /app usable offline after the first visit.
+import { isOfflineAsset } from "../../offline-policy.mjs";
 
-/** Same-origin URLs the converter needs offline: the page, its assets, the worker and wasm. */
+/**
+ * Same-origin URLs the converter needs offline: the page, its assets, the worker and wasm.
+ * Only the app shell and static assets qualify; account, API and document responses the
+ * page also loaded never reach the cache.
+ */
 export function offlineUrls(
   pageUrl: string,
   pageResources: string[],
@@ -15,13 +20,8 @@ export function offlineUrls(
     } catch {
       continue;
     }
-    // Skip other sites, the service worker itself and prefetched data for other pages.
-    if (
-      !["http:", "https:"].includes(url.protocol) ||
-      url.origin !== page.origin ||
-      url.pathname === "/sw.js" ||
-      url.searchParams.has("_rsc")
-    ) {
+    // Skip other sites, the service worker, page data, and every auth, API or document URL.
+    if (!isOfflineAsset(url, page.origin)) {
       continue;
     }
     // Heavy binaries already live in the engine cache; keep only one disk copy.

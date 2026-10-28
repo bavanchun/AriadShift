@@ -75,6 +75,9 @@ assert_classification "root manifest (justfile)" "justfile" "true" "true" "code 
 assert_classification "script (check-js-licenses.mjs)" "scripts/check-js-licenses.mjs" "false" "false" "JavaScript-only change"
 assert_classification "script (install-wasm-bindgen.sh)" "scripts/install-wasm-bindgen.sh" "true" "true" "code change"
 assert_classification "workflow (.github ci.yml)" ".github/workflows/ci.yml" "true" "true" "code change"
+assert_classification "workflow (cloud-e2e.yml)" ".github/workflows/cloud-e2e.yml" "false" "false" "JavaScript-only change"
+assert_classification "e2e test (infra/test/e2e)" "infra/test/e2e/run.sh" "false" "false" "JavaScript-only change"
+assert_classification "compose (infra/compose)" "infra/compose/docker-compose.yml" "true" "false" "code change"
 
 # 8. docs-only
 assert_classification "docs-only (docs/)" "docs/cli.md" "false" "false" "documentation-only change"
@@ -85,10 +88,45 @@ assert_classification "docs-only (plans/)" "plans/design.md" "false" "false" "do
 assert_classification "mixed (docs + host)" "$(printf 'docs/cli.md\ncrates/ariad-host/src/main.rs')" "true" "false" "code change"
 assert_classification "mixed (docs + apps)" "$(printf 'docs/web.md\napps/web/src/converter/worker.ts')" "false" "true" "JavaScript-only change"
 assert_classification "mixed (apps + host)" "$(printf 'apps/web/src/index.ts\ncrates/ariad-host/src/main.rs')" "true" "true" "code change"
+assert_classification "mixed (e2e + host)" "$(printf 'infra/test/e2e/run.sh\ncrates/ariad-host/src/main.rs')" "true" "false" "code change"
 assert_classification "mixed (core + docs)" "$(printf 'crates/ariad-core/src/lib.rs\nREADME.md')" "true" "true" "code change"
 
 # 10. fallback
 assert_classification "full-run fallback (empty list)" "" "true" "true" "full run"
+
+echo "=== Cloud E2E scope ==="
+assert_cloud() {
+  paths=$1 expected=$2
+  actual=$(printf '%s\n' "$paths" | sh "$ci_scope" --classify-cloud)
+  if [ "$actual" = "$expected" ]; then
+    passed_count=$((passed_count + 1))
+    printf 'PASS | cloud %s | %s\n' "$paths" "$actual"
+  else
+    failed_count=$((failed_count + 1))
+    printf 'FAIL | cloud %s | expected %s, got %s\n' "$paths" "$expected" "$actual" >&2
+  fi
+}
+for path in infra/test/e2e/run.sh infra/docker/web.Dockerfile \
+  apps/web/src/app/page.tsx crates/ariad-core/src/lib.rs \
+  crates/ariad-host/src/lib.rs crates/ariad-cli/src/main.rs \
+  crates/ariad-server/src/worker.rs crates/ariad-wasm/src/lib.rs \
+  crates/ariad-typst/src/lib.rs services/auth/src/auth.ts \
+  packages/sdk/src/client.ts packages/ui/src/index.ts brand/src/logo.mjs \
+  Cargo.toml Cargo.lock rust-toolchain.toml pnpm-lock.yaml pnpm-workspace.yaml \
+  package.json .node-version .env.example justfile scripts/install-wasm-bindgen.sh \
+  scripts/ci-scope.sh scripts/test-ci-scope.sh fixtures/manifest.toml \
+  fixtures/pdf/vi-garden-image-only.pdf .github/workflows/cloud-e2e.yml \
+  .github/workflows/pack-docling.yml; do
+  assert_cloud "$path" true
+done
+for path in docs/ci.md plans/design.md README.md fixtures/scan/en-alice-p3.pdf \
+  apps/desktop/src/app.tsx Cargo.lock.bak fixtures/manifest.toml.bak; do
+  assert_cloud "$path" false
+done
+assert_cloud "$(printf 'docs/ci.md\napps/web/src/app/page.tsx')" true
+assert_cloud "$(printf 'docs/ci.md\nREADME.md')" false
+assert_cloud "" true
+[ "$(sh "$ci_scope" --classify-cloud Cargo.lock)" = true ] || exit 1
 
 echo "=== Summary ==="
 echo "Passed: $passed_count, Failed: $failed_count"

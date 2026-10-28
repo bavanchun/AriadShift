@@ -20,6 +20,7 @@ import {
   type Upload,
 } from "./generated";
 import { type Client, createClient } from "./generated/client";
+import { sha256Hex } from "./hash";
 import { parseSse } from "./sse";
 
 /** A credential value, or a function returning the current one (for refreshed tokens). */
@@ -46,8 +47,10 @@ export type UploadBody = Blob | ArrayBuffer | Uint8Array<ArrayBuffer>;
 export interface UploadOptions {
   /** Original file name; defaults to `File.name`. */
   filename?: string;
-  /** Lowercase hex SHA-256 of the body; computed in memory when omitted. */
+  /** Lowercase hex SHA-256 of the body; computed in chunks when omitted. */
   sha256?: string;
+  /** Called while the body is hashed, with the bytes hashed so far and the total. */
+  onHashProgress?: (hashed: number, total: number) => void;
   /** Cloudflare Turnstile token for anonymous callers, when the deployment requires one. */
   turnstileToken?: string;
   signal?: AbortSignal;
@@ -177,13 +180,6 @@ function bodySize(body: UploadBody): number {
   return body instanceof Blob ? body.size : body.byteLength;
 }
 
-/** Lowercase hex SHA-256 through Web Crypto. */
-export async function sha256Hex(body: UploadBody): Promise<string> {
-  const bytes = body instanceof Blob ? await body.arrayBuffer() : body;
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -256,7 +252,12 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
       if (!filename) {
         throw new TypeError("upload needs a filename for bodies that are not a File");
       }
-      const sha256 = uploadOptions.sha256 ?? (await sha256Hex(body));
+      const sha256 =
+        uploadOptions.sha256 ??
+        (await sha256Hex(body, {
+          signal: uploadOptions.signal,
+          onProgress: uploadOptions.onHashProgress,
+        }));
       const created = await client.createUpload(
         { filename, size: bodySize(body), sha256 },
         uploadOptions,
@@ -383,7 +384,10 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
       if (blob.size !== output.size) {
         throw new Error(`downloaded ${blob.size} bytes, expected ${output.size}`);
       }
-      if (downloadOptions.verifySha256 && (await sha256Hex(blob)) !== output.sha256.toLowerCase()) {
+      if (
+        downloadOptions.verifySha256 &&
+        (await sha256Hex(blob, { signal: downloadOptions.signal })) !== output.sha256.toLowerCase()
+      ) {
         throw new Error("the downloaded file does not match its SHA-256");
       }
       return blob;

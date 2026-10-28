@@ -2,7 +2,8 @@
 #
 # AriadShift web app: the static export of apps/web (docs/web.md, "Static
 # hosting") served by unprivileged nginx on port 3000. The API and auth base
-# URLs are compiled into the site, so rebuild the image after changing them.
+# URLs, the Turnstile site key and the operator name are compiled into the
+# site, so rebuild the image after changing them.
 #
 # From the repository root:
 #   docker build -f infra/docker/web.Dockerfile -t ariadshift-web .
@@ -21,7 +22,7 @@ ARG PNPM_VERSION=12.9.1
 # Pass --build-arg CARGO_BUILD_JOBS=N to bound compile parallelism.
 ARG CARGO_BUILD_JOBS=3
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev \
+    && apt-get install -y --no-install-recommends ca-certificates curl gcc libc6-dev unzip \
     && rm -rf /var/lib/apt/lists/*
 # rustup-init and pnpm are checked against their published SHA-256. The Rust
 # toolchain and its wasm32 target come from rust-toolchain.toml.
@@ -52,19 +53,26 @@ ENV PATH=/root/.cargo/bin:${PATH} \
     NEXT_TELEMETRY_DISABLED=1
 WORKDIR /src
 COPY . .
-# Same steps as `just wasm-build`: the browser module goes to packages/ariad-wasm/pkg.
+# Same steps as `just wasm-build`: emit both browser modules before Next resolves them.
 RUN sh scripts/install-wasm-bindgen.sh
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --locked -p ariad-wasm --target wasm32-unknown-unknown --profile wasm-release \
+    cargo build --locked -p ariad-wasm -p ariad-typst --target wasm32-unknown-unknown --profile wasm-release \
     && .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg \
-        target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm
+        target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm \
+    && .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg \
+        target/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm
 RUN pnpm install --frozen-lockfile --filter "@ariadshift/web..."
-# Public base URLs for cloud mode; the defaults match infra/compose.
+# Public base URLs for cloud mode; the defaults match infra/compose. The
+# Turnstile site key and the operator name are optional; empty leaves them off.
 ARG NEXT_PUBLIC_ARIAD_API_URL=http://localhost:8080
 ARG NEXT_PUBLIC_ARIAD_AUTH_URL=http://localhost:3001
+ARG NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY=
+ARG NEXT_PUBLIC_ARIAD_OPERATOR=
 ENV NEXT_PUBLIC_ARIAD_API_URL=${NEXT_PUBLIC_ARIAD_API_URL} \
-    NEXT_PUBLIC_ARIAD_AUTH_URL=${NEXT_PUBLIC_ARIAD_AUTH_URL}
+    NEXT_PUBLIC_ARIAD_AUTH_URL=${NEXT_PUBLIC_ARIAD_AUTH_URL} \
+    NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY} \
+    NEXT_PUBLIC_ARIAD_OPERATOR=${NEXT_PUBLIC_ARIAD_OPERATOR}
 RUN pnpm --filter @ariadshift/web export
 
 FROM ${NGINX} AS web
