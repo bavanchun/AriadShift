@@ -1,11 +1,13 @@
 """The Windows review binds metadata, notices and dynamically imported source."""
 
 import hashlib
+import shutil
 import sys
 from importlib import metadata
+from pathlib import Path
 
 import pytest
-from conftest import REPOSITORY
+from conftest import REPOSITORY, native_record_rows
 
 sys.path.insert(0, str(REPOSITORY / "engines/docling/pack"))
 import licenses
@@ -25,11 +27,24 @@ def reviewed(tmp_path, monkeypatch):
         "License-File: adodbapi/license.txt\n",
         encoding="utf-8",
     )
-    (info / "RECORD").write_text(f"{info.name}/licenses/adodbapi/license.txt,,\n", encoding="utf-8")
     source = tmp_path / "adodbapi"
     source.mkdir()
     (source / "__init__.py").write_text("# Unmodified library\n", encoding="utf-8")
     (source / "README.txt").write_text("Source included\n", encoding="utf-8")
+    outside = tmp_path / "win32/lib/win32con.py"
+    outside.parent.mkdir(parents=True)
+    outside.write_text("VALUE = 1\n", encoding="utf-8")
+    for name in ("pywin32_postinstall.py", "pywin32_testall.py"):
+        script = tmp_path / "pywin32-312.data/scripts" / name
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("# Unmodified wheel script\n", encoding="utf-8")
+    paths = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file())
+    record = info / "RECORD"
+    record.write_bytes(
+        (native_record_rows(tmp_path, paths) + f"{info.name}/RECORD,,\n").encode("utf-8")
+    )
+    receipt = tmp_path.parent / f"{tmp_path.name}.record"
+    receipt.write_bytes(record.read_bytes())
     lines = sorted(
         f"{p.relative_to(source).as_posix()} {hashlib.sha256(p.read_bytes()).hexdigest()}"
         for p in source.rglob("*")
@@ -39,6 +54,7 @@ def reviewed(tmp_path, monkeypatch):
         licenses,
         "_PYWIN32_REVIEW",
         {
+            "records": {str(receipt): hashlib.sha256(receipt.read_bytes()).hexdigest()},
             "version": "312",
             "library_version": "2.6.2.0",
             "source": "https://example.org/pywin32/b312.tar.gz",
@@ -117,3 +133,85 @@ def test_writer_bundles_reviewed_notice_and_source_pointer(reviewed, tmp_path):
     (source / "__init__.py").write_text("# Modified\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="pywin32"):
         licenses.write_notices([dist], tmp_path / "changed-notices")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "outside-source",
+        "edited-record",
+        "missing-outside",
+        "extra-outside",
+        "wrong-size",
+        "wrong-hash",
+        "duplicate-record",
+        "unknown-cache",
+    ],
+)
+def test_review_binds_every_wheel_payload_file(reviewed, change):
+    dist, info, _, _ = reviewed
+    outside = info.parent / "win32/lib/win32con.py"
+    record = info / "RECORD"
+    if change in {"outside-source", "edited-record"}:
+        outside.write_text("VALUE = 2\n", encoding="utf-8")
+        if change == "edited-record":
+            rows = record.read_text(encoding="utf-8").splitlines(keepends=True)
+            rows = [
+                native_record_rows(info.parent, ["win32/lib/win32con.py"])
+                if row.startswith("win32/lib/win32con.py,")
+                else row
+                for row in rows
+            ]
+            record.write_text("".join(rows), encoding="utf-8")
+    elif change == "missing-outside":
+        outside.unlink()
+    elif change == "extra-outside":
+        (outside.parent / "extra.py").write_text("# New source\n", encoding="utf-8")
+    elif change == "unknown-cache":
+        cache = outside.parent / "__pycache__"
+        cache.mkdir()
+        (cache / "extra.cpython-314.pyc").write_bytes(b"unreviewed bytecode")
+    else:
+        rows = record.read_text(encoding="utf-8").splitlines(keepends=True)
+        line = next(row for row in rows if row.startswith("win32/lib/win32con.py,"))
+        if change == "duplicate-record":
+            rows.append(line)
+        else:
+            path, digest, size = line.strip().split(",")
+            replacement = (
+                f"{path},{digest},{int(size) + 1}\n"
+                if change == "wrong-size"
+                else f"{path},sha256=changed,{size}\n"
+            )
+            rows[rows.index(line)] = replacement
+        record.write_text("".join(rows), encoding="utf-8")
+    assert licenses.check([dist])
+    assert licenses.license_of(dist) is None
+
+
+def test_reviewed_record_receipt_cannot_change(reviewed):
+    dist, _, _, _ = reviewed
+    receipt = next(iter(licenses._PYWIN32_REVIEW["records"]))
+    Path(receipt).write_bytes(b"changed receipt")
+    assert licenses.check([dist])
+
+
+def test_installer_relocation_and_metadata_preserve_original_payload_binding(reviewed):
+    dist, info, _, _ = reviewed
+    site = info.parent
+    rows = (info / "RECORD").read_text(encoding="utf-8").splitlines(keepends=True)
+    for name in ("pywin32_postinstall.py", "pywin32_testall.py"):
+        original = site / "pywin32-312.data/scripts" / name
+        relocated = site / "bin" / name
+        relocated.parent.mkdir(exist_ok=True)
+        shutil.move(original, relocated)
+        rows = [row.replace(f"pywin32-312.data/scripts/{name},", f"bin/{name},") for row in rows]
+        launcher = relocated.with_suffix("")
+        launcher.write_text("# Installer-generated launcher\n", encoding="utf-8")
+        rows.append(native_record_rows(site, [launcher.relative_to(site)]))
+    (info / "INSTALLER").write_bytes(b"uv")
+    rows.append(native_record_rows(site, [f"{info.name}/INSTALLER"]))
+    (info / "RECORD").write_text("".join(rows), encoding="utf-8")
+    assert licenses.check([dist]) == []
+    (info / "INSTALLER").write_bytes(b"modified")
+    assert licenses.check([dist])

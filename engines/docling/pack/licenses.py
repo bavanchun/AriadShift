@@ -14,7 +14,10 @@ the third-party notice record; this can mask accidental post-install changes on 
 pack target remains deferred.
 Each Python distribution's licence is read from its metadata (License-Expression, License and
 trove classifiers) and checked against an allow-list. Unknown fields or classifiers fail until
-their exact metadata is reviewed.
+their exact metadata is reviewed. The pywin32 exception additionally binds every wheel payload
+file to a hash-checked original RECORD receipt and verifies installed hashes/sizes. Only known
+uv installation additions and script relocation, plus derived bytecode caches for reviewed
+sources, are permitted beyond those wheel paths.
 
 Usage::
 
@@ -27,7 +30,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import hashlib
+import io
 import json
 import re
 import shutil
@@ -110,6 +115,17 @@ _PYWIN32_REVIEW = {
     "source": "https://github.com/mhammond/pywin32/archive/2a277cb5552756c2b4d42b524dc36d25e0bb6354.tar.gz",
     "metadata_sha256": "7b0ffc7aaed4258c6b2a0ef67d984d55a9169d9bbd1a0a8ace2a35542a75a519",
     "payload_sha256": "2563911fede3a7a0b77ce9bb712a2145a0853c4203a2de72fc80cca8a16bfcc4",
+    "records": {
+        "pywin32-312-cp314-win32.record": (
+            "7af03355b008f5487ef350e846aa68c989505cf9ee8afd975e8f8b71ab66c07a"
+        ),
+        "pywin32-312-cp314-win-amd64.record": (
+            "65762feb4074c3a4f4f1b7eeca7db60ad1c741f40dca1bf7efcdc7f13217019c"
+        ),
+        "pywin32-312-cp314-win-arm64.record": (
+            "c2b5405aef6630c27ac46625bf227671d386538a7a9e545b6e8b74419411230d"
+        ),
+    },
     "notices": {
         "adodbapi/license.txt": "5ea2f23c7f00c3006bacf267183e816d8d4b6dc95ea57a4ddb0ff81de6d8719e",
         "com/License.txt": "fad39c18fc3825fa278db1c86fd52cf88d7c525b3c2fbf7817fa383cbae4d423",
@@ -129,10 +145,98 @@ _PYWIN32_REVIEW = {
 }
 
 
+def _pywin32_generated_cache(relative: Path, files: set[str]) -> bool:
+    match = re.fullmatch(r"(.+)\.cpython-314(?:\.opt-[012])?\.pyc", relative.name)
+    return bool(
+        match
+        and relative.parent.name == "__pycache__"
+        and (relative.parent.parent / (match[1] + ".py")).as_posix() in files
+    )
+
+
+def _pywin32_record_matches(distribution: metadata.Distribution) -> bool:
+    """Compare the installed payload to a hash-bound original wheel RECORD receipt."""
+    files = list(distribution.files or [])
+    installed = {item.as_posix(): item for item in files}
+    record_name = f"pywin32-{distribution.version}.dist-info/RECORD"
+    if len(installed) != len(files) or record_name not in installed:
+        return False
+    for relative, item in installed.items():
+        if relative == record_name:
+            if item.hash is not None or item.size is not None:
+                return False
+        elif not _record_file_matches(item, Path(item.locate())):
+            return False
+    site = Path(distribution.locate_file(""))
+    for filename, digest in _PYWIN32_REVIEW["records"].items():
+        receipt = Path(__file__).with_name("reviewed-records") / filename
+        raw = receipt.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != digest:
+            continue
+        remaining = set(installed)
+        payload = set()
+        additions = {
+            f"pywin32-{distribution.version}.dist-info/{name}"
+            for name in ("INSTALLER", "REQUESTED", "direct_url.json", "uv_cache.json")
+        }
+        normalized = io.StringIO()
+        writer = csv.writer(normalized, lineterminator="\n")
+        for relative, _, _ in csv.reader(io.StringIO(raw.decode("utf-8"))):
+            aliases = {relative}
+            if relative.startswith(f"pywin32-{distribution.version}.data/scripts/"):
+                name = Path(relative).name
+                aliases.update(
+                    f"{folder}/{name}"
+                    for folder in ("bin", "Scripts", "../../../bin", "../../Scripts")
+                )
+            matches = aliases & remaining
+            if len(matches) != 1:
+                break
+            actual = matches.pop()
+            item = installed[actual]
+            actual_checksum = f"{item.hash.mode}={item.hash.value}" if item.hash else ""
+            writer.writerow(
+                (relative, actual_checksum, str(item.size) if item.size is not None else "")
+            )
+            remaining.remove(actual)
+            payload.add(actual)
+            if actual != relative:
+                # uv adds launchers beside the two relocated wheel scripts.
+                launcher = str(Path(actual).with_suffix("")).replace("\\", "/")
+                additions.update((launcher, launcher + ".exe"))
+        else:
+            if hashlib.sha256(normalized.getvalue().encode("utf-8")).hexdigest() != digest:
+                continue
+            if remaining - additions:
+                continue
+            # Shared bin/Scripts directories also contain other distributions' launchers.
+            roots = {
+                Path(name).parts[0]
+                for name in payload
+                if len(Path(name).parts) > 1 and Path(name).parts[0] not in {"..", "bin", "Scripts"}
+            }
+            for directory in roots:
+                for path in (site / directory).rglob("*"):
+                    relative = path.relative_to(site)
+                    if path.is_symlink() or (
+                        path.is_file()
+                        and relative.as_posix() not in installed
+                        and not _pywin32_generated_cache(relative, payload)
+                    ):
+                        return False
+            return True
+    return False
+
+
 def _reviewed_pywin32_expression(distribution: metadata.Distribution) -> str | None:
-    """Permit only the reviewed declaration, full notices and unmodified adodbapi source."""
+    """Permit only the reviewed wheel payload, declaration, full notices and library source."""
     rule = _PYWIN32_REVIEW
     if distribution.version != rule["version"]:
+        return None
+    try:
+        if not _pywin32_record_matches(distribution):
+            return None
+    except OSError, ValueError:
         return None
     text = distribution.read_text("METADATA") or ""
     if hashlib.sha256(text.encode("utf-8")).hexdigest() != rule["metadata_sha256"]:
@@ -875,6 +979,14 @@ def _vendored_files(site: Path) -> set[str]:
     return {name for name in _native_files(site) if _vendor_path(name)}
 
 
+def _record_file_matches(item: metadata.PackagePath, path: Path) -> bool:
+    if item.hash is None or item.hash.mode != "sha256" or path.is_symlink() or not path.is_file():
+        return False
+    data = path.read_bytes()
+    digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).decode().rstrip("=")
+    return item.hash.value == digest and item.size == len(data)
+
+
 def _native_record_owners(site: Path, files: set[str]) -> dict[str, list[metadata.Distribution]]:
     owners: dict[str, list[metadata.Distribution]] = {}
     for distribution in metadata.distributions(path=[str(site)]):
@@ -882,17 +994,7 @@ def _native_record_owners(site: Path, files: set[str]) -> dict[str, list[metadat
             relative = Path(str(item)).as_posix()
             if relative in files:
                 path = site / relative
-                digest = (
-                    base64.urlsafe_b64encode(hashlib.sha256(path.read_bytes()).digest())
-                    .decode()
-                    .rstrip("=")
-                )
-                if (
-                    item.hash is None
-                    or item.hash.mode != "sha256"
-                    or item.hash.value != digest
-                    or item.size != path.stat().st_size
-                ):
+                if not _record_file_matches(item, path):
                     raise SystemExit(f"native RECORD SHA-256/size mismatch: {relative}")
                 owners.setdefault(relative, []).append(distribution)
     return owners

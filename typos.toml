@@ -42,3 +42,8 @@ extend-exclude = [
     "fixtures/docling/*.docling.json",
     "fuzz/seeds/**",
 ]
+
+# Original wheel RECORD receipts contain URL-safe SHA-256 digests.
+[type.wheel-record]
+extend-glob = ["*.record"]
+extend-ignore-re = ["sha256=[A-Za-z0-9_-]+"]
