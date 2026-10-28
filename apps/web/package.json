@@ -6,9 +6,9 @@
   "scripts": {
     "sync-brand": "node scripts/sync-brand.mjs",
     "generate-sdk": "pnpm --filter @ariadshift/sdk generate",
-    "dev": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/write-service-worker.mjs --dev && next dev --port 3200",
-    "build": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && next build && node scripts/write-service-worker.mjs",
-    "export": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/export.mjs",
+    "dev": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/sync-notices.mjs && node scripts/write-service-worker.mjs --dev && next dev --port 3200",
+    "build": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/sync-notices.mjs && next build && node scripts/write-service-worker.mjs",
+    "export": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/sync-notices.mjs && node scripts/export.mjs",
     "start": "next start --port 3100",
     "typecheck": "pnpm run generate-sdk && node scripts/sync-brand.mjs && next typegen && tsc --noEmit -p .",
     "test": "pnpm run generate-sdk && vitest run",

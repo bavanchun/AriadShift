@@ -33,6 +33,10 @@ export default function LicensesPage() {
             Copyright notices
           </a>
           {" · "}
+          <a className="underline" href="/wasm/pandoc/SOURCE.txt">
+            Source record
+          </a>
+          {" · "}
           <a className="underline" href="https://github.com/jgm/pandoc/tree/3.12">
             Corresponding source
           </a>
@@ -46,18 +50,67 @@ export default function LicensesPage() {
         </p>
       </section>
       <section className="flex flex-col gap-2">
-        <h2 className="text-2xl font-semibold">Typst and fonts</h2>
+        <h2 className="text-2xl font-semibold">Typst, fonts and third-party notices</h2>
         <p>
           Typst is licensed under Apache-2.0. PDF output embeds the unmodified Libertinus and Source
-          Code Pro fonts under SIL OFL-1.1.
+          Code Pro fonts under SIL OFL-1.1, and the website uses Plus Jakarta Sans under SIL
+          OFL-1.1.
         </p>
-        <a className="underline" href="https://github.com/bavanchun/AriadShift/blob/dev/NOTICE">
-          Full notices and font licences
-        </a>
+        <p>
+          The core WebAssembly module includes the unmodified MPL-2.0 crates <code>cssparser</code>{" "}
+          0.38.0 (
+          <a className="underline" href="https://crates.io/crates/cssparser/0.38.0">
+            crates.io
+          </a>
+          {", "}
+          <a className="underline" href="https://github.com/servo/rust-cssparser">
+            source
+          </a>
+          ) and <code>dtoa-short</code> 0.3.5 (
+          <a className="underline" href="https://crates.io/crates/dtoa-short/0.3.5">
+            crates.io
+          </a>
+          {", "}
+          <a className="underline" href="https://github.com/upsuper/dtoa-short">
+            source
+          </a>
+          ) as transitive dependencies of the <code>ammonia</code> HTML sanitizer. The source code
+          of these crates is available under MPL-2.0 from crates.io and their respective
+          repositories.
+        </p>
+        <p>
+          <a className="underline" href="/notices/NOTICE.txt">
+            Full notices and font licences
+          </a>
+          {" · "}
+          <a className="underline" href="/notices/THIRD_PARTY_LICENSES.txt">
+            Rust and WebAssembly dependency licences
+          </a>
+          {" · "}
+          <a className="underline" href="/notices/THIRD_PARTY_JS_LICENSES.txt">
+            JavaScript dependency licences
+          </a>
+        </p>
       </section>
-      <section>
+      <section className="flex flex-col gap-2">
         <h2 className="text-2xl font-semibold">Browser WASI shim</h2>
-        <p>@bjorn3/browser_wasi_shim 0.4.2 is licensed under Apache-2.0 OR MIT.</p>
+        <p>
+          @bjorn3/browser_wasi_shim 0.4.2 is licensed under Apache-2.0 OR MIT. Copyright (c) bjorn3
+          and contributors. Full Apache-2.0 and MIT texts are included in{" "}
+          <a className="underline" href="/notices/THIRD_PARTY_JS_LICENSES.txt">
+            JavaScript dependency licences
+          </a>
+          .
+        </p>
+        <pre className="overflow-x-auto rounded border p-3 text-xs whitespace-pre-wrap">
+          {`Copyright (c) bjorn3 and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.`}
+        </pre>
       </section>
     </div>
   );
