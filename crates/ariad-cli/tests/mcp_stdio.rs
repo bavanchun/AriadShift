@@ -351,10 +351,14 @@ impl McpTestClient {
     /// Complete session, closing stdin, ensuring exit code 0 and verifying stdout purity.
     fn close_and_assert_purity(mut self) {
         drop(self.stdin.take());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
 
-        // Read remaining lines until EOF
+        // Bound the entire drain and process exit, including a child that closes stdout early.
         loop {
-            let line = match self.reader.recv_timeout(std::time::Duration::from_secs(5)) {
+            let line = match self
+                .reader
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            {
                 Ok(line) => line.expect("read remaining stdout"),
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(error) => panic!("server did not close stdout promptly: {error}"),
@@ -368,8 +372,19 @@ impl McpTestClient {
             }
         }
 
-        let mut child = self.child.take().expect("child exists");
-        let status = child.wait().expect("wait for child");
+        let child = self.child.as_mut().expect("child exists");
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("poll child exit") {
+                break status;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("server closed stdout but did not exit promptly");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        };
+        drop(self.child.take());
         assert!(
             status.success(),
             "server process did not exit cleanly: {status:?}"
@@ -1935,6 +1950,8 @@ mod concurrent_roots {
             json!({"jsonrpc":"2.0", "id":old_id, "result":{"roots":[{"uri":root}]}})
         };
         client.write_line(&response.to_string());
+        let granted_after_completion = new_grant && !older_error;
+        client.wait_for_input_state(observed_input, granted_after_completion);
         let deadline = Instant::now() + Duration::from_millis(300);
         while Instant::now() < deadline {
             client.send_request(
@@ -1944,8 +1961,8 @@ mod concurrent_roots {
             );
             let response = client.read_response(880);
             assert_eq!(
-                response["result"]["isError"], !new_grant,
-                "stale roots completion changed authorization: {response}"
+                response["result"]["isError"], !granted_after_completion,
+                "roots completion violated the authorization policy: {response}"
             );
         }
         client.close_and_assert_purity();
@@ -1968,7 +1985,7 @@ mod concurrent_roots {
         stale_completion(false, false, true, false);
     }
     #[test]
-    fn older_roots_error_cannot_revoke_newer_success() {
+    fn older_roots_error_revokes_even_after_a_newer_success() {
         stale_completion(false, false, true, true);
     }
 }
@@ -2051,7 +2068,7 @@ mod staging_responsiveness {
 }
 
 #[test]
-fn an_older_roots_timeout_cannot_revoke_a_newer_success() {
+fn an_older_roots_timeout_revokes_even_after_a_newer_success() {
     let root = TempDir::new().unwrap();
     let input = root.path().join("note.md");
     fs::write(&input, "# Root").unwrap();
@@ -2070,19 +2087,293 @@ fn an_older_roots_timeout_cannot_revoke_a_newer_success() {
     client.wait_for_roots_refresh();
     client.wait_for_input_state(&newest_input, true);
     client.wait_for_input_state(&input, false);
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(11);
-    while std::time::Instant::now() < deadline {
-        client.send_request(
-            879,
-            "tools/call",
-            json!({"name":"inspect","arguments":{"input":newest_input}}),
-        );
-        let response = client.read_response(879);
-        assert_eq!(
-            response["result"]["isError"], false,
-            "an older timeout revoked newer roots: {response}"
-        );
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
+    client.wait_for_input_state(&newest_input, false);
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    client.wait_for_input_state(&newest_input, true);
     client.close_and_assert_purity();
+}
+
+fn overlapping_refreshes_revoke_at_the_first_deadline(answer_older: bool) {
+    use std::time::{Duration, Instant};
+    let root = TempDir::new().unwrap();
+    let explicit = TempDir::new().unwrap();
+    let input = root.path().join("note.md");
+    let output = root.path().join("note.html");
+    let other = explicit.path().join("explicit.md");
+    fs::write(&input, "# Client root").unwrap();
+    fs::write(&other, "# Explicit root").unwrap();
+    let root_uri = path_to_file_uri(root.path());
+    let mut client = McpTestClient::spawn(
+        &["--allow-dir", explicit.path().to_str().unwrap()],
+        vec![root_uri.clone()],
+    );
+    client.initialize();
+    client.send_request(
+        920,
+        "tools/call",
+        json!({
+            "name":"convert", "arguments":{"input":input,"output":output,"to":"html"}
+        }),
+    );
+    assert_eq!(client.read_response(920)["result"]["isError"], false);
+    let uri = path_to_file_uri(&output);
+    client.send_request(921, "resources/read", json!({"uri":uri}));
+    assert!(client.read_response(921).get("result").is_some());
+
+    client.roots_failure = Some(RootsFailure::Timeout);
+    let first = Instant::now();
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    let older = client.pending_roots.pop().unwrap();
+    std::thread::sleep((first + Duration::from_secs(9)).saturating_duration_since(Instant::now()));
+    client.send_notification("notifications/roots/list_changed", json!({}));
+    client.wait_for_roots_refresh();
+    let newest = client.pending_roots.pop().unwrap();
+    assert!(
+        first.elapsed() < Duration::from_secs(10),
+        "refreshes did not overlap"
+    );
+    if answer_older {
+        client.write_line(
+            &json!({
+                "jsonrpc":"2.0", "id":older, "result":{"roots":[{"uri":root_uri}]}
+            })
+            .to_string(),
+        );
+    }
+    let deadline = first + Duration::from_secs(12);
+    loop {
+        client.send_request(
+            922,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":input}}),
+        );
+        let response = client.read_response_until(922, deadline);
+        if response["result"]["isError"] == true {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "first unanswered roots deadline was postponed: {response}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    client.send_request(923, "resources/read", json!({"uri":uri}));
+    assert!(client.read_response(923).get("error").is_some());
+    client.send_request(
+        924,
+        "tools/call",
+        json!({"name":"inspect","arguments":{"input":other}}),
+    );
+    assert_eq!(client.read_response(924)["result"]["isError"], false);
+
+    // The newest request remains answerable after the shared revocation deadline.
+    client.write_line(
+        &json!({
+            "jsonrpc":"2.0", "id":newest, "result":{"roots":[{"uri":root_uri}]}
+        })
+        .to_string(),
+    );
+    client.wait_for_input_state(&input, true);
+    client.send_request(925, "resources/read", json!({"uri":uri}));
+    assert!(client.read_response(925).get("result").is_some());
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn overlapping_unanswered_refreshes_keep_the_first_revocation_deadline() {
+    overlapping_refreshes_revoke_at_the_first_deadline(false);
+}
+
+#[test]
+fn stale_success_does_not_restart_the_pending_revocation_deadline() {
+    overlapping_refreshes_revoke_at_the_first_deadline(true);
+}
+
+mod staging_cleanup {
+    use super::*;
+    use std::{
+        path::Path,
+        time::{Duration, SystemTime},
+    };
+
+    const PREFIX: &str = "ashift-mcp-stage-";
+
+    fn process_directory(base: &Path) -> PathBuf {
+        let entries: Vec<_> = fs::read_dir(base)
+            .unwrap()
+            .map(Result::unwrap)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(PREFIX))
+            .map(|entry| entry.path())
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "missing dedicated process staging directory: {entries:?}"
+        );
+        entries[0].clone()
+    }
+
+    fn set_old(path: &Path) {
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.custom_flags(0x0200_0000); // FILE_FLAG_BACKUP_SEMANTICS
+        }
+        options
+            .open(path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(48 * 3600))
+            .unwrap();
+    }
+
+    #[test]
+    fn process_staging_is_removed_after_normal_shutdown() {
+        let temp = TempDir::new().unwrap();
+        let input = temp.path().join("note.md");
+        let base = temp.path().join("staging");
+        fs::create_dir(&base).unwrap();
+        fs::write(&input, "# Normal shutdown").unwrap();
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", temp.path().to_str().unwrap()],
+            vec![],
+            &[
+                ("TMPDIR", base.as_os_str()),
+                ("TMP", base.as_os_str()),
+                ("TEMP", base.as_os_str()),
+            ],
+        );
+        client.initialize();
+        let directory = process_directory(&base);
+        assert!(
+            directory
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&format!("{PREFIX}{}-", client.child.as_ref().unwrap().id()))
+        );
+        client.wait_for_input_state(&input, true);
+        assert!(
+            fs::read_dir(&directory).unwrap().next().is_none(),
+            "completed staging copy remains"
+        );
+        client.close_and_assert_purity();
+        assert!(
+            !directory.exists(),
+            "process staging directory remains after shutdown"
+        );
+    }
+
+    #[test]
+    fn startup_sweeps_only_old_staging_of_dead_processes() {
+        let temp = TempDir::new().unwrap();
+        let mut exited = Command::new(env!("CARGO_BIN_EXE_ashift"))
+            .arg("--version")
+            .stdout(Stdio::null())
+            .spawn()
+            .unwrap();
+        let dead_pid = exited.id();
+        assert!(exited.wait().unwrap().success());
+        let stale = temp.path().join(format!("{PREFIX}{dead_pid}-stale"));
+        let recent = temp.path().join(format!("{PREFIX}{dead_pid}-recent"));
+        let live = temp
+            .path()
+            .join(format!("{PREFIX}{}-live", std::process::id()));
+        let unrelated = temp.path().join("other-application");
+        let malformed = temp.path().join(format!("{PREFIX}invalid-owner"));
+        for path in [&stale, &recent, &live, &unrelated, &malformed] {
+            fs::create_dir(path).unwrap();
+            fs::write(path.join("keep.md"), "private staging bytes").unwrap();
+            if path != &recent {
+                set_old(path);
+            }
+        }
+        #[cfg(unix)]
+        let link = {
+            let link = temp.path().join(format!("{PREFIX}{dead_pid}-link"));
+            std::os::unix::fs::symlink(&unrelated, &link).unwrap();
+            link
+        };
+        let mut client = McpTestClient::spawn_with_env(
+            &[],
+            vec![],
+            &[
+                ("TMPDIR", temp.path().as_os_str()),
+                ("TMP", temp.path().as_os_str()),
+                ("TEMP", temp.path().as_os_str()),
+            ],
+        );
+        client.initialize();
+        assert!(
+            !stale.exists(),
+            "startup did not sweep stale process staging"
+        );
+        for path in [&recent, &live, &unrelated, &malformed] {
+            assert!(
+                path.join("keep.md").exists(),
+                "startup touched protected directory {path:?}"
+            );
+        }
+        #[cfg(unix)]
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        client.close_and_assert_purity();
+    }
+
+    #[cfg(feature = "test-probe")]
+    #[test]
+    fn cancelled_staging_removes_partial_copies_before_shutdown() {
+        use std::time::Instant;
+        let temp = TempDir::new().unwrap();
+        let input = temp.path().join("slow.md");
+        fs::File::create(&input)
+            .unwrap()
+            .set_len(16 * 1024 * 1024)
+            .unwrap();
+        let base = temp.path().join("staging");
+        let marker = temp.path().join("started");
+        fs::create_dir(&base).unwrap();
+        let mut client = McpTestClient::spawn_with_env(
+            &["--allow-dir", temp.path().to_str().unwrap()],
+            vec![],
+            &[
+                ("TMPDIR", base.as_os_str()),
+                ("TMP", base.as_os_str()),
+                ("TEMP", base.as_os_str()),
+                ("ASHIFT_TEST_STAGE_STARTED", marker.as_os_str()),
+                ("ASHIFT_TEST_STAGE_DELAY_MS", std::ffi::OsStr::new("100")),
+            ],
+        );
+        client.initialize();
+        let directory = process_directory(&base);
+        client.send_request(
+            930,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":input}}),
+        );
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !marker.exists() {
+            assert!(Instant::now() < deadline, "staging did not start");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            fs::read_dir(&directory).unwrap().next().is_some(),
+            "no staged copy to cancel"
+        );
+        client.send_notification("notifications/cancelled", json!({"requestId":930}));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while fs::read_dir(&directory).unwrap().next().is_some() {
+            assert!(Instant::now() < deadline, "cancelled staging copy remains");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        client.send_request(931, "tools/list", json!({}));
+        assert!(client.read_response(931).get("result").is_some());
+        client.close_and_assert_purity();
+        assert!(
+            !directory.exists(),
+            "process staging directory remains after shutdown"
+        );
+    }
 }

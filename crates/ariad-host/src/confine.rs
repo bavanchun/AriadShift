@@ -237,6 +237,139 @@ impl Clone for ConfinedInput {
     }
 }
 
+/// Private MCP staging for one process, with conservative recovery after an interrupted exit.
+/// Call [`Self::cleanup`] during normal shutdown; blocked I/O may require startup recovery.
+#[derive(Debug)]
+pub struct ProcessStagingDirectory {
+    path: PathBuf,
+}
+
+impl ProcessStagingDirectory {
+    const PREFIX: &str = "ashift-mcp-stage-";
+    const STALE_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+    pub fn new() -> io::Result<Self> {
+        Self::new_in(&std::env::temp_dir())
+    }
+
+    fn new_in(base: &Path) -> io::Result<Self> {
+        Self::sweep_stale_in(base)?;
+        let directory = tempfile::Builder::new()
+            .prefix(&format!("{}{}-", Self::PREFIX, std::process::id()))
+            .tempdir_in(base)?;
+        // Explicit cleanup can run on a bounded blocking task instead of in a runtime-thread Drop.
+        Ok(Self {
+            path: directory.keep(),
+        })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn cleanup(&self) -> io::Result<()> {
+        match fs::remove_dir_all(&self.path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            result => result,
+        }
+    }
+
+    fn sweep_stale_in(base: &Path) -> io::Result<()> {
+        #[cfg(unix)]
+        let current_uid = {
+            use std::os::unix::fs::MetadataExt;
+            tempfile::NamedTempFile::new_in(base)?
+                .as_file()
+                .metadata()?
+                .uid()
+        };
+        for entry in fs::read_dir(base)?.flatten() {
+            let name = entry.file_name();
+            let Some((pid, suffix)) = name
+                .to_str()
+                .and_then(|name| name.strip_prefix(Self::PREFIX))
+                .and_then(|name| name.split_once('-'))
+            else {
+                continue;
+            };
+            let Ok(pid) = pid.parse::<u32>() else {
+                continue;
+            };
+            if suffix.is_empty() || !suffix.chars().all(|ch| ch.is_ascii_alphanumeric()) {
+                continue;
+            }
+            let Ok(metadata) = fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                continue;
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if metadata.file_attributes() & 0x400 != 0 {
+                    // FILE_ATTRIBUTE_REPARSE_POINT
+                    continue;
+                }
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                if metadata.uid() != current_uid {
+                    continue;
+                }
+            }
+            let old = metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.elapsed().ok())
+                .is_some_and(|age| age >= Self::STALE_AGE);
+            if old && process_is_dead(pid) {
+                // remove_dir_all never follows symlinks inside the candidate directory.
+                let _ = fs::remove_dir_all(entry.path());
+            }
+        }
+        Ok(())
+    }
+}
+
+fn process_is_dead(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        let Ok(pid) = i32::try_from(pid) else {
+            return false;
+        };
+        matches!(
+            nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(pid),
+                None::<nix::sys::signal::Signal>
+            ),
+            Err(nix::errno::Errno::ESRCH)
+        )
+    }
+    #[cfg(windows)]
+    {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+        let current = Pid::from_u32(std::process::id());
+        let candidate = Pid::from_u32(pid);
+        let mut system = System::new();
+        system.refresh_processes_specifics(
+            ProcessesToUpdate::Some(&[current, candidate]),
+            true,
+            ProcessRefreshKind::nothing(),
+        );
+        // Refuse deletion if even the current process cannot be observed.
+        system.process(current).is_some() && system.process(candidate).is_none()
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        false
+    }
+}
+
 impl ConfinedInput {
     /// Copies the opened file into a destination file, bounded by `max_bytes`.
     pub fn copy_to_file(&mut self, dest: &mut fs::File, max_bytes: Option<u64>) -> io::Result<u64> {
@@ -314,7 +447,27 @@ impl ConfinedInput {
         max_bytes: Option<u64>,
         cancel: &tokio_util::sync::CancellationToken,
     ) -> io::Result<(tempfile::TempDir, PathBuf)> {
-        let temp_dir = tempfile::tempdir()?;
+        self.copy_into_temp_dir(tempfile::tempdir()?, file_name, max_bytes, cancel)
+    }
+
+    /// Stages beneath a process-owned recovery directory while preserving the existing API.
+    pub fn create_isolated_copy_cancellable_in(
+        &mut self,
+        parent: &Path,
+        file_name: Option<&str>,
+        max_bytes: Option<u64>,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> io::Result<(tempfile::TempDir, PathBuf)> {
+        self.copy_into_temp_dir(tempfile::tempdir_in(parent)?, file_name, max_bytes, cancel)
+    }
+
+    fn copy_into_temp_dir(
+        &mut self,
+        temp_dir: tempfile::TempDir,
+        file_name: Option<&str>,
+        max_bytes: Option<u64>,
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> io::Result<(tempfile::TempDir, PathBuf)> {
         let stem = file_name
             .or_else(|| self.path.file_name().and_then(|f| f.to_str()))
             .unwrap_or("input.bin");

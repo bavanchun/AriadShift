@@ -9,7 +9,10 @@ use ariad_core::{limits::Limits, planner::Profile};
 use ariad_host::{
     assets::AssetBase,
     commands::{active_capabilities, engines, inspect, plan},
-    confine::{AllowedDirs, ConfineError, confine_input, confine_output, parse_file_uri},
+    confine::{
+        AllowedDirs, ConfineError, ProcessStagingDirectory, confine_input, confine_output,
+        parse_file_uri,
+    },
     convert::{ConvertError, ConvertOutput, ConvertRequest, convert_confined_assets_in},
     session::SessionPool,
 };
@@ -87,7 +90,8 @@ pub struct McpServer {
     pub allow_overwrite: bool,
     pub allowed_dirs: Arc<RwLock<AllowedDirs>>,
     pub cli_allow_dirs: Vec<PathBuf>,
-    pub roots_generation: Arc<Mutex<u64>>,
+    pub(super) roots_refresh: Arc<Mutex<super::RootsRefresh>>,
+    pub staging: Arc<ProcessStagingDirectory>,
     pub resources: SessionResources,
     pub engine_program: PathBuf,
     /// Warm engine sessions shared by every `convert` call of this server.
@@ -242,10 +246,11 @@ impl McpServer {
         };
 
         let engine_prog = self.engine_program.clone();
+        let staging = self.staging.path().to_path_buf();
         let res = self
             .blocking_job(ct, move |cancel| {
                 let (_temp, input) = validated_input
-                    .create_isolated_copy_cancellable(None, None, &cancel)
+                    .create_isolated_copy_cancellable_in(&staging, None, None, &cancel)
                     .map_err(|e| input_error(&e))?;
                 let caps = active_capabilities()?;
                 inspect::inspect(&input, Some(&engine_prog), &caps, cancel)
@@ -290,10 +295,11 @@ impl McpServer {
         };
         let to = args.to;
         let engine_prog = self.engine_program.clone();
+        let staging = self.staging.path().to_path_buf();
         let res = self
             .blocking_job(ct, move |cancel| {
                 let (_temp, input) = validated_input
-                    .create_isolated_copy_cancellable(None, None, &cancel)
+                    .create_isolated_copy_cancellable_in(&staging, None, None, &cancel)
                     .map_err(|e| input_error(&e))?;
                 let caps = active_capabilities()?;
                 plan::plan(&input, &to, profile, &caps, Some(&engine_prog), cancel)
@@ -386,10 +392,12 @@ impl McpServer {
         let final_dest = validated_output.destination.clone();
         let pool = self.pool.clone();
         let engine_program = self.engine_program.clone();
+        let staging = self.staging.path().to_path_buf();
         let res = self
             .blocking_job(ct, move |cancel| {
                 let (_temp, input) = validated_input
-                    .create_isolated_copy_cancellable(
+                    .create_isolated_copy_cancellable_in(
+                        &staging,
                         None,
                         Limits::local().max_input_bytes,
                         &cancel,
