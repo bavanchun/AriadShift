@@ -2126,6 +2126,22 @@ fn overlapping_refreshes_revoke_at_the_first_deadline(answer_older: bool) {
     client.send_notification("notifications/roots/list_changed", json!({}));
     client.wait_for_roots_refresh();
     let older = client.pending_roots.pop().unwrap();
+    client.send_request(
+        926,
+        "tools/call",
+        json!({"name":"inspect","arguments":{"input":input}}),
+    );
+    assert_eq!(
+        client.read_response_until(926, first + Duration::from_secs(2))["result"]["isError"],
+        false
+    );
+    client.send_request(927, "resources/read", json!({"uri":uri}));
+    assert!(
+        client
+            .read_response_until(927, first + Duration::from_secs(2))
+            .get("result")
+            .is_some()
+    );
     std::thread::sleep((first + Duration::from_secs(9)).saturating_duration_since(Instant::now()));
     client.send_notification("notifications/roots/list_changed", json!({}));
     client.wait_for_roots_refresh();
@@ -2182,7 +2198,7 @@ fn overlapping_refreshes_revoke_at_the_first_deadline(answer_older: bool) {
 }
 
 #[test]
-fn overlapping_unanswered_refreshes_keep_the_first_revocation_deadline() {
+fn overlapping_refreshes_keep_client_access_until_the_first_deadline() {
     overlapping_refreshes_revoke_at_the_first_deadline(false);
 }
 
@@ -2376,5 +2392,108 @@ mod staging_cleanup {
             !directory.exists(),
             "process staging directory remains after shutdown"
         );
+    }
+}
+
+#[cfg(unix)]
+mod pinned_explicit_grants {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    fn symlink_replacement_does_not_change_grants(failure: Option<RootsFailure>) {
+        let temp = TempDir::new().unwrap();
+        let base = fs::canonicalize(temp.path()).unwrap();
+        let original = base.join("original");
+        let replacement = base.join("replacement");
+        let client_root = base.join("client-root");
+        for path in [&original, &replacement, &client_root] {
+            fs::create_dir(path).unwrap();
+            fs::write(path.join("note.md"), "# Authorized fixture").unwrap();
+        }
+        let alias = base.join("explicit-link");
+        symlink(&original, &alias).unwrap();
+        let mut client = McpTestClient::spawn(
+            &["--allow-dir", alias.to_str().unwrap()],
+            vec![
+                path_to_file_uri(&replacement),
+                path_to_file_uri(&client_root),
+            ],
+        );
+        client.initialize();
+        for (id, path) in [(940, &original), (941, &replacement)] {
+            client.send_request(
+                id,
+                "tools/call",
+                json!({"name":"convert","arguments":{
+                    "input":path.join("note.md"),"output":path.join("note.html"),"to":"html"
+                }}),
+            );
+            assert_eq!(client.read_response(id)["result"]["isError"], false);
+            client.send_request(
+                id,
+                "resources/read",
+                json!({"uri":path_to_file_uri(&path.join("note.html"))}),
+            );
+            assert!(client.read_response(id).get("result").is_some());
+        }
+        fs::remove_file(&alias).unwrap();
+        symlink(&replacement, &alias).unwrap();
+        client.update_roots(vec![]);
+        client.roots_failure = failure;
+        client.send_notification("notifications/roots/list_changed", json!({}));
+        client.wait_for_roots_refresh();
+        // This distinct client root proves that the refresh decision has been installed.
+        client.wait_for_input_state(&client_root.join("note.md"), false);
+        client.send_request(
+            942,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":original.join("note.md")}}),
+        );
+        let original_tool = client.read_response(942);
+        client.send_request(
+            943,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":replacement.join("note.md")}}),
+        );
+        let replacement_tool = client.read_response(943);
+        client.send_request(
+            944,
+            "resources/read",
+            json!({"uri":path_to_file_uri(&original.join("note.html"))}),
+        );
+        let original_resource = client.read_response(944);
+        client.send_request(
+            945,
+            "resources/read",
+            json!({"uri":path_to_file_uri(&replacement.join("note.html"))}),
+        );
+        let replacement_resource = client.read_response(945);
+        assert!(
+            original_tool["result"]["isError"] == false
+                && replacement_tool["result"]["isError"] == true
+                && original_resource.get("result").is_some()
+                && replacement_resource.get("error").is_some(),
+            "explicit grants moved after symlink replacement: original tool={original_tool}, replacement tool={replacement_tool}, original resource={original_resource}, replacement resource={replacement_resource}"
+        );
+        client.send_request(
+            946,
+            "tools/call",
+            json!({"name":"inspect","arguments":{"input":alias.join("note.md")}}),
+        );
+        assert_eq!(client.read_response(946)["result"]["isError"], true);
+        client.close_and_assert_purity();
+    }
+
+    #[test]
+    fn roots_success_keeps_startup_explicit_grants_after_symlink_replacement() {
+        symlink_replacement_does_not_change_grants(None);
+    }
+    #[test]
+    fn roots_failure_keeps_startup_explicit_grants_after_symlink_replacement() {
+        symlink_replacement_does_not_change_grants(Some(RootsFailure::Error));
+    }
+    #[test]
+    fn roots_timeout_keeps_startup_explicit_grants_after_symlink_replacement() {
+        symlink_replacement_does_not_change_grants(Some(RootsFailure::Timeout));
     }
 }

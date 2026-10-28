@@ -117,13 +117,7 @@ impl McpServer {
     }
 
     fn allowed_for_roots(&self, roots_uris: &[String]) -> AllowedDirs {
-        let explicit: Vec<PathBuf> = self
-            .cli_allow_dirs
-            .iter()
-            .filter(|path| path.is_dir())
-            .cloned()
-            .collect();
-        AllowedDirs::new(&explicit, roots_uris).unwrap_or_default()
+        self.explicit_allowed_dirs.with_client_roots(roots_uris)
     }
 
     fn replace_allowed_dirs(&self, update: RootsUpdate, new_allowed: AllowedDirs) {
@@ -259,8 +253,8 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
         pool: pool.clone(),
         staging: staging.clone(),
         allow_overwrite: args.allow_overwrite,
-        allowed_dirs: Arc::new(RwLock::new(initial_allowed)),
-        cli_allow_dirs: args.allow_dir,
+        allowed_dirs: Arc::new(RwLock::new(initial_allowed.clone())),
+        explicit_allowed_dirs: initial_allowed,
         roots_refresh: Arc::new(Mutex::new(RootsRefresh::default())),
         resources: SessionResources::new(),
         engine_program,
@@ -351,13 +345,11 @@ mod tests {
         std::fs::write(&explicit_input, "# Explicit").unwrap();
         std::fs::write(&root_input, "# Root").unwrap();
         let cli_allow_dirs = vec![explicit.path().to_path_buf()];
-        let allowed_dirs = Arc::new(RwLock::new(
-            AllowedDirs::new(
-                &cli_allow_dirs,
-                &[ariad_host::confine::path_to_file_uri(root.path())],
-            )
-            .unwrap(),
-        ));
+        let explicit_allowed_dirs = AllowedDirs::new(&cli_allow_dirs, &[]).unwrap();
+        let allowed_dirs =
+            Arc::new(RwLock::new(explicit_allowed_dirs.with_client_roots(&[
+                ariad_host::confine::path_to_file_uri(root.path()),
+            ])));
         let poisoned = allowed_dirs.clone();
         let _ = std::thread::spawn(move || {
             let _guard = poisoned.write().unwrap();
@@ -367,7 +359,7 @@ mod tests {
         let server = McpServer {
             roots_refresh: Arc::new(Mutex::new(RootsRefresh::default())),
             allowed_dirs,
-            cli_allow_dirs: cli_allow_dirs.clone(),
+            explicit_allowed_dirs: explicit_allowed_dirs.clone(),
             allow_overwrite: false,
             resources: SessionResources::new(),
             engine_program: std::env::current_exe().unwrap(),
@@ -376,10 +368,7 @@ mod tests {
             cancel_token: tokio_util::sync::CancellationToken::new(),
             in_flight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
-        server.replace_allowed_dirs(
-            RootsUpdate::Failure,
-            AllowedDirs::new(&cli_allow_dirs, &[]).unwrap(),
-        );
+        server.replace_allowed_dirs(RootsUpdate::Failure, explicit_allowed_dirs.clone());
         assert!(
             !server.allowed_dirs.is_poisoned(),
             "replacement must clear poisoned state"
@@ -391,11 +380,8 @@ mod tests {
         }
         server.replace_allowed_dirs(
             RootsUpdate::Success(0),
-            AllowedDirs::new(
-                &cli_allow_dirs,
-                &[ariad_host::confine::path_to_file_uri(root.path())],
-            )
-            .unwrap(),
+            explicit_allowed_dirs
+                .with_client_roots(&[ariad_host::confine::path_to_file_uri(root.path())]),
         );
         assert!(
             ariad_host::confine::confine_input(&root_input, &server.allowed_dirs.read().unwrap())

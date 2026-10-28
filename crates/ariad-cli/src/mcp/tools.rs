@@ -89,7 +89,7 @@ pub struct ConvertArgs {
 pub struct McpServer {
     pub allow_overwrite: bool,
     pub allowed_dirs: Arc<RwLock<AllowedDirs>>,
-    pub cli_allow_dirs: Vec<PathBuf>,
+    pub(super) explicit_allowed_dirs: AllowedDirs,
     pub(super) roots_refresh: Arc<Mutex<super::RootsRefresh>>,
     pub staging: Arc<ProcessStagingDirectory>,
     pub resources: SessionResources,

@@ -1081,3 +1081,234 @@ fn fifo_artifacts_preserve_type_errors_without_blocking() {
         std::thread::sleep(Duration::from_millis(10));
     }
 }
+
+#[cfg(unix)]
+mod staging_privacy {
+    use super::*;
+    use ariad_host::confine::ProcessStagingDirectory;
+    use std::{
+        os::unix::fs::PermissionsExt,
+        process::{Command, Stdio},
+        time::{Duration, Instant},
+    };
+
+    const CHILD: &str = "ARIAD_STAGING_PRIVACY_CHILD";
+
+    struct Cleanup(ProcessStagingDirectory);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = self.0.cleanup();
+        }
+    }
+
+    fn run_child(mut command: Command, name: &str) {
+        let base = tempdir().unwrap();
+        command
+            .args(["--exact", name, "--nocapture"])
+            .env(CHILD, "1")
+            .env("TMPDIR", base.path())
+            .env("TMP", base.path())
+            .env("TEMP", base.path())
+            .stdin(Stdio::null());
+        let mut child = command.spawn().expect("spawn isolated staging regression");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                assert!(
+                    status.success(),
+                    "isolated staging regression failed: {status}"
+                );
+                return;
+            }
+            if Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("isolated staging regression did not exit");
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn permission_child(name: &str) {
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "umask 0; exec \"$@\"", "staging-privacy"])
+            .arg(std::env::current_exe().unwrap());
+        run_child(command, name);
+    }
+
+    #[test]
+    fn process_directory_is_owner_only_under_umask_zero() {
+        if std::env::var_os(CHILD).is_none() {
+            return permission_child(
+                "staging_privacy::process_directory_is_owner_only_under_umask_zero",
+            );
+        }
+        let directory = Cleanup(ProcessStagingDirectory::new().unwrap());
+        assert_eq!(
+            fs::metadata(directory.0.path())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o7777,
+            0o700
+        );
+    }
+
+    fn inspect_copies(check_file: bool) {
+        let source = tempdir().unwrap();
+        let input = source.path().join("note.md");
+        fs::write(&input, "# Permission regression").unwrap();
+        assert_eq!(
+            fs::metadata(&input).unwrap().permissions().mode() & 0o777,
+            0o666,
+            "fixture did not run under umask zero"
+        );
+        let allowed = AllowedDirs::new(&[source.path().to_path_buf()], &[]).unwrap();
+        let mut input = confine_input(&input, &allowed).unwrap();
+        let process = Cleanup(ProcessStagingDirectory::new().unwrap());
+        let cancel = tokio_util::sync::CancellationToken::new();
+        for variant in 0..3 {
+            let (directory, path) = match variant {
+                0 => input.create_isolated_copy(None, None),
+                1 => input.create_isolated_copy_cancellable(None, None, &cancel),
+                _ => {
+                    input.create_isolated_copy_cancellable_in(process.0.path(), None, None, &cancel)
+                }
+            }
+            .unwrap();
+            let (path, expected) = if check_file {
+                (path.as_path(), 0o600)
+            } else {
+                (directory.path(), 0o700)
+            };
+            assert_eq!(
+                fs::metadata(path).unwrap().permissions().mode() & 0o7777,
+                expected,
+                "staging API {variant} created permissive permissions"
+            );
+        }
+    }
+
+    #[test]
+    fn copy_directories_are_owner_only_under_umask_zero() {
+        if std::env::var_os(CHILD).is_none() {
+            return permission_child(
+                "staging_privacy::copy_directories_are_owner_only_under_umask_zero",
+            );
+        }
+        inspect_copies(false);
+    }
+
+    #[test]
+    fn staged_files_are_owner_only_under_umask_zero() {
+        if std::env::var_os(CHILD).is_none() {
+            return permission_child(
+                "staging_privacy::staged_files_are_owner_only_under_umask_zero",
+            );
+        }
+        inspect_copies(true);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn stale_directories_owned_by_another_user_are_not_followed_or_swept() {
+        use std::{
+            os::unix::fs::{MetadataExt, chown, symlink},
+            time::SystemTime,
+        };
+        if std::env::var_os(CHILD).is_none() {
+            let executable = std::env::current_exe().unwrap();
+            let command = if nix::unistd::geteuid().is_root() {
+                Command::new(executable)
+            } else {
+                // A mapped user namespace creates a real foreign owner without host-root access.
+                let mut command = Command::new("unshare");
+                command
+                    .args(["--user", "--map-auto", "--map-root-user"])
+                    .arg(executable);
+                command
+            };
+            return run_child(
+                command,
+                "staging_privacy::stale_directories_owned_by_another_user_are_not_followed_or_swept",
+            );
+        }
+        assert!(
+            nix::unistd::geteuid().is_root(),
+            "fixture requires a mapped root UID"
+        );
+        let base = std::env::temp_dir();
+        let mut exited = Command::new("sh").args(["-c", "exit 0"]).spawn().unwrap();
+        let dead_pid = exited.id();
+        assert!(exited.wait().unwrap().success());
+        let foreign = base.join(format!("ashift-mcp-stage-{dead_pid}-foreign"));
+        let owned = base.join(format!("ashift-mcp-stage-{dead_pid}-owned"));
+        let outside = base.join("unrelated");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("keep.md"), "outside fixture").unwrap();
+        for path in [&foreign, &owned] {
+            fs::create_dir(path).unwrap();
+            fs::write(path.join("keep.md"), "stale fixture").unwrap();
+            fs::set_permissions(path, fs::Permissions::from_mode(0o777)).unwrap();
+            fs::File::open(path)
+                .unwrap()
+                .set_modified(SystemTime::now() - Duration::from_secs(48 * 3600))
+                .unwrap();
+        }
+        symlink(&outside, foreign.join("link")).unwrap();
+        fs::File::open(&foreign)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(48 * 3600))
+            .unwrap();
+        struct RestoreOwner(PathBuf);
+        impl Drop for RestoreOwner {
+            fn drop(&mut self) {
+                let _ = chown(&self.0, Some(0), None);
+            }
+        }
+        let _restore = RestoreOwner(foreign.clone());
+        chown(&foreign, Some(1), None).unwrap();
+        assert_eq!(foreign.metadata().unwrap().uid(), 1);
+        let link = base.join(format!("ashift-mcp-stage-{dead_pid}-link"));
+        symlink(&foreign, &link).unwrap();
+        let process = Cleanup(ProcessStagingDirectory::new().unwrap());
+        assert!(!owned.exists(), "positive sweep control was not removed");
+        assert_eq!(
+            foreign.metadata().unwrap().uid(),
+            1,
+            "foreign owner changed"
+        );
+        assert_eq!(
+            fs::read_to_string(foreign.join("keep.md")).unwrap(),
+            "stale fixture"
+        );
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(
+            fs::read_to_string(outside.join("keep.md")).unwrap(),
+            "outside fixture"
+        );
+        drop(process);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn startup_explicit_handles_survive_replacement_of_their_canonical_path() {
+    use std::io::Read;
+    let temp = tempdir().unwrap();
+    let original = fs::canonicalize(temp.path()).unwrap().join("root");
+    fs::create_dir(&original).unwrap();
+    fs::write(original.join("note.md"), "original authorized bytes").unwrap();
+    let explicit = AllowedDirs::new(std::slice::from_ref(&original), &[]).unwrap();
+    fs::rename(&original, temp.path().join("moved-root")).unwrap();
+    fs::create_dir(&original).unwrap();
+    fs::write(original.join("note.md"), "replacement bytes").unwrap();
+    for client_roots in [vec![], vec![path_to_file_uri(&original)]] {
+        let refreshed = explicit.with_client_roots(&client_roots);
+        let mut input = confine_input(&original.join("note.md"), &refreshed).unwrap();
+        let mut text = String::new();
+        input.file.read_to_string(&mut text).unwrap();
+        assert_eq!(text, "original authorized bytes");
+    }
+}

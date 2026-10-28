@@ -162,6 +162,17 @@ impl AllowedDirs {
             }
         }
 
+        Ok(Self {
+            roots: root_entries,
+        }
+        .with_client_roots(roots))
+    }
+
+    /// Adds fresh client roots while retaining every existing canonical root and capability handle.
+    /// Call this on the startup explicit set to replace only the client portion of a grant set.
+    #[must_use]
+    pub fn with_client_roots(&self, roots: &[String]) -> Self {
+        let mut root_entries = self.roots.clone();
         for root in roots {
             let Ok(path) = parse_file_uri(root) else {
                 continue;
@@ -183,9 +194,9 @@ impl AllowedDirs {
             }
         }
 
-        Ok(Self {
+        Self {
             roots: root_entries,
-        })
+        }
     }
 
     /// Returns true if no allowed directories are configured.
@@ -254,9 +265,10 @@ impl ProcessStagingDirectory {
 
     fn new_in(base: &Path) -> io::Result<Self> {
         Self::sweep_stale_in(base)?;
-        let directory = tempfile::Builder::new()
-            .prefix(&format!("{}{}-", Self::PREFIX, std::process::id()))
-            .tempdir_in(base)?;
+        let directory = private_staging_dir(
+            Some(base),
+            Some(&format!("{}{}-", Self::PREFIX, std::process::id())),
+        )?;
         // Explicit cleanup can run on a bounded blocking task instead of in a runtime-thread Drop.
         Ok(Self {
             path: directory.keep(),
@@ -330,6 +342,25 @@ impl ProcessStagingDirectory {
             }
         }
         Ok(())
+    }
+}
+
+fn private_staging_dir(
+    parent: Option<&Path>,
+    prefix: Option<&str>,
+) -> io::Result<tempfile::TempDir> {
+    let mut builder = tempfile::Builder::new();
+    if let Some(prefix) = prefix {
+        builder.prefix(prefix);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(fs::Permissions::from_mode(0o700));
+    }
+    match parent {
+        Some(parent) => builder.tempdir_in(parent),
+        None => builder.tempdir(),
     }
 }
 
@@ -447,7 +478,12 @@ impl ConfinedInput {
         max_bytes: Option<u64>,
         cancel: &tokio_util::sync::CancellationToken,
     ) -> io::Result<(tempfile::TempDir, PathBuf)> {
-        self.copy_into_temp_dir(tempfile::tempdir()?, file_name, max_bytes, cancel)
+        self.copy_into_temp_dir(
+            private_staging_dir(None, None)?,
+            file_name,
+            max_bytes,
+            cancel,
+        )
     }
 
     /// Stages beneath a process-owned recovery directory while preserving the existing API.
@@ -458,7 +494,12 @@ impl ConfinedInput {
         max_bytes: Option<u64>,
         cancel: &tokio_util::sync::CancellationToken,
     ) -> io::Result<(tempfile::TempDir, PathBuf)> {
-        self.copy_into_temp_dir(tempfile::tempdir_in(parent)?, file_name, max_bytes, cancel)
+        self.copy_into_temp_dir(
+            private_staging_dir(Some(parent), None)?,
+            file_name,
+            max_bytes,
+            cancel,
+        )
     }
 
     fn copy_into_temp_dir(
@@ -472,7 +513,14 @@ impl ConfinedInput {
             .or_else(|| self.path.file_name().and_then(|f| f.to_str()))
             .unwrap_or("input.bin");
         let dest_path = temp_dir.path().join(stem);
-        let mut dest_file = fs::File::create(&dest_path)?;
+        let mut options = fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut dest_file = options.open(&dest_path)?;
         self.copy_to_file_cancellable(&mut dest_file, max_bytes, cancel)?;
         Ok((temp_dir, dest_path))
     }
