@@ -10,13 +10,11 @@ use crate::{
         Alignment, AssetRef, AssetStore, Block, Document, Inline, ListItem, Metadata, RawFormat,
         TableCell,
     },
+    limits::Limits,
     warning::{Warning, WarningCode},
     writer::WriteOutput,
 };
 
-// Reserve for escaping, delimiters and container prefixes before allocating output.
-// This conservative ceiling is internal to the text writers, not an engine limit.
-pub(super) const MAX_OUTPUT_BYTES: usize = 512 * 1024 * 1024;
 const MAX_TABLE_COLUMNS: usize = 128;
 const MAX_WRITER_NESTING_DEPTH: usize = 100;
 
@@ -164,7 +162,7 @@ pub(super) fn check_output_size(
         .len()
         .checked_mul(12)?
         .checked_add(8192)?;
-    let mut remaining = MAX_OUTPUT_BYTES.checked_sub(overhead)?;
+    let mut remaining = Limits::MAX_TEXT_OUTPUT_BYTES.checked_sub(overhead)?;
     for id in references.keys() {
         if let Some(asset) = document.assets.get(id) {
             remaining = remaining.checked_sub(
@@ -259,7 +257,7 @@ pub fn write(document: &Document) -> WriteOutput {
         }
         out.push('\n');
     }
-    if out.len() > MAX_OUTPUT_BYTES {
+    if out.len() > Limits::MAX_TEXT_OUTPUT_BYTES {
         return output_ceiling_exceeded();
     }
     WriteOutput {

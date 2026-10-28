@@ -4,6 +4,7 @@ use ariad_core::{
     ir::Document,
     json_depth::{self, JsonDepthError, JsonDepthScanner},
     limits::Limits,
+    pipeline::{PipelineError, validate_ir_document},
 };
 use serde::Deserialize;
 use thiserror::Error;
@@ -23,6 +24,22 @@ pub enum ReadError {
     BlockLimitExceeded { count: usize, limit: u32 },
     #[error("unsupported IR version")]
     UnsupportedVersion,
+    #[error("IR validation error: {0}")]
+    Validation(#[from] PipelineError),
+}
+
+impl ReadError {
+    /// Whether reading failed because a configured resource limit was exceeded.
+    #[must_use]
+    pub fn is_limit_exceeded(&self) -> bool {
+        matches!(
+            self,
+            Self::ByteLimitExceeded { .. }
+                | Self::DepthExceeded(_)
+                | Self::BlockLimitExceeded { .. }
+                | Self::Validation(PipelineError::LimitExceeded { .. })
+        )
+    }
 }
 
 /// An adapter that streams from an underlying `Read`, enforcing a byte limit
@@ -145,25 +162,27 @@ pub fn read_json<T: for<'de> Deserialize<'de>>(
     Ok(value)
 }
 
-fn validate_block_count(document: &Document, limits: &Limits) -> Result<(), ReadError> {
-    let block_count = document.block_count();
-    if block_count > limits.max_blocks as usize {
-        return Err(ReadError::BlockLimitExceeded {
-            count: block_count,
-            limit: limits.max_blocks,
-        });
-    }
-    Ok(())
+fn validate_document(document: &Document, limits: &Limits) -> Result<(), ReadError> {
+    validate_ir_document(document, limits).map_err(|error| match &error {
+        PipelineError::LimitExceeded { limit } if limit == "max_blocks" => {
+            ReadError::BlockLimitExceeded {
+                count: document.block_count(),
+                limit: limits.max_blocks,
+            }
+        }
+        _ => ReadError::Validation(error),
+    })
 }
 
 /// Reads an IR document with bounded byte size, incremental nesting depth scan,
-/// deep deserialization without whole-file buffering, and post-parse block count validation.
+/// deep deserialization without whole-file buffering, and shared post-parse IR validation.
 pub fn read(reader: impl Read, limits: &Limits) -> Result<Document, ReadError> {
+    limits.validate().map_err(PipelineError::from)?;
     let byte_cap = limits.max_ir_json_bytes;
     let depth_budget = json_depth::json_depth_budget_for_nesting(limits.max_nesting_depth);
 
     let document: Document = read_json(reader, byte_cap, depth_budget)?;
-    validate_block_count(&document, limits)?;
+    validate_document(&document, limits)?;
 
     Ok(document)
 }
@@ -174,8 +193,9 @@ struct VersionProbe {
 }
 
 /// Reads an IR document from a byte slice with version verification,
-/// bounded depth scan, and block count limit.
+/// bounded depth scan, and shared post-parse IR validation.
 pub fn read_versioned(slice: &[u8], limits: &Limits) -> Result<Document, ReadError> {
+    limits.validate().map_err(PipelineError::from)?;
     if (slice.len() as u64) > limits.max_ir_json_bytes {
         return Err(ReadError::ByteLimitExceeded {
             limit: limits.max_ir_json_bytes,
@@ -202,7 +222,7 @@ pub fn read_versioned(slice: &[u8], limits: &Limits) -> Result<Document, ReadErr
     }
 
     let mut document: Document = read_json(slice, limits.max_ir_json_bytes, depth_budget)?;
-    validate_block_count(&document, limits)?;
+    validate_document(&document, limits)?;
 
     document.version = ariad_core::ir::IR_VERSION.to_owned();
     Ok(document)
