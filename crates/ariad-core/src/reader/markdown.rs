@@ -1,13 +1,11 @@
 use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap},
-    sync::Arc,
 };
 
 use comrak::{
-    Arena, Options, ResolvedReference,
+    Arena, Options,
     nodes::{AstNode, ListType, NodeValue, TableAlignment},
-    options::BrokenLinkReference,
 };
 use thiserror::Error;
 
@@ -118,13 +116,6 @@ fn read_impl(
     };
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, &shared.input, &options);
-    let line_offsets: Vec<_> = if shared.definitions.is_empty() {
-        Vec::new()
-    } else {
-        std::iter::once(0)
-            .chain(markdown.match_indices('\n').map(|(offset, _)| offset + 1))
-            .collect()
-    };
     let mut state = WalkState {
         shared_data_urls: shared.destinations,
         shared_url_bytes_remaining: markdown.len().min(100_000),
@@ -186,7 +177,7 @@ fn read_impl(
                 );
             }
             Visit::Exit(node) => {
-                if shared.skipped && !sharing_fallback_warned {
+                if shared.may_have_unresolved_images && !sharing_fallback_warned {
                     let possible_shared_image = match &node.data().value {
                         NodeValue::Image(link) => link.url.starts_with("data:"),
                         NodeValue::Text(text) => text.contains("!["),
@@ -208,16 +199,7 @@ fn read_impl(
                             .unwrap_or(ConvertedNode::Skip)
                     })
                     .collect::<Vec<_>>();
-                // Provenance checks run only after the existing nesting/block
-                // checks have accepted this node and every child.
-                let shared_reference = is_shared_reference_node(
-                    node,
-                    &markdown,
-                    &line_offsets,
-                    &shared.definitions,
-                    &options,
-                );
-                let output = convert_node(node, children, &mut state, limits, shared_reference);
+                let output = convert_node(node, children, &mut state, limits);
                 converted.insert(node_key(node), output);
             }
         }
@@ -257,123 +239,113 @@ fn node_key(node: &AstNode<'_>) -> usize {
     std::ptr::from_ref(node).cast::<()>() as usize
 }
 
-// Comrak charges URL bytes at every reference lookup. Keep shared data out of
-// that expansion path, then decode each destination once during IR conversion.
-// The first parse identifies consumed definitions: visible blocks (including
-// code and raw HTML) must never be rewritten as reference definitions.
+// Comrak removes standalone definitions from the AST. Only the gaps between
+// its block source spans are eligible: code, HTML, titles and other visible
+// source stay byte-exact, so they need no token restoration. The small scanner
+// below delimits destinations within those parser-consumed spans, including
+// definitions with multiline labels, destinations and titles.
+//
+// Tokens cannot originate in user input: U+E000 is absent, interning is
+// disabled for numeric character references, named entities cannot produce
+// U+E000, and backslash escapes only unescape ASCII punctuation. Thus an exact token destination is
+// sufficient proof of origin, regardless of reference/container context. Never
+// reparse a reference use outside that context to decide whether to restore it.
 #[derive(Default)]
 struct ReferenceData<'a> {
     input: Cow<'a, str>,
     destinations: HashMap<String, String>,
-    definitions: HashMap<String, String>,
-    skipped: bool,
+    may_have_unresolved_images: bool,
 }
 
 fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> ReferenceData<'a> {
-    if !markdown.contains("data:") {
-        return ReferenceData {
-            input: Cow::Borrowed(markdown),
-            ..ReferenceData::default()
-        };
+    let original = || ReferenceData {
+        input: Cow::Borrowed(markdown),
+        ..ReferenceData::default()
+    };
+    if !markdown.contains("data:") || markdown.contains('\u{e000}') || markdown.contains("&#") {
+        return original();
     }
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, markdown, options);
-    let mut visible_lines = vec![false; markdown.lines().count() + 1];
+    let mut offsets: Vec<_> = std::iter::once(0)
+        .chain(markdown.match_indices('\n').map(|(offset, _)| offset + 1))
+        .collect();
+    if offsets.last() != Some(&markdown.len()) {
+        offsets.push(markdown.len());
+    }
+    let mut visible = vec![false; offsets.len()];
     for node in root.children() {
         let position = node.data().sourcepos;
-        visible_lines[position.start.line..=position.end.line].fill(true);
+        visible[position.start.line..=position.end.line].fill(true);
     }
-    let mut literal_lines = vec![false; visible_lines.len()];
-    let mut paragraph_lines = vec![0u8; visible_lines.len()];
-    for node in root.descendants() {
-        let data = node.data();
-        let position = data.sourcepos;
-        match &data.value {
-            NodeValue::CodeBlock(_)
-            | NodeValue::HtmlBlock(_)
-            | NodeValue::FrontMatter(_)
-            | NodeValue::TableRow(_) => {
-                literal_lines[position.start.line..=position.end.line].fill(true);
-            }
-            NodeValue::Paragraph | NodeValue::Heading(_) => {
-                paragraph_lines[position.start.line..=position.end.line].fill(2);
-                paragraph_lines[position.start.line] = 1;
-            }
-            _ => {}
+    // Definitions within visible container/paragraph spans stay on the native
+    // path. Preserve a diagnostic if that path still leaves image references
+    // as text after the final parse; never silently lose an unassociated image.
+    let may_have_unresolved_images = root
+        .descendants()
+        .any(|node| matches!(&node.data().value, NodeValue::Text(text) if text.contains("![")));
+    let mut replacements = Vec::new();
+    let mut line = 1;
+    while line < offsets.len() {
+        if visible[line] {
+            line += 1;
+            continue;
         }
-    }
-    // Parser-confirmed literal blocks and paragraph continuations cannot define
-    // references. An actual but unassociated declaration keeps the native path;
-    // possible unresolved images on that path must produce a diagnostic.
-    let mut multiline_label = false;
-    for (index, line) in markdown.lines().enumerate() {
-        let content = definition_content(line);
-        if paragraph_lines[index + 1] != 2 {
-            multiline_label = paragraph_lines[index + 1] == 1 && unclosed_reference_label(content);
+        let start = offsets[line - 1];
+        while line < offsets.len() && !visible[line] {
+            line += 1;
         }
-        if line.contains("]:") {
-            if literal_lines[index + 1] || (paragraph_lines[index + 1] == 2 && !multiline_label) {
-                continue;
+        let end = offsets[line - 1];
+        let mut position = start;
+        while position < end {
+            position += markdown[position..end]
+                .bytes()
+                .take_while(u8::is_ascii_whitespace)
+                .count();
+            if position == end {
+                break;
             }
-            let ambiguous = if visible_lines[index + 1] {
-                multiline_label
-                    || paragraph_lines[index + 1] == 0
-                    || reference_definition(content).is_some()
-            } else {
-                reference_definition(line.trim_start_matches(' ')).is_none()
-            };
-            if ambiguous {
-                return ReferenceData {
-                    input: Cow::Borrowed(markdown),
-                    skipped: true,
-                    ..ReferenceData::default()
-                };
-            }
-        }
-    }
-    let prefix = "a:0:";
-    let mut tokens = HashMap::<&str, String>::new();
-    let mut destinations = HashMap::new();
-    let mut definitions = HashMap::new();
-    let mut seen_labels = BTreeSet::new();
-    let mut input = String::with_capacity(markdown.len());
-    for (index, line) in markdown.split_inclusive('\n').enumerate() {
-        let trimmed = line.trim_start_matches(' ');
-        let definition = (!visible_lines[index + 1])
-            .then(|| reference_definition(trimmed))
-            .flatten();
-        let destination = definition.map(|(_, tail)| tail.trim_start_matches([' ', '\t']));
-        let label = definition.and_then(|(label, _)| normalized_reference_label(label, options));
-        let first_definition = label
-            .as_ref()
-            .is_some_and(|label| seen_labels.insert(label.clone()));
-        let span = destination.and_then(reference_destination);
-        let uri = span.map(|(uri, _)| uri);
-        if let Some(uri) = uri.filter(|uri| {
-            first_definition && uri.starts_with("data:") && uri.len() > prefix.len() + 20
-        }) {
-            let Some(normalized) = normalized_definition_destination(destination.unwrap(), options)
+            let Some((destination, consumed)) = reference_definition_span(&markdown[position..end])
             else {
-                input.push_str(line);
-                continue;
+                return ReferenceData {
+                    may_have_unresolved_images: true,
+                    ..original()
+                };
             };
-            let next = tokens.len();
-            let token = tokens
-                .entry(uri)
-                .or_insert_with(|| format!("{prefix}{next}"));
-            destinations.entry(token.clone()).or_insert(normalized);
-            definitions.insert(label.unwrap(), token.clone());
-            let start = line.len() - destination.unwrap().len();
-            let end = start + span.unwrap().1;
-            input.push_str(&line[..start]);
-            input.push_str(token);
-            // Preserve source positions and Comrak's original input-sized budget.
-            input.extend(std::iter::repeat_n(' ', end - start - token.len()));
-            input.push_str(&line[end..]);
-        } else {
-            input.push_str(line);
+            replacements.push(position + destination.start..position + destination.end);
+            position += consumed;
         }
     }
+    let mut input = String::with_capacity(markdown.len());
+    let mut destinations = HashMap::new();
+    let mut tokens = HashMap::<String, String>::new();
+    let mut copied = 0;
+    for span in replacements {
+        let destination = &markdown[span.clone()];
+        let Some((raw, _)) = reference_destination(destination) else {
+            continue;
+        };
+        if !raw.starts_with("data:") || raw.len() <= 24 {
+            continue;
+        }
+        let Some(normalized) = normalized_definition_destination(destination, options) else {
+            return ReferenceData {
+                may_have_unresolved_images: true,
+                ..original()
+            };
+        };
+        let next = tokens.len();
+        let token = tokens
+            .entry(normalized.clone())
+            .or_insert_with(|| format!("\u{e000}{next}:"));
+        destinations.entry(token.clone()).or_insert(normalized);
+        input.push_str(&markdown[copied..span.start]);
+        input.push_str(token);
+        // Preserve the original input-sized reference budget and source positions.
+        input.extend(std::iter::repeat_n(' ', span.len() - token.len()));
+        copied = span.end;
+    }
+    input.push_str(&markdown[copied..]);
     ReferenceData {
         input: if destinations.is_empty() {
             Cow::Borrowed(markdown)
@@ -381,43 +353,89 @@ fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> R
             Cow::Owned(input)
         },
         destinations,
-        definitions,
-        skipped: false,
+        may_have_unresolved_images,
     }
 }
 
-fn definition_content(line: &str) -> &str {
-    let mut content = line.trim_start_matches([' ', '\t']);
-    loop {
-        if let Some(rest) = content.strip_prefix('>') {
-            content = rest.trim_start_matches([' ', '\t']);
-        } else if let Some(end) = after_list_marker(content.as_bytes(), 0) {
-            content = content[end..].trim_start_matches([' ', '\t']);
-        } else if footnote_definition_label(content).is_some()
-            && let Some((_, rest)) = reference_definition(content)
-        {
-            content = rest.trim_start_matches([' ', '\t']);
-        } else {
-            return content;
+fn reference_space(input: &[u8], mut position: usize) -> usize {
+    while matches!(input.get(position), Some(b' ' | b'\t')) {
+        position += 1;
+    }
+    if input.get(position) == Some(&b'\n') {
+        position += 1;
+        while matches!(input.get(position), Some(b' ' | b'\t')) {
+            position += 1;
         }
     }
+    position
 }
 
-fn unclosed_reference_label(content: &str) -> bool {
-    let Some(label) = content.strip_prefix('[') else {
-        return false;
-    };
-    let mut escaped = false;
-    for character in label.chars() {
-        if escaped {
-            escaped = false;
-        } else if character == '\\' {
-            escaped = true;
-        } else if character == ']' {
-            return false;
+fn reference_definition_span(input: &str) -> Option<(std::ops::Range<usize>, usize)> {
+    let bytes = input.as_bytes();
+    if bytes.first() != Some(&b'[') {
+        return None;
+    }
+    let mut position = 1;
+    while position <= 1001 {
+        match bytes.get(position)? {
+            b'\\'
+                if bytes
+                    .get(position + 1)
+                    .is_some_and(u8::is_ascii_punctuation) =>
+            {
+                position += 2
+            }
+            b'[' => return None,
+            b']' => break,
+            _ => position += 1,
         }
     }
-    true
+    if bytes.get(position..position + 2) != Some(b"]:") {
+        return None;
+    }
+    position = reference_space(bytes, position + 2);
+    let start = position;
+    let (_, length) = reference_destination(&input[position..])?;
+    position += length;
+    let destination = start..position;
+    let before_title = position;
+    let title_start = reference_space(bytes, position);
+    if title_start != position
+        && let Some(delimiter @ (b'\'' | b'"' | b'(')) = bytes.get(title_start)
+    {
+        let close = if *delimiter == b'(' { b')' } else { *delimiter };
+        position = title_start + 1;
+        loop {
+            match bytes.get(position) {
+                Some(b'\\')
+                    if bytes
+                        .get(position + 1)
+                        .is_some_and(u8::is_ascii_punctuation) =>
+                {
+                    position += 2
+                }
+                Some(byte) if *byte == close => {
+                    position += 1;
+                    break;
+                }
+                Some(b'(') if *delimiter == b'(' => return None,
+                Some(_) => position += 1,
+                None => {
+                    position = before_title;
+                    break;
+                }
+            }
+        }
+    }
+    while matches!(bytes.get(position), Some(b' ' | b'\t')) {
+        position += 1;
+    }
+    if bytes.get(position) == Some(&b'\n') {
+        position += 1;
+    } else if position != bytes.len() {
+        return None;
+    }
+    Some((destination, position))
 }
 
 fn reference_destination(destination: &str) -> Option<(&str, usize)> {
@@ -460,119 +478,13 @@ fn reference_destination(destination: &str) -> Option<(&str, usize)> {
     None
 }
 
-fn reference_definition(line: &str) -> Option<(&str, &str)> {
-    let bytes = line.strip_prefix('[')?.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'\\' => index += 2,
-            b']' if bytes.get(index + 1) == Some(&b':') => {
-                return Some((&line[1..index + 1], &line[index + 3..]));
-            }
-            _ => index += 1,
-        }
-    }
-    None
-}
-
-fn normalized_reference_label(label: &str, options: &Options<'_>) -> Option<String> {
-    let mut options = options.clone();
-    options.parse.broken_link_callback = Some(Arc::new(|reference: BrokenLinkReference<'_>| {
-        Some(ResolvedReference {
-            url: reference.normalized.to_owned(),
-            title: String::new(),
-        })
-    }));
-    let arena = Arena::new();
-    let root = comrak::parse_document(&arena, &format!("![x][{label}]"), &options);
-    match &root.first_child()?.first_child()?.data().value {
-        NodeValue::Image(link) => Some(link.url.clone()),
-        _ => None,
-    }
-}
-
 fn normalized_definition_destination(destination: &str, options: &Options<'_>) -> Option<String> {
     let arena = Arena::new();
-    let root = comrak::parse_document(&arena, &format!("[x]({})", destination.trim_end()), options);
+    let root = comrak::parse_document(&arena, &format!("[x]({})", destination), options);
     match &root.first_child()?.first_child()?.data().value {
         NodeValue::Link(link) => Some(link.url.clone()),
         _ => None,
     }
-}
-
-// A token string alone is never proof of origin: inline and unrelated reference
-// destinations can normalize to the same bytes. Reparse the exact original use
-// with only the consumed definitions bound, then require the same whole node.
-fn is_shared_reference_node(
-    node: &AstNode<'_>,
-    markdown: &str,
-    line_offsets: &[usize],
-    definitions: &HashMap<String, String>,
-    options: &Options<'_>,
-) -> bool {
-    if definitions.is_empty() {
-        return false;
-    }
-    let data = node.data();
-    let (url, image) = match &data.value {
-        NodeValue::Link(link) => (&link.url, false),
-        NodeValue::Image(link) => (&link.url, true),
-        _ => return false,
-    };
-    if !url.starts_with("a:0:") {
-        return false;
-    }
-    let position = data.sourcepos;
-    let start = position
-        .start
-        .line
-        .checked_sub(1)
-        .and_then(|line| line_offsets.get(line))
-        .and_then(|offset| offset.checked_add(position.start.column.checked_sub(1)?));
-    let end = position
-        .end
-        .line
-        .checked_sub(1)
-        .and_then(|line| line_offsets.get(line))
-        .and_then(|offset| offset.checked_add(position.end.column));
-    let (Some(start), Some(end)) = (start, end) else {
-        return false;
-    };
-    let Some(source) = markdown
-        .get(start..end)
-        .filter(|source| source.ends_with(']'))
-    else {
-        return false;
-    };
-    let mut options = options.clone();
-    options.parse.broken_link_callback = Some(Arc::new(|reference: BrokenLinkReference<'_>| {
-        definitions
-            .get(reference.normalized)
-            .map(|token| ResolvedReference {
-                url: token.clone(),
-                title: String::new(),
-            })
-    }));
-    let arena = Arena::new();
-    let parsed = comrak::parse_document(&arena, source, &options);
-    let Some(candidate) = parsed
-        .first_child()
-        .and_then(|paragraph| paragraph.first_child())
-    else {
-        return false;
-    };
-    let candidate = candidate.data();
-    let candidate_end = candidate.sourcepos.end;
-    let entire_source = candidate.sourcepos.start.line == 1
-        && candidate.sourcepos.start.column == 1
-        && candidate_end.line == source.lines().count()
-        && candidate_end.column == source.lines().last().unwrap_or_default().len();
-    let matches = match &candidate.value {
-        NodeValue::Image(link) if image => link.url == *url,
-        NodeValue::Link(link) if !image => link.url == *url,
-        _ => false,
-    };
-    entire_source && matches
 }
 
 // Non-image uses and failed decodes still carry their original URLs in the IR.
@@ -600,7 +512,6 @@ fn convert_node(
     children: Vec<ConvertedNode>,
     state: &mut WalkState,
     limits: &Limits,
-    shared_reference: bool,
 ) -> ConvertedNode {
     let data = node.data();
     match &data.value {
@@ -771,7 +682,7 @@ fn convert_node(
             text: html.clone(),
         }),
         NodeValue::Link(link) => {
-            let url = if shared_reference {
+            let url = if state.shared_data_urls.contains_key(&link.url) {
                 let Some(url) = shared_url(&link.url, state) else {
                     return ConvertedNode::Inlines(inlines(children));
                 };
@@ -787,39 +698,38 @@ fn convert_node(
         }
         NodeValue::Image(link) => {
             let alt = nfc(&inline_text(&inlines(children)));
-            let target =
-                if shared_reference && let Some(url) = state.shared_data_urls.get(&link.url) {
-                    let target = state
-                        .shared_image_targets
-                        .entry(link.url.clone())
-                        .or_insert_with(|| {
-                            common::decode_data_uri_image(
-                                url,
-                                limits,
-                                &mut state.assets,
-                                &mut state.warnings,
-                            )
-                        })
-                        .clone();
-                    if let Some(target) = target {
-                        target
-                    } else {
-                        let Some(href) = shared_url(&link.url, state) else {
-                            return inline(Inline::Text { text: alt });
-                        };
-                        AssetRef::Url { href }
-                    }
-                } else {
-                    common::decode_data_uri_image(
-                        &link.url,
-                        limits,
-                        &mut state.assets,
-                        &mut state.warnings,
-                    )
-                    .unwrap_or_else(|| AssetRef::Url {
-                        href: link.url.clone(),
+            let target = if let Some(url) = state.shared_data_urls.get(&link.url) {
+                let target = state
+                    .shared_image_targets
+                    .entry(url.clone())
+                    .or_insert_with(|| {
+                        common::decode_data_uri_image(
+                            url,
+                            limits,
+                            &mut state.assets,
+                            &mut state.warnings,
+                        )
                     })
-                };
+                    .clone();
+                if let Some(target) = target {
+                    target
+                } else {
+                    let Some(href) = shared_url(&link.url, state) else {
+                        return inline(Inline::Text { text: alt });
+                    };
+                    AssetRef::Url { href }
+                }
+            } else {
+                common::decode_data_uri_image(
+                    &link.url,
+                    limits,
+                    &mut state.assets,
+                    &mut state.warnings,
+                )
+                .unwrap_or_else(|| AssetRef::Url {
+                    href: link.url.clone(),
+                })
+            };
             inline(Inline::Image {
                 target,
                 alt,
@@ -1383,6 +1293,211 @@ mod tests {
                 .iter()
                 .any(|warning| warning.code == WarningCode::UnsupportedNode)
         );
+    }
+
+    #[test]
+    fn shared_references_keep_multiline_container_context() {
+        for (first, next) in [("> ", "> "), ("- ", "  "), ("> > ", "> > ")] {
+            for image in ["!", ""] {
+                let markdown = format!(
+                    "{first}{image}[first\n{next}second][p]\n\n[p]: data:image/png;base64,iVBORw0KGgo=\n"
+                );
+                assert_eq!(
+                    read(&markdown, &Limits::local()),
+                    super::read_impl(&markdown, &Limits::local(), false),
+                    "{markdown}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shared_png_definitions_accept_multiline_destinations_and_titles() {
+        use base64::Engine as _;
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        for definition in [
+            format!("[pixel]:\n  data:image/png;base64,{encoded}\n"),
+            format!("[pixel]:\n  <data:image/png;base64,{encoded}>\n  \"first\nsecond\"\n"),
+            format!("[pixel]: data:image/png;base64,{encoded}\n  \"first\nsecond\"\n"),
+        ] {
+            for crlf in [false, true] {
+                let markdown = format!("{}\n{definition}", "![pixel][pixel]\n\n".repeat(3));
+                let markdown = if crlf {
+                    markdown.replace('\n', "\r\n")
+                } else {
+                    markdown
+                };
+                let output = read(&markdown, &Limits::local()).unwrap();
+                assert_eq!(output.document.assets.len(), 1);
+                assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
+                let images = output.document.body.iter().filter(|block| {
+                    matches!(block, Block::Paragraph { content } if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+                }).count();
+                assert_eq!(images, 3, "{markdown}");
+                assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+                if definition.contains("first") {
+                    for block in &output.document.body {
+                        if let Block::Paragraph { content } = block {
+                            assert!(
+                                matches!(content.as_slice(), [Inline::Image { title: Some(title), .. }] if title == "first\nsecond")
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn private_reference_tokens_disable_interning_for_unsafe_input() {
+        for marker in ["&#65;", "&#xE000;", "&#57344;", "\u{e000}"] {
+            let markdown = format!(
+                "{marker}\n\n> ![first\n> second][p]\n\n[p]: data:image/png;base64,iVBORw0KGgo=\n"
+            );
+            assert!(
+                super::intern_reference_data_urls(&markdown, &comrak::Options::default())
+                    .destinations
+                    .is_empty()
+            );
+            assert_eq!(
+                read(&markdown, &Limits::local()),
+                super::read_impl(&markdown, &Limits::local(), false),
+                "{markdown}"
+            );
+        }
+    }
+
+    #[test]
+    fn shared_reference_preprocessing_keeps_literal_definitions_exact() {
+        let definition = "[p]: data:image/png;base64,iVBORw0KGgo=";
+        for literal in [
+            format!("```md\n{definition}\n```\n"),
+            format!("<div>\n{definition}\n</div>\n"),
+            format!("`{definition}`\n"),
+        ] {
+            let markdown = format!("{literal}\n> ![first\n> second][p]\n\n{definition}\n");
+            let output = read(&markdown, &Limits::local()).unwrap();
+            let baseline = super::read_impl(&markdown, &Limits::local(), false).unwrap();
+            assert_eq!(output.document, baseline.document, "{markdown}");
+            match &output.document.body[0] {
+                Block::Code { text, .. } => assert_eq!(text, &format!("{definition}\n")),
+                Block::Raw { text, .. } => assert_eq!(text, &literal),
+                Block::Paragraph { content } => assert!(
+                    matches!(content.as_slice(), [Inline::Code { text }] if text == definition)
+                ),
+                other => panic!("unexpected literal: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn shared_definition_spans_preserve_eof_duplicates_and_title_syntax() {
+        let uri = "data:image/png;base64,iVBORw0KGgo=";
+        for definitions in [
+            format!("[p]: {uri}"),
+            format!("[p]:\n  <{uri}>"),
+            format!("[p]: {uri} \"a title\""),
+            format!("[p]: {uri} 'a title'"),
+            format!("[p]: {uri} (a title)"),
+            format!("[p]: {uri} \"a [q]: literal\"\n[q]: <>"),
+            format!("[p]: {uri}\n  \"first\nsecond\"\n[q]: https://example.test/"),
+            format!("[p]: {uri}\n[P]: https://example.test/"),
+            format!("[P]: https://example.test/\n[p]: {uri}"),
+            format!("[p]: <{uri}>\n[q]: {uri}"),
+        ] {
+            let markdown = format!("![p][p] [q][q]\n\n{definitions}");
+            assert_eq!(
+                read(&markdown, &Limits::local()).unwrap().document,
+                super::read_impl(&markdown, &Limits::local(), false)
+                    .unwrap()
+                    .document,
+                "{markdown}"
+            );
+        }
+    }
+
+    #[test]
+    fn unassociated_shared_image_definitions_keep_a_budget_diagnostic() {
+        use base64::Engine as _;
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        for definition in [
+            format!("[pixel]:\n  data:image/png;base64,{encoded}\nParagraph.\n"),
+            format!("> [pixel]: data:image/png;base64,{encoded}\n"),
+        ] {
+            let markdown = format!("{}\n{definition}", "![pixel][pixel]\n\n".repeat(3));
+            let output = read(&markdown, &Limits::local()).unwrap();
+            let images = output.document.body.iter().filter(|block| {
+                matches!(block, Block::Paragraph { content } if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+            }).count();
+            assert!(images == 3 || output.warnings.iter().any(|warning| warning.message == "shared data image references could not be interned; unresolved references may remain text"), "{markdown}");
+        }
+    }
+
+    #[test]
+    fn shared_reference_reader_matches_a_markdown_corpus() {
+        let mut samples = vec![
+            include_str!("../../../../fixtures/md/en-crlf.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-deep-list.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-emoji-shortcodes.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-emphasis-strike.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-fenced-code.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-footnotes.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-hard-breaks.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-kitchen-sink.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-lf.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-task-list.md").to_owned(),
+            include_str!("../../../../fixtures/md/mixed-kitchen-sink.md").to_owned(),
+            include_str!("../../../../fixtures/md/mixed-math.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-aligned-table.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-blockquote.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-front-matter.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-kitchen-sink.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-links-autolinks.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-local-image.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-long-headings.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-nfc.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-nfd.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-ordered-start.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-raw-html.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-tone-dense-table.md").to_owned(),
+        ];
+        let definition = "[p]: data:image/png;base64,iVBORw0KGgo=";
+        for sample in &mut samples {
+            sample.push_str("\n\n![shared probe][shared-probe]\n\n[shared-probe]: data:image/png;base64,iVBORw0KGgo=\n");
+        }
+        for body in [
+            "> ![first\n> second][p]",
+            "> [first\n> second][p]",
+            "- ![first\n  second][p]",
+            "- [first\n  second][p]",
+            "> > ![first\n> > second][p]",
+            "> > [first\n> > second][p]",
+            "![p][p]",
+            "[p][p]",
+            "`[example]: literal`\n\n![p][p]",
+            "```md\n[p]: data:image/png;base64,iVBORw0KGgo=\n```\n\n![p][p]",
+            "<div>\n[p]: data:image/png;base64,iVBORw0KGgo=\n</div>\n\n![p][p]",
+        ] {
+            samples.push(format!("{body}\n\n{definition}\n"));
+        }
+        samples.extend([
+            "![p][p]\n\n[p]:\n  data:image/png;base64,iVBORw0KGgo=\n".into(),
+            format!("![p][p]\n\n{definition}\n  \"first\nsecond\"\n"),
+            format!("> ![first\r\n> second][p]\r\n\r\n{definition}\r\n"),
+            format!("&#65;\n\n> ![first\n> second][p]\n\n{definition}\n"),
+            format!("\u{e000}\n\n> ![first\n> second][p]\n\n{definition}\n"),
+        ]);
+        assert_eq!(samples.len(), 40);
+        for (index, markdown) in samples.iter().enumerate() {
+            let baseline = super::read_impl(markdown, &Limits::local(), false).unwrap();
+            let output = read(markdown, &Limits::local()).unwrap();
+            assert_eq!(
+                output.document, baseline.document,
+                "sample {index}: {markdown}"
+            );
+        }
     }
 
     #[test]
