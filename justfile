@@ -94,7 +94,7 @@ web-export: wasm-build
 web-browsers *flags:
     pnpm --filter @ariadshift/web exec playwright install {{flags}} chromium firefox webkit
 
-# Playwright on Chromium, Firefox and WebKit against `next start`; run `just web-build` first.
+# Playwright on Chromium, Firefox and WebKit; run `just web-ci` first for build and export.
 web-e2e:
     pnpm --filter @ariadshift/web e2e
 
@@ -103,7 +103,7 @@ web-lighthouse:
     pnpm --filter @ariadshift/web lighthouse
 
 # The JavaScript checks of `just ci`, apart from Biome and the SDK drift check in `just static`.
-web-ci: web-typecheck web-test web-build
+web-ci: web-typecheck web-test web-export web-build web-licenses-check
 
 # Regenerates the committed OpenAPI document, schemas/openapi.v1.json, from the server code.
 openapi:
@@ -152,6 +152,13 @@ test-ci-scope:
 licenses:
     node scripts/generate-licenses.mjs > THIRD_PARTY_LICENSES
     just desktop-licenses
+    just web-licenses
+
+web-licenses:
+    node apps/web/scripts/sync-notices.mjs
+
+web-licenses-check:
+    node apps/web/scripts/sync-notices.mjs --check
 
 licenses-check:
     #!/usr/bin/env bash
@@ -173,6 +180,11 @@ licenses-check:
     if ! cmp -s "$tmp" apps/desktop/THIRD_PARTY_JS_LICENSES; then
         echo "ERROR: desktop JavaScript notices are out of date. Run 'just desktop-licenses'." >&2
         exit 1
+    fi
+    if [ -d apps/web/public/notices ]; then
+        node apps/web/scripts/sync-notices.mjs --check
+    else
+        node apps/web/scripts/sync-notices.mjs --check-graph
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
