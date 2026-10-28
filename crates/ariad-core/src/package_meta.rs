@@ -37,9 +37,6 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
     let mut found = false;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index)?;
-        if entry.size() > MAX_ENTRY_BYTES {
-            return Err(PackageMetaError::EntryTooLarge);
-        }
         let name = entry.name()?.into_owned();
         let target = if epub {
             name.ends_with(".opf") && !name.starts_with("__MACOSX")
@@ -49,6 +46,10 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
         if !target {
             writer.raw_copy_file(entry)?;
             continue;
+        }
+        // Only the XML being rewritten is buffered; unrelated entries are copied raw.
+        if entry.size() > MAX_ENTRY_BYTES {
+            return Err(PackageMetaError::EntryTooLarge);
         }
         if found {
             return Err(PackageMetaError::InvalidProperties);
@@ -74,7 +75,7 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
 
 /// Stamps a package held entirely in memory.
 pub fn stamp_bytes(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8>, PackageMetaError> {
-    // Memory-only callers need a total budget as well as the per-entry native limit.
+    // Memory-only callers also need a total budget for raw-copied entries.
     let mut archive = ZipArchive::new(Cursor::new(bytes))?;
     let mut total = 0u64;
     for index in 0..archive.len() {
@@ -181,6 +182,159 @@ mod tests {
     use zip::write::SimpleFileOptions;
 
     const TIMESTAMP: &str = "2026-10-24T15:00:00Z";
+
+    fn properties(epub: bool) -> (&'static str, &'static [u8]) {
+        if epub {
+            (
+                "EPUB/content.opf",
+                br#"<metadata><date>old</date><meta property="dcterms:modified">old</meta></metadata>"#,
+            )
+        } else {
+            (
+                CORE_PROPERTIES,
+                b"<properties><created>old</created><modified>old</modified></properties>",
+            )
+        }
+    }
+
+    fn write_repeated_entry(
+        writer: &mut ZipWriter<Cursor<Vec<u8>>>,
+        name: &str,
+        size: u64,
+        compression: zip::CompressionMethod,
+    ) {
+        writer
+            .start_file(
+                name,
+                SimpleFileOptions::default().compression_method(compression),
+            )
+            .unwrap();
+        io::copy(&mut io::repeat(b'x').take(size), writer).unwrap();
+    }
+
+    fn raw_entry<'a>(bytes: &'a [u8], name: &str) -> &'a [u8] {
+        let mut archive = ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let entry = archive.by_name(name).unwrap();
+        let start = entry.data_start().unwrap() as usize;
+        &bytes[start..start + entry.compressed_size() as usize]
+    }
+
+    #[test]
+    fn copies_large_stored_media_without_changing_bytes() {
+        for epub in [false, true] {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            let media_name = if epub {
+                "EPUB/media/image.png"
+            } else {
+                "word/media/image.png"
+            };
+            write_repeated_entry(
+                &mut writer,
+                media_name,
+                65 * 1024 * 1024,
+                zip::CompressionMethod::Stored,
+            );
+            let (name, xml) = properties(epub);
+            writer
+                .start_file(name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(xml).unwrap();
+            let input = writer.finish().unwrap().into_inner();
+
+            let stamped = stamp_into(
+                Cursor::new(&input),
+                Cursor::new(Vec::new()),
+                epub,
+                TIMESTAMP,
+            )
+            .unwrap()
+            .into_inner();
+            assert_eq!(
+                raw_entry(&input, media_name),
+                raw_entry(&stamped, media_name)
+            );
+            let mut archive = ZipArchive::new(Cursor::new(&stamped)).unwrap();
+            let mut xml = String::new();
+            archive
+                .by_name(name)
+                .unwrap()
+                .read_to_string(&mut xml)
+                .unwrap();
+            assert_eq!(xml.matches(TIMESTAMP).count(), 2);
+
+            // Memory-only stamping accepts this media within its total budget, too.
+            assert!(stamp_bytes(&input, epub, TIMESTAMP).is_ok());
+        }
+    }
+
+    #[test]
+    fn refuses_oversized_target_xml_in_both_formats() {
+        for epub in [false, true] {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            write_repeated_entry(
+                &mut writer,
+                properties(epub).0,
+                MAX_ENTRY_BYTES + 1,
+                zip::CompressionMethod::Deflated,
+            );
+            let input = writer.finish().unwrap().into_inner();
+            assert!(matches!(
+                stamp_into(
+                    Cursor::new(&input),
+                    Cursor::new(Vec::new()),
+                    epub,
+                    TIMESTAMP
+                ),
+                Err(PackageMetaError::EntryTooLarge)
+            ));
+            assert!(matches!(
+                stamp_bytes(&input, epub, TIMESTAMP),
+                Err(PackageMetaError::EntryTooLarge)
+            ));
+        }
+    }
+
+    #[test]
+    fn memory_total_budget_is_inclusive_and_does_not_limit_streaming() {
+        let (name, xml) = properties(false);
+        for extra in [0, 1] {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            for index in 0..4 {
+                let size = if index == 3 {
+                    MAX_ENTRY_BYTES - xml.len() as u64 + extra
+                } else {
+                    MAX_ENTRY_BYTES
+                };
+                write_repeated_entry(
+                    &mut writer,
+                    &format!("word/media/{index}.bin"),
+                    size,
+                    zip::CompressionMethod::Deflated,
+                );
+            }
+            writer
+                .start_file(name, SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(xml).unwrap();
+            let input = writer.finish().unwrap().into_inner();
+
+            assert!(
+                stamp_into(
+                    Cursor::new(&input),
+                    Cursor::new(Vec::new()),
+                    false,
+                    TIMESTAMP,
+                )
+                .is_ok()
+            );
+            let result = stamp_bytes(&input, false, TIMESTAMP);
+            if extra == 0 {
+                assert!(result.is_ok());
+            } else {
+                assert!(matches!(result, Err(PackageMetaError::EntryTooLarge)));
+            }
+        }
+    }
 
     #[test]
     fn stamps_both_formats_and_preserves_other_properties() {
