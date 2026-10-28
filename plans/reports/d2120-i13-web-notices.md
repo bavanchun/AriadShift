@@ -4,15 +4,16 @@
 - **Worktree:** `/home/vchun/Codes/01-AriadShift-wt-i13-notices`
 - **Branch:** `fix/web-licence-notices`
 - **Base SHA:** `47afeb445fee2692724e392f3ae1aad5fc7cd414` (`origin/dev` at task start)
-- **Implementation HEAD:** `bb6b1001029db2c19f30b5759c27760211a2d93c` (`bb6b100`)
+- **Implementation HEAD:** `8601c41d9eb54d76ebc16c28ef01c3c472bf5c57` (`8601c41`)
 - **Commits:**
   1. `5400da46a31cfc6009a893504b5116f340b37aec` — `fix(web): serve third-party licence notices and check staleness`
   2. `378256b901c8b202dc98e929f03f5fb9c6771249` — `fix(web): add Pandoc source inventory and lockfile notice checks`
   3. `258c6d20004da604109d135b3a30f462a136e85a` — `fix(web): add Pandoc release digests, lock status and source offer`
   4. `bb6b1001029db2c19f30b5759c27760211a2d93c` — `fix(web): verify browser notices against emitted dependencies`
+  5. `8601c41d9eb54d76ebc16c28ef01c3c472bf5c57` — `fix(web): keep graph-only licence checks independent of builds`
 - **Push / PR:** None (local commits only, per brief).
 
-Current outcome: **DONE_WITH_CONCERNS**. The full gate passed on exact implementation HEAD `bb6b1001029db2c19f30b5759c27760211a2d93c`. The lead-directed rerun below supersedes the earlier blocked attempts; the remaining concerns are recorded compiler/cache warnings and the earlier load-dependent test flake.
+Current outcome: **DONE_WITH_CONCERNS**. Rework 4 passed the complete requested gate on exact implementation HEAD `8601c41d9eb54d76ebc16c28ef01c3c472bf5c57`, including `just static` on a fresh checkout without a prior Next build. The final section supersedes earlier verification records. Remaining limits are the recorded Turbopack cache warnings and two optional PowerShell checks skipped by the repository scripts because `pwsh` is unavailable.
 
 ## Rework Summary (Addressing `reports/r-i13-terra.md`)
 
@@ -546,5 +547,56 @@ tailwind-merge@3.7.0
 use-sync-external-store@1.7.0
 wildcard@1.1.2
 ```
+
+## Rework 4: pre-build graph validation and E2E preparation
+
+Both review findings are repaired in `8601c41d9eb54d76ebc16c28ef01c3c472bf5c57`. No dependency, lockfile, conversion code or unrelated test changed. The current implementation head was committed after focused verification; the final report-only commit follows it without changing the tested implementation.
+
+The graph-only CLI passed `checkFiles:false`, but `checkNotices()` previously enabled bundle analysis for every default-directory call before returning for that flag. It now uses `checkFiles && isDefaultNoticesDir` for bundle validation. The actual default `--check-graph` therefore validates source/lock graphs before a build, while default `--check` and both production entry points retain mandatory current-build module checks.
+
+The regression creates an isolated workspace with real source inputs, installed-dependency links and copied lockfiles, with no generated notices, WASM, export or analysis. It invokes the actual script with only `--check-graph`, without `--out-dir` or `--root-dir`; an environment root override keeps the invocation on the default-directory branch. It asserts success without generating any output. It then generates genuine notices and asserts that default `--check` fails for missing bundle analysis. The common fixture setup is shared with the existing stale-lock tests.
+
+The documented E2E preparation in `justfile`, `docs/ci.md` and `docs/web.md` now requires `just web-ci`, which produces both static export and production output, plus browser installation as already documented. The hard `out/licenses.html` assertion remains unchanged. The web docs also explain the graph-only and post-build modes.
+
+### Fresh evidence and exact-head gate
+
+The detached runner was `/home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 zsh -li /tmp/i13-rework4-controller.zsh` (PID 3259476), launched with setsid/nohup, redirected logs and closed stdin. It waited for the slot/load guard, then ran all heavy checks at nice 19 with `CARGO_BUILD_JOBS=4`, `VITEST_MAX_WORKERS=2` and the common tool pins. Nothing was pushed and no PR was opened.
+
+- Baseline regression log: `/home/vchun/Codes/ariadshift-logs/i13-rework4-red.log`. The new test failed on the old implementation, returning 1 with `Cannot read Next.js bundle analysis` and ENOENT for the clean fixture's missing analyzer history. The fixed file was restored before positive tests and commit.
+- Controller/focused log: `/home/vchun/Codes/ariadshift-logs/i13-rework4-controller.log`. All seven notices tests passed after the fix.
+- Exact-head gate script: `/tmp/i13-rework4-full-gate.zsh`.
+- Full gate log: `/home/vchun/Codes/ariadshift-logs/i13-rework4-full-gate.log`.
+- Exact tested head: `8601c41d9eb54d76ebc16c28ef01c3c472bf5c57`.
+- Final line:
+
+```text
+=== 8601c41d9eb54d76ebc16c28ef01c3c472bf5c57 ALL GREEN
+```
+
+For the clean static gate, the runner created `/home/vchun/Codes/01-AriadShift-wt-i13-clean-static` detached at the exact tested head. Its first commands were `pnpm install --frozen-lockfile`, `node apps/web/scripts/sync-notices.mjs --check-graph` and `just static`. No Next build, notice generation or analysis preceded them. All completed successfully; the log records `CLEAN STATIC PASS: actual default graph check and just static, without a prior Next build`. The runner checked that tracked/unignored files remained clean, then removed its temporary worktree. This verifies the actual clean-checkout default CLI as well as the fixture regression.
+
+| Command | Outcome |
+| --- | --- |
+| `pnpm --filter @ariadshift/web exec vitest run test/licenses-notices.test.tsx` | Passed all 7 notices tests after the baseline failure was reproduced. |
+| `node apps/web/scripts/sync-notices.mjs --check-graph` | Passed in the fresh exact-head checkout before any Next build. |
+| `just static` | Passed in that fresh checkout; all static recipes ran, including licence verification. |
+| `pnpm --filter @ariadshift/web exec vitest run test/licenses-notices.test.tsx -t 'checks the default production graph without generated notices or build analysis'` | Passed the selected new clean-workspace regression; six other cases were outside this focused selection and ran in the full suites. |
+| `pnpm --filter @ariadshift/web test` | Passed 24 files and 262 tests. |
+| `just web-ci` | Passed typechecks, 34 files and 357 workspace tests, actual export, actual build and post-build notices validation. |
+| `just web-licenses-check` | Passed the mandatory current-build notices/module checks. |
+| `CI=1 pnpm --filter @ariadshift/web exec playwright test e2e/licenses.spec.ts --project=chromium` | Passed both licences tests, including root and prefixed static hosting. |
+| `pnpm exec biome check apps/web/ packages/` | Passed; 174 files checked. |
+| `typos` | Passed across the workspace. |
+| `just lint-commits` | Passed. |
+
+The gate also checked that HEAD did not change and that all five implementation/documentation paths matched the tested commit. No unrelated timing-sensitive failure occurred, so the low-load retry rule was not triggered. Account-jobs and all other workspace tests were left unchanged.
+
+### Limits and cleanup
+
+The repository's release-workflow mutation tests reported 78 passes, two skips and zero failures. The skipped optional PowerShell syntax cases were `windows-powershell-syntax-archive-colon` and `longpaths-powershell-syntax-archive-colon`, because `pwsh` is absent. No skip was added by this change.
+
+Next 16.4.2 again printed the existing internal Turbopack NFT/cache panic messages during export, then completed both builds and their required validation with exit status zero. These warnings are preserved in the full log and remain an upstream/cache concern. The previously accepted GHC-fork/Cabal-solver public-data uncertainties remain explicitly disclosed. No full Docker image or native Windows validation was run.
+
+All owned runner processes exited and the slot was released. The temporary clean static checkout was removed, Playwright closed port 3100, and the task branch contains only the scoped local implementation and report commits. The result awaits the lead's review; it is not pushed or merged.
 
 Status: DONE_WITH_CONCERNS
