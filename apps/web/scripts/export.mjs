@@ -16,3 +16,5 @@ if (build.status !== 0) {
 await import("./write-static-headers.mjs");
 await import("./write-service-worker.mjs");
 copyFileSync(path.join(web, "public/sw.js"), path.join(web, "out/sw.js"));
+const { checkNotices } = await import("./sync-notices.mjs");
+checkNotices();

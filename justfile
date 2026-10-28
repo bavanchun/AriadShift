@@ -103,7 +103,7 @@ web-lighthouse:
     pnpm --filter @ariadshift/web lighthouse
 
 # The JavaScript checks of `just ci`, apart from Biome and the SDK drift check in `just static`.
-web-ci: web-typecheck web-test web-build web-licenses-check
+web-ci: web-typecheck web-test web-export web-build web-licenses-check
 
 # Regenerates the committed OpenAPI document, schemas/openapi.v1.json, from the server code.
 openapi:
