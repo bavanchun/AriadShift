@@ -1,6 +1,6 @@
 ---
 title: Reviewed native identities at the toolchain export boundary
-status: in-progress
+status: completed
 branch: fix/pack-prebuild-gates
 created: 2026-10-28
 ---
@@ -32,9 +32,9 @@ receipts before toolchain publication; macOS native validation remains pending.
 - [x] Add and run red unknown-native/receipt/notice regressions and real renames.
 - [x] Implement positive inventory enforcement and precise owning docs.
 - [x] Run focused checks and review the complete delta.
-- [ ] Commit source and run the scoped full pack gate at the exact head.
-- [ ] Archive/update/mirror the canonical report and record remaining limits.
-- [ ] Commit report records and verify clean closure without pushing.
+- [x] Commit source and run the scoped full pack gate at the exact head.
+- [x] Archive/update/mirror the canonical report and record remaining limits.
+- [x] Commit report records and verify clean closure without pushing.
 
 Acceptance: unchanged real GPL dylibs are refused under original, neutral and
 image-codec names; unidentified native payloads fail; reviewed clean real bytes
@@ -53,3 +53,13 @@ verification worktree and a source-head pointer written after commit. It removes
 only the owned untracked baseline test copy before checkout. Report draft and
 strict real-object probe are prepared under `/tmp` with `t7-rework10-` prefixes.
 No candidate output checksum creates an approval; no publication is authorized.
+
+Completion: source commit `f63cca840b82f279d108c34db70e1fd6a2c283e2` passed
+the detached slot-2 scoped pack gate. The log ends
+`=== PACK GATE ALL GREEN HEAD=f63cca840b82f279d108c34db70e1fd6a2c283e2`.
+Focused suites: 314 passed; whole Docling: 408 passed, four conditional skips.
+Fresh Linux inventories cover 805 native files with no findings; 75 bench tests,
+135 reproducible fixture files, lock/audit and lint checks pass. The canonical
+report records the receipts, notice requirements and pending native macOS/source
+output release prerequisites. No push, tag, dispatch or release was performed.
+Report-only closure checks are recorded separately after the documentation commit.
