@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import CloudPanel, { type CloudPanelProps } from "@/components/cloud/cloud-panel";
 import type { PlanLimits } from "@/lib/cloud/api";
 import type { DiscardOutcome } from "@/lib/cloud/cloud-job";
@@ -12,6 +12,11 @@ const CONFIG: CloudConfig = {
   turnstileSiteKey: null,
   operator: null,
 };
+
+function jwtFor(sub: string, tag = "1"): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "EdDSA", typ: "JWT" })}.${encode({ sub, jti: tag })}.sig`;
+}
 
 const CAPABILITIES = {
   version: "ariad-capabilities/0",
@@ -169,5 +174,873 @@ describe("CloudPanel", () => {
     expect(dialog.hasAttribute("open")).toBe(true);
     expect(screen.getByLabelText("Email")).toBeDefined();
     expect(screen.getByLabelText("Password")).toBeDefined();
+  });
+
+  it("keeps anonymous cloud conversion working when the auth service is unreachable or 5xx", async () => {
+    for (const authFailure of ["network", "503"] as const) {
+      const requests: string[] = [];
+      const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(request.url);
+        requests.push(`${request.method} ${url.pathname}`);
+        if (url.pathname.startsWith("/api/auth/")) {
+          if (authFailure === "network") {
+            throw new TypeError("Failed to fetch");
+          }
+          return new Response("unavailable", { status: 503 });
+        }
+        if (url.pathname === "/v1/capabilities") {
+          return Response.json(CAPABILITIES);
+        }
+        return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+      }) as typeof fetch;
+
+      const { unmount } = render(
+        <CloudPanel
+          config={CONFIG}
+          file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+          sourceFormat="markdown"
+          preferredTarget="docx"
+          profile="editable"
+          onUseDevice={vi.fn()}
+          cleanup={{ current: null }}
+          onServerCopy={vi.fn()}
+          apiOptions={{
+            fetch: fetchImpl,
+            operations: {
+              getLimits: async () => ({
+                data: limits(),
+                response: new Response(null, { status: 200 }),
+              }),
+            },
+          }}
+        />,
+      );
+
+      const start = await screen.findByRole("button", { name: "Upload and convert" });
+      await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+      expect(requests).not.toContain("GET /api/auth/token");
+      unmount();
+    }
+  });
+
+  it("fails closed with sign-in service unavailable when token refresh 5xxs for a signed-in user", async () => {
+    const requests: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      requests.push(`${request.method} ${url.pathname}`);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json(null);
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        return Response.json({
+          redirect: false,
+          token: "session",
+          user: { id: "u1", email: "ada@example.com", name: "Ada" },
+        });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return new Response("unavailable", { status: 503 });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{
+          fetch: fetchImpl,
+          operations: {
+            getLimits: async () => ({
+              data: limits(),
+              response: new Response(null, { status: 200 }),
+            }),
+          },
+        }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    await screen.findByText("Signed in as ada@example.com");
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.click(start);
+    expect(await screen.findByText("Sign-in service unavailable")).toBeDefined();
+    expect(requests.filter((entry) => entry === "POST /v1/uploads")).toHaveLength(0);
+  });
+
+  it("keeps the user signed in and offers a retry when sign-out fails", async () => {
+    let signOutAttempts = 0;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json(
+          { user: { id: "u1", email: "ada@example.com", name: "Ada" } },
+          { headers: { "set-auth-jwt": jwtFor("u1") } },
+        );
+      }
+      if (url.pathname === "/api/auth/sign-out") {
+        signOutAttempts += 1;
+        if (signOutAttempts === 1) {
+          return new Response("gateway timeout", { status: 504 });
+        }
+        return Response.json({ success: true });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{
+          fetch: fetchImpl,
+          operations: {
+            getLimits: async () => ({
+              data: { ...limits(), plan: "pro", authenticated: true },
+              response: new Response(null, { status: 200 }),
+            }),
+          },
+        }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    const alert = await screen.findByTestId("cloud-sign-out-error");
+    expect(alert.textContent).toMatch(/could not sign out|refused/i);
+    expect(screen.getByText("Signed in as ada@example.com")).toBeDefined();
+
+    fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
+    await screen.findByRole("button", { name: "Sign in" });
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(screen.queryByTestId("cloud-sign-out-error")).toBeNull();
+    expect(signOutAttempts).toBe(2);
+  });
+
+  it("resets a pre-job refusal after signing in so the user can retry", async () => {
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json(null);
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        return Response.json(
+          {
+            redirect: false,
+            token: "session",
+            user: { id: "u1", email: "ada@example.com", name: "Ada" },
+          },
+          { headers: { "set-auth-jwt": jwtFor("u1") } },
+        );
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(start);
+
+    const errorBox = await screen.findByTestId("cloud-error");
+    expect(errorBox.textContent).toContain("Cloud allowance used up");
+
+    fireEvent.click(within(errorBox).getByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    await screen.findByText("Signed in as ada@example.com");
+    expect(screen.queryByTestId("cloud-error")).toBeNull();
+    const retryUpload = await screen.findByRole("button", { name: "Upload and convert" });
+    expect(retryUpload.getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("does not restore credentials when an in-flight /token response arrives after sign-out", async () => {
+    let resolveToken: ((response: Response) => void) | undefined;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json({ user: { id: "u1", email: "ada@example.com", name: "Ada" } });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return new Promise<Response>((resolve) => {
+          resolveToken = resolve;
+        });
+      }
+      if (url.pathname === "/api/auth/sign-out") {
+        return Response.json({ success: true });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    await waitFor(() => expect(resolveToken).toBeTypeOf("function"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByRole("button", { name: "Sign in" });
+
+    resolveToken?.(Response.json({ token: "jwt-stale" }));
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(start);
+
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual([null]);
+  });
+
+  it("blocks upload and syncs user state when /token or a refreshed session returns 401 for a signed-in user", async () => {
+    const tokenRequests: string[] = [];
+    const tokenFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      tokenRequests.push(`${request.method} ${url.pathname}`);
+      if (url.pathname === "/api/auth/get-session") {
+        return Response.json(null);
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        return Response.json({
+          redirect: false,
+          token: "session",
+          user: { id: "u1", email: "ada@example.com", name: "Ada" },
+        });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return new Response("expired", { status: 401 });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    const { unmount } = render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: tokenFetch, operations: {} }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    await screen.findByText("Signed in as ada@example.com");
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.click(start);
+    const errorBox = await screen.findByTestId("cloud-error");
+    expect(errorBox.textContent).toContain("Your session has ended");
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(tokenRequests.filter((entry) => entry === "POST /v1/uploads")).toHaveLength(0);
+
+    fireEvent.click(within(errorBox).getByRole("button", { name: "Continue without an account" }));
+    expect(screen.queryByTestId("cloud-error")).toBeNull();
+    unmount();
+
+    let sessionCalls = 0;
+    const sessionRequests: string[] = [];
+    const sessionFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      sessionRequests.push(`${request.method} ${url.pathname}`);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "u1", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": jwtFor("u1") } },
+          );
+        }
+        return new Response("expired", { status: 401 });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: sessionFetch, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    const uploadButton = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(uploadButton.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.focus(window);
+    const expiredAlert = await screen.findByTestId("cloud-session-expired");
+    expect(expiredAlert.textContent).toContain("Your session has ended");
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(uploadButton.getAttribute("aria-disabled")).toBe("true");
+
+    fireEvent.click(uploadButton);
+    expect(sessionRequests.filter((entry) => entry === "POST /v1/uploads")).toHaveLength(0);
+
+    fireEvent.click(
+      within(expiredAlert).getByRole("button", { name: "Continue without an account" }),
+    );
+    expect(screen.queryByTestId("cloud-session-expired")).toBeNull();
+    expect(uploadButton.getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("clears the previous account's JWT when focus refresh switches to another user without set-auth-jwt", async () => {
+    let sessionCalls = 0;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "a", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": jwtFor("a") } },
+          );
+        }
+        return Response.json({ user: { id: "b", email: "bob@example.com", name: "Bob" } });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return Response.json({ token: jwtFor("b") });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.focus(window);
+    await screen.findByText("Signed in as bob@example.com");
+
+    fireEvent.click(start);
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual([`Bearer ${jwtFor("b")}`]);
+  });
+
+  it("stays anonymous when the user cancels a pending sign-in and chooses Continue without an account", async () => {
+    let sessionCalls = 0;
+    let resolveSignIn: ((response: Response) => void) | undefined;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "u1", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": jwtFor("u1") } },
+          );
+        }
+        return new Response("expired", { status: 401 });
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        return new Promise<Response>((resolve) => {
+          resolveSignIn = resolve;
+        });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    fireEvent.focus(window);
+    const expiredAlert = await screen.findByTestId("cloud-session-expired");
+
+    fireEvent.click(within(expiredAlert).getByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(resolveSignIn).toBeTypeOf("function"));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByTestId("account-dialog")).toBeNull();
+
+    fireEvent.click(
+      within(expiredAlert).getByRole("button", { name: "Continue without an account" }),
+    );
+    expect(screen.queryByTestId("cloud-session-expired")).toBeNull();
+
+    resolveSignIn?.(
+      Response.json(
+        {
+          redirect: false,
+          token: "session",
+          user: { id: "u1", email: "ada@example.com", name: "Ada" },
+        },
+        { headers: { "set-auth-jwt": jwtFor("u1", "late") } },
+      ),
+    );
+    await Promise.resolve();
+
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeDefined();
+
+    const start = screen.getByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+    fireEvent.click(start);
+
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual([null]);
+  });
+
+  it("drops a foreign-cookie /token JWT, updates the panel to the real user, and does not send the upload", async () => {
+    let cookieUser: "a" | "b" | null = null;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        if (cookieUser === "b") {
+          return Response.json(
+            { user: { id: "b", email: "bob@example.com", name: "Bob" } },
+            { headers: { "set-auth-jwt": jwtFor("b") } },
+          );
+        }
+        return Response.json(null);
+      }
+      if (url.pathname === "/api/auth/sign-in/email") {
+        cookieUser = "a";
+        return Response.json({
+          redirect: false,
+          token: "session",
+          user: { id: "a", email: "ada@example.com", name: "Ada" },
+        });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return Response.json({ token: jwtFor(cookieUser ?? "a") });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    const dialog = screen.getByTestId("account-dialog");
+    fireEvent.change(within(dialog).getByLabelText("Email"), {
+      target: { value: "ada@example.com" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Password"), {
+      target: { value: "secret123" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Sign in" }));
+
+    await screen.findByText("Signed in as ada@example.com");
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+
+    // Another tab switches the shared auth cookie from A to B before /token runs.
+    cookieUser = "b";
+    fireEvent.click(start);
+
+    await screen.findByText("Signed in as bob@example.com");
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    expect(uploadAuthHeaders).toEqual([]);
+  });
+
+  it("keeps showing the switched user when a stale sign-out resolves after a focus session refresh", async () => {
+    let sessionCalls = 0;
+    let resolveSignOut: ((response: Response) => void) | undefined;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "a", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": jwtFor("a") } },
+          );
+        }
+        return Response.json(
+          { user: { id: "b", email: "bob@example.com", name: "Bob" } },
+          { headers: { "set-auth-jwt": jwtFor("b") } },
+        );
+      }
+      if (url.pathname === "/api/auth/sign-out") {
+        return new Promise<Response>((resolve) => {
+          resolveSignOut = resolve;
+        });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(resolveSignOut).toBeTypeOf("function"));
+
+    fireEvent.focus(window);
+    await screen.findByText("Signed in as bob@example.com");
+
+    resolveSignOut?.(Response.json({ success: true }));
+    await waitFor(() => {
+      const signOutBtn = screen.queryByRole("button", { name: "Sign out" });
+      expect(signOutBtn === null || !signOutBtn.hasAttribute("disabled")).toBe(true);
+    });
+
+    expect(screen.getByText("Signed in as bob@example.com")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+
+    fireEvent.click(start);
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual([`Bearer ${jwtFor("b")}`]);
+  });
+
+  it("retries capabilities and unblocks upload when the cookie switches from A to B between initial session resolve and the capabilities token fetch", async () => {
+    let sessionCalls = 0;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json({ user: { id: "a", email: "ada@example.com", name: "Ada" } });
+        }
+        return Response.json({ user: { id: "b", email: "bob@example.com", name: "Bob" } });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return Response.json({ token: jwtFor("b") });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as bob@example.com");
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+    expect(screen.queryByTestId("cloud-blocked")).toBeNull();
+
+    fireEvent.click(start);
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual([`Bearer ${jwtFor("b")}`]);
+  });
+
+  it("ignores a late limits response for user A after switching to user B", async () => {
+    let sessionCalls = 0;
+    let limitsCalls = 0;
+    let resolveLimitsA: ((value: PlanLimits) => void) | undefined;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "a", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": jwtFor("a") } },
+          );
+        }
+        return Response.json(
+          { user: { id: "b", email: "bob@example.com", name: "Bob" } },
+          { headers: { "set-auth-jwt": jwtFor("b") } },
+        );
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{
+          fetch: fetchImpl,
+          operations: {
+            getLimits: async () => {
+              limitsCalls += 1;
+              if (limitsCalls === 1) {
+                const data = await new Promise<PlanLimits>((resolve) => {
+                  resolveLimitsA = resolve;
+                });
+                return { data, response: new Response(null, { status: 200 }) };
+              }
+              return {
+                data: {
+                  ...limits({ limit: 100, remaining: 95 }),
+                  plan: "team",
+                  authenticated: true,
+                },
+                response: new Response(null, { status: 200 }),
+              };
+            },
+          },
+        }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    await waitFor(() => expect(resolveLimitsA).toBeTypeOf("function"));
+
+    fireEvent.focus(window);
+    await screen.findByText("Signed in as bob@example.com");
+    await waitFor(() =>
+      expect(screen.getByTestId("cloud-limits").textContent).toBe(
+        "team plan: files up to 10 MB. 95 of 100 left today.",
+      ),
+    );
+
+    await act(async () => {
+      resolveLimitsA?.({
+        ...limits({ limit: 5, remaining: 1 }),
+        plan: "starter",
+        authenticated: true,
+      });
+    });
+
+    expect(screen.getByTestId("cloud-limits").textContent).toBe(
+      "team plan: files up to 10 MB. 95 of 100 left today.",
+    );
   });
 });

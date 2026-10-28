@@ -64,10 +64,44 @@ export function readCloudConfig(env: CloudEnvironment): CloudConfig | null {
   };
 }
 
+function envConfig(): CloudEnvironment {
+  return {
+    api: process.env.NEXT_PUBLIC_ARIAD_API_URL,
+    auth: process.env.NEXT_PUBLIC_ARIAD_AUTH_URL,
+    turnstileSiteKey: process.env.NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY,
+    operator: process.env.NEXT_PUBLIC_ARIAD_OPERATOR,
+  };
+}
+
 /** This build's cloud configuration, or `null` when cloud mode is hidden. */
-export const CLOUD: CloudConfig | null = readCloudConfig({
-  api: process.env.NEXT_PUBLIC_ARIAD_API_URL,
-  auth: process.env.NEXT_PUBLIC_ARIAD_AUTH_URL,
-  turnstileSiteKey: process.env.NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY,
-  operator: process.env.NEXT_PUBLIC_ARIAD_OPERATOR,
-});
+export const CLOUD: CloudConfig | null = readCloudConfig(envConfig());
+
+export interface AccountCloudConfig {
+  /** Base URL of `ariad-server` (origin plus any path prefix, without a trailing slash). */
+  apiUrl: string;
+  /** Origin of the auth service, which serves `/api/auth/*`. */
+  authUrl: string;
+}
+
+/** Builds the account-page config from raw values; `null` unless both URLs are valid. */
+export function resolveCloudConfig(values: {
+  apiUrl?: string;
+  authUrl?: string;
+}): AccountCloudConfig | null {
+  const config = readCloudConfig({ api: values.apiUrl, auth: values.authUrl });
+  return config?.authUrl ? { apiUrl: config.apiUrl, authUrl: config.authUrl } : null;
+}
+
+/** The account-page config of this build. Property accesses stay literal for Next to inline them. */
+export function cloudConfig(): AccountCloudConfig | null {
+  const env = envConfig();
+  return resolveCloudConfig({
+    apiUrl: env.api,
+    authUrl: env.auth,
+  });
+}
+
+/** The host name shown to people, for example `api.example.com`. */
+export function displayHost(url: string): string {
+  return new URL(url).host;
+}

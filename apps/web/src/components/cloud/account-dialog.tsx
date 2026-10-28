@@ -20,6 +20,7 @@ const FIELD =
 /** A minimal sign-in and sign-up dialog for cloud mode; account pages live elsewhere. */
 export function AccountDialog({ auth, open, onClose, onSignedIn }: AccountDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const attemptRef = useRef(0);
   const [mode, setMode] = useState<Mode>("sign-in");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -31,6 +32,7 @@ export function AccountDialog({ auth, open, onClose, onSignedIn }: AccountDialog
   useEffect(() => {
     const opener = document.activeElement;
     return () => {
+      attemptRef.current += 1;
       if (opener instanceof HTMLElement && opener.isConnected) {
         opener.focus();
       }
@@ -56,33 +58,59 @@ export function AccountDialog({ auth, open, onClose, onSignedIn }: AccountDialog
     }
   }, [open]);
 
+  const cancel = () => {
+    attemptRef.current += 1;
+    auth.cancelPendingAuth();
+    onClose();
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const value = (key: string) => String(form.get(key) ?? "").trim();
+    const attempt = ++attemptRef.current;
     setBusy(true);
     setProblem(null);
     try {
       if (mode === "two-factor") {
-        onSignedIn(await auth.verifyCode(value("code"), backup ? "backup" : "totp"));
+        const user = await auth.verifyCode(value("code"), backup ? "backup" : "totp");
+        if (attemptRef.current !== attempt || auth.user?.id !== user.id) {
+          return;
+        }
+        onSignedIn(user);
       } else if (mode === "sign-up") {
-        onSignedIn(await auth.signUp(value("name"), value("email"), String(form.get("password"))));
+        const user = await auth.signUp(value("name"), value("email"), String(form.get("password")));
+        if (attemptRef.current !== attempt || auth.user?.id !== user.id) {
+          return;
+        }
+        onSignedIn(user);
       } else {
         const result = await auth.signIn(value("email"), String(form.get("password")));
+        if (attemptRef.current !== attempt) {
+          return;
+        }
         if (result.status === "two-factor") {
           setMode("two-factor");
+          return;
+        }
+        if (auth.user?.id !== result.user.id) {
           return;
         }
         onSignedIn(result.user);
       }
     } catch (error) {
+      if (attemptRef.current !== attempt) {
+        return;
+      }
       setProblem(
         error instanceof AuthError
           ? error.message
           : "The account service cannot be reached. Check your connection and try again.",
       );
     } finally {
-      setBusy(false);
+      if (attemptRef.current === attempt) {
+        setBusy(false);
+      }
     }
   };
 
@@ -98,7 +126,7 @@ export function AccountDialog({ auth, open, onClose, onSignedIn }: AccountDialog
       ref={dialog}
       aria-labelledby={titleId}
       className="m-auto w-[min(28rem,calc(100%-2rem))] rounded-xl border border-border bg-card p-6 text-card-foreground shadow-lg backdrop:bg-black/40"
-      onClose={onClose}
+      onClose={cancel}
       data-testid="account-dialog"
     >
       <form className="flex flex-col gap-4" onSubmit={submit}>
@@ -175,7 +203,7 @@ export function AccountDialog({ auth, open, onClose, onSignedIn }: AccountDialog
             {busy && <LoaderCircleIcon aria-hidden="true" className="animate-spin" />}
             {mode === "sign-up" ? "Create account" : mode === "two-factor" ? "Verify" : "Sign in"}
           </Button>
-          <Button type="button" size="lg" variant="outline" onClick={onClose}>
+          <Button type="button" size="lg" variant="outline" onClick={cancel}>
             Cancel
           </Button>
         </div>

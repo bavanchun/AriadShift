@@ -8,9 +8,9 @@ import { buttonVariants } from "@ariadshift/ui/components/button";
 import { CloudOffIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { type AccountCloudConfig, cloudConfig, displayHost } from "@/lib/cloud/config";
 import { AccountProvider, useAccount } from "./account-context";
 import type { AuthApi } from "./auth-api";
-import { type CloudConfig, cloudConfig, displayHost } from "./cloud-config";
 import { signInHref } from "./session-gate";
 
 const SECTIONS = [
@@ -92,7 +92,7 @@ function AccountNavigation() {
 export interface AccountShellProps {
   children: ReactNode;
   /** Defaults to the build's configuration. */
-  config?: CloudConfig | null;
+  config?: AccountCloudConfig | null;
   auth?: AuthApi;
 }
 

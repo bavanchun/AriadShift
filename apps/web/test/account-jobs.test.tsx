@@ -6,6 +6,7 @@ import type { AccountUser, AuthApi } from "@/components/account/auth-api";
 import { JOB_HISTORY_KEY, type JobHistoryEntry } from "@/components/account/job-history";
 import type { JobListPage, JobsApi, ListedJob } from "@/components/account/jobs-api";
 import { JobsPanel } from "@/components/account/jobs-panel";
+import { resolveCloudConfig } from "@/lib/cloud/config";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/jobs" }));
 
@@ -424,5 +425,35 @@ describe("jobs page with the account's job list", () => {
     expect(screen.getAllByRole("listitem", { name: "broken.pdf" })[0]?.textContent).toContain(
       "Queued",
     );
+  });
+
+  it("preserves the API path prefix when the jobs page calls /v1/jobs", async () => {
+    const requestedUrls: string[] = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      requestedUrls.push(url);
+      return new Response(
+        JSON.stringify({
+          jobs: [listed("prefixed")],
+          next_cursor: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    try {
+      const config = resolveCloudConfig({
+        apiUrl: "https://example.com/api",
+        authUrl: "https://auth.example.com",
+      });
+      render(
+        <AccountShell config={config} auth={fakeAuth(USER)}>
+          <JobsPanel />
+        </AccountShell>,
+      );
+      expect(await row("prefixed.pdf")).toBeTruthy();
+      expect(requestedUrls).toContain("https://example.com/api/v1/jobs?limit=50");
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

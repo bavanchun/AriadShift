@@ -6,8 +6,8 @@
 
 import type { ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { AccountCloudConfig } from "@/lib/cloud/config";
 import { type AccountUser, type AuthApi, createBetterAuthApi } from "./auth-api";
-import type { CloudConfig } from "./cloud-config";
 
 export type SessionState =
   | { status: "loading" }
@@ -16,7 +16,7 @@ export type SessionState =
   | { status: "error"; message: string };
 
 export interface AccountContextValue {
-  config: CloudConfig;
+  config: AccountCloudConfig;
   auth: AuthApi;
   session: SessionState;
   refreshSession: () => Promise<void>;
@@ -35,7 +35,7 @@ export function useAccount(): AccountContextValue {
 }
 
 export interface AccountProviderProps {
-  config: CloudConfig;
+  config: AccountCloudConfig;
   /** Defaults to Better Auth against `config.authUrl`. */
   auth?: AuthApi;
   children: ReactNode;

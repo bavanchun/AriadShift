@@ -148,7 +148,7 @@ export function PasskeysSection() {
               error={dialogError}
             />
             <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setAdding(false)}>
+              <Button type="button" variant="ghost" onClick={() => setAdding(false)}>
                 Cancel
               </Button>
               <Button type="submit" disabled={busy}>

@@ -7,6 +7,7 @@ import { Badge } from "@ariadshift/ui/components/badge";
 import { Button } from "@ariadshift/ui/components/button";
 import { PlusIcon } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useId, useState } from "react";
+import { displayHost } from "@/lib/cloud/config";
 import { useAccount } from "./account-context";
 import { AccountDialog } from "./account-dialog";
 import {
@@ -19,7 +20,6 @@ import {
   useOutcome,
 } from "./account-ui";
 import type { ApiKeyInfo, CreatedApiKey } from "./auth-api";
-import { displayHost } from "./cloud-config";
 import { SessionGate } from "./session-gate";
 
 /** Lifetimes offered when creating a key, in days; null never expires. */
@@ -259,7 +259,7 @@ function ApiKeys() {
                 </select>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={closeCreate}>
+                <Button type="button" variant="ghost" onClick={closeCreate}>
                   Cancel
                 </Button>
                 <Button type="submit" disabled={busy}>

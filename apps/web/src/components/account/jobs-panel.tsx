@@ -9,8 +9,8 @@ import type { Job } from "@ariadshift/sdk";
 import { Alert, AlertDescription, AlertTitle } from "@ariadshift/ui/components/alert";
 import { Button } from "@ariadshift/ui/components/button";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { displayHost } from "@/lib/cloud/config";
 import { useAccount } from "./account-context";
-import { displayHost } from "./cloud-config";
 import {
   forgetJob,
   JOB_HISTORY_EVENT,

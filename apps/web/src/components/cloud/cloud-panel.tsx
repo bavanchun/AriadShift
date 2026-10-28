@@ -21,7 +21,7 @@ import {
   formatFromName,
   type PlanLimits,
 } from "@/lib/cloud/api";
-import { type AccountUser, CloudAuth } from "@/lib/cloud/auth";
+import { type AccountUser, AuthError, CloudAuth, type CloudAuthState } from "@/lib/cloud/auth";
 import { CloudJob, type DiscardOutcome, type ServerCopy } from "@/lib/cloud/cloud-job";
 import type { CloudConfig } from "@/lib/cloud/config";
 import { type CloudAction, describeCloudError } from "@/lib/cloud/errors";
@@ -57,6 +57,8 @@ export interface CloudPanelProps {
   cleanup: RefObject<(() => Promise<DiscardOutcome>) | null>;
   /** Told when leaving the panel could not delete the server copy, so it stays retryable. */
   onServerCopy: (copy: ServerCopy) => void;
+  /** Told once a cloud upload or job has been created for this file. */
+  onTransferStart?: () => void;
   /** Overrides for tests: the fetch and generated operations the API client uses. */
   apiOptions?: Pick<CloudApiOptions, "fetch" | "operations">;
   /** Overrides the Uppy transfer, for tests. */
@@ -69,6 +71,22 @@ const SELECT =
 const CLOUD_PROFILES = PROFILES.filter(
   (item): item is (typeof PROFILES)[number] & { id: CloudProfile } => item.id !== "private",
 );
+
+const UNRESOLVED_AUTH_STATE: CloudAuthState = {
+  user: null,
+  anonymous: false,
+  sessionExpired: false,
+  epoch: 0,
+  resolved: false,
+};
+
+const NO_AUTH_STATE: CloudAuthState = {
+  user: null,
+  anonymous: true,
+  sessionExpired: false,
+  epoch: 0,
+  resolved: true,
+};
 
 function useOnline(): boolean {
   return useSyncExternalStore(
@@ -131,6 +149,7 @@ export default function CloudPanel({
   onUseDevice,
   cleanup,
   onServerCopy,
+  onTransferStart,
   apiOptions,
   transfer,
 }: CloudPanelProps) {
@@ -151,18 +170,31 @@ export default function CloudPanel({
     [auth, config, testFetch, testOperations],
   );
   const online = useOnline();
+  const authState = useSyncExternalStore(
+    useCallback((notify: () => void) => (auth ? auth.subscribe(notify) : () => undefined), [auth]),
+    () => (auth ? auth.state : NO_AUTH_STATE),
+    () => (auth ? UNRESOLVED_AUTH_STATE : NO_AUTH_STATE),
+  );
+  const user: AccountUser | null | undefined = authState.resolved ? authState.user : undefined;
+  const sessionExpired = authState.sessionExpired;
 
-  const [user, setUser] = useState<AccountUser | null | undefined>(auth ? undefined : null);
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [capabilitiesError, setCapabilitiesError] = useState(false);
+  const [capabilitiesError, setCapabilitiesError] = useState<"api" | "auth" | null>(null);
   const [limits, setLimits] = useState<PlanLimits | null>(null);
-  const [target, setTarget] = useState<string | null>(null);
+  const [selectedTarget, setTarget] = useState<string | null>(null);
   const [profile, setProfile] = useState<CloudProfile>(
     localProfile === "private" ? "editable" : localProfile,
   );
   const [token, setToken] = useState<string | null>(null);
   const [turnstileKey, setTurnstileKey] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutFailure, setSignOutFailure] = useState<{
+    epoch: number;
+    message: string;
+  } | null>(null);
+  const signOutError =
+    signOutFailure && signOutFailure.epoch === authState.epoch ? signOutFailure.message : null;
   const [now, setNow] = useState(() => Date.now());
   const [retryUntil, setRetryUntil] = useState(0);
   const [polite, setPolite] = useState("");
@@ -183,6 +215,12 @@ export default function CloudPanel({
     () => (capabilities && source ? cloudTargets(capabilities, source) : []),
     [capabilities, source],
   );
+  const target =
+    selectedTarget && targets.includes(selectedTarget)
+      ? selectedTarget
+      : preferredTarget && targets.includes(preferredTarget)
+        ? preferredTarget
+        : (targets[0] ?? null);
 
   // The latest values the job needs when it builds error copy.
   const context = useRef({ limits, user, source, target });
@@ -207,16 +245,24 @@ export default function CloudPanel({
         }),
         onUnauthorized: () => {
           auth?.forgetToken();
-          void auth
-            ?.session()
-            .then(setUser)
-            .catch(() => undefined);
+          void auth?.session().catch(() => undefined);
         },
       }),
     [api, auth, config.apiHost, file, transfer],
   );
+  const onTransferStartRef = useRef(onTransferStart);
+  onTransferStartRef.current = onTransferStart;
   const state = useSyncExternalStore(
-    useCallback((notify: () => void) => job.subscribe(notify), [job]),
+    useCallback(
+      (notify: () => void) =>
+        job.subscribe((next) => {
+          if (next.upload !== null || next.job !== null || next.phase === "uploading") {
+            onTransferStartRef.current?.();
+          }
+          notify();
+        }),
+      [job],
+    ),
     () => job.state,
     () => INITIAL_JOB_STATE,
   );
@@ -245,51 +291,57 @@ export default function CloudPanel({
     if (!auth) {
       return;
     }
-    let active = true;
-    auth
-      .session()
-      .then((value) => active && setUser(value))
-      .catch(() => active && setUser(null));
+    const onFocus = () => {
+      if (auth.user) {
+        void auth.session().catch(() => undefined);
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    void auth.session().catch(() => undefined);
     return () => {
-      active = false;
+      window.removeEventListener("focus", onFocus);
     };
   }, [auth]);
 
   useEffect(() => {
+    if (user === undefined || capabilities || sessionExpired) {
+      return;
+    }
     const controller = new AbortController();
+    const startEpoch = authState.epoch;
+    setCapabilitiesError(null);
     api
       .capabilities(controller.signal)
       .then((value) => {
-        setCapabilities(value);
-        setCapabilitiesError(false);
+        if (!controller.signal.aborted) {
+          setCapabilities(value);
+          setCapabilitiesError(null);
+        }
       })
-      .catch(() => !controller.signal.aborted && setCapabilitiesError(true));
+      .catch((error) => {
+        if (controller.signal.aborted || (auth && auth.epoch !== startEpoch)) {
+          return;
+        }
+        setCapabilitiesError(error instanceof AuthError ? "auth" : "api");
+      });
     return () => controller.abort();
-  }, [api]);
+  }, [api, auth, authState.epoch, capabilities, sessionExpired, user]);
 
   useEffect(() => {
-    if (user === undefined || !api.supportsLimits) {
+    if (user === undefined || sessionExpired || !api.supportsLimits) {
       return;
     }
     const controller = new AbortController();
     api
       .limits(controller.signal)
-      .then(setLimits)
+      .then((value) => {
+        if (!controller.signal.aborted) {
+          setLimits(value);
+        }
+      })
       .catch(() => !controller.signal.aborted && setLimits(null));
     return () => controller.abort();
-  }, [api, user]);
-
-  useEffect(() => {
-    setTarget((current) => {
-      if (current && targets.includes(current)) {
-        return current;
-      }
-      if (preferredTarget && targets.includes(preferredTarget)) {
-        return preferredTarget;
-      }
-      return targets[0] ?? null;
-    });
-  }, [preferredTarget, targets]);
+  }, [api, authState.epoch, sessionExpired, user]);
 
   // One tick per second while a step's elapsed time shows, otherwise every
   // 30 seconds for the expiry line.
@@ -331,7 +383,7 @@ export default function CloudPanel({
     }
   }, [state, file.name]);
 
-  const anonymous = user === null;
+  const anonymous = user === null && !sessionExpired;
   const needsTurnstile = !!config.turnstileSiteKey && anonymous;
   const refusal = planRefusal(limits, file);
   const refusalView = refusal
@@ -349,25 +401,36 @@ export default function CloudPanel({
 
   const blocked = !online
     ? "You are offline. Cloud conversion needs a connection; converting on this device still works."
-    : user === undefined || (!capabilities && !capabilitiesError)
-      ? "Connecting to the server…"
-      : capabilitiesError
-        ? `${config.apiHost} cannot be reached right now. Converting on this device still works.`
-        : !source
-          ? `${config.apiHost} does not recognise this file type.`
-          : targets.length === 0
-            ? `${config.apiHost} cannot convert ${formatLabel(source)} files.`
-            : !target
-              ? "Choose a target format first."
-              : refusalView
-                ? refusalView.message
-                : needsTurnstile && !token
-                  ? "Complete the check that you are not a bot first."
-                  : null;
+    : sessionExpired
+      ? "Your session has ended. Sign in again, or continue without an account."
+      : user === undefined || (!capabilities && !capabilitiesError)
+        ? "Connecting to the server…"
+        : capabilitiesError === "auth"
+          ? "The sign-in service is unavailable right now. Converting on this device still works."
+          : capabilitiesError
+            ? `${config.apiHost} cannot be reached right now. Converting on this device still works.`
+            : !source
+              ? `${config.apiHost} does not recognise this file type.`
+              : targets.length === 0
+                ? `${config.apiHost} cannot convert ${formatLabel(source)} files.`
+                : !target
+                  ? "Choose a target format first."
+                  : refusalView
+                    ? refusalView.message
+                    : needsTurnstile && !token
+                      ? "Complete the check that you are not a bot first."
+                      : null;
 
   const consumeToken = () => {
     setToken(null);
     setTurnstileKey((key) => key + 1);
+  };
+
+  const continueAnonymously = () => {
+    auth?.continueAnonymously();
+    if (state.phase === "error" && !state.job) {
+      job.reset();
+    }
   };
 
   const uploadAndConvert = () => {
@@ -379,6 +442,9 @@ export default function CloudPanel({
   };
 
   const retry = () => {
+    if (sessionExpired) {
+      return;
+    }
     const needsToken = job.retryNeedsUpload && needsTurnstile;
     if (needsToken && !token) {
       return;
@@ -390,13 +456,25 @@ export default function CloudPanel({
   };
 
   const signOut = async () => {
-    if (!auth) {
+    if (!auth || signingOut) {
       return;
     }
+    const startEpoch = auth.epoch;
+    setSigningOut(true);
+    setSignOutFailure(null);
     try {
-      await auth.signOut();
+      const outcome = await auth.signOut();
+      if (outcome === "stale") {
+        return;
+      }
+    } catch {
+      if (auth.epoch === startEpoch) {
+        const message = "Could not sign out right now. Try again.";
+        setSignOutFailure({ epoch: startEpoch, message });
+        setAssertive(message);
+      }
     } finally {
-      setUser(null);
+      setSigningOut(false);
     }
   };
 
@@ -404,6 +482,9 @@ export default function CloudPanel({
     switch (action) {
       case "sign-in":
         setDialogOpen(true);
+        return;
+      case "use-anonymous":
+        continueAnonymously();
         return;
       case "use-device":
         onUseDevice();
@@ -421,6 +502,19 @@ export default function CloudPanel({
   const retryWait = Math.max(0, Math.ceil((retryUntil - now) / 1000));
   const retryNeedsToken = job.retryNeedsUpload && needsTurnstile;
   const retention = limits ? formatRetention(limits.retention_s) : null;
+  const rowState =
+    sessionExpired &&
+    state.error &&
+    !state.error.actions.includes("use-anonymous") &&
+    (state.error.code === "unauthorized" || state.error.code === "session_expired")
+      ? {
+          ...state,
+          error: {
+            ...state.error,
+            actions: [...state.error.actions, "use-anonymous", "use-device"] as CloudAction[],
+          },
+        }
+      : state;
 
   return (
     <section
@@ -457,7 +551,12 @@ export default function CloudPanel({
               <>
                 <UserIcon aria-hidden="true" className="size-4" />
                 <span>Signed in as {user.email || user.name}</span>
-                <Button variant="outline" size="lg" onClick={() => void signOut()}>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  disabled={signingOut}
+                  onClick={() => void signOut()}
+                >
                   Sign out
                 </Button>
               </>
@@ -469,6 +568,19 @@ export default function CloudPanel({
           </div>
         )}
       </div>
+
+      {signOutError && user && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/40 p-3 text-sm"
+          data-testid="cloud-sign-out-error"
+        >
+          <span>{signOutError}</span>
+          <Button variant="outline" size="lg" disabled={signingOut} onClick={() => void signOut()}>
+            Try again
+          </Button>
+        </div>
+      )}
 
       {!online && (
         <p className="flex items-center gap-2 text-sm" data-testid="cloud-offline">
@@ -577,7 +689,31 @@ export default function CloudPanel({
             </div>
           )}
 
-          {refusalView && (
+          {sessionExpired && (
+            <div
+              role="alert"
+              className="flex flex-col gap-2 rounded-lg border border-destructive/40 p-3"
+              data-testid="cloud-session-expired"
+            >
+              <p className="text-sm font-semibold text-destructive">Your session has ended</p>
+              <p className="text-sm">
+                Your session has ended. Sign in again, or continue without an account.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="lg" variant="outline" onClick={() => setDialogOpen(true)}>
+                  Sign in
+                </Button>
+                <Button size="lg" variant="outline" onClick={continueAnonymously}>
+                  Continue without an account
+                </Button>
+                <Button size="lg" variant="outline" onClick={onUseDevice}>
+                  Convert on this device
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {refusalView && !sessionExpired && (
             <div
               className="flex flex-col gap-2 rounded-lg border border-destructive/40 p-3"
               data-testid="cloud-refusal"
@@ -631,7 +767,7 @@ export default function CloudPanel({
         </div>
       ) : (
         <CloudJobRow
-          state={state}
+          state={rowState}
           fileName={file.name}
           host={config.apiHost}
           now={now}
@@ -642,9 +778,11 @@ export default function CloudPanel({
           retryBlocked={
             !online
               ? "You are offline. Retry when the connection is back."
-              : retryNeedsToken && !token
-                ? "Complete the check that you are not a bot first."
-                : null
+              : sessionExpired
+                ? "Your session has ended. Sign in again, or continue without an account."
+                : retryNeedsToken && !token
+                  ? "Complete the check that you are not a bot first."
+                  : null
           }
           retryExtra={
             retryNeedsToken && config.turnstileSiteKey && state.error?.actions.includes("retry") ? (
@@ -676,8 +814,14 @@ export default function CloudPanel({
           open={dialogOpen}
           onClose={() => setDialogOpen(false)}
           onSignedIn={(signedIn) => {
-            setUser(signedIn);
+            if (auth.user?.id !== signedIn.id) {
+              return;
+            }
+            setSignOutFailure(null);
             setDialogOpen(false);
+            if (state.phase === "error" && !state.job) {
+              job.reset();
+            }
             queueMicrotask(() => accountRef.current?.focus());
           }}
         />

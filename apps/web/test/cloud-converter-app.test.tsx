@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { type ComponentType, lazy } from "react";
+import type { CloudPanelProps } from "@/components/cloud/cloud-panel";
 import { ConverterApp } from "@/components/converter/converter-app";
 import { ConverterClient } from "@/converter/client";
 import type { RequestEnvelope, WorkerResponse } from "@/converter/protocol";
@@ -13,6 +15,10 @@ vi.mock("@/lib/cloud/config", () => ({
     turnstileSiteKey: null,
     operator: null,
   },
+}));
+
+vi.mock("@/lib/cloud/transfer", () => ({
+  uppyTransfer: vi.fn(async () => undefined),
 }));
 
 const requests: string[] = [];
@@ -61,9 +67,9 @@ const RTF = {
   warnings: [],
 };
 
-function renderApp(inspection: object = RTF) {
+function renderApp(inspection: object = RTF, cloudPanel?: ComponentType<CloudPanelProps>) {
   const client = new ConverterClient(() => new FakeWorker(inspection) as unknown as Worker);
-  render(<ConverterApp client={client} />);
+  render(<ConverterApp client={client} cloudPanel={cloudPanel} />);
   const input = document.querySelector("input[type=file]") as HTMLInputElement;
   fireEvent.change(input, {
     target: { files: [new File(["{\\rtf1 Hello}"], "page.rtf", { type: "application/rtf" })] },
@@ -134,5 +140,105 @@ describe("ConverterApp with cloud mode configured", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: /On this device/ }));
     expect(screen.queryByTestId("cloud-panel")).toBeNull();
+  });
+
+  it("catches a failed lazy CloudPanel chunk load and offers Convert on this device", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const BrokenCloudPanel = lazy<ComponentType<CloudPanelProps>>(() =>
+        Promise.reject(new TypeError("Failed to fetch dynamically imported module")),
+      );
+      renderApp(RTF, BrokenCloudPanel);
+      fireEvent.click(await screen.findByRole("button", { name: "Process in Cloud" }));
+
+      const fallback = await screen.findByTestId("cloud-load-error");
+      expect(fallback.textContent).toContain("Cloud mode could not load");
+      expect(fallback.textContent).not.toContain("has not left this device");
+      fireEvent.click(screen.getByRole("button", { name: "Convert on this device" }));
+      expect(screen.queryByTestId("cloud-load-error")).toBeNull();
+      expect(screen.getByRole("radio", { name: /On this device/ })).toHaveProperty("checked", true);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("does not claim the file stayed on the device when an error happens after upload started", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(request.url);
+        requests.push(`${request.method} ${url.pathname}`);
+        if (url.pathname === "/v1/capabilities") {
+          return Response.json({
+            version: "ariad-capabilities/0",
+            generated_at: "2026-10-25T11:00:00Z",
+            packs: ["core", "office"],
+            formats: [
+              { id: "rtf", extensions: ["rtf"], media_type: "application/rtf" },
+              { id: "markdown", extensions: ["md"], media_type: "text/markdown" },
+            ],
+            edges: [
+              { from: "rtf", to: "markdown", engine: "pandoc", pack: "office", license: "GPL" },
+            ],
+          });
+        }
+        if (url.pathname === "/v1/uploads") {
+          // Malformed expires_at / upload triggers a render crash after upload is recorded.
+          return Response.json({
+            id: "up-1",
+            status: "completed",
+            filename: "page.rtf",
+            size: 13,
+            sha256: "0".repeat(64),
+            expires_at: "2026-10-28T05:00:00Z",
+            upload: { url: "https://storage.example.com/up-1", method: "PUT", headers: {} },
+          });
+        }
+        if (url.pathname === "/up-1") {
+          return new Response(null, { status: 200 });
+        }
+        if (url.pathname === "/v1/uploads/up-1/complete") {
+          return Response.json({
+            id: "up-1",
+            status: "completed",
+            filename: "page.rtf",
+            size: 13,
+            sha256: "0".repeat(64),
+            expires_at: "2026-10-28T05:00:00Z",
+          });
+        }
+        if (url.pathname === "/v1/jobs") {
+          return Response.json({
+            id: "job-1",
+            status: "queued",
+            created_at: "2026-10-28T04:00:00Z",
+            expires_at: "2026-10-28T05:00:00Z",
+            attempts: 1,
+            warnings: null,
+          });
+        }
+        return new Response(null, { status: 404 });
+      }),
+    );
+    try {
+      renderApp(RTF);
+      fireEvent.click(await screen.findByRole("button", { name: "Process in Cloud" }));
+      const start = await screen.findByRole("button", { name: "Upload and convert" });
+      await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+      fireEvent.click(start);
+
+      const fallback = await screen.findByTestId("cloud-load-error");
+      expect(requests).toContain("POST /v1/uploads");
+      expect(fallback.textContent).toContain("Cloud mode stopped unexpectedly");
+      expect(fallback.textContent).toContain("after the upload started");
+      expect(fallback.textContent).not.toContain("has not left this device");
+      fireEvent.click(screen.getByRole("button", { name: "Convert on this device" }));
+      expect(screen.queryByTestId("cloud-load-error")).toBeNull();
+      expect(screen.getByRole("radio", { name: /On this device/ })).toHaveProperty("checked", true);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

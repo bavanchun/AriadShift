@@ -5,12 +5,14 @@ import { AriadApiError } from "@ariadshift/sdk";
 import { formatBytes } from "@/lib/format-bytes";
 import { formatLabel } from "@/lib/formats";
 import type { PlanLimits } from "./api";
+import { AuthError } from "./auth";
 import { formatClock } from "./steps";
 
 /** What the user can do next; the panel renders one control per action. */
 export type CloudAction =
   | "retry"
   | "sign-in"
+  | "use-anonymous"
   | "use-device"
   | "turnstile"
   | "pick-target"
@@ -80,6 +82,42 @@ function withSignIn(context: CloudErrorContext, actions: CloudAction[]): CloudAc
 export function describeCloudError(error: unknown, context: CloudErrorContext): CloudErrorView {
   const onServer = serverCopy(context);
   const base = { serverCopy: onServer, retryAfter: null as number | null };
+
+  if (error instanceof AuthError) {
+    if (error.code === "session_changed") {
+      return {
+        ...base,
+        code: error.code,
+        title: "The signed-in account changed",
+        message: error.message,
+        serverCopy: null,
+        actions: ["retry", "use-device"],
+        technical: technical(error.code, error.message),
+      };
+    }
+    if (error.status === 401 || error.code === "session_expired") {
+      return {
+        ...base,
+        code: error.code,
+        title: "Your session has ended",
+        message: error.message,
+        serverCopy: null,
+        actions: context.signInOffered
+          ? ["sign-in", "use-anonymous", "use-device"]
+          : ["use-device"],
+        technical: technical(error.code, error.message),
+      };
+    }
+    return {
+      ...base,
+      code: error.code,
+      title: "Sign-in service unavailable",
+      message: error.message,
+      serverCopy: null,
+      actions: ["retry", "use-device"],
+      technical: technical(error.code, error.message),
+    };
+  }
 
   if (!(error instanceof AriadApiError)) {
     const offline = typeof navigator !== "undefined" && navigator.onLine === false;
