@@ -9,7 +9,8 @@ Baseline: `522be7e10441caa6365dcb0de722bf03a62fbc9e`.
 Source head: `6262e09d58e12bf4697c768db7c3d07def4281d7`
 (`fix(host): preserve symlink errors across Unix backends`).
 Only `crates/ariad-host/src/confine.rs` changes in the source commit.
-No push, PR mutation, merge or rebase was performed.
+This section records the symlink repair; the authorized dev merge is below.
+No push or PR mutation was performed.
 
 ## Complete native failure inventory
 
@@ -173,5 +174,62 @@ edits remain subject to shared-document ownership coordination.
 Source head: `6262e09d58e12bf4697c768db7c3d07def4281d7`.
 Gate log: `/home/vchun/Codes/ariadshift-logs/t6-rework7-final-gate.log`.
 Last line: `=== 6262e09d58e12bf4697c768db7c3d07def4281d7 ALL GREEN`.
+
+## Dev merge and Cloud E2E scope
+
+Merged `origin/dev` (`47afeb445fee2692724e392f3ae1aad5fc7cd414`, including
+PR #84 and the bounded core readers) into the MCP branch with `--no-ff`.
+Pre-merge head: `1fcdb1b163490f5979bda66bf2fecc84e70cf622`.
+Merge head: `599c4d78e1720502e590474a1d60c15b5333962e`
+(`chore: merge dev into mcp limits and parity`). Both parents are recorded.
+There were no conflicts. Host, CLI and MCP documentation match the first
+parent; core, the scope script and Cloud E2E workflow match dev. No push occurred.
+
+The older scope script falls into pull-request range handling when given
+`--classify-cloud`, then requires unset PR_BASE_SHA. The merged script handles
+that classifier before PR-range metadata, matching the new workflow's head
+checkout. The gate includes table tests and an old/new proof with PR_BASE_SHA
+and PR_HEAD_SHA unset, including both positive and negative classifications.
+
+The source gate uses the existing detached verifier with slot 2, nice 19,
+`CARGO_BUILD_JOBS=1`, `NEXTEST_TEST_THREADS=1`,
+`RUSTFLAGS='-C link-arg=-Wl,--threads=1'`, own CARGO_TARGET_DIR and
+`ARIAD_REQUIRE_FOREIGN_OWNER_TEST=1`. The usual mise pins remain in effect.
+Exact commands on merge head `599c4d78e1720502e590474a1d60c15b5333962e`:
+
+```sh
+sh scripts/test-ci-scope.sh
+python3 /tmp/t6-merge-dev-ci-scope-proof.py
+just pandoc
+export ASHIFT_PANDOC=$PWD/.tools/pandoc/bin/pandoc
+export PATH=$PWD/.tools/pandoc/bin:$PATH
+cargo fmt --all --check
+cargo clippy --locked -p ariad-host -p ariad-cli -p ariad-core --all-targets -- -D warnings
+cargo build --locked -p ariad-host --no-default-features --features test-probe --bin engine-probe
+cargo nextest run --locked -p ariad-core -p ariad-host -p ariad-cli
+export CC_x86_64_pc_windows_gnu=/tmp/t6-zig-cc.sh
+export AR_x86_64_pc_windows_gnu=/tmp/t6-zig-ar.sh
+cargo check --locked -p ariad-core -p ariad-host -p ariad-cli --target x86_64-pc-windows-gnu --all-targets --features test-probe
+just lint-commits
+```
+
+Launcher: `gate-slot.sh 2 zsh /tmp/t6-merge-dev-final-gate.zsh 599c4d78e1720502e590474a1d60c15b5333962e`.
+Scope table: 76 passed / 0 failed; both new classifier checks passed and the
+old missing-metadata error reproduced as expected. Fmt, clippy and probe
+build passed. Full nextest: **856 passed, 11 skipped**, 295.967 seconds,
+including mandatory foreign ownership and the protected workspace FIFO test.
+Windows GNU all-targets checking and commit lint passed. Final source line:
+`=== 599c4d78e1720502e590474a1d60c15b5333962e ALL GREEN`.
+The separate report-only delivery SHA and source-identity/lint log are in
+the operations copy.
+
+Merge gate log: `/home/vchun/Codes/ariadshift-logs/t6-merge-dev-final-gate.log`.
+Cloud E2E execution and native three-OS CI remain checks for the maintainer's
+pushed head; the local scope proof does not claim the Compose stack ran.
+
+
+Verified merge head: `599c4d78e1720502e590474a1d60c15b5333962e`.
+Gate log: `/home/vchun/Codes/ariadshift-logs/t6-merge-dev-final-gate.log`.
+Last line: `=== 599c4d78e1720502e590474a1d60c15b5333962e ALL GREEN`.
 
 Status: DONE
