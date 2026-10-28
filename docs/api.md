@@ -150,6 +150,8 @@ One upload can feed several jobs, for example one per target format. Browsers up
 
 The SDK's `transfer` retries only `429` (busy) and `408` (transfer timeout), with at most three attempts total for reusable `Blob` (including `File`), `ArrayBuffer` or `Uint8Array` bodies. Each attempt sends the same bytes, method, signed headers and abort signal, without API credentials. It cancels discarded response bodies before retrying and waits for `Retry-After` in whole seconds, or one second when absent or invalid. Aborting during the wait stops further attempts. Other HTTP statuses and network failures are returned without retry; download behavior is unchanged.
 
+Upload completion returns `409 conflict` while another call in the same API process verifies that object. Up to four distinct uploads are digested concurrently per process; additional calls wait and recheck access, expiry and status before reading storage. A completed upload returns its existing result. Replicas have independent claims and digest limits; use ingress request limits to bound aggregate verification work.
+
 ## Endpoints
 
 | Method | Path | Credentials | Purpose |

@@ -174,7 +174,7 @@ pub async fn create_upload(
         (status = 200, description = "Upload verified", body = Upload),
         (status = 401, description = "Credentials rejected", body = ErrorBody),
         (status = 404, description = "No such upload", body = ErrorBody),
-        (status = 409, description = "The file is missing, or the upload is no longer live", body = ErrorBody),
+        (status = 409, description = "The file is missing, the upload is no longer live, or another call is verifying it", body = ErrorBody),
         (status = 422, description = "The file does not match the declared size or hash", body = ErrorBody),
         (status = 429, description = "Rate limited", body = ErrorBody,
          headers(("retry-after" = u64, description = "Seconds to wait before retrying; sent with the `rate_limited` code"))),
@@ -193,15 +193,24 @@ pub async fn complete_upload(
         .await?
         .filter(|row| caller.principal.can_access(row.workspace_id))
         .ok_or_else(|| ApiError::not_found("upload"))?;
-    if row.expires_at <= chrono::Utc::now() {
-        return Err(ApiError::conflict("the upload has expired"));
+    if let Some(done) = settled(&row)? {
+        return Ok(Json(done));
     }
-    match row.status() {
-        UploadStatus::Pending => {}
-        UploadStatus::Completed => return Ok(Json(upload_dto(&row, None))),
-        UploadStatus::Deleted | UploadStatus::Expired => {
-            return Err(ApiError::conflict("the upload is no longer available"));
+    // Keep the claim through verification and the final database update.
+    let _claim = match state.storage.claim_digest(&row.storage_key).await {
+        Ok(claim) => claim,
+        Err(StorageError::DigestInProgress) => {
+            return Err(ApiError::conflict("the upload is already being verified"));
         }
+        Err(err) => return Err(ApiError::internal(&err)),
+    };
+    // A permit may have been held by other uploads while this row settled.
+    let row = db::get_upload(&state.db, id)
+        .await?
+        .filter(|row| caller.principal.can_access(row.workspace_id))
+        .ok_or_else(|| ApiError::not_found("upload"))?;
+    if let Some(done) = settled(&row)? {
+        return Ok(Json(done));
     }
     let declared = u64::try_from(row.size_bytes).unwrap_or(0);
     match state.storage.size(&row.storage_key).await {
@@ -233,6 +242,20 @@ pub async fn complete_upload(
     };
     tracing::info!(upload_id = %id, format = ?row.format, "upload completed");
     Ok(Json(upload_dto(&row, None)))
+}
+
+/// Returns an already completed upload, or rejects an unavailable one.
+fn settled(row: &UploadRow) -> ApiResult<Option<Upload>> {
+    if row.expires_at <= chrono::Utc::now() {
+        return Err(ApiError::conflict("the upload has expired"));
+    }
+    match row.status() {
+        UploadStatus::Pending => Ok(None),
+        UploadStatus::Completed => Ok(Some(upload_dto(row, None))),
+        UploadStatus::Deleted | UploadStatus::Expired => {
+            Err(ApiError::conflict("the upload is no longer available"))
+        }
+    }
 }
 
 /// Deletes a mismatching file and retires the upload.
