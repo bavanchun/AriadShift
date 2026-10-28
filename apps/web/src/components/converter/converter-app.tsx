@@ -399,12 +399,12 @@ export function ConverterApp({
     try {
       // Queue device cleanup before another file can be selected.
       const [fromServer] = await Promise.all([
-        cloudFiles?.() ?? Promise.resolve<DiscardOutcome>({ status: "none" }),
+        (cloudFiles?.() ?? Promise.resolve<DiscardOutcome>({ status: "none" })).then((outcome) => {
+          if (outcome.status === "kept") keepServerCopy(outcome);
+          return outcome;
+        }),
         client().request({ type: "reset" }),
       ]);
-      if (fromServer.status === "kept") {
-        keepServerCopy(fromServer);
-      }
       setStatus(
         fromServer.status === "deleted"
           ? "Files were removed from this device and from the server."
