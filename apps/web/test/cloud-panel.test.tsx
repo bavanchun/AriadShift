@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import CloudPanel, { type CloudPanelProps } from "@/components/cloud/cloud-panel";
 import type { PlanLimits } from "@/lib/cloud/api";
 import type { DiscardOutcome } from "@/lib/cloud/cloud-job";
@@ -957,5 +957,90 @@ describe("CloudPanel", () => {
     fireEvent.click(start);
     await screen.findByTestId("cloud-error");
     expect(uploadAuthHeaders).toEqual([`Bearer ${jwtFor("b")}`]);
+  });
+
+  it("ignores a late limits response for user A after switching to user B", async () => {
+    let sessionCalls = 0;
+    let limitsCalls = 0;
+    let resolveLimitsA: ((value: PlanLimits) => void) | undefined;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json(
+            { user: { id: "a", email: "ada@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": jwtFor("a") } },
+          );
+        }
+        return Response.json(
+          { user: { id: "b", email: "bob@example.com", name: "Bob" } },
+          { headers: { "set-auth-jwt": jwtFor("b") } },
+        );
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{
+          fetch: fetchImpl,
+          operations: {
+            getLimits: async () => {
+              limitsCalls += 1;
+              if (limitsCalls === 1) {
+                const data = await new Promise<PlanLimits>((resolve) => {
+                  resolveLimitsA = resolve;
+                });
+                return { data, response: new Response(null, { status: 200 }) };
+              }
+              return {
+                data: {
+                  ...limits({ limit: 100, remaining: 95 }),
+                  plan: "team",
+                  authenticated: true,
+                },
+                response: new Response(null, { status: 200 }),
+              };
+            },
+          },
+        }}
+      />,
+    );
+
+    await screen.findByText("Signed in as ada@example.com");
+    await waitFor(() => expect(resolveLimitsA).toBeTypeOf("function"));
+
+    fireEvent.focus(window);
+    await screen.findByText("Signed in as bob@example.com");
+    await waitFor(() =>
+      expect(screen.getByTestId("cloud-limits").textContent).toBe(
+        "team plan: files up to 10 MB. 95 of 100 left today.",
+      ),
+    );
+
+    await act(async () => {
+      resolveLimitsA?.({
+        ...limits({ limit: 5, remaining: 1 }),
+        plan: "starter",
+        authenticated: true,
+      });
+    });
+
+    expect(screen.getByTestId("cloud-limits").textContent).toBe(
+      "team plan: files up to 10 MB. 95 of 100 left today.",
+    );
   });
 });

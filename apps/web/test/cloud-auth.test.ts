@@ -432,166 +432,175 @@ describe("CloudAuth", () => {
       }
     }
 
-    for (const order of ["reverse", "forward"] as const) {
-      for (const first of transitions) {
-        for (const second of transitions) {
-          const deferred: Array<() => void> = [];
-          let deferRequests = true;
-          let activeServerUser: typeof userA | null = userA;
-          let switchSessionOnNextRead = false;
+    for (const initialState of ["unresolved", "signedInA"] as const) {
+      for (const order of ["reverse", "forward"] as const) {
+        for (const first of transitions) {
+          for (const second of transitions) {
+            const deferred: Array<() => void> = [];
+            let deferRequests = true;
+            let flushing = false;
+            let activeServerUser: typeof userA | null = userA;
+            let switchSessionOnNextRead = false;
 
-          const respondFor = (path: string): Response => {
-            if (path.endsWith("/sign-in/email") || path.endsWith("/two-factor/verify-totp")) {
-              activeServerUser = userA;
-              return Response.json(
-                { user: userA },
-                { headers: { "set-auth-jwt": jwtFor(userA.id) } },
-              );
-            }
-            if (path.endsWith("/sign-up/email")) {
-              activeServerUser = userB;
-              return Response.json(
-                { user: userB },
-                { headers: { "set-auth-jwt": jwtFor(userB.id) } },
-              );
-            }
-            if (path.endsWith("/get-session")) {
-              if (switchSessionOnNextRead) {
+            const respondFor = (path: string): Response => {
+              if (path.endsWith("/sign-in/email") || path.endsWith("/two-factor/verify-totp")) {
+                activeServerUser = userA;
+                return Response.json(
+                  { user: userA },
+                  { headers: { "set-auth-jwt": jwtFor(userA.id) } },
+                );
+              }
+              if (path.endsWith("/sign-up/email")) {
                 activeServerUser = userB;
-                switchSessionOnNextRead = false;
+                return Response.json(
+                  { user: userB },
+                  { headers: { "set-auth-jwt": jwtFor(userB.id) } },
+                );
               }
-              return Response.json(activeServerUser ? { user: activeServerUser } : null);
-            }
-            if (path.endsWith("/sign-out")) {
-              if (activeServerUser?.id === "a") {
-                activeServerUser = null;
+              if (path.endsWith("/get-session")) {
+                if (switchSessionOnNextRead) {
+                  activeServerUser = userB;
+                  switchSessionOnNextRead = false;
+                }
+                return Response.json(activeServerUser ? { user: activeServerUser } : null);
               }
-              return Response.json({ success: true });
-            }
-            return Response.json(null);
-          };
+              if (path.endsWith("/sign-out")) {
+                if (activeServerUser?.id === "a") {
+                  activeServerUser = null;
+                }
+                return Response.json({ success: true });
+              }
+              return Response.json(null);
+            };
 
-          const fetchImpl = (async (input: RequestInfo | URL) => {
-            const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
-            if (path.endsWith("/token")) {
-              if (!activeServerUser) {
-                return new Response("unauthorized", { status: 401 });
+            const fetchImpl = (async (input: RequestInfo | URL) => {
+              const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+              if (path.endsWith("/token")) {
+                if (!activeServerUser) {
+                  return new Response("unauthorized", { status: 401 });
+                }
+                return Response.json({ token: jwtFor(activeServerUser.id) });
               }
-              return Response.json({ token: jwtFor(activeServerUser.id) });
-            }
-            if (!deferRequests) {
-              return respondFor(path);
-            }
-            return new Promise<Response>((resolve) => {
-              deferred.push(() => {
-                resolve(respondFor(path));
+              if (!deferRequests || flushing) {
+                return respondFor(path);
+              }
+              return new Promise<Response>((resolve) => {
+                deferred.push(() => {
+                  resolve(respondFor(path));
+                });
               });
-            });
-          }) as typeof fetch;
+            }) as typeof fetch;
 
-          const auth = new CloudAuth("https://auth.example.com", fetchImpl);
-          if (first !== "initialBearer") {
-            deferRequests = false;
-            await auth.signIn("a@example.com", "secret");
-            deferRequests = true;
-          }
-          const start = (step: TransitionName): Promise<unknown> => {
-            switch (step) {
-              case "signInA":
-                return auth.signIn("a@example.com", "secret");
-              case "signUpB":
-                return auth.signUp("Bob", "b@example.com", "secret12");
-              case "verifyA":
-                return auth.verifyCode("123456");
-              case "sessionSwitchB":
-                switchSessionOnNextRead = true;
-                return auth.session();
-              case "foreignCookieTokenB":
-                auth.forgetToken();
-                activeServerUser = userB;
-                return auth.bearer();
-              case "mismatchReconcileReauthA": {
-                auth.forgetToken();
-                activeServerUser = userB;
-                const oldBearer = auth.bearer();
-                return Promise.resolve()
-                  .then(() => Promise.resolve())
-                  .then(async () => {
-                    deferRequests = false;
-                    const relogin = await auth.signIn("a@example.com", "secret");
-                    deferRequests = true;
-                    const settled = await Promise.allSettled([oldBearer]);
-                    expect(auth.sessionExpired).toBe(false);
-                    return [relogin, settled];
-                  });
-              }
-              case "mismatchReconcileSignOut": {
-                auth.forgetToken();
-                activeServerUser = userB;
-                const oldBearer = auth.bearer();
-                return Promise.resolve()
-                  .then(() => Promise.resolve())
-                  .then(async () => {
-                    deferRequests = false;
-                    const out = await auth.signOut();
-                    deferRequests = true;
-                    const settled = await Promise.allSettled([oldBearer]);
-                    expect(auth.sessionExpired).toBe(false);
-                    return [out, settled];
-                  });
-              }
-              case "mismatchReconcileCancelAnon": {
-                auth.forgetToken();
-                activeServerUser = userB;
-                const oldBearer = auth.bearer();
-                return Promise.resolve()
-                  .then(() => Promise.resolve())
-                  .then(async () => {
+            const auth = new CloudAuth("https://auth.example.com", fetchImpl);
+            if (initialState === "signedInA" && first !== "initialBearer") {
+              deferRequests = false;
+              await auth.signIn("a@example.com", "secret");
+              deferRequests = true;
+            }
+            const start = (step: TransitionName): Promise<unknown> => {
+              switch (step) {
+                case "signInA":
+                  return auth.signIn("a@example.com", "secret");
+                case "signUpB":
+                  return auth.signUp("Bob", "b@example.com", "secret12");
+                case "verifyA":
+                  return auth.verifyCode("123456");
+                case "sessionSwitchB":
+                  switchSessionOnNextRead = true;
+                  return auth.session();
+                case "foreignCookieTokenB":
+                  auth.forgetToken();
+                  activeServerUser = userB;
+                  return auth.bearer();
+                case "mismatchReconcileReauthA": {
+                  auth.forgetToken();
+                  activeServerUser = userB;
+                  const oldBearer = auth.bearer();
+                  return (async () => {
+                    for (let i = 0; i < 5; i += 1) {
+                      await Promise.resolve();
+                    }
+                    const relogin = auth.signIn("a@example.com", "secret");
+                    return Promise.allSettled([oldBearer, relogin]);
+                  })();
+                }
+                case "mismatchReconcileSignOut": {
+                  auth.forgetToken();
+                  activeServerUser = userB;
+                  const oldBearer = auth.bearer();
+                  return (async () => {
+                    for (let i = 0; i < 5; i += 1) {
+                      await Promise.resolve();
+                    }
+                    const out = auth.signOut();
+                    return Promise.allSettled([oldBearer, out]);
+                  })();
+                }
+                case "mismatchReconcileCancelAnon": {
+                  auth.forgetToken();
+                  activeServerUser = userB;
+                  const oldBearer = auth.bearer();
+                  return (async () => {
+                    for (let i = 0; i < 5; i += 1) {
+                      await Promise.resolve();
+                    }
                     auth.cancelPendingAuth();
                     auth.continueAnonymously();
-                    const settled = await Promise.allSettled([oldBearer]);
-                    expect(auth.sessionExpired).toBe(false);
-                    return settled;
-                  });
+                    return Promise.allSettled([oldBearer]);
+                  })();
+                }
+                case "staleSignOutVsSessionSwitchB": {
+                  const out = auth.signOut();
+                  switchSessionOnNextRead = true;
+                  const switched = auth.session();
+                  return Promise.allSettled([out, switched]);
+                }
+                case "initialBearer":
+                  return auth.bearer();
+                case "signOut":
+                  return auth.signOut();
+                case "continueAnonymously":
+                  auth.continueAnonymously();
+                  return Promise.resolve();
+                case "cancelPendingAuth":
+                  auth.cancelPendingAuth();
+                  return Promise.resolve();
               }
-              case "staleSignOutVsSessionSwitchB": {
-                const out = auth.signOut();
-                switchSessionOnNextRead = true;
-                const switched = auth.session();
-                return Promise.allSettled([out, switched]);
-              }
-              case "initialBearer":
-                return auth.bearer();
-              case "signOut":
-                return auth.signOut();
-              case "continueAnonymously":
-                auth.continueAnonymously();
-                return Promise.resolve();
-              case "cancelPendingAuth":
-                auth.cancelPendingAuth();
-                return Promise.resolve();
-            }
-          };
+            };
 
-          const p1 = start(first);
-          await Promise.resolve();
-          await Promise.resolve();
-          const p2 = start(second);
-          await Promise.resolve();
-          await Promise.resolve();
-          deferRequests = false;
-          while (deferred.length > 0) {
-            const flush = order === "reverse" ? deferred.pop() : deferred.shift();
-            flush?.();
-            await Promise.resolve();
-          }
-          const settled = await Promise.allSettled([p1, p2]);
-          for (const item of settled) {
-            if (item.status === "rejected" && !(item.reason instanceof AuthError)) {
-              throw item.reason;
+            const p1 = start(first);
+            for (let i = 0; i < 6; i += 1) {
+              await Promise.resolve();
             }
+            const p2 = start(second);
+            for (let i = 0; i < 6; i += 1) {
+              await Promise.resolve();
+            }
+            flushing = true;
+            deferRequests = false;
+            while (deferred.length > 0) {
+              const flush = order === "reverse" ? deferred.pop() : deferred.shift();
+              flush?.();
+              await Promise.resolve();
+            }
+            const settled = await Promise.allSettled([p1, p2]);
+            for (const item of settled) {
+              if (item.status === "rejected" && !(item.reason instanceof AuthError)) {
+                throw item.reason;
+              }
+            }
+            if (
+              initialState === "signedInA" &&
+              order === "reverse" &&
+              first === second &&
+              (first === "mismatchReconcileReauthA" ||
+                first === "mismatchReconcileSignOut" ||
+                first === "mismatchReconcileCancelAnon")
+            ) {
+              expect(auth.sessionExpired).toBe(false);
+            }
+            await assertInvariant(auth, () => activeServerUser);
           }
-          await assertInvariant(auth, () => activeServerUser);
         }
       }
     }

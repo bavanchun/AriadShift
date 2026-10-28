@@ -334,7 +334,11 @@ export default function CloudPanel({
     const controller = new AbortController();
     api
       .limits(controller.signal)
-      .then(setLimits)
+      .then((value) => {
+        if (!controller.signal.aborted) {
+          setLimits(value);
+        }
+      })
       .catch(() => !controller.signal.aborted && setLimits(null));
     return () => controller.abort();
   }, [api, authState.epoch, sessionExpired, user]);
