@@ -39,7 +39,7 @@ ENV_EXAMPLE="$ROOT/.env.example"
 # (id vi-garden-image-only). It has no text layer, so the DOCX
 # must obtain these words through OCR.
 FIXTURE="$ROOT/fixtures/pdf/vi-garden-image-only.pdf"
-FIXTURE_SHA256=048930c263e1b5aefe30990d74a207fbec3ce275abfda6fd402ead05ee7170fb
+FIXTURE_SHA256=352d6e29841cde85f57cf3cbeb773960f6517fffd0ef71a44422555416f7f192
 EXPECTED_WORDS="Khu vườn đọc sách"
 
 PROJECT=${E2E_PROJECT:-ariadshift-e2e}
