@@ -33,6 +33,48 @@ def test_pack_manifest_keeps_the_frozen_protocol_host_range():
     assert manifest["schema"] == "ariad-pack/1"
 
 
+def test_macos_opencv_uses_a_video_disabled_source_build():
+    target = "aarch64-apple-darwin"
+    assert build.source_opencv_required(target)
+    flags = native_build.opencv_flags(target)
+    assert "-DWITH_FFMPEG=OFF" in flags
+    assert "-DBUILD_opencv_videoio=OFF" in flags
+    assert "-DWITH_AVFOUNDATION=OFF" in flags
+    assert f"-DCMAKE_OSX_DEPLOYMENT_TARGET={build.MACOS_DEPLOYMENT_TARGET}" in flags
+    assert "-DCMAKE_OSX_ARCHITECTURES=arm64" in flags
+    assert not build.source_opencv_required("aarch64-unknown-linux-gnu")
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="requires an incompatible build host")
+def test_macos_opencv_source_fallback_refuses_an_incompatible_host(tmp_path, monkeypatch):
+    pins = fetch.load_pins()
+    monkeypatch.setattr(native_build, "release_files", lambda *_: None)
+
+    def must_not_compile(*_):
+        pytest.fail("a macOS compiler build must not start on this host")
+
+    monkeypatch.setattr(native_build, "cached_build", must_not_compile)
+    with pytest.raises(SystemExit, match="native macOS arm64"):
+        native_build.opencv("aarch64-apple-darwin", pins, tmp_path)
+
+
+def test_opencv_export_hashes_the_actual_output(tmp_path):
+    wheel = tmp_path / "opencv_python_headless-5.0.0.93-test.whl"
+    wheel.write_bytes(b"build output bytes")
+    destination = tmp_path / "out"
+    target = "aarch64-apple-darwin"
+    pins = fetch.load_pins()
+    native_build.export_opencv(wheel, target, pins, destination)
+    record = json.loads((destination / f"opencv-build-{target}.json").read_text("utf-8"))
+    assert (destination / wheel.name).read_bytes() == wheel.read_bytes()
+    assert record["build_key"] == native_build.cache_key("opencv", target, pins)
+    assert record["files"][wheel.name] == {
+        "asset": wheel.name,
+        "size": wheel.stat().st_size,
+        "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+    }
+
+
 @pytest.mark.parametrize(
     "source",
     (

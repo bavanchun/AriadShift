@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -17,6 +18,7 @@ import fetch
 
 PACK = Path(__file__).resolve().parent
 REPOSITORY = PACK.parents[2]
+MACOS_DEPLOYMENT_TARGET = "14.0"
 # These options also form part of the native artifact cache key. Keep optional
 # device SDKs and vendor binary downloads out of this document-processing build.
 OPENCV_FLAGS = (
@@ -64,6 +66,18 @@ IPP_HEADING = (
     "Intel(R) IPP ICV library statically linked within x86 and x86_64 opencv-python packages."
 )
 NOTICE_SEPARATOR = "------------------------------------------------------------------------------"
+
+
+def opencv_flags(target):
+    if target == "aarch64-apple-darwin":
+        return (
+            *OPENCV_FLAGS,
+            "-DBUILD_opencv_videoio=OFF",
+            "-DWITH_AVFOUNDATION=OFF",
+            "-DCMAKE_OSX_ARCHITECTURES=arm64",
+            f"-DCMAKE_OSX_DEPLOYMENT_TARGET={MACOS_DEPLOYMENT_TARGET}",
+        )
+    return OPENCV_FLAGS
 
 
 def check_opencv_pin(pins):
@@ -132,7 +146,7 @@ def cache_key(kind, target, pins):
         "pin": pins[kind],
         "target": target,
         "python": "3.14",
-        "flags": OPENCV_FLAGS if kind == "opencv" else LLVM_FLAGS,
+        "flags": opencv_flags(target) if kind == "opencv" else LLVM_FLAGS,
         "manylinux": pins["manylinux"] if target.endswith("linux-gnu") else None,
     }
     digest = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode())
@@ -238,6 +252,10 @@ def opencv(target, pins, cache):
         ):
             raise SystemExit("pinned OpenCV toolchain must contain exactly one headless wheel")
         return wheels[0]
+    if target == "aarch64-apple-darwin" and (
+        platform.system() != "Darwin" or platform.machine() not in {"arm64", "aarch64"}
+    ):
+        raise SystemExit("OpenCV source fallback requires native macOS arm64")
 
     def build(work, destination):
         src = source(pins["opencv"], work / "source", cache)
@@ -257,10 +275,12 @@ def opencv(target, pins, cache):
             os.environ,
             ENABLE_HEADLESS="1",
             ENABLE_CONTRIB="0",
-            CMAKE_ARGS=" ".join(OPENCV_FLAGS),
+            CMAKE_ARGS=" ".join(opencv_flags(target)),
             CMAKE_BUILD_PARALLEL_LEVEL="3",
             SOURCE_DATE_EPOCH="0",
         )
+        if target == "aarch64-apple-darwin":
+            env["MACOSX_DEPLOYMENT_TARGET"] = MACOS_DEPLOYMENT_TARGET
         if target.endswith("windows-msvc"):
             env.update(CMAKE_GENERATOR="Ninja", CC="cl", CXX="cl")
         command = tools("python", src / "setup.py", "bdist_wheel", "--dist-dir", destination)
@@ -317,8 +337,51 @@ def opencv(target, pins, cache):
         wheels = list(destination.glob("*.whl"))
         if len(wheels) != 1:
             raise SystemExit("OpenCV source build did not produce exactly one wheel")
+        if target == "aarch64-apple-darwin":
+            raw = work / wheels[0].name
+            shutil.move(wheels[0], raw)
+            run(
+                tools(
+                    "delocate-wheel",
+                    "--require-archs",
+                    "arm64",
+                    "--sanitize-rpaths",
+                    "--require-target-macos-version",
+                    MACOS_DEPLOYMENT_TARGET,
+                    "--wheel-dir",
+                    destination,
+                    raw,
+                ),
+                cwd=REPOSITORY,
+                env=env,
+            )
+            if len(list(destination.glob("*.whl"))) != 1:
+                raise SystemExit("OpenCV repair did not produce exactly one wheel")
 
     return next(cached_build("opencv", target, pins, cache, build).glob("*.whl"))
+
+
+def export_opencv(wheel, target, pins, destination):
+    """Export actual build bytes and a manifest consumed by release pin rendering."""
+    destination.mkdir(parents=True, exist_ok=True)
+    output = destination / wheel.name
+    shutil.copyfile(wheel, output)
+    record = {
+        "schema": 1,
+        "kind": "opencv",
+        "target": target,
+        "build_key": cache_key("opencv", target, pins),
+        "files": {
+            output.name: {
+                "asset": output.name,
+                "sha256": fetch._sha256(output),
+                "size": output.stat().st_size,
+            }
+        },
+    }
+    (destination / f"opencv-build-{target}.json").write_text(
+        json.dumps(record, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def configure_llvm_openmp(src, import_library):
@@ -436,7 +499,7 @@ def llvm_openmp(target, pins, cache):
     return cached_build("llvm", target, pins, cache, build)
 
 
-def verify_opencv(runtime_python, *, env=None):
+def verify_opencv(runtime_python, *, target=None, env=None):
     """Native runtime proof; never remove notices based on a build flag alone."""
     probe = """
 import cv2
@@ -445,6 +508,8 @@ print(information)
 assert not cv2.ipp.useIPP(), 'OpenCV enables Intel IPP'
 assert not any('Intel IPP' in line and 'NO' not in line for line in information.splitlines())
 """
+    if target == "aarch64-apple-darwin":
+        probe += "assert not hasattr(cv2, 'VideoCapture'), 'OpenCV video I/O is enabled'\n"
     run([runtime_python, "-I", "-B", "-c", probe], env=env)
 
 

@@ -69,7 +69,7 @@ NOTICES = (
 MAX_COMPONENT_BYTES = 2 * 1024**3
 PYTHON_VERSION = "3.14"
 # docling-parse ships macOS wheels for 14.0 and later only; uv would otherwise assume 13.0.
-MACOS_DEPLOYMENT_TARGET = "14.0"
+MACOS_DEPLOYMENT_TARGET = native_build.MACOS_DEPLOYMENT_TARGET
 
 # uv's --python-platform name for each pack target.
 PLATFORMS = {
@@ -648,6 +648,10 @@ def archive(
     return destination.name
 
 
+def source_opencv_required(target: str) -> bool:
+    return target.startswith("x86_64-") or target == "aarch64-apple-darwin"
+
+
 def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
     if target not in PLATFORMS:
         raise SystemExit(f"unsupported target {target}; known: {', '.join(PLATFORMS)}")
@@ -678,7 +682,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         if target.startswith("x86_64-")
         else {}
     )
-    if target.startswith("x86_64-"):
+    if source_opencv_required(target):
         wheel = native_build.opencv(target, pins, cache)
         run(
             [
@@ -711,7 +715,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         approved_openmp[replacement.relative_to(root).as_posix()] = fetch._sha256(replacement)
         prune_microsoft_runtime(runtime)
     if native:
-        native_build.verify_opencv(python_executable(runtime, target))
+        native_build.verify_opencv(python_executable(runtime, target), target=target)
         if target.startswith("x86_64-"):
             run([python_executable(runtime, target), "-I", "-B", "-c", torch_build.TORCH_PROBE])
             run([python_executable(runtime, target), "-I", "-B", "-c", torch_build.VISION_PROBE])
@@ -740,8 +744,8 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         f"Source: {pins['opencv']['source']}\n"
         f"Source SHA-256: {pins['opencv']['sha256']}\n"
         + (
-            f"Build flags: {' '.join(native_build.OPENCV_FLAGS)}\n"
-            if target.startswith("x86_64-")
+            f"Build flags: {' '.join(native_build.opencv_flags(target))}\n"
+            if source_opencv_required(target)
             else "Unmodified upstream ARM wheel binary.\n"
         )
         + "The common upstream notice's inapplicable x86 IPP section was removed.\n"

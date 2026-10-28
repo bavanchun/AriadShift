@@ -138,11 +138,17 @@ An explicit IPP/ICV notice section remains forbidden independently of metadata.
 
 The [toolchain wheels workflow](../.github/workflows/toolchain-wheels.yml) and
 [torch toolchain workflow](../.github/workflows/torch-docling.yml) own source
-builds. In 1.0 they run the source build natively on Linux x86_64 and verify the
-retained ARM wheels on Linux aarch64 and macOS arm64 (the Windows x86_64 CPU
+builds. They source-build CPU torch and OpenCV on Linux x86_64, verify the
+retained ARM torch wheels on Linux aarch64 and macOS arm64, and source-build
+macOS arm64 OpenCV with FFmpeg, video I/O and AVFoundation disabled (the Windows x86_64 CPU
 torch and pack CI rows are deferred to v1.x in [#83](https://github.com/bavanchun/AriadShift/issues/83));
 the Mac arm64 development machine does not emulate x86_64 source builds. Compiler caches preserve completed work
 across bounded jobs, and wheel caches avoid rebuilding unchanged toolchains.
+The macOS job repairs the complete source-built wheel with pinned delocate,
+requires arm64 and macOS 14 compatibility, checks the import/build information
+and absence of `VideoCapture`, and audits every wheel payload for forbidden
+components. Native macOS validation and actual wheel SHA-256 pinning must finish
+before that target ships; no upstream GPL dylib is removed to make a wheel pass.
 The build key covers source, options, target and frozen build tools, excluding
 model pins and the published wheel manifest. Restored wheels are rehashed and
 run through CPU/torchvision and OpenCV probes. Linux uses the pinned manylinux
