@@ -10,9 +10,10 @@ contained an extra `briefs/` directory.
 Code commit: `0c1c00c4ccb3bb7207911209495eb9da02b61163`
 (`fix(core): validate deserialized document invariants`). Its exact tested source
 tree is `9dba7e70432bcbe9165833bc417870f993623913`, based on
-`bcfac8c2c07ee3b0162d57ef7b21ec654fed166f`. This report is committed separately;
-the final report commit SHA and its final ALL GREEN marker are recorded in
-`/home/vchun/Codes/ariadshift-logs/i11-ir-finish-a2045.log`.
+`bcfac8c2c07ee3b0162d57ef7b21ec654fed166f`. The original finishing report commit is
+`1b996a97fa8072ae8a8b71ae1f89affcc34c03fc`; its ALL GREEN marker is recorded in
+`/home/vchun/Codes/ariadshift-logs/i11-ir-finish-a2045.log`. The subsequent CI fuzz
+repair and its exact tested head are recorded below.
 
 The shared `pipeline::validate_ir_document` walks blocks and inlines iteratively,
 including furniture, list items, table cells, captions and table footnotes. It
@@ -42,6 +43,7 @@ Caller audit:
 | `ariad-host` | `convert::RouteRun::load_ir` uses `ir_io::read_versioned`; engine artifacts and Pandoc/Typst writers use `ir_io::read`. These previously bypassed core JSON validation, so both native readers and their error adapters were updated. |
 | `ariad-cli` | Conversion and inspection delegate to host conversion/command paths; there is no direct `pipeline::read_ir_json` call. |
 | `ariad-server` | `worker.rs` calls `ariad_host::convert::isolated::convert`, reaching the native readers. The server was added to Clippy and nextest coverage because admission behavior changes. |
+| `ariad-fuzz` | The separate fuzz workspace calls native `read` in `ir_json` and generic `read_json::<Pandoc>` in `pandoc_ast_to_ir`. Their exhaustive error matches required the CI follow-up below. |
 
 Failing-first evidence was collected against the unmodified implementation:
 
@@ -135,6 +137,99 @@ skips remain; PostgreSQL/S3-dependent tests retain their existing environment
 guards because test service credentials were not configured. No database was
 modified. No push or PR was performed; the local commits await lead review.
 
+## CI Fuzz failure
+
+PR #100 failed the [Fuzz job](https://github.com/bavanchun/AriadShift/actions/runs/40719835415/job/122927531278)
+on head `1b996a97fa8072ae8a8b71ae1f89affcc34c03fc`. This is a deterministic compile
+regression caused by the new `ReadError::Validation` variant. The job completed
+60-second runs of `markdown_reader`, `front_matter` and `html_reader`, then failed
+while compiling `pandoc_ast_to_ir` at `fuzz/fuzz_targets/pandoc_ast_to_ir.rs:27`:
+
+```text
+error[E0004]: non-exhaustive patterns: `Err(ariad_host::ir_io::ReadError::Validation(_))` not covered
+error: could not compile `ariad-fuzz` (bin "pandoc_ast_to_ir") due to 1 previous error
+```
+
+There was no corpus crash or timeout. The artifact upload reported no crash
+files. Raw job log: `/home/vchun/Codes/ariadshift-logs/i11-ci-fuzz-failed.log`.
+`gh pr checks 100` identified the job. `gh run view --job 122927531278 --log-failed`
+was unavailable while the enclosing run was in progress, so the completed job log
+was fetched with `gh api --allow-escape-sequences
+repos/bavanchun/AriadShift/actions/jobs/122927531278/logs`.
+
+The original caller audit missed the separate fuzz workspace, which root
+Clippy/nextest commands do not build. Its `ir_json` target had the same missing
+match arm, hidden behind the earlier Pandoc compilation failure. Failing-first
+checks reproduced `E0004` for both targets before editing either harness:
+
+```sh
+cargo check --manifest-path fuzz/Cargo.toml --bin pandoc_ast_to_ir
+cargo check --manifest-path fuzz/Cargo.toml --bin ir_json
+```
+
+The respective logs are
+`/home/vchun/Codes/ariadshift-logs/i11-ci-fuzz-red-pandoc_ast_to_ir.log` and
+`/home/vchun/Codes/ariadshift-logs/i11-ci-fuzz-red-ir_json.log`.
+
+Local repair commit: `490442ddf62aef30c74c12db51d5fe203b246737`
+(`fix(fuzz): handle IR validation errors in reader harnesses`). The IR harness
+accepts semantic `LimitExceeded` and `InvalidIr` rejections while asserting that
+other validation errors are unexpected for its valid limits. The Pandoc harness
+asserts that its generic bounded JSON parser cannot produce IR validation errors.
+Existing byte, JSON-depth and block-count assertions remain. Two synthetic seeds
+exercise semantic depth above the small cap and a mismatched asset identity.
+Production readers, validation limits and schemas did not change.
+
+An initial local check with `--locked` stopped before compilation because the fuzz
+lockfile lacked the host's existing `same-file` dependency edge. CI's fuzz recipe
+does not pass `--locked`. Cargo added exactly that one edge, without changing any
+package version; the repair commits it so the narrowed locked checks also pass.
+The preflight evidence is retained in
+`/home/vchun/Codes/ariadshift-logs/i11-ci-fuzz-locked-preflight.log` and
+`/home/vchun/Codes/ariadshift-logs/i11-ci-fuzz-locked-preflight-detail.log`.
+
+The narrowed gate ran detached through
+`zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 1 zsh /tmp/i11-ci-fuzz-verify.sh`
+at nice 19 with `CARGO_BUILD_JOBS=4` and the pinned tool environment. Every build
+and fuzz command waited for load below 12. Commands:
+
+```sh
+cargo fmt --all -- --check
+rustfmt --check --edition 2024 fuzz/fuzz_targets/pandoc_ast_to_ir.rs fuzz/fuzz_targets/ir_json.rs
+cargo check --manifest-path fuzz/Cargo.toml --locked --bins
+cargo clippy --manifest-path fuzz/Cargo.toml --locked --bin pandoc_ast_to_ir --bin ir_json -- -D warnings
+cargo nextest run -p ariad-core -p ariad-host --test ir_validation --test-threads 2 --features ariad-host/test-probe
+cargo fuzz run -s none --dev pandoc_ast_to_ir fuzz/corpus/pandoc_ast_to_ir fuzz/seeds/pandoc_ast_to_ir -- -max_total_time=60 -timeout=10 -rss_limit_mb=2048
+cargo fuzz run -s none --dev ir_json fuzz/corpus/ir_json fuzz/seeds/ir_json -- -max_total_time=60 -timeout=10 -rss_limit_mb=2048
+just lint-commits
+```
+
+Locked compilation of all seven default-feature fuzz binaries, scoped Clippy,
+formatting, the 16 focused IR regressions and both fuzz smoke runs passed.
+Gate log: `/home/vchun/Codes/ariadshift-logs/i11-ci-fuzz-verify.log`.
+The two fuzz result lines are in Pandoc, then IR order:
+
+```text
+     Summary [   7.851s] 16 tests run: 16 passed, 0 skipped
+Done 31560 runs in 61 second(s)
+Done 55557 runs in 61 second(s)
+=== 2026-10-29T02:03:28+07:00 ALL GREEN @ 490442ddf62aef30c74c12db51d5fe203b246737
+```
+
+The report-only successor receives commit-message, spelling and whitespace checks
+in the same slot, and the log ends with an ALL GREEN marker naming that final
+committed head. No push or CI rerun was performed; the lead owns review and push.
+The local smoke used stable Rust with `-s none --dev`; the full release-mode CI
+matrix and nightly sanitizer suite were not rerun locally.
+
+A broader `cargo fmt --manifest-path fuzz/Cargo.toml -- --check` also found an
+existing unformatted assertion at `fuzz/fuzz_targets/pdf_reader.rs:32`. The line
+is identical in `1b996a9` and this repair; that unrelated file was left untouched.
+This failed broad check, together with the red compiler checks, is retained in
+`/home/vchun/Codes/ariadshift-logs/i11-ci-fuzz-gate.log`. The narrowed format check
+for both modified harnesses passed. The PDF harness formatting remains a separate
+follow-up concern.
+
 Unresolved questions: none.
 
-Status: DONE
+Status: DONE_WITH_CONCERNS
