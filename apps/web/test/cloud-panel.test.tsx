@@ -904,4 +904,58 @@ describe("CloudPanel", () => {
     await screen.findByTestId("cloud-error");
     expect(uploadAuthHeaders).toEqual([`Bearer ${jwtFor("b")}`]);
   });
+
+  it("retries capabilities and unblocks upload when the cookie switches from A to B between initial session resolve and the capabilities token fetch", async () => {
+    let sessionCalls = 0;
+    const uploadAuthHeaders: (string | null)[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const url = new URL(request.url);
+      if (url.pathname === "/api/auth/get-session") {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return Response.json({ user: { id: "a", email: "ada@example.com", name: "Ada" } });
+        }
+        return Response.json({ user: { id: "b", email: "bob@example.com", name: "Bob" } });
+      }
+      if (url.pathname === "/api/auth/token") {
+        return Response.json({ token: jwtFor("b") });
+      }
+      if (url.pathname === "/v1/capabilities") {
+        return Response.json(CAPABILITIES);
+      }
+      if (url.pathname === "/v1/uploads") {
+        uploadAuthHeaders.push(request.headers.get("authorization"));
+        return Response.json(
+          { error: { code: "quota_exceeded", message: "daily quota exhausted" } },
+          { status: 429 },
+        );
+      }
+      return Response.json({ error: { code: "not_found", message: "no" } }, { status: 404 });
+    }) as typeof fetch;
+
+    render(
+      <CloudPanel
+        config={CONFIG}
+        file={new File(["# Hi\n"], "notes.md", { type: "text/markdown" })}
+        sourceFormat="markdown"
+        preferredTarget="docx"
+        profile="editable"
+        onUseDevice={vi.fn()}
+        cleanup={{ current: null }}
+        onServerCopy={vi.fn()}
+        apiOptions={{ fetch: fetchImpl, operations: {} }}
+      />,
+    );
+
+    await screen.findByText("Signed in as bob@example.com");
+    expect(screen.queryByText("Signed in as ada@example.com")).toBeNull();
+    const start = await screen.findByRole("button", { name: "Upload and convert" });
+    await waitFor(() => expect(start.getAttribute("aria-disabled")).toBeNull());
+    expect(screen.queryByTestId("cloud-blocked")).toBeNull();
+
+    fireEvent.click(start);
+    await screen.findByTestId("cloud-error");
+    expect(uploadAuthHeaders).toEqual([`Bearer ${jwtFor("b")}`]);
+  });
 });

@@ -304,23 +304,28 @@ export default function CloudPanel({
   }, [auth]);
 
   useEffect(() => {
-    if (capabilities || sessionExpired) {
+    if (user === undefined || capabilities || sessionExpired) {
       return;
     }
     const controller = new AbortController();
+    const startEpoch = authState.epoch;
+    setCapabilitiesError(null);
     api
       .capabilities(controller.signal)
       .then((value) => {
-        setCapabilities(value);
-        setCapabilitiesError(null);
+        if (!controller.signal.aborted) {
+          setCapabilities(value);
+          setCapabilitiesError(null);
+        }
       })
-      .catch(
-        (error) =>
-          !controller.signal.aborted &&
-          setCapabilitiesError(error instanceof AuthError ? "auth" : "api"),
-      );
+      .catch((error) => {
+        if (controller.signal.aborted || (auth && auth.epoch !== startEpoch)) {
+          return;
+        }
+        setCapabilitiesError(error instanceof AuthError ? "auth" : "api");
+      });
     return () => controller.abort();
-  }, [api, capabilities, sessionExpired]);
+  }, [api, auth, authState.epoch, capabilities, sessionExpired, user]);
 
   useEffect(() => {
     if (user === undefined || sessionExpired || !api.supportsLimits) {
@@ -332,7 +337,7 @@ export default function CloudPanel({
       .then(setLimits)
       .catch(() => !controller.signal.aborted && setLimits(null));
     return () => controller.abort();
-  }, [api, sessionExpired, user]);
+  }, [api, authState.epoch, sessionExpired, user]);
 
   // One tick per second while a step's elapsed time shows, otherwise every
   // 30 seconds for the expiry line.

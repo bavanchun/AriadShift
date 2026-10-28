@@ -450,6 +450,12 @@ export class CloudAuth {
     this.#syncState();
   }
 
+  async #awaitPendingSession() {
+    while (this.#pendingSession) {
+      await this.#pendingSession.catch(() => null);
+    }
+  }
+
   /**
    * The current JWT for the API, or `undefined` without a session, in which
    * case requests go out anonymously.
@@ -458,8 +464,8 @@ export class CloudAuth {
     if (!this.#pendingSession && !this.#user && !this.#anonymous && !this.#sessionExpired) {
       void this.session().catch(() => null);
     }
-    while (this.#pendingSession) {
-      await this.#pendingSession.catch(() => null);
+    if (this.#pendingSession) {
+      await this.#awaitPendingSession();
     }
     if (this.#sessionExpired) {
       throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
@@ -495,9 +501,7 @@ export class CloudAuth {
     try {
       response = await this.#request("token");
     } catch {
-      if (this.#pendingSession) {
-        await this.#pendingSession.catch(() => null);
-      }
+      await this.#awaitPendingSession();
       if (this.#user && this.#user.id !== userId) {
         throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
       }
@@ -511,9 +515,7 @@ export class CloudAuth {
         "The sign-in service is unavailable right now. Try again, or convert on this device.",
       );
     }
-    if (this.#pendingSession) {
-      await this.#pendingSession.catch(() => null);
-    }
+    await this.#awaitPendingSession();
     if (this.#user && this.#user.id !== userId) {
       throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
     }
@@ -538,9 +540,7 @@ export class CloudAuth {
     } catch {
       data = null;
     }
-    if (this.#pendingSession) {
-      await this.#pendingSession.catch(() => null);
-    }
+    await this.#awaitPendingSession();
     if (this.#user && this.#user.id !== userId) {
       throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
     }
@@ -566,16 +566,37 @@ export class CloudAuth {
       );
     }
     if (subject !== userId) {
-      this.#token = null;
+      if (this.#token?.epoch === epoch) {
+        this.#token = null;
+      }
       await this.session().catch(() => null);
+      await this.#awaitPendingSession();
+      if (this.#epoch !== epoch || this.#user?.id !== userId) {
+        if (this.#sessionExpired) {
+          throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
+        }
+        if (this.#anonymous || !this.#user) {
+          return undefined;
+        }
+        if (this.#user.id !== userId) {
+          throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
+        }
+        if (
+          this.#token &&
+          this.#token.epoch === this.#epoch &&
+          this.#token.userId === this.#user.id &&
+          jwtSubject(this.#token.value) === this.#user.id &&
+          Date.now() < this.#token.until
+        ) {
+          return this.#token.value;
+        }
+        throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
+      }
       if (this.#sessionExpired) {
         throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
       }
-      if (this.#user?.id === userId) {
-        this.#expireSession();
-        throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
-      }
-      throw new AuthError(409, "session_changed", SESSION_CHANGED_MESSAGE);
+      this.#expireSession();
+      throw new AuthError(401, "session_expired", SESSION_EXPIRED_MESSAGE);
     }
     if (!this.#remember(token, epoch, userId)) {
       return this.bearer();

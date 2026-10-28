@@ -362,6 +362,9 @@ describe("CloudAuth", () => {
       | "verifyA"
       | "sessionSwitchB"
       | "foreignCookieTokenB"
+      | "mismatchReconcileReauthA"
+      | "mismatchReconcileSignOut"
+      | "mismatchReconcileCancelAnon"
       | "staleSignOutVsSessionSwitchB"
       | "initialBearer"
       | "signOut"
@@ -374,6 +377,9 @@ describe("CloudAuth", () => {
       "verifyA",
       "sessionSwitchB",
       "foreignCookieTokenB",
+      "mismatchReconcileReauthA",
+      "mismatchReconcileSignOut",
+      "mismatchReconcileCancelAnon",
       "staleSignOutVsSessionSwitchB",
       "initialBearer",
       "signOut",
@@ -484,6 +490,11 @@ describe("CloudAuth", () => {
           }) as typeof fetch;
 
           const auth = new CloudAuth("https://auth.example.com", fetchImpl);
+          if (first !== "initialBearer") {
+            deferRequests = false;
+            await auth.signIn("a@example.com", "secret");
+            deferRequests = true;
+          }
           const start = (step: TransitionName): Promise<unknown> => {
             switch (step) {
               case "signInA":
@@ -499,6 +510,50 @@ describe("CloudAuth", () => {
                 auth.forgetToken();
                 activeServerUser = userB;
                 return auth.bearer();
+              case "mismatchReconcileReauthA": {
+                auth.forgetToken();
+                activeServerUser = userB;
+                const oldBearer = auth.bearer();
+                return Promise.resolve()
+                  .then(() => Promise.resolve())
+                  .then(async () => {
+                    deferRequests = false;
+                    const relogin = await auth.signIn("a@example.com", "secret");
+                    deferRequests = true;
+                    const settled = await Promise.allSettled([oldBearer]);
+                    expect(auth.sessionExpired).toBe(false);
+                    return [relogin, settled];
+                  });
+              }
+              case "mismatchReconcileSignOut": {
+                auth.forgetToken();
+                activeServerUser = userB;
+                const oldBearer = auth.bearer();
+                return Promise.resolve()
+                  .then(() => Promise.resolve())
+                  .then(async () => {
+                    deferRequests = false;
+                    const out = await auth.signOut();
+                    deferRequests = true;
+                    const settled = await Promise.allSettled([oldBearer]);
+                    expect(auth.sessionExpired).toBe(false);
+                    return [out, settled];
+                  });
+              }
+              case "mismatchReconcileCancelAnon": {
+                auth.forgetToken();
+                activeServerUser = userB;
+                const oldBearer = auth.bearer();
+                return Promise.resolve()
+                  .then(() => Promise.resolve())
+                  .then(async () => {
+                    auth.cancelPendingAuth();
+                    auth.continueAnonymously();
+                    const settled = await Promise.allSettled([oldBearer]);
+                    expect(auth.sessionExpired).toBe(false);
+                    return settled;
+                  });
+              }
               case "staleSignOutVsSessionSwitchB": {
                 const out = auth.signOut();
                 switchSessionOnNextRead = true;
@@ -519,14 +574,23 @@ describe("CloudAuth", () => {
           };
 
           const p1 = start(first);
+          await Promise.resolve();
+          await Promise.resolve();
           const p2 = start(second);
+          await Promise.resolve();
+          await Promise.resolve();
           deferRequests = false;
           while (deferred.length > 0) {
             const flush = order === "reverse" ? deferred.pop() : deferred.shift();
             flush?.();
             await Promise.resolve();
           }
-          await Promise.allSettled([p1, p2]);
+          const settled = await Promise.allSettled([p1, p2]);
+          for (const item of settled) {
+            if (item.status === "rejected" && !(item.reason instanceof AuthError)) {
+              throw item.reason;
+            }
+          }
           await assertInvariant(auth, () => activeServerUser);
         }
       }
@@ -667,5 +731,115 @@ describe("CloudAuth", () => {
 
     await expect(pendingBearer).resolves.toBeUndefined();
     expect(canceledAuth.user).toBeNull();
+  });
+
+  it("does not mutate a newer auth state when a stale token-mismatch session refresh resolves after same-user sign-in, sign-out, or cancel/anonymous", async () => {
+    const makeHarness = () => {
+      let resolveRefresh: ((response: Response) => void) | undefined;
+      let startRefresh: (() => void) | undefined;
+      const waitingForRefresh = new Promise<void>((resolve) => {
+        startRefresh = resolve;
+      });
+      const auth = new CloudAuth("https://auth.example.com", (async (input: RequestInfo | URL) => {
+        const path = new URL(input instanceof Request ? input.url : String(input)).pathname;
+        if (path.endsWith("/sign-in/email")) {
+          return Response.json(
+            { user: { id: "a", email: "a@example.com", name: "Ada" } },
+            { headers: { "set-auth-jwt": jwtFor("a") } },
+          );
+        }
+        if (path.endsWith("/token")) {
+          return Response.json({ token: jwtFor("b") });
+        }
+        if (path.endsWith("/sign-out")) {
+          return Response.json({ success: true });
+        }
+        if (path.endsWith("/get-session")) {
+          startRefresh?.();
+          return new Promise<Response>((resolve) => {
+            resolveRefresh = resolve;
+          });
+        }
+        throw new Error(`unexpected ${path}`);
+      }) as typeof fetch);
+      return {
+        auth,
+        waitingForRefresh,
+        resolveStaleRefresh: (user: { id: string; email: string; name: string } | null) =>
+          resolveRefresh?.(Response.json(user ? { user } : null)),
+      };
+    };
+
+    // 1. Same-user re-authentication during mismatch reconciliation
+    {
+      const { auth, waitingForRefresh, resolveStaleRefresh } = makeHarness();
+      await auth.signIn("a@example.com", "secret");
+      auth.forgetToken();
+      const oldBearer = auth.bearer();
+      await waitingForRefresh;
+
+      await auth.signIn("a@example.com", "secret");
+      expect(auth.user?.id).toBe("a");
+      expect(auth.sessionExpired).toBe(false);
+
+      resolveStaleRefresh({ id: "a", email: "a@example.com", name: "Ada" });
+      await Promise.allSettled([oldBearer]);
+
+      expect(auth.user?.id).toBe("a");
+      expect(auth.sessionExpired).toBe(false);
+      await expect(auth.bearer()).resolves.toBe(jwtFor("a"));
+    }
+
+    // 2. Sign-out during mismatch reconciliation
+    {
+      const { auth, waitingForRefresh, resolveStaleRefresh } = makeHarness();
+      await auth.signIn("a@example.com", "secret");
+      auth.forgetToken();
+      const oldBearer = auth.bearer();
+      await waitingForRefresh;
+
+      await expect(auth.signOut()).resolves.toBe("signed-out");
+      resolveStaleRefresh({ id: "a", email: "a@example.com", name: "Ada" });
+
+      await expect(oldBearer).resolves.toBeUndefined();
+      expect(auth.user).toBeNull();
+      expect(auth.anonymous).toBe(true);
+      expect(auth.sessionExpired).toBe(false);
+      await expect(auth.bearer()).resolves.toBeUndefined();
+    }
+
+    // 3. Cancel / continueAnonymously during mismatch reconciliation
+    {
+      const { auth, waitingForRefresh, resolveStaleRefresh } = makeHarness();
+      await auth.signIn("a@example.com", "secret");
+      auth.forgetToken();
+      const oldBearer = auth.bearer();
+      await waitingForRefresh;
+
+      auth.cancelPendingAuth();
+      resolveStaleRefresh({ id: "a", email: "a@example.com", name: "Ada" });
+      await Promise.allSettled([oldBearer]);
+
+      expect(auth.user?.id).toBe("a");
+      expect(auth.sessionExpired).toBe(false);
+
+      const {
+        auth: anonAuth,
+        waitingForRefresh: waitingAnon,
+        resolveStaleRefresh: resolveAnonRefresh,
+      } = makeHarness();
+      await anonAuth.signIn("a@example.com", "secret");
+      anonAuth.forgetToken();
+      const anonBearer = anonAuth.bearer();
+      await waitingAnon;
+
+      anonAuth.continueAnonymously();
+      resolveAnonRefresh({ id: "a", email: "a@example.com", name: "Ada" });
+
+      await expect(anonBearer).resolves.toBeUndefined();
+      expect(anonAuth.user).toBeNull();
+      expect(anonAuth.anonymous).toBe(true);
+      expect(anonAuth.sessionExpired).toBe(false);
+    }
   });
 });
