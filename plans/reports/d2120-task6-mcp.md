@@ -1,74 +1,69 @@
-# MCP startup identity and stale-sweep repair
+# MCP cleanup limits and root fixture selection
 
-All three requested repairs are implemented. Branch: `fix/mcp-limits-and-parity`.
-Baseline: `ab6090522d3cf1c638cd5ffaef79bd8053be0350`.
-Source repair: `932c4c97aade1f4a6b6f0277a5d4b341d4292f33`
-(`fix(host): bind root grants and staging cleanup to handles`).
+Branch: `fix/mcp-limits-and-parity`.
+Baseline: `2ef370f60ad0259355764cad3fde1f0aabd55cee`.
+Source repair: `c7afa19bc1923572a625397539e8043b0c425380`
+(`fix(host): avoid namespace probes for root fixtures`).
 No push, PR change, rebase or merge was performed.
 
-## Changes
+## Owner decisions and changes
 
-Startup opens each root before resolving its public name. A verified
-canonical-path handle must identify the same directory, and a second
-canonicalization must agree. Unix compares device/inode; Windows compares
-volume/file IDs through safe `same-file` handles. A mismatch fails closed with
-an explicit startup error. The shared acquisition helper also protects client
-roots while refreshes retain the original explicit handles.
+The owner accepted Windows final path-based stale cleanup under the private
+profile-temp ACL: a racing actor must already be the same user, so this does
+not cross a privilege boundary. Unix cleanup uses handles but is not atomic
+against a concurrent rename of the checked directory. The code comment and
+`docs/mcp.md` now state both limits precisely. No custom Windows removal was
+added; an overridden temp root must retain equivalent user-only permissions.
 
-Stale staging candidates are opened without following the leaf link. Type,
-Unix owner and age are read from that handle; the parsed PID must be dead.
-Entry identity is checked again immediately before removal through the checked
-directory handle. Three thread-local hook regressions deterministically swap
-a startup directory, a startup symlink and a validated stale candidate;
-no sleeps arrange the races.
+The owner also accepted the Windows-only direct `same-file` 1.0.6 manifest
+edge introduced in the preceding source repair. This is a manifest edge,
+not a new resolved package or version: the same package/version was already
+present transitively in `Cargo.lock`. Its `Unlicense/MIT` licence is permissive.
+This delta leaves both the host manifest and lockfile unchanged. The full
+repository `just deny` recipe is included in the exact-head gate below.
 
-The foreign-owner fixture first probes exactly
-`unshare --user --map-auto --map-root-user true`. An unavailable capability
-prints `SKIP` and returns unless `ARIAD_REQUIRE_FOREIGN_OWNER_TEST=1`, which
-makes it a hard failure. Real UID ownership assertions are unchanged.
-A separate ownership-predicate unit test runs on every platform.
+The foreign-owner fixture checks whether it is already root first, running
+the fixture directly in that case. Only non-root callers probe
+`unshare --user --map-auto --map-root-user true`. The optional printed SKIP,
+mandatory `ARIAD_REQUIRE_FOREIGN_OWNER_TEST=1` hard failure, fixture body and
+real UID ownership assertions remain intact. No production logic changed:
+the host source diff contains only comments. Only those comments, the test
+branch order and the MCP documentation changed in the source commit.
 
-Only confinement source/tests, the host manifest/lock dependency edge and
-`docs/mcp.md` changed. Windows directly uses already-locked `same-file` 1.0.6;
-no resolved package or version was added. Stable std's Windows file-ID methods
-remain [experimental](https://doc.rust-lang.org/stable/std/os/windows/fs/trait.MetadataExt.html#tymethod.file_index).
-Private staging modes, FIFO classification, public signatures, full-file
-analysis and the owner-selected roots deadline remain intact. Original
-workspace source/tests are unchanged.
-
-## Before and after evidence
+## Focused evidence
 
 Logs are under `/home/vchun/Codes/ariadshift-logs/`.
-`t6-rework4-proof-tests.log` records **three expected old-product failures**
-using the new hooks. The initial combined runner proved those failures, then
-failed preflight compilation because cap SystemTime has no `elapsed()`.
-`t6-rework4-preflight-attempt1.log` preserves that error; converting via
-`into_std()` fixed it.
+`t6-rework5-proof.log` proves the old root selection failed unnecessarily:
+the test ran as real mapped UID 0 with PATH containing `sh` but no `unshare`,
+and strict mode rejected the missing probe command. The repaired code passed
+that same real foreign-owner fixture without `unshare` in PATH. The ordinary
+non-root strict fixture also passed. These are two invocations of the same
+named test, with all original assertions retained.
 
-Corrected `t6-rework4-preflight.log` passed confinement unit **6**, confinement
-integration **31**, assets **18**, clippy and Windows checking. It exercised
-real foreign ownership with the mandatory flag and verified both the optional
-skip and required hard-error paths with an unavailable-command environment.
-That required-error probe is an expected negative case, not a gate regression.
-The corresponding focused commands were:
+Commands within the detached slot-2 proving runner:
 
 ```sh
-cargo test -p ariad-host --lib root_and_sweep_race_tests -- --nocapture --test-threads=1
-cargo test --locked -p ariad-host --lib confine:: -- --nocapture --test-threads=1
-cargo test --locked -p ariad-host --test confine --test assets -- --nocapture --test-threads=1
-python3 /tmp/t6-rework4-probe-portability.py
+python3 /tmp/t6-rework5-root-fixture.py old /home/vchun/Codes/ariadshift-logs/t6-rework4-preflight-integration.log
+cargo test --locked -p ariad-host --test confine staging_privacy::stale_directories_owned_by_another_user_are_not_followed_or_swept -- --exact --nocapture
+python3 /tmp/t6-rework5-root-fixture.py fixed /home/vchun/Codes/ariadshift-logs/t6-rework5-preflight-foreign.log
+cargo fmt --all --check
 ```
 
-Last line: `=== fourth rework preflight ALL GREEN`.
+The script uses a real user namespace and changes PATH only after entering it;
+no metadata or ownership is mocked. The old failure is an expected negative
+case. Proof log last line:
+`=== fifth rework proof and focused fixtures ALL GREEN`.
+`t6-rework5-preflight.log` last line:
+`=== fifth rework focused root fixtures ALL GREEN`.
 
 ## Exact source gate
 
-Detached launcher: `gate-slot.sh 2 zsh /tmp/t6-rework4-final-gate.zsh 932c4c97aade1f4a6b6f0277a5d4b341d4292f33`.
-Worktree: `/home/vchun/Codes/01-AriadShift-wt-t6-verify`. Nice 19;
-`CARGO_BUILD_JOBS=1`, `NEXTEST_TEST_THREADS=1`,
-`RUSTFLAGS='-C link-arg=-Wl,--threads=1'`, its own `CARGO_TARGET_DIR=$PWD/target`,
-and `ARIAD_REQUIRE_FOREIGN_OWNER_TEST=1`. Tool pins:
-`MISE_UV_VERSION=0.12.23 MISE_PNPM_VERSION=12.9.1 MISE_NODE_VERSION=$(cat .node-version)`.
+Detached launcher: `gate-slot.sh 2 zsh /tmp/t6-rework5-final-gate.zsh c7afa19bc1923572a625397539e8043b0c425380`.
+Worktree: `/home/vchun/Codes/01-AriadShift-wt-t6-verify`, nice 19.
+Environment: `CARGO_BUILD_JOBS=1`, `NEXTEST_TEST_THREADS=1`,
+`RUSTFLAGS='-C link-arg=-Wl,--threads=1'`, `CARGO_TARGET_DIR=$PWD/target`,
+`ARIAD_REQUIRE_FOREIGN_OWNER_TEST=1`.
+Pins: `MISE_UV_VERSION=0.12.23 MISE_PNPM_VERSION=12.9.1 MISE_NODE_VERSION=$(cat .node-version)`.
 
 Exact commands, all successful:
 
@@ -84,33 +79,38 @@ cargo test --locked -p ariad-cli --features test-probe --test mcp_stdio -- --tes
 export CC_x86_64_pc_windows_gnu=/tmp/t6-zig-cc.sh
 export AR_x86_64_pc_windows_gnu=/tmp/t6-zig-ar.sh
 cargo check --locked -p ariad-host -p ariad-cli --target x86_64-pc-windows-gnu --all-targets --features test-probe
+just deny
 just lint-commits
 ```
 
-The first full gate was cancelled while running after shared load stayed above
-24 (29.20 then 24.96). Only owned PGID 2656250 received SIGTERM and exited.
-`t6-rework4-final-gate-attempt1.log` ends `STOPPED`; it is not successful gate
-evidence. No process was paused and no queued job was cancelled. The final
-retry uses one Cargo job and the identical source head and test scope.
+`just deny` runs `node --test scripts/check-crypto-bigint.test.mjs`,
+`node scripts/check-crypto-bigint.mjs` and `cargo deny check`.
 
-Pandoc was 3.12. Full nextest: **469 passed, 10 skipped** (529.245 seconds).
-Feature-enabled MCP: **46 passed** (108.33 seconds). The real foreign-owner
-regression ran with the mandatory flag, and the unchanged workspace FIFO
-regression passed. Fmt, clippy, Windows checking and commit lint all passed.
-The operations copy records the later report-only delivery SHA and separate
-source-identity/commit-lint log; that check is not another build/test gate.
+Full nextest: **469 passed, 10 skipped** (244.679 seconds). Feature-enabled
+MCP: **46 passed** (109.36 seconds). The foreign-owner fixture executed with
+the required flag. Fmt, clippy, probe build, Windows GNU all-targets checking
+and commit lint passed. Pandoc was 3.12.
+
+`just deny` passed: **3 crypto-bigint tests passed, 0 failed**, the lockfile
+crypto-bigint check passed, and cargo-deny reported
+`advisories ok, bans ok, licenses ok, sources ok`. Duplicate-version warnings
+were non-fatal; no policy exception was added. This confirms the accepted
+Windows manifest edge passes the repository policy with the existing package.
+The later report-only delivery SHA and source-identity/commit-lint log are
+recorded in the operations copy; that check is not another build/test gate.
 
 ## Remaining verification
 
-Linux GitHub runners print `SKIP` for the foreign-owner integration case unless
-provisioned with the required namespace/UID mapping capability; the portable
-predicate unit test still runs. ASUS exercised the real fixture in strict mode.
+Windows path removal under a private temp-root ACL and Unix rename
+non-atomicity are accepted limits, not pending custom-removal work.
 Native Windows/macOS runtime checks and full three-OS GitHub CI remain merge
-conditions. Windows GNU all-targets checking proves compilation only.
+conditions. Windows GNU checking proves compilation only. Non-root Linux
+runners without the needed namespace capability print SKIP unless strict mode
+is required; already-root runners execute the fixture directly.
 
-Baseline head: `ab6090522d3cf1c638cd5ffaef79bd8053be0350`.
-Verified source head: `932c4c97aade1f4a6b6f0277a5d4b341d4292f33`.
-Gate log: `/home/vchun/Codes/ariadshift-logs/t6-rework4-final-gate.log`.
-Last line: `=== 932c4c97aade1f4a6b6f0277a5d4b341d4292f33 ALL GREEN`.
+Baseline head: `2ef370f60ad0259355764cad3fde1f0aabd55cee`.
+Verified source head: `c7afa19bc1923572a625397539e8043b0c425380`.
+Gate log: `/home/vchun/Codes/ariadshift-logs/t6-rework5-final-gate.log`.
+Last line: `=== c7afa19bc1923572a625397539e8043b0c425380 ALL GREEN`.
 
 Status: DONE
