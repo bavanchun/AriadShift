@@ -12,7 +12,7 @@ import {
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isAllowedLicense } from "../../../scripts/check-js-licenses.mjs";
-import { pandocVersion, pandocWasmSha256 } from "../engine-assets.mjs";
+import { pandocArchiveSha256, pandocVersion, pandocWasmSha256 } from "../engine-assets.mjs";
 import {
   pandocSourceInventory,
   renderPandocSourceTxt,
@@ -539,14 +539,53 @@ export function verifyBundleAgainstJsNotices(webDir, jsNoticesText) {
   }
 }
 
+export function generateWebNoticeTxt(rootDir = defaultRootDir, inventory = pandocSourceInventory) {
+  const rootNotice = readFileSync(path.join(rootDir, "NOTICE"), "utf8").trimEnd();
+  const pandocSection = [
+    "------------------------------------------------------------------------------",
+    "",
+    `Pandoc ${inventory.version} WebAssembly Module (Browser DOCX/EPUB Engine)`,
+    "",
+    `The web application distributes the unmodified official pandoc.wasm binary (${inventory.license}) as a separate WebAssembly file (public/wasm/pandoc/pandoc.wasm), invoked out of process in a Web Worker via WASI.`,
+    `Upstream release page (tag): ${inventory.releaseTagUrl}`,
+    `Upstream release asset (zip): ${inventory.archiveUrl}`,
+    `Release archive SHA-256: ${inventory.archiveSha256} (upstream published GitHub Release asset digest: ${inventory.upstreamArchiveDigest})`,
+    `Shipped pandoc.wasm SHA-256: ${inventory.wasmSha256} (upstream publishes no separate standalone digest for the inner pandoc.wasm file)`,
+    `Upstream build definitions (tag ${inventory.gitTag}): ${inventory.recipe.files.map((item) => item.url).join(", ")}`,
+    `Upstream freeze/lock status: ${inventory.freezeAndLockFiles.summary}`,
+    ...inventory.freezeAndLockFiles.unverifiedFacts,
+    "",
+    "Written Corresponding-Source Offer (Three Years):",
+    inventory.writtenOffer.text,
+  ].join("\n");
+  return normalize(`${rootNotice}\n\n${pandocSection}\n`);
+}
+
 export function expectedNotices(rootDir = defaultRootDir) {
   return {
-    "NOTICE.txt": normalize(readFileSync(path.join(rootDir, "NOTICE"), "utf8")),
+    "NOTICE.txt": generateWebNoticeTxt(rootDir),
     "THIRD_PARTY_LICENSES.txt": normalize(
       readFileSync(path.join(rootDir, "THIRD_PARTY_LICENSES"), "utf8"),
     ),
     "THIRD_PARTY_JS_LICENSES.txt": generateWebJsNotices(rootDir),
   };
+}
+
+function readPandocEngineAssets(webDir) {
+  const engineAssetsPath = path.join(webDir, "engine-assets.mjs");
+  if (!existsSync(engineAssetsPath)) {
+    return {
+      version: pandocVersion,
+      archiveSha256: pandocArchiveSha256,
+      wasmSha256: pandocWasmSha256,
+    };
+  }
+  const text = readFileSync(engineAssetsPath, "utf8");
+  const version = /pandocVersion\s*=\s*"([^"]+)"/.exec(text)?.[1] ?? pandocVersion;
+  const archiveSha256 =
+    /pandocArchiveSha256\s*=\s*"([^"]+)"/.exec(text)?.[1] ?? pandocArchiveSha256;
+  const wasmSha256 = /pandocWasmSha256\s*=\s*"([^"]+)"/.exec(text)?.[1] ?? pandocWasmSha256;
+  return { version, archiveSha256, wasmSha256 };
 }
 
 export function verifyLicensesPage(
@@ -556,9 +595,11 @@ export function verifyLicensesPage(
 ) {
   const webDir = path.join(rootDir, "apps/web");
   const wasmPath = path.join(webDir, "public/wasm/pandoc/pandoc.wasm");
+  const engineAssets = readPandocEngineAssets(webDir);
   verifyPandocSourceInventory({
-    version: pandocVersion,
-    wasmSha256: pandocWasmSha256,
+    version: engineAssets.version,
+    archiveSha256: engineAssets.archiveSha256,
+    wasmSha256: engineAssets.wasmSha256,
     wasmBytes: verifyWasmBinary && existsSync(wasmPath) ? readFileSync(wasmPath) : null,
   });
 
@@ -591,8 +632,31 @@ export function verifyLicensesPage(
       "src/app/licenses/page.tsx must use document-relative notice/wasm links so path-prefix hosting works",
     );
   }
-  if (page.includes("blob/dev/NOTICE")) {
-    throw new Error("src/app/licenses/page.tsx still links to the moving dev branch NOTICE");
+  if (
+    page.includes("blob/dev/NOTICE") ||
+    /\/(?:blob|tree)\/(?:main|master|dev|HEAD)\b/.test(page)
+  ) {
+    throw new Error(
+      "src/app/licenses/page.tsx must not link to a moving branch (main/master/dev/HEAD)",
+    );
+  }
+  for (const requiredRef of [
+    "pandocSourceInventory.releaseTagUrl",
+    "pandocSourceInventory.archiveUrl",
+    "pandocSourceInventory.archiveSha256",
+    "pandocSourceInventory.upstreamArchiveDigest",
+    "pandocSourceInventory.wasmSha256",
+    "pandocSourceInventory.hashComparisonNote",
+    "pandocSourceInventory.recipe.files",
+    "pandocSourceInventory.freezeAndLockFiles",
+    "pandocSourceInventory.writtenOffer.text",
+    "pandocSourceInventory.writtenOffer.contactUrl",
+  ]) {
+    if (!page.includes(requiredRef)) {
+      throw new Error(
+        `src/app/licenses/page.tsx is missing required Pandoc source disclosure reference: ${requiredRef}`,
+      );
+    }
   }
 
   const cargoLock = readFileSync(path.join(rootDir, "Cargo.lock"), "utf8");

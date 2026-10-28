@@ -49,11 +49,30 @@ describe("web licence notices", () => {
     expect(html).not.toMatch(/href="\/(?:notices|wasm\/pandoc)\//);
     expect(html).not.toContain("https://github.com/bavanchun/AriadShift/blob/dev/NOTICE");
 
-    // Pandoc 3.12 recipe, toolchain, and linked Hackage package inventory.
+    // Pandoc 3.12 release tag, release asset, SHA-256 comparison, build recipe, freeze/lock status, and written offer.
+    expect(html).toContain(pandocSourceInventory.releaseTagUrl);
+    expect(html).toContain(pandocSourceInventory.archiveUrl);
+    expect(html).toContain(pandocSourceInventory.archiveSha256);
+    expect(html).toContain(pandocSourceInventory.upstreamArchiveDigest);
+    expect(html).toContain(pandocSourceInventory.wasmSha256);
     expect(html).toContain(pandocSourceInventory.gitCommit.slice(0, 12));
     expect(html).toContain("https://github.com/jgm/pandoc/blob/3.12/.circleci/config.yml");
+    expect(html).toContain(
+      "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/.circleci/config.yml",
+    );
+    expect(html).toContain("https://github.com/jgm/pandoc/blob/3.12/Makefile");
+    expect(html).toContain("https://github.com/jgm/pandoc/blob/3.12/wasm/Makefile");
     expect(html).toContain("https://github.com/jgm/pandoc/blob/3.12/flake.lock");
     expect(html).toContain("https://github.com/jgm/pandoc/blob/3.12/cabal.project");
+    expect(html).toContain("https://github.com/jgm/pandoc/blob/3.12/stack.yaml");
+    expect(html).toContain("cabal.project.freeze");
+    expect(html).toContain("plan.json");
+    expect(html).toContain("index-state");
+    expect(html).toContain("not verified from public data");
+    expect(html).toContain("at least three (3) years from the last distribution");
+    expect(html).toContain(pandocSourceInventory.writtenOffer.contactUrl);
+    expect(html).toContain(pandocSourceInventory.writtenOffer.repositoryUrl);
+    expect(html).toContain(pandocSourceInventory.writtenOffer.securityAdvisoriesUrl);
     expect(html).toContain(
       "https://gitlab.haskell.org/haskell-wasm/wasi-libc/-/tree/ccb6b3d394fdfdfc0fdf855a4d2c99268842de30",
     );
@@ -84,7 +103,7 @@ describe("web licence notices", () => {
     expect(html).toContain("THE SOFTWARE IS PROVIDED &quot;AS IS&quot;");
   });
 
-  it("verifies the Pandoc source inventory and fails when version, URLs or unit IDs diverge", () => {
+  it("verifies the Pandoc source inventory and fails when version, tag, asset hashes, build-definition permalinks, written offer or unit IDs diverge", () => {
     expect(() =>
       verifyPandocSourceInventory({
         version: pandocSourceInventory.version,
@@ -99,13 +118,88 @@ describe("web licence notices", () => {
 
     expect(() =>
       verifyPandocSourceInventory({
+        inventory: {
+          ...pandocSourceInventory,
+          gitTag: "3.11",
+        },
+      }),
+    ).toThrow(/tag/);
+
+    expect(() =>
+      verifyPandocSourceInventory({
+        inventory: {
+          ...pandocSourceInventory,
+          releaseTagUrl: "https://github.com/jgm/pandoc/releases/tag/3.11",
+        },
+      }),
+    ).toThrow(/release tag URL/);
+
+    expect(() =>
+      verifyPandocSourceInventory({
+        archiveSha256: "0".repeat(64),
+      }),
+    ).toThrow(/archive SHA-256/);
+
+    expect(() =>
+      verifyPandocSourceInventory({
+        wasmSha256: "f".repeat(64),
+      }),
+    ).toThrow(/pandoc\.wasm SHA-256/);
+
+    expect(() =>
+      verifyPandocSourceInventory({
+        inventory: {
+          ...pandocSourceInventory,
+          recipe: {
+            ...pandocSourceInventory.recipe,
+            files: [
+              {
+                label: "Moving branch workflow",
+                url: "https://github.com/jgm/pandoc/blob/main/.circleci/config.yml",
+                commitUrl:
+                  "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/.circleci/config.yml",
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow(/permalink/);
+
+    expect(() =>
+      verifyPandocSourceInventory({
+        inventory: {
+          ...pandocSourceInventory,
+          writtenOffer: {
+            ...pandocSourceInventory.writtenOffer,
+            text: " Incomplete offer without validity period",
+          },
+        },
+      }),
+    ).toThrow(/written corresponding-source offer/);
+
+    expect(() =>
+      verifyPandocSourceInventory({
         version: pandocSourceInventory.version,
         wasmBytes: Buffer.from("pandoc-3.12-inplace:Main\x00", "latin1"),
       }),
     ).toThrow(/unit IDs diverged/);
 
     const sourceTxt = renderPandocSourceTxt();
-    expect(sourceTxt).toContain("Build Recipe (Upstream Release Binary)");
+    expect(sourceTxt).toContain(pandocSourceInventory.releaseTagUrl);
+    expect(sourceTxt).toContain(pandocSourceInventory.archiveUrl);
+    expect(sourceTxt).toContain(pandocSourceInventory.archiveSha256);
+    expect(sourceTxt).toContain(pandocSourceInventory.upstreamArchiveDigest);
+    expect(sourceTxt).toContain(pandocSourceInventory.wasmSha256);
+    expect(sourceTxt).toContain("Written Corresponding-Source Offer (Three Years)");
+    expect(sourceTxt).toContain(pandocSourceInventory.writtenOffer.text);
+    expect(sourceTxt).toContain(
+      "Build Recipe and Upstream Build Definitions (Tag 3.12 Permalinks)",
+    );
+    expect(sourceTxt).toContain("Upstream Freeze, Lock, and Plan Files at Tag 3.12");
+    expect(sourceTxt).toContain("cabal.project.freeze");
+    expect(sourceTxt).toContain("plan.json");
+    expect(sourceTxt).toContain("index-state");
+    expect(sourceTxt).toContain("not verified from public data");
     expect(sourceTxt).toContain("Compiler, WASI Libc, and Toolchain Sources");
     expect(sourceTxt).toContain("Linked Haskell Packages Verified in pandoc.wasm");
     expect(sourceTxt).toContain(
@@ -171,6 +265,23 @@ describe("web licence notices", () => {
     const noticeText = readFileSync(path.join(webDir, "public/notices/NOTICE.txt"), "utf8");
     expect(noticeText).toContain("Apache License, Version 2.0");
     expect(noticeText).toContain("SIL OPEN FONT LICENSE Version 1.1");
+    expect(noticeText).toContain(pandocSourceInventory.releaseTagUrl);
+    expect(noticeText).toContain(pandocSourceInventory.archiveUrl);
+    expect(noticeText).toContain(pandocSourceInventory.archiveSha256);
+    expect(noticeText).toContain(pandocSourceInventory.wasmSha256);
+    expect(noticeText).toContain("not verified from public data");
+    expect(noticeText).toContain(pandocSourceInventory.writtenOffer.text);
+
+    const pandocSourceText = readFileSync(
+      path.join(webDir, "public/wasm/pandoc/SOURCE.txt"),
+      "utf8",
+    );
+    expect(pandocSourceText).toContain(pandocSourceInventory.releaseTagUrl);
+    expect(pandocSourceText).toContain(pandocSourceInventory.archiveUrl);
+    expect(pandocSourceText).toContain(pandocSourceInventory.archiveSha256);
+    expect(pandocSourceText).toContain(pandocSourceInventory.wasmSha256);
+    expect(pandocSourceText).toContain("not verified from public data");
+    expect(pandocSourceText).toContain(pandocSourceInventory.writtenOffer.text);
 
     const rustNotices = readFileSync(
       path.join(webDir, "public/notices/THIRD_PARTY_LICENSES.txt"),
@@ -305,6 +416,42 @@ describe("web licence notices", () => {
       );
       expect(staleCargoSync.status).not.toBe(0);
       expect(staleCargoSync.stderr).toMatch(/Cargo\.lock/);
+
+      // 3. Stale Pandoc engine-assets.mjs version or SHA-256 in fixture
+      writeFileSync(path.join(rootFixture, "Cargo.lock"), realCargoLock, "utf8");
+      const realEngineAssets = readFileSync(path.join(webDir, "engine-assets.mjs"), "utf8");
+      writeFileSync(
+        path.join(rootFixture, "apps/web/engine-assets.mjs"),
+        realEngineAssets.replace(pandocSourceInventory.wasmSha256, "0".repeat(64)),
+        "utf8",
+      );
+      const stalePandocHashSync = spawnSync(
+        process.execPath,
+        [syncNoticesScript, "--check", "--root-dir", rootFixture],
+        { cwd: webDir, encoding: "utf8" },
+      );
+      expect(stalePandocHashSync.status).not.toBe(0);
+      expect(stalePandocHashSync.stderr).toMatch(/pandoc\.wasm SHA-256/);
+
+      // 4. Moving-branch URL or missing written-offer reference in page.tsx fixture
+      writeFileSync(path.join(rootFixture, "apps/web/engine-assets.mjs"), realEngineAssets, "utf8");
+      const realPage = readFileSync(path.join(webDir, "src/app/licenses/page.tsx"), "utf8");
+      unlinkSync(path.join(rootFixture, "apps/web/src/app/licenses/page.tsx"));
+      writeFileSync(
+        path.join(rootFixture, "apps/web/src/app/licenses/page.tsx"),
+        realPage.replace(
+          "pandocSourceInventory.writtenOffer.text",
+          '"https://github.com/jgm/pandoc/blob/main/.circleci/config.yml"',
+        ),
+        "utf8",
+      );
+      const stalePageSync = spawnSync(
+        process.execPath,
+        [syncNoticesScript, "--check", "--root-dir", rootFixture],
+        { cwd: webDir, encoding: "utf8" },
+      );
+      expect(stalePageSync.status).not.toBe(0);
+      expect(stalePageSync.stderr).toMatch(/moving branch|writtenOffer/);
     } finally {
       rmSync(fixtureDir, { recursive: true, force: true });
     }

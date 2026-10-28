@@ -1,14 +1,20 @@
 // Verified upstream build recipe, toolchain, and linked dependency inventory for
 // the official unmodified pandoc.wasm binary aggregated in public/wasm/pandoc/.
+import { createHash } from "node:crypto";
 
 export const pandocSourceInventory = {
   version: "3.12",
   license: "GPL-2.0-or-later",
   gitTag: "3.12",
   gitCommit: "381230ee36d8fa871c28f8982e22579f1a8f723b",
+  releaseTagUrl: "https://github.com/jgm/pandoc/releases/tag/3.12",
   archiveUrl: "https://github.com/jgm/pandoc/releases/download/3.12/pandoc-3.12.wasm.zip",
   archiveSha256: "f14bc3e7722c8bdd58188707e8d5445ce1ac909eae43373f903b45c2f7390cf9",
+  upstreamArchiveDigest: "sha256:f14bc3e7722c8bdd58188707e8d5445ce1ac909eae43373f903b45c2f7390cf9",
   wasmSha256: "1c69902d11b31711d510f2e317263fb4a5954601117b41038121ea2979110bf8",
+  upstreamWasmDigest: null,
+  hashComparisonNote:
+    "Upstream publishes the GitHub Release asset digest sha256:f14bc3e7722c8bdd58188707e8d5445ce1ac909eae43373f903b45c2f7390cf9 for the outer pandoc-3.12.wasm.zip archive on the 3.12 release page, matching our verified archive SHA-256 (f14bc3e7722c8bdd58188707e8d5445ce1ac909eae43373f903b45c2f7390cf9). Upstream publishes no separate standalone digest for the inner pandoc-wasm/pandoc.wasm file; scripts/sync-pandoc.mjs and the browser verify the shipped pandoc.wasm file against SHA-256 1c69902d11b31711d510f2e317263fb4a5954601117b41038121ea2979110bf8.",
   sourceUrls: {
     tagTree: "https://github.com/jgm/pandoc/tree/3.12",
     commitTree: "https://github.com/jgm/pandoc/commit/381230ee36d8fa871c28f8982e22579f1a8f723b",
@@ -23,44 +29,116 @@ export const pandocSourceInventory = {
       {
         label: "CircleCI wasm job (.circleci/config.yml)",
         url: "https://github.com/jgm/pandoc/blob/3.12/.circleci/config.yml",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/.circleci/config.yml",
       },
       {
         label: "Nix flake (flake.nix)",
         url: "https://github.com/jgm/pandoc/blob/3.12/flake.nix",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/flake.nix",
       },
       {
         label: "Nix flake lockfile (flake.lock)",
         url: "https://github.com/jgm/pandoc/blob/3.12/flake.lock",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/flake.lock",
       },
       {
         label: "Makefile pandoc.wasm target",
         url: "https://github.com/jgm/pandoc/blob/3.12/Makefile",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/Makefile",
+      },
+      {
+        label: "WASM directory Makefile (wasm/Makefile)",
+        url: "https://github.com/jgm/pandoc/blob/3.12/wasm/Makefile",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/wasm/Makefile",
       },
       {
         label: "Cabal project & arch(wasm32) flags/patches (cabal.project)",
         url: "https://github.com/jgm/pandoc/blob/3.12/cabal.project",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/cabal.project",
       },
       {
         label: "WASM patch directory (wasm/patches)",
         url: "https://github.com/jgm/pandoc/tree/3.12/wasm/patches",
+        commitUrl:
+          "https://github.com/jgm/pandoc/tree/381230ee36d8fa871c28f8982e22579f1a8f723b/wasm/patches",
       },
       {
         label: "WASM reactor entrypoint (pandoc-cli/wasm/PandocWasm.hs)",
         url: "https://github.com/jgm/pandoc/blob/3.12/pandoc-cli/wasm/PandocWasm.hs",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/pandoc-cli/wasm/PandocWasm.hs",
       },
       {
         label: "pandoc-cli Cabal manifest (pandoc-cli/pandoc-cli.cabal)",
         url: "https://github.com/jgm/pandoc/blob/3.12/pandoc-cli/pandoc-cli.cabal",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/pandoc-cli/pandoc-cli.cabal",
       },
       {
         label: "pandoc Cabal manifest (pandoc.cabal)",
         url: "https://github.com/jgm/pandoc/blob/3.12/pandoc.cabal",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/pandoc.cabal",
       },
       {
         label: "Stack dependency snapshot (stack.yaml)",
         url: "https://github.com/jgm/pandoc/blob/3.12/stack.yaml",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/stack.yaml",
       },
     ],
+  },
+  freezeAndLockFiles: {
+    summary:
+      "At tag 3.12 (commit 381230ee36d8fa871c28f8982e22579f1a8f723b), upstream jgm/pandoc publishes the Nix flake lockfile (flake.lock), Nix flake (flake.nix), Cabal project configuration (cabal.project), and Stack dependency snapshot (stack.yaml) linked below. Neither the jgm/pandoc 3.12 tag tree nor the pandoc-3.12.wasm.zip release asset (or any other 3.12 release asset) publishes a cabal.project.freeze, a Cabal plan.json, or a Cabal index-state pin (cabal.project contains no index-state field, and Makefile runs an unpinned wasm32-wasi-cabal update).",
+    publishedFiles: [
+      {
+        label: "Nix flake lockfile (flake.lock)",
+        url: "https://github.com/jgm/pandoc/blob/3.12/flake.lock",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/flake.lock",
+      },
+      {
+        label: "Nix flake (flake.nix)",
+        url: "https://github.com/jgm/pandoc/blob/3.12/flake.nix",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/flake.nix",
+      },
+      {
+        label: "Cabal project configuration (cabal.project)",
+        url: "https://github.com/jgm/pandoc/blob/3.12/cabal.project",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/cabal.project",
+      },
+      {
+        label: "Stack dependency snapshot (stack.yaml)",
+        url: "https://github.com/jgm/pandoc/blob/3.12/stack.yaml",
+        commitUrl:
+          "https://github.com/jgm/pandoc/blob/381230ee36d8fa871c28f8982e22579f1a8f723b/stack.yaml",
+      },
+    ],
+    unpublishedFiles: [
+      "cabal.project.freeze — not published in jgm/pandoc tag 3.12 or release assets",
+      "plan.json — not published in jgm/pandoc tag 3.12 or release assets",
+      "Cabal index-state pin — not published in cabal.project or Makefile at tag 3.12",
+    ],
+    unverifiedFacts: [
+      "Exact wasm32-wasi-cabal solver versions for the 16 direct build-depends declared in pandoc.cabal and pandoc-lua-engine.cabal whose GHC unit-id strings were stripped by wasm-opt -Oz: not verified from public data because upstream publishes no cabal.project.freeze, plan.json, or Cabal index-state pin for the wasm32-wasi build.",
+      "Exact haskell-wasm/ghc fork commit SHA for GitLab CI job 2600313 (ghc-9.14.1.20260731-wasm32-wasi in bindist 20260731T193144): not verified from public data because ghc-wasm-bindists/meta.json records only the GitLab CI job ID (2600313) and bindist tag (20260731T193144), and gitlab.haskell.org's job detail API requires authentication.",
+    ],
+  },
+  writtenOffer: {
+    validityYears: 3,
+    contactUrl: "https://github.com/bavanchun/AriadShift/issues",
+    repositoryUrl: "https://github.com/bavanchun/AriadShift",
+    securityAdvisoriesUrl: "https://github.com/bavanchun/AriadShift/security/advisories",
+    text: "AriadShift distributes the unmodified official pandoc.wasm binary (Pandoc 3.12, GPL-2.0-or-later) as a separate WebAssembly module. In addition to the direct source and release links above, AriadShift hereby offers, for a period of at least three (3) years from the last distribution of this pandoc.wasm build, to provide any third party with a complete machine-readable copy of the corresponding source code on request, at no charge for electronic delivery and for no more than the reasonable cost of physically performing source distribution. To request the corresponding source archive or ask a licensing question, open an issue at https://github.com/bavanchun/AriadShift/issues (repository: https://github.com/bavanchun/AriadShift; security and maintainer contact: https://github.com/bavanchun/AriadShift/security/advisories).",
   },
   toolchain: [
     {
@@ -75,7 +153,7 @@ export const pandocSourceInventory = {
     {
       name: "wasm32-wasi-ghc (GHC + RTS + boot libraries)",
       version:
-        "9.14.1.20260731 (boot library base-4.22.1.0-d986 verified in pandoc.wasm; bindist 20260731T193144)",
+        "9.14.1.20260731 (boot library base-4.22.1.0-d986 verified in pandoc.wasm; bindist 20260731T193144, GitLab CI job 2600313; exact haskell-wasm/ghc fork commit SHA not verified from public data)",
       sourceUrl: "https://gitlab.haskell.org/ghc/ghc/-/tree/ghc-9.14.1-release",
       secondaryUrl:
         "https://github.com/haskell-wasm/ghc-wasm-bindists/releases/tag/20260731T193144",
@@ -747,7 +825,7 @@ export const pandocSourceInventory = {
     },
   ],
   unfrozenCabalNote:
-    "Upstream jgm/pandoc 3.12 runs `wasm32-wasi-cabal update && wasm32-wasi-cabal build pandoc-cli` without a committed `cabal.project.freeze` or `plan.json` for `wasm32-wasi`, and `wasm-opt -Oz` strips unused GHC unit-id strings for packages without runtime-retained symbol names. The 92 Haskell packages above (97 GHC unit IDs) and `lpeg-1.1.0` are verified directly from `pandoc.wasm` rodata; the remaining direct `build-depends` declared in `pandoc.cabal`, `pandoc-lua-engine.cabal`, and `stack.yaml` whose unit-id strings were stripped by `wasm-opt -Oz` are listed below (exact `wasm32-wasi-cabal` solver versions for those stripped units are not verified by an upstream freeze file).",
+    "Upstream jgm/pandoc 3.12 runs `wasm32-wasi-cabal update && wasm32-wasi-cabal build pandoc-cli` without a committed `cabal.project.freeze`, `plan.json`, or Cabal `index-state` pin for `wasm32-wasi`, and `wasm-opt -Oz` strips unused GHC unit-id strings for packages without runtime-retained symbol names. The 92 Haskell packages above (97 GHC unit IDs) and `lpeg-1.1.0` are verified directly from `pandoc.wasm` rodata; the remaining 16 direct `build-depends` declared in `pandoc.cabal`, `pandoc-lua-engine.cabal`, and `stack.yaml` whose unit-id strings were stripped by `wasm-opt -Oz` are listed below (exact `wasm32-wasi-cabal` solver versions for those stripped units are not verified from public data).",
   unfrozenCabalDependencies: [
     {
       name: "hslua",
@@ -877,9 +955,21 @@ export function verifyPandocSourceInventory({
   wasmBytes = null,
   inventory = pandocSourceInventory,
 } = {}) {
-  if (version !== inventory.version) {
+  if (version !== inventory.version || version !== inventory.gitTag) {
     throw new Error(
-      `Pandoc source inventory version (${inventory.version}) does not match engine-assets.mjs (${version})`,
+      `Pandoc source inventory version/tag (${inventory.version} / ${inventory.gitTag}) does not match engine-assets.mjs (${version})`,
+    );
+  }
+  const expectedReleaseTagUrl = `https://github.com/jgm/pandoc/releases/tag/${inventory.gitTag}`;
+  if (inventory.releaseTagUrl !== expectedReleaseTagUrl) {
+    throw new Error(
+      `Pandoc release tag URL (${inventory.releaseTagUrl}) does not match tag ${inventory.gitTag} (${expectedReleaseTagUrl})`,
+    );
+  }
+  const expectedArchiveUrl = `https://github.com/jgm/pandoc/releases/download/${inventory.gitTag}/pandoc-${inventory.version}.wasm.zip`;
+  if (inventory.archiveUrl !== expectedArchiveUrl) {
+    throw new Error(
+      `Pandoc release asset URL (${inventory.archiveUrl}) does not match tag/version (${expectedArchiveUrl})`,
     );
   }
   if (archiveSha256 !== inventory.archiveSha256) {
@@ -887,16 +977,80 @@ export function verifyPandocSourceInventory({
       `Pandoc archive SHA-256 (${archiveSha256}) does not match inventory (${inventory.archiveSha256})`,
     );
   }
+  if (inventory.upstreamArchiveDigest !== `sha256:${inventory.archiveSha256}`) {
+    throw new Error(
+      `Upstream release asset digest (${inventory.upstreamArchiveDigest}) does not match archive SHA-256 (sha256:${inventory.archiveSha256})`,
+    );
+  }
   if (wasmSha256 !== inventory.wasmSha256) {
     throw new Error(
       `pandoc.wasm SHA-256 (${wasmSha256}) does not match inventory (${inventory.wasmSha256})`,
     );
   }
+  if (
+    !inventory.hashComparisonNote?.includes(inventory.archiveSha256) ||
+    !inventory.hashComparisonNote?.includes(inventory.wasmSha256)
+  ) {
+    throw new Error(
+      "Pandoc hashComparisonNote must record both the archive SHA-256 and shipped pandoc.wasm SHA-256",
+    );
+  }
+
+  for (const item of [...inventory.recipe.files, ...inventory.freezeAndLockFiles.publishedFiles]) {
+    const validTagPermalink =
+      item.url?.startsWith(`https://github.com/jgm/pandoc/blob/${inventory.gitTag}/`) ||
+      item.url?.startsWith(`https://github.com/jgm/pandoc/tree/${inventory.gitTag}/`);
+    const validCommitPermalink =
+      item.commitUrl?.startsWith(`https://github.com/jgm/pandoc/blob/${inventory.gitCommit}/`) ||
+      item.commitUrl?.startsWith(`https://github.com/jgm/pandoc/tree/${inventory.gitCommit}/`);
+    if (!validTagPermalink || !validCommitPermalink) {
+      throw new Error(
+        `Pandoc build-definition or freeze/lock permalink must be pinned to tag ${inventory.gitTag} and commit ${inventory.gitCommit}: ${item.url ?? "missing"} / ${item.commitUrl ?? "missing"}`,
+      );
+    }
+  }
+
+  const freezeSummary = [
+    inventory.freezeAndLockFiles?.summary ?? "",
+    ...(inventory.freezeAndLockFiles?.unpublishedFiles ?? []),
+    ...(inventory.freezeAndLockFiles?.unverifiedFacts ?? []),
+  ].join("\n");
+  for (const requiredToken of [
+    "cabal.project.freeze",
+    "plan.json",
+    "index-state",
+    "not verified from public data",
+  ]) {
+    if (!freezeSummary.includes(requiredToken)) {
+      throw new Error(
+        `Pandoc freezeAndLockFiles disclosure is missing required token: ${requiredToken}`,
+      );
+    }
+  }
+
+  const offerText = inventory.writtenOffer?.text ?? "";
+  if (
+    inventory.writtenOffer?.validityYears < 3 ||
+    !offerText.includes("three (3) years") ||
+    !offerText.includes("corresponding source") ||
+    !offerText.includes(inventory.writtenOffer?.contactUrl ?? "")
+  ) {
+    throw new Error(
+      "Pandoc written corresponding-source offer must be valid for at least three years and include the repository contact URL",
+    );
+  }
 
   const allUrls = [
+    inventory.releaseTagUrl,
     inventory.archiveUrl,
     ...Object.values(inventory.sourceUrls),
-    ...inventory.recipe.files.map((item) => item.url),
+    ...inventory.recipe.files.flatMap((item) => [item.url, item.commitUrl].filter(Boolean)),
+    ...inventory.freezeAndLockFiles.publishedFiles.flatMap((item) =>
+      [item.url, item.commitUrl].filter(Boolean),
+    ),
+    inventory.writtenOffer.contactUrl,
+    inventory.writtenOffer.repositoryUrl,
+    inventory.writtenOffer.securityAdvisoriesUrl,
     ...inventory.toolchain.flatMap((item) => [item.sourceUrl, item.secondaryUrl].filter(Boolean)),
     ...inventory.embeddedPackages.flatMap((item) =>
       [item.sourceUrl, item.patchUrl].filter(Boolean),
@@ -924,6 +1078,12 @@ export function verifyPandocSourceInventory({
         `pandoc.wasm embedded GHC unit IDs diverged from pandoc-source-inventory.mjs (missing: ${missing.join(", ") || "none"}; extra: ${extra.join(", ") || "none"})`,
       );
     }
+    const actualWasmSha256 = createHash("sha256").update(wasmBytes).digest("hex");
+    if (actualWasmSha256 !== wasmSha256) {
+      throw new Error(
+        `Shipped pandoc.wasm SHA-256 (${actualWasmSha256}) does not match recorded SHA-256 (${wasmSha256})`,
+      );
+    }
   }
 }
 
@@ -931,19 +1091,36 @@ export function renderPandocSourceTxt(inventory = pandocSourceInventory) {
   const lines = [
     `Unmodified Pandoc ${inventory.version}, ${inventory.license}.`,
     `Upstream git tag: ${inventory.gitTag} (commit ${inventory.gitCommit})`,
+    `Upstream release page (tag): ${inventory.releaseTagUrl}`,
+    `Upstream release asset (zip): ${inventory.archiveUrl}`,
+    `Release archive SHA-256: ${inventory.archiveSha256} (upstream published GitHub Release asset digest: ${inventory.upstreamArchiveDigest})`,
+    `Shipped pandoc.wasm SHA-256: ${inventory.wasmSha256} (upstream standalone digest for inner pandoc.wasm: none published)`,
+    `SHA-256 comparison: ${inventory.hashComparisonNote}`,
     `Source tree: ${inventory.sourceUrls.tagTree}`,
     `Source commit: ${inventory.sourceUrls.commitTree}`,
     `Source archive: ${inventory.sourceUrls.sourceArchive}`,
     `Hackage pandoc tarball: ${inventory.sourceUrls.hackagePandoc}`,
     `Hackage pandoc-cli tarball: ${inventory.sourceUrls.hackagePandocCli}`,
-    `Release binary archive: ${inventory.archiveUrl}`,
-    `Release archive SHA-256: ${inventory.archiveSha256}`,
-    `Extracted pandoc.wasm SHA-256: ${inventory.wasmSha256}`,
     "",
-    "Build Recipe (Upstream Release Binary)",
-    "======================================",
+    "Written Corresponding-Source Offer (Three Years)",
+    "================================================",
+    inventory.writtenOffer.text,
+    "",
+    "Build Recipe and Upstream Build Definitions (Tag 3.12 Permalinks)",
+    "=================================================================",
     inventory.recipe.summary,
-    ...inventory.recipe.files.map((item) => `- ${item.label}: ${item.url}`),
+    ...inventory.recipe.files.map(
+      (item) => `- ${item.label}: ${item.url} (commit: ${item.commitUrl})`,
+    ),
+    "",
+    "Upstream Freeze, Lock, and Plan Files at Tag 3.12",
+    "=================================================",
+    inventory.freezeAndLockFiles.summary,
+    ...inventory.freezeAndLockFiles.publishedFiles.map(
+      (item) => `- Published: ${item.label}: ${item.url} (commit: ${item.commitUrl})`,
+    ),
+    ...inventory.freezeAndLockFiles.unpublishedFiles.map((item) => `- Not published: ${item}`),
+    ...inventory.freezeAndLockFiles.unverifiedFacts.map((item) => `- Disclosure: ${item}`),
     "",
     "Compiler, WASI Libc, and Toolchain Sources",
     "==========================================",

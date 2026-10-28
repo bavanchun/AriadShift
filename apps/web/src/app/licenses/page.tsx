@@ -40,6 +40,14 @@ export default function LicensesPage() {
             Source record
           </a>
           {" · "}
+          <a className="underline" href={pandocSourceInventory.releaseTagUrl}>
+            Upstream release ({pandocSourceInventory.gitTag})
+          </a>
+          {" · "}
+          <a className="underline" href={pandocSourceInventory.archiveUrl}>
+            Release asset (pandoc-{pandocSourceInventory.version}.wasm.zip)
+          </a>
+          {" · "}
           <a className="underline" href={pandocSourceInventory.sourceUrls.tagTree}>
             Corresponding source
           </a>
@@ -52,21 +60,103 @@ export default function LicensesPage() {
             Source archive
           </a>
         </p>
+        <div className="rounded border p-3 text-sm">
+          <p className="font-medium">Release asset and binary SHA-256 verification</p>
+          <ul className="mt-1 list-disc pl-5">
+            <li>
+              Upstream release asset (
+              <a className="underline" href={pandocSourceInventory.archiveUrl}>
+                <code>pandoc-{pandocSourceInventory.version}.wasm.zip</code>
+              </a>{" "}
+              at{" "}
+              <a className="underline" href={pandocSourceInventory.releaseTagUrl}>
+                tag {pandocSourceInventory.gitTag}
+              </a>
+              ) SHA-256: <code>{pandocSourceInventory.archiveSha256}</code> (matches upstream
+              published GitHub Release asset digest{" "}
+              <code>{pandocSourceInventory.upstreamArchiveDigest}</code>).
+            </li>
+            <li>
+              Shipped <code>pandoc.wasm</code> (extracted from <code>pandoc-wasm/pandoc.wasm</code>)
+              SHA-256: <code>{pandocSourceInventory.wasmSha256}</code> (upstream publishes no
+              separate standalone digest for the inner <code>pandoc.wasm</code> file).
+            </li>
+          </ul>
+          <p className="mt-1">{pandocSourceInventory.hashComparisonNote}</p>
+        </div>
+        <div className="rounded border p-3 text-sm">
+          <p className="font-medium">
+            Written corresponding-source offer ({pandocSourceInventory.writtenOffer.validityYears}{" "}
+            years)
+          </p>
+          <p className="mt-1">{pandocSourceInventory.writtenOffer.text}</p>
+          <p className="mt-1">
+            Contact:{" "}
+            <a className="underline" href={pandocSourceInventory.writtenOffer.contactUrl}>
+              GitHub Issues
+            </a>
+            {" · "}
+            <a className="underline" href={pandocSourceInventory.writtenOffer.repositoryUrl}>
+              Repository
+            </a>
+            {" · "}
+            <a
+              className="underline"
+              href={pandocSourceInventory.writtenOffer.securityAdvisoriesUrl}
+            >
+              Security &amp; maintainer advisories
+            </a>
+          </p>
+        </div>
         <details className="rounded border p-3 text-sm">
           <summary className="cursor-pointer font-medium">
-            Build recipe, toolchain, and linked Hackage package inventory
+            Build recipe, freeze/lock status, toolchain, and linked Hackage package inventory
           </summary>
           <div className="mt-3 flex flex-col gap-3">
             <div>
-              <h3 className="font-semibold">Upstream build recipe</h3>
+              <h3 className="font-semibold">
+                Upstream build recipe and tag {pandocSourceInventory.gitTag} permalinks
+              </h3>
               <p className="mt-1">{pandocSourceInventory.recipe.summary}</p>
               <ul className="mt-1 list-disc pl-5">
                 {pandocSourceInventory.recipe.files.map((item) => (
                   <li key={item.url}>
                     <a className="underline" href={item.url}>
                       {item.label}
+                    </a>{" "}
+                    (
+                    <a className="underline" href={item.commitUrl}>
+                      commit permalink
                     </a>
+                    )
                   </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h3 className="font-semibold">
+                Upstream freeze, lock, and plan files at tag {pandocSourceInventory.gitTag}
+              </h3>
+              <p className="mt-1">{pandocSourceInventory.freezeAndLockFiles.summary}</p>
+              <ul className="mt-1 list-disc pl-5">
+                {pandocSourceInventory.freezeAndLockFiles.publishedFiles.map((item) => (
+                  <li key={item.url}>
+                    Published:{" "}
+                    <a className="underline" href={item.url}>
+                      {item.label}
+                    </a>{" "}
+                    (
+                    <a className="underline" href={item.commitUrl}>
+                      commit permalink
+                    </a>
+                    )
+                  </li>
+                ))}
+                {pandocSourceInventory.freezeAndLockFiles.unpublishedFiles.map((item) => (
+                  <li key={item}>Not published by upstream: {item}</li>
+                ))}
+                {pandocSourceInventory.freezeAndLockFiles.unverifiedFacts.map((item) => (
+                  <li key={item}>{item}</li>
                 ))}
               </ul>
             </div>

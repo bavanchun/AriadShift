@@ -5,7 +5,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pandocWasmSha256, pandocVersion as version } from "../engine-assets.mjs";
+import {
+  pandocWasmSha256,
+  pandocArchiveSha256 as sha256,
+  pandocVersion as version,
+} from "../engine-assets.mjs";
 import { renderPandocSourceTxt, verifyPandocSourceInventory } from "../pandoc-source-inventory.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -15,7 +19,6 @@ if (
   )
 )
   throw new Error("Native and browser Pandoc versions must match");
-const sha256 = "f14bc3e7722c8bdd58188707e8d5445ce1ac909eae43373f903b45c2f7390cf9";
 const dir = path.join(root, ".tools/pandoc-wasm");
 await mkdir(dir, { recursive: true });
 const archive = path.join(dir, "pandoc.zip");
