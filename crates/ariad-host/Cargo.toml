@@ -61,6 +61,10 @@ landlock.workspace = true
 nix = { workspace = true, features = ["mount", "resource", "sched", "user"] }
 seccompiler.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+# Safe handle identity while std's Windows file IDs remain unstable.
+same-file = "1.0.6"
+
 [target.'cfg(any(target_os = "macos", windows))'.dependencies]
 sysinfo = { workspace = true, features = ["system"] }
 

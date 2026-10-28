@@ -277,6 +277,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "ruzstd",
+ "same-file",
  "schemars 1.2.3",
  "seccompiler",
  "semver",

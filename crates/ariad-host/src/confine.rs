@@ -134,31 +134,22 @@ impl AllowedDirs {
 
         for dir in allow_dirs {
             validate_path_string(dir)?;
-            let canonical = fs::canonicalize(dir).map_err(|e| {
-                if e.kind() == io::ErrorKind::NotFound {
+            let root = open_allowed_root(dir).map_err(|error| {
+                if error.kind() == io::ErrorKind::NotFound
+                    || error.kind() == io::ErrorKind::NotADirectory
+                {
                     ConfineError::AccessDenied {
                         path: dir.display().to_string(),
                     }
                 } else {
-                    ConfineError::Io(e)
+                    ConfineError::Io(error)
                 }
             })?;
-            if !canonical.is_dir() {
-                return Err(ConfineError::AccessDenied {
-                    path: dir.display().to_string(),
-                });
-            }
             if !root_entries
                 .iter()
-                .any(|r: &AllowedRoot| r.canonical_path == canonical)
+                .any(|r: &AllowedRoot| r.canonical_path == root.canonical_path)
             {
-                let cap_dir =
-                    cap_std::fs::Dir::open_ambient_dir(&canonical, cap_std::ambient_authority())
-                        .map_err(ConfineError::Io)?;
-                root_entries.push(AllowedRoot {
-                    canonical_path: canonical,
-                    dir: Arc::new(cap_dir),
-                });
+                root_entries.push(root);
             }
         }
 
@@ -177,20 +168,12 @@ impl AllowedDirs {
             let Ok(path) = parse_file_uri(root) else {
                 continue;
             };
-            if let Ok(canonical) = fs::canonicalize(&path) {
-                let is_new_dir = canonical.is_dir()
-                    && !root_entries
-                        .iter()
-                        .any(|r: &AllowedRoot| r.canonical_path == canonical);
-                if is_new_dir
-                    && let Ok(cap_dir) =
-                        cap_std::fs::Dir::open_ambient_dir(&canonical, cap_std::ambient_authority())
-                {
-                    root_entries.push(AllowedRoot {
-                        canonical_path: canonical,
-                        dir: Arc::new(cap_dir),
-                    });
-                }
+            if let Ok(root) = open_allowed_root(&path)
+                && !root_entries
+                    .iter()
+                    .any(|r: &AllowedRoot| r.canonical_path == root.canonical_path)
+            {
+                root_entries.push(root);
             }
         }
 
@@ -219,6 +202,66 @@ impl AllowedDirs {
             .map(|r| r.canonical_path.clone())
             .collect()
     }
+}
+
+/// Open before resolving the public name, then bind that name to the same object.
+/// Explicit symlinks are intentional grants; the resolved path must be a plain directory.
+fn open_allowed_root(path: &Path) -> io::Result<AllowedRoot> {
+    let directory = cap_std::fs::Dir::open_ambient_dir(path, cap_std::ambient_authority())?;
+    let canonical = fs::canonicalize(path)?;
+    #[cfg(test)]
+    test_open_hook("root-canonicalized");
+    let verified = match canonical.file_name().zip(canonical.parent()) {
+        Some((name, parent)) => {
+            let parent = cap_std::fs::Dir::open_ambient_dir(parent, cap_std::ambient_authority())?;
+            open_dir_nofollow(&parent, Path::new(name))?
+        }
+        None => cap_std::fs::Dir::open_ambient_dir(&canonical, cap_std::ambient_authority())?,
+    };
+    #[cfg(test)]
+    test_open_hook("root-opened");
+    if fs::canonicalize(path)? != canonical || !same_directory(&directory, &verified)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!(
+                "changed while opening allowed directory: {}",
+                path.display()
+            ),
+        ));
+    }
+    Ok(AllowedRoot {
+        canonical_path: canonical,
+        dir: Arc::new(directory),
+    })
+}
+
+fn same_directory(left: &cap_std::fs::Dir, right: &cap_std::fs::Dir) -> io::Result<bool> {
+    #[cfg(unix)]
+    {
+        Ok(same_inode(&left.dir_metadata()?, &right.dir_metadata()?))
+    }
+    #[cfg(windows)]
+    {
+        // Stable std exposes no file ID. Compare volume/file IDs through the safe
+        // wrapper already present in the lockfile; do not approximate with timestamps.
+        Ok(
+            same_file::Handle::from_file(left.try_clone()?.into_std_file())?
+                == same_file::Handle::from_file(right.try_clone()?.into_std_file())?,
+        )
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = (left, right);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "directory identity is unavailable",
+        ))
+    }
+}
+
+#[cfg(any(unix, test))]
+fn staging_owner_matches(candidate: u32, current: u32) -> bool {
+    candidate == current
 }
 
 /// A validated input document with an open `File` handle resolved through capability routing.
@@ -295,7 +338,8 @@ impl ProcessStagingDirectory {
                 .metadata()?
                 .uid()
         };
-        for entry in fs::read_dir(base)?.flatten() {
+        let base_dir = cap_std::fs::Dir::open_ambient_dir(base, cap_std::ambient_authority())?;
+        for entry in base_dir.entries()?.flatten() {
             let name = entry.file_name();
             let Some((pid, suffix)) = name
                 .to_str()
@@ -310,35 +354,41 @@ impl ProcessStagingDirectory {
             if suffix.is_empty() || !suffix.chars().all(|ch| ch.is_ascii_alphanumeric()) {
                 continue;
             }
-            let Ok(metadata) = fs::symlink_metadata(entry.path()) else {
+            let Ok(candidate) = open_entry_nofollow(&base_dir, Path::new(&name), true) else {
                 continue;
             };
-            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            let candidate = cap_std::fs::Dir::from_std_file(candidate.into_std());
+            let Ok(metadata) = candidate.dir_metadata() else {
                 continue;
-            }
-            #[cfg(windows)]
-            {
-                use std::os::windows::fs::MetadataExt;
-                if metadata.file_attributes() & 0x400 != 0 {
-                    // FILE_ATTRIBUTE_REPARSE_POINT
-                    continue;
-                }
+            };
+            if !metadata.is_dir() || is_reparse_point(&metadata) {
+                continue;
             }
             #[cfg(unix)]
             {
-                use std::os::unix::fs::MetadataExt;
-                if metadata.uid() != current_uid {
+                use cap_std::fs::MetadataExt;
+                if !staging_owner_matches(metadata.uid(), current_uid) {
                     continue;
                 }
             }
             let old = metadata
                 .modified()
                 .ok()
-                .and_then(|time| time.elapsed().ok())
+                .and_then(|time| time.into_std().elapsed().ok())
                 .is_some_and(|age| age >= Self::STALE_AGE);
             if old && process_is_dead(pid) {
-                // remove_dir_all never follows symlinks inside the candidate directory.
-                let _ = fs::remove_dir_all(entry.path());
+                #[cfg(test)]
+                test_open_hook("staging-checked");
+                // Refuse replacement entries, and remove only through the checked handle.
+                let Ok(current) = open_entry_nofollow(&base_dir, Path::new(&name), true) else {
+                    continue;
+                };
+                let current = cap_std::fs::Dir::from_std_file(current.into_std());
+                if !same_directory(&candidate, &current).unwrap_or(false) {
+                    continue;
+                }
+                drop(current);
+                let _ = candidate.remove_open_dir_all();
             }
         }
         Ok(())
@@ -1398,5 +1448,143 @@ mod nofollow_tests {
             opened.is_err(),
             "a handle reached through a link was accepted after entry restoration"
         );
+    }
+}
+
+#[cfg(all(test, any(unix, windows)))]
+mod root_and_sweep_race_tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    fn install_hook(point: &'static str, hook: impl FnOnce() + 'static) {
+        TEST_OPEN_HOOKS.with(|hooks| hooks.borrow_mut().push((point, Box::new(hook))));
+    }
+
+    fn clear_hooks() {
+        TEST_OPEN_HOOKS.with(|hooks| hooks.borrow_mut().clear());
+    }
+
+    #[test]
+    fn startup_refuses_a_directory_replaced_between_canonicalization_and_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("allowed");
+        let saved = temp.path().join("saved");
+        let replacement = temp.path().join("replacement");
+        fs::create_dir(&original).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(original.join("note.md"), "authorized").unwrap();
+        fs::write(replacement.join("note.md"), "unauthorized").unwrap();
+        let (path, backup, other) = (original.clone(), saved.clone(), replacement.clone());
+        install_hook("root-canonicalized", move || {
+            fs::rename(&path, &backup).unwrap();
+            fs::rename(&other, &path).unwrap();
+        });
+        let (path, backup, other) = (original.clone(), saved, replacement);
+        install_hook("root-opened", move || {
+            fs::rename(&path, &other).unwrap();
+            fs::rename(&backup, &path).unwrap();
+        });
+        let opened = AllowedDirs::new(&[original], &[]);
+        clear_hooks();
+        assert!(
+            matches!(&opened, Err(ConfineError::Io(error))
+                if error.kind() == io::ErrorKind::PermissionDenied
+                    && error.to_string().contains("changed while opening allowed directory")),
+            "startup accepted a different directory under the canonical name: {opened:?}"
+        );
+    }
+
+    #[test]
+    fn startup_refuses_a_symlink_swap_between_canonicalization_and_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = temp.path().join("allowed");
+        let saved = temp.path().join("saved");
+        let other = temp.path().join("unauthorized");
+        fs::create_dir(&original).unwrap();
+        fs::create_dir(&other).unwrap();
+        let (path, backup) = (original.clone(), saved.clone());
+        install_hook("root-canonicalized", move || {
+            fs::rename(&path, &backup).unwrap();
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&other, &path).unwrap();
+            #[cfg(windows)]
+            std::os::windows::fs::symlink_dir(&other, &path).unwrap();
+        });
+        let path = original.clone();
+        install_hook("root-opened", move || {
+            #[cfg(unix)]
+            fs::remove_file(&path).unwrap();
+            #[cfg(windows)]
+            fs::remove_dir(&path).unwrap();
+            fs::rename(&saved, &path).unwrap();
+        });
+        let opened = AllowedDirs::new(&[original], &[]);
+        clear_hooks();
+        assert!(
+            opened.is_err(),
+            "startup accepted a swapped symlink: {opened:?}"
+        );
+    }
+
+    #[test]
+    fn stale_sweep_refuses_a_replacement_after_candidate_validation() {
+        let base = tempfile::tempdir().unwrap();
+        let dead_pid = i32::MAX as u32;
+        assert!(process_is_dead(dead_pid), "fixture PID must be absent");
+        let candidate = base
+            .path()
+            .join(format!("ashift-mcp-stage-{dead_pid}-stale"));
+        let saved = base.path().join("saved");
+        let replacement = base.path().join("unrelated");
+        fs::create_dir(&candidate).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(candidate.join("stale.md"), "checked object").unwrap();
+        fs::write(replacement.join("keep.md"), "unrelated bytes").unwrap();
+        #[cfg(unix)]
+        let file = fs::File::open(&candidate).unwrap();
+        #[cfg(windows)]
+        let file = {
+            use std::os::windows::fs::OpenOptionsExt;
+            fs::OpenOptions::new()
+                .access_mode(0x100)
+                .custom_flags(0x0200_0000)
+                .open(&candidate)
+                .unwrap()
+        };
+        file.set_modified(SystemTime::now() - Duration::from_secs(48 * 3600))
+            .unwrap();
+        drop(file);
+        let (path, backup, other) = (candidate.clone(), saved.clone(), replacement);
+        install_hook("staging-checked", move || {
+            fs::rename(&path, &backup).unwrap();
+            fs::rename(&other, &path).unwrap();
+        });
+        ProcessStagingDirectory::sweep_stale_in(base.path()).unwrap();
+        clear_hooks();
+        assert_eq!(
+            fs::read_to_string(candidate.join("keep.md"))
+                .ok()
+                .as_deref(),
+            Some("unrelated bytes"),
+            "sweep removed an unchecked replacement directory"
+        );
+        assert_eq!(
+            fs::read_to_string(saved.join("stale.md")).unwrap(),
+            "checked object"
+        );
+    }
+}
+
+#[cfg(test)]
+mod staging_owner_tests {
+    use super::staging_owner_matches;
+
+    #[test]
+    fn only_matching_filesystem_owners_are_eligible_for_cleanup() {
+        assert!(staging_owner_matches(1000, 1000));
+        assert!(staging_owner_matches(0, 0));
+        assert!(!staging_owner_matches(1001, 1000));
+        assert!(!staging_owner_matches(0, 1000));
+        assert!(!staging_owner_matches(1000, 0));
     }
 }
