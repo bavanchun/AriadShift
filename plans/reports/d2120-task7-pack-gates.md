@@ -1,178 +1,221 @@
-# Pack gates: reviewed PyTorch model archives
+# Pack gates: complete foreign native census and licence stop
 
-Twelve exact PyTorch regression-model archives are accepted by distribution,
-version, relative path and SHA-256, with one matching installed RECORD owner.
-Other ZIP payloads retain the fail-closed gate. No broad .pt/.ptl exception,
-licensing exception or dependency/lock change is added.
+The local scoped pack gate passes at `fc3997cf2a0f7360c37165b7fb8fce9e582e0ccb`. The requested all-platform
+success condition is **BLOCKED**: the locked macOS OpenCV wheel contains
+GPL-enabled FFmpeg dylibs, and the complete foreign census still has unresolved
+native name/notice/source/byte reviews. No licence waiver or push was made.
+Five independently verified BSD-3-Clause OpenEXR/Imath dylibs now have exact
+entries and complete upstream notices. All other unreviewed files remain refused.
 
-- Starting head: `ce0d878978a13c00f9325dbd29806d1271c1f441`.
-- Code/gate head: `ea43f406da7ae5aa2602b47a49ebe9372cc11232`.
-- Code commit: `fix(docling): bind reviewed model data archives`.
-- Gate log: `/home/vchun/Codes/ariadshift-logs/d2120-t7-rework5-final-gate.log`.
-- Last gate line: `=== PACK GATE ALL GREEN HEAD=ea43f406da7ae5aa2602b47a49ebe9372cc11232`.
-- Nothing is pushed; a report-only successor follows the tested code head.
-- [Previous result](/home/vchun/Codes/01-AriadShift-wt-t7-pack/plans/reports/archive-261028-1349-pack-gates-merge-dev.md)
-  preserves the earlier licence approvals, GNU pointers, pywin32 binding,
-  Windows repair and fixture evidence.
+- Starting head: `c9d5f324ff85942703c976d24cfa760958c3bf2c`.
+- Code and tested head: `fc3997cf2a0f7360c37165b7fb8fce9e582e0ccb`.
+- Code commit: `build(docling): attribute reviewed OpenEXR and Imath dylibs`.
+- Final gate log: [d2120-t7-rework6-final-gate.log](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-final-gate.log).
+- Last gate line: `=== PACK GATE ALL GREEN HEAD=fc3997cf2a0f7360c37165b7fb8fce9e582e0ccb`.
+- A report-only successor records this result; its first parent is the tested head.
+- [Previous result](archive-261028-1440-pack-gates-data-archives.md) preserves
+  the data-archive review and earlier licensing, GNU, Windows and fixture evidence.
 
-## Reproduction and repair
+## Complete native inventory
 
-[Pack aarch64 Linux](https://github.com/bavanchun/AriadShift/actions/runs/40644845744/job/122671647465)
-at ce0d878 failed at 06:42:44 UTC on 2026-10-28 with
-`uninspected site-packages ZIP archive: torch/bin/script_module_v4.ptl`.
-The ZIP guard detected model data outside its document/array suffix classes.
-A complete extraction of the locked aarch64 torch wheel reproduces that exact
-error before editing production code; the repaired scan passes and finds 146
-native files. This is a real wheel check, not a full foreign-architecture pack.
+The [complete CSV table](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-native-files.csv) and
+[JSON with discovery items and binary evidence](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-native-files.json)
+contain all **2,251 native files**, including every `.so`, versioned `.so`,
+`.dylib` and `.dll` (950 rows), plus `.pyd`, executables and native archives.
+Each row records platform, distribution/version, relative path, SHA-256,
+carrying wheel/hash, existing named licence and notice references where reviewed,
+and the owning wheel's available notice paths/digests. Missing library attribution
+is explicitly **UNVERIFIED**. An owner's Python metadata is labelled as owner
+metadata; it does not establish the licence of a separate bundled native project.
+Full upstream/licence attribution for every row is therefore still an unmet
+acceptance criterion, rather than an invented permission.
 
-The twelve exact entries in `engines/docling/pack/reviewed-data-archives.toml`
-cover the torch 2.14.1+cpu Linux model bundles. Changed hash, version, owner,
-path or installed RECORD, and duplicate ownership fail. Unknown ZIP/JAR/zipapp,
-.zip/.egg/.whl suffixes and archive path references retain their refusal checks.
-ARCHITECTURE.md, both owning Decision Log rows, AGENTS Licensing and the module
-threat-model docstring describe this bounded exception.
+Artifact SHA-256: CSV `fa6480d852597af25b324519d7f4267c0145c7bc8c9b1a7eb2d505cc2e0adbe2`;
+JSON `3e97d745b4befbf6e62611d93b3a5a67936c67c847cb5aac1da0ed65082fbc4f`.
 
-## Complete locked-wheel ZIP inventory
+| Platform | Selected wheels | Native files | SO/dylib/DLL | Rejected files | Site-level archive errors |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| x86_64-unknown-linux-gnu | 88 | 402 | 270 | 148 | 0 |
+| aarch64-unknown-linux-gnu | 88 | 403 | 271 | 155 | 0 |
+| aarch64-apple-darwin | 88 | 351 | 346 | 115 | 0 |
+| x86_64-pc-windows-msvc | 89 | 494 | 35 | 235 | 1 |
+| i686-pc-windows-msvc | 79 | 145 | 10 | 67 | 0 |
+| aarch64-pc-windows-msvc | 85 | 456 | 18 | 227 | 0 |
 
-The scanner exports the pack builder's frozen, no-dev ariad-docling requirements
-and checks every compatible locked wheel for those package names, including
-compatible variants rather than only one resolver choice. All **216 wheels**
-match uv.lock SHA-256 values. Every regular wheel member is checked for PK
-local-header magic: **148 payload occurrences**, grouped below into **37 rows**
-with identical owner/version/path/size/hash. The complete wheel mapping is in
-the preserved JSON; the table retains platform unions and occurrence counts.
+These are conservative raw locked-wheel input sets: the best compatible normal
+CPython 3.14, ABI3 or pure wheel per project, using Linux glibc 2.28/macOS 14
+compatibility ranks. Windows x86/ARM64 have fewer available wheels and are partial
+input sets, not supported release packs. Dependency markers are not evaluated,
+so the census is a superset. This deliberately includes source-build replacement
+inputs and upstream torch test/helper binaries that the actual Linux source-built
+pack does not ship; those counts cannot be compared with the 256-file production
+fixture as equivalent final artifacts. No foreign machine code is executed.
 
-Coverage is normal CPython 3.14, compatible ABI3 and pure wheels for Linux
-x86_64/aarch64, macOS arm64 at deployment version 14.0 and Windows x86_64, plus
-locked Windows x86/arm64 wheels where available. Free-threaded, musl, iOS and
-unrelated platforms are outside the pack configuration. Extra Windows
-architectures are audited wheels, not complete supported pack resolutions.
+The final diagnostic ends `=== FOREIGN NATIVE REVIEW COMPLETE
+HEAD=fc3997cf2a0f7360c37165b7fb8fce9e582e0ccb (findings remain refused)`.
+It records 947 rejected native files and one site-level error.
 
-LX = x86_64 Linux; LA = aarch64 Linux; MA = arm64 macOS; WX = x86_64 Windows;
-W32 = x86 Windows; WA = arm64 Windows.
+The [final census log](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-native-final.log) and
+[preserved harness](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-native-census-final.py) call production
+`_native_files`, `_native_record_owners`, `vendored_libraries` and
+`check_vendored_native_files` on every native file. The full scan first checks
+installed RECORD hashes/sizes and ownership. Per-file read-only selectors collect
+every rejection instead of stopping at the first. Owner licence results are
+memoized only within the immutable extracted input set; licence rules, notices,
+file bytes and inventory items are not changed. The final harness also checks
+ordinary extensions; the initial diagnostic skipped their owner/notice check.
+The restarted final run supersedes that initial diagnostic. Source and wheel
+hash verification also passes in the full local gate (216 locked wheel hashes).
 
-| Owner/version | Relative wheel path | Bytes | SHA-256 | Platforms / occurrences |
-| --- | --- | ---: | --- | --- |
-| numpy 2.5.4 | `numpy/lib/tests/data/py2-objarr.npz` | 366 | `c68d771c14f415b159daabd9cf42d61836f74ae40049269787baca7d57098f1e` | LA,LX,MA,W32,WA,WX / 7 |
-| numpy 2.5.4 | `numpy/lib/tests/data/py3-objarr.npz` | 453 | `bd5465f7f359effabe86376e52bf185a7cd1cbc1123659af30f95a4920baf5f9` | LA,LX,MA,W32,WA,WX / 7 |
-| python-docx 1.2.0 | `docx/templates/default.docx` | 38116 | `2094b5bddffe9cf973d61fe03388413804f034160718494a65db7e98da40d35d` | LA,LX,MA,W32,WA,WX / 1 |
-| python-pptx 1.0.2 | `pptx/templates/default.pptx` | 34030 | `e10cc9e120961f6bd4074a373c9c80d2a06c497157e8f4972977b7bea83a8f34` | LA,LX,MA,W32,WA,WX / 1 |
-| scipy 1.18.1 | `scipy/fftpack/tests/fftw_double_ref.npz` | 162120 | `a60c649415b645223924d8342ccc5c097801c86901287a369e53fc9259f5ec4e` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/fftpack/tests/fftw_longdouble_ref.npz` | 296072 | `a406cbd4dad04d0c59dd38f54416fb49424c82229c1a074b6a44ec0cde2000e3` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/fftpack/tests/fftw_single_ref.npz` | 95144 | `276a9141318e6fc36e4ab6ff54a61b64054ef8849b660f17359e5f541b43c526` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/fftpack/tests/test.npz` | 11968 | `36de804a22d8fdea054590ce49ddf3c859838b7d89193c56b3bcb660cbf43797` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/interpolate/tests/data/bug-1310.npz` | 2648 | `8d6803c0b398f2704c236f1d1b9e8e5ede06bd165a0abb0f228281abbd455ae9` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/interpolate/tests/data/gcvspl.npz` | 3138 | `03ce8155a6cba0c1bf0a2441a10c228191f916dec36cb820723429811296bba8` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/linalg/tests/data/carex_15_data.npz` | 34462 | `13f3e1491a876bbf59d7ea10ad29c1f9b5996a2ab99216f31d5bfcd659012c1e` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/linalg/tests/data/carex_18_data.npz` | 161487 | `59f839467f2752b7df6fb6d4094396edd32a5929b764f7ffa1e6666431e6cac6` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/linalg/tests/data/carex_19_data.npz` | 34050 | `38e8fc7b041df0b23d7e5ca15ead1a065e6467611ef9a848cc7db93f80adfd87` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/linalg/tests/data/carex_20_data.npz` | 31231 | `14e222d34a7118c7284a1675c6feceee77b84df951a5c6ba2a5ee9ff3054fa1d` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/linalg/tests/data/carex_6_data.npz` | 15878 | `1b2a0736b541ebf5c4b9b4c00d6dab281e73c9fb9913c6e2581a781b37b602f9` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/linalg/tests/data/gendare_20170120_data.npz` | 2164 | `a3dfab451d9d5c20243e0ed85cd8b6c9657669fb9a0f83b5be165585783d55b5` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/sparse/linalg/tests/propack_test_data.npz` | 600259 | `25d42e05bb6cb5672db22ebf8df7f113e4cb21b1817491fadc996341a542346d` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/spatial/tests/data/degenerate_pointset.npz` | 22548 | `048abc1ddd924bf2d4d1f216015552ed9431f9e99546fbf382768eda58788175` | LA,LX,MA,WA,WX / 6 |
-| scipy 1.18.1 | `scipy/special/tests/data/boost.npz` | 1270643 | `57b5c2b67ee01c741536aae6ad9f8f128106b7fdff152afcf3d8f774b0645844` | LA,LX,MA / 4 |
-| scipy 1.18.1 | `scipy/special/tests/data/boost.npz` | 1273269 | `c37a7db057c98c228459f560fa2b1246789859cec97ae1550d6840d6f0f164b4` | WA,WX / 2 |
-| scipy 1.18.1 | `scipy/special/tests/data/gsl.npz` | 51433 | `cbf1afdd27999806a710279910a2eb2f9f7f559033c7ecb796deaa10c44feb31` | LA,LX,MA / 4 |
-| scipy 1.18.1 | `scipy/special/tests/data/gsl.npz` | 51453 | `3ed9f083ac91ea7190b593775114584875160ddf886d13a28e2d371f22c8f173` | WA,WX / 2 |
-| scipy 1.18.1 | `scipy/special/tests/data/local.npz` | 203438 | `6c29e58ce827084f84db9f1bba96045a61ce69f1d3ea3d7c828a79c133cf88f2` | LA,LX,MA / 4 |
-| scipy 1.18.1 | `scipy/special/tests/data/local.npz` | 203667 | `9e35e6df1806a464d555b14b0e3ccba5bf6b53dd0e2eda77e97e460986a48362` | WA,WX / 2 |
-| scipy 1.18.1 | `scipy/stats/_sobol_direction_numbers.npz` | 589334 | `4859931147d42ce465b8605cb277f957d98b839d03194fdf06579357906d193b` | LA,LX,MA,WA,WX / 6 |
-| torch 2.14.1+cpu | `torch/bin/script_module_v4.ptl` | 2573 | `dead49900e21bb04339bf06c14968de7d2a651a3739ccb1c8e88a9209f6e82ad` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/test_interpreter_async.pt` | 2840 | `549d04b98a683b79f1c5831a5ad922b563311a4216b5a2c28226182790368b21` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_scalar_float_v2.ptl` | 2160 | `91360dfdc505de05fac69b971ef8a06a2b75b468e0a66cf2db404fc50f210281` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_scalar_inplace_float_v2.ptl` | 2273 | `4f4711f0639598ebd2275ffd98a32ddd0108bc4cc85f46c133957ab77f8faa29` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_scalar_inplace_int_v2.ptl` | 2259 | `5013d856a255346ad71c4b462be3ab05cccd9443c6978819624197300be8220b` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_scalar_int_v2.ptl` | 2146 | `b1d850caddbab0c8804529321ffb93fd8a5a63637304d85634c94befde8cb094` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_scalar_reciprocal_float_v2.ptl` | 2904 | `7eeb7829a439737b2a09d21a8e18fb32cc0fd0fcce77b652eec352f7c603abcb` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_scalar_reciprocal_int_v2.ptl` | 2890 | `64b56ee0a2c5efeb6744a731286006adae747d6e9b54d65e701c292ad17ff3a0` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_scalar_scalar_v2.ptl` | 2672 | `321da0d43e96138be4bd102b2bd5fde6b836c0814ca754533f0246e2f030a74f` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_tensor_inplace_v2.ptl` | 2168 | `87a7c59d41d047fa1bc45578143f6c6a1577cee159a9094cc2bb80e12603017c` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_tensor_out_v2.ptl` | 2211 | `ccbcc0954174e817a7789194ea30e99b09e17de14d089ffed7e67c3e883195fd` | LA,LX / 2 |
-| torch 2.14.1+cpu | `torch/bin/upgrader_models/test_versioned_div_tensor_v2.ptl` | 2463 | `3cbb7834ee5e0479468a29d91189e6413c81186e25d03c1210d8cfb16db77c74` | LA,LX / 2 |
+Windows x64 additionally fails the real global scan on the zero-byte file
+`scipy-1.18.1-cp314-cp314-win_amd64.whl` shipped inside the locked SciPy wheel.
+That suffix rejection is retained. The harness records the global error and
+continues native enumeration so it does not hide the other findings. It does
+not claim that the original global scan passes.
 
-The existing data formats account for 124 occurrences: NumPy/SciPy NPZ arrays
-(all members are NPY files), the python-docx DOCX template and python-pptx PPTX
-template. No new suffix class is introduced. The other 24 occurrences are the
-same twelve torch model bundles in both Linux wheels; torch macOS/Windows
-contain no ZIP payloads.
+## Added library table
 
-The model bundles contain serialized TorchScript code, tensors and state, as
-shown by the [upstream format](https://github.com/pytorch/pytorch/blob/main/torch/csrc/jit/docs/serialization.md)
-and the reviewed wheel's `torch/jit/mobile/__init__.py` file-taking loader.
-They are inputs to explicit model-load calls. The four .pth files across the
-inspected wheels do not reference these models. No JAR, zipapp, egg/wheel import
-archive or archive loader path requiring escalation was found. Model contents,
-source and loader evidence are preserved; archive contents are not parsed at
-runtime. The existing default notice-content and other-archive-magic limits,
-and deferred Windows RECORD refresh, remain unchanged.
+All five paths are under `cv2/.dylibs/` in **opencv-python-headless 5.0.0.93**, from
+`opencv_python_headless-5.0.0.93-cp37-abi3-macosx_13_0_arm64.whl`, locked wheel
+SHA-256 `030ca5e0837a2963ab36ef896baa9767eb8d2b83353fb28af5a521e40dd8756f`.
 
-## Tests and gate
+| Exact filename | Upstream / notice key | Licence | Locked native SHA-256 |
+| --- | --- | --- | --- |
+| `libIex-3_3.32.3.3.4.dylib` | OpenEXR 3.3.4 / O | BSD-3-Clause | `df9f5aa8542d0e7a9bd2a6461a9894024a41bd2f8c81f2a0e11f94086b7f4550` |
+| `libIlmThread-3_3.32.3.3.4.dylib` | OpenEXR 3.3.4 / O | BSD-3-Clause | `fb8b20381ed5c52c96c74f0972d0b51741339d2d6ee8fde3e68997baf55f7b01` |
+| `libImath-3_1.29.11.0.dylib` | Imath 3.1.11 / I | BSD-3-Clause | `1f20d905051a125d8aa4e481b9f0c1c42e2cc0d4a08ae9ddedf88e451a09ef01` |
+| `libOpenEXR-3_3.32.3.3.4.dylib` | OpenEXR 3.3.4 / O | BSD-3-Clause | `f1df5d2dbaf3e38c0ba2649e36a5af1fe1a76621346f8e78484bbdac828b906a` |
+| `libOpenEXRCore-3_3.32.3.3.4.dylib` | OpenEXR 3.3.4 / O | BSD-3-Clause | `4ece54c65206a77f891019446d93a8ac3ebbeea8af4c1c0561c2b0c613e29718` |
 
-Baseline tests: **1 failed, 6 passed**. The valid reviewed archive is refused
-before the repair; every negative case already passes. Synthetic tests cover
-exact bytes, changed bytes with a rewritten RECORD, owner/version/RECORD,
-duplicate owner and unreviewed paths inside/outside torch. JAR and zipapp cases
-extend the existing renamed-archive test. The first focused run passed the
-inventory tests and real wheel but stopped at two Ruff regex warnings; the
-patterns were corrected. The final focused run passes all **48 tests**, the
-real aarch64 wheel, Ruff check/format and the tracked diff check.
+- **O:** complete [OpenEXR v3.3.4 notice](https://github.com/AcademySoftwareFoundation/openexr/blob/v3.3.4/LICENSE.md),
+  stored as `engines/docling/pack/licenses/openexr-3.3.4.txt`, SHA-256
+  `84853c91d4c2e0310741d4773469d98bb93e61029608e0ba0882a3fffdf330bd`.
+- **I:** complete [Imath v3.1.11 notice](https://github.com/AcademySoftwareFoundation/Imath/blob/v3.1.11/LICENSE.md),
+  stored as `engines/docling/pack/licenses/imath-3.1.11.txt`, SHA-256
+  `c20236d3b39fd20eba8e3d1fb3b892a5483df2e7d8d61bf43f165d3fac22f601`.
 
-The exact-head full scoped gate completed through `gate-slot.sh 2`, nice 19,
-with one Cargo/test/BLAS/Rayon job. All selected checks pass:
+The wheel's own four OpenCV notice files omit OpenEXR/Imath attribution: searching
+for OpenEXR, Imath, Iex and IlmThread does not establish the requested licences.
+The file versions were matched to the upstream tags above and the complete BSD
+copyright/conditions/disclaimer texts were copied byte-for-byte. These entries
+use the existing explicit upstream-notice mechanism, as Tokenizers does; they
+never fall back to SciPy's unrelated native notice. Distribution, wheel version,
+exact path and notice digest are fixed in `native-components.toml`. Native bytes
+still require the installed RECORD SHA-256 and size. `write_vendored_notices`
+bundles the full original text. AGENTS Licensing, ARCHITECTURE and the Decision
+Log record this narrow review in the same source commit.
+
+Ten regression cases cover all five valid files and full notice bundling, both
+notice texts missing or changed, and an unknown companion still refused. Before
+the entries, **9 failed / 1 passed**; after them, **10 passed**. See
+[red](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-notices-red.log) and
+[green](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-notices-green.log).
+The real foreign scan now accepts all five, while retaining the other failures.
+
+## Licence stops and Q candidates
+
+All paths below are under the same macOS wheel's `cv2/.dylibs/`. The eight FFmpeg
+objects contain their own `lib… license: GPL version 3 or later` strings and
+`--enable-gpl --enable-version3`; their configuration also identifies a Homebrew
+FFmpeg 7.1.1_3 prefix. This identifies build provenance, not an exact independently
+verified corresponding-source release. The bundled OpenCV text says LGPL-2.1
+for FFmpeg, which conflicts with the binary configuration and self-declarations.
+The [FFmpeg licence rules](https://ffmpeg.org/general.html) explain that GPL-enabled
+builds require GPL terms; no runtime exception is established for these objects.
+The [binary proof JSON](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-gpl-binary-proof.json) preserves
+complete strings/configurations, wheel hash and every file hash.
+
+| Exact filename | Evidence / stop | SHA-256 |
+| --- | --- | --- |
+| `libavcodec.61.19.101.dylib` | FFmpeg: embedded GPL-3.0-or-later declaration | `20825ad7fa755087b533595d24ebb7d5424114bef428032b233537c4e7f1e09f` |
+| `libavdevice.61.3.100.dylib` | FFmpeg: embedded GPL-3.0-or-later declaration | `3d779f3daa08b5144f545baade5f078c55fb918ca98341751760ab39043de2e5` |
+| `libavfilter.10.4.100.dylib` | FFmpeg: embedded GPL-3.0-or-later declaration | `c6c84f1d3bd90f2d270b4908d4a4469eca62828f3dfd4517c8837c3658406d80` |
+| `libavformat.61.7.100.dylib` | FFmpeg: embedded GPL-3.0-or-later declaration | `d670552654be11579f2fc31d66b994d7adbaaea9ef2bb5b5599b52c892c92033` |
+| `libswresample.5.3.100.dylib` | FFmpeg: embedded GPL-3.0-or-later declaration | `b47b866d5a394eadcb0b0edb7e9481f9a76e78922c9170b36edd5146eb7bea1c` |
+| `libavutil.59.39.100.dylib` | FFmpeg: embedded GPL-3.0-or-later declaration | `f38ed445f8b47a91f26f6bb03c16794d357c6ff72382d9f7ffca145c49ae4a58` |
+| `libswscale.8.3.100.dylib` | FFmpeg: embedded GPL-3.0-or-later declaration | `d85a25897775fa901806148b25f00a8bc0d8b38063fd68f102c9c4b06e7e5fe3` |
+| `libpostproc.58.3.100.dylib` | FFmpeg: embedded GPL-3.0-or-later declaration | `09e09ff09cf250933fddb18ab0e1cb36775d1dc25e0f81b1334df58d78642cd5` |
+| `libx264.164.dylib` | x264: upstream GPL-2.0; commercial entitlement not established | `7f02ead8b5987d7441c56521a80a3e894b44fa5f49a57f8dd515ac3b3f733564` |
+| `libx265.215.dylib` | x265: upstream GPL-2.0; commercial entitlement not established | `860a3c77010264c498e781b599980f6bb8cdaab989b05ea1522844bab961bbac` |
+| `librubberband.3.dylib` | Rubber Band: upstream GPL-2.0-or-later; commercial entitlement not established | `ac8aeb49e8c6a77c29086fb0696ee88faaa3f6a20363477a015c228fad5d5686` |
+
+The three additional candidates use upstream
+[x264 COPYING](https://github.com/mirror/x264/blob/master/COPYING),
+[x265 COPYING](https://github.com/videolan/x265/blob/master/COPYING) and
+[Rubber Band](https://github.com/breakfastquay/rubberband).
+Their ABI filenames do not prove exact upstream release versions. No commercial
+licence entitlement or matching alternative wheel notice was found; they remain
+refused pending the Q/input replacement. libvidstab is not included in this GPL
+list: its current upstream notice differs from older GPL releases, so an old
+project-level GPL claim alone would not establish this wheel's licence.
+
+Remaining foreign findings are fully listed in the CSV/JSON and platform summary:
+unnamed OpenCV companions; raw torch helpers/libraries; platform notice hash
+changes; NumPy metadata/native archive cases; onnxruntime/PDFium/TorchVision
+foreign paths; and Windows ownership/extension/native helpers. GNU runtime files
+on other platforms require their own byte/format/provenance review; the seven
+approved Linux ELF hash bindings and all A-0700 source/offer texts remain intact.
+No generic copyleft, filename, hash, static-object or notice exception was added.
+A native file with no sufficient upstream licence/notice or static/modified
+payload remains a stop candidate; the complete table marks its missing evidence.
+
+**Required follow-up:** replace or rebuild the macOS OpenCV input without its
+GPL-enabled FFmpeg and GPL codec payloads, and finish the remaining exact native
+licence/notice/source reviews on the selected platform inputs. Then rerun the
+complete inventories and pack builds. The task's zero-unreviewed requirement is
+not met, and this report does not request a blanket GPL approval.
+
+## Exact-head local pack gate
+
+The complete scoped gate passed through `gate-slot.sh 1`, nice 19, with one
+Cargo/test/BLAS/Rayon job. The separate diagnostic census used slot 2. Owned
+obsolete diagnostic jobs were cancelled with SIGTERM; no lock holder was paused.
 
 | Check | Result |
 | --- | --- |
-| Five focused suites / whole engine suite | 182 passed / 273 passed, 4 skipped |
-| Three complete locked pywin32 wheels and uv installations | Passed; modified source and forged RECORD refused |
-| Real Linux native inventory | 256 files: 52 named objects, 204 extensions |
-| Complete aarch64 torch wheel archive scan | Passed; 146 native files detected |
-| All real-wheel ZIP payloads / locked hashes | 148 payloads pass / 216 wheel hashes match |
-| CP1252 and C-locale probes | 5 passed each |
-| uv lock --check / uv audit --frozen | 113 packages, lock unchanged / 109 packages, no adverse findings |
-| UTF-8 audit / Ruff check and format | 19 files, no implicit encodings / all 9 selected modules pass |
-| Current-head CLI build / just bench-test | Passed / 75 passed |
-| Fixture generators | 135 files match stored bytes and manifest hashes in two runs |
+| Five focused suites / whole Docling suite | 192 passed / 283 passed, 4 skipped |
+| Three complete pywin32 wheels and uv installations | Passed; altered source/RECORD refused |
+| Actual Linux native fixture | 256 files: 52 named objects, 204 extensions; all seven GNU hashes/ELF checks pass |
+| Complete aarch64 torch archive scan | Passed; 146 native files detected; this is an archive scan, not the full foreign licence gate |
+| All-wheel ZIP payloads / locked hashes | 148 accepted payloads / 216 wheel hashes match |
+| CP1252 and C-locale checks | 5 passed each |
+| uv lock --check / uv audit --frozen | Passed; lock unchanged / no vulnerabilities found |
+| UTF-8 audit / Ruff check and format | 19 files / all 9 selected modules pass |
+| Current-head CLI build / bench tests | Passed / 75 passed |
+| All fixture generators | Two runs byte-identical; 135 stored files and manifest hashes match |
 | typos / just lint-commits / tracked diff / exact-head assertion | Passed |
 
-Exact launch command:
+Exact launch commands:
 
 ```sh
-zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 /bin/bash /tmp/t7-rework5-final-pack-gate.sh
+zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 1 bash /tmp/t7-rework6-final-pack-gate.sh
+zsh /home/vchun/Codes/ariadshift-ops/gate-slot.sh 2 bash /tmp/t7-rework6-native-final.sh
 ```
 
-The [preserved gate script](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework5-final-pack-gate.sh)
-contains every command and environment variable: both pytest scopes, the real
-wheel and archive checks, lock/audit, text/Ruff checks, CLI/bench, all generators,
-typos and commit lint. Helpers are preserved beside it. No full Rust matrix,
-native source pack build or publishing is added. Local review of the complete
-source/TOML/docs diff found no open finding within this ZIP repair.
+The [preserved full gate script](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-final-pack-gate.sh)
+contains every command and environment variable, including both pytest scopes,
+real-wheel checks, lock/audit, Ruff, CLI/bench, generators, typos and commit lint.
+Helpers and both diagnostic harnesses are preserved beside it. No full Rust
+matrix or new native source pack build was run. Local review covered the entire
+six-file source diff, exact matching, notice bytes and caller paths; no additional
+finding was found within the five-library change. The wider acceptance gaps above
+remain blockers.
 
-## CI and evidence
+## Remote CI
 
-At 06:49:52 UTC on ce0d878, the aarch64 pack was the only failed check. The
-x86_64 pack and CPU torch build were running; macOS pack was queued. Engine
-tests Windows/Linux, real-engine conformance and CPU torch arm64 Linux/macOS
-passed. At 07:19:24 UTC, macOS had also failed; x86_64 pack and CPU torch
-were still running. The complete macOS log ends its build at 07:01:25 UTC with
-`review vendored library licences for opencv-python-headless: cv2/.dylibs/libIex-3_3.32.3.3.4.dylib`.
-[macOS pack job](https://github.com/bavanchun/AriadShift/actions/runs/40644845744/job/122671647402)
-failed on a missing named native-library review, not ZIP data. This rework keeps
-that object refused and records it as a separate remaining pack issue. The
-final snapshot at **07:31:36 UTC** still has exactly these two failed pack jobs;
-[x86_64 pack](https://github.com/bavanchun/AriadShift/actions/runs/40644845744/job/122671647410)
-remains in progress at `Build the pack`, with no completed job log available.
-Its step/status JSON is saved. No Windows pack job is present in this run;
-Windows engine tests pass. The remote PR head is still ce0d878.
+At **2026-10-28 08:19:11 UTC**, `gh pr checks 95` reports the
+[x86_64 pack job](https://github.com/bavanchun/AriadShift/actions/runs/40644845744/job/122671647410)
+**IN_PROGRESS**, at `Build the pack`; macOS and ARM Linux pack jobs have failed.
+The downloaded x86_64 job log is available despite the running state: its latest
+available line is **2026-10-28 07:06:53 UTC**, OpenBLAS compile step
+`12819/14175`. This is a partial server log, with no success/failure conclusion;
+it is not evidence that the new head passes CI. The source-matched pack wait is
+also in progress. No Windows pack job is present in this workflow run.
 
-Evidence: `/home/vchun/Codes/ariadshift-logs/d2120-t7-rework5-*`: CI JSON/logs,
-wheel receipts and complete ZIP inventory, model/archive members and loader
-source, download/scan/reproduction logs, baseline/focused tests and gate helpers.
-Wheels remain in `/home/vchun/Codes/t7-rework5-wheel-review/`; the full aarch64
-extraction is `/home/vchun/Codes/t7-rework5-aarch64-site/`.
+[PR checks JSON](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-pr-checks.json),
+[job JSON](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-x86-ci-job.json) and
+[normalized partial log](/home/vchun/Codes/ariadshift-logs/d2120-t7-rework6-x86-ci.log) preserve the findings.
+The remote PR head remains `ce0d878978a13c00f9325dbd29806d1271c1f441`;
+the new source and report commits are local only. Nothing was pushed.
 
-Foreign wheel checks execute no ARM/macOS/Windows code. Full-pack CI at the new
-head requires an authorized push. No runnable archive requiring a Q was found.
-The macOS libIex native-library review remains unresolved outside this ZIP repair.
-
-Status: DONE_WITH_CONCERNS
+Status: BLOCKED
