@@ -7,6 +7,46 @@ test.setTimeout(120_000);
 const ENGINE_BOOT = { timeout: 60_000 };
 const JPEG_BYTES = 12.5 * 1024 * 1024;
 
+/**
+ * 1x1 white baseline JPEG (204 bytes), produced with:
+ * `ffmpeg -f lavfi -i color=c=white:s=1x1:d=1 -frames:v 1 -bitexact -f image2 -`
+ * Contains SOI (0xFFD8), APP0 JFIF (0xFFE0), DQT (0xFFDB), DHT (0xFFC4),
+ * SOF0 baseline frame (0xFFC0), SOS (0xFFDA at byte offset 185), scan data, and EOI (0xFFD9).
+ */
+const BASELINE_1X1_JPEG_HEX =
+  "ffd8ffe000104a46494600010200000100010000" +
+  "ffdb0043000804040404040505050505050606060606060606060606060607070708080807070706060707080808080909090808080809090a0a0a0c0c0b0b0e0e0e111114" +
+  "ffc4004b00010100000000000000000000000000000007010100000000000000000000000000000000100100000000000000000000000000000000110100000000000000000000000000000000" +
+  "ffc00011080001000103012200021100031100" +
+  "ffda000c03010002110311003f00bf800fffd9";
+
+function buildDecodableJpeg(targetBytes: number): Buffer {
+  const base = Buffer.from(BASELINE_1X1_JPEG_HEX, "hex");
+  const sosOffset = base.indexOf(Buffer.from([0xff, 0xda]));
+  if (sosOffset < 0) {
+    throw new Error("missing SOS marker in baseline JPEG");
+  }
+  const out = Buffer.alloc(targetBytes, 0x41);
+  base.copy(out, 0, 0, sosOffset);
+  let cursor = sosOffset;
+  let remaining = targetBytes - base.length;
+  // Pad with valid COM (0xFFFE) segments before the SOS marker so the JPEG stays decodable.
+  while (remaining > 0) {
+    let segmentTotal = Math.min(remaining, 65_500);
+    if (remaining - segmentTotal > 0 && remaining - segmentTotal < 4) {
+      segmentTotal = remaining - 4;
+    }
+    const segmentLength = segmentTotal - 2;
+    out[cursor] = 0xff;
+    out[cursor + 1] = 0xfe;
+    out.writeUInt16BE(segmentLength, cursor + 2);
+    cursor += segmentTotal;
+    remaining -= segmentTotal;
+  }
+  base.copy(out, cursor, sosOffset);
+  return out;
+}
+
 function storedZip(entries: Array<{ name: string; data: Buffer }>): Buffer {
   const localParts: Buffer[] = [];
   const centralParts: Buffer[] = [];
@@ -70,10 +110,7 @@ function storedZip(entries: Array<{ name: string; data: Buffer }>): Buffer {
 }
 
 function buildJpegDocx(jpegSizeBytes: number): Buffer {
-  const jpeg = Buffer.alloc(jpegSizeBytes, 0x5a);
-  // Minimal valid JPEG SOI + APP0 + EOI markers so media extraction classifies image/jpeg.
-  jpeg.set([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01], 0);
-  jpeg.set([0xff, 0xd9], jpeg.length - 2);
+  const jpeg = buildDecodableJpeg(jpegSizeBytes);
 
   const contentTypes = `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -183,5 +220,9 @@ test("converts a 12.5 MiB JPEG DOCX to Markdown when intermediate IR exceeds 16 
   await page.getByRole("button", { name: /^Download / }).click();
   const output = await readFile(await (await download).path(), "utf8");
   expect(output).toContain("Large JPEG document");
-  expect(output).toContain("data:image/jpeg;base64,");
+  const match = output.match(/data:image\/jpeg;base64,([A-Za-z0-9+/=]+)/);
+  expect(match).not.toBeNull();
+  const imageBytes = Buffer.from(match?.[1] ?? "", "base64");
+  expect([...imageBytes.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+  expect(imageBytes.byteLength).toBe(JPEG_BYTES);
 });

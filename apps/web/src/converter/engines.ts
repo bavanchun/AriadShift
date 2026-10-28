@@ -81,12 +81,24 @@ export interface RouteOutput {
   warnings: Notice[];
 }
 
+/**
+ * Largest intermediate `ariad-ir+json` payload a multi-engine browser route may hand to
+ * the next engine (256 MiB). Matches the worker's wasm memory recycle threshold
+ * (`RECYCLE_MEMORY_BYTES` in `session.ts`): an accepted <= 16 MiB source document with
+ * embedded media legitimately expands past 16 MiB once base64-encoded into IR JSON,
+ * while an intermediate payload above 256 MiB would exceed a single conversion's worker
+ * memory budget before the consuming engine deserializes it.
+ */
+export const INTERMEDIATE_IR_LIMIT_BYTES = 256 * 1024 * 1024;
+
 function intermediateOptions(options: ConvertOptions): ConvertOptions {
-  if (!options.limits || !("max_input_bytes" in options.limits)) {
-    return options;
-  }
-  const { max_input_bytes: _, ...limits } = options.limits;
-  return { ...options, limits };
+  return {
+    ...options,
+    limits: {
+      ...options.limits,
+      max_input_bytes: INTERMEDIATE_IR_LIMIT_BYTES,
+    },
+  };
 }
 
 /** Runs a planned route, handing each run of steps to its engine. */
@@ -99,7 +111,7 @@ export async function runRoute(
   let current = bytes;
   let last: ConvertResult | null = null;
   const warnings: Notice[] = [];
-  // Ingest already capped the user's original bytes; intermediate IR is produced in-process.
+  // Ingest already capped the user's original bytes; intermediate IR uses its own browser budget.
   const laterOptions = intermediateOptions(options);
   for (const [index, group] of groupSteps(steps).entries()) {
     const engine = core.engines.get(group.engine);
