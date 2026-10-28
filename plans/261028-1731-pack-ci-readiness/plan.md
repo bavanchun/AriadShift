@@ -1,6 +1,6 @@
 ---
 title: Honest pack CI readiness and wheel export checks
-status: in-progress
+status: completed
 branch: fix/pack-prebuild-gates
 created: 2026-10-28
 ---
@@ -31,12 +31,16 @@ not per-object reviewed hashes; weak-copyleft/GNU object bindings stay intact.
 - [x] Add failing plan/release/assembly, export and lock-drift regressions.
 - [x] Implement the policy, metadata guards and owning documentation.
 - [x] Run focused tests/workflow lint and review the complete diff.
-- [ ] Commit source; run one full exact-head pack gate through gate-slot.sh.
-- [ ] Prepare the unsent master release request in the canonical report.
-- [ ] Commit reports alone, mirror and verify report closure.
+- [x] Commit source; run one full exact-head pack gate through gate-slot.sh.
+- [x] Prepare the unsent master release request in the canonical report.
+- [x] Commit reports alone, mirror and verify report closure.
 
 Acceptance: PR omission is explicit/non-red; invalid configured pins fail;
 release omissions require explicit macOS declarations, never Linux omissions;
 missing/stale/unexpected artifacts fail; manifest/checksums match actual planned
 builds; required negatives and the full gate pass at the recorded source head.
 Native macOS build/pinning remains a separate release prerequisite.
+
+Verified source: `149e4cb55dacc7fe1387a4d459bbd94c0a808129`. The full gate ends ALL GREEN;
+the report closure records the unsent release request and the remaining native
+macOS release prerequisite. No push, tag, dispatch or release was made.
