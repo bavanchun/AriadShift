@@ -7,7 +7,7 @@ import sys
 from importlib import metadata
 
 import pytest
-from conftest import REPOSITORY, native_record_rows
+from conftest import REPOSITORY, native_record_rows, reviewed_native_file
 
 sys.path.insert(0, str(REPOSITORY / "engines/docling/pack"))
 
@@ -17,9 +17,13 @@ import licenses
 def _record_owner(site, owner, paths, version="1.0"):
     info = site / f"{owner}-{version}.dist-info"
     info.mkdir(exist_ok=True)
-    (info / "METADATA").write_text(f"Name: {owner}\nVersion: {version}\nLicense-Expression: MIT\n")
-    (info / "LICENSE").write_text("MIT License\n")
-    (info / "RECORD").write_text(native_record_rows(site, [*paths, f"{info.name}/LICENSE"]))
+    (info / "METADATA").write_text(
+        f"Name: {owner}\nVersion: {version}\nLicense-Expression: MIT\n", encoding="utf-8"
+    )
+    (info / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+    (info / "RECORD").write_text(
+        native_record_rows(site, [*paths, f"{info.name}/LICENSE"]), encoding="utf-8"
+    )
 
 
 @pytest.mark.parametrize(
@@ -48,7 +52,7 @@ def test_conflicting_or_unknown_metadata_fails_closed(
     lines += [f"Classifier: License :: {item}" for item in classifiers]
     if expression:
         lines.append(f"License-Expression: {expression}")
-    (info / "METADATA").write_text("\n".join(lines) + "\n")
+    (info / "METADATA").write_text("\n".join(lines) + "\n", encoding="utf-8")
     assert (licenses.check([metadata.PathDistribution(info)]) == []) is allowed
 
 
@@ -68,7 +72,9 @@ def test_vendored_native_inventory_rejects_unknown_files_and_stale_entries(tmp_p
     ]
     notice = tmp_path / inventory[0]["notice"]
     notice.parent.mkdir(parents=True, exist_ok=True)
-    notice.write_text("GNU GENERAL PUBLIC LICENSE\nGCC RUNTIME LIBRARY EXCEPTION\n")
+    notice.write_text(
+        "GNU GENERAL PUBLIC LICENSE\nGCC RUNTIME LIBRARY EXCEPTION\n", encoding="utf-8"
+    )
     with pytest.raises(SystemExit, match="unlisted native"):
         licenses.check_vendored_native_files(tmp_path, [], "x86_64-unknown-linux-gnu")
     assert (
@@ -100,7 +106,7 @@ def test_native_inventory_cannot_approve_forbidden_code_or_missing_notices(
     native.write_bytes(b"\x7fELF")
     notice = tmp_path / "COPYING"
     if notice_present:
-        notice.write_text("Upstream licence text.\n")
+        notice.write_text("Upstream licence text.\n", encoding="utf-8")
     inventory = [
         {
             "name": "demo",
@@ -121,12 +127,13 @@ def test_intel_scanner_checks_native_magic_without_extension(tmp_path, magic):
         licenses.check_vendor_files(tmp_path)
 
 
-@pytest.mark.parametrize("name", ["scipy", "python-dateutil", "pypdfium2"])
+@pytest.mark.parametrize("name", ["scipy", "python-dateutil", "pypdfium2", "pywin32"])
 def test_reviewed_distribution_names_cannot_hide_changed_gpl_metadata(tmp_path, name):
     info = tmp_path / f"{name}-1.0.dist-info"
     info.mkdir()
     (info / "METADATA").write_text(
-        f"Name: {name}\nVersion: 1.0\nLicense: GPL-3.0-only\nLicense-Expression: MIT\n"
+        f"Name: {name}\nVersion: 1.0\nLicense: GPL-3.0-only\nLicense-Expression: MIT\n",
+        encoding="utf-8",
     )
     assert licenses.check([metadata.PathDistribution(info)])
 
@@ -147,12 +154,15 @@ def test_numpy_cc0_exception_requires_reviewed_metadata_only(
     info = tmp_path / f"numpy-{version}.dist-info"
     info.mkdir()
     (info / "METADATA").write_text(
-        reference.read_text("METADATA").replace("Version: 2.5.4\n", f"Version: {version}\n")
+        reference.read_text("METADATA").replace("Version: 2.5.4\n", f"Version: {version}\n"),
+        encoding="utf-8",
     )
     record = reference.read_text("RECORD")
     if include_code:
-        (tmp_path / "numpy/random/renamed-unreviewed-code.c").write_text("/* Unreviewed code. */\n")
-    (info / "RECORD").write_text(record)
+        (tmp_path / "numpy/random/renamed-unreviewed-code.c").write_text(
+            "/* Unreviewed code. */\n", encoding="utf-8"
+        )
+    (info / "RECORD").write_text(record, encoding="utf-8")
     assert (licenses.check([metadata.PathDistribution(info)]) == []) is allowed
 
 
@@ -172,7 +182,7 @@ def test_vendored_notices_preserve_full_text_and_manifest_obligations(tmp_path):
     site = tmp_path / "site"
     site.mkdir()
     text = "GNU GENERAL PUBLIC LICENSE\nGCC RUNTIME LIBRARY EXCEPTION\n"
-    (site / "COPYING").write_text(text)
+    (site / "COPYING").write_text(text, encoding="utf-8")
     inventory = [
         {
             "name": "libgomp",
@@ -186,8 +196,8 @@ def test_vendored_notices_preserve_full_text_and_manifest_obligations(tmp_path):
     licenses.write_vendored_notices(site, notices, inventory)
     copied = list((notices / "vendored").iterdir())
     assert len(copied) == 6
-    assert text in [p.read_text() for p in copied]
-    summary = (notices / "vendored-libraries.txt").read_text()
+    assert text in [p.read_text(encoding="utf-8") for p in copied]
+    summary = (notices / "vendored-libraries.txt").read_text(encoding="utf-8")
     assert "torch/lib/libgomp.so.1" in summary
     assert "GCC-exception-3.1" in summary
     expression = licenses.pack_expression([], [item["license"] for item in inventory])
@@ -200,11 +210,12 @@ def test_wheel_notice_content_changes_require_review(tmp_path):
     native.write_bytes(b"\x7fELF")
     info = tmp_path / "pillow-13.0.0.dist-info"
     (info / "licenses").mkdir(parents=True)
-    (info / "METADATA").write_text("Name: pillow\nVersion: 13.0.0\n")
-    (info / "licenses/LICENSE").write_text("Unrelated MIT licence text.\n")
+    (info / "METADATA").write_text("Name: pillow\nVersion: 13.0.0\n", encoding="utf-8")
+    (info / "licenses/LICENSE").write_text("Unrelated MIT licence text.\n", encoding="utf-8")
     (info / "RECORD").write_text(
         native_record_rows(tmp_path, ["pillow.libs/libavif-abc.so.16"])
-        + "pillow-13.0.0.dist-info/licenses/LICENSE,,\n"
+        + "pillow-13.0.0.dist-info/licenses/LICENSE,,\n",
+        encoding="utf-8",
     )
     with pytest.raises(SystemExit, match="native licence notice digest mismatch"):
         licenses.vendored_libraries(tmp_path, "x86_64-unknown-linux-gnu")
@@ -220,7 +231,7 @@ def test_freetype_exception_is_bound_to_pillow_and_the_permissive_alternative(
     native = tmp_path / "pillow.libs/libfreetype-abc.so.6"
     native.parent.mkdir()
     native.write_bytes(b"\x7fELF")
-    (tmp_path / "COPYING").write_text("FreeType licence text fixture.\n")
+    (tmp_path / "COPYING").write_text("FreeType licence text fixture.\n", encoding="utf-8")
     _record_owner(tmp_path, owner, ["pillow.libs/libfreetype-abc.so.6"])
     inventory = [
         {
@@ -244,23 +255,23 @@ def test_freetype_exception_is_bound_to_pillow_and_the_permissive_alternative(
 def test_native_freetype_exception_does_not_allow_python_distributions(tmp_path):
     info = tmp_path / "pillow-13.0.0.dist-info"
     info.mkdir()
-    (info / "METADATA").write_text("Name: pillow\nVersion: 13.0.0\nLicense-Expression: FTL\n")
+    (info / "METADATA").write_text(
+        "Name: pillow\nVersion: 13.0.0\nLicense-Expression: FTL\n", encoding="utf-8"
+    )
     assert licenses.check([metadata.PathDistribution(info)])
 
 
 @pytest.mark.parametrize("owner", ["shapely", "rtree"])
 def test_shared_library_exception_requires_unchanged_objects_and_exact_source(tmp_path, owner):
     reference = metadata.distribution(owner)
-    relative = next(
-        str(item) for item in reference.files if str(item) in licenses._REVIEWED_SHARED_FILES
-    )
+    relative = reviewed_native_file(reference, licenses._REVIEWED_SHARED_FILES)
     native = tmp_path / relative
     native.parent.mkdir(parents=True)
     shutil.copyfile(reference.locate_file(relative), native)
     info = tmp_path / f"{owner}-{reference.version}.dist-info"
     info.mkdir()
-    (info / "METADATA").write_text(reference.read_text("METADATA"))
-    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    (info / "METADATA").write_text(reference.read_text("METADATA"), encoding="utf-8")
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]), encoding="utf-8")
     if owner == "shapely":
         notice = "licenses/LICENSE_GEOS"
         (info / "licenses").mkdir()
@@ -269,11 +280,11 @@ def test_shared_library_exception_requires_unchanged_objects_and_exact_source(tm
     licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
     notices = tmp_path / "notices"
     licenses.write_vendored_notices(tmp_path, notices, inventory)
-    summary = (notices / "vendored-libraries.txt").read_text()
+    summary = (notices / "vendored-libraries.txt").read_text(encoding="utf-8")
     version, source = licenses._REVIEWED_SHARED_SOURCES[owner]
     assert version in summary and source in summary
     if owner == "rtree":
-        full_text = next((notices / "vendored").iterdir()).read_text()
+        full_text = next((notices / "vendored").iterdir()).read_text(encoding="utf-8")
         assert "Marios Hadjieleftheriou" in full_text and "Howard Butler" in full_text
     item = inventory[0]
     item.pop("source")
@@ -281,11 +292,11 @@ def test_shared_library_exception_requires_unchanged_objects_and_exact_source(tm
         licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
     item["source"] = source
     native.write_bytes(native.read_bytes() + b"modified")
-    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]), encoding="utf-8")
     with pytest.raises(SystemExit, match="requires an unmodified reviewed shared object"):
         licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
     native.write_bytes(b"!<arch>\nstatic library")
-    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]), encoding="utf-8")
     with pytest.raises(SystemExit, match="requires an unmodified reviewed shared object"):
         licenses.check_vendored_native_files(tmp_path, inventory, "x86_64-unknown-linux-gnu")
 
@@ -299,17 +310,15 @@ def test_reviewed_shared_files_have_a_named_library_and_owner(relative):
 
 def test_quadmath_bundles_full_lgpl_and_retains_wheel_attribution(tmp_path):
     reference = metadata.distribution("numpy")
-    relative = next(
-        str(p)
-        for p in reference.files
-        if str(p) in licenses._GNU_SHARED_FILES and "libquadmath" in str(p)
+    relative = reviewed_native_file(
+        reference, [path for path in licenses._GNU_SHARED_FILES if "libquadmath" in path]
     )
     native = tmp_path / relative
     native.parent.mkdir()
     shutil.copyfile(reference.locate_file(relative), native)
     _record_owner(tmp_path, "numpy", [relative], reference.version)
     attribution = "libquadmath: Copyright Free Software Foundation; LGPL-2.1-or-later.\n"
-    (tmp_path / "COPYING").write_text(attribution)
+    (tmp_path / "COPYING").write_text(attribution, encoding="utf-8")
     inventory = [
         {
             "name": "libquadmath",
@@ -327,6 +336,6 @@ def test_quadmath_bundles_full_lgpl_and_retains_wheel_attribution(tmp_path):
     full_text = licenses._libquadmath_licence_text().read_bytes()
     assert full_text in copied
     assert b"GNU LESSER GENERAL PUBLIC LICENSE" in full_text
-    summary = (notices / "vendored-libraries.txt").read_text()
+    summary = (notices / "vendored-libraries.txt").read_text(encoding="utf-8")
     assert summary.count("  Text:") == 6
     assert licenses._LGPL_21_SOURCE in summary

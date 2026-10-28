@@ -117,7 +117,7 @@ def test_runtime_library_notices_cover_each_target_and_are_declared(tmp_path):
         assert ("libuuid" in {item["name"] for item in libraries}) == ("linux" in target)
         notices = tmp_path / target / "notices"
         licenses.write_runtime_notices(notices, libraries)
-        summary = (notices / "runtime-libraries.txt").read_text()
+        summary = (notices / "runtime-libraries.txt").read_text(encoding="utf-8")
         for item in libraries:
             assert f"{item['name']} {item['version']}: {item['license']}" in summary
             assert item["source"].startswith("https://")

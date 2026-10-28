@@ -101,6 +101,72 @@ OVERRIDES = {
 }
 
 
+# pywin32 b312: metadata says PSF, but its bundled libraries have additional obligations.
+# All three locked CPython 3.14 Windows wheels share these notices and adodbapi sources.
+_PYWIN32_LICENSE = "BSD-3-Clause AND HPND AND LGPL-2.1-or-later AND MIT AND PSF-2.0 AND Python-2.0"
+_PYWIN32_REVIEW = {
+    "version": "312",
+    "library_version": "2.6.2.0",
+    "source": "https://github.com/mhammond/pywin32/archive/2a277cb5552756c2b4d42b524dc36d25e0bb6354.tar.gz",
+    "metadata_sha256": "7b0ffc7aaed4258c6b2a0ef67d984d55a9169d9bbd1a0a8ace2a35542a75a519",
+    "payload_sha256": "2563911fede3a7a0b77ce9bb712a2145a0853c4203a2de72fc80cca8a16bfcc4",
+    "notices": {
+        "adodbapi/license.txt": "5ea2f23c7f00c3006bacf267183e816d8d4b6dc95ea57a4ddb0ff81de6d8719e",
+        "com/License.txt": "fad39c18fc3825fa278db1c86fd52cf88d7c525b3c2fbf7817fa383cbae4d423",
+        "com/win32comext/mapi/src/MAPIStubLibrary/LICENSE": (
+            "1c4cf44d2fb8bf2d10214d6da80cc9e05502824cc4460f35be4c7bcb4cde53da"
+        ),
+        "isapi/README.txt": "41383bcc95edb8138d37077ae54bfdcbd2a3b77bf745a8529a9c161146e22303",
+        "pythonwin/License.txt": "a74d826efb242db087b850348e20abbfd591b51e2081f2048735290913872924",
+        "pythonwin/Scintilla/License.txt": (
+            "57ec79bbeab4fd1cf7460a7ad450d2ab01471810459aeae9e75e4c66b472095f"
+        ),
+        "pythonwin/pywin/idle/LICENSE.txt": (
+            "a0fa1e7b8a4230055685e796548ac084a6c0eea395294574093bba72efd9191b"
+        ),
+        "win32/License.txt": "a74d826efb242db087b850348e20abbfd591b51e2081f2048735290913872924",
+    },
+}
+
+
+def _reviewed_pywin32_expression(distribution: metadata.Distribution) -> str | None:
+    """Permit only the reviewed declaration, full notices and unmodified adodbapi source."""
+    rule = _PYWIN32_REVIEW
+    if distribution.version != rule["version"]:
+        return None
+    text = distribution.read_text("METADATA") or ""
+    if hashlib.sha256(text.encode("utf-8")).hexdigest() != rule["metadata_sha256"]:
+        return None
+    files = {item.as_posix(): item for item in distribution.files or []}
+    for relative, digest in rule["notices"].items():
+        matches = [
+            item for name, item in files.items() if name.endswith(".dist-info/licenses/" + relative)
+        ]
+        if len(matches) != 1:
+            return None
+        notice = Path(matches[0].locate())
+        if (
+            notice.is_symlink()
+            or not notice.is_file()
+            or hashlib.sha256(notice.read_bytes()).hexdigest() != digest
+        ):
+            return None
+    source = Path(distribution.locate_file("adodbapi"))
+    if source.is_symlink() or not source.is_dir():
+        return None
+    lines = []
+    for path in source.rglob("*"):
+        if path.is_symlink():
+            return None
+        if not path.is_file() or (path.parent.name == "__pycache__" and path.suffix == ".pyc"):
+            continue
+        lines.append(
+            f"{path.relative_to(source).as_posix()} {hashlib.sha256(path.read_bytes()).hexdigest()}"
+        )
+    digest = hashlib.sha256("\n".join(sorted(lines)).encode("utf-8")).hexdigest()
+    return _PYWIN32_LICENSE if digest == rule["payload_sha256"] else None
+
+
 @dataclass(frozen=True)
 class Finding:
     distribution: str
@@ -155,6 +221,8 @@ def license_of(distribution: metadata.Distribution) -> str | None:
     if _duplicate_licence_fields(distribution) or _empty_licence_fields(distribution):
         return None
     name = canonical(distribution.metadata["Name"])
+    if name == "pywin32":
+        return _reviewed_pywin32_expression(distribution)
     field = (distribution.metadata.get("License") or "").strip()
     reviewed = _reviewed_license_field(distribution)
     if field and field.lower() not in _KNOWN and not reviewed:
@@ -289,6 +357,14 @@ def check(distributions: Iterable[metadata.Distribution]) -> list[Finding]:
         if _duplicate_licence_fields(distribution):
             findings.append(Finding(name, "unknown", "duplicate single-value licence field"))
             continue
+        if name == "pywin32":
+            if license_of(distribution) is None:
+                findings.append(
+                    Finding(
+                        name, "unknown", "changed or unreviewed pywin32 metadata, notices or source"
+                    )
+                )
+            continue
         raw = list(distribution.metadata.get_all("License") or [])
         # Only the exact reviewed field may contain separately gated runtime notices.
         if _reviewed_license_field(distribution):
@@ -395,6 +471,8 @@ def write_notices(
         reviewed_owners.add(item["distribution"])
     for distribution in sorted(distributions, key=lambda item: canonical(item.metadata["Name"])):
         name = canonical(distribution.metadata["Name"])
+        if name == "pywin32" and license_of(distribution) is None:
+            raise SystemExit("changed or unreviewed pywin32 metadata, notices or source")
         has_native = any(
             Path(item.locate()).is_file() and _native_file(Path(item.locate()))
             for item in distribution.files or []
@@ -415,6 +493,19 @@ def write_notices(
                 destination = target.joinpath(*parts[1:])
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, destination)
+        if name == "pywin32":
+            rule = _PYWIN32_REVIEW
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "adodbapi-source.txt").write_text(
+                f"adodbapi {rule['library_version']}: LGPL-2.1-or-later\n"
+                "Unmodified dynamically imported Python source is included in\n"
+                "runtime site-packages/adodbapi.\n"
+                "Full LGPL-2.1 text: licenses/adodbapi/license.txt.\n"
+                f"Source payload SHA-256: {rule['payload_sha256']}\n"
+                f"Upstream pywin32 {rule['version']} (tag b312), including adodbapi source:\n"
+                f"{rule['source']}\n",
+                encoding="utf-8",
+            )
     notices.mkdir(parents=True, exist_ok=True)
     (notices / "python-distributions.txt").write_text("\n".join(rows) + "\n", encoding="utf-8")
 

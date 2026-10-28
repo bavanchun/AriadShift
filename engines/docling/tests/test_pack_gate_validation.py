@@ -8,7 +8,7 @@ from importlib import metadata
 from pathlib import Path
 
 import pytest
-from conftest import REPOSITORY, native_record_rows
+from conftest import REPOSITORY, native_record_rows, reviewed_native_file
 
 sys.path.insert(0, str(REPOSITORY / "engines/docling/pack"))
 import licenses
@@ -19,9 +19,11 @@ TARGET = "x86_64-unknown-linux-gnu"
 def distribution(site, owner="demo", fields="License-Expression: MIT\n", files=()):
     info = site / f"{owner}-1.0.dist-info"
     info.mkdir(parents=True, exist_ok=True)
-    (info / "METADATA").write_text(f"Name: {owner}\nVersion: 1.0\n{fields}")
-    (info / "LICENSE").write_text("MIT License\n")
-    (info / "RECORD").write_text(native_record_rows(site, [*files, f"{info.name}/LICENSE"]))
+    (info / "METADATA").write_text(f"Name: {owner}\nVersion: 1.0\n{fields}", encoding="utf-8")
+    (info / "LICENSE").write_text("MIT License\n", encoding="utf-8")
+    (info / "RECORD").write_text(
+        native_record_rows(site, [*files, f"{info.name}/LICENSE"]), encoding="utf-8"
+    )
     return metadata.PathDistribution(info)
 
 
@@ -99,7 +101,7 @@ def test_record_owned_extensions_need_a_licensed_unique_owner(tmp_path, relative
     owner = distribution(tmp_path, files=[relative])
     licenses.check_vendored_native_files(tmp_path, [], TARGET)
     (Path(owner.locate_file("demo-1.0.dist-info")) / "METADATA").write_text(
-        "Name: demo\nVersion: 1.0\nLicense-Expression: GPL-3.0-only\n"
+        "Name: demo\nVersion: 1.0\nLicense-Expression: GPL-3.0-only\n", encoding="utf-8"
     )
     with pytest.raises(SystemExit, match=relative):
         licenses.check_vendored_native_files(tmp_path, [], TARGET)
@@ -117,16 +119,11 @@ def test_native_record_ownership_must_not_overlap(tmp_path):
 
 
 def test_moving_a_listed_library_cannot_hide_it_as_a_python_module(tmp_path):
-    reference = metadata.distribution("shapely")
-    relative = next(str(p) for p in reference.files if str(p).startswith("shapely.libs/libgeos_c"))
-    moved = "shapely/relocated/" + Path(relative).name
+    moved = "shapely/relocated/libgeos_c-reviewed.so"
     native = tmp_path / moved
     native.parent.mkdir(parents=True)
-    shutil.copyfile(reference.locate_file(relative), native)
-    info = tmp_path / f"shapely-{reference.version}.dist-info"
-    info.mkdir()
-    (info / "METADATA").write_text(reference.read_text("METADATA"))
-    (info / "RECORD").write_text(native_record_rows(tmp_path, [moved]))
+    native.write_bytes(b"\x7fELF" + b"relocated shared library")
+    distribution(tmp_path, owner="shapely", files=[moved])
     with pytest.raises(SystemExit, match=moved):
         licenses.check_vendored_native_files(tmp_path, [], TARGET)
 
@@ -141,9 +138,11 @@ def test_gnu_runtime_entries_refuse_static_and_changed_payloads(tmp_path, family
     info = tmp_path / f"numpy-{reference.version}.dist-info"
     (info / "licenses").mkdir(parents=True)
     (info / "METADATA").write_text(
-        f"Name: numpy\nVersion: {reference.version}\nLicense-Expression: MIT\n"
+        f"Name: numpy\nVersion: {reference.version}\nLicense-Expression: MIT\n", encoding="utf-8"
     )
-    (info / "RECORD").write_text(native_record_rows(tmp_path, [native.relative_to(tmp_path)]))
+    (info / "RECORD").write_text(
+        native_record_rows(tmp_path, [native.relative_to(tmp_path)]), encoding="utf-8"
+    )
     shutil.copyfile(
         reference.locate_file(f"{info.name}/licenses/LICENSE.txt"), info / "licenses/LICENSE.txt"
     )
@@ -159,7 +158,9 @@ def test_gomp_entry_refuses_static_and_changed_payloads(tmp_path, payload):
     native.parent.mkdir(parents=True)
     native.write_bytes(payload)
     distribution(tmp_path, owner="torch", files=[relative])
-    (tmp_path / "COPYING").write_text("GNU GENERAL PUBLIC LICENSE\nGCC RUNTIME LIBRARY EXCEPTION\n")
+    (tmp_path / "COPYING").write_text(
+        "GNU GENERAL PUBLIC LICENSE\nGCC RUNTIME LIBRARY EXCEPTION\n", encoding="utf-8"
+    )
     inventory = [
         {
             "name": "libgomp",
@@ -176,8 +177,8 @@ def test_gomp_entry_refuses_static_and_changed_payloads(tmp_path, payload):
 @pytest.mark.parametrize("family", ["libgfortran", "libquadmath"])
 def test_gnu_binding_checks_changes_at_the_reviewed_path(tmp_path, family):
     reference = metadata.distribution("numpy")
-    relative = next(
-        str(p) for p in reference.files if str(p) in licenses._GNU_SHARED_FILES and family in str(p)
+    relative = reviewed_native_file(
+        reference, [path for path in licenses._GNU_SHARED_FILES if family in path]
     )
     native = tmp_path / relative
     native.parent.mkdir()
@@ -185,20 +186,20 @@ def test_gnu_binding_checks_changes_at_the_reviewed_path(tmp_path, family):
     info = tmp_path / f"numpy-{reference.version}.dist-info"
     (info / "licenses").mkdir(parents=True)
     (info / "METADATA").write_text(
-        f"Name: numpy\nVersion: {reference.version}\nLicense-Expression: MIT\n"
+        f"Name: numpy\nVersion: {reference.version}\nLicense-Expression: MIT\n", encoding="utf-8"
     )
-    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]), encoding="utf-8")
     shutil.copyfile(
         reference.locate_file(f"{info.name}/licenses/LICENSE.txt"), info / "licenses/LICENSE.txt"
     )
     inventory = licenses.vendored_libraries(tmp_path, TARGET)
     licenses.check_vendored_native_files(tmp_path, inventory, TARGET)
     native.write_bytes(native.read_bytes() + b"modified")
-    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]), encoding="utf-8")
     with pytest.raises(SystemExit, match="unmodified reviewed ELF shared object"):
         licenses.check_vendored_native_files(tmp_path, inventory, TARGET)
     native.write_bytes(b"!<arch>\nstatic library")
-    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]))
+    (info / "RECORD").write_text(native_record_rows(tmp_path, [relative]), encoding="utf-8")
     with pytest.raises(SystemExit, match="unmodified reviewed ELF shared object"):
         licenses.check_vendored_native_files(tmp_path, inventory, TARGET)
 
@@ -225,7 +226,7 @@ def test_total_scan_detects_thin_archives_without_an_extension(tmp_path):
 
 def test_gnu_notices_bundle_source_offer_and_all_licence_texts(tmp_path):
     attribution = "Original GNU runtime attribution remains bundled.\n"
-    (tmp_path / "COPYING").write_text(attribution)
+    (tmp_path / "COPYING").write_text(attribution, encoding="utf-8")
     inventory = [
         {
             "name": "libquadmath",
@@ -239,7 +240,7 @@ def test_gnu_notices_bundle_source_offer_and_all_licence_texts(tmp_path):
     ]
     notices = tmp_path / "notices"
     licenses.write_vendored_notices(tmp_path, notices, inventory)
-    copied = [p.read_text() for p in (notices / "vendored").iterdir()]
+    copied = [p.read_text(encoding="utf-8") for p in (notices / "vendored").iterdir()]
     assert attribution in copied
     assert any(
         t.lstrip().startswith("GNU GENERAL PUBLIC LICENSE") and "Version 3," in t for t in copied

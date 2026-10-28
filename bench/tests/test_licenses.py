@@ -94,6 +94,10 @@ class TestLicenses(unittest.TestCase):
             self.assertEqual(checked, expression)
             self.assertFalse(_is_permissive_exact(value, checked, []))
 
+    def test_cc0_is_not_a_general_permissive_expression(self) -> None:
+        self.assertFalse(_is_permissive_exact("", "BSD-3-Clause AND CC0-1.0", []))
+        self.assertFalse(_is_permissive_exact("", "CC0-1.0", []))
+
     def test_no_banned_packages_in_uv_lock(self) -> None:
         """Verify uv.lock contains no banned or GPL packages."""
         root = Path(__file__).resolve().parents[2]
@@ -146,7 +150,12 @@ class TestLicenses(unittest.TestCase):
                 )
 
             checked_expr = _reviewed_expression(pkg_name, license_val, license_expr)
-            is_valid = _is_permissive_exact(license_val, checked_expr, classifiers)
+            # NumPy's CC0 terms cover only reviewed metadata, not arbitrary code.
+            is_valid = (
+                not pack_licenses.check([dist])
+                if pkg_name == "numpy"
+                else _is_permissive_exact(license_val, checked_expr, classifiers)
+            )
             self.assertTrue(
                 is_valid,
                 f"Package '{pkg_name}' does not have an exact allowed permissive license. "
