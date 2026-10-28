@@ -290,6 +290,77 @@ def test_reviewed_external_notices_are_checked_and_bundled(tmp_path, monkeypatch
         licenses.check_vendored_native_files(tmp_path, inventory, TRIPLE)
 
 
+OPENEXR_LIBRARIES = [
+    "libIex-3_3.32.3.3.4.dylib",
+    "libIlmThread-3_3.32.3.3.4.dylib",
+    "libOpenEXR-3_3.32.3.3.4.dylib",
+    "libOpenEXRCore-3_3.32.3.3.4.dylib",
+]
+IMATH_LIBRARY = "libImath-3_1.29.11.0.dylib"
+
+
+def opencv_upstream_notice(site, monkeypatch, filename):
+    relative = "cv2/.dylibs/" + filename
+    native = site / relative
+    native.parent.mkdir(parents=True)
+    native.write_bytes(b"\xcf\xfa\xed\xfe" + bytes(8) + (6).to_bytes(4, "little"))
+    info = site / "opencv_python_headless-5.0.0.93.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(
+        "Name: opencv-python-headless\nVersion: 5.0.0.93\nLicense-Expression: Apache-2.0\n",
+        encoding="utf-8",
+    )
+    (info / "RECORD").write_text(native_record_rows(site, [relative]), encoding="utf-8")
+    notices = site / "pack/licenses"
+    notices.mkdir(parents=True)
+    for notice in ("openexr-3.3.4.txt", "imath-3.1.11.txt"):
+        (notices / notice).write_bytes(
+            (REPOSITORY / "engines/docling/pack/licenses" / notice).read_bytes()
+        )
+    monkeypatch.setattr(licenses, "__file__", str(site / "pack/licenses.py"))
+    return notices
+
+
+@pytest.mark.parametrize("filename", [*OPENEXR_LIBRARIES, IMATH_LIBRARY])
+def test_opencv_reviewed_dylib_bundles_its_complete_upstream_notice(
+    tmp_path, monkeypatch, filename
+):
+    sources = opencv_upstream_notice(tmp_path, monkeypatch, filename)
+    inventory = licenses.vendored_libraries(tmp_path, "aarch64-apple-darwin")
+    licenses.check_vendored_native_files(tmp_path, inventory, "aarch64-apple-darwin")
+    assert len(inventory) == 1
+    assert inventory[0]["license"] == "BSD-3-Clause"
+    assert inventory[0]["distribution"] == "opencv-python-headless"
+    output = tmp_path / "bundled-notices"
+    output.mkdir()
+    licenses.write_vendored_notices(tmp_path, output, inventory)
+    bundled = list((output / "vendored").iterdir())
+    assert len(bundled) == 1
+    assert bundled[0].read_bytes() == (sources / inventory[0]["notice"]).read_bytes()
+
+
+@pytest.mark.parametrize("filename", [OPENEXR_LIBRARIES[0], IMATH_LIBRARY])
+@pytest.mark.parametrize("change", ["missing", "changed"])
+def test_opencv_reviewed_dylib_requires_the_original_full_notice(
+    tmp_path, monkeypatch, filename, change
+):
+    sources = opencv_upstream_notice(tmp_path, monkeypatch, filename)
+    inventory = licenses.vendored_libraries(tmp_path, "aarch64-apple-darwin")
+    notice = sources / inventory[0]["notice"]
+    if change == "missing":
+        notice.unlink()
+    else:
+        notice.write_text("BSD-3-Clause\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match=r"native (licence )?notice"):
+        licenses.check_vendored_native_files(tmp_path, inventory, "aarch64-apple-darwin")
+
+
+def test_opencv_upstream_notices_do_not_allow_an_unreviewed_dylib(tmp_path, monkeypatch):
+    opencv_upstream_notice(tmp_path, monkeypatch, "libunreviewed.1.dylib")
+    with pytest.raises(SystemExit, match="review vendored library licences"):
+        licenses.vendored_libraries(tmp_path, "aarch64-apple-darwin")
+
+
 @pytest.mark.parametrize("triple", [TRIPLE, "aarch64-apple-darwin", "x86_64-pc-windows-msvc"])
 def test_runtime_pruning_drops_only_foreign_launcher_resources(tmp_path, triple):
     runtime = tmp_path / "runtime"

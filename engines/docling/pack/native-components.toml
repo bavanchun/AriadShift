@@ -2,6 +2,36 @@
 # Every listed file still requires its installed RECORD SHA-256 and size.
 # Notices outside dist-info are explicit, hash-bound sources, not inferred attribution.
 
+# The macOS wheel omits these project notices. Bundle the complete upstream texts:
+# https://github.com/AcademySoftwareFoundation/openexr/blob/v3.3.4/LICENSE.md
+# https://github.com/AcademySoftwareFoundation/Imath/blob/v3.1.11/LICENSE.md
+[[components]]
+name = "opencv-openexr"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "BSD-3-Clause"
+notice_scope = "upstream"
+files = [
+  "cv2/.dylibs/libIex-3_3.32.3.3.4.dylib",
+  "cv2/.dylibs/libIlmThread-3_3.32.3.3.4.dylib",
+  "cv2/.dylibs/libOpenEXR-3_3.32.3.3.4.dylib",
+  "cv2/.dylibs/libOpenEXRCore-3_3.32.3.3.4.dylib",
+]
+notices = [
+  { path = "openexr-3.3.4.txt", sha256 = "84853c91d4c2e0310741d4773469d98bb93e61029608e0ba0882a3fffdf330bd" },
+]
+
+[[components]]
+name = "opencv-imath"
+distribution = "opencv-python-headless"
+version = "5.0.0.93"
+license = "BSD-3-Clause"
+notice_scope = "upstream"
+files = ["cv2/.dylibs/libImath-3_1.29.11.0.dylib"]
+notices = [
+  { path = "imath-3.1.11.txt", sha256 = "c20236d3b39fd20eba8e3d1fb3b892a5483df2e7d8d61bf43f165d3fac22f601" },
+]
+
 [[components]]
 name = "tokenizers-native"
 distribution = "tokenizers"
