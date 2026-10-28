@@ -479,6 +479,8 @@ fn pre_code_and_language() {
 
 #[test]
 fn figure_and_figcaption_and_bare_image() {
+    use ariad_core::ir::{AssetRef, Block, Inline};
+
     let html = r#"
     <figure>
         <img src="chart.png" alt="Revenue chart">
@@ -488,41 +490,35 @@ fn figure_and_figcaption_and_bare_image() {
     "#;
     let output =
         read(html.as_bytes(), &Limits::default()).expect("figures and images should parse");
-    assert_eq!(output.document.body.len(), 2);
-
-    // Figure block
-    if let ariad_core::ir::Block::Figure { asset, caption } = &output.document.body[0] {
-        assert_eq!(
-            asset,
-            &ariad_core::ir::AssetRef::Url {
-                href: "chart.png".to_owned(),
-            }
-        );
-        assert_eq!(
-            caption,
-            &vec![ariad_core::ir::Inline::Text {
-                text: "Figure 1: Revenue".to_owned(),
-            }]
-        );
-    } else {
-        panic!("expected figure block");
-    }
-
-    // Bare image in paragraph
-    if let ariad_core::ir::Block::Paragraph { content } = &output.document.body[1] {
-        assert_eq!(
-            content,
-            &vec![ariad_core::ir::Inline::Image {
-                target: ariad_core::ir::AssetRef::Url {
-                    href: "https://example.com/logo.png".to_owned(),
-                },
-                alt: "Site logo".to_owned(),
-                title: Some("Logo".to_owned()),
-            }]
-        );
-    } else {
-        panic!("expected paragraph containing bare image");
-    }
+    // Image paragraphs retain independent alt/title fields that Figure lacks.
+    assert_eq!(
+        output.document.body,
+        vec![
+            Block::Paragraph {
+                content: vec![Inline::Image {
+                    target: AssetRef::Url {
+                        href: "chart.png".to_owned()
+                    },
+                    alt: "Revenue chart".to_owned(),
+                    title: None,
+                }]
+            },
+            Block::Paragraph {
+                content: vec![Inline::Text {
+                    text: "Figure 1: Revenue".to_owned()
+                }]
+            },
+            Block::Paragraph {
+                content: vec![Inline::Image {
+                    target: AssetRef::Url {
+                        href: "https://example.com/logo.png".to_owned()
+                    },
+                    alt: "Site logo".to_owned(),
+                    title: Some("Logo".to_owned()),
+                }]
+            },
+        ]
+    );
 }
 
 #[test]

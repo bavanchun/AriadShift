@@ -8,6 +8,8 @@
 #     --build-arg SERVER_IMAGE=ariadshift-worker-office -t ariadshift-worker-docling .
 # The signed pack must be published before this build can finish. The default
 # command reads the docling queue; see docs/server.md for runtime sizing.
+# Cloud E2E uses the read-only local-pack image override for PR/push CI packs;
+# nightly tests keep this signed-install path. See docs/ci.md.
 
 ARG SERVER_IMAGE=ariadshift-worker-office
 

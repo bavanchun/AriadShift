@@ -61,6 +61,18 @@ export function buildAuthOptions(config: AuthServiceConfig, database: pg.Pool) {
       requireEmailVerification: false,
     },
     socialProviders: socialProviders(config),
+    user: {
+      // The account page deletes an account after the user confirms the
+      // password; without a mail transport there is no emailed confirmation.
+      deleteUser: {
+        enabled: true,
+        // API keys use a polymorphic referenceId without a user foreign key.
+        // Revoke them before deletion; a failed cleanup must stop deletion.
+        beforeDelete: async (user) => {
+          await database.query('DELETE FROM "auth"."apikey" WHERE "referenceId" = $1', [user.id]);
+        },
+      },
+    },
     rateLimit: {
       enabled: true,
       // Shared across replicas and kept across restarts.

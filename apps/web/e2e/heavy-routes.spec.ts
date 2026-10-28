@@ -7,12 +7,20 @@ test.setTimeout(120_000);
 const fixture = (name: string) => path.resolve(import.meta.dirname, "../../../fixtures", name);
 const MARKDOWN =
   "# Browser document\n\nTiếng Việt: khu vườn yên tĩnh.\n\n- first\n- second\n\n| Name | Value |\n| --- | --- |\n| a | 1 |\n";
+// A converter worker boots once: it downloads and compiles the ariad-wasm module and opens
+// browser storage. On a loaded machine that alone can outlast the default assertion timeout,
+// so the helpers wait for the boot as its own step, like a conversion, before reading a file.
+const ENGINE_BOOT = { timeout: 60_000 };
 async function pick(
   page: Page,
   name: string,
   buffer: Buffer,
   mimeType = "application/octet-stream",
 ) {
+  await expect(page.getByTestId("device-indicator")).toContainText(
+    /browser storage|In memory/,
+    ENGINE_BOOT,
+  );
   await page.locator("input[type=file]").setInputFiles({ name, buffer, mimeType });
   await expect(page.getByTestId("input-name")).toHaveText(name);
 }
@@ -29,6 +37,11 @@ async function convert(page: Page, label: string) {
 async function reset(page: Page) {
   await page.getByRole("button", { name: "Start over and delete files" }).click();
   await expect(page.locator("input[type=file]")).toBeAttached();
+  // A worker that grew too large is replaced here, so the answer can include a fresh boot.
+  await expect(page.getByRole("status")).toHaveText(
+    "Files were removed from this device.",
+    ENGINE_BOOT,
+  );
 }
 const cacheKeys = (page: Page, name: string) =>
   page.evaluate(
