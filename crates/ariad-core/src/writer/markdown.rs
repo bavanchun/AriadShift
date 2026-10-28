@@ -1,5 +1,7 @@
 //! Markdown document writer producing GitHub Flavored Markdown (GFM).
 
+use std::collections::BTreeMap;
+
 use base64::engine::{Engine as _, general_purpose::STANDARD};
 use unicode_normalization::UnicodeNormalization;
 
@@ -12,8 +14,187 @@ use crate::{
     writer::WriteOutput,
 };
 
+// Reserve for escaping, delimiters and container prefixes before allocating output.
+// This conservative ceiling is internal to the text writers, not an engine limit.
+pub(super) const MAX_OUTPUT_BYTES: usize = 512 * 1024 * 1024;
+const MAX_TABLE_COLUMNS: usize = 128;
+const MAX_WRITER_NESTING_DEPTH: usize = 100;
+
+pub(super) fn output_ceiling_exceeded() -> WriteOutput {
+    WriteOutput {
+        content: String::new(),
+        warnings: vec![Warning::new(
+            WarningCode::UnsupportedNode,
+            "document exceeds the text writer output ceiling (512 MiB) or nesting limit",
+        )],
+    }
+}
+
+struct SizeCounter {
+    remaining: usize,
+}
+
+impl std::io::Write for SizeCounter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.remaining = self
+            .remaining
+            .checked_sub(bytes.len())
+            .ok_or_else(|| std::io::Error::other("text writer output ceiling exceeded"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+enum WriterNode<'a> {
+    Block(&'a Block),
+    Inline(&'a Inline),
+}
+
+// The iterative walk runs before normalization and serde's recursive traversal.
+// Count all image locations, including furniture, captions, cells and footnotes.
+pub(super) fn check_output_size(
+    document: &Document,
+    title: Option<&str>,
+) -> Option<BTreeMap<String, usize>> {
+    let mut references = BTreeMap::<String, usize>::new();
+    let mut stack: Vec<_> = document
+        .body
+        .iter()
+        .chain(&document.furniture)
+        .map(|block| (WriterNode::Block(block), 0usize, 0usize))
+        .collect();
+    let mut max_prefix = 0;
+    while let Some((node, depth, prefix)) = stack.pop() {
+        if depth > MAX_WRITER_NESTING_DEPTH {
+            return None;
+        }
+        max_prefix = max_prefix.max(prefix);
+        let mut image = None;
+        match node {
+            WriterNode::Block(block) => match block {
+                Block::Heading { content, .. } | Block::Paragraph { content } => {
+                    stack.extend(
+                        content
+                            .iter()
+                            .map(|inline| (WriterNode::Inline(inline), depth, prefix)),
+                    );
+                }
+                Block::Quote { blocks } | Block::Footnote { blocks, .. } => {
+                    let nested_prefix = prefix
+                        + if matches!(block, Block::Quote { .. }) {
+                            2
+                        } else {
+                            4
+                        };
+                    stack.extend(
+                        blocks
+                            .iter()
+                            .map(|block| (WriterNode::Block(block), depth + 1, nested_prefix)),
+                    );
+                }
+                Block::List { items, .. } => {
+                    for item in items {
+                        stack.extend(
+                            item.blocks
+                                .iter()
+                                .map(|block| (WriterNode::Block(block), depth + 1, prefix + 26)),
+                        );
+                    }
+                }
+                Block::Table {
+                    caption,
+                    head,
+                    body,
+                    footnotes,
+                    ..
+                } => {
+                    for row in head.iter().chain(body) {
+                        for cell in row {
+                            stack.extend(
+                                cell.blocks
+                                    .iter()
+                                    .map(|block| (WriterNode::Block(block), depth + 1, prefix)),
+                            );
+                        }
+                    }
+                    stack.extend(
+                        caption
+                            .iter()
+                            .flatten()
+                            .chain(footnotes)
+                            .map(|inline| (WriterNode::Inline(inline), depth + 1, prefix)),
+                    );
+                }
+                Block::Figure { asset, caption } => {
+                    image = Some(asset);
+                    stack.extend(
+                        caption
+                            .iter()
+                            .map(|inline| (WriterNode::Inline(inline), depth + 1, prefix)),
+                    );
+                }
+                _ => {}
+            },
+            WriterNode::Inline(inline) => match inline {
+                Inline::Emph { content }
+                | Inline::Strong { content }
+                | Inline::Strikeout { content }
+                | Inline::Superscript { content }
+                | Inline::Subscript { content }
+                | Inline::Link { content, .. } => {
+                    stack.extend(
+                        content
+                            .iter()
+                            .map(|inline| (WriterNode::Inline(inline), depth + 1, prefix)),
+                    );
+                }
+                Inline::Image { target, .. } => image = Some(target),
+                _ => {}
+            },
+        }
+        if let Some(AssetRef::Asset { id }) = image {
+            *references.entry(id.clone()).or_default() += 1;
+        }
+    }
+    let overhead = title
+        .unwrap_or_default()
+        .len()
+        .checked_mul(12)?
+        .checked_add(8192)?;
+    let mut remaining = MAX_OUTPUT_BYTES.checked_sub(overhead)?;
+    for id in references.keys() {
+        if let Some(asset) = document.assets.get(id) {
+            remaining = remaining.checked_sub(
+                asset
+                    .bytes
+                    .len()
+                    .checked_mul(2)?
+                    .checked_add(asset.media_type.len().checked_mul(12)?)?,
+            )?;
+        }
+    }
+    // JSON is streamed into a counter: assets are charged once above, never serialized.
+    // Twelve bytes cover escaping and duplicated math/figure text; also reserve
+    // the longest accumulated container prefix for every serialized source byte.
+    let mut counter = SizeCounter {
+        remaining: remaining / (12 + max_prefix),
+    };
+    serde_json::to_writer(
+        &mut counter,
+        &(&document.meta, &document.body, &document.furniture),
+    )
+    .ok()?;
+    Some(references)
+}
+
 struct MarkdownContext<'a> {
     assets: &'a AssetStore,
+    shared_assets: BTreeMap<String, usize>,
+    shared_titles: BTreeMap<String, Option<String>>,
+    image_title_dropped_warned: bool,
     warnings: &'a mut Vec<Warning>,
     raw_dropped_warned: bool,
     math_fallback_warned: bool,
@@ -23,6 +204,9 @@ struct MarkdownContext<'a> {
 /// Serializes an IR document to GitHub Flavored Markdown.
 #[must_use]
 pub fn write(document: &Document) -> WriteOutput {
+    let Some(references) = check_output_size(document, None) else {
+        return output_ceiling_exceeded();
+    };
     let normalized_doc = super::normalize_document(document);
     let document = &normalized_doc;
 
@@ -34,6 +218,14 @@ pub fn write(document: &Document) -> WriteOutput {
 
     let mut ctx = MarkdownContext {
         assets: &document.assets,
+        shared_assets: references
+            .into_iter()
+            .filter(|(id, count)| *count > 1 && document.assets.contains_key(id))
+            .enumerate()
+            .map(|(index, (id, _))| (id, index))
+            .collect(),
+        shared_titles: BTreeMap::new(),
+        image_title_dropped_warned: false,
         warnings: &mut warnings,
         raw_dropped_warned: false,
         math_fallback_warned: false,
@@ -50,6 +242,26 @@ pub fn write(document: &Document) -> WriteOutput {
         write_block(block, &mut ctx, &mut out);
     }
 
+    for (id, title) in &ctx.shared_titles {
+        let index = ctx.shared_assets[id];
+        let asset = &ctx.assets[id];
+        let url = format!(
+            "data:{};base64,{}",
+            asset.media_type,
+            STANDARD.encode(&asset.bytes)
+        );
+        out.push_str(&format!(
+            "[ariad-asset-{index}]: {}",
+            format_link_destination(&url, false)
+        ));
+        if let Some(title) = title {
+            out.push_str(&format!(" \"{}\"", format_link_title(title, false)));
+        }
+        out.push('\n');
+    }
+    if out.len() > MAX_OUTPUT_BYTES {
+        return output_ceiling_exceeded();
+    }
     WriteOutput {
         content: out,
         warnings,
@@ -431,7 +643,7 @@ fn write_table(
     out: &mut String,
 ) {
     // Check for complex non-pipe-representable table features
-    let mut has_complex = false;
+    let mut has_complex = body.iter().flatten().any(|cell| cell.header == Some(true));
     for row in head.iter().chain(body.iter()) {
         for cell in row {
             if cell.rowspan > 1 || cell.colspan > 1 || cell.blocks.len() > 1 {
@@ -446,16 +658,23 @@ fn write_table(
     if has_complex {
         ctx.warnings.push(Warning::new(
             WarningCode::UnsupportedNode,
-            "table with cell spans or block cells was simplified to a pipe table",
+            "table with cell spans, row headers or block cells was simplified to a pipe table",
         ));
     }
 
-    let mut col_count = columns.len();
-    if let Some(first) = head.first() {
-        col_count = col_count.max(first.len());
-    }
-    if let Some(first) = body.first() {
-        col_count = col_count.max(first.len());
+    let requested_columns = head
+        .iter()
+        .chain(body)
+        .map(Vec::len)
+        .max()
+        .unwrap_or(0)
+        .max(columns.len());
+    let col_count = requested_columns.min(MAX_TABLE_COLUMNS);
+    if head.len() > 1 || requested_columns > MAX_TABLE_COLUMNS {
+        ctx.warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            "extra table header rows or columns beyond 128 were omitted",
+        ));
     }
     if col_count == 0 {
         return;
@@ -495,7 +714,7 @@ fn write_table(
     // 3. Body rows
     for row in body {
         out.push_str("| ");
-        for col_idx in 0..col_count {
+        for col_idx in 0..row.len().clamp(1, col_count) {
             if col_idx > 0 {
                 out.push_str(" | ");
             }
@@ -524,15 +743,14 @@ fn render_cell_content(cell: &TableCell, ctx: &mut MarkdownContext) -> String {
 
 fn format_footnote_id(id: &str) -> String {
     let mut out = String::with_capacity(id.len());
-    for ch in id.chars() {
-        match ch {
-            '\\' => out.push_str("%5C"),
-            '[' => out.push_str("%5B"),
-            ']' => out.push_str("%5D"),
-            ' ' => out.push_str("%20"),
-            '\n' => out.push_str("%0A"),
-            '\r' => out.push_str("%0D"),
-            c => out.push(c),
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    for byte in id.bytes() {
+        if byte.is_ascii_alphanumeric() || b"_.:-".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push('%');
+            out.push(char::from(HEX[usize::from(byte >> 4)]));
+            out.push(char::from(HEX[usize::from(byte & 15)]));
         }
     }
     out
@@ -1054,6 +1272,31 @@ fn render_image(
     in_table: bool,
     ctx: &mut MarkdownContext,
 ) -> String {
+    if let AssetRef::Asset { id } = target
+        && let Some(index) = ctx.shared_assets.get(id).copied()
+    {
+        // One definition per asset keeps output linear. Conflicting or missing
+        // per-occurrence titles deliberately use the first title and warn.
+        let first_title = ctx
+            .shared_titles
+            .entry(id.clone())
+            .or_insert_with(|| title.map(str::to_owned));
+        if first_title.as_deref() != title && !ctx.image_title_dropped_warned {
+            ctx.warnings.push(Warning::new(
+                WarningCode::UnsupportedNode,
+                "different titles on repeated embedded images were reduced to the first title",
+            ));
+            ctx.image_title_dropped_warned = true;
+        }
+        let escaped_alt = escape_markdown_text(
+            alt,
+            EscapeOptions {
+                in_table,
+                trailing_bang_before_link: false,
+            },
+        );
+        return format!("![{escaped_alt}][ariad-asset-{index}]");
+    }
     let (url, warn) = match target {
         AssetRef::Asset { id } => {
             if let Some(asset) = ctx.assets.get(id) {
@@ -1164,8 +1407,10 @@ pub fn escape_markdown_text(text: &str, options: EscapeOptions) -> String {
                     spaces += 1;
                 }
                 if spaces >= 4 {
-                    out.push_str("&#32;   ");
-                    i += 4;
+                    out.push_str("&#32;");
+                    out.extend(std::iter::repeat_n(' ', spaces - 1));
+                    i += spaces;
+                    at_line_start = false;
                     continue;
                 }
 
