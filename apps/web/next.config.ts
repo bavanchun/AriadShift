@@ -9,7 +9,8 @@ const nextConfig: NextConfig = {
   // `ARIADSHIFT_WEB_OUTPUT=export` writes a static site to out/; otherwise `next start` serves it.
   output: staticExport ? "export" : undefined,
   poweredByHeader: false,
-  transpilePackages: ["@ariadshift/ui"],
+  // Both workspace packages export TypeScript source.
+  transpilePackages: ["@ariadshift/sdk", "@ariadshift/ui"],
   images: { unoptimized: true },
   turbopack: { root: repositoryRoot },
   outputFileTracingRoot: repositoryRoot,

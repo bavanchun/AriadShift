@@ -3,4 +3,5 @@
 export * from "./client";
 export * from "./errors";
 export * from "./generated";
+export * from "./hash";
 export { parseSse, type SseMessage } from "./sse";

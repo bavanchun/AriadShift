@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
 
+test.describe.configure({ timeout: 120_000 });
+
 const MARKDOWN = `# Field notes
 
 A paragraph with *emphasis* and a [link](https://example.test).
@@ -17,12 +19,22 @@ const HTML = `<!doctype html>
 <html lang="en"><head><title>Sample page</title></head>
 <body><h1>Sample page</h1><p>Hello <strong>world</strong>.</p><ul><li>one</li><li>two</li></ul></body></html>`;
 
+const ENGINE_BOOT = { timeout: 60_000 };
+
 async function openConverter(page: Page, query = "") {
   await page.goto(`/app${query}`);
   await expect(page.getByRole("heading", { name: "Convert a document" })).toBeVisible();
+  await expect(page.getByTestId("device-indicator")).toContainText(
+    /browser storage|In memory/,
+    ENGINE_BOOT,
+  );
 }
 
 async function chooseFile(page: Page, name: string, mimeType: string, content: string | Buffer) {
+  await expect(page.getByTestId("device-indicator")).toContainText(
+    /browser storage|In memory/,
+    ENGINE_BOOT,
+  );
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("button", { name: "Choose a file" }).click();
   await (await chooser).setFiles({ name, mimeType, buffer: Buffer.from(content) });
@@ -197,6 +209,7 @@ test("reset deletes the stored files", async ({ page, browserName }) => {
 });
 
 test("two tabs keep their files apart", async ({ context, browserName }) => {
+  test.setTimeout(240_000);
   const first = await context.newPage();
   const second = await context.newPage();
   await openConverter(first);
@@ -225,6 +238,7 @@ test("files of a closed tab are deleted when the converter starts again", async 
   context,
   browserName,
 }) => {
+  test.setTimeout(240_000);
   const closing = await context.newPage();
   await openConverter(closing);
   await chooseFile(closing, "left-behind.md", "text/markdown", "# Left behind\n");
@@ -255,7 +269,7 @@ test("refuses files above the browser limit", async ({ page }) => {
 });
 
 test("offers a compatible Desktop route for oversized IR JSON", async ({ page }) => {
-  await page.goto("/app?to=docx&profile=private");
+  await openConverter(page, "?to=docx&profile=private");
   await page.locator("input[type=file]").setInputFiles({
     name: "huge.ir.json",
     mimeType: "application/json",

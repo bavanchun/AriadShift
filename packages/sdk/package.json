@@ -13,6 +13,9 @@
     "test": "vitest run",
     "typecheck": "node scripts/generate.mjs && tsc --noEmit -p ."
   },
+  "dependencies": {
+    "@noble/hashes": "2.4.0"
+  },
   "devDependencies": {
     "@ariadshift/config": "workspace:*",
     "@hey-api/openapi-ts": "0.99.0",
