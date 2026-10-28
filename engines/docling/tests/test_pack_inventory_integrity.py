@@ -544,3 +544,101 @@ def test_reviewed_upstream_sidecar_bytes_match_every_declared_digest():
     for relative, expected in notices.items():
         notice = REPOSITORY / "engines/docling/pack/licenses" / relative
         assert hashlib.sha256(notice.read_bytes()).hexdigest() == expected, relative
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "libx264.164.dylib",
+        "libx265.215.dylib",
+        "librubberband.3.dylib",
+        "libavcodec.62.dylib",
+        "libavdevice.62.dylib",
+        "libavfilter.11.dylib",
+        "libavformat.62.dylib",
+        "libavutil.60.dylib",
+        "libswresample.6.dylib",
+        "libswscale.9.dylib",
+        "libpostproc.58.dylib",
+        "libvidstab.1.dylib",
+        "libfdk-aac.2.dylib",
+    ],
+)
+@pytest.mark.parametrize("markers", [False, True])
+def test_exported_wheels_refuse_video_families_even_without_markers(tmp_path, name, markers):
+    wheel = tmp_path / "native-1.0-py3-none-any.whl"
+    data = b"\xcf\xfa\xed\xfe" + bytes(16)
+    if markers:
+        data += b"libcodec license: GPL version 3 or later\x00"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(f"cv2/.dylibs/{name}", data)
+    with pytest.raises(SystemExit, match=r"video library|GPL runtime"):
+        licenses.check_wheel_files([wheel])
+
+
+@pytest.mark.parametrize("name", ["libclean.1.dylib", "libavif.16.dylib"])
+def test_exported_clean_image_libraries_remain_allowed(tmp_path, name):
+    wheel = tmp_path / "native-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(f"cv2/.dylibs/{name}", b"\xcf\xfa\xed\xfe" + bytes(16))
+    licenses.check_wheel_files([wheel])
+
+
+def test_exported_wheel_refuses_nonfree_configuration_in_an_unlisted_library(tmp_path):
+    wheel = tmp_path / "native-1.0-py3-none-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            "cv2/.dylibs/libclean.dylib", b"\xcf\xfa\xed\xfe" + b" --enable-nonfree\x00"
+        )
+    with pytest.raises(SystemExit, match="runtime declaration"):
+        licenses.check_wheel_files([wheel])
+
+
+@pytest.mark.parametrize("change", ["none", "hash", "removed", "target"])
+def test_permissive_component_review_requires_the_same_locked_wheel(tmp_path, monkeypatch, change):
+    component = reviewed_shared_component(tmp_path, monkeypatch)
+    component["license"] = "MIT"
+    component.pop("shared_objects")
+    monkeypatch.setitem(licenses.NATIVE_LIBRARIES, "demo-native", ("MIT", {"demo"}))
+    component["reviewed_wheels"] = {
+        TRIPLE: {"name": "demo-1.0-py3-none-any.whl", "sha256": "a" * 64}
+    }
+    lock = tmp_path / "uv.lock"
+    lock.write_text(
+        '[[package]]\nname = "demo"\nversion = "1.0"\nwheels = [\n'
+        '{url = "https://example.invalid/demo-1.0-py3-none-any.whl", '
+        f'hash = "sha256:{"a" * 64}"}}]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(licenses, "_LOCK_FILE", lock, raising=False)
+    inventory = licenses.vendored_libraries(tmp_path, TRIPLE)
+    licenses.check_vendored_native_files(tmp_path, inventory, TRIPLE)
+    if change == "none":
+        return
+    if change == "hash":
+        lock.write_text(lock.read_text("utf-8").replace("a" * 64, "b" * 64), encoding="utf-8")
+    elif change == "removed":
+        lock.write_text('[[package]]\nname="demo"\nversion="1.0"\nwheels=[]\n', encoding="utf-8")
+    else:
+        component["reviewed_wheels"].pop(TRIPLE)
+    with pytest.raises(SystemExit, match="reviewed locked wheel"):
+        licenses.check_vendored_native_files(tmp_path, inventory, TRIPLE)
+
+
+def test_new_permissive_reviews_all_declare_their_reviewed_wheel_inputs():
+    names = {
+        "torch-native",
+        "torch-arm-compute",
+        "torch-openblas",
+        "opencv-linux-aom",
+        "opencv-linux-avif",
+        "opencv-linux-png",
+        "opencv-linux-vpx",
+        "opencv-linux-openssl",
+        "opencv-linux-drm",
+        "opencv-linux-openblas",
+    }
+    for name in names:
+        component = licenses._NATIVE_COMPONENTS[name]
+        assert component["reviewed_wheels"], name
+        assert "shared_objects" not in component, name

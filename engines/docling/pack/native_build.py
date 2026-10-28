@@ -186,16 +186,11 @@ def cached_build(kind, target, pins, cache, builder):
     return destination
 
 
-def release_files(kind, target, pins, cache, destination, build_key):
-    """Fetch reviewed release outputs, or return None while bootstrapping.
-
-    A configured pin is authoritative: stale inputs, bad hashes and download
-    errors must fail rather than silently switching to a different build.
-    """
+def release_inputs(kind, target, pins, build_key):
+    """Validate configured release metadata without fetching or starting a build."""
     toolchain = pins.get("toolchain", {})
     entry = toolchain.get("targets", {}).get(target, {}).get(kind)
     if entry is None:
-        print(f"No pinned {kind} release for {target}; building from source", flush=True)
         return None
     release = toolchain.get("release", "")
     if not re.fullmatch(r"toolchain-wheels-[A-Za-z0-9][A-Za-z0-9._-]*", release):
@@ -214,15 +209,25 @@ def release_files(kind, target, pins, cache, destination, build_key):
             raise SystemExit("toolchain assets must come from the pinned repository release")
         if not re.fullmatch(r"[a-f0-9]{64}", pin["sha256"]) or pin["size"] <= 0:
             raise SystemExit("toolchain assets require a SHA-256 and positive size")
-        blob = fetch.fetch(
-            fetch.Pinned(url, pin["sha256"], pin["size"], PurePosixPath(name)), cache
-        )
+        files[name] = fetch.Pinned(url, pin["sha256"], pin["size"], PurePosixPath(name))
+    if not files:
+        raise SystemExit(f"pinned {kind} toolchain has no files")
+    return files
+
+
+def release_files(kind, target, pins, cache, destination, build_key):
+    """Fetch authoritative reviewed outputs, or bootstrap only when no pin exists."""
+    inputs = release_inputs(kind, target, pins, build_key)
+    if inputs is None:
+        print(f"No pinned {kind} release for {target}; building from source", flush=True)
+        return None
+    files = {}
+    for name, pin in inputs.items():
+        blob = fetch.fetch(pin, cache)
         destination.mkdir(parents=True, exist_ok=True)
         path = destination / name
         shutil.copyfile(blob, path)
         files[name] = path
-    if not files:
-        raise SystemExit(f"pinned {kind} toolchain has no files")
     return files
 
 

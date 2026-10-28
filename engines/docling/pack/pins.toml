@@ -74,6 +74,11 @@ source = "https://github.com/bavanchun/AriadShift/releases/tag/toolchain-wheels-
 #     { name = "LLVM-OpenMP-LICENSE.txt", url = "https://github.com/bavanchun/AriadShift/releases/download/toolchain-wheels-v0.2.0/LLVM-OpenMP-LICENSE.txt", sha256 = "<64-hex>", size = 0 },
 # ]
 
+# Only an explicit reviewed declaration for an exact pack tag can omit macOS.
+# No omission is approved here. Manual runs use their explicit workflow input.
+# Example after approval: "pack-docling-vX.Y.Z" = ["aarch64-apple-darwin"]
+[pack_release_skips]
+
 [python]
 # python-build-standalone, "install_only_stripped" archives.
 release = "20261021"

@@ -14,6 +14,9 @@ also require one matching RECORD owner. Archive contents are not parsed at runti
 other archive magic is not inspected. RECORD refresh rewrites every DLL/PYD digest and
 the third-party notice record; this can mask accidental post-install changes on Windows, whose
 pack target remains deferred.
+Exported toolchain wheels also refuse video-library names, including FFmpeg, even without
+licence markers. Permissive component wheel receipts force a new review on lock drift;
+they are not independently reviewed per-object hashes. Installed RECORD checks still apply.
 Native GPL/AGPL runtime self-declarations and GPL build flags are refused; absence of a
 matching string does not establish a binary's complete licence provenance.
 Each Python distribution's licence is read from its metadata (License-Expression, License and
@@ -49,6 +52,7 @@ from fnmatch import fnmatchcase
 from functools import cache
 from importlib import metadata
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 ALLOWED = frozenset(
     {
@@ -918,6 +922,23 @@ def _component_basenames(paths: tuple[str, ...]) -> frozenset[str]:
     return frozenset(Path(path).name.casefold() for path in paths)
 
 
+_LOCK_FILE = Path(__file__).resolve().parents[3] / "uv.lock"
+
+
+@cache
+def _locked_wheels(contents: bytes) -> dict[tuple[str, str, str], str]:
+    """Cache parsing by the actual lock bytes, so same-process edits cannot hide drift."""
+    return {
+        (
+            canonical(package["name"]),
+            package["version"],
+            Path(unquote(urlsplit(wheel["url"]).path)).name,
+        ): wheel["hash"].removeprefix("sha256:")
+        for package in tomllib.loads(contents.decode("utf-8"))["package"]
+        for wheel in package.get("wheels", [])
+    }
+
+
 def _native_family(owner: str, filename: str) -> str | None:
     filename = Path(filename.replace("\\", "/")).name.casefold()
     if owner == "shapely" and filename.startswith("geos"):
@@ -1193,6 +1214,11 @@ def check_vendored_native_files(site: Path, inventory: list[dict], target: str) 
     notice_owners = {key for key, owner in distributions.items() if _distribution_notices(owner)}
     covered = set()
     errors = []
+    locked = (
+        _locked_wheels(_LOCK_FILE.read_bytes())
+        if any("reviewed_wheels" in _NATIVE_COMPONENTS.get(item["name"], {}) for item in inventory)
+        else {}
+    )
     for item in inventory:
         reviewed = NATIVE_LIBRARIES.get(item["name"])
         if reviewed is not None:
@@ -1217,6 +1243,22 @@ def check_vendored_native_files(site: Path, inventory: list[dict], target: str) 
             or any(name not in component["files"] for name in matches)
         ):
             errors.append(f"{item['name']}: unreviewed component file or notices")
+        # Permissive entries bind reviewed locked-wheel inputs plus installed RECORD
+        # hashes/sizes, not independently reviewed per-object bytes. Approved source
+        # toolchain replacements retain their own output hashes and runtime probes.
+        if component is not None and "reviewed_wheels" in component:
+            binding = component["reviewed_wheels"].get(target)
+            if (
+                not binding
+                or not re.fullmatch(r"[a-f0-9]{64}", binding.get("sha256", ""))
+                or (
+                    locked.get(
+                        (component["distribution"], component["version"], binding.get("name"))
+                    )
+                    != binding["sha256"]
+                )
+            ):
+                errors.append(f"{item['name']}: reviewed locked wheel changed; renew native review")
         if component is not None and (
             component["license"].startswith(("LGPL-", "MPL-"))
             or component.get("shared_objects") is not None
@@ -1419,6 +1461,18 @@ def write_vendored_notices(site: Path, notices: Path, inventory: list[dict]) -> 
 
 
 _INTEL_LIBRARIES = ("iomp", "ippicv", "libipp", "libmkl", "mkl_rt", "mkl_core")
+# These families cannot belong to a video-disabled toolchain export. Names alone
+# suffice, even when a binary omits GPL declarations or configure strings.
+_VIDEO_LIBRARIES = {
+    "libav": "FFmpeg is disabled in exported toolchains",
+    "libsw": "FFmpeg resampling/scaling is disabled in exported toolchains",
+    "libpostproc": "FFmpeg postprocessing is disabled in exported toolchains",
+    "libx264": "x264 is excluded from video-disabled exports",
+    "libx265": "x265 is excluded from video-disabled exports",
+    "librubberband": "Rubber Band is excluded from video-disabled exports",
+    "libvidstab": "video stabilization is excluded from video-disabled exports",
+    "libfdk": "FDK codecs are excluded from video-disabled exports",
+}
 _ITT_LIBRARIES = ("ittnotify", "libitt")
 _INTEL_MARKERS = (
     b"ippicvgetlibversion",
@@ -1462,12 +1516,18 @@ def _scan_stream(
     *,
     allow_itt: bool = True,
     strip_opencv_ipp_notice: bool = False,
+    reject_video: bool = False,
 ) -> None:
     header = handle.read(8)
     native = header.startswith(_NATIVE_MAGIC) or any(
         fnmatchcase(name, p)
         for p in ("*.so*", "*.dll", "*.pyd", "*.dylib", "*.exe", "*.a", "*.lib")
     )
+    if native and reject_video and not re.match(r"libavif(?:[._-]|$)", name):
+        for family, reason in _VIDEO_LIBRARIES.items():
+            if name.startswith(family):
+                errors.append(f"forbidden video library: {relative}: {reason}")
+                return
     libraries = _INTEL_LIBRARIES if allow_itt else (*_INTEL_LIBRARIES, *_ITT_LIBRARIES)
     if any(word in name for word in libraries):
         data = header + handle.read()
@@ -1487,7 +1547,7 @@ def _scan_stream(
         iterator = iter(chunks) if chunks is not None else _stream_chunks(header, handle)
         for chunk in iterator:
             data = (tail + chunk).lower()
-            if _GPL_RUNTIME.search(data):
+            if _GPL_RUNTIME.search(data) or (reject_video and b"--enable-nonfree" in data):
                 errors.append(f"forbidden GPL runtime declaration: {relative}")
                 break
             if any(marker in data for marker in markers):
@@ -1575,11 +1635,12 @@ def check_wheel_files(
     allow_itt: bool = False,
     openmp_dll: Path | None = None,
 ) -> None:
-    """Audit built wheel archives and optional OpenMP sidecars for forbidden Intel components.
+    """Audit exported wheels and OpenMP sidecars for forbidden Intel/video components.
 
     Source-built toolchain wheels disable ITT instrumentation (``USE_ITT=0``,
     ``-DWITH_ITT=OFF``, ``-DLIBOMP_USE_ITT_NOTIFY=OFF``), so ``allow_itt``
-    defaults to ``False`` here.
+    defaults to ``False`` here. Video-library names are refused independently of
+    GPL self-declarations/flags. The installed pack keeps its named LGPL FFmpeg review.
     """
     approved = dict(approved_openmp or {})
     wheel_list = [Path(wheel) for wheel in wheels]
@@ -1604,6 +1665,7 @@ def check_wheel_files(
                 approved,
                 errors,
                 allow_itt=allow_itt,
+                reject_video=True,
             )
     for path in wheel_list:
         if not path.is_file():
@@ -1628,6 +1690,7 @@ def check_wheel_files(
                             approved,
                             errors,
                             allow_itt=allow_itt,
+                            reject_video=True,
                             strip_opencv_ipp_notice=is_opencv,
                         )
         else:
@@ -1643,6 +1706,7 @@ def check_wheel_files(
                     approved,
                     errors,
                     allow_itt=allow_itt,
+                    reject_video=True,
                 )
     missing = set(approved) - present
     errors.extend(f"missing LLVM OpenMP replacement: {name}" for name in sorted(missing))
