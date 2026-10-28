@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { crc32 } from "node:zlib";
 import { expect, type Page, test } from "@playwright/test";
@@ -109,9 +110,7 @@ function storedZip(entries: Array<{ name: string; data: Buffer }>): Buffer {
   return Buffer.concat([...localParts, centralDir, eocd]);
 }
 
-function buildJpegDocx(jpegSizeBytes: number): Buffer {
-  const jpeg = buildDecodableJpeg(jpegSizeBytes);
-
+function buildJpegDocx(jpeg: Buffer): Buffer {
   const contentTypes = `<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="xml" ContentType="application/xml" />
@@ -202,7 +201,8 @@ async function pick(page: Page, name: string, buffer: Buffer) {
 test("converts a 12.5 MiB JPEG DOCX to Markdown when intermediate IR exceeds 16 MiB", async ({
   page,
 }) => {
-  const docx = buildJpegDocx(JPEG_BYTES);
+  const jpeg = buildDecodableJpeg(JPEG_BYTES);
+  const docx = buildJpegDocx(jpeg);
   expect(docx.byteLength).toBeGreaterThan(JPEG_BYTES);
   expect(docx.byteLength).toBeLessThan(16 * 1024 * 1024);
 
@@ -225,4 +225,8 @@ test("converts a 12.5 MiB JPEG DOCX to Markdown when intermediate IR exceeds 16 
   const imageBytes = Buffer.from(match?.[1] ?? "", "base64");
   expect([...imageBytes.subarray(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
   expect(imageBytes.byteLength).toBe(JPEG_BYTES);
+  expect(imageBytes.equals(jpeg)).toBe(true);
+  expect(createHash("sha256").update(imageBytes).digest("hex")).toBe(
+    createHash("sha256").update(jpeg).digest("hex"),
+  );
 });

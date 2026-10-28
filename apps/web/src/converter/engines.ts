@@ -122,6 +122,14 @@ export async function runRoute(
         engine: group.engine,
       };
     }
+    if (index > 0 && current.byteLength > INTERMEDIATE_IR_LIMIT_BYTES) {
+      const limitMb = INTERMEDIATE_IR_LIMIT_BYTES / (1024 * 1024);
+      throw {
+        code: "limit_exceeded",
+        limit: "max_input_bytes",
+        message: `This document expands to ${Math.ceil(current.byteLength / (1024 * 1024))} MB during conversion. The browser converter handles intermediate documents up to ${limitMb} MB; the AriadShift CLI converts larger ones on your computer.`,
+      };
+    }
     last = await engine.convert(
       current,
       group.from,

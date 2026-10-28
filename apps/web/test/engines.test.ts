@@ -1,4 +1,5 @@
 import type { ConvertOptions, FormatId, PlanStep } from "@ariadshift/ariad-wasm";
+import { browserEngines } from "@/converter/browser-engines";
 import { type Core, type Engine, INTERMEDIATE_IR_LIMIT_BYTES, runRoute } from "@/converter/engines";
 import { MemoryStore } from "@/converter/file-store";
 import { ConverterSession, INPUT_LIMIT_BYTES, RECYCLE_MEMORY_BYTES } from "@/converter/session";
@@ -12,7 +13,8 @@ interface RecordedCall {
   options: ConvertOptions;
 }
 
-function fakeCore(
+/** Pure recording fake: accepts any input so tests prove runRoute's own behavior. */
+function recordingCore(
   stepsByPair: Record<string, PlanStep[]>,
   format: FormatId = "docx",
   intermediateOutput?: Uint8Array,
@@ -24,14 +26,6 @@ function fakeCore(
   const makeEngine = (name: string): Engine => ({
     convert(bytes, from, to, options) {
       calls.push({ engine: name, from, to, bytes, options });
-      const maxInputBytes = options.limits?.max_input_bytes;
-      if (typeof maxInputBytes === "number" && bytes.byteLength > maxInputBytes) {
-        throw {
-          code: "limit_exceeded",
-          limit: "max_input_bytes",
-          message: "the input exceeds the max_input_bytes limit",
-        };
-      }
       return {
         bytes:
           to === "ariad-ir+json" && intermediateOutput
@@ -81,7 +75,7 @@ describe("runRoute input byte limits", () => {
   });
 
   it("applies max_input_bytes to the original group and replaces it with INTERMEDIATE_IR_LIMIT_BYTES for intermediate IR while keeping other limits", async () => {
-    const { core, calls } = fakeCore({});
+    const { core, calls } = recordingCore({});
     const original = new Uint8Array([1, 2, 3, 4]);
 
     await runRoute(
@@ -135,7 +129,7 @@ describe("runRoute input byte limits", () => {
   });
 
   it("keeps max_input_bytes on a single-group route", async () => {
-    const { core, calls } = fakeCore({});
+    const { core, calls } = recordingCore({});
     await runRoute(
       core,
       new TextEncoder().encode("# Title\n"),
@@ -164,7 +158,7 @@ describe("runRoute input byte limits", () => {
   ] as const)(
     "ConverterSession passes INPUT_LIMIT_BYTES to the first group and INTERMEDIATE_IR_LIMIT_BYTES to the second group on %s -> %s",
     async (source, target, firstEngine) => {
-      const { core, calls } = fakeCore(
+      const { core, calls } = recordingCore(
         {
           [`${source}->${target}`]: [
             { from: source, to: "ariad-ir+json", engine: firstEngine },
@@ -183,7 +177,7 @@ describe("runRoute input byte limits", () => {
     },
   );
 
-  it("caps original bytes at 16 MiB and intermediate IR at INTERMEDIATE_IR_LIMIT_BYTES (accepted just below, refused just above)", async () => {
+  it("guards every subsequent group at INTERMEDIATE_IR_LIMIT_BYTES with a recording fake that accepts any input", async () => {
     const steps: PlanStep[] = [
       { from: "docx", to: "ariad-ir+json", engine: "pandoc" },
       { from: "ariad-ir+json", to: "markdown", engine: "ariad-core" },
@@ -194,63 +188,79 @@ describe("runRoute input byte limits", () => {
       limits: { max_input_bytes: INPUT_LIMIT_BYTES },
     };
 
-    // (a) Original bytes capped at 16 MiB (accepted just below and at 16 MiB, refused just above).
-    const { core: okOriginalCore } = fakeCore({ "docx->markdown": steps });
-    await expect(
-      runRoute(okOriginalCore, new Uint8Array(INPUT_LIMIT_BYTES - 1), steps, options),
-    ).resolves.toMatchObject({ extension: "md" });
-    await expect(
-      runRoute(okOriginalCore, new Uint8Array(INPUT_LIMIT_BYTES), steps, options),
-    ).resolves.toMatchObject({ extension: "md" });
-
-    const { core: overOriginalCore, calls: overOriginalCalls } = fakeCore({
-      "docx->markdown": steps,
-    });
-    await expect(
-      runRoute(overOriginalCore, new Uint8Array(INPUT_LIMIT_BYTES + 1), steps, options),
-    ).rejects.toMatchObject({
-      code: "limit_exceeded",
-      limit: "max_input_bytes",
-    });
-    expect(overOriginalCalls).toHaveLength(1);
-    expect(overOriginalCalls[0]?.options.limits?.max_input_bytes).toBe(INPUT_LIMIT_BYTES);
-
-    // (b) Intermediate IR capped at INTERMEDIATE_IR_LIMIT_BYTES (accepted just below, refused just above).
+    // Just below the intermediate limit invokes the second group.
     const justBelowIr = new Uint8Array(INTERMEDIATE_IR_LIMIT_BYTES - 1);
-    const { core: belowIrCore, calls: belowIrCalls } = fakeCore(
-      { "docx->markdown": steps },
-      "docx",
-      justBelowIr,
-    );
-    const belowSession = new ConverterSession(belowIrCore, new MemoryStore());
-    await belowSession.ingest(new File([new Uint8Array(16)], "below.docx"));
-    await expect(belowSession.convert("markdown", "editable")).resolves.toMatchObject({
-      name: "below.md",
+    const { core: belowCore, calls: belowCalls } = recordingCore({}, "docx", justBelowIr);
+    await expect(runRoute(belowCore, new Uint8Array(16), steps, options)).resolves.toMatchObject({
+      extension: "md",
     });
-    expect(belowIrCalls).toHaveLength(2);
-    expect(belowIrCalls[0]?.options.limits?.max_input_bytes).toBe(INPUT_LIMIT_BYTES);
-    expect(belowIrCalls[1]?.options.limits?.max_input_bytes).toBe(INTERMEDIATE_IR_LIMIT_BYTES);
-    expect(belowIrCalls[1]?.bytes.byteLength).toBe(INTERMEDIATE_IR_LIMIT_BYTES - 1);
+    expect(belowCalls).toHaveLength(2);
+    expect(belowCalls[1]?.bytes.byteLength).toBe(INTERMEDIATE_IR_LIMIT_BYTES - 1);
+    expect(belowCalls[1]?.options.limits?.max_input_bytes).toBe(INTERMEDIATE_IR_LIMIT_BYTES);
 
+    // Exactly at the intermediate limit also invokes the second group.
+    const exactIr = new Uint8Array(INTERMEDIATE_IR_LIMIT_BYTES);
+    const { core: exactCore, calls: exactCalls } = recordingCore({}, "docx", exactIr);
+    await expect(runRoute(exactCore, new Uint8Array(16), steps, options)).resolves.toMatchObject({
+      extension: "md",
+    });
+    expect(exactCalls).toHaveLength(2);
+    expect(exactCalls[1]?.bytes.byteLength).toBe(INTERMEDIATE_IR_LIMIT_BYTES);
+
+    // Just above the intermediate limit is rejected by runRoute before invoking the second group.
     const justAboveIr = new Uint8Array(INTERMEDIATE_IR_LIMIT_BYTES + 1);
-    const { core: aboveIrCore, calls: aboveIrCalls } = fakeCore(
-      { "docx->markdown": steps },
-      "docx",
-      justAboveIr,
-    );
-    const aboveSession = new ConverterSession(aboveIrCore, new MemoryStore());
-    await aboveSession.ingest(new File([new Uint8Array(16)], "above.docx"));
-    await expect(aboveSession.convert("markdown", "editable")).rejects.toMatchObject({
+    const { core: aboveCore, calls: aboveCalls } = recordingCore({}, "docx", justAboveIr);
+    await expect(runRoute(aboveCore, new Uint8Array(16), steps, options)).rejects.toMatchObject({
       code: "limit_exceeded",
       limit: "max_input_bytes",
+      message: expect.stringContaining("up to 256 MB"),
     });
-    expect(aboveIrCalls).toHaveLength(2);
-    expect(aboveIrCalls[0]?.options.limits?.max_input_bytes).toBe(INPUT_LIMIT_BYTES);
-    expect(aboveIrCalls[1]?.options.limits?.max_input_bytes).toBe(INTERMEDIATE_IR_LIMIT_BYTES);
-    expect(aboveIrCalls[1]?.bytes.byteLength).toBe(INTERMEDIATE_IR_LIMIT_BYTES + 1);
+    expect(aboveCalls).toHaveLength(1);
+    expect(aboveCalls[0]?.engine).toBe("pandoc");
   });
 
-  it("converts intermediate IR JSON that expands past the session input byte cap", async () => {
+  it("blocks oversized intermediate IR before reaching real Pandoc and Typst consumer adapters that ignore options.limits", async () => {
+    const oversizedIr = new Uint8Array(INTERMEDIATE_IR_LIMIT_BYTES + 1);
+    const baseCore = browserEngines(loadCore());
+    const producer: Engine = {
+      convert() {
+        return {
+          bytes: oversizedIr,
+          format: "ariad-ir+json",
+          media_type: "application/json",
+          extension: "ir.json",
+          route: [],
+          warnings: [],
+        };
+      },
+    };
+    const core: Core = {
+      ...baseCore,
+      engines: new Map([...baseCore.engines, ["producer", producer]]),
+    };
+
+    for (const [target, consumer] of [
+      ["docx", "pandoc"],
+      ["pdf", "typst"],
+    ] as const) {
+      await expect(
+        runRoute(
+          core,
+          new Uint8Array([1, 2, 3]),
+          [
+            { from: "markdown", to: "ariad-ir+json", engine: "producer" },
+            { from: "ariad-ir+json", to: target, engine: consumer },
+          ],
+          { profile: "editable", title: "doc", limits: { max_input_bytes: INPUT_LIMIT_BYTES } },
+        ),
+      ).rejects.toMatchObject({
+        code: "limit_exceeded",
+        limit: "max_input_bytes",
+      });
+    }
+  });
+
+  it("enforces the original input cap on group 0 and converts intermediate IR past the session input cap with real ariad-core", async () => {
     const realCore = loadCore();
     const coreEngine = realCore.engines.get("ariad-core");
     if (!coreEngine) {
@@ -265,6 +275,22 @@ describe("runRoute input byte limits", () => {
     const irBytes = produced.bytes;
     const smallCap = 64;
     expect(irBytes.byteLength).toBeGreaterThan(smallCap);
+
+    // Real ariad-core rejects original input above max_input_bytes on the first group.
+    await expect(
+      runRoute(
+        realCore,
+        new TextEncoder().encode("x".repeat(smallCap + 1)),
+        [
+          { from: "markdown", to: "ariad-ir+json", engine: "ariad-core" },
+          { from: "ariad-ir+json", to: "html", engine: "ariad-core" },
+        ],
+        { limits: { max_input_bytes: smallCap } },
+      ),
+    ).rejects.toMatchObject({
+      code: "limit_exceeded",
+      limit: "max_input_bytes",
+    });
 
     const pandoc: Engine = {
       convert() {
