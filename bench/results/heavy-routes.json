@@ -47,13 +47,21 @@
     },
     {
       "id": "heavy-en-map-scan-pdf",
-      "sha256": "81057b17f0147900dcac48b3d1740c9fada05877d46f74d25543171192dc19f3",
+      "sha256": "54bf2bfa46a4651a0d513f72b50394117f0f8ad5e1c6eca8371b3aac5017e597",
       "truth": [
         {
           "path": "fixtures/heavy/en-map-scan.pdf.truth.json",
           "sha256": "7d27d6c9f21e285f87a4861f05264a41b72057c7757f866d7a24dc99e189bb13"
         }
-      ]
+      ],
+      "measured_sha256": "81057b17f0147900dcac48b3d1740c9fada05877d46f74d25543171192dc19f3",
+      "serialization_update": {
+        "generator": "Pillow 13.0.0",
+        "reason": "PDF indirect object numbering changed; encoded image stream and rendered page bytes are identical. Measurements and timestamp are retained from the original input digest, not rerun.",
+        "image_sha256": "b07e9bcb3728fdaf165e028bc9732dc9a98a81b9c465ed5db4c5b3e972470ed5",
+        "render_sha256": "a068159853f23143f345189c27227e521b6ae83303a4eb26492d5114bb3105f9",
+        "render_scale": 1.5
+      }
     },
     {
       "id": "heavy-en-map-scan-png",
@@ -117,13 +125,21 @@
     },
     {
       "id": "heavy-vi-garden-scan-pdf",
-      "sha256": "2e79071f6d07b8f9bffbb275aa49d13f461e4494729c20ddd8c4ec5ddd2548fc",
+      "sha256": "bb5aa0abd6b9b953336eccd4b6caf651f200b444e102ab958917aa66a1f33c01",
       "truth": [
         {
           "path": "fixtures/heavy/vi-garden-scan.pdf.truth.json",
           "sha256": "e8728dfd274c21e1ffab352ec336d41b4c7593fff02642979b2d543ca9214321"
         }
-      ]
+      ],
+      "measured_sha256": "2e79071f6d07b8f9bffbb275aa49d13f461e4494729c20ddd8c4ec5ddd2548fc",
+      "serialization_update": {
+        "generator": "Pillow 13.0.0",
+        "reason": "PDF indirect object numbering changed; encoded image stream and rendered page bytes are identical. Measurements and timestamp are retained from the original input digest, not rerun.",
+        "image_sha256": "2b107fb63d8098804fc5b20f884304834c87fdc64afc48098819c2645dcbb294",
+        "render_sha256": "dd859c34d2007da7c021a4f338dd2ff18eeccc6dd9650e3e9927f5e01493d32e",
+        "render_scale": 1.5
+      }
     },
     {
       "id": "heavy-vi-garden-scan-png",
