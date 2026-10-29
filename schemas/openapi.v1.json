@@ -1172,7 +1172,7 @@
             }
           },
           "409": {
-            "description": "The file is missing, or the upload is no longer live",
+            "description": "The file is missing, the upload is no longer live, or another call is verifying it",
             "content": {
               "application/json": {
                 "schema": {

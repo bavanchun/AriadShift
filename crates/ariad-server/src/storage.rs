@@ -63,6 +63,8 @@ pub enum StorageError {
     NoSigner,
     #[error("too many concurrent blob transfers")]
     Busy,
+    #[error("the object is already being verified")]
+    DigestInProgress,
     #[error("the blob transfer timed out")]
     Timeout,
 }
@@ -161,6 +163,47 @@ impl Drop for TransferPermit {
     }
 }
 
+/// Uploads verified at once per process; further callers wait for a slot.
+pub const MAX_CONCURRENT_DIGESTS: usize = 4;
+
+#[derive(Debug)]
+struct DigestSlots {
+    keys: Mutex<HashSet<String>>,
+    permits: Arc<tokio::sync::Semaphore>,
+}
+
+impl Default for DigestSlots {
+    fn default() -> Self {
+        Self {
+            keys: Mutex::default(),
+            permits: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DIGESTS)),
+        }
+    }
+}
+
+/// Removes the object's claim on success, error or cancellation, even while
+/// the caller is still waiting for a digest permit.
+struct DigestKey {
+    slots: Arc<DigestSlots>,
+    key: String,
+}
+
+impl Drop for DigestKey {
+    fn drop(&mut self) {
+        self.slots
+            .keys
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .remove(&self.key);
+    }
+}
+
+/// Held while one upload is verified. Storage clones share both budgets.
+pub struct DigestClaim {
+    _key: DigestKey,
+    _permit: tokio::sync::OwnedSemaphorePermit,
+}
+
 /// Object storage shared by the API and workers.
 #[derive(Clone, Debug)]
 pub struct Storage {
@@ -169,6 +212,7 @@ pub struct Storage {
     signing: Signing,
     blob_limits: BlobTransferLimits,
     active: Arc<Mutex<ActiveTransfers>>,
+    digests: Arc<DigestSlots>,
 }
 
 impl Storage {
@@ -202,6 +246,7 @@ impl Storage {
                     signing: Signing::S3(signer),
                     blob_limits: BlobTransferLimits::default(),
                     active: Arc::default(),
+                    digests: Arc::default(),
                 })
             }
             StorageConfig::Local { root } => {
@@ -220,6 +265,7 @@ impl Storage {
                     signing,
                     blob_limits: BlobTransferLimits::default(),
                     active: Arc::default(),
+                    digests: Arc::default(),
                 })
             }
         }
@@ -381,6 +427,32 @@ impl Storage {
             Err(object_store::Error::NotFound { .. }) => Ok(None),
             Err(err) => Err(err.into()),
         }
+    }
+
+    /// Claims an object before upload verification. The same key fails at
+    /// once; distinct keys beyond [`MAX_CONCURRENT_DIGESTS`] wait for a slot.
+    pub async fn claim_digest(&self, key: &str) -> Result<DigestClaim, StorageError> {
+        let slots = Arc::clone(&self.digests);
+        if !slots
+            .keys
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .insert(key.to_owned())
+        {
+            return Err(StorageError::DigestInProgress);
+        }
+        let marker = DigestKey {
+            slots: Arc::clone(&slots),
+            key: key.to_owned(),
+        };
+        let permit = Arc::clone(&slots.permits)
+            .acquire_owned()
+            .await
+            .map_err(|_| StorageError::Busy)?;
+        Ok(DigestClaim {
+            _key: marker,
+            _permit: permit,
+        })
     }
 
     /// Streams an object, returning its size, SHA-256 and first
@@ -597,10 +669,11 @@ impl Storage {
                         break;
                     }
                 }
-                // EOF is explicit so the producer can retain admission until
-                // the consumer drains/drops its body, or the deadline fires.
+                // Retain admission while the consumer drains/drops its body,
+                // bounded by the same idle limit as a stalled data chunk.
+                // The final data and EOF remain queued after admission ends.
                 if matches!(timeout(idle, sender.send(None)).await, Ok(Ok(()))) {
-                    sender.closed().await;
+                    let _ = timeout(idle, sender.closed()).await;
                 }
             };
             let _ = timeout_at(deadline, transfer).await;

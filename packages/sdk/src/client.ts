@@ -107,6 +107,8 @@ const FINAL_JOB_STATUSES: ReadonlySet<string> = FINAL_JOB_EVENT_KINDS;
 /** Responses worth retrying when following events. */
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
+const TRANSFER_RETRY_WAIT_BUDGET_MS = 60_000;
+
 export interface AriadClient {
   /** The generated client, for calling any generated operation directly. */
   readonly raw: Client;
@@ -115,7 +117,11 @@ export interface AriadClient {
     request: { filename: string; size: number; sha256: string },
     options?: Pick<UploadOptions, "turnstileToken" | "signal">,
   ): Promise<Upload>;
-  /** Sends a body to the presigned request of a pending upload. */
+  /**
+   * Sends a pending upload with at most three attempts on 429/408. Total retry
+   * waiting is at most 60 seconds and each wait must end before URL expiry.
+   * Invalid Retry-After or a minimum outside that budget returns the HTTP error.
+   */
   transfer(presigned: PresignedRequest, body: UploadBody, signal?: AbortSignal): Promise<void>;
   /** Verifies a transferred upload's size and hash. */
   completeUpload(uploadId: string, signal?: AbortSignal): Promise<Upload>;
@@ -229,16 +235,46 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
     },
 
     async transfer(presigned, body, signal) {
-      const response = await fetchImpl(presigned.url, {
-        method: presigned.method,
-        headers: presigned.headers,
-        body,
-        signal,
-      });
-      if (!response.ok) {
-        throw await errorFromResponse(response, "transfer_failed");
+      // Only these reusable byte bodies may be sent again after a refusal.
+      const reusable =
+        body instanceof Blob || body instanceof ArrayBuffer || body instanceof Uint8Array;
+      let waitingBudgetMs = TRANSFER_RETRY_WAIT_BUDGET_MS;
+      const expiresAt = Date.parse(presigned.expires_at);
+      for (let attempt = 1; ; attempt += 1) {
+        signal?.throwIfAborted();
+        const response = await fetchImpl(presigned.url, {
+          method: presigned.method,
+          headers: presigned.headers,
+          body,
+          signal,
+        });
+        if (response.ok) {
+          await response.body?.cancel();
+          return;
+        }
+        const retryAfter = retryAfterSeconds(response);
+        const delaySeconds = retryAfter ?? 1;
+        const withinWaitBudget =
+          (retryAfter !== undefined || !response.headers.has("retry-after")) &&
+          delaySeconds <= waitingBudgetMs / 1_000 &&
+          Number.isFinite(expiresAt) &&
+          delaySeconds < (expiresAt - Date.now()) / 1_000;
+        if (
+          !reusable ||
+          attempt >= 3 ||
+          (response.status !== 429 && response.status !== 408) ||
+          !withinWaitBudget
+        ) {
+          // Parsing drains the error body; cancellation also covers a read error.
+          const error = await errorFromResponse(response, "transfer_failed");
+          if (!response.body?.locked) await response.body?.cancel();
+          throw error;
+        }
+        await response.body?.cancel();
+        const delayMs = delaySeconds * 1_000;
+        waitingBudgetMs -= delayMs;
+        await sleep(delayMs, signal);
       }
-      await response.body?.cancel();
     },
 
     completeUpload(uploadId, signal) {
