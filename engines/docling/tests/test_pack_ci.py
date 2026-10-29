@@ -7,6 +7,7 @@ import importlib
 import io
 import json
 import os
+import shlex
 import sys
 import tarfile
 import tomllib
@@ -63,6 +64,27 @@ def test_unpinned_pull_request_keeps_both_linux_targets_and_explains_macos(plann
 def test_release_without_an_explicit_macos_omission_fails(planner, event):
     with pytest.raises(SystemExit, match=r"explicit.*omission"):
         planner.plan(fetch.load_pins(), event, "pack-docling-v0.2.0")
+
+
+def test_cloud_ci_dispatch_explicitly_omits_only_macos_without_relaxing_release(planner):
+    workflow = (REPOSITORY / ".github/workflows/cloud-e2e.yml").read_text(encoding="utf-8")
+    commands = [
+        shlex.split(line.strip())
+        for line in workflow.replace("\\\n", " ").splitlines()
+        if line.strip().startswith("gh workflow run pack-docling.yml ")
+    ]
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[command.index("--ref") + 1] == "$PACK_REF"
+    omissions = command[command.index("--field") + 1]
+    assert omissions == f"allow_missing_targets={MACOS}"
+    pins = fetch.load_pins()
+    result = planner.plan(pins, "workflow_dispatch", allowed_skips=omissions.split("=", 1)[1])
+    assert result["targets"] == LINUX
+    assert result["allowed_skips"] == [MACOS]
+    assert result["release"] is True
+    with pytest.raises(SystemExit, match="release requires an explicit macOS omission"):
+        planner.plan(pins, "workflow_dispatch")
 
 
 def test_tag_omission_is_bound_to_the_exact_release_tag(planner):
