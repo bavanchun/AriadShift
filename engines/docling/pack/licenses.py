@@ -1613,10 +1613,18 @@ def _export_native_review(digest: str, label: str, archive, artifact: Path, erro
         errors.append(f"native export lacks an allowed component licence/review: {label}")
         return
     for notice in component["notices"]:
-        path = Path(notice["path"])
-        if path.is_absolute() or ".." in path.parts or "\\" in notice["path"]:
+        relative = notice["path"]
+        # Receipt paths use portable archive syntax, including on Windows,
+        # where a leading slash is rooted but Path.is_absolute() is false.
+        if (
+            relative.startswith("/")
+            or ":" in relative
+            or "\\" in relative
+            or ".." in relative.split("/")
+        ):
             errors.append(f"native export notice path is unsafe: {label}")
             continue
+        path = Path(relative)
         if component.get("notice_scope") == "upstream":
             path = Path("notices") / path
         try:

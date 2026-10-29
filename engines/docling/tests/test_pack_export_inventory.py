@@ -3,6 +3,7 @@
 import hashlib
 import sys
 import zipfile
+from pathlib import PureWindowsPath
 
 import pytest
 from conftest import REPOSITORY
@@ -141,12 +142,38 @@ def test_component_receipt_must_reference_its_reviewed_files(tmp_path, monkeypat
         licenses.check_wheel_files([export_wheel(tmp_path)])
 
 
-@pytest.mark.parametrize("path", ["../LICENSE", "/outside/LICENSE", "notices\\LICENSE"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "../LICENSE",
+        "/outside/LICENSE",
+        "notices\\LICENSE",
+        "C:/outside/LICENSE",
+        "C:LICENSE",
+        "//server/share/LICENSE",
+        "\\outside\\LICENSE",
+        "notices/../LICENSE",
+    ],
+)
 def test_native_export_notice_paths_cannot_escape_the_artifact(tmp_path, monkeypatch, path):
     component = review(monkeypatch)
     component["notices"][0]["path"] = path
     with pytest.raises(SystemExit, match="native export notice path is unsafe"):
         licenses.check_wheel_files([export_wheel(tmp_path)])
+
+
+@pytest.mark.parametrize("path", ["/outside/LICENSE", "C:LICENSE", "notices/../LICENSE"])
+def test_native_export_notice_paths_are_safe_under_windows_semantics(tmp_path, monkeypatch, path):
+    component = review(monkeypatch)
+    component["notices"][0]["path"] = path
+    wheel = export_wheel(tmp_path)
+    with zipfile.ZipFile(wheel) as archive:
+        monkeypatch.setattr(licenses, "Path", PureWindowsPath)
+        errors = []
+        licenses._export_native_review(
+            hashlib.sha256(PAYLOAD).hexdigest(), wheel.name, archive, wheel, errors
+        )
+    assert errors == [f"native export notice path is unsafe: {wheel.name}"]
 
 
 def test_upstream_notices_must_be_bundled_under_the_reviewed_notice_path(tmp_path, monkeypatch):
@@ -236,15 +263,23 @@ def test_empty_directory_with_compressed_payload_bytes_is_refused(tmp_path):
         "codec/payload.data\x7f",
     ],
 )
-def test_ambiguous_export_member_paths_are_refused_before_licence_approval(tmp_path, name):
+@pytest.mark.parametrize("separator", ["/", "\\"], ids=["posix-writer", "windows-writer"])
+def test_ambiguous_export_member_paths_are_refused_before_licence_approval(
+    tmp_path, monkeypatch, name, separator
+):
     wheel = tmp_path / "paths-1.0-py3-none-any.whl"
-    # ZipInfo strips NULs before writing; patch both stored names to exercise
-    # an actual archive containing the original unsafe bytes instead.
-    stored_name = name.replace("\0", "!")
-    with zipfile.ZipFile(wheel, "w") as archive:
-        archive.writestr(stored_name, b"plain data")
-    if stored_name != name:
-        wheel.write_bytes(wheel.read_bytes().replace(stored_name.encode(), name.encode()))
+    # ZipInfo strips NULs and normalizes backslashes on Windows. Write a safe,
+    # same-length placeholder, then patch both the local and central names.
+    stored_name = "x" * len(name.encode())
+    with monkeypatch.context() as writer:
+        writer.setattr(zipfile.os, "sep", separator)
+        with zipfile.ZipFile(wheel, "w") as archive:
+            archive.writestr(stored_name, b"plain data")
+    raw = wheel.read_bytes()
+    assert raw.count(stored_name.encode()) == 2
+    wheel.write_bytes(raw.replace(stored_name.encode(), name.encode()))
+    with zipfile.ZipFile(wheel) as archive:
+        assert archive.infolist()[0].orig_filename == name
     with pytest.raises(SystemExit, match="unsafe native export archive path"):
         licenses.check_wheel_files([wheel])
 
