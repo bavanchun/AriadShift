@@ -2,16 +2,18 @@
 
 use std::{
     path::PathBuf,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 
-use ariad_core::planner::Profile;
+use ariad_core::{limits::Limits, planner::Profile};
 use ariad_host::{
+    assets::AssetBase,
     commands::{active_capabilities, engines, inspect, plan},
-    confine::{AllowedDirs, ConfineError, confine_input, confine_output, parse_file_uri},
-    convert::{
-        ANALYSIS_MAX_BYTES, ConvertError, ConvertOutput, ConvertRequest, convert_confined_in,
+    confine::{
+        AllowedDirs, ConfineError, ProcessStagingDirectory, confine_input, confine_output,
+        parse_file_uri,
     },
+    convert::{ConvertError, ConvertOutput, ConvertRequest, convert_confined_assets_in},
     session::SessionPool,
 };
 use rmcp::{
@@ -87,7 +89,9 @@ pub struct ConvertArgs {
 pub struct McpServer {
     pub allow_overwrite: bool,
     pub allowed_dirs: Arc<RwLock<AllowedDirs>>,
-    pub cli_allow_dirs: Vec<PathBuf>,
+    pub(super) explicit_allowed_dirs: AllowedDirs,
+    pub(super) roots_refresh: Arc<Mutex<super::RootsRefresh>>,
+    pub staging: Arc<ProcessStagingDirectory>,
     pub resources: SessionResources,
     pub engine_program: PathBuf,
     /// Warm engine sessions shared by every `convert` call of this server.
@@ -124,6 +128,52 @@ fn tool_convert_error(err: &ConvertError) -> CallToolResult {
     tool_error(err.code(), err.exit_code(), err.to_string())
 }
 
+fn input_error(err: &std::io::Error) -> ConvertError {
+    match err.kind() {
+        std::io::ErrorKind::FileTooLarge => ConvertError::LimitExceeded,
+        std::io::ErrorKind::Interrupted => ConvertError::Interrupted,
+        _ => ConvertError::InputIo,
+    }
+}
+
+struct InFlightGuard(Arc<std::sync::atomic::AtomicUsize>);
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl McpServer {
+    async fn blocking_job<T, F>(
+        &self,
+        request_cancel: CancellationToken,
+        job: F,
+    ) -> Result<T, ErrorData>
+    where
+        T: Send + 'static,
+        F: FnOnce(CancellationToken) -> T + Send + 'static,
+    {
+        let cancel = self.cancel_token.child_token();
+        let _cancel_on_drop = cancel.clone().drop_guard();
+        let forwarded = cancel.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                _ = request_cancel.cancelled() => forwarded.cancel(),
+                _ = forwarded.cancelled() => {},
+            }
+        });
+        self.in_flight
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let guard = InFlightGuard(self.in_flight.clone());
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            job(cancel)
+        })
+        .await
+        .map_err(|e| ErrorData::internal_error(format!("blocking task failed: {e}"), None))
+    }
+}
+
 fn tool_success<T: serde::Serialize>(
     val: &T,
     extra_blocks: Vec<ContentBlock>,
@@ -154,7 +204,7 @@ impl McpServer {
         let caps = match active_capabilities() {
             Ok(c) => c,
             Err(e) => {
-                return Ok(tool_error("invalid_capabilities", 2, e.to_string()));
+                return Ok(tool_convert_error(&e));
             }
         };
 
@@ -195,32 +245,17 @@ impl McpServer {
             }
         };
 
-        // Create isolated copy to eliminate C2 input swap race
-        let (_isolated_temp, isolated_input) =
-            match validated_input.create_isolated_copy(None, Some(ANALYSIS_MAX_BYTES)) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    return Ok(tool_error(
-                        "input_io",
-                        2,
-                        format!("failed to read input file: {e}"),
-                    ));
-                }
-            };
-
-        let caps = match active_capabilities() {
-            Ok(c) => c,
-            Err(e) => {
-                return Ok(tool_error("invalid_capabilities", 2, e.to_string()));
-            }
-        };
-
         let engine_prog = self.engine_program.clone();
-        let res = tokio::task::spawn_blocking(move || {
-            inspect::inspect(&isolated_input, Some(&engine_prog), &caps, ct)
-        })
-        .await
-        .map_err(|e| ErrorData::internal_error(format!("blocking task failed: {e}"), None))?;
+        let staging = self.staging.path().to_path_buf();
+        let res = self
+            .blocking_job(ct, move |cancel| {
+                let (_temp, input) = validated_input
+                    .create_isolated_copy_cancellable_in(&staging, None, None, &cancel)
+                    .map_err(|e| input_error(&e))?;
+                let caps = active_capabilities()?;
+                inspect::inspect(&input, Some(&engine_prog), &caps, cancel)
+            })
+            .await?;
 
         match res {
             Ok(report) => tool_success(&report, vec![]),
@@ -254,37 +289,22 @@ impl McpServer {
             }
         };
 
-        // Create isolated copy to eliminate C2 input swap race
-        let (_isolated_temp, isolated_input) =
-            match validated_input.create_isolated_copy(None, Some(ANALYSIS_MAX_BYTES)) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    return Ok(tool_error(
-                        "input_io",
-                        2,
-                        format!("failed to read input file: {e}"),
-                    ));
-                }
-            };
-
-        let caps = match active_capabilities() {
-            Ok(c) => c,
-            Err(e) => {
-                return Ok(tool_error("invalid_capabilities", 2, e.to_string()));
-            }
-        };
-
         let profile = match parse_profile(args.profile.as_deref()) {
             Ok(p) => p,
             Err(e) => return Ok(e),
         };
-        let to = args.to.clone();
+        let to = args.to;
         let engine_prog = self.engine_program.clone();
-        let res = tokio::task::spawn_blocking(move || {
-            plan::plan(&isolated_input, &to, profile, &caps, Some(&engine_prog), ct)
-        })
-        .await
-        .map_err(|e| ErrorData::internal_error(format!("blocking task failed: {e}"), None))?;
+        let staging = self.staging.path().to_path_buf();
+        let res = self
+            .blocking_job(ct, move |cancel| {
+                let (_temp, input) = validated_input
+                    .create_isolated_copy_cancellable_in(&staging, None, None, &cancel)
+                    .map_err(|e| input_error(&e))?;
+                let caps = active_capabilities()?;
+                plan::plan(&input, &to, profile, &caps, Some(&engine_prog), cancel)
+            })
+            .await?;
 
         match res {
             Ok(report) => tool_success(&report, vec![]),
@@ -302,17 +322,6 @@ impl McpServer {
         Parameters(args): Parameters<ConvertArgs>,
         ct: CancellationToken,
     ) -> Result<CallToolResult, ErrorData> {
-        self.in_flight
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let in_flight = self.in_flight.clone();
-        struct InFlightGuard(Arc<std::sync::atomic::AtomicUsize>);
-        impl Drop for InFlightGuard {
-            fn drop(&mut self) {
-                self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            }
-        }
-        let _guard = InFlightGuard(in_flight);
-
         let profile = match parse_profile(args.profile.as_deref()) {
             Ok(p) => p,
             Err(e) => return Ok(e),
@@ -379,58 +388,49 @@ impl McpServer {
             (valid_in, valid_out)
         };
 
-        // Create isolated copy to eliminate C2 input swap race
-        let (_isolated_temp, isolated_input) =
-            match validated_input.create_isolated_copy(None, Some(ANALYSIS_MAX_BYTES)) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    return Ok(tool_error(
-                        "input_io",
-                        2,
-                        format!("failed to read input file: {e}"),
-                    ));
-                }
-            };
-
-        let original_parent = validated_input.path.parent().map(|p| p.to_path_buf());
-        let request = ConvertRequest {
-            input: isolated_input,
-            output: validated_output.destination.clone(),
-            target_format: args.to.clone(),
-            profile,
-            overwrite: validated_output.overwrite,
-            engine_program: self.engine_program.clone(),
-            title_fallback: None,
-            asset_base_dir: original_parent,
-            reader_engine: None,
-        };
-
-        let parent_dir = validated_output.parent_dir;
-        let file_name = validated_output.file_name;
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let cancel_child = cancel.clone();
-        let s_cancel = self.cancel_token.clone();
-        let req_cancel = ct.clone();
-        tokio::spawn(async move {
-            tokio::select! {
-                _ = s_cancel.cancelled() => cancel_child.cancel(),
-                _ = req_cancel.cancelled() => cancel_child.cancel(),
-            }
-        });
-
+        let target_format = args.to.clone();
+        let final_dest = validated_output.destination.clone();
         let pool = self.pool.clone();
-        let res = tokio::task::spawn_blocking(move || {
-            convert_confined_in(
-                &pool,
-                &request,
-                &parent_dir,
-                std::path::Path::new(&file_name),
-                cancel,
-                |_| {},
-            )
-        })
-        .await
-        .map_err(|e| ErrorData::internal_error(format!("blocking task failed: {e}"), None))?;
+        let engine_program = self.engine_program.clone();
+        let staging = self.staging.path().to_path_buf();
+        let res = self
+            .blocking_job(ct, move |cancel| {
+                let (_temp, input) = validated_input
+                    .create_isolated_copy_cancellable_in(
+                        &staging,
+                        None,
+                        Limits::local().max_input_bytes,
+                        &cancel,
+                    )
+                    .map_err(|e| input_error(&e))?;
+                let asset_base = AssetBase::confined(
+                    validated_input
+                        .parent_dir
+                        .try_clone()
+                        .map_err(|e| input_error(&e))?,
+                );
+                let request = ConvertRequest {
+                    input,
+                    output: validated_output.destination,
+                    target_format: args.to,
+                    profile,
+                    overwrite: validated_output.overwrite,
+                    engine_program,
+                    title_fallback: None,
+                    asset_base_dir: None,
+                    reader_engine: None,
+                };
+                convert_confined_assets_in(
+                    &pool,
+                    &request,
+                    &validated_output.parent_dir,
+                    std::path::Path::new(&validated_output.file_name),
+                    &asset_base,
+                    cancel,
+                    |_| {},
+                )
+            })
+            .await?;
 
         let report = match res {
             Ok(r) => r,
@@ -438,7 +438,6 @@ impl McpServer {
         };
 
         // On successful promotion, build output blocks without reading destination by path (C1)
-        let final_dest = validated_output.destination;
         let file_uri = path_to_file_uri(&final_dest);
         let file_size = report.output_bytes;
         let mime = mime_type_for_path(&final_dest);
@@ -461,7 +460,7 @@ impl McpServer {
         // When `to` is markdown, provide inline text if <= 256 KiB read from trusted workspace artifact
         if let Some(ref md_text) = report.inline_markdown {
             extra_blocks.push(ContentBlock::text(md_text.clone()));
-        } else if (args.to == "md" || args.to == "markdown") && file_size > 256 * 1024 {
+        } else if (target_format == "md" || target_format == "markdown") && file_size > 256 * 1024 {
             extra_blocks.push(ContentBlock::text(
                 "Markdown content exceeds 256 KiB; read the file directly or via resources/read.",
             ));
@@ -469,5 +468,29 @@ impl McpServer {
 
         let convert_output = ConvertOutput::from(&report);
         tool_success(&convert_output, extra_blocks)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn staging_errors_match_host_codes_and_exit_statuses() {
+        for (kind, expected) in [
+            (ErrorKind::FileTooLarge, ConvertError::LimitExceeded),
+            (ErrorKind::Interrupted, ConvertError::Interrupted),
+            (ErrorKind::PermissionDenied, ConvertError::InputIo),
+            (ErrorKind::NotFound, ConvertError::InputIo),
+            (ErrorKind::Other, ConvertError::InputIo),
+        ] {
+            let result = tool_convert_error(&input_error(&Error::from(kind)));
+            assert_eq!(result.is_error, Some(true));
+            let value = result.structured_content.unwrap();
+            assert_eq!(value["code"], expected.code());
+            assert_eq!(value["exit_code"], expected.exit_code());
+            assert_eq!(value["message"], expected.to_string());
+        }
     }
 }

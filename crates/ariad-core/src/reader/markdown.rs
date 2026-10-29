@@ -1,4 +1,7 @@
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeSet, HashMap},
+};
 
 use comrak::{
     Arena, Options,
@@ -53,6 +56,9 @@ enum Visit<'a> {
 #[derive(Default)]
 struct WalkState {
     assets: AssetStore,
+    shared_data_urls: HashMap<String, String>,
+    shared_image_targets: HashMap<String, Option<AssetRef>>,
+    shared_url_bytes_remaining: usize,
     block_nodes: u64,
     warnings: Vec<Warning>,
     footnote_references: BTreeSet<String>,
@@ -62,6 +68,14 @@ struct WalkState {
 /// Reads CommonMark and GFM Markdown into the shared document IR.
 /// Nesting limits count both block and inline containers.
 pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
+    read_impl(markdown, limits, true)
+}
+
+fn read_impl(
+    markdown: &str,
+    limits: &Limits,
+    share_reference_data: bool,
+) -> Result<ReadOutput, ReadError> {
     limits.validate()?;
     if let Some(limit) = limits.max_input_bytes
         && markdown.len() as u64 > limit
@@ -92,15 +106,26 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
     options.extension.shortcodes = true;
     options.parse.leave_footnote_definitions = true;
 
+    let shared = if share_reference_data {
+        intern_reference_data_urls(&markdown, &options)
+    } else {
+        ReferenceData {
+            input: Cow::Borrowed(markdown.as_str()),
+            ..ReferenceData::default()
+        }
+    };
     let arena = Arena::new();
-    let root = comrak::parse_document(&arena, &markdown, &options);
+    let root = comrak::parse_document(&arena, &shared.input, &options);
     let mut state = WalkState {
+        shared_data_urls: shared.destinations,
+        shared_url_bytes_remaining: markdown.len().min(100_000),
         footnote_references,
         footnote_definitions,
         ..WalkState::default()
     };
     let mut converted = HashMap::new();
     let mut stack = vec![Visit::Enter(root, 0)];
+    let mut sharing_fallback_warned = false;
 
     while let Some(task) = stack.pop() {
         match task {
@@ -152,6 +177,20 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
                 );
             }
             Visit::Exit(node) => {
+                if shared.may_have_unresolved_images && !sharing_fallback_warned {
+                    let possible_shared_image = match &node.data().value {
+                        NodeValue::Image(link) => link.url.starts_with("data:"),
+                        NodeValue::Text(text) => text.contains("!["),
+                        _ => false,
+                    };
+                    if possible_shared_image {
+                        state.warnings.push(Warning::new(
+                            WarningCode::UnsupportedNode,
+                            "shared data image references could not be interned; unresolved references may remain text",
+                        ));
+                        sharing_fallback_warned = true;
+                    }
+                }
                 let children = node
                     .children()
                     .map(|child| {
@@ -198,6 +237,274 @@ pub fn read(markdown: &str, limits: &Limits) -> Result<ReadOutput, ReadError> {
 
 fn node_key(node: &AstNode<'_>) -> usize {
     std::ptr::from_ref(node).cast::<()>() as usize
+}
+
+// Comrak removes standalone definitions from the AST. Only the gaps between
+// its block source spans are eligible: code, HTML, titles and other visible
+// source stay byte-exact, so they need no token restoration. The small scanner
+// below delimits destinations within those parser-consumed spans, including
+// definitions with multiline labels, destinations and titles.
+//
+// Tokens cannot originate in user input: U+E000 is absent, interning is
+// disabled for numeric character references, named entities cannot produce
+// U+E000, and backslash escapes only unescape ASCII punctuation. Thus an exact token destination is
+// sufficient proof of origin, regardless of reference/container context. Never
+// reparse a reference use outside that context to decide whether to restore it.
+#[derive(Default)]
+struct ReferenceData<'a> {
+    input: Cow<'a, str>,
+    destinations: HashMap<String, String>,
+    may_have_unresolved_images: bool,
+}
+
+fn intern_reference_data_urls<'a>(markdown: &'a str, options: &Options<'_>) -> ReferenceData<'a> {
+    let original = || ReferenceData {
+        input: Cow::Borrowed(markdown),
+        ..ReferenceData::default()
+    };
+    if !markdown.contains("data:") || markdown.contains('\u{e000}') || markdown.contains("&#") {
+        return original();
+    }
+    let arena = Arena::new();
+    let root = comrak::parse_document(&arena, markdown, options);
+    let mut offsets: Vec<_> = std::iter::once(0)
+        .chain(markdown.match_indices('\n').map(|(offset, _)| offset + 1))
+        .collect();
+    if offsets.last() != Some(&markdown.len()) {
+        offsets.push(markdown.len());
+    }
+    let mut visible = vec![false; offsets.len()];
+    for node in root.children() {
+        let position = node.data().sourcepos;
+        visible[position.start.line..=position.end.line].fill(true);
+    }
+    // Definitions within visible container/paragraph spans stay on the native
+    // path. Preserve a diagnostic if that path still leaves image references
+    // as text after the final parse; never silently lose an unassociated image.
+    let may_have_unresolved_images = root
+        .descendants()
+        .any(|node| matches!(&node.data().value, NodeValue::Text(text) if text.contains("![")));
+    let mut replacements = Vec::new();
+    let mut line = 1;
+    while line < offsets.len() {
+        if visible[line] {
+            line += 1;
+            continue;
+        }
+        let start = offsets[line - 1];
+        while line < offsets.len() && !visible[line] {
+            line += 1;
+        }
+        let end = offsets[line - 1];
+        let mut position = start;
+        while position < end {
+            position += markdown[position..end]
+                .bytes()
+                .take_while(u8::is_ascii_whitespace)
+                .count();
+            if position == end {
+                break;
+            }
+            let Some((destination, consumed)) = reference_definition_span(&markdown[position..end])
+            else {
+                return ReferenceData {
+                    may_have_unresolved_images: true,
+                    ..original()
+                };
+            };
+            replacements.push(position + destination.start..position + destination.end);
+            position += consumed;
+        }
+    }
+    let mut input = String::with_capacity(markdown.len());
+    let mut destinations = HashMap::new();
+    let mut tokens = HashMap::<String, String>::new();
+    let mut copied = 0;
+    for span in replacements {
+        let destination = &markdown[span.clone()];
+        let Some((raw, _)) = reference_destination(destination) else {
+            continue;
+        };
+        if !raw.starts_with("data:") || raw.len() <= 24 {
+            continue;
+        }
+        let Some(normalized) = normalized_definition_destination(destination, options) else {
+            return ReferenceData {
+                may_have_unresolved_images: true,
+                ..original()
+            };
+        };
+        let next = tokens.len();
+        let token = tokens
+            .entry(normalized.clone())
+            .or_insert_with(|| format!("\u{e000}{next}:"));
+        destinations.entry(token.clone()).or_insert(normalized);
+        input.push_str(&markdown[copied..span.start]);
+        input.push_str(token);
+        // Preserve the original input-sized reference budget and source positions.
+        input.extend(std::iter::repeat_n(' ', span.len() - token.len()));
+        copied = span.end;
+    }
+    input.push_str(&markdown[copied..]);
+    ReferenceData {
+        input: if destinations.is_empty() {
+            Cow::Borrowed(markdown)
+        } else {
+            Cow::Owned(input)
+        },
+        destinations,
+        may_have_unresolved_images,
+    }
+}
+
+fn reference_space(input: &[u8], mut position: usize) -> usize {
+    while matches!(input.get(position), Some(b' ' | b'\t')) {
+        position += 1;
+    }
+    if input.get(position) == Some(&b'\n') {
+        position += 1;
+        while matches!(input.get(position), Some(b' ' | b'\t')) {
+            position += 1;
+        }
+    }
+    position
+}
+
+fn reference_definition_span(input: &str) -> Option<(std::ops::Range<usize>, usize)> {
+    let bytes = input.as_bytes();
+    if bytes.first() != Some(&b'[') {
+        return None;
+    }
+    let mut position = 1;
+    while position <= 1001 {
+        match bytes.get(position)? {
+            b'\\'
+                if bytes
+                    .get(position + 1)
+                    .is_some_and(u8::is_ascii_punctuation) =>
+            {
+                position += 2
+            }
+            b'[' => return None,
+            b']' => break,
+            _ => position += 1,
+        }
+    }
+    if bytes.get(position..position + 2) != Some(b"]:") {
+        return None;
+    }
+    position = reference_space(bytes, position + 2);
+    let start = position;
+    let (_, length) = reference_destination(&input[position..])?;
+    position += length;
+    let destination = start..position;
+    let before_title = position;
+    let title_start = reference_space(bytes, position);
+    if title_start != position
+        && let Some(delimiter @ (b'\'' | b'"' | b'(')) = bytes.get(title_start)
+    {
+        let close = if *delimiter == b'(' { b')' } else { *delimiter };
+        position = title_start + 1;
+        loop {
+            match bytes.get(position) {
+                Some(b'\\')
+                    if bytes
+                        .get(position + 1)
+                        .is_some_and(u8::is_ascii_punctuation) =>
+                {
+                    position += 2
+                }
+                Some(byte) if *byte == close => {
+                    position += 1;
+                    break;
+                }
+                Some(b'(') if *delimiter == b'(' => return None,
+                Some(_) => position += 1,
+                None => {
+                    position = before_title;
+                    break;
+                }
+            }
+        }
+    }
+    while matches!(bytes.get(position), Some(b' ' | b'\t')) {
+        position += 1;
+    }
+    if bytes.get(position) == Some(&b'\n') {
+        position += 1;
+    } else if position != bytes.len() {
+        return None;
+    }
+    Some((destination, position))
+}
+
+fn reference_destination(destination: &str) -> Option<(&str, usize)> {
+    let bytes = destination.as_bytes();
+    if !destination.starts_with('<') {
+        let mut index = 0;
+        let mut parentheses = 0;
+        while index < bytes.len() {
+            match bytes[index] {
+                b'\\' if bytes.get(index + 1).is_some_and(u8::is_ascii_punctuation) => {
+                    index += 2;
+                }
+                b'(' => {
+                    parentheses += 1;
+                    if parentheses > 32 {
+                        return None;
+                    }
+                    index += 1;
+                }
+                b')' if parentheses == 0 => break,
+                b')' => {
+                    parentheses -= 1;
+                    index += 1;
+                }
+                byte if byte == b' ' || (byte.is_ascii_control() && byte != 0) => break,
+                _ => index += 1,
+            }
+        }
+        return (index > 0 && parentheses == 0).then_some((&destination[..index], index));
+    }
+    let mut index = 1;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => index += 2,
+            b'>' => return Some((&destination[1..index], index + 1)),
+            b'\n' | b'\r' | b'<' => return None,
+            _ => index += 1,
+        }
+    }
+    None
+}
+
+fn normalized_definition_destination(destination: &str, options: &Options<'_>) -> Option<String> {
+    let arena = Arena::new();
+    let root = comrak::parse_document(&arena, &format!("[x]({})", destination), options);
+    match &root.first_child()?.first_child()?.data().value {
+        NodeValue::Link(link) => Some(link.url.clone()),
+        _ => None,
+    }
+}
+
+// Non-image uses and failed decodes still carry their original URLs in the IR.
+// Short URLs have bounded cost per reference; retain the expansion ceiling for
+// long destinations that cannot be represented by a shared asset identifier.
+fn shared_url(token: &str, state: &mut WalkState) -> Option<String> {
+    let url = state.shared_data_urls.get(token)?;
+    if url.len() <= 128 {
+        return Some(url.clone());
+    }
+    if let Some(remaining) = state.shared_url_bytes_remaining.checked_sub(url.len()) {
+        state.shared_url_bytes_remaining = remaining;
+        Some(url.clone())
+    } else {
+        state.warnings.push(Warning::new(
+            WarningCode::UnsupportedNode,
+            "shared data URL expansion exceeds the Markdown reference budget",
+        ));
+        None
+    }
 }
 
 fn convert_node(
@@ -374,22 +681,57 @@ fn convert_node(
             format: RawFormat::Html,
             text: html.clone(),
         }),
-        NodeValue::Link(link) => inline(Inline::Link {
-            url: link.url.clone(),
-            title: nonempty(&link.title),
-            content: inlines(children),
-        }),
+        NodeValue::Link(link) => {
+            let url = if state.shared_data_urls.contains_key(&link.url) {
+                let Some(url) = shared_url(&link.url, state) else {
+                    return ConvertedNode::Inlines(inlines(children));
+                };
+                url
+            } else {
+                link.url.clone()
+            };
+            inline(Inline::Link {
+                url,
+                title: nonempty(&link.title),
+                content: inlines(children),
+            })
+        }
         NodeValue::Image(link) => {
             let alt = nfc(&inline_text(&inlines(children)));
-            let target = common::decode_data_uri_image(
-                &link.url,
-                limits,
-                &mut state.assets,
-                &mut state.warnings,
-            )
-            .unwrap_or_else(|| AssetRef::Url {
-                href: link.url.clone(),
-            });
+            let target = if let Some(url) = state.shared_data_urls.get(&link.url) {
+                // Equal normalized destinations already share one token. Cache
+                // hits only copy and hash that short key, never the data URL.
+                let target = state
+                    .shared_image_targets
+                    .entry(link.url.clone())
+                    .or_insert_with(|| {
+                        common::decode_data_uri_image(
+                            url,
+                            limits,
+                            &mut state.assets,
+                            &mut state.warnings,
+                        )
+                    })
+                    .clone();
+                if let Some(target) = target {
+                    target
+                } else {
+                    let Some(href) = shared_url(&link.url, state) else {
+                        return inline(Inline::Text { text: alt });
+                    };
+                    AssetRef::Url { href }
+                }
+            } else {
+                common::decode_data_uri_image(
+                    &link.url,
+                    limits,
+                    &mut state.assets,
+                    &mut state.warnings,
+                )
+                .unwrap_or_else(|| AssetRef::Url {
+                    href: link.url.clone(),
+                })
+            };
             inline(Inline::Image {
                 target,
                 alt,
@@ -952,6 +1294,571 @@ mod tests {
                 .warnings
                 .iter()
                 .any(|warning| warning.code == WarningCode::UnsupportedNode)
+        );
+    }
+
+    #[test]
+    fn shared_references_keep_multiline_container_context() {
+        for (first, next) in [("> ", "> "), ("- ", "  "), ("> > ", "> > ")] {
+            for image in ["!", ""] {
+                let markdown = format!(
+                    "{first}{image}[first\n{next}second][p]\n\n[p]: data:image/png;base64,iVBORw0KGgo=\n"
+                );
+                assert_eq!(
+                    read(&markdown, &Limits::local()),
+                    super::read_impl(&markdown, &Limits::local(), false),
+                    "{markdown}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shared_png_definitions_accept_multiline_destinations_and_titles() {
+        use base64::Engine as _;
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        for definition in [
+            format!("[pixel]:\n  data:image/png;base64,{encoded}\n"),
+            format!("[pixel]:\n  <data:image/png;base64,{encoded}>\n  \"first\nsecond\"\n"),
+            format!("[pixel]: data:image/png;base64,{encoded}\n  \"first\nsecond\"\n"),
+        ] {
+            for crlf in [false, true] {
+                let markdown = format!("{}\n{definition}", "![pixel][pixel]\n\n".repeat(3));
+                let markdown = if crlf {
+                    markdown.replace('\n', "\r\n")
+                } else {
+                    markdown
+                };
+                let output = read(&markdown, &Limits::local()).unwrap();
+                assert_eq!(output.document.assets.len(), 1);
+                assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
+                let images = output.document.body.iter().filter(|block| {
+                    matches!(block, Block::Paragraph { content } if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+                }).count();
+                assert_eq!(images, 3, "{markdown}");
+                assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+                if definition.contains("first") {
+                    for block in &output.document.body {
+                        if let Block::Paragraph { content } = block {
+                            assert!(
+                                matches!(content.as_slice(), [Inline::Image { title: Some(title), .. }] if title == "first\nsecond")
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn private_reference_tokens_disable_interning_for_unsafe_input() {
+        for marker in ["&#65;", "&#xE000;", "&#57344;", "\u{e000}"] {
+            let markdown = format!(
+                "{marker}\n\n> ![first\n> second][p]\n\n[p]: data:image/png;base64,iVBORw0KGgo=\n"
+            );
+            assert!(
+                super::intern_reference_data_urls(&markdown, &comrak::Options::default())
+                    .destinations
+                    .is_empty()
+            );
+            assert_eq!(
+                read(&markdown, &Limits::local()),
+                super::read_impl(&markdown, &Limits::local(), false),
+                "{markdown}"
+            );
+        }
+    }
+
+    #[test]
+    fn shared_reference_preprocessing_keeps_literal_definitions_exact() {
+        let definition = "[p]: data:image/png;base64,iVBORw0KGgo=";
+        for literal in [
+            format!("```md\n{definition}\n```\n"),
+            format!("<div>\n{definition}\n</div>\n"),
+            format!("`{definition}`\n"),
+        ] {
+            let markdown = format!("{literal}\n> ![first\n> second][p]\n\n{definition}\n");
+            let output = read(&markdown, &Limits::local()).unwrap();
+            let baseline = super::read_impl(&markdown, &Limits::local(), false).unwrap();
+            assert_eq!(output.document, baseline.document, "{markdown}");
+            match &output.document.body[0] {
+                Block::Code { text, .. } => assert_eq!(text, &format!("{definition}\n")),
+                Block::Raw { text, .. } => assert_eq!(text, &literal),
+                Block::Paragraph { content } => assert!(
+                    matches!(content.as_slice(), [Inline::Code { text }] if text == definition)
+                ),
+                other => panic!("unexpected literal: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn shared_definition_spans_preserve_eof_duplicates_and_title_syntax() {
+        let uri = "data:image/png;base64,iVBORw0KGgo=";
+        for definitions in [
+            format!("[p]: {uri}"),
+            format!("[p]:\n  <{uri}>"),
+            format!("[p]: {uri} \"a title\""),
+            format!("[p]: {uri} 'a title'"),
+            format!("[p]: {uri} (a title)"),
+            format!("[p]: {uri} \"a [q]: literal\"\n[q]: <>"),
+            format!("[p]: {uri}\n  \"first\nsecond\"\n[q]: https://example.test/"),
+            format!("[p]: {uri}\n[P]: https://example.test/"),
+            format!("[P]: https://example.test/\n[p]: {uri}"),
+            format!("[p]: <{uri}>\n[q]: {uri}"),
+        ] {
+            let markdown = format!("![p][p] [q][q]\n\n{definitions}");
+            assert_eq!(
+                read(&markdown, &Limits::local()).unwrap().document,
+                super::read_impl(&markdown, &Limits::local(), false)
+                    .unwrap()
+                    .document,
+                "{markdown}"
+            );
+        }
+    }
+
+    #[test]
+    fn unassociated_shared_image_definitions_keep_a_budget_diagnostic() {
+        use base64::Engine as _;
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        for definition in [
+            format!("[pixel]:\n  data:image/png;base64,{encoded}\nParagraph.\n"),
+            format!("> [pixel]: data:image/png;base64,{encoded}\n"),
+        ] {
+            let markdown = format!("{}\n{definition}", "![pixel][pixel]\n\n".repeat(3));
+            let output = read(&markdown, &Limits::local()).unwrap();
+            let images = output.document.body.iter().filter(|block| {
+                matches!(block, Block::Paragraph { content } if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+            }).count();
+            assert!(images == 3 || output.warnings.iter().any(|warning| warning.message == "shared data image references could not be interned; unresolved references may remain text"), "{markdown}");
+        }
+    }
+
+    #[test]
+    fn shared_reference_reader_matches_a_markdown_corpus() {
+        let mut samples = vec![
+            include_str!("../../../../fixtures/md/en-crlf.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-deep-list.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-emoji-shortcodes.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-emphasis-strike.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-fenced-code.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-footnotes.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-hard-breaks.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-kitchen-sink.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-lf.md").to_owned(),
+            include_str!("../../../../fixtures/md/en-task-list.md").to_owned(),
+            include_str!("../../../../fixtures/md/mixed-kitchen-sink.md").to_owned(),
+            include_str!("../../../../fixtures/md/mixed-math.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-aligned-table.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-blockquote.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-front-matter.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-kitchen-sink.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-links-autolinks.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-local-image.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-long-headings.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-nfc.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-nfd.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-ordered-start.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-raw-html.md").to_owned(),
+            include_str!("../../../../fixtures/md/vi-tone-dense-table.md").to_owned(),
+        ];
+        let definition = "[p]: data:image/png;base64,iVBORw0KGgo=";
+        for sample in &mut samples {
+            sample.push_str("\n\n![shared probe][shared-probe]\n\n[shared-probe]: data:image/png;base64,iVBORw0KGgo=\n");
+        }
+        for body in [
+            "> ![first\n> second][p]",
+            "> [first\n> second][p]",
+            "- ![first\n  second][p]",
+            "- [first\n  second][p]",
+            "> > ![first\n> > second][p]",
+            "> > [first\n> > second][p]",
+            "![p][p]",
+            "[p][p]",
+            "`[example]: literal`\n\n![p][p]",
+            "```md\n[p]: data:image/png;base64,iVBORw0KGgo=\n```\n\n![p][p]",
+            "<div>\n[p]: data:image/png;base64,iVBORw0KGgo=\n</div>\n\n![p][p]",
+        ] {
+            samples.push(format!("{body}\n\n{definition}\n"));
+        }
+        samples.extend([
+            "![p][p]\n\n[p]:\n  data:image/png;base64,iVBORw0KGgo=\n".into(),
+            format!("![p][p]\n\n{definition}\n  \"first\nsecond\"\n"),
+            format!("> ![first\r\n> second][p]\r\n\r\n{definition}\r\n"),
+            format!("&#65;\n\n> ![first\n> second][p]\n\n{definition}\n"),
+            format!("\u{e000}\n\n> ![first\n> second][p]\n\n{definition}\n"),
+        ]);
+        assert_eq!(samples.len(), 40);
+        for (index, markdown) in samples.iter().enumerate() {
+            let baseline = super::read_impl(markdown, &Limits::local(), false).unwrap();
+            let output = read(markdown, &Limits::local()).unwrap();
+            assert_eq!(
+                output.document, baseline.document,
+                "sample {index}: {markdown}"
+            );
+        }
+    }
+
+    #[test]
+    fn literal_reference_roundtrip_keeps_fenced_code_and_all_shared_images() {
+        let output = shared_png_roundtrip("```md\n[example]: literal\n```\n");
+        assert!(
+            matches!(&output.document.body[0], Block::Code { text, .. } if text == "[example]: literal\n")
+        );
+    }
+
+    #[test]
+    fn literal_reference_roundtrip_keeps_code_spans_and_all_shared_images() {
+        let output = shared_png_roundtrip("`[example]: literal`\n");
+        assert!(
+            matches!(&output.document.body[0], Block::Paragraph { content }
+            if matches!(content.as_slice(), [Inline::Code { text }] if text == "[example]: literal"))
+        );
+    }
+
+    #[test]
+    fn literal_reference_roundtrip_keeps_html_and_all_shared_images() {
+        let literal = "<div>\n[example]: literal\n</div>\n";
+        let output = shared_png_roundtrip(literal);
+        assert!(matches!(&output.document.body[0], Block::Raw { text, .. } if text == literal));
+    }
+
+    #[test]
+    fn literal_reference_roundtrip_keeps_paragraphs_and_all_shared_images() {
+        let literal = "Paragraph with [example]: literal text.";
+        let output = shared_png_roundtrip(literal);
+        assert_eq!(paragraph_text(&output.document.body[0]), literal);
+    }
+
+    fn shared_png_roundtrip(literal: &str) -> super::ReadOutput {
+        use crate::ir::{Asset, Document};
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let mut document = Document::default();
+        document.assets.insert(
+            "pixel".into(),
+            Asset {
+                media_type: "image/png".into(),
+                bytes: png.to_vec(),
+            },
+        );
+        for _ in 0..3 {
+            document.body.push(Block::Paragraph {
+                content: vec![Inline::Image {
+                    target: AssetRef::Asset { id: "pixel".into() },
+                    alt: "pixel".into(),
+                    title: None,
+                }],
+            });
+        }
+        let written = crate::writer::markdown::write(&document);
+        assert_eq!(written.content.matches("data:image/png;base64,").count(), 1);
+        let output = read(
+            &format!("{literal}\n\n{}", written.content),
+            &Limits::local(),
+        )
+        .unwrap();
+        assert_eq!(output.document.assets.len(), 1);
+        assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
+        let images = output.document.body.iter().filter(|block| {
+            matches!(block, Block::Paragraph { content }
+                if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+        }).count();
+        assert_eq!(images, 3);
+        assert!(output.warnings.is_empty());
+        output
+    }
+
+    #[test]
+    fn escaped_angle_reference_destinations_match_the_original_reader() {
+        for url in [
+            r"data:text/plain,12345678901234567890\>suffix",
+            r"data:text/plain,12345678901234567890\>one\>two",
+            r"data:text/plain,12345678901234567890\\\>suffix",
+        ] {
+            for image in ["", "!"] {
+                let markdown = format!("{image}[p][p]\n\n[p]: <{url}>\n");
+                assert_eq!(
+                    read(&markdown, &Limits::local()),
+                    super::read_impl(&markdown, &Limits::local(), false),
+                    "{markdown}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shared_image_fallback_never_silently_loses_references() {
+        use base64::Engine as _;
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        let markdown = format!(
+            "[other]: https://example.test/\nParagraph.\n\n{}\n[pixel]: data:image/png;base64,{encoded}\n",
+            "![pixel][pixel]\n\n".repeat(3)
+        );
+        let output = read(&markdown, &Limits::local()).unwrap();
+        assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
+        let images = output.document.body.iter().filter(|block| {
+            matches!(block, Block::Paragraph { content }
+                if matches!(content.as_slice(), [Inline::Image { target: AssetRef::Asset { .. }, .. }]))
+        }).count();
+        assert!(images == 3 || output.warnings.iter().any(|warning| warning.message == "shared data image references could not be interned; unresolved references may remain text"));
+    }
+
+    #[test]
+    fn escaped_internal_urls_match_the_original_reader() {
+        for url in [
+            "a&#58;0:0",
+            r"a\:0:0",
+            "&#97;&#58;0&#58;0",
+            "a:&#48;:0",
+            "a:0:0",
+        ] {
+            for image in ["", "!"] {
+                for body in [
+                    format!("{image}[link]({url})"),
+                    format!("{image}[link][other]\n\n[other]: {url}"),
+                    format!("{image}[other][]\n\n[other]: {url}"),
+                    format!("{image}[other]\n\n[other]: {url}"),
+                ] {
+                    let markdown =
+                        format!("{body}\n\n[pixel]: data:image/png;base64,iVBORw0KGgo=\n");
+                    assert_eq!(
+                        read(&markdown, &Limits::local()),
+                        super::read_impl(&markdown, &Limits::local(), false),
+                        "{markdown}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn normalized_reference_destinations_match_the_original_reader() {
+        for url in [
+            "data:image/png;base64,iVBORw0KGgo&#61;",
+            r"data:image/png;base64,iVBORw0KGgo\=",
+            r"data:image/png\;base64\,iVBORw0KGgo\=",
+            "data:text/plain;base64,YQ&#61;&#61;",
+            r"data:application/foo\;bar\,baz\=qux",
+            r"https://example.test/a\(b\)?x&#61;1",
+            "data:text/plain,1234567890\u{a0}1234567890",
+            "data:text/plain,1234567890\u{2003}1234567890",
+            "data:text/plain,1234567890(1234567890)",
+            r"data:text/plain,1234567890\(1234567890\)",
+        ] {
+            for image in ["", "!"] {
+                let markdown = format!("{image}[p][p]\n\n[p]: {url}\n");
+                assert_eq!(
+                    read(&markdown, &Limits::local()),
+                    super::read_impl(&markdown, &Limits::local(), false),
+                    "{markdown}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn literal_reference_definitions_match_the_original_reader() {
+        let definition = "[pixel]: data:image/png;base64,iVBORw0KGgo=";
+        for literal in [
+            format!("`{definition}`"),
+            format!("```md\n{definition}\n```"),
+            format!("    {definition}"),
+            format!("> `{definition}`"),
+        ] {
+            let markdown = format!(
+                "{literal}\n\n[link](a&#58;0:0)\n\n[unused]: data:image/png;base64,iVBORw0KGgo=\n"
+            );
+            assert_eq!(
+                read(&markdown, &Limits::local()),
+                super::read_impl(&markdown, &Limits::local(), false),
+                "{markdown}"
+            );
+        }
+        for prefix in [
+            "[pixel]: a&#58;0:0\nParagraph",
+            "> [pixel]: a&#58;0:0",
+            "[^note]: [pixel]: a&#58;0:0",
+            r"[^note\]: literal",
+            "[pi\n xel]: a&#58;0:0",
+            "[pixel]: a&#58;0:0",
+        ] {
+            let markdown = format!(
+                "{prefix}\n\n[link][pixel]\n\n[pixel]: data:image/png;base64,iVBORw0KGgo=\n"
+            );
+            assert_eq!(
+                read(&markdown, &Limits::local()),
+                super::read_impl(&markdown, &Limits::local(), false),
+                "{markdown}"
+            );
+        }
+        for tail in ["", "\nParagraph."] {
+            let markdown = format!(
+                "[pi\n xel]: a&#58;0:0{tail}\n\n[link][pi xel]\n\n[pi xel]: data:image/png;base64,iVBORw0KGgo=\n"
+            );
+            assert_eq!(
+                read(&markdown, &Limits::local()),
+                super::read_impl(&markdown, &Limits::local(), false),
+                "{markdown}"
+            );
+        }
+    }
+
+    #[test]
+    fn large_shared_images_keep_reader_work_linear_in_reference_count() {
+        use base64::Engine as _;
+        use std::time::Duration;
+
+        let fixture = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let iend = &fixture[fixture.len() - 12..];
+        assert_eq!(&iend[4..8], b"IEND");
+        let mut png = fixture[..fixture.len() - 12].to_vec();
+        // Add a valid 1,400,001-byte tEXt chunk before IEND. Its fixed payload
+        // is the keyword "padding", a NUL separator and repeated ASCII 'a'.
+        let mut metadata = b"tEXtpadding\0".to_vec();
+        metadata.resize(4 + 1_400_001, b'a');
+        png.extend_from_slice(&1_400_001_u32.to_be_bytes());
+        png.extend_from_slice(&metadata);
+        png.extend_from_slice(&0x920e534d_u32.to_be_bytes());
+        png.extend_from_slice(iend);
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&png);
+        assert!((1024 * 1024..=2 * 1024 * 1024).contains(&encoded.len()));
+
+        let measure = |references: usize| {
+            let markdown = format!(
+                "{}\n[p]: data:image/png;base64,{encoded}\n",
+                "![p]\n\n".repeat(references)
+            );
+            let mut limits = Limits::local();
+            limits.max_asset_bytes = Some(png.len() as u64);
+            let start = Instant::now();
+            let output = read(&markdown, &limits).unwrap();
+            let elapsed = start.elapsed();
+            assert!(output.warnings.is_empty());
+            assert_eq!(output.document.assets.len(), 1);
+            let (id, asset) = output.document.assets.first_key_value().unwrap();
+            assert!(asset.bytes == png);
+            assert_eq!(asset.media_type, "image/png");
+            assert_eq!(output.document.body.len(), references);
+            for block in &output.document.body {
+                assert!(matches!(block, Block::Paragraph { content }
+                    if matches!(content.as_slice(), [Inline::Image {
+                        target: AssetRef::Asset { id: target }, ..
+                    }] if target == id)));
+            }
+            let json_bytes = serde_json::to_vec(&output.document).unwrap().len();
+            assert!(json_bytes <= encoded.len() + references * 256 + 2048);
+            eprintln!(
+                "reader work: references={references}, definition_bytes={}, input_bytes={}, elapsed={elapsed:?}, json_bytes={json_bytes}",
+                encoded.len(),
+                markdown.len()
+            );
+            (elapsed, json_bytes)
+        };
+        let (small, small_bytes) = measure(2_000);
+        let (large, large_bytes) = measure(20_000);
+        eprintln!(
+            "reader work ratio: {:.3}",
+            large.as_secs_f64() / small.as_secs_f64()
+        );
+        // Fixed definition parsing can dominate the small case. Allow a linear
+        // upper bound plus scheduling noise; the absolute bound also rejects
+        // repeatedly copying/hashing the large asset at every reference.
+        assert!(large <= small.mul_f64(15.0) + Duration::from_millis(100));
+        assert!(large < Duration::from_secs(10), "reader work: {large:?}");
+        assert!(large_bytes <= small_bytes + 18_000 * 256);
+    }
+
+    #[test]
+    fn shared_data_image_definition_is_decoded_once_for_all_references() {
+        use base64::Engine as _;
+
+        let png = include_bytes!("../../../../fixtures/md/assets/vietnamese-route.png");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+        let markdown = format!(
+            "{}\n[pixel]: data:image/png;base64,{encoded} \"Shared title\"\n",
+            "![pixel][pixel]\n\n".repeat(1_000)
+        );
+        let mut limits = Limits::local();
+        limits.max_asset_bytes = Some(png.len() as u64);
+        let output = read(&markdown, &limits).unwrap();
+        assert_eq!(output.document.assets.len(), 1);
+        assert_eq!(output.document.assets.values().next().unwrap().bytes, png);
+        assert_eq!(output.document.body.len(), 1_000);
+        for block in &output.document.body {
+            assert!(matches!(block, Block::Paragraph { content }
+                if matches!(content.as_slice(), [Inline::Image {
+                    target: AssetRef::Asset { .. }, title: Some(title), ..
+                }] if title == "Shared title")));
+        }
+        assert!(output.warnings.is_empty());
+    }
+
+    #[test]
+    fn data_image_definition_interning_preserves_literal_blocks_and_urls() {
+        let uri = "data:image/png;base64,iVBORw0KGgo=";
+        let definition = format!("[pixel]: <{uri}> \"Pixel\"");
+        let markdown = format!(
+            "```md\n{definition}\n```\n\n<div>\n{definition}\n</div>\n\na:0:0\n\n![one][real]\n\n![two][real]\n\n[link][real]\n\n[real]: <{uri}> \"Pixel\"\n"
+        );
+        let output = read(&markdown, &Limits::local()).unwrap();
+        assert!(matches!(&output.document.body[0], Block::Code { text, .. }
+            if text == &format!("{definition}\n")));
+        assert!(matches!(&output.document.body[1], Block::Raw { text, .. }
+            if text.contains(&definition)));
+        assert_eq!(paragraph_text(&output.document.body[2]), "a:0:0");
+        assert_eq!(output.document.assets.len(), 1);
+        assert!(
+            matches!(&output.document.body[5], Block::Paragraph { content }
+            if matches!(&content[0], Inline::Link { url, title: Some(title), .. }
+                if url == uri && title == "Pixel"))
+        );
+
+        let mut limits = Limits::local();
+        limits.max_asset_bytes = Some(1);
+        let limited = read(&markdown, &limits).unwrap();
+        assert!(limited.document.assets.is_empty());
+        assert!(
+            limited
+                .warnings
+                .iter()
+                .any(|warning| warning.code == WarningCode::ImageNotEmbedded)
+        );
+        assert!(
+            !serde_json::to_string(&limited.document)
+                .unwrap()
+                .contains("a:1:")
+        );
+    }
+
+    #[test]
+    fn shared_data_hyperlinks_keep_the_reference_expansion_ceiling() {
+        let uri = format!("data:image/png;base64,{}", "iVBORw0KGgo=".repeat(1_000));
+        let markdown = format!("{}\n[pixel]: {uri}\n", "[pixel][pixel]\n\n".repeat(100));
+        let output = read(&markdown, &Limits::local()).unwrap();
+        let url_bytes: usize = output
+            .document
+            .body
+            .iter()
+            .filter_map(|block| {
+                if let Block::Paragraph { content } = block
+                    && let Some(Inline::Link { url, .. }) = content.first()
+                {
+                    return Some(url.len());
+                }
+                None
+            })
+            .sum();
+        assert!(url_bytes <= markdown.len().min(100_000));
+        assert!(output.document.assets.is_empty());
+        assert!(
+            output
+                .warnings
+                .iter()
+                .any(|warning| warning.message.contains("reference budget"))
         );
     }
 

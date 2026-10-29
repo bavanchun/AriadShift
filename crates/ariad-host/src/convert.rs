@@ -29,7 +29,7 @@ use uuid::Uuid;
 
 use crate::{
     archive::{self, ArchiveError},
-    assets,
+    assets::{self, AssetBase},
     engines::{self, EngineInvocation, IN_PROCESS_ENGINE},
     package_meta,
     runner::{self, EngineCommand, RunError},
@@ -544,7 +544,11 @@ where
     let invocation = EngineInvocation::new(&request.engine_program);
     convert_executor(
         request,
-        Some((destination_parent, file_name)),
+        Some(Confinement {
+            destination_parent,
+            file_name,
+            asset_base: None,
+        }),
         &invocation,
         None,
         Limits::local(),
@@ -555,6 +559,9 @@ where
 }
 
 /// Converts like [`convert_confined`], taking engine processes from `pool`.
+///
+/// Retains the original image resolution policy and call signature. Call
+/// [`convert_confined_assets_in`] to bind image reads to a confined directory handle.
 pub fn convert_confined_in<F>(
     pool: &SessionPool,
     request: &ConvertRequest,
@@ -569,7 +576,44 @@ where
     let invocation = EngineInvocation::new(&request.engine_program);
     convert_executor(
         request,
-        Some((destination_parent, file_name)),
+        Some(Confinement {
+            destination_parent,
+            file_name,
+            asset_base: None,
+        }),
+        &invocation,
+        None,
+        Limits::local(),
+        Engines::Pool(pool),
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts like [`convert_confined`], taking engine processes from `pool`.
+///
+/// Images referenced by a Markdown or HTML input resolve beneath `asset_base`, never through
+/// `request.asset_base_dir` or the input's path, so they stay within the authorized directory.
+pub fn convert_confined_assets_in<F>(
+    pool: &SessionPool,
+    request: &ConvertRequest,
+    destination_parent: &cap_std::fs::Dir,
+    file_name: &Path,
+    asset_base: &AssetBase,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let invocation = EngineInvocation::new(&request.engine_program);
+    convert_executor(
+        request,
+        Some(Confinement {
+            destination_parent,
+            file_name,
+            asset_base: Some(asset_base),
+        }),
         &invocation,
         None,
         Limits::local(),
@@ -817,9 +861,20 @@ enum Stage {
     Ir(Box<Document>),
 }
 
+/// Capability handles that tie a confined conversion's reads and writes to directories that
+/// were authorized before it started.
+#[derive(Clone, Copy)]
+struct Confinement<'a> {
+    destination_parent: &'a cap_std::fs::Dir,
+    file_name: &'a Path,
+    /// Base for images referenced by the source document; `None` resolves them by path.
+    asset_base: Option<&'a AssetBase>,
+}
+
 /// State shared by the steps of one route execution.
 struct RouteRun<'a, F> {
     request: &'a ConvertRequest,
+    asset_base: Option<&'a AssetBase>,
     invocation: &'a EngineInvocation<'a>,
     engines: Engines<'a>,
     limits: &'a Limits,
@@ -865,12 +920,14 @@ where
         let bytes = read_bounded_file(path, Some(self.limits.max_ir_json_bytes))?;
         let document =
             crate::ir_io::read_versioned(&bytes, self.limits).map_err(|err| match err {
-                crate::ir_io::ReadError::ByteLimitExceeded { .. }
-                | crate::ir_io::ReadError::DepthExceeded(_)
-                | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
+                error if error.is_limit_exceeded() => ConvertError::LimitExceeded,
                 crate::ir_io::ReadError::UnsupportedVersion => ConvertError::UnsupportedIrVersion,
                 crate::ir_io::ReadError::Io(_) => ConvertError::InputIo,
-                crate::ir_io::ReadError::Json(_) => ConvertError::Failed,
+                crate::ir_io::ReadError::Json(_)
+                | crate::ir_io::ReadError::Validation(_)
+                | crate::ir_io::ReadError::ByteLimitExceeded { .. }
+                | crate::ir_io::ReadError::DepthExceeded(_)
+                | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::Failed,
             })?;
         Ok(Stage::Ir(Box::new(document)))
     }
@@ -905,14 +962,23 @@ where
                     ),
                     Stage::Ir(_) => return Err(ConvertError::Failed),
                 };
+                let confined_base = if matches!(stage, Stage::Source) {
+                    self.asset_base
+                } else {
+                    None
+                };
                 let read = read_document_to_ir(path, step.from, self.limits)?;
                 self.warnings.extend(read.warnings);
                 let mut document = read.document;
                 if self.cancel.is_cancelled() {
                     return Err(ConvertError::Interrupted);
                 }
-                let asset_warnings = assets::resolve(&mut document, base_dir, self.limits)
-                    .map_err(|_| ConvertError::InputIo)?;
+                // A confined source resolves images only through its authorized handle.
+                let asset_warnings = match confined_base {
+                    Some(base) => assets::resolve_in(&mut document, base, self.limits),
+                    None => assets::resolve(&mut document, base_dir, self.limits)
+                        .map_err(|_| ConvertError::InputIo)?,
+                };
                 self.warnings
                     .extend(asset_warnings.iter().map(safe_warning));
                 Ok(Stage::Ir(Box::new(document)))
@@ -1118,9 +1184,7 @@ fn read_ir_artifact(
 ) -> Result<Document, ConvertError> {
     let file = workspace.open_artifact(path).map_err(map_workspace_error)?;
     crate::ir_io::read(std::io::BufReader::new(file), limits).map_err(|err| match err {
-        crate::ir_io::ReadError::ByteLimitExceeded { .. }
-        | crate::ir_io::ReadError::DepthExceeded(_)
-        | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
+        error if error.is_limit_exceeded() => ConvertError::LimitExceeded,
         _ => ConvertError::Failed,
     })
 }
@@ -1187,7 +1251,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn convert_for_route<F>(
     request: &ConvertRequest,
-    destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
+    confinement: Option<Confinement<'_>>,
     route: &Route,
     pdf_read: Option<ArchiveToIrOutput>,
     invocation: &EngineInvocation<'_>,
@@ -1229,6 +1293,7 @@ where
     };
     let mut run = RouteRun {
         request,
+        asset_base: confinement.and_then(|confinement| confinement.asset_base),
         invocation,
         engines,
         limits: &limits,
@@ -1270,10 +1335,13 @@ where
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
-    let promoted = match destination_parent {
-        Some((parent_dir, file_name)) => {
-            workspace.promote_into(&artifact_path, parent_dir, file_name, request.overwrite)
-        }
+    let promoted = match confinement {
+        Some(confinement) => workspace.promote_into(
+            &artifact_path,
+            confinement.destination_parent,
+            confinement.file_name,
+            request.overwrite,
+        ),
         None => workspace.promote(&artifact_path, &request.output, request.overwrite),
     };
     promoted.map_err(map_workspace_error)?;
@@ -1535,7 +1603,7 @@ fn plan_with_available_engines(
 #[allow(clippy::too_many_arguments)]
 fn convert_executor<F>(
     request: &ConvertRequest,
-    destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
+    confinement: Option<Confinement<'_>>,
     invocation: &EngineInvocation<'_>,
     forced_input: Option<Format>,
     limits: Limits,
@@ -1607,7 +1675,7 @@ where
     })?;
     let mut report = convert_for_route(
         request,
-        destination_parent,
+        confinement,
         &route,
         selected.pdf,
         invocation,

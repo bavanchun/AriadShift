@@ -81,6 +81,26 @@ export interface RouteOutput {
   warnings: Notice[];
 }
 
+/**
+ * Largest intermediate `ariad-ir+json` payload a multi-engine browser route may hand to
+ * the next engine (256 MiB). Matches the worker's wasm memory recycle threshold
+ * (`RECYCLE_MEMORY_BYTES` in `session.ts`): an accepted <= 16 MiB source document with
+ * embedded media legitimately expands past 16 MiB once base64-encoded into IR JSON,
+ * while an intermediate payload above 256 MiB would exceed a single conversion's worker
+ * memory budget before the consuming engine deserializes it.
+ */
+export const INTERMEDIATE_IR_LIMIT_BYTES = 256 * 1024 * 1024;
+
+function intermediateOptions(options: ConvertOptions): ConvertOptions {
+  return {
+    ...options,
+    limits: {
+      ...options.limits,
+      max_input_bytes: INTERMEDIATE_IR_LIMIT_BYTES,
+    },
+  };
+}
+
 /** Runs a planned route, handing each run of steps to its engine. */
 export async function runRoute(
   core: Core,
@@ -91,7 +111,9 @@ export async function runRoute(
   let current = bytes;
   let last: ConvertResult | null = null;
   const warnings: Notice[] = [];
-  for (const group of groupSteps(steps)) {
+  // Ingest already capped the user's original bytes; intermediate IR uses its own browser budget.
+  const laterOptions = intermediateOptions(options);
+  for (const [index, group] of groupSteps(steps).entries()) {
     const engine = core.engines.get(group.engine);
     if (!engine) {
       throw {
@@ -100,7 +122,20 @@ export async function runRoute(
         engine: group.engine,
       };
     }
-    last = await engine.convert(current, group.from, group.to, options);
+    if (index > 0 && current.byteLength > INTERMEDIATE_IR_LIMIT_BYTES) {
+      const limitMb = INTERMEDIATE_IR_LIMIT_BYTES / (1024 * 1024);
+      throw {
+        code: "limit_exceeded",
+        limit: "max_input_bytes",
+        message: `This document expands to ${Math.ceil(current.byteLength / (1024 * 1024))} MB during conversion. The browser converter handles intermediate documents up to ${limitMb} MB; the AriadShift CLI converts larger ones on your computer.`,
+      };
+    }
+    last = await engine.convert(
+      current,
+      group.from,
+      group.to,
+      index === 0 ? options : laterOptions,
+    );
     current = last.bytes;
     warnings.push(...last.warnings);
   }

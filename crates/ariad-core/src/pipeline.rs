@@ -304,7 +304,7 @@ pub fn write(
 }
 
 /// Reads an IR JSON document with the same bounds as the native host: byte cap,
-/// nesting pre-scan before deserializing, version check and block count.
+/// nesting pre-scan before deserializing, version check and IR validation.
 pub fn read_ir_json(bytes: &[u8], limits: &Limits) -> Result<Document, PipelineError> {
     limits.validate()?;
     if let Some(limit) = limits.max_input_bytes
@@ -339,11 +339,146 @@ pub fn read_ir_json(bytes: &[u8], limits: &Limits) -> Result<Document, PipelineE
     }
 
     let mut document: Document = deserialize_bounded(bytes).map_err(|error| invalid_ir(&error))?;
-    if document.block_count() > limits.max_blocks as usize {
-        return Err(limit_exceeded("max_blocks"));
-    }
+    validate_ir_document(&document, limits)?;
     document.version = IR_VERSION.to_owned();
     Ok(document)
+}
+
+enum IrNode<'a> {
+    Block(&'a Block),
+    Inline(&'a Inline),
+}
+
+/// Validates deserialized IR before any recursive consumer uses it.
+///
+/// Container blocks and inline wrappers share one nesting budget; body and
+/// furniture share the block and footnote-id budgets. Asset limits are per asset.
+/// This heap-based walk does not recurse through untrusted blocks or inlines.
+pub fn validate_ir_document(document: &Document, limits: &Limits) -> Result<(), PipelineError> {
+    use sha2::{Digest, Sha256};
+    use std::collections::BTreeSet;
+
+    limits.validate()?;
+    for (id, asset) in &document.assets {
+        if let Some(maximum) = limits.max_asset_bytes
+            && asset.bytes.len() as u64 > maximum
+        {
+            return Err(limit_exceeded("max_asset_bytes"));
+        }
+        if *id != hex::encode(Sha256::digest(&asset.bytes)) {
+            return Err(PipelineError::InvalidIr {
+                reason: "asset id must equal the lowercase SHA-256 of its bytes".to_owned(),
+            });
+        }
+    }
+
+    let mut stack: Vec<_> = document
+        .body
+        .iter()
+        .chain(&document.furniture)
+        .map(|block| (IrNode::Block(block), 0u16))
+        .collect();
+    let mut block_count = 0usize;
+    let mut footnote_ids = BTreeSet::new();
+    while let Some((node, depth)) = stack.pop() {
+        let (blocks, inlines, depth): (&[Block], &[Inline], u16) = match node {
+            IrNode::Block(block) => {
+                block_count += 1;
+                if block_count > limits.max_blocks as usize {
+                    return Err(limit_exceeded("max_blocks"));
+                }
+                match block {
+                    Block::Heading { level, content } => {
+                        if !(1..=6).contains(level) {
+                            return Err(PipelineError::InvalidIr {
+                                reason: "heading level must be between 1 and 6".to_owned(),
+                            });
+                        }
+                        (&[], content, depth)
+                    }
+                    Block::Paragraph { content } => (&[], content, depth),
+                    Block::Figure { caption, .. } => (&[], caption, depth),
+                    Block::Quote { blocks } => (blocks, &[], depth + 1),
+                    Block::Footnote { id, blocks } => {
+                        if !footnote_ids.insert(id) {
+                            return Err(PipelineError::InvalidIr {
+                                reason: "footnote ids must be unique".to_owned(),
+                            });
+                        }
+                        (blocks, &[], depth + 1)
+                    }
+                    Block::List { items, .. } => {
+                        for item in items {
+                            stack.extend(
+                                item.blocks
+                                    .iter()
+                                    .map(|block| (IrNode::Block(block), depth + 1)),
+                            );
+                        }
+                        (&[], &[], depth + 1)
+                    }
+                    Block::Table {
+                        caption,
+                        columns,
+                        head,
+                        body,
+                        footnotes,
+                    } => {
+                        for row in head.iter().chain(body) {
+                            let mut remaining = columns.len() as u64;
+                            for cell in row {
+                                remaining = remaining
+                                    .checked_sub(u64::from(cell.colspan))
+                                    .ok_or_else(|| PipelineError::InvalidIr {
+                                        reason:
+                                            "table row colspans exceed the declared column count"
+                                                .to_owned(),
+                                    })?;
+                                stack.extend(
+                                    cell.blocks
+                                        .iter()
+                                        .map(|block| (IrNode::Block(block), depth + 1)),
+                                );
+                            }
+                        }
+                        stack.extend(
+                            caption
+                                .iter()
+                                .flatten()
+                                .map(|inline| (IrNode::Inline(inline), depth + 1)),
+                        );
+                        (&[], footnotes, depth + 1)
+                    }
+                    Block::Code { .. }
+                    | Block::Math { .. }
+                    | Block::PageBreak {}
+                    | Block::Raw { .. } => (&[], &[], depth),
+                }
+            }
+            IrNode::Inline(inline) => match inline {
+                Inline::Emph { content }
+                | Inline::Strong { content }
+                | Inline::Strikeout { content }
+                | Inline::Superscript { content }
+                | Inline::Subscript { content }
+                | Inline::Link { content, .. } => (&[], content, depth + 1),
+                Inline::Text { .. }
+                | Inline::Code { .. }
+                | Inline::Image { .. }
+                | Inline::SoftBreak {}
+                | Inline::LineBreak {}
+                | Inline::Math { .. }
+                | Inline::FootnoteRef { .. }
+                | Inline::Raw { .. } => (&[], &[], depth),
+            },
+        };
+        if depth > limits.max_nesting_depth {
+            return Err(limit_exceeded("max_nesting_depth"));
+        }
+        stack.extend(blocks.iter().map(|block| (IrNode::Block(block), depth)));
+        stack.extend(inlines.iter().map(|inline| (IrNode::Inline(inline), depth)));
+    }
+    Ok(())
 }
 
 /// Deserializes JSON whose nesting a caller has already bounded with a pre-scan.

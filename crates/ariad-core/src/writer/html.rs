@@ -1,5 +1,7 @@
 //! Standalone HTML5 document writer.
 
+use std::collections::BTreeSet;
+
 use base64::engine::{Engine as _, general_purpose::STANDARD};
 use unicode_normalization::UnicodeNormalization;
 
@@ -7,6 +9,7 @@ use crate::{
     ir::{
         Alignment, AssetRef, AssetStore, Block, Document, Inline, ListItem, RawFormat, TableCell,
     },
+    limits::Limits,
     warning::{Warning, WarningCode},
     writer::{WriteOutput, sanitize},
 };
@@ -62,6 +65,9 @@ pub fn write(document: &Document) -> WriteOutput {
 /// Writes a document to a standalone HTML5 document with an optional title fallback.
 #[must_use]
 pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&str>) -> WriteOutput {
+    if super::markdown::check_output_size(document, title_fallback).is_none() {
+        return super::markdown::output_ceiling_exceeded();
+    }
     let normalized_doc = super::normalize_document(document);
     let document = &normalized_doc;
     let normalized_title_fallback = title_fallback.map(super::normalize_singleline);
@@ -134,6 +140,8 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
 
     let mut ctx = HtmlContext {
         assets: &document.assets,
+        embedded_assets: BTreeSet::new(),
+        repeated_assets_warned: BTreeSet::new(),
         warnings: &mut warnings,
         raw_dropped_warned: false,
     };
@@ -164,6 +172,9 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
 
     out.push_str("</body>\n</html>\n");
 
+    if out.len() > Limits::MAX_TEXT_OUTPUT_BYTES {
+        return super::markdown::output_ceiling_exceeded();
+    }
     WriteOutput {
         content: out,
         warnings,
@@ -172,6 +183,8 @@ pub fn write_with_title_fallback(document: &Document, title_fallback: Option<&st
 
 struct HtmlContext<'a> {
     assets: &'a AssetStore,
+    embedded_assets: BTreeSet<String>,
+    repeated_assets_warned: BTreeSet<String>,
     warnings: &'a mut Vec<Warning>,
     raw_dropped_warned: bool,
 }
@@ -247,14 +260,19 @@ fn write_block(block: &Block, ctx: &mut HtmlContext<'_>, out: &mut String) {
             columns,
             head,
             body,
-            ..
+            footnotes,
         } => {
             write_table(caption.as_deref(), columns, head, body, ctx, out);
+            if !footnotes.is_empty() {
+                out.push_str("<p>");
+                out.push_str(&render_inlines(footnotes, ctx));
+                out.push_str("</p>\n");
+            }
         }
         Block::Figure { asset, caption } => {
             out.push_str("<figure>\n");
             let alt = plain_text(caption);
-            let img = render_image(asset, &alt, None, ctx.assets, ctx.warnings);
+            let img = render_image(asset, &alt, None, ctx);
             out.push_str(&img);
             out.push('\n');
             if !caption.is_empty() {
@@ -486,9 +504,7 @@ fn render_single_inline(inline: &Inline, ctx: &mut HtmlContext<'_>) -> String {
                 s
             }
         }
-        Inline::Image { target, alt, title } => {
-            render_image(target, alt, title.as_deref(), ctx.assets, ctx.warnings)
-        }
+        Inline::Image { target, alt, title } => render_image(target, alt, title.as_deref(), ctx),
     }
 }
 
@@ -504,12 +520,23 @@ fn render_image(
     target: &AssetRef,
     alt: &str,
     title: Option<&str>,
-    assets: &AssetStore,
-    warnings: &mut Vec<Warning>,
+    ctx: &mut HtmlContext<'_>,
 ) -> String {
+    if let AssetRef::Asset { id } = target
+        && ctx.embedded_assets.contains(id)
+    {
+        if ctx.repeated_assets_warned.insert(id.clone()) {
+            ctx.warnings.push(Warning::new(
+                WarningCode::ImageNotEmbedded,
+                format!("repeated asset `{id}` was reduced to alt text to avoid duplicating embedded data"),
+            ));
+        }
+        return escape_prose(alt);
+    }
     let (url, warn) = match target {
         AssetRef::Asset { id } => {
-            if let Some(asset) = assets.get(id) {
+            if let Some(asset) = ctx.assets.get(id) {
+                ctx.embedded_assets.insert(id.clone());
                 let b64 = STANDARD.encode(&asset.bytes);
                 (
                     Some(format!("data:{};base64,{}", asset.media_type, b64)),
@@ -541,7 +568,7 @@ fn render_image(
     };
 
     if let Some(warning) = warn {
-        warnings.push(warning);
+        ctx.warnings.push(warning);
     }
 
     if let Some(url) = url {

@@ -148,6 +148,12 @@ curl -sS --fail-with-body -X DELETE "$API/v1/jobs/$JOB_ID" "${AUTHN[@]}"
 
 One upload can feed several jobs, for example one per target format. Browsers upload with Uppy's `@uppy/aws-s3` plugin in single-request mode, using the presigned request as its upload parameters, or with the SDK's `upload` helper.
 
+The SDK's `transfer` retries only `429` (busy) and `408` (transfer timeout), with at most three attempts total for reusable `Blob` (including `File`), `ArrayBuffer` or `Uint8Array` bodies. Each attempt sends the same bytes, method, signed headers and abort signal, without API credentials. It cancels discarded response bodies before retrying. Total scheduled retry waits are limited to 60 seconds, below both the timer limit and the signed PUT's 15-minute lifetime; each wait must also end strictly before the request's `expires_at`.
+
+`Retry-After` must be a nonnegative whole number of seconds represented by at most 16 decimal digits and a safe, finite integer. A missing header uses one second. A present invalid or unsafe header (including negative, NaN, non-finite or oversized values), an invalid/expired URL expiry, or a server minimum exceeding the remaining waiting budget or reaching URL expiry stops automatic retry and surfaces that response's original `429`/`408` error. The SDK never clamps a valid minimum to retry sooner. Aborting during a wait stops further attempts. Other HTTP statuses and network failures are returned without retry; download behavior is unchanged.
+
+Upload completion returns `409 conflict` while another call in the same API process verifies that object. Up to four distinct uploads are digested concurrently per process; additional calls wait and recheck access, expiry and status before reading storage. A completed upload returns its existing result. Replicas have independent claims and digest limits; use ingress request limits to bound aggregate verification work.
+
 ## Endpoints
 
 | Method | Path | Credentials | Purpose |
@@ -484,7 +490,9 @@ Presigned upload and download URLs never receive credentials.
 
 `events` reconnects after dropped connections and retryable responses (`429`, `500`, `502`, `503`, `504`) with `Last-Event-ID`, so no event is lost or repeated. It waits `Retry-After` when the server sends one and otherwise backs off exponentially from 1 second up to 30 seconds, giving up after 8 consecutive failures (`maxRetries`, `retryDelayMs`, `maxRetryDelayMs`). When a stream closes without a final event, it reads the job's status to decide whether to reconnect. Pass `signal` to stop.
 
-Every other helper throws `AriadApiError` on a non-2xx response, with `status`, the error body's `code` and `message`, and `retryAfter` (seconds) when the response had `Retry-After`. Storage errors use the codes `transfer_failed` and `download_failed`. The helpers do not retry on their own:
+`transfer` uses the bounded upload policy above: at most three attempts, at most 60 seconds of total scheduled waiting, and no wait reaching signed-URL expiry. Missing `Retry-After` defaults to one second; invalid headers or valid minimums that do not fit stop retrying with the current HTTP error. Cancellation remains effective during the wait.
+
+Other helpers throw `AriadApiError` on a non-2xx response, with `status`, the error body's `code` and `message`, and `retryAfter` (seconds) only when the header is a valid safe whole-second value. Storage errors use the codes `transfer_failed` and `download_failed`. Apart from `transfer` and `events`, helpers do not retry on their own. Optional caller retries must honor the server minimum within an explicit finite budget, as in this example:
 
 ```ts
 import { AriadApiError } from "@ariadshift/sdk";
@@ -493,8 +501,12 @@ try {
   await ariad.createJob({ uploadId: upload.id, to: "docx" });
 } catch (error) {
   if (error instanceof AriadApiError && error.code === "rate_limited") {
-    await new Promise((resolve) => setTimeout(resolve, (error.retryAfter ?? 1) * 1000));
-    // retry
+    const seconds = error.retryAfter;
+    if (seconds === undefined || !Number.isSafeInteger(seconds) || seconds < 0 || seconds > 60) {
+      throw error; // no retry when the server minimum is invalid or exceeds this budget
+    }
+    await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+    // Retry this rejected request once.
   } else {
     throw error;
   }

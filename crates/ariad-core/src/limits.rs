@@ -35,6 +35,13 @@ impl Default for Limits {
 }
 
 impl Limits {
+    /// Internal output ceiling shared by Markdown and HTML writers.
+    ///
+    /// This is a fixed safety budget, not a serialized engine-protocol field.
+    /// Writers conservatively reserve expansion before allocating output and
+    /// refuse documents exceeding this ceiling with an empty output and warning.
+    pub const MAX_TEXT_OUTPUT_BYTES: usize = 512 * 1024 * 1024;
+
     /// Serialized names of every field, for callers that must reject unknown names.
     pub const FIELD_NAMES: &'static [&'static str] = &[
         "max_input_bytes",

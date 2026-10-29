@@ -29,7 +29,25 @@ vi.mock("@/components/cloud/cloud-panel", () => ({
 }));
 
 class FakeWorker extends EventTarget {
+  constructor(private readonly failReset = false) {
+    super();
+  }
+
   postMessage(request: RequestEnvelope) {
+    if (request.type === "reset" && this.failReset) {
+      queueMicrotask(() =>
+        this.dispatchEvent(
+          new MessageEvent("message", {
+            data: {
+              id: request.id,
+              ok: false,
+              error: { code: "cleanup_failed", message: "Device cleanup failed.", fatal: false },
+            } satisfies WorkerResponse,
+          }),
+        ),
+      );
+      return;
+    }
     const result =
       request.type === "init"
         ? {
@@ -80,8 +98,8 @@ function kept(reason: ServerCopy["reason"], retry: ServerCopy["retry"]): ServerC
   };
 }
 
-async function startOverFromCloud() {
-  const client = new ConverterClient(() => new FakeWorker() as unknown as Worker);
+async function startOverFromCloud(failReset = false) {
+  const client = new ConverterClient(() => new FakeWorker(failReset) as unknown as Worker);
   render(<ConverterApp client={client} />);
   const input = document.querySelector("input[type=file]") as HTMLInputElement;
   fireEvent.change(input, {
@@ -134,6 +152,22 @@ describe("Start over after a cloud job", () => {
     expect(
       screen.getByRole("button", { name: "Delete from server" }).hasAttribute("disabled"),
     ).toBe(false);
+  });
+
+  it("keeps a retained server copy visible when device cleanup fails", async () => {
+    const retry = vi.fn(async (): Promise<DiscardOutcome> => ({ status: "deleted" }));
+    panel.discard = vi.fn(async () => kept("failed", retry));
+    await startOverFromCloud(true);
+
+    expect((await screen.findByTestId("converter-error")).textContent).toContain(
+      "Device cleanup failed.",
+    );
+    expect((await screen.findByTestId("server-copy")).textContent).toContain(
+      "page.rtf is still on api.example.com",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete from server" }));
+    await waitFor(() => expect(screen.queryByTestId("server-copy")).toBeNull());
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 
   it("names the retention when the server cannot delete an upload on request", async () => {

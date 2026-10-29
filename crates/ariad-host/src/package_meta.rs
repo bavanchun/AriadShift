@@ -86,7 +86,7 @@ mod tests {
   </metadata>
 </package>"#;
 
-    fn make_docx(path: &std::path::Path, include_large_entry: bool) {
+    fn make_docx(path: &std::path::Path, oversized_properties: bool) {
         let file = File::create(path).unwrap();
         let mut writer = ZipWriter::new(file);
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -96,19 +96,18 @@ mod tests {
         writer
             .write_all(b"<w:document>unchanged</w:document>")
             .unwrap();
-        if include_large_entry {
-            writer.start_file("word/large.xml", options).unwrap();
-            let chunk = [b'x'; 1024 * 1024];
+        writer.start_file("docProps/core.xml", options).unwrap();
+        writer.write_all(CORE_XML.as_bytes()).unwrap();
+        if oversized_properties {
+            let chunk = [b' '; 1024 * 1024];
             for _ in 0..(MAX_ENTRY_BYTES / chunk.len() as u64 + 1) {
                 writer.write_all(&chunk).unwrap();
             }
         }
-        writer.start_file("docProps/core.xml", options).unwrap();
-        writer.write_all(CORE_XML.as_bytes()).unwrap();
         writer.finish().unwrap();
     }
 
-    fn make_epub(path: &std::path::Path, include_large_entry: bool) {
+    fn make_epub(path: &std::path::Path, oversized_properties: bool) {
         let file = File::create(path).unwrap();
         let mut writer = ZipWriter::new(file);
         let stored_options =
@@ -126,20 +125,16 @@ mod tests {
             .write_all(b"<container><rootfiles><rootfile full-path=\"EPUB/content.opf\" media-type=\"application/oebps-package+xml\"/></rootfiles></container>")
             .unwrap();
 
-        if include_large_entry {
-            writer
-                .start_file("EPUB/large.bin", deflated_options)
-                .unwrap();
-            let chunk = [b'x'; 1024 * 1024];
-            for _ in 0..(MAX_ENTRY_BYTES / chunk.len() as u64 + 1) {
-                writer.write_all(&chunk).unwrap();
-            }
-        }
-
         writer
             .start_file("EPUB/content.opf", deflated_options)
             .unwrap();
         writer.write_all(OPF_XML.as_bytes()).unwrap();
+        if oversized_properties {
+            let chunk = [b' '; 1024 * 1024];
+            for _ in 0..(MAX_ENTRY_BYTES / chunk.len() as u64 + 1) {
+                writer.write_all(&chunk).unwrap();
+            }
+        }
         writer.finish().unwrap();
     }
 
@@ -244,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_zip_entry_over_the_uncompressed_size_cap() {
+    fn rejects_package_properties_over_the_uncompressed_size_cap() {
         let directory = tempdir().unwrap();
         let path = directory.path().join("oversized.docx");
         make_docx(&path, true);

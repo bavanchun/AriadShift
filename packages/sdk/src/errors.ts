@@ -8,7 +8,7 @@ export class AriadApiError extends Error {
     /** Stable machine-readable code from the error body, for example `not_found`. */
     readonly code: string,
     message: string,
-    /** Seconds to wait before retrying, from `Retry-After` on 429 responses. */
+    /** Safe whole seconds from a valid `Retry-After` header, when available. */
     readonly retryAfter?: number,
   ) {
     super(message);
@@ -17,11 +17,13 @@ export class AriadApiError extends Error {
 
 /** Reads `Retry-After` as whole seconds; HTTP dates are not used by the API. */
 export function retryAfterSeconds(response: Response): number | undefined {
-  const value = response.headers.get("retry-after");
-  if (value === null || !/^\d+$/.test(value.trim())) {
+  const value = response.headers.get("retry-after")?.trim();
+  // A safe integer has at most 16 decimal digits; reject oversized input first.
+  if (value === undefined || value.length > 16 || !/^\d+$/.test(value)) {
     return undefined;
   }
-  return Number(value.trim());
+  const seconds = Number(value);
+  return Number.isSafeInteger(seconds) ? seconds : undefined;
 }
 
 /** Builds an error from a parsed `ErrorBody`, a raw body, or nothing. */

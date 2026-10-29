@@ -177,7 +177,7 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 |---|---|
 | `just ci` | Shared local quality gate: `just static`, Clippy, the WASM check, tests, `bench-test`, `bench-check`, `package-check`, `web-ci` (wasm build, typecheck, Vitest, site build), and desktop-scoped `desktop-ci`; browser E2E and installer packaging run separately |
 | `just desktop-ci` | On desktop/shared dependency changes: regenerate bindings and command permissions, reject drift, build the frontend and run UI, build-tool and native tests; see [desktop.md](desktop.md) for installer and Linux smoke commands |
-| `just web-e2e` | The web job's Playwright tests; needs `just web-build` and `just web-browsers` first |
+| `just web-e2e` | The web job's Playwright tests; needs `just web-ci` (build and static export) and `just web-browsers` first |
 | `just bench` | Run benchmark harness on fixture suite |
 | `just bench-check` | Validate capabilities.json against schema and invariants |
 | `just bench-test` | Run unit tests for benchmark harness |

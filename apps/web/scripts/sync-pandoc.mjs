@@ -5,7 +5,12 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { pandocWasmSha256, pandocVersion as version } from "../engine-assets.mjs";
+import {
+  pandocWasmSha256,
+  pandocArchiveSha256 as sha256,
+  pandocVersion as version,
+} from "../engine-assets.mjs";
+import { renderPandocSourceTxt, verifyPandocSourceInventory } from "../pandoc-source-inventory.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 if (
@@ -14,7 +19,6 @@ if (
   )
 )
   throw new Error("Native and browser Pandoc versions must match");
-const sha256 = "f14bc3e7722c8bdd58188707e8d5445ce1ac909eae43373f903b45c2f7390cf9";
 const dir = path.join(root, ".tools/pandoc-wasm");
 await mkdir(dir, { recursive: true });
 const archive = path.join(dir, "pandoc.zip");
@@ -45,14 +49,16 @@ for (const name of ["pandoc.wasm", "COPYING.md", "COPYRIGHT"]) {
     },
   );
   // The browser checks this digest before it caches or compiles the reactor.
-  if (
-    name === "pandoc.wasm" &&
-    createHash("sha256").update(data).digest("hex") !== pandocWasmSha256
-  )
-    throw new Error("pandoc.wasm SHA-256 does not match engine-assets.mjs");
+  if (name === "pandoc.wasm") {
+    if (createHash("sha256").update(data).digest("hex") !== pandocWasmSha256)
+      throw new Error("pandoc.wasm SHA-256 does not match engine-assets.mjs");
+    verifyPandocSourceInventory({
+      version,
+      archiveSha256: sha256,
+      wasmSha256: pandocWasmSha256,
+      wasmBytes: data,
+    });
+  }
   await writeFile(path.join(output, name), data);
 }
-await writeFile(
-  path.join(output, "SOURCE.txt"),
-  `Unmodified Pandoc ${version}, GPL-2.0-or-later.\nSource: https://github.com/jgm/pandoc/tree/${version}\nSource archive: https://github.com/jgm/pandoc/archive/refs/tags/${version}.tar.gz\nRelease archive SHA-256: ${sha256}\n`,
-);
+await writeFile(path.join(output, "SOURCE.txt"), renderPandocSourceTxt());

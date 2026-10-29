@@ -164,15 +164,9 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 let input_bytes = fs::read(&input.path).map_err(|_| EngineFailure::io())?;
                 let document = ir_io::read(BufReader::new(input_bytes.as_slice()), &limits)
                     .map_err(|err| match err {
-                        ir_io::ReadError::ByteLimitExceeded { .. }
-                        | ir_io::ReadError::DepthExceeded(_)
-                        | ir_io::ReadError::BlockLimitExceeded { .. } => {
-                            EngineFailure::limit_exceeded()
-                        }
+                        error if error.is_limit_exceeded() => EngineFailure::limit_exceeded(),
                         ir_io::ReadError::Io(_) => EngineFailure::io(),
-                        ir_io::ReadError::Json(_) | ir_io::ReadError::UnsupportedVersion => {
-                            EngineFailure::invalid_request()
-                        }
+                        _ => EngineFailure::invalid_request(),
                     })?;
                 let mut mapped = from_ir(&document);
 
