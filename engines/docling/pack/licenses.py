@@ -1617,7 +1617,9 @@ def _export_native_review(digest: str, label: str, archive, artifact: Path, erro
         # Receipt paths use portable archive syntax, including on Windows,
         # where a leading slash is rooted but Path.is_absolute() is false.
         if (
-            relative.startswith("/")
+            not relative
+            or "\0" in relative
+            or relative.startswith("/")
             or ":" in relative
             or "\\" in relative
             or ".." in relative.split("/")

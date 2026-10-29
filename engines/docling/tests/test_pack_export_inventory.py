@@ -162,6 +162,28 @@ def test_native_export_notice_paths_cannot_escape_the_artifact(tmp_path, monkeyp
         licenses.check_wheel_files([export_wheel(tmp_path)])
 
 
+@pytest.mark.parametrize("path", ["", "codec\0LICENSE"], ids=["empty", "nul"])
+@pytest.mark.parametrize("scope", ["site", "upstream"])
+@pytest.mark.parametrize("artifact_kind", ["wheel", "loose"])
+def test_native_export_notice_paths_reject_empty_and_nul_receipts(
+    tmp_path, monkeypatch, path, scope, artifact_kind
+):
+    component = review(monkeypatch)
+    component["notice_scope"] = scope
+    component["notices"][0]["path"] = path
+    if artifact_kind == "wheel":
+        artifact = export_wheel(tmp_path)
+        with zipfile.ZipFile(artifact, "a") as archive:
+            archive.writestr("notices", NOTICE)
+    else:
+        artifact = tmp_path / "payload.data"
+        artifact.write_bytes(PAYLOAD)
+        (tmp_path / "notices").write_bytes(NOTICE)
+    # An empty upstream receipt must not resolve to a hash-matching notices file.
+    with pytest.raises(SystemExit, match="native export notice path is unsafe"):
+        licenses.check_wheel_files([artifact])
+
+
 @pytest.mark.parametrize("path", ["/outside/LICENSE", "C:LICENSE", "notices/../LICENSE"])
 def test_native_export_notice_paths_are_safe_under_windows_semantics(tmp_path, monkeypatch, path):
     component = review(monkeypatch)
