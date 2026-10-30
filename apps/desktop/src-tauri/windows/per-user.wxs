@@ -151,7 +151,8 @@
                 </RegistryKey>
                 {{/each~}}
             </Component>
-            <Component Id="Path" Guid="*" Win64="$(var.Win64)">
+            <!-- Registry-keypath components containing files require explicit GUIDs. -->
+            <Component Id="Path" Guid="8B62D1E5-7229-49F9-9D65-FDD2DF97E41A" Win64="$(var.Win64)">
                 <RegistryValue Root="HKCU" Key="Software\AriadShift\OsIntegration" Name="DesktopBinary" Type="integer" Value="1" KeyPath="yes" />
                 <File Id="Path" Source="{{main_binary_path}}" KeyPath="no" Checksum="yes"/>
                 {{#each file_associations as |association| ~}}
@@ -165,7 +166,7 @@
                 {{/each~}}
             </Component>
             {{#each binaries as |bin| ~}}
-            <Component Id="{{ bin.id }}" Guid="*" Win64="$(var.Win64)">
+            <Component Id="{{ bin.id }}" Guid="{{ bin.guid }}" Win64="$(var.Win64)">
                 <RegistryValue Root="HKCU" Key="Software\AriadShift\OsIntegration\Binaries" Name="{{bin.id}}" Type="integer" Value="1" KeyPath="yes" />
                 <File Id="Bin_{{ bin.id }}" Source="{{bin.path}}" KeyPath="no"/>
             </Component>

@@ -151,8 +151,10 @@ default app for a format.
   require the platform checks below.
   Files and generated resource components use HKCU registry keypaths, as required
   by WiX for files under a user profile. Explorer's existing component keeps its
-  GUID; the executable gets a registry-derived component identity because its
-  keypath changed.
+  GUID; the executable has a new fixed GUID because its keypath changed.
+  Additional binaries use Tauri's supplied component GUIDs. These file-bearing
+  components need explicit GUIDs because WiX cannot generate them for registry
+  keypaths.
 - **Linux:** the `.deb` and `.rpm` desktop entry lists the supported MIME types and
   passes files with `%U`, so the app appears in Open With. Dolphin reads the
   bundled service menu from `/usr/share/kio/servicemenus` (and

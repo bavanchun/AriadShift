@@ -72,12 +72,12 @@ test("profile files and generated resources use HKCU keypaths", () => {
   const template = readFileSync(new URL(config.wix.template, windows), "utf8");
   const main = /<Component Id="Path"[\s\S]*?<\/Component>/.exec(template)?.[0];
   assert.ok(main);
-  assert.match(main, /Guid="\*"/);
+  assert.match(main, /Guid="[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}"/);
   assert.match(main, /<RegistryValue Root="HKCU"[^>]*KeyPath="yes"/);
   assert.match(main, /<File Id="Path"[^>]*KeyPath="no"/);
   const binaries = /\{\{#each binaries[\s\S]*?\{\{\/each/.exec(template)?.[0];
   assert.ok(binaries);
-  assert.match(binaries, /Guid="\*"/);
+  assert.match(binaries, /Guid="\{\{\s*bin\.guid\s*\}\}"/);
   assert.match(binaries, /<RegistryValue Root="HKCU"[^>]*KeyPath="yes"/);
   assert.match(binaries, /<File Id="Bin_[^>]*KeyPath="no"/);
   assert.doesNotMatch(template, /\{\{resources\}\}|\{\{#each resource_file_ids/);
