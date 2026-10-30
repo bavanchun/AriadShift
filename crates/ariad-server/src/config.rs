@@ -685,7 +685,10 @@ mod debug_tests {
             format!("{:?}", api.storage),
             format!("{:?}", WorkerConfig::from_env(&env, &[]).unwrap()),
         ] {
-            assert!(!debug.contains(sentinel), "{debug}");
+            assert!(
+                !debug.contains(sentinel),
+                "configuration debug leaked a secret"
+            );
         }
     }
 }

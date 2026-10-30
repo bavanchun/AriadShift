@@ -79,7 +79,7 @@ fn check_signature(
 ) -> bool {
     match keys.verify(manifest, signature, name, version) {
         Ok(id) => {
-            assert!(keys.ids().contains(&id), "verified by an unknown key {id}");
+            assert!(keys.ids().contains(&id), "verified by an unknown key");
             let mut tampered = manifest.to_vec();
             tampered.push(b'\n');
             assert!(

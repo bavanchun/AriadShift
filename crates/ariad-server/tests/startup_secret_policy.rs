@@ -57,10 +57,11 @@ fn provider_discovery_public_identifier_and_file_storage_remain_available() {
     ApiConfig::from_env(&env).unwrap();
     WorkerConfig::from_env(&env, &[]).unwrap();
     values.retain(|(key, _)| *key != "ARIAD_STORAGE_URL");
-    values.push((
-        "ARIAD_STORAGE_URL",
-        "file:///tmp/ariad-secret-policy".into(),
-    ));
+    let storage_dir = tempfile::tempdir().unwrap();
+    let storage_url = url::Url::from_directory_path(storage_dir.path())
+        .unwrap()
+        .to_string();
+    values.push(("ARIAD_STORAGE_URL", storage_url));
     values.push(("ARIAD_PUBLIC_URL", "http://localhost:8080".into()));
     ApiConfig::from_env(&Env::from_pairs(values.clone())).unwrap();
     WorkerConfig::from_env(&Env::from_pairs(values), &[]).unwrap();
