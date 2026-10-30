@@ -123,6 +123,7 @@ dependencies = [
  "serde_json",
  "typst",
  "unicode-normalization",
+ "zip",
 ]
 
 [[package]]

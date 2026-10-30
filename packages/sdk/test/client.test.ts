@@ -194,7 +194,7 @@ describe("upload", () => {
     await expect(
       client.upload(hello(), { filename: "report.md", sha256: HELLO_SHA256 }),
     ).rejects.toMatchObject({ status: 403, code: "forbidden" });
-    expect(mock.requests).toHaveLength(2);
+    expect(mock.requests).toHaveLength(3);
   });
 
   it("falls back to transfer_failed for non-JSON storage errors", async () => {

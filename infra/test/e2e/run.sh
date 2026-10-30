@@ -12,7 +12,7 @@
 # volumes are always removed on exit; on failure the compose logs are printed
 # first.
 #
-# Needs docker (with the compose plugin and BuildKit), curl, jq and unzip.
+# Needs docker (with the compose plugin and BuildKit), Python 3, curl, jq and unzip.
 # The host must meet docs/self-hosting.md's prerequisites for the office and
 # docling profiles (Landlock, seccomp, unprivileged user namespaces, memory).
 #
@@ -61,10 +61,11 @@ fail() {
 	exit 1
 }
 
-for tool in docker curl jq unzip; do
+for tool in docker curl jq unzip python3; do
 	command -v "$tool" >/dev/null 2>&1 || fail "$tool is required"
 done
 docker compose version >/dev/null 2>&1 || fail "the docker compose plugin is required"
+python3 "$ROOT/infra/test/e2e/check-turnstile-config.py"
 [ -f "$FIXTURE" ] || fail "missing fixture $FIXTURE"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/ariadshift-e2e.XXXXXX")
@@ -170,6 +171,8 @@ while IFS= read -r line || [ -n "$line" ]; do
 	*) printf '%s\n' "$line" ;;
 	esac
 done <"$ENV_EXAMPLE" >"$ENV_FILE"
+# Explicit test-only signup opt-in.
+printf '\nAUTH_ALLOW_SIGN_UP=true\n' >>"$ENV_FILE"
 if grep -q '^[A-Z0-9_]*=replace-with' "$ENV_FILE"; then
 	fail "the generated environment still has placeholder values"
 fi

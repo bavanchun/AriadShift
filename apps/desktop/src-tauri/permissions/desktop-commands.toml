@@ -16,4 +16,5 @@ permissions = [
   "allow-pack",
   "allow-pack-cancel",
   "allow-doctor",
+  "allow-opened-files",
 ]

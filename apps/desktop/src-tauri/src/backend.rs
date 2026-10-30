@@ -120,6 +120,10 @@ impl Backend {
     pub fn parse_link(&self, request: LinkRequest) -> Result<Option<DeepLink>, String> {
         crate::deep_link::parse(&request.url)
     }
+    /// Drains the files the OS file manager opened with the app since the last call.
+    pub fn opened_files(&self, _: Empty) -> Result<Vec<String>, String> {
+        Ok(crate::file_open::take())
+    }
     pub fn snapshot(&self, _: Empty) -> Result<Snapshot, String> {
         let m = self.model.lock().unwrap();
         Ok(Snapshot {

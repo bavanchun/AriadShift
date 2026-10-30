@@ -40,3 +40,6 @@ export async function pack_cancel(request: T.Empty): Promise<null> {
 export async function doctor(request: T.Empty): Promise<Array<T.Diagnostic>> {
   return invoke<Array<T.Diagnostic>>("doctor", { request });
 }
+export async function opened_files(request: T.Empty): Promise<Array<string>> {
+  return invoke<Array<string>>("opened_files", { request });
+}

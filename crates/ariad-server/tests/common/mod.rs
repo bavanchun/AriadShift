@@ -2,7 +2,8 @@
 //!
 //! Each test gets its own database on the server named by
 //! `ARIAD_TEST_DATABASE_URL` (PostgreSQL with the pgmq extension available)
-//! and skips with a message when the variable is unset. The API runs in
+//! and skips with a message when the variable is unset, unless
+//! `ARIAD_TEST_REQUIRE_DATABASE=1` makes a missing URL fatal. The API runs in
 //! process on a random port with a local object store; workers use the
 //! `ashift` binary as their engine program, as in production.
 #![allow(dead_code)]
@@ -40,6 +41,10 @@ pub fn admin_url(test: &str) -> Option<String> {
     match std::env::var("ARIAD_TEST_DATABASE_URL") {
         Ok(url) if !url.trim().is_empty() => Some(url),
         _ => {
+            assert!(
+                std::env::var("ARIAD_TEST_REQUIRE_DATABASE").as_deref() != Ok("1"),
+                "{test}: ARIAD_TEST_REQUIRE_DATABASE=1 needs ARIAD_TEST_DATABASE_URL"
+            );
             eprintln!("skipping {test}: ARIAD_TEST_DATABASE_URL is not set");
             None
         }

@@ -12,7 +12,7 @@ use uuid::Uuid;
 use super::{ApiJson, AppState, Caller, parse_id};
 use crate::{
     api::dto::{CreateJobRequest, Job, JobWarning, OutputFile, Outputs, Profile, RouteStep},
-    db::{self, JobRow, JobStatus, NewJob, UploadStatus, UsageEvent},
+    db::{self, JobRow, JobStatus, NewJob, StepRow, UploadStatus, UsageEvent},
     error::{ApiError, ApiResult, ErrorBody, ErrorDetail},
     packs::Pack,
     queue::JobMessage,
@@ -21,9 +21,14 @@ use crate::{
 
 pub(crate) async fn job_dto(state: &AppState, row: &JobRow) -> ApiResult<Job> {
     let steps = db::job_steps(&state.db, row.id).await?;
+    Ok(job_from_row(row, steps))
+}
+
+/// The API representation of a job row and its route.
+pub(crate) fn job_from_row(row: &JobRow, steps: Vec<StepRow>) -> Job {
     let warnings: Vec<JobWarning> =
         serde_json::from_value(row.warnings.0.clone()).unwrap_or_default();
-    Ok(Job {
+    Job {
         id: row.id,
         status: row.status(),
         upload_id: row.upload_id,
@@ -49,7 +54,7 @@ pub(crate) async fn job_dto(state: &AppState, row: &JobRow) -> ApiResult<Job> {
         started_at: row.started_at,
         finished_at: row.finished_at,
         expires_at: row.expires_at,
-    })
+    }
 }
 
 /// Loads a job the caller may see.
@@ -170,7 +175,22 @@ pub async fn create_job(
         .collect();
 
     let mut tx = state.db.begin().await?;
+    if !db::admit_global_job(&mut tx, state.queue.active_limit()).await? {
+        return Err(ApiError::quota_exceeded(
+            "the fleet's active job capacity is full",
+        ));
+    }
     db::lock_subject(&mut tx, &subject).await?;
+    // The share lock keeps `DELETE /v1/uploads/{id}` from retiring the input
+    // until this job is committed, and sees a deletion that committed first.
+    let live: Option<String> =
+        sqlx::query_scalar("SELECT status FROM uploads WHERE id = $1 FOR SHARE")
+            .bind(upload.id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if live.as_deref() != Some(UploadStatus::Completed.as_str()) {
+        return Err(ApiError::conflict("the upload is no longer available"));
+    }
     let usage = crate::entitlements::usage(&mut tx, &subject).await?;
     if let Err(violation) = caller.entitlement.admit(usage, input_bytes) {
         return Err(ApiError::quota_exceeded(violation.to_string()));

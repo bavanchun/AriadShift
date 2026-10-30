@@ -28,6 +28,7 @@ pub struct ApiError {
     code: &'static str,
     message: String,
     retry_after_s: Option<u64>,
+    reusable_upload_id: Option<uuid::Uuid>,
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -40,6 +41,7 @@ impl ApiError {
             code,
             message: message.into(),
             retry_after_s: None,
+            reusable_upload_id: None,
         }
     }
 
@@ -108,6 +110,16 @@ impl ApiError {
             "internal",
             "internal server error",
         )
+    }
+
+    /// Let an MCP caller retry admission without allocating another inline upload.
+    pub(crate) fn with_reusable_upload(mut self, id: uuid::Uuid) -> Self {
+        self.reusable_upload_id = Some(id);
+        self
+    }
+
+    pub(crate) const fn reusable_upload_id(&self) -> Option<uuid::Uuid> {
+        self.reusable_upload_id
     }
 
     #[must_use]

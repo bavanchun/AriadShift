@@ -32,7 +32,12 @@ fn check(data: &[u8], limits: &Limits) {
     assert!(stats.text_pages + stats.image_only_pages <= stats.pages);
     let layout = document.layout.as_ref().expect("layout index");
     assert_eq!(layout.pages.len(), stats.pages as usize);
-    assert!(layout.blocks.values().all(|position| (1..=stats.pages).contains(&position.page_no)));
+    assert!(
+        layout
+            .blocks
+            .values()
+            .all(|position| (1..=stats.pages).contains(&position.page_no))
+    );
     assert_eq!(
         layout.blocks.len(),
         document.body.len() + document.furniture.len()

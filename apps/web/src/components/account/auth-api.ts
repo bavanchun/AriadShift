@@ -46,7 +46,7 @@ export interface AuthApi {
   getSession(): Promise<AccountUser | null>;
   /** Signs in; `twoFactorRequired` means a TOTP or backup code must follow. */
   signInEmail(email: string, password: string): Promise<{ twoFactorRequired: boolean }>;
-  signUpEmail(name: string, email: string, password: string): Promise<void>;
+  signUpEmail(name: string, email: string, password: string, signupToken?: string): Promise<void>;
   signInPasskey(): Promise<void>;
   /** Finishes a two-factor sign-in, or confirms TOTP enrolment. */
   verifyTotp(code: string, trustDevice?: boolean): Promise<void>;
@@ -169,8 +169,15 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
       return { twoFactorRequired: data.twoFactorRedirect === true };
     },
 
-    async signUpEmail(name, email, password) {
-      await call(client.signUp.email({ name, email, password }));
+    async signUpEmail(name, email, password, signupToken) {
+      await call(
+        client.signUp.email(
+          { name, email, password },
+          {
+            ...(signupToken ? { headers: { "x-captcha-response": signupToken } } : {}),
+          },
+        ),
+      );
     },
 
     async signInPasskey() {

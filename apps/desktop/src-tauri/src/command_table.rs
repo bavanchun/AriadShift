@@ -15,6 +15,7 @@ macro_rules! command_table {
             (pack, PackRequest, String),
             (pack_cancel, Empty, ()),
             (doctor, Empty, Vec<Diagnostic>),
+            (opened_files, Empty, Vec<String>),
         }
     };
 }

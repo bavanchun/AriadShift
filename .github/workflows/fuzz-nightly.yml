@@ -21,9 +21,24 @@ permissions:
 
 jobs:
   fuzz-nightly:
-    name: Fuzz (ASan)
+    name: Fuzz (ASan, ${{ matrix.target }})
     runs-on: ubuntu-26.04
-    timeout-minutes: 90
+    # One target per job: 10 minutes of fuzzing plus the toolchain, a cargo-fuzz install on a
+    # cache miss and one ASan build, so adding a target never eats into another's budget.
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - markdown_reader
+          - html_reader
+          - pandoc_ast_to_ir
+          - docling_to_ir
+          - ir_json
+          - pdf_reader
+          - archive_preflight
+          - docx_meta
+          - pack_archive
     permissions:
       contents: read
     defaults:
@@ -40,8 +55,9 @@ jobs:
         run: |
           rustup toolchain install nightly-2026-10-05 --profile minimal
 
-      - name: Cache cargo-fuzz
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore cargo-fuzz
+        id: restore-cargo-fuzz
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cargo/bin/cargo-fuzz
           key: cargo-fuzz-0.13.2-${{ runner.os }}
@@ -52,29 +68,42 @@ jobs:
             cargo install cargo-fuzz --version 0.13.2 --locked
           fi
 
-      - name: Cache fuzz corpus
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Save cargo-fuzz binary
+        if: github.event_name == 'schedule' && matrix.target == 'markdown_reader' && steps.restore-cargo-fuzz.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: fuzz/corpus/
-          key: fuzz-nightly-corpus-${{ runner.os }}-${{ github.run_id }}
+          path: ~/.cargo/bin/cargo-fuzz
+          key: cargo-fuzz-0.13.2-${{ runner.os }}
+
+      - name: Restore fuzz corpus
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-nightly-corpus-${{ runner.os }}-${{ matrix.target }}-${{ github.run_id }}
           restore-keys: |
-            fuzz-nightly-corpus-${{ runner.os }}-
+            fuzz-nightly-corpus-${{ runner.os }}-${{ matrix.target }}-
 
       - name: Run AddressSanitizer fuzzing
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
-          targets="markdown_reader html_reader pandoc_ast_to_ir docling_to_ir ir_json pdf_reader"
-          for t in $targets; do
-            echo "=== Running ASan fuzz target: $t (600s) ==="
-            mkdir -p "fuzz/corpus/$t"
-            build_options=()
-            if [[ "$t" == pdf_reader ]]; then build_options=(--dev --features pdf-reader); fi
-            cargo +nightly-2026-10-05 fuzz run "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=600 -timeout=25 -rss_limit_mb=2048
-          done
+          echo "=== Running ASan fuzz target: $TARGET (600s) ==="
+          mkdir -p "fuzz/corpus/$TARGET"
+          build_options=()
+          if [[ "$TARGET" == pdf_reader ]]; then build_options=(--dev --features pdf-reader); fi
+          cargo +nightly-2026-10-05 fuzz run "${build_options[@]}" "$TARGET" "fuzz/corpus/$TARGET" "fuzz/seeds/$TARGET" -- -max_total_time=600 -timeout=25 -rss_limit_mb=2048
+
+      - name: Save fuzz corpus
+        if: github.event_name == 'schedule' && !cancelled()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-nightly-corpus-${{ runner.os }}-${{ matrix.target }}-${{ github.run_id }}
 
       - name: Upload crash artifacts on failure
         if: failure() || cancelled()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: fuzz-nightly-artifacts
+          name: fuzz-nightly-artifacts-${{ matrix.target }}
           path: fuzz/artifacts/
           retention-days: 14

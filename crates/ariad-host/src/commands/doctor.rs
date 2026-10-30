@@ -35,6 +35,10 @@ pub struct DoctorSandbox {
     pub mode: Option<SandboxMode>,
     #[serde(flatten)]
     pub support: SandboxSupport,
+    /// The mode enables Seatbelt and its enforcement probe succeeded (macOS only).
+    #[cfg(target_os = "macos")]
+    #[serde(default)]
+    pub seatbelt_enforced: bool,
 }
 
 /// Aggregate doctor diagnostic report.
@@ -436,7 +440,7 @@ fn pack_checks(checks: &mut Vec<DoctorCheck>) -> Option<PathBuf> {
     writable.then_some(context.data_dir)
 }
 
-/// Reports the sandbox mode and kernel support. The check is required only in required mode.
+/// Reports platform isolation. Refused Seatbelt is a required failure in either enabled mode.
 fn sandbox_check() -> (DoctorCheck, DoctorSandbox) {
     let support = sandbox::support();
     let mode = sandbox::effective_mode();
@@ -466,53 +470,90 @@ fn sandbox_check() -> (DoctorCheck, DoctorSandbox) {
             format!(
                 "engine sandbox: {mode}; not used on this platform, engines run in their own process group or Job Object"
             ),
-            "required mode needs Linux",
+            "required mode needs Linux or macOS",
         ),
         Ok(mode) => {
             let gaps = support.gaps();
-            let mut features = Vec::new();
-            if let Some(abi) = support.landlock_abi {
-                let mut covered = vec!["filesystem"];
-                if support.landlock_network {
-                    covered.push("TCP");
-                }
-                if support.landlock_scopes {
-                    covered.push("scopes");
-                }
-                if support.landlock_unix_sockets {
-                    covered.push("UNIX sockets");
-                }
-                features.push(format!("Landlock ABI {abi} ({})", covered.join(", ")));
-            } else {
-                features.push("no Landlock".to_owned());
-            }
-            features.push(if support.seccomp {
-                "seccomp available".to_owned()
-            } else {
-                "no seccomp".to_owned()
-            });
-            if support.landlock_filesystem && !support.landlock_unix_sockets {
-                features.push("pathname UNIX socket isolation needs Landlock ABI 9".to_owned());
-            }
-            let mut message = format!("engine sandbox: {mode}; {}", features.join(", "));
+            let (features, hint) = sandbox_features(&support);
+            let mut message = format!("engine sandbox: {mode}; {features}");
+            #[cfg(target_os = "macos")]
+            let refused = support.seatbelt_available && !support.seatbelt_usable;
+            #[cfg(not(target_os = "macos"))]
+            let refused = false;
             if !gaps.is_empty() {
                 message.push_str("; ");
                 message.push_str(&gaps.join("; "));
             }
             check(
                 gaps.is_empty(),
-                *mode == SandboxMode::Required,
+                *mode == SandboxMode::Required || refused,
                 message,
-                "use a kernel with Landlock enabled (Linux 5.13 or newer with landlock in the LSM list)",
+                hint,
             )
         }
     };
+    #[cfg(target_os = "macos")]
+    let seatbelt_enforced = matches!(mode, Ok(SandboxMode::BestEffort | SandboxMode::Required))
+        && support.seatbelt_usable;
     (
         check,
         DoctorSandbox {
             mode: mode.ok(),
             support,
+            #[cfg(target_os = "macos")]
+            seatbelt_enforced,
         },
+    )
+}
+
+/// Features and remedies are host-owned so every surface receives the same diagnosis.
+#[cfg(target_os = "macos")]
+fn sandbox_features(support: &SandboxSupport) -> (String, &'static str) {
+    let available = if support.seatbelt_available {
+        "available"
+    } else {
+        "unavailable"
+    };
+    let enforcement = if support.seatbelt_usable {
+        "enforced for engine launches"
+    } else {
+        "not enforced"
+    };
+    (
+        format!("Seatbelt {available} (/usr/bin/sandbox-exec); {enforcement}"),
+        "use a macOS system providing sandbox-exec and permitting Seatbelt profiles; refused Seatbelt blocks engines in both enabled modes; ASHIFT_SANDBOX=off explicitly disables isolation",
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn sandbox_features(support: &SandboxSupport) -> (String, &'static str) {
+    let mut features = Vec::new();
+    if let Some(abi) = support.landlock_abi {
+        let mut covered = vec!["filesystem"];
+        if support.landlock_network {
+            covered.push("TCP");
+        }
+        if support.landlock_scopes {
+            covered.push("scopes");
+        }
+        if support.landlock_unix_sockets {
+            covered.push("UNIX sockets");
+        }
+        features.push(format!("Landlock ABI {abi} ({})", covered.join(", ")));
+    } else {
+        features.push("no Landlock".to_owned());
+    }
+    features.push(if support.seccomp {
+        "seccomp available".to_owned()
+    } else {
+        "no seccomp".to_owned()
+    });
+    if support.landlock_filesystem && !support.landlock_unix_sockets {
+        features.push("pathname UNIX socket isolation needs Landlock ABI 9".to_owned());
+    }
+    (
+        features.join(", "),
+        "use a kernel with Landlock enabled (Linux 5.13 or newer with landlock in the LSM list)",
     )
 }
 

@@ -1,8 +1,9 @@
-// Hand-written layer over the generated /v1 client: credentials, the upload
-// flow, job events with resumption, downloads and deletion. Requests to the API
-// go through the generated operations; presigned URLs are followed as returned
-// and never receive credentials, since with S3 storage they point at the object
-// store rather than at `/v1/blobs`.
+// Hand-written layer over the generated /v1 client: credentials, plan limits,
+// the upload flow, the account's job list, job events with resumption,
+// downloads and deletion. Requests to the API go through the generated
+// operations; presigned URLs are followed as returned and never receive
+// credentials, since with S3 storage they point at the object store rather
+// than at `/v1/blobs`.
 import { errorFromBody, errorFromResponse, retryAfterSeconds } from "./errors";
 import {
   type CreateJobRequest,
@@ -10,12 +11,18 @@ import {
   createJob as createJobOperation,
   createUpload as createUploadOperation,
   deleteJob as deleteJobOperation,
+  deleteUpload as deleteUploadOperation,
   getJob as getJobOperation,
+  getLimits as getLimitsOperation,
   type Job,
   type JobEvent,
+  type JobList,
+  type JobStatus,
   jobOutputs as jobOutputsOperation,
+  listJobs as listJobsOperation,
   type OutputFile,
   type Outputs,
+  type PlanLimits,
   type PresignedRequest,
   type Upload,
 } from "./generated";
@@ -64,6 +71,16 @@ export interface CreateJobOptions {
   signal?: AbortSignal;
 }
 
+export interface ListJobsOptions {
+  /** Jobs per page, from 1 to 100. The server defaults to 50. */
+  limit?: number;
+  /** The previous page's `next_cursor`, to read the page after it. */
+  cursor?: string;
+  /** Only jobs with this status. */
+  status?: JobStatus;
+  signal?: AbortSignal;
+}
+
 export interface JobEventsOptions {
   /** Resume after this event id instead of replaying from the start. */
   lastEventId?: number | string;
@@ -107,6 +124,9 @@ const FINAL_JOB_STATUSES: ReadonlySet<string> = FINAL_JOB_EVENT_KINDS;
 /** Responses worth retrying when following events. */
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
 
+/** Longest wait for the best-effort cleanup of a failed upload. */
+const CLEANUP_TIMEOUT_MS = 10_000;
+
 const TRANSFER_RETRY_WAIT_BUDGET_MS = 60_000;
 
 export interface AriadClient {
@@ -125,9 +145,23 @@ export interface AriadClient {
   transfer(presigned: PresignedRequest, body: UploadBody, signal?: AbortSignal): Promise<void>;
   /** Verifies a transferred upload's size and hash. */
   completeUpload(uploadId: string, signal?: AbortSignal): Promise<Upload>;
-  /** Creates the upload, transfers the body and completes it. */
+  /** Creates, transfers and completes an upload; cleans up after transfer or completion failure. */
   upload(body: UploadBody, options?: UploadOptions): Promise<Upload>;
+  /**
+   * Deletes an upload that no job uses, with its stored file, for example after
+   * a canceled transfer. Deleting it again succeeds; an upload that feeds a job
+   * is deleted with `deleteJob`.
+   */
+  deleteUpload(uploadId: string, signal?: AbortSignal): Promise<void>;
+  /** The caller's plan limits, quotas and retention, for showing before an upload. */
+  limits(signal?: AbortSignal): Promise<PlanLimits>;
   createJob(options: CreateJobOptions): Promise<Job>;
+  /**
+   * Lists the account's jobs, newest first, one page at a time. Follow
+   * `next_cursor` until it is `null`. Needs a bearer token or an API key:
+   * anonymous jobs are never listed.
+   */
+  listJobs(options?: ListJobsOptions): Promise<JobList>;
   getJob(jobId: string, signal?: AbortSignal): Promise<Job>;
   /**
    * Follows a job's events until its final event. Reconnects after dropped
@@ -165,20 +199,37 @@ async function unwrap<T>(pending: Promise<OperationResult<T>>): Promise<T> {
   return data as T;
 }
 
-async function resolveSecret(secret: Secret): Promise<string | undefined> {
-  return typeof secret === "function" ? await secret() : secret;
+/** Stops waiting on abort while still observing a pending operation's late rejection. */
+function abortable<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  let onAbort: () => void;
+  const result = new Promise<T>((resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(resolve, reject);
+    if (signal.aborted) onAbort();
+  });
+  return result.finally(() => signal.removeEventListener("abort", onAbort));
+}
+
+async function resolveSecret(secret: Secret, signal?: AbortSignal): Promise<string | undefined> {
+  signal?.throwIfAborted();
+  const pending = Promise.resolve(typeof secret === "function" ? secret() : secret);
+  return signal ? abortable(pending, signal) : pending;
 }
 
 /** The headers that carry `credentials`, resolved for one request. */
-async function authHeaders(credentials: Credentials | undefined): Promise<Record<string, string>> {
+async function authHeaders(
+  credentials: Credentials | undefined,
+  signal?: AbortSignal,
+): Promise<Record<string, string>> {
   if (credentials === undefined) {
     return {};
   }
   if ("bearer" in credentials) {
-    const token = await resolveSecret(credentials.bearer);
+    const token = await resolveSecret(credentials.bearer, signal);
     return token ? { authorization: `Bearer ${token}` } : {};
   }
-  const key = await resolveSecret(credentials.apiKey);
+  const key = await resolveSecret(credentials.apiKey, signal);
   return key ? { "x-api-key": key } : {};
 }
 
@@ -213,7 +264,9 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
 
   const raw = createClient({ baseUrl, fetch: fetchImpl });
   raw.interceptors.request.use(async (request) => {
-    for (const [name, value] of Object.entries(await authHeaders(credentials))) {
+    const headers = await authHeaders(credentials, request.signal);
+    request.signal.throwIfAborted();
+    for (const [name, value] of Object.entries(headers)) {
       request.headers.set(name, value);
     }
     return request;
@@ -301,8 +354,34 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
       if (!created.upload) {
         throw new Error(`upload ${created.id} has no presigned request (status ${created.status})`);
       }
-      await client.transfer(created.upload, body, uploadOptions.signal);
-      return client.completeUpload(created.id, uploadOptions.signal);
+      try {
+        await client.transfer(created.upload, body, uploadOptions.signal);
+        return await client.completeUpload(created.id, uploadOptions.signal);
+      } catch (error) {
+        // The caller never learns the id, so free the pending upload's quota slot.
+        // Cleanup needs its own signal because the caller may already have aborted.
+        const cleanup = new AbortController();
+        const timer = setTimeout(
+          () => cleanup.abort(new DOMException("upload cleanup timed out", "TimeoutError")),
+          CLEANUP_TIMEOUT_MS,
+        );
+        try {
+          await abortable(client.deleteUpload(created.id, cleanup.signal), cleanup.signal);
+        } catch {
+          // Cleanup is best effort; only the original upload error reaches the caller.
+        } finally {
+          clearTimeout(timer);
+        }
+        throw error;
+      }
+    },
+
+    async deleteUpload(uploadId, signal) {
+      await unwrap<unknown>(deleteUploadOperation({ client: raw, path: { id: uploadId }, signal }));
+    },
+
+    limits(signal) {
+      return unwrap<PlanLimits>(getLimitsOperation({ client: raw, signal }));
     },
 
     createJob({ uploadId, to, profile, signal }) {
@@ -311,6 +390,10 @@ export function createAriadClient(options: AriadClientOptions): AriadClient {
         body.profile = profile;
       }
       return unwrap<Job>(createJobOperation({ client: raw, body, signal }));
+    },
+
+    listJobs({ signal, ...query } = {}) {
+      return unwrap<JobList>(listJobsOperation({ client: raw, query, signal }));
     },
 
     getJob(jobId, signal) {

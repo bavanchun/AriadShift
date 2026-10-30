@@ -196,6 +196,24 @@ impl JwtVerifier {
     }
 }
 
+#[cfg(test)]
+impl JwtVerifier {
+    /// A verifier over a fixed key set, for tests of the claim checks.
+    pub(crate) fn with_keys(config: JwtConfig, keys: JwkSet) -> Self {
+        Self {
+            config,
+            fetch: Arc::new(move || {
+                let keys = keys.clone();
+                Box::pin(async move { Ok(keys) })
+                    as futures_util::future::BoxFuture<'static, Result<JwkSet, JwtError>>
+            }),
+            now: Arc::new(Instant::now),
+            cache: RwLock::new(None),
+            last_fetch: Mutex::new(None),
+        }
+    }
+}
+
 const fn is_asymmetric(alg: Algorithm) -> bool {
     !matches!(alg, Algorithm::HS256 | Algorithm::HS384 | Algorithm::HS512)
 }

@@ -22,11 +22,11 @@ docker compose -f infra/compose/docker-compose.yml --profile core up -d --wait
 
 The first run builds the images from source, which takes a while. When the command returns, every long-running service is healthy:
 
-| URL | Service |
-|---|---|
-| `http://localhost:3000` | Web app |
-| `http://localhost:8080` | `/v1` API (`/readyz` reports database and storage readiness) |
-| `http://localhost:3001` | Better Auth (sign-up, sign-in, API keys, JWKS at `/api/auth/jwks`) |
+| URL                     | Service                                                                    |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `http://localhost:3000` | Web app                                                                    |
+| `http://localhost:8080` | `/v1` API (`/readyz` reports database and storage readiness)               |
+| `http://localhost:3001` | Better Auth (sign-up, sign-in, API keys, JWKS at `/api/auth/jwks`)         |
 | `http://localhost:8333` | SeaweedFS S3 gateway, used by browsers for presigned uploads and downloads |
 
 Compose reads `infra/compose/.env` because the compose file lives in that directory. That file is git-ignored; never commit it. `COMPOSE_PROFILES` in it lets you drop the `--profile` flags.
@@ -35,20 +35,20 @@ Stop the stack with `docker compose -f infra/compose/docker-compose.yml down`. A
 
 ## Services
 
-| Service | Profile | Role |
-|---|---|---|
-| `postgres` | any | PostgreSQL 18 with the pgmq extension (`ghcr.io/pgmq/pg18-pgmq`, pinned by digest) |
-| `seaweedfs` | any | SeaweedFS with its S3 gateway, volume data encrypted at rest |
-| `db-init` | any | One-shot: creates the database logins and the `auth` schema |
-| `migrate` | any | One-shot: `ariad-server migrate` |
-| `bucket-init` | any | One-shot: creates the bucket and a one-day expiry backstop on `t/` |
-| `auth` | `core` | Better Auth service built from `services/auth/Dockerfile` |
-| `db-grants` | `core` | One-shot: applies [`infra/server-roles.sql`](../infra/server-roles.sql) and binds the runtime roles to their logins |
-| `api` | `core` | `ariad-server api` |
-| `worker-core` | `core` | `ariad-server worker --packs core` (Pandoc, PDF, Typst) |
-| `web` | `core` | The web app, built from `infra/docker/web.Dockerfile` |
-| `worker-office` | `office`, `docling` | `ariad-server worker --packs office` (LibreOffice) |
-| `worker-docling` | `docling` | `ariad-server worker --packs docling` (OCR and layout-aware PDF) |
+| Service          | Profile             | Role                                                                                                                |
+| ---------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `postgres`       | any                 | PostgreSQL 18 with the pgmq extension (`ghcr.io/pgmq/pg18-pgmq`, pinned by digest)                                  |
+| `seaweedfs`      | any                 | SeaweedFS with its S3 gateway, volume data encrypted at rest                                                        |
+| `db-init`        | any                 | One-shot: creates the database logins and the `auth` schema                                                         |
+| `migrate`        | any                 | One-shot: `ariad-server migrate`                                                                                    |
+| `bucket-init`    | any                 | One-shot: creates the bucket and a one-day expiry backstop on `t/`                                                  |
+| `auth`           | `core`              | Better Auth service built from `services/auth/Dockerfile`                                                           |
+| `db-grants`      | `core`              | One-shot: applies [`infra/server-roles.sql`](../infra/server-roles.sql) and binds the runtime roles to their logins |
+| `api`            | `core`              | `ariad-server api`                                                                                                  |
+| `worker-core`    | `core`              | `ariad-server worker --packs core` (Pandoc, PDF, Typst)                                                             |
+| `web`            | `core`              | The web app, built from `infra/docker/web.Dockerfile`                                                               |
+| `worker-office`  | `office`, `docling` | `ariad-server worker --packs office` (LibreOffice)                                                                  |
+| `worker-docling` | `docling`           | `ariad-server worker --packs docling` (OCR and layout-aware PDF)                                                    |
 
 Start order is enforced with health checks: PostgreSQL is ready → logins and schema exist → migrations ran → Better Auth created its tables → grants applied and the bucket exists → API and workers start → web starts. The one-shot services run again on every `up`; each is idempotent.
 
@@ -56,10 +56,10 @@ Start order is enforced with health checks: PostgreSQL is ready → logins and s
 
 `core` is always required. Add the others for heavier routes, and list the packs that have running workers in `ARIAD_PACKS` so the API plans over them:
 
-| Profiles | `ARIAD_PACKS` | Adds |
-|---|---|---|
-| `core` | `core` | Markdown, HTML, DOCX, EPUB, digital PDF text, PDF output |
-| `core`, `office` | `core,office` | Office and ODF routes through LibreOffice |
+| Profiles          | `ARIAD_PACKS`         | Adds                                                                                                                                                      |
+| ----------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core`            | `core`                | Markdown, HTML, DOCX, EPUB, digital PDF text, PDF output                                                                                                  |
+| `core`, `office`  | `core,office`         | Office and ODF routes through LibreOffice                                                                                                                 |
 | `core`, `docling` | `core,office,docling` | Scanned PDFs, images and layout-aware Office/PDF extraction. The docling image builds on the office image, and this profile starts the office worker too. |
 
 ```sh
@@ -81,11 +81,15 @@ journey, then removes the test stack and volumes on exit.
 ## Configuration
 
 All settings live in `infra/compose/.env`; [`.env.example`](../.env.example) lists them with safe placeholders. The compose file maps them to the server variables documented in [server.md](server.md).
-
 - **Secrets.** `POSTGRES_PASSWORD`, the three service database passwords, `S3_SECRET_ACCESS_KEY`, `ARIAD_SECRET` and `BETTER_AUTH_SECRET`. Compose refuses to start when one is missing. Database passwords go into connection URLs, so use letters and digits only (hex is safe).
 - **Public URLs.** `ARIAD_WEB_ORIGIN`, `ARIAD_PUBLIC_URL`, `BETTER_AUTH_URL` and `ARIAD_S3_PUBLIC_ENDPOINT` are the addresses a browser uses. The API trusts tokens whose `iss` and `aud` are the origin of `BETTER_AUTH_URL` and fetches the signing keys from `http://auth:3000/api/auth/jwks` on the internal network. CORS on the API allows `ARIAD_WEB_ORIGIN` only. The web image bakes the API and auth URLs in at build time, together with `ARIAD_TURNSTILE_SITE_KEY` (the Turnstile site key that pairs with `ARIAD_TURNSTILE_SECRET`) and `ARIAD_OPERATOR` (who runs the server, named in the upload disclosure), so rebuild `web` after changing any of them.
+- **OAuth resource.** The auth container also requires `ARIAD_PUBLIC_URL`, set to the same public API origin as the API container. It issues remote MCP tokens for `<ARIAD_PUBLIC_URL>/mcp`; outside loopback this URL must use HTTPS for remote MCP OAuth. Compose passes it to both services. Changing it requires OAuth clients to register again.
 - **Ports.** Published ports bind to `BIND_ADDRESS` (default `127.0.0.1`), so only the host itself can reach the stack. PostgreSQL and the SeaweedFS master, volume and filer ports are never published.
-- **Sign-in.** Email and password work with no further setup. Set `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` or `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` to add those providers.
+- **OAuth load limits.** Each auth replica admits at most three token/revoke requests into its ten-connection pool. Additional requests return OAuth `503 temporarily_unavailable` with `Retry-After: 1` before checkout, leaving capacity for sign-in. Checkout, lock acquisition and provider execution have deadlines; a timed-out operation destroys its owning connection. The constants and default deadlines are documented in [the auth service](../services/auth/README.md#oauth-for-remote-mcp). Connect auth directly to PostgreSQL or use session-affine pooling; transaction-mode poolers are unsupported for this lock.
+- **Sign-in.** Existing email and password accounts can sign in without external providers. New password and social accounts are disabled by default; set `AUTH_ALLOW_SIGN_UP=true` to opt in. Password email addresses are not verified because there is no mail transport. Set `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` or `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` to add those service providers. Implicit account linking is disabled, so a social login cannot attach to an existing password account with the same email.
+- **Deployment flags.** `AUTH_ALLOW_SIGN_UP` and `AUTH_ALLOW_INSECURE_HTTP` default to `false` and accept only `true` or `false`; blank values use the default. Compose passes both flags to auth.
+- **URL paths.** `BETTER_AUTH_URL` and `ARIAD_PUBLIC_URL` must be bare origins. Path-prefixed deployments are unsupported in v1.
+- **Signup challenge.** Set `ARIAD_TURNSTILE_SECRET` and its paired `ARIAD_TURNSTILE_SITE_KEY` together. Compose maps the secret to the API and to auth as `AUTH_TURNSTILE_SECRET`, and bakes the site key into the web image. With signup enabled, direct password signup requires a valid signup proof. Rebuild `web` when changing the site key. Leaving both values empty preserves the explicitly enabled local signup flow without Cloudflare. `python3 infra/test/e2e/check-turnstile-config.py` verifies the rendered web/API/auth configuration for both cases without starting containers.
 - **Anonymous use.** `ARIAD_ANONYMOUS=true` lets callers without an account convert small files under the `anonymous` plan. `ARIAD_TURNSTILE_SECRET` adds a Cloudflare Turnstile check; it needs outbound internet.
 - **Sizing.** `*_MEMORY` sets each container's memory limit and `*_WORK_SIZE` the tmpfs work directory of each worker. Tmpfs counts against the container's memory. The docling defaults (12 GiB work tmpfs, 20 GiB memory) fit one job at a time with the seeded 2 GiB input cap; [server.md](server.md#container-runtime-support) explains the arithmetic.
 - **Plans and quotas.** Edit `plan_entitlements` with SQL, as [server.md](server.md) describes: `docker compose -f infra/compose/docker-compose.yml exec postgres psql -U postgres -d ariadshift`.
@@ -93,15 +97,17 @@ All settings live in `infra/compose/.env`; [`.env.example`](../.env.example) lis
 ## Going beyond localhost
 
 To serve other machines, put a reverse proxy with TLS in front of the published ports, set the four public URLs to their `https://` addresses, and rebuild `web`. Two proxy rules matter:
-
 - The S3 upload endpoint has no per-object size limit of its own. Cap request bodies on the proxy route to SeaweedFS at the largest finite upload entitlement, for example `client_max_body_size 2g; proxy_request_buffering off;` in Nginx, and keep the signed host, path and query unchanged ([server.md](server.md) explains why).
-- If the proxy overwrites a client address header such as `CF-Connecting-IP`, set `ARIAD_TRUSTED_CLIENT_IP_HEADER` to it. Otherwise leave it empty.
+- If the proxy overwrites a client address header such as `CF-Connecting-IP`, set `ARIAD_TRUSTED_CLIENT_IP_HEADER` to it. Otherwise leave it empty. Compose passes it to auth as `AUTH_TRUSTED_CLIENT_IP_HEADER`. When this header is configured, the auth backend MUST be unreachable by untrusted callers: a direct caller could choose its value and rotate rate-limit buckets. For example, keep auth's published port bound to `127.0.0.1` and run the proxy on the same host; for a remote proxy, restrict backend ingress to that proxy. The auth service uses the header for rate limits, including at most 20 anonymous OAuth registrations per address within an hour; without it every client behind the proxy shares one limit. Registration bodies are capped at 8 KiB.
+
+Auth refuses non-loopback HTTP by default. For an intentional LAN HTTP deployment, set `AUTH_ALLOW_INSECURE_HTTP=true`. Accounts, sessions, API JWTs and API keys remain available; remote MCP OAuth, discovery, sign-in and consent pages and their assets stay off whenever either public origin is non-loopback HTTP. Startup logs the reason. OAuth clients following the API's protected-resource metadata then receive `404` at discovery and must use API keys instead. Loopback development needs no opt-in.
 
 Restrict `/readyz` to your monitoring, and cache or rate-limit `/v1/capabilities` at the proxy.
 
 ## Security model
 
 - **Database roles.** Each service connects with its own login. The superuser password reaches only the one-shot setup containers (`db-init`, `migrate`, `db-grants`). `ariad_api_login` and `ariad_worker_login` inherit only the `ariad_api` and `ariad_worker` roles from `infra/server-roles.sql`: they own nothing, cannot create objects, and cannot read Better Auth's users, sessions, accounts or signing keys. The API may read `apikey` and nothing else in the `auth` schema. The `ariad_auth` login owns the `auth` schema and has no access to AriadShift's tables. Only these logins and the superuser may connect to the database.
+- **Local storage.** `file://` storage is supported for single-tenant deployments only. Use the object store for multi-tenant deployments.
 - **Object storage.** The single S3 identity may read, write, list and tag objects in the one bucket. It cannot create buckets or reach other buckets; `bucket-init` creates the bucket through the SeaweedFS shell instead.
 - **Containers.** The API and worker containers run with a read-only root filesystem, every capability dropped except the `SETUID`/`SETGID` their root supervisor needs to drop to UID 10001, `no-new-privileges`, tmpfs scratch space, and memory and process limits. Auth and web run read-only with no capabilities.
 - **Networks.** Workers join only the internal `data` network, which has no route out of the host: a compromised engine cannot reach the internet. The API and auth also join `edge` for published ports and outbound calls (Turnstile, OAuth).
@@ -110,7 +116,6 @@ Restrict `/readyz` to your monitoring, and cache or rate-limit `/v1/capabilities
 ## gVisor
 
 [`docker-compose.gvisor.yml`](../infra/compose/docker-compose.gvisor.yml) runs the three workers under gVisor's `runsc` runtime, which puts a user-space kernel between each worker and the host kernel.
-
 1. Install `runsc` from the [gVisor installation guide](https://gvisor.dev/docs/user_guide/install/), then register it with Docker: `sudo runsc install && sudo systemctl restart docker`.
 2. Start the stack with both files:
 

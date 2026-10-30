@@ -6,9 +6,9 @@
     "dev": "node scripts/prepare-icons.mjs && vite --host 127.0.0.1 --port 3210 --strictPort",
     "build": "node scripts/prepare-icons.mjs && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "tauri": "node scripts/tauri.mjs",
+    "tauri": "node os-integration/generate.mjs --tauri",
     "test": "vitest run",
-    "test:tools": "node --test scripts/*.test.mjs"
+    "test:tools": "node --test scripts/*.test.mjs os-integration/*.test.mjs"
   },
   "dependencies": {
     "@ariadshift/ui": "workspace:*",

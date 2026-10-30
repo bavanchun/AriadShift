@@ -7,6 +7,9 @@ export const AUTH_SCHEMA = "auth";
 /** Shortest accepted BETTER_AUTH_SECRET, in characters. */
 export const MIN_SECRET_LENGTH = 32;
 
+/** Path of the remote MCP endpoint on the API's public origin. */
+export const MCP_PATH = "/mcp";
+
 export interface OAuthClient {
   clientId: string;
   clientSecret: string;
@@ -17,6 +20,12 @@ export interface AuthServiceConfig {
   secret: string;
   /** Public origin of this service, e.g. `https://auth.example.com`. */
   baseUrl: string;
+  /**
+   * The remote MCP resource, `<API public origin>/mcp`. OAuth access tokens
+   * carry it as `aud`, exactly as ariad-server derives it from the same
+   * ARIAD_PUBLIC_URL.
+   */
+  mcpResource: string;
   /** Browser origins allowed to call the service with credentials. */
   trustedOrigins: string[];
   port: number;
@@ -27,6 +36,14 @@ export interface AuthServiceConfig {
   passkeyRpId: string;
   github: OAuthClient | undefined;
   google: OAuthClient | undefined;
+  /** Explicit operator permission to create password or social accounts. */
+  allowSignUp: boolean;
+  /** Explicit permission for non-loopback HTTP without remote MCP OAuth. */
+  allowInsecureHttp: boolean;
+  /** Why remote MCP OAuth is disabled, or undefined when it is available. */
+  oauthDisabledReason: string | undefined;
+  /** Optional signup challenge; absent for self-contained local deployments. */
+  turnstileSecret?: string;
 }
 
 export class ConfigError extends Error {
@@ -47,6 +64,22 @@ function required(env: Env, name: string): string {
   return value;
 }
 
+function secretOption(env: Env, name: string): string | undefined {
+  const value = read(env, name);
+  if (value?.startsWith("replace-with")) {
+    throw new ConfigError(`${name} must be a generated secret, not a template placeholder`);
+  }
+  return value;
+}
+
+/** Only the literal boolean values are accepted; blank values are unset. */
+function booleanOption(env: Env, name: string): boolean {
+  const value = read(env, name);
+  if (value === undefined || value === "false") return false;
+  if (value === "true") return true;
+  throw new ConfigError(`${name} must be true or false`);
+}
+
 /** Parses an http(s) URL that must be a bare origin (no path, query or hash). */
 function parseOrigin(name: string, raw: string): string {
   let url: URL;
@@ -62,6 +95,29 @@ function parseOrigin(name: string, raw: string): string {
     throw new ConfigError(`${name} must be an origin without a path: ${raw}`);
   }
   return url.origin;
+}
+
+/** `localhost`, `*.localhost`, 127.0.0.0/8 or `[::1]`. */
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "[::1]" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
+  );
+}
+
+/**
+ * OAuth 2.1 and MCP require TLS for the issuer and the protected resource,
+ * except on loopback hosts during development. Better Auth also rewrites a
+ * plain-HTTP non-loopback issuer to https in its discovery document, which
+ * would no longer match the `iss` of the tokens it signs.
+ */
+function tlsProblem(name: string, origin: string): string | undefined {
+  const url = new URL(origin);
+  return url.protocol !== "https:" && !isLoopbackHost(url.hostname)
+    ? `${name} must use https unless it is a loopback host: ${origin}`
+    : undefined;
 }
 
 function parseDatabaseUrl(raw: string): string {
@@ -89,7 +145,7 @@ function parsePort(raw: string | undefined): number {
 /** Both halves of an OAuth client, or neither. */
 function parseOAuth(env: Env, provider: "GITHUB" | "GOOGLE"): OAuthClient | undefined {
   const clientId = read(env, `${provider}_CLIENT_ID`);
-  const clientSecret = read(env, `${provider}_CLIENT_SECRET`);
+  const clientSecret = secretOption(env, `${provider}_CLIENT_SECRET`);
   if (clientId === undefined && clientSecret === undefined) return undefined;
   if (clientId === undefined || clientSecret === undefined) {
     throw new ConfigError(
@@ -107,11 +163,23 @@ function parseHeaderName(name: string, raw: string | undefined): string | undefi
 }
 
 export function parseConfig(env: Env): AuthServiceConfig {
-  const secret = required(env, "BETTER_AUTH_SECRET");
+  const secret = secretOption(env, "BETTER_AUTH_SECRET") ?? required(env, "BETTER_AUTH_SECRET");
   if (secret.length < MIN_SECRET_LENGTH) {
     throw new ConfigError(`BETTER_AUTH_SECRET must be at least ${MIN_SECRET_LENGTH} characters`);
   }
+  const allowSignUp = booleanOption(env, "AUTH_ALLOW_SIGN_UP");
+  const allowInsecureHttp = booleanOption(env, "AUTH_ALLOW_INSECURE_HTTP");
   const baseUrl = parseOrigin("BETTER_AUTH_URL", required(env, "BETTER_AUTH_URL"));
+  // The same variable gives ariad-server its public URL, so both services
+  // agree on the MCP resource without a second setting.
+  const apiOrigin = parseOrigin("ARIAD_PUBLIC_URL", required(env, "ARIAD_PUBLIC_URL"));
+  const oauthDisabledReason =
+    tlsProblem("BETTER_AUTH_URL", baseUrl) ?? tlsProblem("ARIAD_PUBLIC_URL", apiOrigin);
+  if (oauthDisabledReason && !allowInsecureHttp) {
+    throw new ConfigError(
+      `${oauthDisabledReason}; set AUTH_ALLOW_INSECURE_HTTP=true to allow accounts without remote MCP OAuth`,
+    );
+  }
 
   const trustedOrigins = [
     ...new Set(
@@ -130,11 +198,13 @@ export function parseConfig(env: Env): AuthServiceConfig {
   // web app's host unless an operator names a shared parent domain.
   const firstOrigin = trustedOrigins[0] as string;
   const passkeyRpId = read(env, "AUTH_PASSKEY_RP_ID") ?? new URL(firstOrigin).hostname;
+  const turnstileSecret = secretOption(env, "AUTH_TURNSTILE_SECRET");
 
   return {
     databaseUrl: parseDatabaseUrl(required(env, "DATABASE_URL")),
     secret,
     baseUrl,
+    mcpResource: `${apiOrigin}${MCP_PATH}`,
     trustedOrigins,
     port: parsePort(read(env, "PORT")),
     host: read(env, "HOST") ?? "0.0.0.0",
@@ -145,5 +215,9 @@ export function parseConfig(env: Env): AuthServiceConfig {
     passkeyRpId,
     github: parseOAuth(env, "GITHUB"),
     google: parseOAuth(env, "GOOGLE"),
+    allowSignUp,
+    allowInsecureHttp,
+    oauthDisabledReason,
+    ...(turnstileSecret ? { turnstileSecret } : {}),
   };
 }

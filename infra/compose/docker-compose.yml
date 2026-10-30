@@ -187,6 +187,14 @@ services:
       # through ARIAD_AUTH_URL below.
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3001}
       BETTER_AUTH_TRUSTED_ORIGINS: ${ARIAD_WEB_ORIGIN:-http://localhost:3000}
+      # Account creation is an explicit opt-in; password email is unverified.
+      AUTH_ALLOW_SIGN_UP: ${AUTH_ALLOW_SIGN_UP:-false}
+      AUTH_TURNSTILE_SECRET: ${ARIAD_TURNSTILE_SECRET:-}
+      # LAN HTTP is an explicit opt-in and always disables remote MCP OAuth.
+      AUTH_ALLOW_INSECURE_HTTP: ${AUTH_ALLOW_INSECURE_HTTP:-false}
+      # The API's public origin. OAuth access tokens for remote MCP carry
+      # <ARIAD_PUBLIC_URL>/mcp as their audience, the resource the API checks.
+      ARIAD_PUBLIC_URL: ${ARIAD_PUBLIC_URL:-http://localhost:8080}
       # The same proxy header as the API's; empty uses the socket peer.
       AUTH_TRUSTED_CLIENT_IP_HEADER: ${ARIAD_TRUSTED_CLIENT_IP_HEADER:-}
       # Empty uses the web origin's host as the WebAuthn relying party.

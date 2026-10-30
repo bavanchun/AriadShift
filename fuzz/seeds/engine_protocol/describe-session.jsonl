@@ -1,0 +1,3 @@
+{"op":"describe","protocol":"ariad-engine/1","job":"describe-1"}
+{"type":"capabilities","engine":"pandoc","version":"0.2.0","tool":{"name":"pandoc","version":"3.12.1","status":"found"},"license":"GPL-2.0-or-later","routes":[{"input":"docx","output":"ariad-ir+json"},{"input":"markdown","output":"epub"}],"enforces_memory_limit":false,"supports_session":true,"models":["layout-v2"]}
+{"type":"result","ok":true,"metrics":{"elapsed_ms":12.5,"pages":3}}

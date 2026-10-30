@@ -397,6 +397,10 @@ fn convert(
     if let Some(path) = env::var_os("PATH") {
         command.env("PATH", path);
     }
+    #[cfg(target_os = "macos")]
+    if let Some(ipc) = env::var_os("OSL_SOCKET_PATH") {
+        command.env("OSL_SOCKET_PATH", ipc);
+    }
     #[cfg(windows)]
     {
         command

@@ -1,0 +1,20 @@
+{
+  "build": {
+    "beforeBundleCommand": "node os-integration/generate.mjs --check-windows-resources"
+  },
+  "bundle": {
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "windows/os-integration.nsh"
+      },
+      "wix": {
+        "template": "windows/per-user.wxs",
+        "enableElevatedUpdateTask": false,
+        "componentGroupRefs": ["PerUserBundleResources"],
+        "fragmentPaths": ["windows/os-integration.wxs"],
+        "componentRefs": ["ExplorerConvertVerbs"]
+      }
+    }
+  }
+}

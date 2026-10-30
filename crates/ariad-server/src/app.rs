@@ -36,7 +36,8 @@ pub fn api_state(config: &ApiConfig, pool: PgPool) -> Result<AppState, StartErro
         config.public_url.as_ref(),
         Some(&config.secret),
     )?;
-    let queue: Arc<dyn JobQueue> = Arc::new(PgmqQueue::new(pool.clone()));
+    let queue: Arc<dyn JobQueue> =
+        Arc::new(PgmqQueue::new(pool.clone()).with_active_limit(config.global_active_jobs));
     let auth = Authenticator::new(
         config.auth.clone(),
         config.secret.clone(),
@@ -71,13 +72,15 @@ pub async fn serve_api(
         config.sweep_batch,
         shutdown.clone(),
     ));
+    let mcp = crate::mcp::router(state.clone(), &config, shutdown.clone());
     let router = api::router(
         state,
         &RouterOptions {
             cors_origins: config.cors_origins.clone(),
             request_timeout: config.request_timeout,
         },
-    );
+    )
+    .merge(mcp);
     tracing::info!(addr = %listener.local_addr()?, packs = ?config.packs, "API listening");
     axum::serve(
         listener,
@@ -98,7 +101,11 @@ pub async fn run_worker(
     shutdown: CancellationToken,
 ) -> Result<(), StartError> {
     sandbox::protect_worker_credentials()?;
-    let status = sandbox::preflight(config.sandbox)?;
+    let status = sandbox::preflight_worker_with_support(
+        config.sandbox,
+        config.concurrency,
+        &ariad_host::sandbox::support(),
+    )?;
     if !status.missing.is_empty() {
         tracing::warn!(
             mode = %status.mode,

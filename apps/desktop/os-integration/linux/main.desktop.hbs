@@ -1,0 +1,17 @@
+[Desktop Entry]
+Categories={{categories}}
+{{#if comment}}
+Comment={{comment}}
+{{/if}}
+Exec={{exec}} %U
+StartupWMClass={{exec}}
+Icon={{icon}}
+Name={{name}}
+Terminal=false
+Type=Application
+MimeType={{#if mime_type}}{{mime_type}};{{/if}}text/markdown;text/html;application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/epub+zip;application/pdf;image/png;application/vnd.openxmlformats-officedocument.presentationml.presentation;application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;application/vnd.oasis.opendocument.text;application/vnd.oasis.opendocument.spreadsheet;application/vnd.oasis.opendocument.presentation;application/msword;application/vnd.ms-excel;application/vnd.ms-powerpoint;application/rtf;image/jpeg;image/webp;image/tiff;
+Actions=convert;
+
+[Desktop Action convert]
+Name=Convert with AriadShift
+Exec={{exec}} %U

@@ -1,0 +1,41 @@
+{
+  "assets": {},
+  "body": [
+    {
+      "content": [
+        {
+          "text": "A Small Distance Check",
+          "type": "text"
+        }
+      ],
+      "level": 1,
+      "type": "heading"
+    },
+    {
+      "lang": "python",
+      "text": "segments = [120, 85, 210]\nprint(sum(segments))\n",
+      "type": "code"
+    },
+    {
+      "content": [
+        {
+          "text": "The values are metres, not minutes.",
+          "type": "text"
+        }
+      ],
+      "type": "paragraph"
+    }
+  ],
+  "layout": null,
+  "meta": {
+    "authors": [],
+    "date": null,
+    "keywords": [],
+    "language": null,
+    "source_format": "markdown",
+    "subject": null,
+    "title": null
+  },
+  "provenance": null,
+  "version": "ariad-ir/0"
+}

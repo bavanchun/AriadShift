@@ -9,6 +9,7 @@ function env(overrides: Record<string, string | undefined> = {}) {
     BETTER_AUTH_SECRET: SECRET,
     BETTER_AUTH_URL: "http://localhost:3001",
     BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+    ARIAD_PUBLIC_URL: "http://localhost:8080",
     ...overrides,
   };
 }
@@ -20,6 +21,7 @@ describe("parseConfig", () => {
       databaseUrl: "postgres://ariad_auth:pw@postgres:5432/ariadshift",
       secret: SECRET,
       baseUrl: "http://localhost:3001",
+      mcpResource: "http://localhost:8080/mcp",
       trustedOrigins: ["http://localhost:3000"],
       port: 3000,
       host: "0.0.0.0",
@@ -27,15 +29,19 @@ describe("parseConfig", () => {
       passkeyRpId: "localhost",
       github: undefined,
       google: undefined,
+      allowSignUp: false,
+      allowInsecureHttp: false,
+      oauthDisabledReason: undefined,
     });
   });
 
-  it("requires the database URL, secret, base URL and web origin", () => {
+  it("requires the database URL, secret, base URL, web origin and API URL", () => {
     for (const name of [
       "DATABASE_URL",
       "BETTER_AUTH_SECRET",
       "BETTER_AUTH_URL",
       "BETTER_AUTH_TRUSTED_ORIGINS",
+      "ARIAD_PUBLIC_URL",
     ]) {
       expect(() => parseConfig(env({ [name]: undefined })), name).toThrow(ConfigError);
       expect(() => parseConfig(env({ [name]: "   " })), name).toThrow(ConfigError);
@@ -63,6 +69,41 @@ describe("parseConfig", () => {
       "auth.example.com",
     ]) {
       expect(() => parseConfig(env({ BETTER_AUTH_URL: bad })), bad).toThrow(ConfigError);
+    }
+  });
+
+  it("derives the MCP resource from the API origin as ariad-server does", () => {
+    expect(parseConfig(env({ ARIAD_PUBLIC_URL: "https://api.example.com/" })).mcpResource).toBe(
+      "https://api.example.com/mcp",
+    );
+    expect(parseConfig(env({ ARIAD_PUBLIC_URL: "https://API.example.com:443" })).mcpResource).toBe(
+      "https://api.example.com/mcp",
+    );
+    expect(parseConfig(env({ ARIAD_PUBLIC_URL: "http://127.0.0.1:18080" })).mcpResource).toBe(
+      "http://127.0.0.1:18080/mcp",
+    );
+    for (const bad of ["https://api.example.com/v1", "api.example.com", "ftp://api.example.com"]) {
+      expect(() => parseConfig(env({ ARIAD_PUBLIC_URL: bad })), bad).toThrow(ConfigError);
+    }
+  });
+
+  it("requires TLS for the OAuth issuer and the MCP resource outside loopback hosts", () => {
+    for (const name of ["BETTER_AUTH_URL", "ARIAD_PUBLIC_URL"]) {
+      expect(() => parseConfig(env({ [name]: "http://auth.example.com" })), name).toThrow(
+        /must use https/,
+      );
+      expect(() => parseConfig(env({ [name]: "http://192.168.1.20:3001" })), name).toThrow(
+        /must use https/,
+      );
+      for (const local of [
+        "http://localhost:4000",
+        "http://auth.localhost",
+        "http://127.0.0.2:4000",
+        "http://[::1]:4000",
+        "https://example.com",
+      ]) {
+        expect(() => parseConfig(env({ [name]: local })), `${name}=${local}`).not.toThrow();
+      }
     }
   });
 

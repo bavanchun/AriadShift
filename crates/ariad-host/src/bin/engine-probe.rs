@@ -19,6 +19,11 @@ fn main() -> ExitCode {
     };
 
     match operation.as_str() {
+        "__engine" => ariad_host::engines::serve_builtin(
+            &args.next().unwrap(),
+            io::stdin().lock(),
+            io::stdout().lock(),
+        ),
         "--version" => {
             println!("pandoc 2.19.2");
             ExitCode::SUCCESS
@@ -421,6 +426,43 @@ fn sandbox_check() -> ExitCode {
     if let Some(path) = option("unix") {
         let connected = std::os::unix::net::UnixStream::connect(path).is_ok();
         metrics.insert("unix_connect".to_owned(), verdict(connected));
+    }
+    #[cfg(target_os = "macos")]
+    if options.get("ipc").and_then(serde_json::Value::as_bool) == Some(true) {
+        let ipc = env::var_os("OSL_SOCKET_PATH").map(std::path::PathBuf::from);
+        let socket = ipc.as_ref().map(|dir| dir.join("probe.sock"));
+        let listener = socket
+            .as_ref()
+            .and_then(|path| std::os::unix::net::UnixListener::bind(path).ok());
+        metrics.insert("ipc_bind".to_owned(), verdict(listener.is_some()));
+        metrics.insert(
+            "ipc_connect".to_owned(),
+            verdict(
+                socket
+                    .as_ref()
+                    .is_some_and(|path| std::os::unix::net::UnixStream::connect(path).is_ok()),
+            ),
+        );
+        if let Some(dir) = ipc {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+            metrics.insert("ipc_mode".to_owned(), serde_json::json!(mode));
+            if let Some(target) = option("unix") {
+                let link = dir.join("host-socket-link");
+                let _ = std::os::unix::fs::symlink(target, &link);
+                metrics.insert(
+                    "ipc_symlink_connect".to_owned(),
+                    verdict(std::os::unix::net::UnixStream::connect(link).is_ok()),
+                );
+            }
+            metrics.insert("ipc_dir".to_owned(), serde_json::json!(dir));
+        }
+        if let Some(path) = option("bind_unix") {
+            metrics.insert(
+                "unix_bind".to_owned(),
+                verdict(std::os::unix::net::UnixListener::bind(path).is_ok()),
+            );
+        }
     }
     let exec_self = env::current_exe()
         .and_then(|executable| Command::new(executable).arg("--version").output())

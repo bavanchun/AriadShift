@@ -124,6 +124,37 @@ pub struct Usage {
     pub active_jobs: u64,
 }
 
+/// Live pending uploads allowed when the plan sets no `concurrent_jobs`.
+pub const DEFAULT_PENDING_UPLOADS: u64 = 64;
+
+/// Upload usage of one quota subject.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UploadUsage {
+    /// Uploads created in the last day, whatever their status.
+    pub uploads_last_day: u64,
+    /// Declared bytes of those uploads.
+    pub input_bytes_last_day: u64,
+    /// Pending uploads that have not expired.
+    pub pending: u64,
+}
+
+pub async fn upload_usage(
+    conn: &mut sqlx::PgConnection,
+    subject: &str,
+) -> Result<UploadUsage, sqlx::Error> {
+    let (uploads, bytes, pending): (i64, i64, i64) = sqlx::query_as(
+        "SELECT count(*) FILTER (WHERE created_at > now() - interval '1 day'), \
+         COALESCE(sum(size_bytes) FILTER (WHERE created_at > now() - interval '1 day'), 0)::bigint, \
+         (SELECT count(*) FROM uploads WHERE subject = $1 AND status = 'pending' AND expires_at > now()) \
+         FROM uploads WHERE subject = $1 AND created_at > now() - interval '1 day' "
+    ).bind(subject).fetch_one(conn).await?;
+    Ok(UploadUsage {
+        uploads_last_day: u64::try_from(uploads).unwrap_or(0),
+        input_bytes_last_day: u64::try_from(bytes).unwrap_or(0),
+        pending: u64::try_from(pending).unwrap_or(0),
+    })
+}
+
 /// Upload admission is independent of conversion usage: abandoned uploads
 /// consume the daily allocation too, and live pending uploads reserve slots.
 pub async fn admit_upload(
@@ -132,19 +163,14 @@ pub async fn admit_upload(
     entitlement: &Entitlement,
     input_bytes: u64,
 ) -> Result<(), crate::error::ApiError> {
-    let (uploads, bytes, pending): (i64, i64, i64) = sqlx::query_as(
-        "SELECT count(*) FILTER (WHERE created_at > now() - interval '1 day'), \
-         COALESCE(sum(size_bytes) FILTER (WHERE created_at > now() - interval '1 day'), 0)::bigint, \
-         (SELECT count(*) FROM uploads WHERE subject = $1 AND status = 'pending' AND expires_at > now()) \
-         FROM uploads WHERE subject = $1 AND created_at > now() - interval '1 day' "
-    ).bind(subject).fetch_one(conn).await?;
+    let usage = upload_usage(conn, subject).await?;
     let exceeded = entitlement
         .jobs_per_day
-        .is_some_and(|cap| uploads as u64 >= cap)
+        .is_some_and(|cap| usage.uploads_last_day >= cap)
         || entitlement
             .input_bytes_per_day
-            .is_some_and(|cap| (bytes as u64).saturating_add(input_bytes) > cap)
-        || pending as u64 >= entitlement.concurrent_jobs.unwrap_or(64);
+            .is_some_and(|cap| usage.input_bytes_last_day.saturating_add(input_bytes) > cap)
+        || usage.pending >= entitlement.pending_upload_cap();
     if exceeded {
         return Err(crate::error::ApiError::quota_exceeded(
             "the plan's upload allowance is exhausted",
@@ -197,6 +223,12 @@ impl std::fmt::Display for QuotaViolation {
 }
 
 impl Entitlement {
+    /// How many live pending uploads upload admission allows.
+    #[must_use]
+    pub fn pending_upload_cap(&self) -> u64 {
+        self.concurrent_jobs.unwrap_or(DEFAULT_PENDING_UPLOADS)
+    }
+
     /// Checks whether one more job of `input_bytes` fits the quotas.
     pub fn admit(&self, usage: Usage, input_bytes: u64) -> Result<(), QuotaViolation> {
         if let Some(cap) = self.concurrent_jobs
@@ -268,6 +300,16 @@ mod tests {
             ),
             Err(QuotaViolation::InputBytesPerDay(100))
         );
+    }
+
+    #[test]
+    fn pending_uploads_fall_back_to_a_fixed_cap() {
+        assert_eq!(entitlement().pending_upload_cap(), 1);
+        let unlimited = Entitlement {
+            concurrent_jobs: None,
+            ..entitlement()
+        };
+        assert_eq!(unlimited.pending_upload_cap(), DEFAULT_PENDING_UPLOADS);
     }
 
     #[test]

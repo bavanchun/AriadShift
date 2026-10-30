@@ -6,6 +6,8 @@
 import { Button, buttonVariants } from "@ariadshift/ui/components/button";
 import { KeyRoundIcon } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { Turnstile } from "@/components/cloud/turnstile";
+import { CLOUD } from "@/lib/cloud/config";
 import { useAccount } from "./account-context";
 import {
   errorMessage,
@@ -61,6 +63,9 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [signupToken, setSignupToken] = useState<string | null>(null);
+  const [challengeReset, setChallengeReset] = useState(0);
+  const siteKey = CLOUD?.turnstileSiteKey;
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   // Move focus to a new step's heading so keyboard and screen reader users follow it.
@@ -132,8 +137,23 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
       return;
     }
     setConfirmError(null);
+    if (busy) return;
+    if (siteKey && !signupToken) {
+      setOutcome({ kind: "error", message: "Complete the signup bot check and try again." });
+      return;
+    }
     void run(async () => {
-      await auth.signUpEmail(name.trim(), email.trim(), password);
+      try {
+        await auth.signUpEmail(
+          name.trim(),
+          email.trim(),
+          password,
+          ...(signupToken ? ([signupToken] as const) : []),
+        );
+      } finally {
+        setSignupToken(null);
+        setChallengeReset((value) => value + 1);
+      }
       setPassword("");
       setConfirm("");
       await finish();
@@ -286,8 +306,16 @@ export function SignInPanel({ navigate }: SignInPanelProps) {
               onValueChange={setConfirm}
               error={confirmError}
             />
+            {siteKey ? (
+              <Turnstile
+                siteKey={siteKey}
+                action="signup"
+                resetKey={challengeReset}
+                onToken={setSignupToken}
+              />
+            ) : null}
             <OutcomeMessage outcome={outcome} />
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || Boolean(siteKey && !signupToken)}>
               Create account
             </Button>
           </form>

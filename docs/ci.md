@@ -30,12 +30,12 @@ GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, on
 1. **Scope** (Linux, seconds) runs [`scripts/ci-scope.sh`](../scripts/ci-scope.sh). It picks the commit range to lint and decides whether the build, test and fuzz jobs must run, and separately whether the web job must run. The script also provides a `--classify` mode for table-driven offline testing.
 2. **Static checks** (Linux) run once for every event:
    - each new commit against the commit rules (`just lint-commits`);
-   - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, the license check of production JavaScript dependencies (`js-licenses`), Biome (`web-lint`), release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), WinGet manifest generator test (`test-winget-manifest`), and scope classifier test (`test-ci-scope`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
+   - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, the license check of production JavaScript dependencies (`js-licenses`), Biome (`web-lint`), release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), WinGet manifest generator test (`test-winget-manifest`), scope classifier test (`test-ci-scope`), and database/E2E/fuzz wiring regression (`test-hardening-ci-wiring`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
 3. **Lint (windows-2025)** runs Clippy on Windows, for early feedback on Windows-only code.
 4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc (plus distribution-pinned LibreOffice Writer/Calc/Impress and qpdf on Linux), sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test` (including shared engine conformance, with LibreOffice required on Linux), `just bench-test`, `just bench-check`, and `just package-check`.
-5. **Server integration** (Linux, `ubuntu-26.04`) runs the `ariad-server` tests against PostgreSQL 18 with pgmq (a service container) and SeaweedFS (started in a step, because service containers cannot take a command), with Pandoc installed and the `ashift` engine binary built. The database and S3 tests skip in the Verify job, where neither exists; `just test-server` runs the same suite locally in Docker. The job also checks all three Dockerfiles, builds the server image and converts Markdown to DOCX using real Pandoc in required mode in a read-only container with tmpfs, then probes procfs access to the worker and its supervisor. The signed Docling image, the Office namespace profile and the direct-launch Kubernetes fragment are not exercised by this smoke.
-6. **Fuzz** (Linux, `ubuntu-26.04`) runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `docling_to_ir`, `ir_json`, `limits_validate`, `pdf_reader`, `typst_writer`), with cached corpus and crash artifact upload on failure or cancellation.
-7. **Web** (Linux, `ubuntu-26.04`) builds the wasm module, typechecks every JavaScript package, runs Vitest, builds the site (`just web-ci`) and runs Playwright on Chromium, Firefox and WebKit (`just web-e2e`), uploading traces on failure. See [web.md](web.md).
+5. **Server integration** (Linux, `ubuntu-26.04`) runs the `ariad-server` tests against PostgreSQL 18 with pgmq (a service container) and SeaweedFS (started in a step, because service containers cannot take a command), with Pandoc installed and the `ashift` engine binary built. The database and S3 tests skip in the Verify job, where neither exists; `just test-server` runs the same suite locally in Docker. It installs Node.js, pnpm and the matching PostgreSQL 18 client, then runs `just test-auth-db` with mandatory database execution to prove OAuth serialization across replicas. The job also checks all three Dockerfiles, builds the server image and converts Markdown to DOCX using real Pandoc in required mode in a read-only container with tmpfs, then probes procfs access to the worker and its supervisor. The signed Docling image, the Office namespace profile and the direct-launch Kubernetes fragment are not exercised by this smoke.
+6. **Fuzz** (Linux, `ubuntu-26.04`) first runs `cargo test --locked --manifest-path fuzz/Cargo.toml --bin docx_meta`, then runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `docling_to_ir`, `ir_json`, `limits_validate`, `pdf_reader`, `typst_writer`, `archive_preflight`, `docx_meta`, `pack_manifest`, `pack_archive`, `engine_protocol`, `capabilities_json`, `asset_resolve`, `uri_parsers`, `ir_json_versioned`), with cached corpus and crash artifact upload on failure or cancellation.
+7. **Web** (Linux, `ubuntu-26.04`) builds the wasm module, typechecks every JavaScript package, runs Vitest against a PostgreSQL 18/pgmq service (including mandatory auth database tests), builds the site (`just web-ci`) and runs Playwright on Chromium, Firefox and WebKit (`just web-e2e`), uploading traces on failure. See [web.md](web.md).
 8. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, jobs 3 to 6 either passed or were skipped by the scope decision, and job 7 passed when the scope asked for it and was skipped otherwise.
 
 ### When the build, test and fuzz jobs are skipped
@@ -54,7 +54,11 @@ The same tree is never built twice without a reason:
 | Change under `apps/desktop/src-tauri/` | Run | Native desktop Rust needs the same three-OS checks as the other crates |
 | Manual run, or a push whose previous commit is unknown | Run | Nothing to compare against |
 
-The web job runs when a change touches `apps/`, `packages/`, `brand/`, `.node-version`, `crates/ariad-core/`, `crates/ariad-wasm/`, the root pnpm, Biome, Vitest, Cargo or toolchain files, the `justfile`, `ci.yml`, `ci-scope.sh` or `install-wasm-bindgen.sh`, and on manual runs and pushes without a known previous commit. Promotions follow the same tree rule as the other jobs.
+The web job also installs the matching PostgreSQL 18 client before Vitest.
+This keeps auth-only pull requests covered even when Rust/server jobs are
+intentionally skipped by scope.
+
+The web job runs when a change touches `apps/`, `packages/`, `services/`, `brand/`, `.node-version`, `crates/ariad-core/`, `crates/ariad-wasm/`, the root pnpm, Biome, Vitest, Cargo or toolchain files, the `justfile`, `ci.yml`, `ci-scope.sh` or `install-wasm-bindgen.sh`, and on manual runs and pushes without a known previous commit. Promotions follow the same tree rule as the other jobs.
 
 The native Linux and web jobs download LibreOffice and browser system libraries from Ubuntu's primary archive over HTTPS, replacing Azure entries in direct sources and indirect APT mirror lists. Browser binaries come from the pinned Playwright release. Ubuntu's package signatures and the browser cache policy remain in effect. The native Linux runner also enables unprivileged user namespaces for its disposable VM and verifies user/mount namespace creation before running tests. This satisfies LibreOffice's private `/tmp` requirement; the engine still runs with Landlock, seccomp and host limits, and namespace setup failures remain fatal. The workflow setting does not change the application or configure an end user's machine.
 
@@ -64,7 +68,7 @@ CodeQL is the one deliberate repeat: GitHub computes pull request alerts against
 
 CI disables development/test debug information and incremental compilation to bound Typst and package-verification artifact sizes. Every native Verify job also runs `cargo check -p ariad-cli --no-default-features` to keep the slim CLI build working.
 
-The Rust cache is written only by pushes to `dev` and `main` (the web job shares this rule, and saves the Playwright browser cache on pushes only); pull requests read it but never save their own, so they cannot evict the base branch's cache. The fuzz caches (cargo-fuzz binary, `fuzz/target`, and corpus) follow the same policy: saved on pushes to `dev` and `main`, while pull requests restore caches without saving. The nightly workflow (`fuzz-nightly.yml`) saves caches on schedule, dispatch and its own pull request runs (PR-scoped entries are not visible to `dev` or `main`); crash artifacts upload on failure or cancellation.
+The Rust cache is written only by pushes to `dev` and `main` (the web job shares this rule, and saves the Playwright browser cache on pushes only); pull requests read it but never save their own, so they cannot evict the base branch's cache. The fuzz caches (cargo-fuzz binary, `fuzz/target`, and corpus) follow the same policy: saved on pushes to `dev` and `main`, while pull requests restore caches without saving. The nightly workflow (`fuzz-nightly.yml`) restores caches on every run and saves them only from scheduled runs; one matrix leg saves the cargo-fuzz binary and each leg saves its own corpus. Crash artifacts upload on failure or cancellation.
 
 ## Cloud E2E pack dependency
 
@@ -156,11 +160,24 @@ The nightly deliberately retains the production Dockerfile's signed-release
 installer. It requires a published signed pack compatible with the host version;
 a passing PR override does not establish that release prerequisite.
 
-For local proof, set `E2E_DOCLING_PACK_DIR` to a real unpacked CI pack and run
+Local Compose proof requires Docker with Compose and BuildKit, Python 3, curl, jq
+and unzip. Set `E2E_DOCLING_PACK_DIR` to a real unpacked CI pack and run
 `bash infra/test/e2e/run.sh`. The script checks the fixture hash, the final
 `GET /v1/jobs/{id}` route (`docling`), absence of `ocr_required`, and the OCR
 words “Khu vườn đọc sách” in the downloaded DOCX. Removing `tessdata` from a
 separate test copy must make the same script fail before starting the stack.
+
+The independent **Remote MCP OAuth (core)** job follows the same Scope decision,
+immutable event ref and recorded-SHA verification, with read-only repository
+permissions and its own label-aware cancellation group. It builds the core
+services without waiting for a Docling pack or publishing dependency caches.
+It checks discovery, registration, PKCE, sign-in, consent, token exchange,
+uploaded Markdown conversion, refresh, API JWT rejection at MCP and the
+PostgreSQL-backed anonymous registration cap. It does not run a browser or a 2FA
+flow. Both E2E scripts explicitly enable signup in
+their private generated environment; deployments retain the default-off setting.
+OAuth request credentials use private temporary files, and reset/cleanup refuses
+foreign project volumes.
 
 ## Commit rules
 
@@ -183,14 +200,25 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 | `just bench-test` | Run unit tests for benchmark harness |
 | `just package-check` | Verify core, host, CLI and internal WASM packaging; server and desktop are excluded, and desktop installers have their own workflow |
 | `just test-server-container` | Linux container build/check and required-mode worker smoke; needs a dedicated `ARIAD_TEST_DATABASE_URL`. Set `ARIAD_TEST_CONTAINER_SMOKE=1` with `just test-server` to reuse its throwaway service and clean everything up |
+| `just test-auth-db` | The auth PostgreSQL serialization suite; requires `ARIAD_TEST_DATABASE_URL` and `pg_dump` 18; missing database configuration fails instead of skipping |
 | `just test-server` | The `ariad-server` database and S3 tests in throwaway Docker containers (`ariadshift-test-pg` on 127.0.0.1:55442, `ariadshift-test-s3` on 127.0.0.1:58342), removed afterwards; an ownership label prevents removing another worktree's containers |
 | `just static` | The OS-independent checks (requires `cargo-about 0.9.2`, `uv`, `python3`, and `pwsh` in CI) |
 | `just lint-commits` | Your commits since `origin/dev`; pass a range to check others, for example `just lint-commits main..dev` |
 | `just lint-workflows` | `actionlint` and `zizmor`. Online audits require a clean `GH_TOKEN`/`GITHUB_TOKEN` or a logged-in `gh` CLI |
 | `just deny-advisories` | The daily advisory scan |
-| `just fuzz` | Run fuzz targets locally on stable Rust (`target=""` for all, `seconds="60"`) |
+| `just fuzz` | Run package metadata oracle unit tests, discover all declared fuzz bins through `cargo fuzz list` and run them locally on stable Rust (`target=""` for all, `seconds="60"`) |
 
 The throwaway PostgreSQL in `just test-server` allows 180 seconds for `pg_ctl` operations and TCP readiness. This accommodates initialization on busy hosts; if the service never becomes ready, the recipe prints its container log and fails before compiling the test binaries.
+
+The Server job and `just test-server` set `ARIAD_TEST_REQUIRE_DATABASE=1`.
+The shared Rust database harness fails if `ARIAD_TEST_DATABASE_URL` is missing
+or blank in that mode; an unreachable configured database also fails. Ordinary
+Verify runs leave both variables unset and skip database-backed tests.
+To probe this contract, run `cargo nextest run -p ariad-server --test mcp_remote
+-E 'test(=inline_fleet_refusal_preserves_upload_allowance_for_recovery)' --no-capture`
+with both variables unset (success with a skip diagnostic), then with only
+`ARIAD_TEST_REQUIRE_DATABASE=1` (failure). `just test-server` must show a PASS
+for that test with its real throwaway database and no skip diagnostic.
 
 [`scripts/with-github-token.py`](../scripts/with-github-token.py) is the credential source for zizmor. It prefers a clean `GH_TOKEN`, then `GITHUB_TOKEN`, then captures `gh auth token` with stderr separate. Malformed environment values are ignored with a diagnostic; CLI output containing whitespace, control characters or wrapper status lines is rejected without printing the value. Only the normal trailing CLI line ending is removed. Missing credentials fail the audit with instructions to authenticate. `just test-github-token` checks these paths and runs as part of `lint-workflows`. The launcher passes the validated value directly to zizmor's environment; no shell capture or manual token export is needed.
 

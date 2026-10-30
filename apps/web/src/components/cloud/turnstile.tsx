@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// Cloudflare Turnstile for anonymous uploads, rendered explicitly so the script
-// loads only when an anonymous cloud upload is about to happen. Tokens are
-// single-use: the panel bumps `resetKey` after each upload request.
+// Render explicitly only when a cloud upload or signup needs a bot check.
+// Tokens are single-use: callers bump `resetKey` after each attempt.
 
 interface TurnstileApi {
   render(
@@ -62,9 +61,11 @@ export interface TurnstileProps {
   onToken: (token: string | null) => void;
   /** Changing it renders a new challenge. */
   resetKey: number;
+  /** Must match the server-side verifier's expected action. */
+  action?: "upload" | "signup";
 }
 
-export function Turnstile({ siteKey, onToken, resetKey }: TurnstileProps) {
+export function Turnstile({ siteKey, onToken, resetKey, action = "upload" }: TurnstileProps) {
   const container = useRef<HTMLDivElement>(null);
   const callback = useRef(onToken);
   callback.current = onToken;
@@ -84,22 +85,26 @@ export function Turnstile({ siteKey, onToken, resetKey }: TurnstileProps) {
         api = loaded;
         widget = loaded.render(container.current, {
           sitekey: siteKey,
-          action: "upload",
+          action,
           callback: (token) => {
+            if (!active) return;
             setProblem(null);
             callback.current(token);
           },
-          "expired-callback": () => callback.current(null),
+          "expired-callback": () => {
+            if (active) callback.current(null);
+          },
           "error-callback": () => {
+            if (!active) return;
             callback.current(null);
-            setProblem("The check could not run. Reload the page, or convert on this device.");
+            setProblem("The check could not run. Reload the page and try again.");
           },
         });
       })
       .catch(() => {
         if (active) {
           setProblem(
-            "The bot check could not be loaded. Check your connection, or convert on this device.",
+            "The bot check could not be loaded. Check your connection and reload the page.",
           );
         }
       });
@@ -109,12 +114,14 @@ export function Turnstile({ siteKey, onToken, resetKey }: TurnstileProps) {
         api.remove(widget);
       }
     };
-  }, [siteKey, resetKey]);
+  }, [siteKey, resetKey, action]);
 
   return (
     <div className="flex flex-col gap-1" data-testid="turnstile">
       <p className="text-sm text-muted-foreground">
-        Uploads without an account need a quick check that you are not a bot.
+        {action === "signup"
+          ? "Creating an account needs a quick check that you are not a bot."
+          : "Uploads without an account need a quick check that you are not a bot."}
       </p>
       <div ref={container} />
       {problem && (
