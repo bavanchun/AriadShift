@@ -64,11 +64,12 @@ NOTICES = (
     "notices/models-and-data.txt",
     "notices/runtime-libraries.txt",
     "notices/native-libraries.txt",
+    "notices/vendored-libraries.txt",
 )
 MAX_COMPONENT_BYTES = 2 * 1024**3
 PYTHON_VERSION = "3.14"
 # docling-parse ships macOS wheels for 14.0 and later only; uv would otherwise assume 13.0.
-MACOS_DEPLOYMENT_TARGET = "14.0"
+MACOS_DEPLOYMENT_TARGET = native_build.MACOS_DEPLOYMENT_TARGET
 
 # uv's --python-platform name for each pack target.
 PLATFORMS = {
@@ -184,6 +185,30 @@ def prune_runtime(runtime: Path, target: str) -> None:
             shutil.rmtree(path)
     if is_windows(target):
         prune_microsoft_runtime(runtime)
+    prune_foreign_launchers(site_packages(runtime, target), target)
+
+
+def prune_foreign_launchers(site: Path, target: str) -> None:
+    """Drop Windows installer resources that Unix runtime packs never use."""
+    if is_windows(target):
+        return
+    removed = set()
+    for package, patterns in (
+        (site / "pip/_vendor/distlib", ("*.exe",)),
+        (site / "setuptools", ("cli*.exe", "gui*.exe")),
+    ):
+        for pattern in patterns:
+            for path in package.glob(pattern):
+                removed.add(path.relative_to(site).as_posix())
+                path.unlink()
+    if removed:
+        for record in site.glob("*.dist-info/RECORD"):
+            with record.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.reader(handle))
+            with record.open("w", newline="", encoding="utf-8") as handle:
+                csv.writer(handle, lineterminator="\n").writerows(
+                    row for row in rows if row[0] not in removed
+                )
 
 
 def is_microsoft_runtime(path: Path) -> bool:
@@ -381,7 +406,7 @@ def install_torch_toolchain(work: Path, runtime: Path, target: str, cache: Path)
 
 
 def refresh_wheel_records(site: Path) -> None:
-    """Rehash replaced libraries/notices and remove the deleted Intel stubs row."""
+    """Rehash all DLL/PYD and third-party notice rows; drop deleted Intel stubs."""
     for record in site.glob("*.dist-info/RECORD"):
         with record.open(newline="", encoding="utf-8") as handle:
             rows = list(csv.reader(handle))
@@ -464,6 +489,9 @@ def write_notices(root: Path, runtime: Path, target: str, pins: dict) -> str:
     site = site_packages(runtime, target)
     distributions = list(metadata.distributions(path=[str(site)]))
     libraries = licenses.runtime_libraries(pins["python"]["release"], target)
+    vendored = licenses.check_vendored_native_files(
+        site, licenses.vendored_libraries(site, target), target
+    )
     expression = licenses.pack_expression(
         distributions,
         [
@@ -472,11 +500,13 @@ def write_notices(root: Path, runtime: Path, target: str, pins: dict) -> str:
             pins["tessdata"]["license"],
             *(model["license"] for model in pins["models"]),
             *(item["license"] for item in libraries),
+            *(item["license"] for item in vendored),
         ],
     )
     notices = root / "notices"
-    licenses.write_notices(distributions, notices)
+    licenses.write_notices(distributions, notices, vendored)
     licenses.write_runtime_notices(notices, libraries)
+    licenses.write_vendored_notices(site, notices, vendored)
 
     for name in ("LICENSE", "NOTICE"):
         shutil.copyfile(REPOSITORY / name, notices / f"AriadShift-{name}")
@@ -618,6 +648,10 @@ def archive(
     return destination.name
 
 
+def source_opencv_required(target: str) -> bool:
+    return target.startswith("x86_64-") or target == "aarch64-apple-darwin"
+
+
 def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
     if target not in PLATFORMS:
         raise SystemExit(f"unsupported target {target}; known: {', '.join(PLATFORMS)}")
@@ -648,7 +682,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         if target.startswith("x86_64-")
         else {}
     )
-    if target.startswith("x86_64-"):
+    if source_opencv_required(target):
         wheel = native_build.opencv(target, pins, cache)
         run(
             [
@@ -681,7 +715,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         approved_openmp[replacement.relative_to(root).as_posix()] = fetch._sha256(replacement)
         prune_microsoft_runtime(runtime)
     if native:
-        native_build.verify_opencv(python_executable(runtime, target))
+        native_build.verify_opencv(python_executable(runtime, target), target=target)
         if target.startswith("x86_64-"):
             run([python_executable(runtime, target), "-I", "-B", "-c", torch_build.TORCH_PROBE])
             run([python_executable(runtime, target), "-I", "-B", "-c", torch_build.VISION_PROBE])
@@ -699,6 +733,7 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         raise SystemExit("unreviewed OpenCV third-party notice location")
     for notice in notices:
         native_build.remove_inapplicable_ipp_notice(notice)
+    prune_foreign_launchers(site, target)
     refresh_wheel_records(site)
     if native:
         compile_bytecode(runtime, target)
@@ -709,8 +744,8 @@ def build(target: str, out: Path, cache: Path, ashift: str) -> TargetBuild:
         f"Source: {pins['opencv']['source']}\n"
         f"Source SHA-256: {pins['opencv']['sha256']}\n"
         + (
-            f"Build flags: {' '.join(native_build.OPENCV_FLAGS)}\n"
-            if target.startswith("x86_64-")
+            f"Build flags: {' '.join(native_build.opencv_flags(target))}\n"
+            if source_opencv_required(target)
             else "Unmodified upstream ARM wheel binary.\n"
         )
         + "The common upstream notice's inapplicable x86 IPP section was removed.\n"

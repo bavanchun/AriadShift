@@ -1,7 +1,8 @@
 name: Docling toolchain wheels
 
 # Builds and publishes Intel-free OpenCV and CPU PyTorch wheels for Linux x86_64,
-# and verifies ARM wheels. Windows LLVM OpenMP wheels are deferred to v1.x (#83).
+# builds video-disabled OpenCV on macOS arm64 and verifies ARM torch wheels.
+# Windows LLVM OpenMP wheels are deferred to v1.x (#83).
 # Tagged runs (`toolchain-wheels-v*`) publish the audited wheels and SHA256SUMS to a
 # GitHub Release on this repository so `engines/docling/pack/pins.toml` can pin them by SHA-256.
 on:
@@ -177,33 +178,16 @@ jobs:
           pins.pop("toolchain", None)
           cache = fetch.default_cache()
           opencv_wheel = native_build.opencv(target, pins, cache)
-          opencv_key = native_build.cache_key("opencv", target, pins)
           subprocess.run([
               "uv", "pip", "install", "--python", sys.executable,
               "--no-deps", "--reinstall", str(opencv_wheel),
           ], check=True)
-          native_build.verify_opencv(sys.executable)
+          native_build.verify_opencv(sys.executable, target=target)
 
           out = Path("wheels-out")
           shutil.rmtree(out, ignore_errors=True)
           out.mkdir(parents=True)
-          shutil.copyfile(opencv_wheel, out / opencv_wheel.name)
-          opencv_record = {
-              "schema": 1,
-              "kind": "opencv",
-              "target": target,
-              "build_key": opencv_key,
-              "files": {
-                  opencv_wheel.name: {
-                      "asset": opencv_wheel.name,
-                      "sha256": fetch._sha256(opencv_wheel),
-                      "size": opencv_wheel.stat().st_size,
-                  }
-              },
-          }
-          (out / f"opencv-build-{target}.json").write_text(
-              json.dumps(opencv_record, indent=2) + "\n", encoding="utf-8"
-          )
+          native_build.export_opencv(opencv_wheel, target, pins, out)
 
           torch_out = Path("torch-out")
           torch_record = json.loads((torch_out / "build.json").read_text(encoding="utf-8"))
@@ -227,9 +211,9 @@ jobs:
               json.dumps(torch_record, indent=2) + "\n", encoding="utf-8"
           )
 
-          wheels = sorted(out.glob("*.whl"))
+          artifacts = sorted(path for path in out.rglob("*") if path.is_file())
           openmp = out / "libiomp5md.dll" if target.endswith("windows-msvc") else None
-          licenses.check_wheel_files(wheels, allow_itt=False, openmp_dll=openmp)
+          licenses.check_wheel_files(artifacts, allow_itt=False, openmp_dll=openmp)
 
       - name: Upload toolchain wheels and provenance
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -272,9 +256,85 @@ jobs:
           uv run --package ariad-docling --frozen python
           engines/docling/pack/torch_build.py verify-upstream --target "$TARGET"
 
+  opencv-macos:
+    name: Video-disabled OpenCV (macOS arm64)
+    runs-on: macos-26
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-opencv-macos
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: python {0}
+    env:
+      UV_PROJECT_ENVIRONMENT: .tools/opencv-macos-env
+      TARGET: aarch64-apple-darwin
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.12.23
+          python-version: "3.14"
+
+      - name: Cache verified sources and native build outputs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: |
+            ~/.cache/ariadshift/docling/blobs
+            ~/.cache/ariadshift/docling/native
+          key: docling-opencv-macos-${{ hashFiles('engines/docling/pack/native_build.py', 'engines/docling/pack/pins.toml', 'uv.lock') }}
+
+      - name: Build, probe and audit video-disabled OpenCV
+        run: |
+          import os
+          import subprocess
+          subprocess.run([
+              "uv", "run", "--package", "ariad-docling", "--group", "pack-build",
+              "--frozen", "python", "-c", """
+          import os
+          import shutil
+          import subprocess
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path('engines/docling/pack').resolve()))
+          import fetch
+          import licenses
+          import native_build
+          target = os.environ['TARGET']
+          pins = dict(fetch.load_pins())
+          pins.pop('toolchain', None)
+          wheel = native_build.opencv(target, pins, fetch.default_cache())
+          subprocess.run([
+              'uv', 'pip', 'install', '--python', sys.executable,
+              '--no-deps', '--reinstall', str(wheel),
+          ], check=True)
+          native_build.verify_opencv(sys.executable, target=target)
+          out = Path('wheels-out')
+          shutil.rmtree(out, ignore_errors=True)
+          native_build.export_opencv(wheel, target, pins, out)
+          licenses.check_wheel_files(
+              sorted(path for path in out.rglob('*') if path.is_file()), allow_itt=False,
+          )
+          """], check=True)
+
+      - name: Upload audited OpenCV wheel and provenance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: toolchain-wheels-aarch64-apple-darwin
+          path: wheels-out/*
+          if-no-files-found: error
+          retention-days: 30
+
   checksums:
     name: Collate SHA256SUMS and pin manifest
-    needs: [build, arm]
+    needs: [build, arm, opencv-macos]
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     permissions:
@@ -356,6 +416,6 @@ jobs:
           if ! gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "$GH_REPO" \
               --title "$TAG" \
-              --notes "Audited Intel-free Linux x86_64 OpenCV and CPU PyTorch wheels and SHA256SUMS; ARM wheels verified. Windows LLVM OpenMP wheels are deferred to v1.x (#83)."
+              --notes "Audited Intel-free Linux x86_64 CPU PyTorch/OpenCV and video-disabled macOS arm64 OpenCV wheels, with SHA256SUMS; ARM torch wheels verified. Windows LLVM OpenMP wheels are deferred to v1.x (#83)."
           fi
           gh release upload "$TAG" release-out/* --repo "$GH_REPO" --clobber

@@ -131,7 +131,9 @@ jobs:
             # Do not mistake an older completed run for the new dispatch.
             previous_id=$(find_run)
             previous_id=${previous_id:-0}
-            gh workflow run pack-docling.yml --ref "$PACK_REF"
+            # CI needs Linux only; explicitly declare the unpinned macOS omission.
+            gh workflow run pack-docling.yml --ref "$PACK_REF" \
+              --field allow_missing_targets=aarch64-apple-darwin
           else
             previous_id=0
           fi

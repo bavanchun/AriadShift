@@ -33,6 +33,48 @@ def test_pack_manifest_keeps_the_frozen_protocol_host_range():
     assert manifest["schema"] == "ariad-pack/1"
 
 
+def test_macos_opencv_uses_a_video_disabled_source_build():
+    target = "aarch64-apple-darwin"
+    assert build.source_opencv_required(target)
+    flags = native_build.opencv_flags(target)
+    assert "-DWITH_FFMPEG=OFF" in flags
+    assert "-DBUILD_opencv_videoio=OFF" in flags
+    assert "-DWITH_AVFOUNDATION=OFF" in flags
+    assert f"-DCMAKE_OSX_DEPLOYMENT_TARGET={build.MACOS_DEPLOYMENT_TARGET}" in flags
+    assert "-DCMAKE_OSX_ARCHITECTURES=arm64" in flags
+    assert not build.source_opencv_required("aarch64-unknown-linux-gnu")
+
+
+@pytest.mark.skipif(sys.platform == "darwin", reason="requires an incompatible build host")
+def test_macos_opencv_source_fallback_refuses_an_incompatible_host(tmp_path, monkeypatch):
+    pins = fetch.load_pins()
+    monkeypatch.setattr(native_build, "release_files", lambda *_: None)
+
+    def must_not_compile(*_):
+        pytest.fail("a macOS compiler build must not start on this host")
+
+    monkeypatch.setattr(native_build, "cached_build", must_not_compile)
+    with pytest.raises(SystemExit, match="native macOS arm64"):
+        native_build.opencv("aarch64-apple-darwin", pins, tmp_path)
+
+
+def test_opencv_export_hashes_the_actual_output(tmp_path):
+    wheel = tmp_path / "opencv_python_headless-5.0.0.93-test.whl"
+    wheel.write_bytes(b"build output bytes")
+    destination = tmp_path / "out"
+    target = "aarch64-apple-darwin"
+    pins = fetch.load_pins()
+    native_build.export_opencv(wheel, target, pins, destination)
+    record = json.loads((destination / f"opencv-build-{target}.json").read_text("utf-8"))
+    assert (destination / wheel.name).read_bytes() == wheel.read_bytes()
+    assert record["build_key"] == native_build.cache_key("opencv", target, pins)
+    assert record["files"][wheel.name] == {
+        "asset": wheel.name,
+        "size": wheel.stat().st_size,
+        "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+    }
+
+
 @pytest.mark.parametrize(
     "source",
     (
@@ -44,10 +86,10 @@ def test_pack_manifest_keeps_the_frozen_protocol_host_range():
 def test_sleef_compiler_patch_refuses_unreviewed_source(tmp_path, source):
     configure = tmp_path / "third_party/sleef/Configure.cmake"
     configure.parent.mkdir(parents=True)
-    configure.write_text(source)
+    configure.write_text(source, encoding="utf-8")
     with pytest.raises(SystemExit, match="review upstream SLEEF's changed"):
         torch_build.patch_sleef_msvc(tmp_path)
-    assert configure.read_text() == source
+    assert configure.read_text(encoding="utf-8") == source
 
 
 @pytest.mark.skipif(
@@ -58,21 +100,22 @@ def test_sleef_compiler_patch_refuses_unreviewed_source(tmp_path, source):
 def test_sleef_compiler_patch_only_rejects_the_affected_version(tmp_path, msvc_version, expected):
     configure = tmp_path / "third_party/sleef/Configure.cmake"
     configure.parent.mkdir(parents=True)
-    configure.write_text(torch_build.SLEEF_BUILTIN_MATH_CHECK)
+    configure.write_text(torch_build.SLEEF_BUILTIN_MATH_CHECK, encoding="utf-8")
     torch_build.patch_sleef_msvc(tmp_path)
     (tmp_path / "CMakeLists.txt").write_text(
         "cmake_minimum_required(VERSION 3.20)\n"
         "project(SleefProbe C)\n"
         "include(CheckCSourceCompiles)\n"
         "include(third_party/sleef/Configure.cmake)\n"
-        'file(WRITE "${CMAKE_BINARY_DIR}/result.txt" "${COMPILER_SUPPORTS_BUILTIN_MATH}")\n'
+        'file(WRITE "${CMAKE_BINARY_DIR}/result.txt" "${COMPILER_SUPPORTS_BUILTIN_MATH}")\n',
+        encoding="utf-8",
     )
     command = ["cmake", "-S", str(tmp_path), "-B", str(tmp_path / "build")]
     if msvc_version is not None:
         command.append(f"-DCMAKE_REQUIRED_DEFINITIONS=-D_MSC_VER={msvc_version}")
     result = subprocess.run(command, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert (tmp_path / "build/result.txt").read_text() == expected
+    assert (tmp_path / "build/result.txt").read_text(encoding="utf-8") == expected
 
 
 @pytest.mark.skipif(
@@ -101,15 +144,15 @@ def test_llvm_export_map_preserves_upstream_and_exports_every_msvc_wrapper(tmp_p
     source = tmp_path / "openmp/runtime/src"
     source.mkdir(parents=True)
     original = "# Existing LLVM exports\nomp_get_num_threads 718\n"
-    (source / "dllexports").write_text(original)
-    (source / "CMakeLists.txt").write_text("# Existing LLVM build\n")
+    (source / "dllexports").write_text(original, encoding="utf-8")
+    (source / "CMakeLists.txt").write_text("# Existing LLVM build\n", encoding="utf-8")
     native_build.configure_llvm_openmp(tmp_path, tmp_path / "build/libiomp5md.lib")
-    exports = (source / "dllexports").read_text()
+    exports = (source / "dllexports").read_text(encoding="utf-8")
     assert exports.startswith(original)
     wrappers = set(
         re.findall(
             r"__declspec\(dllexport\) void (_vcomp_\w+)\(",
-            (native_build.PACK / "vcomp-compat.cpp").read_text(),
+            (native_build.PACK / "vcomp-compat.cpp").read_text(encoding="utf-8"),
         )
     )
     assert set(exports[len(original) :].split()) == wrappers
@@ -120,10 +163,10 @@ def test_llvm_export_changes_require_review_if_upstream_adds_a_wrapper(tmp_path,
     source = tmp_path / "openmp/runtime/src"
     source.mkdir(parents=True)
     original = f"{name} 123\n"
-    (source / "dllexports").write_text(original)
+    (source / "dllexports").write_text(original, encoding="utf-8")
     with pytest.raises(SystemExit, match="review upstream LLVM's existing MSVC export"):
         native_build.configure_llvm_openmp(tmp_path, tmp_path / "build/libiomp5md.lib")
-    assert (source / "dllexports").read_text() == original
+    assert (source / "dllexports").read_text(encoding="utf-8") == original
 
 
 @pytest.mark.skipif(
@@ -137,7 +180,8 @@ def test_msvc_marker_requires_an_object_in_the_import_archive(tmp_path):
     definition.write_text(
         "LIBRARY libiomp5md.dll\nEXPORTS\n"
         + "\n".join(native_build.VCOMP_EXPORTS)
-        + f"\n{marker} DATA\n"
+        + f"\n{marker} DATA\n",
+        encoding="utf-8",
     )
     raw = tmp_path / "raw.lib"
     obj = tmp_path / "markers.obj"
@@ -271,11 +315,11 @@ def test_torch_bootstrap_builds_once_then_verifies_cached_outputs(tmp_path, monk
     output = cache / "native/torch-key"
     output.mkdir(parents=True)
     if cached:
-        (output / "build.json").write_text(json.dumps({"build_key": "key"}))
+        (output / "build.json").write_text(json.dumps({"build_key": "key"}), encoding="utf-8")
     version = torch_build.load_config()["torch"]["version"]
     wheel = output / f"torch-{version}-cp314-cp314-manylinux_2_28_x86_64.whl"
     wheel.write_bytes(b"wheel")
-    (output / "OpenBLAS-LICENSE.txt").write_text("BSD-3-Clause")
+    (output / "OpenBLAS-LICENSE.txt").write_text("BSD-3-Clause", encoding="utf-8")
     monkeypatch.setattr(build, "host_target", lambda: target)
     monkeypatch.setattr(torch_build, "key", lambda _: "key")
     monkeypatch.setattr(fetch, "load_pins", lambda: {})
@@ -356,7 +400,9 @@ def test_vendor_gate_rejects_intel_libraries_inside_wheels(tmp_path, name):
 def test_vendor_gate_rejects_ipp_notices_even_with_permissive_wheel_metadata(tmp_path, content):
     info = tmp_path / "opencv-1.dist-info"
     info.mkdir()
-    (info / "METADATA").write_text("Name: opencv-python-headless\nLicense-Expression: Apache-2.0\n")
+    (info / "METADATA").write_text(
+        "Name: opencv-python-headless\nLicense-Expression: Apache-2.0\n", encoding="utf-8"
+    )
     (info / "LICENSE-3RD-PARTY.txt").write_bytes(content)
     with pytest.raises(SystemExit, match="proprietary IPP ICV notice"):
         licenses.check_vendor_files(tmp_path)
@@ -407,7 +453,8 @@ def test_vendor_gate_allows_permissive_itt_and_onednn_symbols(tmp_path):
 def test_vendor_gate_preserves_common_notices_for_components_not_in_the_binary(tmp_path):
     (tmp_path / "ThirdPartyNotices.txt").write_text(
         "Intel Math Kernel Library (Intel MKL)\n"
-        "Intel Simplified Software License (Version April 2018)"
+        "Intel Simplified Software License (Version April 2018)",
+        encoding="utf-8",
     )
     (tmp_path / "onnxruntime.so").write_bytes(b"CPUExecutionProvider MLAS")
     licenses.check_vendor_files(tmp_path)
@@ -435,10 +482,11 @@ def test_only_the_reviewed_inapplicable_ipp_notice_is_removed(tmp_path):
         + native_build.IPP_HEADING
         + "\nIntel Simplified Software License\n"
         + separator
-        + suffix
+        + suffix,
+        encoding="utf-8",
     )
     native_build.remove_inapplicable_ipp_notice(path)
-    assert path.read_text() == prefix + separator + suffix
+    assert path.read_text(encoding="utf-8") == prefix + separator + suffix
     with pytest.raises(SystemExit, match="unreviewed OpenCV IPP notice layout"):
         native_build.remove_inapplicable_ipp_notice(path)
 
@@ -452,11 +500,15 @@ def test_replaced_openmp_and_notice_records_match_the_distributed_bytes(tmp_path
     record = info / "RECORD"
     record.write_text(
         "libiomp5md.dll,sha256=old,0\nlibiompstubs5md.dll,sha256=old,0\n"
-        "torch-1.dist-info/RECORD,,\n"
+        "torch-1.dist-info/RECORD,,\n",
+        encoding="utf-8",
     )
     build.refresh_wheel_records(site)
     digest = urlsafe_b64encode(hashlib.sha256(dll.read_bytes()).digest()).decode().rstrip("=")
-    assert record.read_text() == f"libiomp5md.dll,sha256={digest},11\ntorch-1.dist-info/RECORD,,\n"
+    assert (
+        record.read_text(encoding="utf-8")
+        == f"libiomp5md.dll,sha256={digest},11\ntorch-1.dist-info/RECORD,,\n"
+    )
 
 
 @pytest.mark.parametrize("installer_records", [False, True])
@@ -484,11 +536,11 @@ def test_removed_console_script_records_do_not_retain_build_paths(tmp_path, inst
                 (info / filename).write_bytes(content)
                 lines.append(entry(f"{info.name}/{filename}", content))
         record = info / "RECORD"
-        record.write_text("\n".join(lines) + "\n")
+        record.write_text("\n".join(lines) + "\n", encoding="utf-8")
         build.drop_build_records(site)
         assert not (info / "direct_url.json").exists()
         assert not (info / "uv_cache.json").exists()
-        records.append(record.read_text())
+        records.append(record.read_text(encoding="utf-8"))
     assert records[0] == records[1]
     assert records[0] == f"{module}\ndemo-1.0.dist-info/RECORD,,\n"
 
@@ -545,12 +597,14 @@ def test_archive_rejects_microsoft_runtime_dlls_including_wheel_copies(tmp_path,
     forbidden.touch()
     record = root / "Lib/site-packages/vendor-1.dist-info/RECORD"
     record.parent.mkdir()
-    record.write_text(f"vendor/{name},sha256=old,0\nvendor-1.dist-info/RECORD,,\n")
+    record.write_text(
+        f"vendor/{name},sha256=old,0\nvendor-1.dist-info/RECORD,,\n", encoding="utf-8"
+    )
     with pytest.raises(SystemExit, match="Microsoft runtime DLL must not be bundled"):
         build.archive(tmp_path, ["runtime"], tmp_path / "runtime.tar.zst")
     build.prune_microsoft_runtime(root)
     assert not forbidden.exists()
-    assert record.read_text() == "vendor-1.dist-info/RECORD,,\n"
+    assert record.read_text(encoding="utf-8") == "vendor-1.dist-info/RECORD,,\n"
     assert build.archive(tmp_path, ["runtime"], tmp_path / "runtime.tar.zst") == "runtime.tar.zst"
 
 
@@ -581,14 +635,14 @@ def test_wheel_imports_use_system_runtime_names_without_relocating_image_data(tm
     dll.touch()
     record = site / "module-1.dist-info/RECORD"
     record.parent.mkdir()
-    record.write_text(f"module.pyd,sha256=old,1024\n{dll.name},sha256=old,0\n")
+    record.write_text(f"module.pyd,sha256=old,1024\n{dll.name},sha256=old,0\n", encoding="utf-8")
     build.prune_microsoft_runtime(root)
     result = path.read_bytes()
     assert len(result) == len(image)
     assert result[640 : 640 + len(alias)] == b"msvcp140.dll".ljust(len(alias), b"\0")
     assert struct.unpack_from("<I", result, 88 + 64)[0] == 0
     digest = urlsafe_b64encode(hashlib.sha256(result).digest()).decode().rstrip("=")
-    assert record.read_text() == f"module.pyd,sha256={digest},1024\n"
+    assert record.read_text(encoding="utf-8") == f"module.pyd,sha256={digest},1024\n"
     path.write_bytes(b"MZ")
     with pytest.raises(SystemExit, match="cannot retarget Microsoft runtime imports"):
         windows_imports.retarget(path, {alias: b"msvcp140.dll"})

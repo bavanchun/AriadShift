@@ -138,11 +138,35 @@ An explicit IPP/ICV notice section remains forbidden independently of metadata.
 
 The [toolchain wheels workflow](../.github/workflows/toolchain-wheels.yml) and
 [torch toolchain workflow](../.github/workflows/torch-docling.yml) own source
-builds. In 1.0 they run the source build natively on Linux x86_64 and verify the
-retained ARM wheels on Linux aarch64 and macOS arm64 (the Windows x86_64 CPU
+builds. They source-build CPU torch and OpenCV on Linux x86_64, verify the
+retained ARM torch wheels on Linux aarch64 and macOS arm64, and source-build
+macOS arm64 OpenCV with FFmpeg, video I/O and AVFoundation disabled (the Windows x86_64 CPU
 torch and pack CI rows are deferred to v1.x in [#83](https://github.com/bavanchun/AriadShift/issues/83));
 the Mac arm64 development machine does not emulate x86_64 source builds. Compiler caches preserve completed work
 across bounded jobs, and wheel caches avoid rebuilding unchanged toolchains.
+The macOS job repairs the complete source-built wheel with pinned delocate,
+requires arm64 and macOS 14 compatibility, checks the import/build information
+and absence of `VideoCapture`, and audits every wheel payload for forbidden
+components. Native macOS validation and actual wheel SHA-256 pinning must finish
+before that target ships; no upstream GPL dylib is removed to make a wheel pass.
+Every detected native payload in an exported toolchain wheel or loose native
+sidecar must additionally match one component's reviewed `export_objects`
+SHA-256 receipt in
+[`native-components.toml`](../engines/docling/pack/native-components.toml), with
+an allowed SPDX licence and all hash-verified notices bundled. Wheel-scoped
+notices retain their reviewed paths; upstream notices go inside the wheel at
+`notices/<path>`. Loose artifacts require those files beside the artifact.
+Renaming an object, a generated output checksum or an OpenMP sidecar hash cannot
+create an approval. ZIP directory entries must have zero declared/compressed
+size and no readable bytes; payloads still reach content scanning and are refused.
+Only genuine empty directories may skip scanning. All member names must be
+canonical relative POSIX paths; traversal, backslashes, control characters,
+duplicate/case-colliding paths and file/directory conflicts fail.
+The five initial BSD OpenEXR/Imath receipts identify only
+those objects; they do not approve the containing upstream GPL wheel or new
+source-build outputs. Review and record actual new object identities and full
+notices before attempting toolchain publication. Missing reviews stop the
+workflow before upload; do not refresh approvals automatically from candidates.
 The build key covers source, options, target and frozen build tools, excluding
 model pins and the published wheel manifest. Restored wheels are rehashed and
 run through CPU/torchvision and OpenCV probes. Linux uses the pinned manylinux
@@ -186,7 +210,18 @@ In 1.0, shipped pack targets are `x86_64-unknown-linux-gnu`, `aarch64-unknown-li
 
 - **Engine tests** on `ubuntu-26.04` and `windows-2025`: ruff and pytest.
 - **Engine conformance** on Linux with cached models and Tesseract: `just docling-engine-test`.
-- **Pack** builds the Linux x86_64 pack twice in separate directories, compares the component and manifest hashes, and converts the scanned Vietnamese page with it offline. Tags, and pull requests that change `engines/docling/pack/` or the workflow, also build `aarch64` Linux (not run) and macOS (which converts a digital PDF) and merge their manifests. The Linux x86_64 job additionally runs the conformance/acceptance tests with the packaged interpreter and uploads the original/replacement conversion comparisons. Native OpenCV/LLVM caches are separate from downloaded source/model blobs. The Windows `x86_64-pc-windows-msvc` pack row is deferred to v1.x ([#83](https://github.com/bavanchun/AriadShift/issues/83)).
+- **Pack** always builds both Linux targets. Linux x86_64 is built twice in separate directories, compares component/manifest hashes, converts the scanned Vietnamese page offline, and runs packaged-interpreter conformance/acceptance tests. Linux aarch64 is built but not run. macOS additionally builds and converts a digital PDF when its authoritative video-disabled OpenCV release pin matches the current inputs. Without that pin, pull requests omit the macOS pack row with a warning and a `SKIPPED` summary: "macOS pack requires the video-disabled OpenCV wheel from toolchain-wheels-v*; pin missing". An invalid configured pin fails instead of being treated as missing. Windows packs remain deferred to v1.x ([#83](https://github.com/bavanchun/AriadShift/issues/83)).
+
+Tag pushes and manual runs fail on a missing macOS pin unless the release
+explicitly declares that omission. A tag uses its exact `pack-docling-v*` key in
+`[pack_release_skips]` in `pins.toml`; a manual run uses the
+`allow_missing_targets` input. Only `aarch64-apple-darwin` may be listed; neither
+Linux target may be omitted. The default table and input allow no omissions.
+This guard does not authorize publishing an incomplete release. The
+[`ci_plan.py`](../engines/docling/pack/ci_plan.py) planner owns selection and
+requires exactly the selected build receipts before producing a manifest and
+checksums for their component files. Its plan is uploaded with the manifest.
+Native OpenCV/LLVM caches remain separate from source/model blobs.
 
 For a failed matrix job while its sibling is still running, obtain the job ID
 with `gh run view <run-id> --json jobs`. Download only that completed job's logs
@@ -210,5 +245,5 @@ Check the new version or revision against its registry (PyPI, GitHub Releases, H
 When OpenCV, PyTorch, OpenBLAS, LLVM OpenMP or manylinux build inputs change:
 
 1. Update the source pins in `engines/docling/pack/pins.toml`, `engines/docling/pack/torch-build.toml` and `uv.lock`.
-2. Trigger or tag [`.github/workflows/toolchain-wheels.yml`](../.github/workflows/toolchain-wheels.yml) with `toolchain-wheels-v<version>` (after explicit maintainer authorization) so CI builds, caches, audits and publishes the Intel-free wheels, sidecars, provenance files, `toolchain-pins.toml` and `SHA256SUMS` to GitHub Releases.
+2. After explicit maintainer authorization, push a `toolchain-wheels-v<version>` tag to run [`.github/workflows/toolchain-wheels.yml`](../.github/workflows/toolchain-wheels.yml) and publish audited wheels, sidecars, provenance files, `toolchain-pins.toml` and `SHA256SUMS` to GitHub Releases. A manual dispatch has no inputs and builds artifacts only; its publish job does not run.
 3. Download the `toolchain-wheels-release` artifact (or release assets), verify `sha256sum --check SHA256SUMS`, and update `[toolchain]` in `engines/docling/pack/pins.toml` with the rendered `toolchain-pins.toml` entries (`uv run --no-project --python 3.14 python engines/docling/pack/licenses.py --render-toolchain-pins <dir> --release-tag toolchain-wheels-v<version>`).

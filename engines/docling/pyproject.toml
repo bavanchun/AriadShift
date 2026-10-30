@@ -26,6 +26,7 @@ torch-build = [
 pack-build = [
     "auditwheel==6.8.2; sys_platform == 'linux'",
     "cmake==4.4.4",
+    "delocate==0.13.0; sys_platform == 'darwin'",
     "ninja==1.13.2",
     "packaging==26.3",
     "scikit-build==0.19.1",

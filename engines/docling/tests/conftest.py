@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -14,6 +16,35 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 FIXTURES = REPOSITORY / "fixtures"
 PROTOCOL = "ariad-engine/1"
 TIMEOUT_S = 600
+
+
+def native_record_rows(site: Path, paths) -> str:
+    rows = []
+    for relative in paths:
+        relative = Path(relative).as_posix()
+        source = site / relative
+        digest = (
+            base64.urlsafe_b64encode(hashlib.sha256(source.read_bytes()).digest())
+            .decode()
+            .rstrip("=")
+        )
+        rows.append(f"{relative},sha256={digest},{source.stat().st_size}\n")
+    return "".join(rows)
+
+
+def reviewed_native_file(distribution, reviewed_paths) -> str:
+    """Keep real-byte coverage mandatory on Linux and explain absent host artifacts."""
+    files = {str(path) for path in distribution.files or []}
+    relative = next((path for path in reviewed_paths if path in files), None)
+    if relative is not None:
+        return relative
+    reason = (
+        f"{distribution.metadata['Name']} {distribution.version}: reviewed native fixture "
+        f"is absent on {sys.platform}; the real-object checks remain mandatory on Linux"
+    )
+    if sys.platform == "linux":
+        pytest.fail(reason)
+    pytest.skip(reason)
 
 
 def clean_env() -> dict[str, str]:
