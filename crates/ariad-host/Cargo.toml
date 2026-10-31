@@ -14,6 +14,7 @@ build = "build.rs"
 
 [dependencies]
 ariad-core.workspace = true
+ariad-engine-io.workspace = true
 base64.workspace = true
 cap-std.workspace = true
 directories.workspace = true

@@ -254,10 +254,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ariad-engine-io"
+version = "0.2.0"
+dependencies = [
+ "ariad-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "ariad-host"
 version = "0.2.0"
 dependencies = [
  "ariad-core",
+ "ariad-engine-io",
  "ariad-typst",
  "base64 0.23.1",
  "cap-std",
