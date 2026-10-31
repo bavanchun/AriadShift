@@ -37,7 +37,7 @@ Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHu
 
 ### Package managers
 
-v0.2.0 is published to crates.io (ariad-core, ariad-typst, ariad-host, ariad-cli) and the Homebrew tap; the shell installer, PowerShell installer and cargo-binstall paths passed the release smoke run; the Homebrew install smoke failed on the runner because Homebrew refuses the tap as untrusted (#110), so the Homebrew path is published but not confirmed; no WinGet submission exists yet.
+v0.2.0 is published to crates.io (ariad-core, ariad-typst, ariad-host, ariad-cli) and the Homebrew tap, and the release smoke run passed on the Homebrew, shell installer, PowerShell installer and cargo-binstall channels; current Homebrew needs the tap trust step shown in the commands below; no WinGet submission exists yet.
 
 ```sh
 # Homebrew (macOS & Linux; current Homebrew requires trusting third-party taps)
