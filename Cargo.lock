@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ariad-core",
  "ariad-host",
@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
@@ -233,7 +233,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ariad-core",
  "ariad-host",
@@ -255,7 +255,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-host"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ariad-core",
  "ariad-typst",
@@ -300,7 +300,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ariad-core",
  "ariad-host",
@@ -345,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-typst"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ariad-core",
  "jiff",
@@ -359,7 +359,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-wasm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ariad-core",
  "js-sys",
