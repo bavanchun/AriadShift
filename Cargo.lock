@@ -387,7 +387,9 @@ name = "ariad-wasm"
 version = "0.2.0"
 dependencies = [
  "ariad-core",
+ "ariad-pdf",
  "js-sys",
+ "lopdf",
  "serde",
  "serde_json",
  "wasm-bindgen",
