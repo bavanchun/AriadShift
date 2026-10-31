@@ -35,7 +35,7 @@ AriadShift today converts documents (36 routes, shared IR, CLI/MCP/web/desktop/c
 
 | # | Phase | Milestone | Depends on | Status |
 |---|---|---|---|---|
-| 1 | [Architecture contracts, parity matrix, test corpus](./phase-01-architecture-contracts-and-parity-matrix.md) | A | — | Pending |
+| 1 | [Architecture contracts, parity matrix, test corpus](./phase-01-architecture-contracts-and-parity-matrix.md) | A | — | Completed |
 | 2 | [Tool framework + `ariad-engine/2` (pdf.info skeleton)](./phase-02-tool-framework-and-engine-protocol-v2.md) | A | 1 | Pending |
 | 3 | [Structural PDF tools (19 tools, wasm)](./phase-03-structural-pdf-tools.md) | A → 0.3.0 | 2 | Pending |
 | 4 | [PDFium engine: render, images, text](./phase-04-pdfium-engine-render-and-images.md) | B | 2 | Pending |

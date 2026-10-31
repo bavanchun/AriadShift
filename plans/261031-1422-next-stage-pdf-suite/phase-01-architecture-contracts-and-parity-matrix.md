@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Architecture contracts, parity matrix and test corpus"
-status: pending
+status: completed
 priority: P1
 effort: "5 tasks, ~3-4 worker-days"
 dependencies: []
@@ -132,12 +132,12 @@ rg -n "pdfium" crates apps fuzz Cargo.toml   # matches the T1 decision
 
 ## Acceptance (gate to the Mac PM, then owner for tiers)
 
-- [ ] ARCHITECTURE.md contains AD-1..AD-18 in the Decision Log, a §7.3 for `ariad-engine/2`, and no remaining sentence saying PDFium is Docling/bench-only.
-- [ ] `docs/tools.md` defines ids, params, page ranges, outputs, limits, determinism, recipes and tiers with examples.
-- [ ] `docs/parity-matrix.md` covers 100 % of the Stirling feature table rows and Bento tools (or lists them under "Not adopted" with a reason); Pro rows are marked `proposed`.
-- [ ] Owner approved the Pro list (recorded in `docs/parity-matrix.md` with the date).
-- [ ] `docs/i18n.md` fixes library, catalogue path, TMS, locale list.
-- [ ] The corpus regenerates deterministically and every file has a truth companion and a manifest entry.
+- [x] ARCHITECTURE.md contains AD-1..AD-18 in the Decision Log, a §7.3 for `ariad-engine/2`, and no remaining sentence saying PDFium is Docling/bench-only (AD rows verified verbatim by script; merged in PR #125).
+- [x] `docs/tools.md` defines ids, params, page ranges, outputs, limits, determinism, recipes and tiers with examples (`docs/tools.md` merged in PR #125).
+- [x] `docs/parity-matrix.md` covers 100 % of the Stirling feature table rows and Bento tools (or lists them under "Not adopted" with a reason); Pro rows are marked `proposed` (`docs/parity-matrix.md` merged in PR #125).
+- [x] Owner approved the Pro list (recorded in `docs/parity-matrix.md` with the date) (Pro list approved by the Mac PM on the owner's delegation on 2026-11-01, recorded in `docs/parity-matrix.md`).
+- [x] `docs/i18n.md` fixes library, catalogue path, TMS, locale list (`docs/i18n.md` merged in PR #125).
+- [x] The corpus regenerates deterministically and every file has a truth companion and a manifest entry (corpus: 22 PDFs with truth files and manifest entries, deterministic across two runs of `just fixtures`; merged in PR #125).
 
 ## Risks
 
@@ -146,3 +146,5 @@ rg -n "pdfium" crates apps fuzz Cargo.toml   # matches the T1 decision
 | Worker redesigns a decision | The AD table is normative; reviewer rejects diffs that change Chosen/Rejected text. |
 | Corpus generator cannot produce encryption/forms | Use `pikepdf` (MPL-2.0, dev/test-only, not distributed) inside `fixtures/gen` only; record it as a dev-only dependency; never ship it. |
 | Parity matrix misses Stirling Pro-only features | T3 step 5 counts rows against the report table. |
+
+Gate decisions applied 2026-11-01: batch cap 25 files or 250 MB enforced by within_run_quota in phase 13; the 14 dagger rows were assigned to phases 3, 4, 6, 7, 9, 10 and 13 and the PM adds their tasks at each phase scout.
