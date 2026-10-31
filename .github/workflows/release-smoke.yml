@@ -38,6 +38,7 @@ jobs:
           clean_ver="${VERSION#v}"
           brew update
           brew tap bavanchun/homebrew-tap
+          brew trust --tap bavanchun/tap
           brew install ashift
           installed_ver="$(ashift --version | awk '{print $2}')"
           if [ "$installed_ver" != "$clean_ver" ]; then
