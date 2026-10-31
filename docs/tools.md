@@ -521,6 +521,10 @@ backed by the `ToolAccess` type in `ariad-core`:
 | `apps/macos` (`ariad-ffi`) | **Authoritative** | Checked in Rust via `ariad-ffi` before execution. |
 | `apps/web` (`ariad-wasm`) | **Advisory** | `ariad-wasm` calls the same `access::allowed` check for UI/UX consistency, but because WebAssembly running in the user's browser executes on user-controlled hardware and can be modified in DevTools, browser tier gating is advisory rather than a security boundary. |
 
+### Batch cap (`within_run_quota`)
+
+`allowed(tier, plan)` stays pure and tier-only. A second pure function in the same module, `ariad-core::tools::access`, decides the batch cap: `within_run_quota(plan, RunSize { files, bytes }) -> bool`. The recipe runner calls it before a run starts and before each watch trigger (each trigger counts as one run). The cap is 25 files or 250 MB combined input per run; a run above either limit needs a plan that grants Pro. Host and server enforcement is authoritative and browser enforcement is advisory, the same split as AD-9 in the table above.
+
 Billing, payment providers, and subscription management are out of scope of the tool contract; there are no credit meters or per-page token deductions.
 
 ---
