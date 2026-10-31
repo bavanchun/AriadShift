@@ -1,0 +1,103 @@
+{
+  "version": "ariad-truth/0",
+  "id": "scanned-skewed-vi",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 1,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.44,
+      "height_pt": 842.04,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false,
+      "has_text_layer": false,
+      "image_only": true
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.44,
+      "height_pt": 842.04,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0
+  ],
+  "metadata": {
+    "title": "Khu vườn đọc sách",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "vi"
+  },
+  "has_forms": false,
+  "field_names": [],
+  "form_fields": [],
+  "has_annotations": false,
+  "annotations": [],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 1,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.44,
+        "height_pt": 842.04,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false,
+        "has_text_layer": false,
+        "image_only": true
+      }
+    ],
+    "metadata": {
+      "title": "Khu vườn đọc sách",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "vi"
+    },
+    "has_forms": false,
+    "has_annotations": false,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Khu vườn đọc sách\nKhu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "scan": true,
+  "has_text_layer": false,
+  "skew_degrees": 3.0,
+  "ppi": 200
+}
