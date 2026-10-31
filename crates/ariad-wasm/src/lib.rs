@@ -132,6 +132,63 @@ export interface ConvertResult {
   warnings: Notice[];
 }
 
+export type ToolGroup =
+  | "organize"
+  | "convert"
+  | "optimize"
+  | "security"
+  | "overlay"
+  | "ocr"
+  | "annotate"
+  | "forms"
+  | "sign"
+  | "redact"
+  | "compare"
+  | "edit"
+  | "ai"
+  | "automation";
+
+export type ToolTier = "free" | "pro";
+
+export type ToolInputArity =
+  | { kind: "one" }
+  | { kind: "many"; min: number; max: number };
+
+export interface ToolDescriptor {
+  id: string;
+  version: string;
+  group: ToolGroup;
+  summary: string;
+  inputs: ToolInputArity;
+  input_formats: string[];
+  output_format: string;
+  params_schema: Record<string, unknown>;
+  tier: ToolTier;
+  runtimes: RuntimeId[];
+  engine: string;
+  secret_params: string[];
+}
+
+export interface ToolArtifactResult {
+  name: string;
+  format: string;
+  media_type: string;
+  extension: string;
+  bytes: Uint8Array;
+}
+
+export interface ToolRunResult {
+  tool: string;
+  format: string;
+  media_type: string;
+  extension: string;
+  bytes: Uint8Array;
+  artifacts: ToolArtifactResult[];
+  data: Record<string, unknown> | null;
+  warnings: Notice[];
+  [field: string]: unknown;
+}
+
 export type AriadErrorCode =
   | "unknown_format"
   | "same_format"
@@ -145,7 +202,13 @@ export type AriadErrorCode =
   | "invalid_ir"
   | "unsupported_ir_version"
   | "limit_exceeded"
-  | "invalid_capabilities";
+  | "invalid_capabilities"
+  | "unknown_tool"
+  | "invalid_params"
+  | "wrong_input"
+  | "not_allowed"
+  | "encrypted_input"
+  | "engine_failure";
 
 /** The object every export throws on failure. Extra fields depend on the code. */
 export interface AriadError {
@@ -287,6 +350,97 @@ pub fn stamp_package(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8
             },
         ))
     })
+}
+
+/// Lists every registered document tool whose supported runtimes include `wasm`.
+#[wasm_bindgen(js_name = listTools, unchecked_return_type = "ToolDescriptor[]")]
+pub fn list_tools() -> Result<JsValue, JsValue> {
+    to_js(&api::list_tools())
+}
+
+/// Executes a browser-capable document tool in memory.
+///
+/// Rejects with `limit_exceeded` when the summed byte size of `inputs` exceeds `budgetBytes`
+/// (supplied by the TypeScript worker layer). Calls `ariad-core::tools::access` with the
+/// browser plan (`free` by default, or `pro` when the optional `entitled` flag is `true`);
+/// browser tier enforcement is advisory because WebAssembly runs on user-controlled hardware.
+#[wasm_bindgen(js_name = runTool, unchecked_return_type = "ToolRunResult")]
+pub fn run_tool(
+    #[wasm_bindgen(unchecked_param_type = "Uint8Array[]")] inputs: Vec<js_sys::Uint8Array>,
+    names: Vec<String>,
+    #[wasm_bindgen(js_name = toolId)] tool_id: &str,
+    #[wasm_bindgen(js_name = paramsJson)] params_json: &str,
+    #[wasm_bindgen(js_name = budgetBytes)] budget_bytes: f64,
+    entitled: Option<bool>,
+) -> Result<JsValue, JsValue> {
+    let budget = api::parse_budget_bytes(budget_bytes).map_err(|e| to_js_error(&e))?;
+    let total_bytes = inputs
+        .iter()
+        .map(|arr| u64::from(arr.byte_length()))
+        .fold(0u64, u64::saturating_add);
+    api::check_budget(total_bytes, budget).map_err(|e| to_js_error(&e))?;
+
+    let input_vecs: Vec<Vec<u8>> = inputs.iter().map(js_sys::Uint8Array::to_vec).collect();
+    let run = api::run_tool(
+        &input_vecs,
+        &names,
+        tool_id,
+        params_json,
+        budget,
+        entitled.unwrap_or(false),
+    )
+    .map_err(|e| to_js_error(&e))?;
+
+    tool_run_to_js(&run)
+}
+
+fn tool_run_to_js(run: &api::ToolRun) -> Result<JsValue, JsValue> {
+    let artifacts = js_sys::Array::new();
+    for artifact in &run.artifacts {
+        let entry = to_js(artifact)?;
+        js_sys::Reflect::set(
+            &entry,
+            &JsValue::from_str("bytes"),
+            &js_sys::Uint8Array::from(artifact.bytes.as_slice()),
+        )?;
+        artifacts.push(&entry);
+    }
+
+    let bytes = js_sys::Uint8Array::from(run.bytes.as_slice());
+    let warnings = to_js(&run.warnings)?;
+
+    if let Some(ref data) = run.data {
+        let result = to_js(data)?;
+        let data_clone = to_js(data)?;
+        define_hidden_prop(&result, "tool", &JsValue::from_str(run.tool))?;
+        define_hidden_prop(&result, "format", &JsValue::from_str(run.format))?;
+        define_hidden_prop(&result, "media_type", &JsValue::from_str(run.media_type))?;
+        define_hidden_prop(&result, "extension", &JsValue::from_str(run.extension))?;
+        define_hidden_prop(&result, "bytes", &bytes.into())?;
+        define_hidden_prop(&result, "artifacts", &artifacts.into())?;
+        define_hidden_prop(&result, "data", &data_clone)?;
+        define_hidden_prop(&result, "warnings", &warnings)?;
+        Ok(result)
+    } else {
+        let result = to_js(run)?;
+        js_sys::Reflect::set(&result, &JsValue::from_str("bytes"), &bytes)?;
+        js_sys::Reflect::set(&result, &JsValue::from_str("artifacts"), &artifacts)?;
+        js_sys::Reflect::set(&result, &JsValue::from_str("data"), &JsValue::NULL)?;
+        Ok(result)
+    }
+}
+
+fn define_hidden_prop(target: &JsValue, key: &str, value: &JsValue) -> Result<(), JsValue> {
+    let Some(obj) = target.dyn_ref::<js_sys::Object>() else {
+        return Ok(());
+    };
+    let desc = js_sys::Object::new();
+    js_sys::Reflect::set(&desc, &JsValue::from_str("value"), value)?;
+    js_sys::Reflect::set(&desc, &JsValue::from_str("enumerable"), &JsValue::FALSE)?;
+    js_sys::Reflect::set(&desc, &JsValue::from_str("configurable"), &JsValue::TRUE)?;
+    js_sys::Reflect::set(&desc, &JsValue::from_str("writable"), &JsValue::TRUE)?;
+    js_sys::Object::define_property(obj, &JsValue::from_str(key), &desc);
+    Ok(())
 }
 
 fn bridge_result(
