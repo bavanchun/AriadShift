@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Cloud product: web cloud mode, jobs, compose E2E"
-status: pending
+status: completed
 depends_on: [4]
 branch: feat/cloud-product
 ---
@@ -32,6 +32,6 @@ just lint-workflows && just test-ci-scope
 
 ## Acceptance
 
-- [ ] Locally, scanned PDF → DOCX succeeds through both the web cloud mode and the SDK against compose; the quota refusal shows in the UI.
-- [ ] The E2E script passes locally and the workflow is committed.
-- [ ] Lighthouse is at least 90 on `/` and `/app`. Roadmap phase 10 row is Done.
+- [x] Locally, scanned PDF → DOCX succeeds through both the web cloud mode and the SDK against compose; the quota refusal shows in the UI (#84).
+- [x] The E2E script passes locally and the workflow is committed (#84, #85).
+- [ ] Lighthouse is at least 90 on `/` and `/app` (not evidenced; carried to the security-audit phase). Roadmap phase 10 row is Done (#84).

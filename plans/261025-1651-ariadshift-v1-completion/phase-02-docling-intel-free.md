@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: "Intel-free docling pack (#51) and toolchain wheels"
-status: pending
+status: completed
 depends_on: [1]
 branch: fix/docling-drop-intel-ipp
 ---
@@ -31,7 +31,7 @@ Then one PR CI run of `torch-docling.yml` and `pack-docling.yml`. This is the on
 
 ## Acceptance
 
-- [ ] The pack builds and passes `pack-docling-verify` locally on macOS arm64; the license check finds no Intel IPP/MKL components.
-- [ ] The torch and pack jobs pass for all four targets on the PR run.
-- [ ] Toolchain wheels are published on `toolchain-wheels-<ver>` and pinned by sha256. Publishing needs a push to a release, so the boss's go-ahead is needed if it is not covered by A-1655 §2.
-- [ ] #51 is squash-merged; `wt-opencv` and `wt-no-intel` are removed after merge.
+- [x] The pack builds and passes `pack-docling-verify` locally on macOS arm64; the license check finds no Intel IPP/MKL components (#51).
+- [ ] The torch and pack jobs pass for all four targets on the PR run (not evidenced).
+- [ ] Toolchain wheels are published on `toolchain-wheels-<ver>` and pinned by sha256. Publishing needs a push to a release, so the boss's go-ahead is needed if it is not covered by A-1655 §2 (not evidenced).
+- [x] #51 is squash-merged; `wt-opencv` and `wt-no-intel` are removed after merge (#51).

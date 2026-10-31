@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: "Cloud foundation: OpenAPI, SDK, auth, compose, images"
-status: pending
+status: completed
 depends_on: [1]
 branch: feat/cloud-foundation
 ---
@@ -34,7 +34,7 @@ just lint-workflows
 
 ## Acceptance
 
-- [ ] The OpenAPI file is committed and its drift test passes; the SDK builds from it and its tests pass.
-- [ ] Locally, sign-up → sign-in → API key works through the auth service, `pnpm --filter web build` still produces the static export,, and the server accepts both the JWT and the API key on `/v1/jobs`.
-- [ ] `docker compose --profile core up` is healthy with no external accounts.
-- [ ] `images.yml` passes `just lint-workflows`. Decision Log rows exist for new choices (SDK generator).
+- [x] The OpenAPI file is committed and its drift test passes; the SDK builds from it and its tests pass (#53).
+- [x] Locally, sign-up → sign-in → API key works through the auth service, `pnpm --filter web build` still produces the static export,, and the server accepts both the JWT and the API key on `/v1/jobs` (#53).
+- [x] `docker compose --profile core up` is healthy with no external accounts (#53).
+- [x] `images.yml` passes `just lint-workflows`. Decision Log rows exist for new choices (SDK generator) (#53).

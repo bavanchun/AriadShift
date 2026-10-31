@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "v0.2.0 release prep"
-status: pending
+status: in-progress
 depends_on: [1, 2]
 branch: release/v0.2.0
 ---

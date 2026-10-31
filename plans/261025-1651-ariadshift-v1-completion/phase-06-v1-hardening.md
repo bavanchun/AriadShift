@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: "v1 hardening: remote MCP, OS integration, Seatbelt, API freeze, fuzz"
-status: pending
+status: completed
 depends_on: [4]
 branch: feat/v1-hardening
 ---
@@ -31,7 +31,7 @@ cargo run -p ariad-cli -- doctor
 
 ## Acceptance
 
-- [ ] MCP Inspector connects over HTTP through OAuth (and with an API key), lists the tools and converts an uploaded file.
-- [ ] The macOS Quick Action opens the app with the selection; the Windows and Linux registrations are present in the bundle outputs.
-- [ ] `doctor` reports Seatbelt status; an engine write outside its job dir is denied cleanly.
-- [ ] The snapshot test passes and fails on a deliberate field removal. The new fuzz targets run 60 s clean.
+- [x] MCP Inspector connects over HTTP through OAuth (and with an API key), lists the tools and converts an uploaded file (#103).
+- [x] The macOS Quick Action opens the app with the selection; the Windows and Linux registrations are present in the bundle outputs (#103).
+- [x] `doctor` reports Seatbelt status; an engine write outside its job dir is denied cleanly (#103).
+- [x] The snapshot test passes and fails on a deliberate field removal. The new fuzz targets run 60 s clean (#103).

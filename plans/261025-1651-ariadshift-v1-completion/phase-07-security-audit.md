@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Security audit and fixes"
-status: pending
+status: on-hold
 depends_on: [5, 6]
 branch: fix/v1-security-audit
 ---
