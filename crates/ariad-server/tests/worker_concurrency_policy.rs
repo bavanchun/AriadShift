@@ -97,10 +97,14 @@ fn supported_native_parallelism_and_positive_config_survive() {
     ] {
         assert!(sandbox::preflight_worker_with_support(mode, 2, &support).is_ok());
     }
+    let work_dir = std::env::temp_dir().join("ariad-concurrency-policy");
+    let storage = url::Url::from_directory_path(&work_dir)
+        .unwrap()
+        .to_string();
     let env = Env::from_pairs([
-        ("ARIAD_STORAGE_URL", "file:///tmp/ariad-concurrency-policy"),
+        ("ARIAD_STORAGE_URL", storage.as_str()),
         ("ARIAD_ENGINE_PROGRAM", "ashift"),
-        ("ARIAD_WORK_DIR", "/tmp/ariad-concurrency-policy"),
+        ("ARIAD_WORK_DIR", work_dir.to_str().unwrap()),
         ("ARIAD_WORKER_CONCURRENCY", "2"),
         ("ARIAD_SANDBOX", "best-effort"),
     ]);
