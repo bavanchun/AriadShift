@@ -2631,40 +2631,85 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     assert_eq!(empty_resp["result"]["structuredContent"], json!([]));
 
     // 3. run_doc_tool pdf.info without output_dir (inline JSON only, no file written)
-    client.send_request(
-        702,
-        "tools/call",
-        json!({
-            "name": "run_doc_tool",
-            "arguments": {
-                "tool": "pdf.info",
-                "inputs": [sample_in]
-            }
-        }),
-    );
-    let info_resp = client.read_response(702);
-    assert_eq!(info_resp["result"]["isError"], false, "{info_resp}");
-    let structured = &info_resp["result"]["structuredContent"];
-    assert_eq!(structured["tool"], "pdf.info");
-    assert_eq!(structured["engine"], "ariad-pdf");
-    assert_eq!(structured["artifacts"], json!([]));
-    let inline_json = &structured["inline_json"];
-    assert_eq!(inline_json["page_count"], 1);
-    assert_eq!(inline_json["repaired_xref"], true);
-    assert!(inline_json["warnings"].is_array());
+    // For three corpus files (`multipage-20`, `broken-xref`, `rotated-pages`), assert that
+    // the MCP `run_doc_tool` structured result (`structuredContent["inline_json"]`) is
+    // byte-equal after canonical serialisation (`serde_json::to_vec` and `to_string_pretty`)
+    // to the CLI `ashift tool pdf.info <file> --json` output and to the truth file `pdf_info`.
+    for (idx, stem) in ["multipage-20", "broken-xref", "rotated-pages"]
+        .into_iter()
+        .enumerate()
+    {
+        let src = repository_root().join(format!("fixtures/pdf-tools/{stem}.pdf"));
+        let copied = temp_dir.path().join(format!("{stem}.pdf"));
+        if !copied.exists() {
+            fs::copy(&src, &copied).unwrap();
+        }
+        let req_id = 702 + idx as u64;
+        client.send_request(
+            req_id,
+            "tools/call",
+            json!({
+                "name": "run_doc_tool",
+                "arguments": {
+                    "tool": "pdf.info",
+                    "inputs": [copied]
+                }
+            }),
+        );
+        let info_resp = client.read_response(req_id);
+        assert_eq!(info_resp["result"]["isError"], false, "{info_resp}");
+        let structured = &info_resp["result"]["structuredContent"];
+        assert_eq!(structured["tool"], "pdf.info");
+        assert_eq!(structured["engine"], "ariad-pdf");
+        assert_eq!(structured["artifacts"], json!([]));
+        let inline_json = &structured["inline_json"];
 
-    // Verify inline_json matches truth file pdf_info
-    let truth_raw =
-        fs::read_to_string(repository_root().join("fixtures/pdf-tools/broken-xref.truth.json"))
-            .unwrap();
-    let truth_val: Value = serde_json::from_str(&truth_raw).unwrap();
-    assert_eq!(inline_json, &truth_val["pdf_info"]);
+        let cli_output = Command::new(env!("CARGO_BIN_EXE_ashift"))
+            .args(["tool", "pdf.info"])
+            .arg(&copied)
+            .arg("--json")
+            .env("ASHIFT_PANDOC", pandoc_path())
+            .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path())
+            .output()
+            .expect("run ashift tool pdf.info --json");
+        assert!(
+            cli_output.status.success(),
+            "CLI pdf.info failed on {stem}: {}",
+            String::from_utf8_lossy(&cli_output.stderr)
+        );
+        let cli_json: Value =
+            serde_json::from_slice(&cli_output.stdout).expect("parse CLI pdf.info JSON");
+
+        // Canonical byte-for-byte equality between MCP inline_json and CLI --json output.
+        assert_eq!(
+            serde_json::to_vec(inline_json).expect("serialize MCP inline_json"),
+            serde_json::to_vec(&cli_json).expect("serialize CLI json"),
+            "canonical compact JSON bytes must match between MCP and CLI for {stem}"
+        );
+        assert_eq!(
+            serde_json::to_string_pretty(inline_json).expect("pretty MCP inline_json"),
+            String::from_utf8_lossy(&cli_output.stdout).trim(),
+            "canonical pretty JSON bytes must match CLI stdout for {stem}"
+        );
+
+        // Verify both match the truth file pdf_info (defaulting missing repaired_xref to false).
+        let truth_raw = fs::read_to_string(
+            repository_root().join(format!("fixtures/pdf-tools/{stem}.truth.json")),
+        )
+        .unwrap();
+        let truth_val: Value = serde_json::from_str(&truth_raw).unwrap();
+        let mut expected_pdf_info = truth_val["pdf_info"].clone();
+        if let Value::Object(ref mut map) = expected_pdf_info {
+            map.entry("repaired_xref").or_insert(Value::Bool(false));
+        }
+        assert_eq!(inline_json, &expected_pdf_info, "truth mismatch for {stem}");
+    }
 
     // 4. run_doc_tool pdf.info with output_dir publishes artifact and registers resource_link
     let out_dir = temp_dir.path().join("published");
     fs::create_dir_all(&out_dir).unwrap();
     client.send_request(
-        703,
+        706,
         "tools/call",
         json!({
             "name": "run_doc_tool",
@@ -2675,11 +2720,11 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
             }
         }),
     );
-    let pub_resp = client.read_response(703);
+    let pub_resp = client.read_response(706);
     let expected_artifact = out_dir.join("broken-xref.info.json");
     let resource_uri = converted_resource_uri(&pub_resp, &expected_artifact);
-    client.send_request(704, "resources/read", json!({ "uri": resource_uri }));
-    let read_resp = client.read_response(704);
+    client.send_request(707, "resources/read", json!({ "uri": resource_uri }));
+    let read_resp = client.read_response(707);
     assert!(read_resp.get("result").is_some(), "{read_resp}");
 
     client.close_and_assert_purity();
