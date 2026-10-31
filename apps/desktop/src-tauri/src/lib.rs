@@ -3,6 +3,8 @@ pub mod bindings;
 mod command_table;
 pub mod deep_link;
 pub mod file_open;
+#[cfg(test)]
+mod finder_file_links_tests;
 #[cfg(any(windows, test))]
 mod launch_gate;
 pub mod types;

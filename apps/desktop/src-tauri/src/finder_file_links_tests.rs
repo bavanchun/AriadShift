@@ -1,4 +1,4 @@
-use ariad_desktop::{deep_link, file_open, types::Profile};
+use crate::{deep_link, file_open, types::Profile};
 
 #[test]
 fn finder_file_urls_belong_to_file_open() {

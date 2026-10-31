@@ -284,6 +284,17 @@ The same table declares the application command manifest and generates the
 `desktop-commands` permission set, granted only to the local main window. Its
 permissions are regenerated and checked alongside the TypeScript bindings.
 
+The file-open and deep-link library assertions run in the unit-test harness.
+They do not exercise the executable, so they do not need Cargo's automatic
+unoptimized app build for integration targets. Installer builds still link the
+full app. Warning denial remains enabled for every target.
+
+Known v1.x follow-up: reduce the ariad-desktop link size so the compact-unwind
+limit is not exceeded. The unoptimized macOS app can exceed Apple's 16 MiB
+`__eh_frame` offset limit, which emits a linker performance warning and fails
+builds with warnings denied. Test placement does not remove that debug-build
+limitation or alter panic unwinding.
+
 `vendor/tauri-plugin-deep-link` preserves the published stable 2.6.2 crate with
 one Linux compatibility change: its `ini::ParseOption` initializer fills added
 rust-ini 0.21.3 fields from `Default`, retaining the explicit quote/escape flags.
