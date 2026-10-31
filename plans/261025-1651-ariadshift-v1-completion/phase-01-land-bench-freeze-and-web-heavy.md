@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: "Land #49 (bench, contract freeze) then #48 (web heavy routes)"
-status: pending
+status: completed
 depends_on: []
 branches: [feat/heavy-route-bench-and-freeze, feat/web-heavy-routes]
 ---
@@ -31,6 +31,6 @@ just web-e2e     # #48 only
 
 ## Acceptance
 
-- [ ] #49 is merged, then #48, each green locally with no open critical or high finding.
-- [ ] The schema drift tests show `ariad-engine/1` and `ariad-ir/1` frozen; `docs/bench-report.md` covers the heavy routes.
-- [ ] The browser runs the DOCX, EPUB and PDF routes (#48 E2E).
+- [x] #49 is merged, then #48, each green locally with no open critical or high finding (#49, #48).
+- [x] The schema drift tests show `ariad-engine/1` and `ariad-ir/1` frozen; `docs/bench-report.md` covers the heavy routes (#49).
+- [x] The browser runs the DOCX, EPUB and PDF routes (#48 E2E) (#48).

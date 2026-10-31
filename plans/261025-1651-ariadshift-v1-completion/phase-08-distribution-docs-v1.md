@@ -1,7 +1,7 @@
 ---
 phase: 8
 title: "Distribution, docs, v1.0.0 prep"
-status: pending
+status: on-hold
 depends_on: [7]
 branch: feat/v1-distribution
 ---

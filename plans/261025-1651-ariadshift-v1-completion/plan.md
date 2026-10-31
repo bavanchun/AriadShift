@@ -1,7 +1,7 @@
 ---
 title: "AriadShift v1 completion"
 description: "Land the open PRs, ship the Intel-free docling pack and v0.2.0, then finish cloud web/auth/SDK/self-host, v1 hardening, the security audit, distribution and the v1.0.0 release."
-status: pending
+status: in-progress
 priority: P1
 effort: "8 phases, 31 worker tasks"
 branch: dev
@@ -17,6 +17,10 @@ Continues [roadmap 1b → v1](../261022-2128-roadmap-1b-to-v1-product/plan.md). 
 
 ## Verified state (2026-10-25 17:00, local `dev` = `origin/dev` = `826d817`, dev CI green)
 
+> [!NOTE]
+> Verified state update (2026-10-31, local `dev` = `origin/dev` = `874a19d`):
+> PRs #49, #48, #51, #53, #84 (#85), and #103 have merged into `dev`. Security fixes #88–#102 are merged. Cloud foundation, cloud product and v1 hardening are landed. P1, P2, P4, P5, and P6 are complete. P3 (v0.2.0 release) is in progress; P7 and P8 are on hold for the next stage.
+
 - Already in `dev`, with file content verified identical: `feat/cloud-backend`, `feat/pdf-typst-office-routes`, `feat/web-local-app`, `feat/desktop-app`, `fix/cloud-hardening-3`, `fix/docling-followups-3`, `pdf-review-fix`, `fix/web-review-followups`, `fix/web-converter-polish`. Their worktrees are being removed (A-1655 §8); `wt-cloud`, `wt-pdf-office` and `wt-web` have old uncommitted edits that are not in `dev` (see PLAN-READY).
 - Open PRs:
   - #49 `feat/heavy-route-bench-and-freeze`: CONFLICTING, only in `docs/ci.md`; 5 behind.
@@ -29,14 +33,14 @@ Continues [roadmap 1b → v1](../261022-2128-roadmap-1b-to-v1-product/plan.md). 
 
 | # | Phase | Tasks | Depends on | Status |
 |---|---|---|---|---|
-| 1 | [Land #49 then #48](./phase-01-land-bench-freeze-and-web-heavy.md) | 2 + coordinator | none | Pending approval |
-| 2 | [Intel-free docling pack (#51)](./phase-02-docling-intel-free.md) | 3 | 1 | Pending |
-| 3 | [v0.2.0 release prep](./phase-03-release-0-2-prep.md) | 1 + coordinator | 1, 2 | Pending |
-| 4 | [Cloud foundation: OpenAPI, SDK, auth, compose, images](./phase-04-cloud-foundation.md) | 5 | 1 | Pending |
-| 5 | [Cloud product: web cloud mode, jobs, compose E2E](./phase-05-cloud-product.md) | 5 | 4 | Pending |
-| 6 | [v1 hardening: remote MCP, OS integration, Seatbelt, API freeze, fuzz](./phase-06-v1-hardening.md) | 5 | 4 | Pending |
-| 7 | [Security audit and fixes](./phase-07-security-audit.md) | 4 | 5, 6 | Pending |
-| 8 | [Distribution, docs, v1.0.0 prep](./phase-08-distribution-docs-v1.md) | 5 + coordinator | 7 | Pending |
+| 1 | [Land #49 then #48](./phase-01-land-bench-freeze-and-web-heavy.md) | 2 + coordinator | none | Done (#49, #48) |
+| 2 | [Intel-free docling pack (#51)](./phase-02-docling-intel-free.md) | 3 | 1 | Done (#51); four-target PR runs and published toolchain wheels not evidenced |
+| 3 | [v0.2.0 release prep](./phase-03-release-0-2-prep.md) | 1 + coordinator | 1, 2 | In progress (v0.2.0 release, owner decision 2026-10-31) |
+| 4 | [Cloud foundation: OpenAPI, SDK, auth, compose, images](./phase-04-cloud-foundation.md) | 5 | 1 | Done (#53) |
+| 5 | [Cloud product: web cloud mode, jobs, compose E2E](./phase-05-cloud-product.md) | 5 | 4 | Done (#84, #85); Lighthouse not evidenced |
+| 6 | [v1 hardening: remote MCP, OS integration, Seatbelt, API freeze, fuzz](./phase-06-v1-hardening.md) | 5 | 4 | Done (#103) |
+| 7 | [Security audit and fixes](./phase-07-security-audit.md) | 4 | 5, 6 | On hold - next stage (security-fix PRs #88-#102 merged; audit report and Lighthouse >= 90 still open) |
+| 8 | [Distribution, docs, v1.0.0 prep](./phase-08-distribution-docs-v1.md) | 5 + coordinator | 7 | On hold - next stage |
 
 Max-throughput mode (A-1707): independent phases overlap in separate SSD worktrees, 5 workers stay busy across them, and one global build queue runs one build/test command at a time. Wave 1: phase 1 (coordinator review/merge) + phase 2 (#51, 3 workers) + phase 4 T1/T4 (OpenAPI, compose; 2 workers). Wave 2: the rest of phase 4, then phase 5 alongside phase 6 (disjoint files: web/infra vs server-mcp/desktop/host/fuzz), with phase 3 run by the coordinator in between. Wave 3: phases 7 and 8.
 
@@ -65,12 +69,12 @@ Model routing: before 17:00, Opus 5.5 High only. After 17:00, the brief's table 
 
 ## Acceptance criteria (v1)
 
-- [ ] #49, #48 and #51 are merged. `ariad-engine/1` and `ariad-ir/1` are frozen, and the docling pack contains no Intel components.
+- [x] #49, #48 and #51 are merged (#49, #48, #51). `ariad-engine/1` and `ariad-ir/1` are frozen, and the docling pack contains no Intel components.
 - [ ] v0.2.0 is fully prepared: notes, version, a green local release dry run and a verified pack build. The tag waits only on the user.
-- [ ] `docker compose up` (profiles core, office, docling) runs end to end with no external accounts. Scanned PDF → DOCX succeeds in the sandboxed worker, and a quota refusal is enforced. The compose E2E workflow is committed.
-- [ ] `schemas/openapi.v1.json` has a drift test; `packages/sdk` is generated from it and used by `apps/web`; `/v1` is frozen by a snapshot test.
-- [ ] Better Auth sign-up, sign-in, API keys and jobs work against the server's JWT/JWKS and API-key auth.
-- [ ] Remote MCP (Streamable HTTP, OAuth) works. OS integration exists on three platforms. macOS Seatbelt is best effort and reported by `doctor`.
+- [x] `docker compose up` (profiles core, office, docling) runs end to end with no external accounts. Scanned PDF → DOCX succeeds in the sandboxed worker, and a quota refusal is enforced. The compose E2E workflow is committed (#53, #84).
+- [x] `schemas/openapi.v1.json` has a drift test; `packages/sdk` is generated from it and used by `apps/web`; `/v1` is frozen by a snapshot test (#53, #84, #103).
+- [x] Better Auth sign-up, sign-in, API keys and jobs work against the server's JWT/JWKS and API-key auth (#53, #84).
+- [x] Remote MCP (Streamable HTTP, OAuth) works. OS integration exists on three platforms. macOS Seatbelt is best effort and reported by `doctor` (#103).
 - [ ] The audit has zero open high findings. Lighthouse is at least 90 on `/` and `/app`.
 - [ ] Unsigned desktop installers ship with checksums and Minisign signatures, and the first-run guide is published. The Homebrew formula is generated. README, `docs/` and ARCHITECTURE.md ("v1") match behaviour.
 - [ ] v1.0.0 is fully prepared. The promotion and tag wait only on the user.
