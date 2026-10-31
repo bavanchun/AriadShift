@@ -106,7 +106,7 @@ Copies live beneath a per-process directory named `ashift-mcp-stage-<pid>-<rando
 
 ## Tools Reference
 
-The server exposes 4 tools:
+The server exposes 6 tools:
 
 ### 1. `list_engines`
 
@@ -144,6 +144,28 @@ Executes a document conversion in an isolated workspace, promotes the output to 
   - Text content block containing the JSON summary.
   - Inline Markdown: For Markdown targets where output size is `<= 256 KiB`, the complete text is inlined in the response. If output exceeds 256 KiB, the raw text is omitted with an explanatory note and can be read via `resources/read`.
   - Registered `file://` resource for the generated output file.
+
+### 5. `list_doc_tools`
+
+Lists registered document manipulation tools (`ariad-core::tools`) whose supported runtimes include `local`, optionally filtered by functional group, together with the live availability status (`engine_status`: `available`, `missing`, `incompatible`) of each tool's backing engine.
+- **Parameters**:
+  - `group` (string, optional): Filter tools by group (`organize`, `convert`, `optimize`, `security`, `overlay`, `ocr`, `annotate`, `forms`, `sign`, `redact`, `compare`, `edit`, `ai`, `automation`).
+- **Returns**: Array of tool descriptors (`id`, `version`, `group`, `summary`, `inputs`, `input_formats`, `output_format`, `params_schema`, `tier`, `runtimes`, `engine`, `engine_status`, `secret_params`).
+
+### 6. `run_doc_tool`
+
+Executes a registered document manipulation tool under the same `--allow-dir` path confinement, `Limits`, and capability-based atomic output publishing rules as `convert`.
+- **Parameters**:
+  - `tool` (string, required): Canonical tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
+  - `inputs` (array of strings, required): Input file paths or `file://` URIs within allowed directories.
+  - `output_dir` (string, optional): Destination directory within allowed directories for published outputs (defaults to the first input's parent directory).
+  - `output` (string, optional): Explicit output file or directory path within allowed directories.
+  - `params` (object, optional): Tool parameters matching the tool's `params_schema`. Note: in this phase, `secret_put` secret handles are not yet implemented, so any secret parameter (`x-ariad-secret: true`) or `$secret` reference passed over MCP is rejected with `code: "invalid_params"` (`exit_code: 9`).
+  - `overwrite` (boolean, optional): Set to `true` to replace existing destination files (only honoured when the server was launched with `--allow-overwrite`). Defaults to `false`.
+- **Returns**:
+  - `structuredContent` matching `ToolOutcome` (`tool`, `version`, `engine`, `artifacts`, `warnings`, `metrics`, and `inline_json` for JSON-emitting tools such as `pdf.info` when `<= 256 KiB`).
+  - One `resource_link` content block (`file://` URI, `mime_type`, byte `size`) per published output artifact, registered in the session's resource store for `resources/read`.
+  - On failure, returns `isError: true` with `code`, `exit_code` (`8` `unknown_tool`, `9` `invalid_params`, `10` `wrong_input`, `11` `tier_not_allowed`, `12` `encrypted_input`, `6` `destination_exists`, `5` `tool_missing`/`sandbox_unavailable`, `4` `limit_exceeded`, `2` `usage`, `1` `engine_failure`/`io`, `130` `interrupted`), and `message`.
 
 ---
 

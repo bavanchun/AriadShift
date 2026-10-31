@@ -1,0 +1,33 @@
+---
+source: crates/ariad-cli/tests/tools_cli.rs
+expression: tools_json
+---
+[
+  {
+    "engine": "ariad-pdf",
+    "group": "organize",
+    "id": "pdf.info",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.info`.\n\n`pdf.info` takes no parameters (`{}`) and rejects any unknown fields.",
+      "title": "InfoParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Inspect PDF version, page count, encryption status, geometry, metadata, and structural features.",
+    "tier": "free",
+    "version": "1"
+  }
+]

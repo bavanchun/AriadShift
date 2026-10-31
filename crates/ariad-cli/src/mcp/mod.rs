@@ -154,7 +154,7 @@ impl ServerHandler for McpServer {
         )
         .with_server_info(Implementation::new("ashift", env!("CARGO_PKG_VERSION")))
         .with_instructions(
-            "AriadShift document conversion server. Exposes tools: list_engines, inspect, plan, convert. \
+            "AriadShift document conversion server. Exposes tools: list_engines, inspect, plan, convert, list_doc_tools, run_doc_tool. \
              Path confinement: all file operations require explicit path authorization via --allow-dir or client roots."
         )
     }

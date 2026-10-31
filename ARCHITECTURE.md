@@ -226,10 +226,11 @@ Diagnostic and introspection commands:
 - `ashift engines [--json]`: lists registered engines, versions, licenses, and supported routes from the availability provider.
 - `ashift doctor [--json]`: checks Pandoc availability and version, temporary workspace creation/cleanup, reports stale workspace counts without deleting them, engine describe round trips, and sandbox mode, Landlock ABI and seccomp availability; non-required checks report the engine pack data directory, the compiled-in pack signing keys and each installed pack.
 - `ashift engines install <NAME> [--version <V>] [--manifest <URL|PATH> | --from <DIR>] [--json]`, `ashift engines remove <NAME> [--version <V>]` and `ashift engines verify <NAME> [--version <V>]` manage signed engine packs (§7.1, [docs/packs.md](docs/packs.md)). `ashift engines` lists installed packs; MCP `list_engines` includes them, but installing stays a CLI and desktop operation.
+- `ashift tools [--group <G>] [--json]`, `ashift tool <ID> <INPUT>... [-o <DIR|FILE>] [--param k=v]... [--params-json <FILE|->] [--secret name=@file|name=-]... [--overwrite] [--json]`, and `ashift recipe run <RECIPE.JSON> <INPUT>... -o <DIR> [--yes] [--overwrite] [--json]` expose the typed document manipulation tool registry (`ariad_core::tools`, [docs/tools.md](docs/tools.md)) and pipeline recipes (`ariad-recipe/1`), adding exit codes `8` (`unknown_tool`), `9` (`invalid_params`), `10` (`wrong_input`), `11` (`tier_not_allowed`), and `12` (`encrypted_input`).
 
 ### Model Context Protocol (MCP) Server
 
-`ashift mcp [--allow-dir <DIR>...] [--allow-overwrite]` runs an MCP server over standard I/O (stdio) using `rmcp 3.5.1`. It exposes four tools (`list_engines`, `inspect`, `plan`, `convert`) whose structured output schemas match their CLI JSON equivalents and returns `structuredContent` matching CLI `--json` value-for-value:
+`ashift mcp [--allow-dir <DIR>...] [--allow-overwrite]` runs an MCP server over standard I/O (stdio) using `rmcp 3.5.1`. It exposes six tools (`list_engines`, `inspect`, `plan`, `convert`, `list_doc_tools`, `run_doc_tool`) whose structured output schemas match their CLI JSON equivalents and returns `structuredContent` matching CLI `--json` value-for-value:
 - **Confinement and Security**: Enforces path confinement (`ariad_host::confine`). File access is confined to `--allow-dir` roots and client-advertised workspace roots synchronized via `roots/list` and `notifications/roots/list_changed`. Rejects symlink/junction escapes, hidden path components, non-regular inputs, mismatched output extensions, and same-file input/output collisions. Relative paths resolve against the server's working directory.
 - **Capability-Based Promotion**: Conversions write outputs inside isolated workspaces (`ariad_host::workspace`) and promote them into the destination using `cap_std::fs::Dir` capability handles opened relative to the confined root to mitigate race-condition directory swap attacks. Replacing existing files requires `--allow-overwrite` on the server and `overwrite: true` on the tool call; unforced publication uses hard-link creation to guarantee atomic refusal without clobbering.
 - **Resources & Inlining**: Successful conversions register `file://` URIs for `resources/read`. Markdown outputs `<= 256 KiB` are inlined directly into tool results.
@@ -246,6 +247,11 @@ Diagnostic and introspection commands:
 | 4 | limit exceeded |
 | 5 | tool missing, wrong version, or required sandbox unavailable (prints a hint) |
 | 6 | destination exists |
+| 8 | unknown tool |
+| 9 | invalid tool parameters, secret rule violation, or unconfirmed imported recipe |
+| 10 | wrong tool input count or format |
+| 11 | tier not allowed or Free-plan batch quota exceeded |
+| 12 | encrypted input requiring password or `pdf.decrypt` |
 | 130 | interrupted |
 
 Warnings are written to stderr as `warning[<code>]: <message>`. Progress is written to stderr only when stderr is a TTY. Stdout contains human output (or the output path for `convert`), or exactly one JSON document when `--json` is specified. SIGTERM and SIGHUP (Unix), Ctrl-C, and Ctrl-Break (Windows) cancel the run, kill the engine process tree, delete the workspace, return 130, and leave the destination untouched. Failures never leave partial output; `--overwrite` replaces the destination only after a successful conversion. `ASHIFT_PANDOC` selects the Pandoc executable; `ASHIFT_SOFFICE` selects a system LibreOffice (>=24.2); `SOURCE_DATE_EPOCH` fixes Typst PDF, DOCX and EPUB timestamps for reproducible goldens. Commands reuse the same exit-code table. Full reference: [docs/cli.md](docs/cli.md) and [docs/mcp.md](docs/mcp.md).
