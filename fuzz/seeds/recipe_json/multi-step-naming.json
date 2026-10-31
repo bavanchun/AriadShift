@@ -1,0 +1,1 @@
+{"version":"ariad-recipe/1","steps":[{"tool":"pdf.info"},{"convert":{"to":"md"}}],"naming":"{stem}.{n}.{date}.md"}
