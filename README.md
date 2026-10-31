@@ -35,9 +35,9 @@ irm https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-i
 
 Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`, and ships with a `.sha256` checksum.
 
-### Package managers (not yet published)
+### Package managers
 
-The release pipeline is ready for Homebrew, crates.io and WinGet, but v0.2.0 has not reached them yet: the Homebrew formula and the crates were not published, and no WinGet submission exists. These commands work once each channel is published:
+v0.2.0 is published to crates.io (ariad-core, ariad-typst, ariad-host, ariad-cli) and the Homebrew tap; the shell installer, PowerShell installer and cargo-binstall paths passed the release smoke run; the Homebrew install smoke failed on the runner because Homebrew refuses the tap as untrusted (#110), so the Homebrew path is published but not confirmed; no WinGet submission exists yet.
 
 ```sh
 # Homebrew (macOS & Linux)
