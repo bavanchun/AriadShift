@@ -1031,10 +1031,19 @@ mod tests {
             let file_name = truth_path.file_name().unwrap().to_str().unwrap();
             let stem = file_name.strip_suffix(".truth.json").unwrap();
             let truth = read_pdf_truth(stem);
-            let expected_value = truth
+            let mut expected_value = truth
                 .get("pdf_info")
                 .cloned()
                 .unwrap_or_else(|| panic!("missing pdf_info in {file_name}"));
+            if stem == "broken-xref" {
+                assert_eq!(
+                    expected_value.get("repaired_xref"),
+                    Some(&Value::Bool(true)),
+                    "broken-xref.truth.json must declare repaired_xref: true"
+                );
+            } else if let Value::Object(ref mut map) = expected_value {
+                map.entry("repaired_xref").or_insert(Value::Bool(false));
+            }
 
             match stem {
                 "encrypted-owner-only" => {
