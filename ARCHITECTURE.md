@@ -97,7 +97,7 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | html5ever | **0.40.1** (MIT OR Apache-2.0) | Native HTML reader in `ariad-core` |
 | process-wrap | **10.0.1** (`tokio1`, `process-group`, `job-object`) | Cross-platform engine process-tree control |
 | tokio-util | **0.7.20** | Bounded NDJSON line framing |
-| unicode-normalization | **0.1.25** | NFC normalization of prose text |
+| unicode-normalization | **0.1.26** | NFC normalization of prose text |
 | sha2 | **0.11.1** | SHA-256 asset identifiers and golden hashes |
 | base64 | **0.23.1** | JSON asset bytes and embedded image data URLs |
 | cap-std | **4.0.3** | Capability-based asset file access |
@@ -114,7 +114,7 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 | directories | **6.0.0** | Platform data directory for packs; its `option-ext` 0.2.0 dependency is MPL-2.0 (per-crate exception) |
 | semver | **1.0.28** | Pack versions and `requires_ashift` |
 | toml | **1.1.8+spec-1.1.0** | Pack manifests, receipts and the pack index in `ariad-host`; fixture and test validation |
-| Dev-only test crates | insta **1.49.0** (`json`, `glob`), jsonschema **0.58.6**, assert_cmd **2.2.2**, quick-xml **0.42.0**, hex **0.4.3**, minisign **0.10.0** (throwaway pack signing keys), rcgen **0.14.10** (`ring`, throwaway TLS certificates) | Test and fixture validation only; never distributed |
+| Dev-only test crates | insta **1.49.0** (`json`, `glob`), jsonschema **0.59.0**, assert_cmd **2.2.2**, quick-xml **0.42.0**, hex **0.4.3**, minisign **0.10.0** (throwaway pack signing keys), rcgen **0.14.10** (`ring`, throwaway TLS certificates) | Test and fixture validation only; never distributed |
 
 ### 2.4 Engines and Infrastructure
 
