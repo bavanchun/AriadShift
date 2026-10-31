@@ -1,4 +1,6 @@
-//! Typed messages for the frozen AriadShift engine protocol.
+//! Typed messages for the AriadShift engine protocol (`/1` frozen and `/2` tool extensions).
+
+pub mod v2;
 
 use std::collections::BTreeMap;
 
@@ -7,6 +9,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::limits::Limits;
+
+pub use v2::{
+    EventV2, MAX_INLINE_PARAMS_BYTES, MessageV2, OutputDir, PROTOCOL_V2, ProtocolV2Error,
+    RequestV2, ToolCapability,
+};
 
 /// The protocol version implemented by this workspace.
 pub const PROTOCOL: &str = "ariad-engine/1";
@@ -378,5 +385,137 @@ mod tests {
             "work_dir": "/tmp",
         });
         assert!(serde_json::from_value::<Request>(json).is_err());
+    }
+
+    #[test]
+    fn v1_request_and_event_golden_snapshots_are_byte_identical() {
+        // Golden /1 snapshots captured prior to adding protocol/v2.rs.
+        // Every /1 request and event must remain byte-for-byte identical.
+        let convert_one_shot = Request::Convert {
+            protocol: PROTOCOL.to_owned(),
+            job: "job_01JABC".to_owned(),
+            input: Input {
+                path: "/work/in/document.ir.json".to_owned(),
+                format: "ariad-ir+json".to_owned(),
+            },
+            output: Output {
+                dir: "/work/out".to_owned(),
+                format: "docx".to_owned(),
+            },
+            work_dir: "/work/tmp".to_owned(),
+            options: BTreeMap::new(),
+            limits: Limits::local(),
+            session_id: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&convert_one_shot).unwrap(),
+            r#"{"op":"convert","protocol":"ariad-engine/1","job":"job_01JABC","input":{"path":"/work/in/document.ir.json","format":"ariad-ir+json"},"output":{"dir":"/work/out","format":"docx"},"work_dir":"/work/tmp","options":{},"limits":{"max_nesting_depth":64,"max_blocks":10000000,"max_front_matter_bytes":65536,"max_archive_entries":20000,"max_decompressed_bytes":4294967296,"max_ir_json_bytes":6442450944}}"#
+        );
+
+        let convert_session = Request::Convert {
+            protocol: PROTOCOL.to_owned(),
+            job: "job-1".to_owned(),
+            input: Input {
+                path: "/work/in/input.json".to_owned(),
+                format: "ariad-ir+json".to_owned(),
+            },
+            output: Output {
+                dir: "/work/out".to_owned(),
+                format: "docx".to_owned(),
+            },
+            work_dir: "/work/tmp".to_owned(),
+            options: BTreeMap::from([("profile".to_owned(), Value::String("editable".to_owned()))]),
+            limits: Limits::local(),
+            session_id: Some("session-7".to_owned()),
+        };
+        assert_eq!(
+            serde_json::to_string(&convert_session).unwrap(),
+            r#"{"op":"convert","protocol":"ariad-engine/1","job":"job-1","input":{"path":"/work/in/input.json","format":"ariad-ir+json"},"output":{"dir":"/work/out","format":"docx"},"work_dir":"/work/tmp","options":{"profile":"editable"},"limits":{"max_nesting_depth":64,"max_blocks":10000000,"max_front_matter_bytes":65536,"max_archive_entries":20000,"max_decompressed_bytes":4294967296,"max_ir_json_bytes":6442450944},"session_id":"session-7"}"#
+        );
+
+        let describe = Request::Describe {
+            protocol: PROTOCOL.to_owned(),
+            job: "job-desc-1".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_string(&describe).unwrap(),
+            r#"{"op":"describe","protocol":"ariad-engine/1","job":"job-desc-1"}"#
+        );
+
+        let capabilities = Event::Capabilities {
+            engine: "pandoc".to_owned(),
+            version: "0.1.0".to_owned(),
+            tool: super::ToolStatus {
+                name: "pandoc".to_owned(),
+                version: Some("3.12".to_owned()),
+                status: super::ToolAvailability::Found,
+            },
+            license: "GPL-2.0-or-later".to_owned(),
+            routes: vec![super::RouteCapability {
+                input: "ariad-ir+json".to_owned(),
+                output: "docx".to_owned(),
+            }],
+            enforces_memory_limit: true,
+            supports_session: false,
+            models: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&capabilities).unwrap(),
+            r#"{"type":"capabilities","engine":"pandoc","version":"0.1.0","tool":{"name":"pandoc","version":"3.12","status":"found"},"license":"GPL-2.0-or-later","routes":[{"input":"ariad-ir+json","output":"docx"}],"enforces_memory_limit":true,"supports_session":false}"#
+        );
+
+        let progress = Event::Progress {
+            stage: "layout".to_owned(),
+            done: Some(12),
+            total: Some(37),
+        };
+        assert_eq!(
+            serde_json::to_string(&progress).unwrap(),
+            r#"{"type":"progress","stage":"layout","done":12,"total":37}"#
+        );
+
+        let warning = Event::Warning {
+            code: "font_missing".to_owned(),
+            message: "A font was substituted".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_string(&warning).unwrap(),
+            r#"{"type":"warning","code":"font_missing","message":"A font was substituted"}"#
+        );
+
+        let artifact = Event::Artifact {
+            path: "/work/out/document.docx".to_owned(),
+            format: "docx".to_owned(),
+        };
+        assert_eq!(
+            serde_json::to_string(&artifact).unwrap(),
+            r#"{"type":"artifact","path":"/work/out/document.docx","format":"docx"}"#
+        );
+
+        let result_ok = Event::Result {
+            ok: true,
+            metrics: Some(BTreeMap::from([
+                ("pages".to_owned(), json!(37)),
+                ("elapsed_ms".to_owned(), json!(8421)),
+            ])),
+            error: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&result_ok).unwrap(),
+            r#"{"type":"result","ok":true,"metrics":{"elapsed_ms":8421,"pages":37}}"#
+        );
+
+        let result_err = Event::Result {
+            ok: false,
+            metrics: None,
+            error: Some(EngineError {
+                code: ErrorCode::ToolMissing,
+                message: "Install Pandoc with `just pandoc`.".to_owned(),
+            }),
+        };
+        assert_eq!(
+            serde_json::to_string(&result_err).unwrap(),
+            r#"{"type":"result","ok":false,"error":{"code":"tool_missing","message":"Install Pandoc with `just pandoc`."}}"#
+        );
     }
 }
