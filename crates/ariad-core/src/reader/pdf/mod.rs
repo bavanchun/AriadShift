@@ -133,42 +133,7 @@ pub enum ReadError {
 /// dictionary, `furniture` for running headers and footers, a [`crate::ir::LayoutIndex`] with
 /// page geometry and block boxes, and [`PdfStats`] under [`PROVENANCE_KEY`].
 pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
-    limits.validate()?;
-    if let Some(limit) = limits.max_input_bytes
-        && bytes.len() as u64 > limit
-    {
-        return Err(ReadError::InputTooLarge {
-            actual: bytes.len() as u64,
-            limit,
-        });
-    }
-    let amplification = CONTENT_BUDGET_BASE
-        .saturating_add(CONTENT_BUDGET_PER_INPUT_BYTE.saturating_mul(bytes.len() as u64))
-        .min((usize::MAX / 4) as u64);
-    let (doc, budget) = load(bytes, limits, amplification)?;
-    if doc.objects.len() > MAX_OBJECTS || doc.reference_table.entries.len() > MAX_OBJECTS {
-        return Err(ReadError::TooManyObjects { limit: MAX_OBJECTS });
-    }
-
-    let mut seen = HashSet::new();
-    let mut page_ids = Vec::new();
-    // The upstream iterator's size hint sums untrusted /Count values.
-    for id in doc.page_iter() {
-        if seen.insert(id) {
-            page_ids.push(id);
-        }
-    }
-    if page_ids.is_empty() {
-        return Err(ReadError::Malformed);
-    }
-    if let Some(limit) = limits.max_pages
-        && page_ids.len() as u64 > u64::from(limit)
-    {
-        return Err(ReadError::TooManyPages {
-            actual: page_ids.len() as u64,
-            limit,
-        });
-    }
+    let (doc, budget, page_ids) = load_bounded_inner(bytes, limits)?;
 
     let mut state = DocState::new(&doc, budget);
     let mut stats = PdfStats {
@@ -275,6 +240,61 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     Ok(ReadOutput { document, warnings })
 }
 
+/// Parses a PDF with the resource bounds from [`Limits`], returning the parsed
+/// [`lopdf::Document`] without interpreting page content streams into document IR.
+///
+/// Enforces [`Limits::validate`], [`Limits::max_input_bytes`], [`Limits::max_decompressed_bytes`],
+/// [`MAX_OBJECTS`], and [`Limits::max_pages`]. Documents that open with the empty user password
+/// retain their `encryption_state` on the returned [`Document`]; documents requiring a non-empty
+/// password fail with [`ReadError::Encrypted`].
+pub fn load_bounded(bytes: &[u8], limits: &Limits) -> Result<Document, ReadError> {
+    let (doc, _budget, _page_ids) = load_bounded_inner(bytes, limits)?;
+    Ok(doc)
+}
+
+fn load_bounded_inner(
+    bytes: &[u8],
+    limits: &Limits,
+) -> Result<(Document, Budget, Vec<lopdf::ObjectId>), ReadError> {
+    limits.validate()?;
+    if let Some(limit) = limits.max_input_bytes
+        && bytes.len() as u64 > limit
+    {
+        return Err(ReadError::InputTooLarge {
+            actual: bytes.len() as u64,
+            limit,
+        });
+    }
+    let amplification = CONTENT_BUDGET_BASE
+        .saturating_add(CONTENT_BUDGET_PER_INPUT_BYTE.saturating_mul(bytes.len() as u64))
+        .min((usize::MAX / 4) as u64);
+    let (doc, budget) = load(bytes, limits, amplification)?;
+    if doc.objects.len() > MAX_OBJECTS || doc.reference_table.entries.len() > MAX_OBJECTS {
+        return Err(ReadError::TooManyObjects { limit: MAX_OBJECTS });
+    }
+
+    let mut seen = HashSet::new();
+    let mut page_ids = Vec::new();
+    // The upstream iterator's size hint sums untrusted /Count values.
+    for id in doc.page_iter() {
+        if seen.insert(id) {
+            page_ids.push(id);
+        }
+    }
+    if page_ids.is_empty() {
+        return Err(ReadError::Malformed);
+    }
+    if let Some(limit) = limits.max_pages
+        && page_ids.len() as u64 > u64::from(limit)
+    {
+        return Err(ReadError::TooManyPages {
+            actual: page_ids.len() as u64,
+            limit,
+        });
+    }
+    Ok((doc, budget, page_ids))
+}
+
 /// Parses the file, opening encrypted documents with the empty user password.
 fn load(
     bytes: &[u8],
@@ -288,13 +308,25 @@ fn load(
         max_decompressed_size: Some(load_limit as usize),
         ..LoadOptions::default()
     };
-    let doc = Document::load_mem_with_options(bytes, options).map_err(|error| match error {
+    let map_load_err = |error: lopdf::Error| match error {
         lopdf::Error::Decompress(DecompressError::MemoryLimitExceeded { .. }) => {
             ReadError::DecompressedTooLarge { limit: load_limit }
         }
         lopdf::Error::Decryption(_) | lopdf::Error::InvalidPassword => ReadError::Encrypted,
         _ => ReadError::Malformed,
-    })?;
+    };
+    let doc = match Document::load_mem_with_options(bytes, options) {
+        Ok(doc) => doc,
+        Err(lopdf::Error::Xref(_)) => {
+            let fallback = LoadOptions {
+                strict: false,
+                max_decompressed_size: Some(load_limit as usize),
+                ..LoadOptions::default()
+            };
+            Document::load_mem_with_options(bytes, fallback).map_err(map_load_err)?
+        }
+        Err(err) => return Err(map_load_err(err)),
+    };
     // `lopdf` leaves `/Encrypt` in the trailer when no password opened the file.
     if doc.trailer.get(b"Encrypt").is_ok() {
         return Err(ReadError::Encrypted);

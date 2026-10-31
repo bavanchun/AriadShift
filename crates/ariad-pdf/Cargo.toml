@@ -1,0 +1,24 @@
+[package]
+name = "ariad-pdf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Pure-Rust structural PDF manipulation and inspection for AriadShift."
+
+[dependencies]
+ariad-core = { workspace = true, features = ["pdf"] }
+lopdf.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+unicode-normalization.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+lopdf = { workspace = true, features = ["wasm_js"] }
+
+[lints]
+workspace = true
