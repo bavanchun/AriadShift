@@ -5,8 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
-description = "Pure-Rust structural PDF manipulation and inspection for AriadShift."
+description = "Pure-Rust structural PDF manipulation and inspection for AriadShift"
+readme = "../../README.md"
+keywords = ["document-conversion", "pdf", "inspection", "manipulation"]
+categories = ["text-processing", "parser-implementations"]
+publish = true
 
 [dependencies]
 ariad-core = { workspace = true, features = ["pdf"] }
@@ -19,6 +22,9 @@ unicode-normalization.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lopdf = { workspace = true, features = ["wasm_js"] }
+
+[package.metadata.dist]
+dist = false
 
 [lints]
 workspace = true
