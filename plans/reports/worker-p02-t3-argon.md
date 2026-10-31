@@ -70,3 +70,35 @@
 - `cargo check -p ariad-pdf --target wasm32-unknown-unknown` — passed
 - `cargo clippy -p ariad-core -p ariad-pdf --all-targets -- -D warnings` — passed
 - `cargo fmt --all --check` — passed
+
+## 4. Follow-Up Addendum (XRef Repair Scoping, Reporting, and Publishability)
+
+### What Changed
+- **`crates/ariad-core/src/reader/pdf/mod.rs`**:
+  - Added `LoadMode { repair_xref: bool }` to the shared loader (`load_bounded_inner` and `load`).
+  - `ariad_core::reader::pdf::read` (converter path) passes `LoadMode { repair_xref: false }`, so a broken cross-reference table fails strictly with `ReadError::Malformed` as before.
+  - `ariad_core::reader::pdf::load_bounded` passes `LoadMode { repair_xref: true }` and returns `BoundedPdf { document: Document, repaired_xref: bool }` (which implements `Deref<Target = Document>` and `DerefMut` for caller compatibility), enforcing the exact same stream decompression, object, catalog, and page limits on both paths.
+- **`crates/ariad-pdf/src/document.rs` & `crates/ariad-pdf/src/info.rs`**:
+  - Recorded `repaired_xref: bool` on `TrailerProvenance` and exposed `PdfDoc::repaired_xref(&self) -> bool`.
+  - Added `repaired_xref: bool` (always serialized, `false` for well-formed inputs) and `warnings: Vec<String>` (`#[serde(default, skip_serializing_if = "Vec::is_empty")]`) to `PdfInfo`. When `repaired_xref` is `true`, `pdf.info` emits `"cross-reference table was malformed and reconstructed from object offsets"` in `warnings`.
+- **`fixtures/pdf-tools/broken-xref.truth.json` & `fixtures/manifest.toml`**:
+  - Updated `broken-xref.truth.json` `pdf_info` to include `"repaired_xref": true` and `"warnings": ["cross-reference table was malformed and reconstructed from object offsets"]`, and updated its companion `sha256` in `fixtures/manifest.toml`.
+- **Regression Tests (`crates/ariad-core/tests/pdf_reader.rs`, `crates/ariad-pdf/tests/info.rs`)**:
+  - Verified that `ariad_core::reader::pdf::read` on `fixtures/pdf-tools/broken-xref.pdf` returns `Err(ReadError::Malformed)`.
+  - Verified that `ariad_core::reader::pdf::load_bounded` and `ariad_pdf::document::open` succeed on `broken-xref.pdf` and flag `repaired_xref == true`.
+  - Verified that `ariad_pdf::info::run` reports `repaired_xref: true` and the reconstruction warning on `broken-xref.pdf`, and `repaired_xref: false` (with no warnings) on well-formed fixtures (`multipage-20.pdf`).
+- **Publishability (`crates/ariad-pdf/Cargo.toml`)**:
+  - Updated `crates/ariad-pdf/Cargo.toml` with `publish = true`, `readme = "../../README.md"`, `keywords`, `categories`, and `[package.metadata.dist] dist = false`.
+- **Note for `ariad-wasm` test caller**:
+  - `crates/ariad-wasm/src/api.rs::tests::run_tool_pdf_info_equals_truth_for_every_corpus_file` compares `serde_json::to_value(&run)` directly against raw `truth["pdf_info"]` across all 22 truth files without defaulting `"repaired_xref": false` on the 21 non-broken truth companions. Left `crates/ariad-wasm` and the other 21 truth files untouched per file-ownership rules.
+
+### Follow-Up Test Results
+- `cargo test --locked -p ariad-core --lib reader::pdf` — passed (46 unit tests)
+- `cargo test --locked -p ariad-core --test pdf_reader --test pdf_reader_bounds` — passed (18 + 2 integration tests)
+- `cargo test --locked -p ariad-pdf` — passed (4 integration tests)
+- `cargo check --locked -p ariad-host -p ariad-cli -p ariad-wasm` — passed
+- `cargo check --locked -p ariad-pdf --target wasm32-unknown-unknown` — passed
+- `cargo clippy --locked -p ariad-core -p ariad-pdf --all-targets -- -D warnings` — passed
+- `cargo fmt --all --check` — passed
+- `env UV_NO_CONFIG=1 just spell` — passed
+- `cargo test --locked -p ariad-cli --test fixture_manifest` — passed (2 integration tests)

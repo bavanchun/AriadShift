@@ -133,7 +133,8 @@ pub enum ReadError {
 /// dictionary, `furniture` for running headers and footers, a [`crate::ir::LayoutIndex`] with
 /// page geometry and block boxes, and [`PdfStats`] under [`PROVENANCE_KEY`].
 pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
-    let (doc, budget, page_ids) = load_bounded_inner(bytes, limits)?;
+    let (doc, budget, page_ids, _repaired_xref) =
+        load_bounded_inner(bytes, limits, LoadMode { repair_xref: false })?;
 
     let mut state = DocState::new(&doc, budget);
     let mut stats = PdfStats {
@@ -240,22 +241,59 @@ pub fn read(bytes: &[u8], limits: &Limits) -> Result<ReadOutput, ReadError> {
     Ok(ReadOutput { document, warnings })
 }
 
+/// A [`lopdf::Document`] loaded within [`Limits`], together with cross-reference repair status.
+#[derive(Clone, Debug)]
+pub struct BoundedPdf {
+    /// The parsed PDF document.
+    pub document: Document,
+    /// Whether strict parsing failed on the cross-reference table and `lopdf` had to reconstruct
+    /// object offsets in non-strict mode.
+    pub repaired_xref: bool,
+}
+
+impl std::ops::Deref for BoundedPdf {
+    type Target = Document;
+
+    fn deref(&self) -> &Self::Target {
+        &self.document
+    }
+}
+
+impl std::ops::DerefMut for BoundedPdf {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.document
+    }
+}
+
+/// Controls whether [`load_bounded_inner`] may fall back from strict parsing when the
+/// cross-reference table is malformed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct LoadMode {
+    repair_xref: bool,
+}
+
 /// Parses a PDF with the resource bounds from [`Limits`], returning the parsed
-/// [`lopdf::Document`] without interpreting page content streams into document IR.
+/// [`lopdf::Document`] and whether its cross-reference table required reconstruction, without
+/// interpreting page content streams into document IR.
 ///
 /// Enforces [`Limits::validate`], [`Limits::max_input_bytes`], [`Limits::max_decompressed_bytes`],
 /// [`MAX_OBJECTS`], and [`Limits::max_pages`]. Documents that open with the empty user password
 /// retain their `encryption_state` on the returned [`Document`]; documents requiring a non-empty
 /// password fail with [`ReadError::Encrypted`].
-pub fn load_bounded(bytes: &[u8], limits: &Limits) -> Result<Document, ReadError> {
-    let (doc, _budget, _page_ids) = load_bounded_inner(bytes, limits)?;
-    Ok(doc)
+pub fn load_bounded(bytes: &[u8], limits: &Limits) -> Result<BoundedPdf, ReadError> {
+    let (document, _budget, _page_ids, repaired_xref) =
+        load_bounded_inner(bytes, limits, LoadMode { repair_xref: true })?;
+    Ok(BoundedPdf {
+        document,
+        repaired_xref,
+    })
 }
 
 fn load_bounded_inner(
     bytes: &[u8],
     limits: &Limits,
-) -> Result<(Document, Budget, Vec<lopdf::ObjectId>), ReadError> {
+    mode: LoadMode,
+) -> Result<(Document, Budget, Vec<lopdf::ObjectId>, bool), ReadError> {
     limits.validate()?;
     if let Some(limit) = limits.max_input_bytes
         && bytes.len() as u64 > limit
@@ -268,7 +306,7 @@ fn load_bounded_inner(
     let amplification = CONTENT_BUDGET_BASE
         .saturating_add(CONTENT_BUDGET_PER_INPUT_BYTE.saturating_mul(bytes.len() as u64))
         .min((usize::MAX / 4) as u64);
-    let (doc, budget) = load(bytes, limits, amplification)?;
+    let (doc, budget, repaired_xref) = load(bytes, limits, amplification, mode)?;
     if doc.objects.len() > MAX_OBJECTS || doc.reference_table.entries.len() > MAX_OBJECTS {
         return Err(ReadError::TooManyObjects { limit: MAX_OBJECTS });
     }
@@ -292,7 +330,7 @@ fn load_bounded_inner(
             limit,
         });
     }
-    Ok((doc, budget, page_ids))
+    Ok((doc, budget, page_ids, repaired_xref))
 }
 
 /// Parses the file, opening encrypted documents with the empty user password.
@@ -300,7 +338,8 @@ fn load(
     bytes: &[u8],
     limits: &Limits,
     amplification: u64,
-) -> Result<(Document, Budget), ReadError> {
+    mode: LoadMode,
+) -> Result<(Document, Budget, bool), ReadError> {
     let load_limit = limits.max_decompressed_bytes.min(amplification);
     let options = LoadOptions {
         // Strict mode propagates object-stream limit errors instead of silently skipping them.
@@ -315,15 +354,16 @@ fn load(
         lopdf::Error::Decryption(_) | lopdf::Error::InvalidPassword => ReadError::Encrypted,
         _ => ReadError::Malformed,
     };
-    let doc = match Document::load_mem_with_options(bytes, options) {
-        Ok(doc) => doc,
-        Err(lopdf::Error::Xref(_)) => {
+    let (doc, repaired_xref) = match Document::load_mem_with_options(bytes, options) {
+        Ok(doc) => (doc, false),
+        Err(lopdf::Error::Xref(_)) if mode.repair_xref => {
             let fallback = LoadOptions {
                 strict: false,
                 max_decompressed_size: Some(load_limit as usize),
                 ..LoadOptions::default()
             };
-            Document::load_mem_with_options(bytes, fallback).map_err(map_load_err)?
+            let doc = Document::load_mem_with_options(bytes, fallback).map_err(map_load_err)?;
+            (doc, true)
         }
         Err(err) => return Err(map_load_err(err)),
     };
@@ -344,7 +384,7 @@ fn load(
     if doc.catalog().is_err() {
         return Err(ReadError::Malformed);
     }
-    Ok((doc, budget))
+    Ok((doc, budget, repaired_xref))
 }
 
 /// An attribute of a page or, failing that, of its nearest ancestor in the page tree.

@@ -22,6 +22,9 @@ pub struct TrailerProvenance {
     pub encrypt_object_id: Option<ObjectId>,
     /// Whether the document had `/Prev` incremental cross-reference sections in the raw bytes.
     pub has_prev_xref: bool,
+    /// Whether strict parsing failed on the cross-reference table and `lopdf` had to reconstruct
+    /// object offsets in non-strict mode.
+    pub repaired_xref: bool,
 }
 
 /// Bounded wrapper around [`lopdf::Document`] carrying trailer and encryption provenance.
@@ -75,6 +78,13 @@ impl PdfDoc {
         self.provenance.encrypted
     }
 
+    /// Whether strict parsing failed on the cross-reference table and object offsets had to be
+    /// reconstructed when opening the document.
+    #[must_use]
+    pub const fn repaired_xref(&self) -> bool {
+        self.provenance.repaired_xref
+    }
+
     /// Serializes the document to PDF bytes.
     ///
     /// Refuses to serialize any document that was opened from an encrypted source without an
@@ -123,8 +133,8 @@ pub fn open_for_info(bytes: &[u8], limits: &Limits) -> Result<PdfDoc, PdfError> 
     let raw_encrypted = raw_trailer_has_encrypt(bytes);
     let has_prev_xref = raw_trailer_has_prev(bytes);
 
-    let inner = match load_bounded(bytes, limits) {
-        Ok(doc) => doc,
+    let loaded = match load_bounded(bytes, limits) {
+        Ok(loaded) => loaded,
         Err(ReadError::Encrypted) => {
             return Err(PdfError::Encrypted {
                 needs_password: true,
@@ -132,6 +142,8 @@ pub fn open_for_info(bytes: &[u8], limits: &Limits) -> Result<PdfDoc, PdfError> 
         }
         Err(other) => return Err(PdfError::from(other)),
     };
+    let repaired_xref = loaded.repaired_xref;
+    let inner = loaded.document;
 
     let encrypt_object_id = inner
         .encryption_state
@@ -154,6 +166,7 @@ pub fn open_for_info(bytes: &[u8], limits: &Limits) -> Result<PdfDoc, PdfError> 
             encrypted,
             encrypt_object_id,
             has_prev_xref,
+            repaired_xref,
         },
     })
 }

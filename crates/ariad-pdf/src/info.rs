@@ -71,6 +71,12 @@ pub struct PdfInfo {
     pub has_javascript: bool,
     /// Total number of bookmark entries in the `/Outlines` hierarchy.
     pub outline_count: u32,
+    /// Whether the cross-reference table was malformed and had to be reconstructed during loading.
+    #[serde(default)]
+    pub repaired_xref: bool,
+    /// Non-fatal diagnostic warnings emitted while inspecting the PDF.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// Per-page geometry and content-layer inspection record.
@@ -167,6 +173,13 @@ pub fn from_doc(doc: &PdfDoc) -> Result<PdfInfo, PdfError> {
     let has_attachments = detect_attachments(inner, &page_ids);
     let has_javascript = detect_javascript(inner);
     let outline_count = count_outlines(inner, page_count, metadata.title.as_deref());
+    let repaired_xref = doc.repaired_xref();
+    let mut warnings = Vec::new();
+    if repaired_xref {
+        warnings.push(
+            "cross-reference table was malformed and reconstructed from object offsets".to_owned(),
+        );
+    }
 
     Ok(PdfInfo {
         version,
@@ -180,6 +193,8 @@ pub fn from_doc(doc: &PdfDoc) -> Result<PdfInfo, PdfError> {
         has_attachments,
         has_javascript,
         outline_count,
+        repaired_xref,
+        warnings,
     })
 }
 
