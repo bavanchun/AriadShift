@@ -269,6 +269,7 @@ version = "0.2.0"
 dependencies = [
  "ariad-core",
  "ariad-engine-io",
+ "ariad-pdf",
  "ariad-typst",
  "base64 0.23.1",
  "cap-std",
@@ -307,6 +308,19 @@ dependencies = [
  "ureq",
  "uuid",
  "zip",
+]
+
+[[package]]
+name = "ariad-pdf"
+version = "0.2.0"
+dependencies = [
+ "ariad-core",
+ "lopdf",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unicode-normalization",
 ]
 
 [[package]]
