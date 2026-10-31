@@ -510,6 +510,30 @@ if publish_crates_path and os.path.isfile(publish_crates_path):
             if not isinstance(s.get('with'), dict) or s['with'].get('persist-credentials') is not False:
                 fail(f"{publish_crates_path} checkout must have persist-credentials: false")
 
+    publish_step = None
+    for s in (p_pub.get('steps') or []):
+        if isinstance(s, dict) and s.get('name') == 'Publish crates in dependency order':
+            publish_step = s
+            break
+    if not isinstance(publish_step, dict) or not isinstance(publish_step.get('run'), str):
+        fail(f"{publish_crates_path} missing 'Publish crates in dependency order' run step")
+    crates_match = re.search(r'crates=\(([^)]*)\)', publish_step['run'])
+    if not crates_match:
+        fail(f"{publish_crates_path} 'Publish crates in dependency order' step must declare crates=(...)")
+    crate_list = re.findall(r'"([^"]+)"', crates_match.group(1))
+    expected_crates = ['ariad-core', 'ariad-pdf', 'ariad-engine-io', 'ariad-typst', 'ariad-host', 'ariad-cli']
+    if set(crate_list) != set(expected_crates) or len(crate_list) != len(expected_crates):
+        fail(f"{publish_crates_path} crates list must contain {expected_crates}, got {crate_list}")
+    if crate_list[0] != 'ariad-core':
+        fail(f"{publish_crates_path} must publish 'ariad-core' first, got {crate_list}")
+    host_idx = crate_list.index('ariad-host')
+    cli_idx = crate_list.index('ariad-cli')
+    for dep_crate in ('ariad-core', 'ariad-pdf', 'ariad-engine-io', 'ariad-typst'):
+        if crate_list.index(dep_crate) > host_idx:
+            fail(f"{publish_crates_path} must publish '{dep_crate}' before 'ariad-host', got {crate_list}")
+    if host_idx > cli_idx:
+        fail(f"{publish_crates_path} must publish 'ariad-host' before 'ariad-cli', got {crate_list}")
+
     # Assert CARGO_REGISTRY_TOKEN appears only in the env of its two authorized steps
     for text, path in walk_elements(p_data):
         if 'CARGO_REGISTRY_TOKEN' in text:

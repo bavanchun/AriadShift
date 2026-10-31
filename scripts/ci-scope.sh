@@ -25,10 +25,10 @@ js_paths='^(apps|packages|services|brand)/|^(package\.json|pnpm-lock\.yaml|pnpm-
 e2e_paths='^infra/test/e2e/|^\.github/workflows/cloud-e2e\.yml$'
 # Everything the web job builds or depends on, including the Rust code compiled to wasm
 # and the OpenAPI document the SDK is generated from.
-web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|wasm|typst)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$|^schemas/openapi\.v1\.json$'
+web_paths='^(apps|packages|services|brand)/|^crates/ariad-(core|pdf|engine-io|wasm|typst)/|^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|biome\.json|vitest\.config\.ts|\.node-version|Cargo\.toml|Cargo\.lock|rust-toolchain\.toml|justfile)$|^scripts/(ci-scope\.sh|install-wasm-bindgen\.sh)$|^\.github/workflows/ci\.yml$|^schemas/openapi\.v1\.json$'
 
 # One path list for cloud push/PR scope; cloud-e2e.yml calls this classifier.
-cloud_paths='^(infra/|apps/web/|crates/ariad-(server|core|host|cli|wasm|typst)/|services/|packages/|brand/)|^(Cargo\.(toml|lock)|rust-toolchain\.toml|pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|\.node-version|\.env\.example|justfile)$|^scripts/(ci-scope\.sh|test-ci-scope\.sh|install-wasm-bindgen\.sh)$|^fixtures/(pdf/vi-garden-image-only\.pdf|manifest\.toml)$|^\.github/workflows/(cloud-e2e|pack-docling)\.yml$'
+cloud_paths='^(infra/|apps/web/|crates/ariad-(server|core|pdf|engine-io|host|cli|wasm|typst)/|services/|packages/|brand/)|^(Cargo\.(toml|lock)|rust-toolchain\.toml|pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json|\.node-version|\.env\.example|justfile)$|^scripts/(ci-scope\.sh|test-ci-scope\.sh|install-wasm-bindgen\.sh)$|^fixtures/(pdf/vi-garden-image-only\.pdf|manifest\.toml)$|^\.github/workflows/(cloud-e2e|pack-docling)\.yml$'
 
 if [ "${1:-}" = --classify-cloud ]; then
     shift
