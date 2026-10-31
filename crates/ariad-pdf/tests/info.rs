@@ -9,7 +9,7 @@ use std::{
 
 use ariad_core::{
     limits::{Limits, LimitsError},
-    reader::pdf::ReadError,
+    reader::pdf::{self, ReadError, load_bounded},
 };
 use ariad_pdf::{
     PdfError, PdfInfo,
@@ -114,12 +114,21 @@ fn pdf_info_matches_every_corpus_truth_file() {
         let file_name = truth_path.file_name().unwrap().to_str().unwrap();
         let stem = file_name.strip_suffix(".truth.json").unwrap();
         let truth = read_truth(stem);
-        let expected_value = truth
+        let mut expected_value = truth
             .get("pdf_info")
             .cloned()
             .unwrap_or_else(|| panic!("missing pdf_info in {file_name}"));
         let expected_info: PdfInfo = serde_json::from_value(expected_value.clone())
             .unwrap_or_else(|err| panic!("deserialize expected PdfInfo for {stem}: {err}"));
+        if stem == "broken-xref" {
+            assert_eq!(
+                expected_value.get("repaired_xref"),
+                Some(&Value::Bool(true)),
+                "broken-xref.truth.json must declare repaired_xref: true"
+            );
+        } else if let Value::Object(ref mut map) = expected_value {
+            map.entry("repaired_xref").or_insert(Value::Bool(false));
+        }
 
         match stem {
             "encrypted-owner-only" => {
@@ -230,11 +239,78 @@ fn pdf_info_matches_every_corpus_truth_file() {
                 let doc = document::open(&pdf_bytes, &Limits::local())
                     .unwrap_or_else(|err| panic!("document::open failed on {stem}: {err}"));
                 assert!(!doc.is_encrypted());
+                assert_eq!(doc.repaired_xref(), stem == "broken-xref");
                 let from_doc = info::from_doc(&doc).unwrap();
                 assert_eq!(from_doc, expected_info, "from_doc mismatch on {stem}");
             }
         }
     }
+}
+
+#[test]
+fn broken_xref_is_rejected_by_converter_but_repaired_and_reported_by_pdf_tools() {
+    let broken_bytes = read_fixture("broken-xref.pdf");
+
+    // (a) Converter path (`ariad_core::reader::pdf::read`) rejects broken cross-reference tables.
+    assert_eq!(
+        pdf::read(&broken_bytes, &Limits::local()).unwrap_err(),
+        ReadError::Malformed,
+        "converter must reject broken-xref.pdf with ReadError::Malformed"
+    );
+
+    // (b) `load_bounded` and `ariad_pdf::document::open` succeed and flag `repaired_xref`.
+    let bounded = load_bounded(&broken_bytes, &Limits::local())
+        .expect("load_bounded succeeds on repairable broken-xref.pdf");
+    assert!(
+        bounded.repaired_xref,
+        "load_bounded must flag repaired_xref: true"
+    );
+
+    let doc = open(&broken_bytes, &Limits::local())
+        .expect("document::open succeeds on repairable broken-xref.pdf");
+    assert!(
+        doc.repaired_xref(),
+        "PdfDoc::repaired_xref() must return true on broken-xref.pdf"
+    );
+    assert!(doc.provenance().repaired_xref);
+
+    let broken_info = info::run(&broken_bytes, &Limits::local())
+        .expect("pdf.info succeeds on repairable broken-xref.pdf");
+    assert!(broken_info.repaired_xref);
+    assert_eq!(
+        broken_info.warnings,
+        vec!["cross-reference table was malformed and reconstructed from object offsets"]
+    );
+    let broken_json = serde_json::to_value(&broken_info).unwrap();
+    assert_eq!(broken_json.get("repaired_xref"), Some(&Value::Bool(true)));
+    assert!(
+        broken_json
+            .get("warnings")
+            .and_then(Value::as_array)
+            .is_some_and(|w| !w.is_empty())
+    );
+
+    // (c) Well-formed fixture (`multipage-20.pdf`) reports `repaired_xref: false` and no warnings.
+    let multipage_bytes = read_fixture("multipage-20.pdf");
+    let clean_bounded = load_bounded(&multipage_bytes, &Limits::local())
+        .expect("load_bounded succeeds on multipage-20.pdf");
+    assert!(!clean_bounded.repaired_xref);
+
+    let clean_doc = open(&multipage_bytes, &Limits::local())
+        .expect("document::open succeeds on multipage-20.pdf");
+    assert!(!clean_doc.repaired_xref());
+
+    let clean_info = info::run(&multipage_bytes, &Limits::local())
+        .expect("pdf.info succeeds on multipage-20.pdf");
+    assert!(!clean_info.repaired_xref);
+    assert!(clean_info.warnings.is_empty());
+    let clean_json = serde_json::to_value(&clean_info).unwrap();
+    assert_eq!(
+        clean_json.get("repaired_xref"),
+        Some(&Value::Bool(false)),
+        "well-formed PDF must always serialize repaired_xref: false"
+    );
+    assert!(clean_json.get("warnings").is_none());
 }
 
 #[test]

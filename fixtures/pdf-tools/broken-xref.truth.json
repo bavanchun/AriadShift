@@ -82,7 +82,11 @@
     "has_annotations": false,
     "has_attachments": false,
     "has_javascript": false,
-    "outline_count": 0
+    "outline_count": 0,
+    "repaired_xref": true,
+    "warnings": [
+      "cross-reference table was malformed and reconstructed from object offsets"
+    ]
   },
   "canonical": {
     "text": "Repairable Cross-Reference Document\nThis PDF has corrupted xref byte offsets that qpdf can reconstruct.",

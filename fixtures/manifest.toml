@@ -3666,7 +3666,7 @@ pages = 1
 tags = ["pdf-tools", "broken-xref"]
 phase = "1"
 routes = []
-companions = [{ path = "fixtures/pdf-tools/broken-xref.truth.json", sha256 = "0645230bdb8cf6a71a17e1684603bfa1c23511896fa54555e0d5a0113cbaaf5b" }]
+companions = [{ path = "fixtures/pdf-tools/broken-xref.truth.json", sha256 = "7e48c745b58bffbb615ae8438cc0ca4c760ccb4565a4efe42a97dd778f032205" }]
 
 [[fixture]]
 id = "object-streams"
