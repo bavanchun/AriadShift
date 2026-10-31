@@ -161,22 +161,22 @@ Upload completion returns `409 conflict` while another call in the same API proc
 | `POST` | `/v1/uploads` | optional | Start an upload: `{filename, size, sha256}` → `201` with one presigned `PUT` (valid 15 minutes) |
 | `PUT` | presigned upload URL | the URL | Send the file bytes |
 | `POST` | `/v1/uploads/{id}/complete` | optional | Verify the stored file's size and SHA-256 and detect its format; a mismatching file is deleted |
-| `DELETE` | `/v1/uploads/{id}` | optional | Deployment capability: discard an upload before job creation; unavailable on the base server |
+| `DELETE` | `/v1/uploads/{id}` | optional | Delete an upload that no job uses: its stored file now, and its file name; repeating it succeeds, and `409` means a job uses it (delete the job instead) |
 | `POST` | `/v1/plan` | optional | Plan a route without converting: `{from` or `upload_id, to, profile}` → route, scores, pack, alternatives |
 | `POST` | `/v1/jobs` | optional | Create a job: `{upload_id, to, profile}` → `202` with the job and a `Location` header |
-| `GET` | `/v1/jobs` | account | Deployment capability: list account jobs; the base server requires the browser-history fallback |
+| `GET` | `/v1/jobs` | account | The account's jobs, newest first, in pages; see [Listing jobs](#listing-jobs) |
 | `GET` | `/v1/jobs/{id}` | optional | Job status, route, warnings and error |
 | `GET` | `/v1/jobs/{id}/events` | optional | Server-Sent Events, resumable with `Last-Event-ID` |
 | `GET` | `/v1/jobs/{id}/outputs` | optional | Download URLs valid for five minutes; call again for fresh ones |
 | `GET` | presigned download URL | the URL | Download one output |
 | `DELETE` | `/v1/jobs/{id}` | optional | Cancel if still active, and delete the input upload and outputs now → `204` |
 | `GET` | `/v1/capabilities` | none | Formats and conversion edges this deployment runs |
-| `GET` | `/v1/limits` | optional | Deployment capability: current plan limits and quota; unavailable on the base server |
+| `GET` | `/v1/limits` | optional | The caller's plan, conversion limits, retention, and each quota's limit, use and remainder |
 | `GET` | `/healthz`, `/readyz` | none | Liveness, and readiness of the database and storage |
 
 "Optional" means the endpoint accepts a JWT, an API key, or no credential (the anonymous plan). With S3 storage the presigned URLs point at the object store. With the local file store they are `PUT` and `GET /v1/blobs/{token}` on the API, where the signed token is the only credential; a bad or expired token returns `403 forbidden`.
 
-The web client probes the deployment capabilities above and handles `404`, `405` and `501` responses. They are not part of this base server's generated OpenAPI document. Jobs remain manageable through this browser's recorded history; an upload without a job remains subject to server expiry when direct deletion is unavailable.
+The web client probes these capabilities and handles `404`, `405` and `501` responses from older deployments. When listing jobs is unavailable, jobs remain manageable through this browser's recorded history; an upload without a job remains subject to server expiry when direct deletion is unavailable.
 
 Request bodies are JSON with `content-type: application/json`, at most 1 MiB. Unknown fields are rejected with `422 invalid_request`. Ids are UUIDs; a path id that is not a UUID returns `404 not_found`. Times are RFC 3339 strings in UTC. Every response carries an `x-request-id` header; quote it when reporting a problem. Browser access needs the web origin in the API's `ARIAD_CORS_ORIGINS`.
 
@@ -316,6 +316,22 @@ The stream replays the job's events from the start, or after the id in `Last-Eve
 
 Across API replicas, at most eight streams per caller subject and two per job may be open; further requests return `429 rate_limited` with `Retry-After: 5`. Capacity is released on disconnect or completion, or after a 90-second crash lease expires. Streams also close when the API shuts down.
 
+### Listing jobs
+
+`GET /v1/jobs` lists the jobs of the caller's account (JWT or API key), newest first. Anonymous callers get `401 unauthorized`: anonymous jobs are reachable only through their ids, so no list ever shows them. Query parameters:
+
+| Parameter | Meaning |
+|---|---|
+| `limit` | Jobs per page, from 1 to 100; default 50 |
+| `cursor` | The previous page's `next_cursor`, passed unchanged |
+| `status` | Only jobs with this status, for example `failed` |
+
+The response is `{jobs, next_cursor}`. Each item has every property of `GET /v1/jobs/{id}` plus `filename`, the input's original name; `filename` is absent once the input is deleted or expired, because the service forgets the name with the file. Expired jobs stay listed until their metadata is pruned after 30 days. `next_cursor` is `null` on the last page. Cursors are opaque and mark a position in the `(created_at, id)` order, so jobs created while a client pages never shift or repeat later pages. An invalid `limit`, `cursor` or `status` returns `422 invalid_request`. The plan's requests-per-minute limit applies.
+
+```sh
+curl -sS "$API/v1/jobs?limit=20&status=failed" -H "x-api-key: $KEY"
+```
+
 ### Outputs
 
 `GET /v1/jobs/{id}/outputs` returns fresh download URLs for a succeeded job:
@@ -399,7 +415,9 @@ Each plan sets the conversion limits (input size, pages, time, memory, structura
 
 Operators can change these values and add plans; the full table, including the structural caps, is in [server.md](server.md#plans-quotas-and-rate-limits). New accounts start on `free`.
 
-Job creation checks, in order, the jobs still queued or running against `concurrent_jobs`, the jobs submitted in the last 24 hours against `jobs_per_day`, and their input bytes plus this input against `input_bytes_per_day`. The `quota_exceeded` message names the quota, for example "the plan allows 4 queued or running jobs at a time".
+`GET /v1/limits` reports these values for the caller, with or without credentials, so a client can show them before uploading: the plan name, the conversion limits, `retention_s`, and for each quota its `limit`, `used` and `remaining` (`null` when unlimited). Quota `limit` and `remaining`, all four conversion limits, and `requests_per_minute` are always present, including when their value is `null`. Daily quotas count the last 24 hours. The response is not cached.
+
+REST and MCP job creation first check all queued/running jobs across the fleet against `ARIAD_GLOBAL_ACTIVE_JOBS` (default 64, with production capacity approval pending). A full fleet returns `429 quota_exceeded` even when the caller has quota remaining. Job creation then checks, in order, the caller's jobs still queued or running against `concurrent_jobs`, the jobs submitted in the last 24 hours against `jobs_per_day`, and their input bytes plus this input against `input_bytes_per_day`. The `quota_exceeded` message names the quota, for example "the plan allows 4 queued or running jobs at a time".
 
 Upload admission separately counts all uploads and their declared bytes over 24 hours, including deleted or abandoned ones, against `jobs_per_day` and `input_bytes_per_day`. Pending uploads reserve `concurrent_jobs` slots (64 when that quota is unlimited). Completing an upload releases its pending slot; conversion quotas are checked independently for every job. A refused upload returns `429 quota_exceeded` with "the plan's upload allowance is exhausted". This bounds outstanding signed requests; on S3, actual size is checked at completion and by the pending/completed upload sweeper, while a deployment-side public-upload body cap remains necessary before those checks.
 
@@ -482,6 +500,9 @@ Presigned upload and download URLs never receive credentials.
 | `upload(body, options)` | `createUpload`, `transfer` and `completeUpload` in one call |
 | `createUpload`, `transfer`, `completeUpload` | the three upload steps, for custom transfers |
 | `createJob({ uploadId, to, profile })`, `getJob(id)` | create and read jobs |
+| `listJobs(options)` | list account jobs with pagination and an optional status filter |
+| `limits()` | read the caller's current plan limits and quotas |
+| `deleteUpload(id)` | delete an upload that no job uses |
 | `events(id, options)` | an async iterator of `JobEvent`s that ends after the final event |
 | `outputs(id)` | fresh presigned URLs for a succeeded job |
 | `download(output, { verifySha256 })` | a `Blob`, with its size (and optionally SHA-256) checked |
@@ -526,4 +547,28 @@ const { data: caps } = await capabilities({ client: ariad.raw });
 
 ## Versioning and deprecation
 
-The `/v1` compatibility and deprecation policy is defined when `/v1` is frozen. Until then, the contract can change between releases; `schemas/openapi.v1.json` and the SDK generated from it always describe the current server.
+`/v1` is stable. The document's `info` carries `"x-stability": "stable"`, and within `/v1` the API changes only in backward-compatible ways. The test `crates/ariad-server/tests/openapi_v1_snapshot.rs` compares the generated document with the frozen snapshot `crates/ariad-server/tests/snapshots/openapi_v1.json` and fails on a breaking change or a compatible change that has not been explicitly refreshed into the snapshot. Refresh mode still rejects breaking changes.
+
+The frozen comparison excludes `/v1/blobs/{token}` and components referenced exclusively by its transfer operations, including transitive dependencies. Components shared with the API and its security schemes remain frozen. Blob operations remain in the generated document and are still checked for drift; clients use the presigned URLs rather than depending on their route shape.
+
+Changes that may happen within `/v1`:
+
+- new paths and operations;
+- new optional request fields, query parameters and headers;
+- new response properties, response headers, response codes for new conditions, and error codes;
+- new enum values in responses, such as a job status, upload status, pack or event kind.
+
+Changes that never happen within `/v1`:
+
+- removing or renaming a path, operation, `operationId`, schema, property, parameter, response code, media type or response header;
+- a newly required request field, parameter or body, a changed or removed request default, or a narrower request type (fewer enum values, a shorter maximum length, a stricter format, pattern, bound, multiple or uniqueness constraint);
+- a response property that stops being required or becomes nullable, removal of a response enum constraint, or a wider response type;
+- tighter security, such as an operation that stops accepting anonymous callers, one of the credential types or previously sufficient scopes, or removal or a wire change of an existing security scheme.
+
+Composite schemas follow the same request and response rules. The checker accepts compatible branch changes in unions (`anyOf`) and intersections (`allOf`) and ignores branch order. For `oneOf`, changed alternatives must be provably disjoint; potentially overlapping alternatives require a new version rather than being treated as an ordinary union. Pattern and multiple changes whose compatibility cannot be proven are rejected conservatively; dropping a request constraint or adding a response constraint remains compatible. Changes to validation keywords the checker does not interpret, such as `const`, `not` and `propertyNames`, are also rejected conservatively; unchanged keywords and descriptive annotations remain compatible.
+
+Clients should ignore response properties they do not know, treat unknown enum values, event kinds and error codes as an unknown or generic case, and handle an unexpected status code by its class (`4xx` or `5xx`). Within `ErrorBody`, `code` is stable and `message` is not. Descriptions, examples, `info.version`, plan values (read them from `GET /v1/limits`), the contents of `GET /v1/capabilities`, and the form of presigned URLs may change at any time. A security fix may tighten validation; the release notes say so.
+
+A breaking change goes into a new major version path, `/v2`, served next to `/v1`. Before an operation is removed from a future major version, it is marked `deprecated: true` in the OpenAPI document, its responses carry a `Deprecation` header (RFC 9745) and, once a date is set, a `Sunset` header (RFC 8594), and the release notes announce it. A deprecated operation keeps working for at least six months after the release that deprecates it, and `/v1` stays available for at least twelve months after `/v2` becomes stable. Self-hosted operators choose when they upgrade; these periods count from the releases.
+
+After a compatible change, regenerate the document with `just openapi`, refresh the snapshot with `ARIAD_UPDATE_OPENAPI_BASELINE=1 cargo nextest run -p ariad-server --test openapi_v1_snapshot`, and update the SDK lock with `pnpm --filter @ariadshift/sdk lock`. The refresh refuses to write while the change is breaking. Rerun `cargo nextest run -p ariad-server --test openapi_v1_snapshot --test openapi_drift` without the update variable and run `just sdk-check` to verify the committed contract and generated client inputs.

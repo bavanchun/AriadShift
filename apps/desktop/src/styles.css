@@ -50,11 +50,39 @@ nav {
   gap: 6px;
 }
 nav button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   text-align: left;
   padding: 11px 14px;
   border-radius: 9px;
   font-size: 13px;
   cursor: pointer;
+}
+nav button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in oklch, currentColor 35%, transparent);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: inherit;
+}
+/* Shortcut hints stay quiet until the row is hovered, focused or current. */
+nav .kbd {
+  opacity: 0;
+}
+nav button:hover .kbd,
+nav button:focus-visible .kbd,
+nav button[aria-current] .kbd {
+  opacity: 1;
 }
 nav button:hover {
   background: var(--muted);
@@ -82,6 +110,9 @@ main {
 }
 header {
   margin-bottom: 28px;
+}
+h1:focus:not(:focus-visible) {
+  outline: none;
 }
 h1 {
   font-size: 32px;
@@ -113,6 +144,44 @@ h2 {
   border-radius: 18px;
   text-align: center;
   padding: 38px 24px;
+}
+.drop-panel[data-dragging] {
+  border-style: solid;
+  background: color-mix(in oklch, var(--primary) 10%, var(--background));
+}
+/* The whole window accepts a drop, so the overlay covers it and shows what will be added. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in oklch, var(--background) 82%, transparent);
+  pointer-events: none;
+}
+.drop-overlay-card {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: min(100%, 520px);
+  padding: 40px 28px;
+  border: 2px dashed var(--destructive);
+  border-radius: 20px;
+  background: var(--card);
+  text-align: center;
+  font-size: 18px;
+}
+.drop-overlay[data-accepts] .drop-overlay-card {
+  border-color: var(--primary);
+}
+.drop-overlay svg {
+  width: 32px;
+  height: 32px;
+  color: var(--primary);
+}
+.drop-overlay p {
+  margin: 0;
 }
 .drop-panel p {
   margin-bottom: 20px;
@@ -208,6 +277,106 @@ select:focus {
 .notice button {
   cursor: pointer;
 }
+.notice[data-tone="warning"] {
+  border-left: 3px solid var(--gold);
+}
+.notice[data-tone="error"] {
+  border-left: 3px solid var(--destructive);
+  color: var(--foreground);
+}
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  width: min(380px, calc(100vw - 40px));
+}
+.toast {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 10px 30px color-mix(in oklch, var(--foreground) 14%, transparent);
+}
+.toast[data-tone="error"] {
+  border-left-color: var(--destructive);
+}
+.toast > svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--primary);
+}
+.toast[data-tone="error"] > svg {
+  color: var(--destructive);
+}
+.toast p {
+  margin: 0;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+.toast-actions {
+  grid-column: 2;
+  align-items: center;
+}
+.queue-head {
+  justify-content: space-between;
+  align-items: center;
+}
+.queue-head h2 {
+  margin: 0;
+}
+.queue-summary {
+  margin: 0 0 8px;
+  color: var(--foreground);
+  font-weight: 600;
+}
+progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--primary);
+}
+.empty-state {
+  padding: 28px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+}
+.empty-state h3 {
+  font-size: 14px;
+  font-weight: 650;
+  margin: 0;
+}
+.empty-state p {
+  margin: 6px 0 14px;
+}
+.save-row {
+  align-items: center;
+}
+.unsaved {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.shortcuts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+.shortcut {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+}
+.shortcuts dd {
+  margin: 0;
+}
 .file-list li,
 .jobs li {
   display: flex;
@@ -220,6 +389,16 @@ select:focus {
 }
 .jobs li > div:first-child {
   min-width: 0;
+}
+.jobs li[data-status="failed"] {
+  box-shadow: inset 3px 0 0 var(--destructive);
+  padding-left: 12px;
+}
+.jobs li p:first-of-type {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 .jobs small {
   display: block;
@@ -250,9 +429,45 @@ select:focus {
 .error {
   color: var(--destructive);
 }
-[data-status="succeeded"] {
-  color: var(--primary);
-  font-weight: 650;
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+/* Motion only reinforces state and runs only when the system allows it, so every change stays
+   visible with Reduce Motion on; the running badge's spinner then stands still. */
+@media (prefers-reduced-motion: no-preference) {
+  nav button,
+  nav .kbd {
+    transition:
+      background-color 120ms ease-out,
+      opacity 120ms ease-out;
+  }
+  .drop-panel {
+    transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+  .drop-overlay {
+    animation: fade-in 120ms ease-out;
+  }
+  .toast {
+    animation: toast-in 180ms ease-out;
+  }
+  .spin {
+    animation: spin 1s linear infinite;
+  }
 }
 footer {
   font-size: 10px;

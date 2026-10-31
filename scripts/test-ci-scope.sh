@@ -71,6 +71,10 @@ assert_classification "root manifest (Cargo.lock)" "Cargo.lock" "true" "true" "c
 assert_classification "root config (rust-toolchain.toml)" "rust-toolchain.toml" "true" "true" "code change"
 assert_classification "root manifest (justfile)" "justfile" "true" "true" "code change"
 
+# Fuzz crate tests are outside the root workspace and need the fuzz job.
+assert_classification "fuzz oracle tests" "fuzz/fuzz_targets/docx_meta_tests.rs" "true" "false" "code change"
+assert_classification "fuzz crate manifest" "fuzz/Cargo.toml" "true" "false" "code change"
+
 # 7. scripts and workflows
 assert_classification "script (check-js-licenses.mjs)" "scripts/check-js-licenses.mjs" "false" "false" "JavaScript-only change"
 assert_classification "script (install-wasm-bindgen.sh)" "scripts/install-wasm-bindgen.sh" "true" "true" "code change"

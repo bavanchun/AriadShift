@@ -350,6 +350,38 @@ jobs:
           E2E_JOB_TIMEOUT: "900"
         run: bash infra/test/e2e/run.sh
 
+  mcp-oauth:
+    name: Remote MCP OAuth (core)
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
+    concurrency:
+      group: cloud-mcp-oauth-${{ github.event.pull_request.number || github.sha }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: *source-ref
+          persist-credentials: false
+
+      - name: Verify the recorded source
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.scope.outputs.source-sha }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SOURCE_SHA" ]] || { echo '::error::Checkout differs from the recorded source; rerun on the updated ref'; exit 1; }
+
+      # Core needs neither a Docling pack nor shared dependency caches.
+      - name: Run the MCP OAuth end-to-end test
+        env:
+          E2E_WAIT_TIMEOUT: "900"
+          CARGO_BUILD_JOBS: "4"
+        run: bash infra/test/e2e/mcp-oauth.sh
+
   status:
     name: Compose stack (core, office, docling)
     needs: [scope, e2e]

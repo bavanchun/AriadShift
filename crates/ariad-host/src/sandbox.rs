@@ -3,7 +3,8 @@
 //! On Linux the runner starts every engine through the `__sandbox` launcher, a hidden subcommand
 //! of `ashift`. The launcher restricts itself with Landlock (filesystem, TCP and scopes), a
 //! seccomp filter that denies non-Unix sockets, and rlimits, then `exec`s the engine, which
-//! inherits every restriction. macOS and Windows keep process groups and Job Objects only.
+//! inherits every restriction. macOS uses Seatbelt through `/usr/bin/sandbox-exec` when
+//! available; Windows keeps Job Objects only.
 
 use std::{
     ffi::OsString,
@@ -20,6 +21,8 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
 
 /// Environment variable that overrides the sandbox mode: `off`, `best-effort` or `required`.
 pub const MODE_ENV: &str = "ASHIFT_SANDBOX";
@@ -107,8 +110,16 @@ pub fn effective_mode() -> Result<SandboxMode, String> {
 /// Isolation features the running kernel offers to engine processes.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SandboxSupport {
-    /// Whether this platform uses the sandbox launcher at all (Linux only).
+    /// Whether this platform uses the sandbox launcher (Linux or macOS).
     pub platform: bool,
+    /// Whether the system Seatbelt launcher exists (macOS only).
+    #[cfg(target_os = "macos")]
+    #[serde(default)]
+    pub seatbelt_available: bool,
+    /// Whether a disposable child could apply the Seatbelt profile (macOS only).
+    #[cfg(target_os = "macos")]
+    #[serde(default)]
+    pub seatbelt_usable: bool,
     /// Highest Landlock ABI the kernel and the `landlock` crate share, if Landlock is enabled.
     pub landlock_abi: Option<u8>,
     /// Landlock filesystem rules (ABI 1).
@@ -127,18 +138,27 @@ impl SandboxSupport {
     /// Isolation the sandbox cannot provide on this kernel, as user-facing phrases.
     #[must_use]
     pub fn gaps(&self) -> Vec<&'static str> {
-        let mut gaps = Vec::new();
-        if !self.landlock_filesystem {
-            gaps.push("Landlock is unavailable, so the engine is not confined to its workspace");
+        #[cfg(target_os = "macos")]
+        {
+            macos::gaps(self)
         }
-        if !self.seccomp {
-            gaps.push(if self.landlock_network {
+        #[cfg(not(target_os = "macos"))]
+        {
+            let mut gaps = Vec::new();
+            if !self.landlock_filesystem {
+                gaps.push(
+                    "Landlock is unavailable, so the engine is not confined to its workspace",
+                );
+            }
+            if !self.seccomp {
+                gaps.push(if self.landlock_network {
                 "seccomp is unavailable, so only TCP network access is blocked"
             } else {
                 "neither Landlock network rules nor seccomp are available, so network access is not blocked"
             });
+            }
+            gaps
         }
-        gaps
     }
 }
 
@@ -154,7 +174,7 @@ fn probe_support() -> SandboxSupport {
     #[cfg(debug_assertions)]
     if simulated_without_support() {
         return SandboxSupport {
-            platform: cfg!(target_os = "linux"),
+            platform: cfg!(any(target_os = "linux", target_os = "macos")),
             ..SandboxSupport::default()
         };
     }
@@ -162,17 +182,27 @@ fn probe_support() -> SandboxSupport {
     {
         linux::probe()
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::probe()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         SandboxSupport::default()
     }
 }
 
 /// Debug builds treat `ARIAD_TEST_SANDBOX_SUPPORT=none` as a kernel without Landlock or
-/// seccomp, so tests can exercise the degraded and fail-closed paths on any kernel.
+/// seccomp, or a Mac without sandbox-exec. On macOS, `seatbelt-refused` instead keeps the
+/// launcher available but makes every enforcement probe fail.
 #[cfg(debug_assertions)]
 fn simulated_without_support() -> bool {
     std::env::var_os("ARIAD_TEST_SANDBOX_SUPPORT").is_some_and(|value| value == "none")
+}
+
+#[cfg(all(debug_assertions, target_os = "macos"))]
+fn simulated_seatbelt_refusal() -> bool {
+    std::env::var_os("ARIAD_TEST_SANDBOX_SUPPORT").is_some_and(|value| value == "seatbelt-refused")
 }
 
 /// The isolation one engine process received.
@@ -180,7 +210,7 @@ fn simulated_without_support() -> bool {
 pub enum SandboxOutcome {
     /// The mode is `off`.
     Off,
-    /// The platform does not use the launcher (macOS, Windows).
+    /// The platform does not use the launcher (Windows).
     NotApplicable,
     /// Every isolation feature the sandbox relies on was applied.
     Applied,
@@ -202,7 +232,7 @@ impl SandboxOutcome {
 /// Filesystem paths and limits the launcher applies to one engine process.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SandboxPolicy {
-    /// Workspace backing a private `/tmp` for engines with hard-coded IPC paths.
+    /// Workspace backing private `/tmp` on Linux, or a dedicated IPC directory on macOS.
     pub private_tmp: Option<PathBuf>,
     /// Paths the engine may read.
     pub read_only: Vec<PathBuf>,
@@ -217,6 +247,8 @@ pub struct SandboxPolicy {
 }
 
 /// System paths every engine may execute from (libraries, the dynamic loader, shells).
+/// On macOS the Seatbelt profile owns the system allow-list instead.
+#[cfg(not(target_os = "macos"))]
 const BASE_EXEC: &[&str] = &[
     "/usr",
     "/bin",
@@ -227,6 +259,9 @@ const BASE_EXEC: &[&str] = &[
     "/libx32",
     "/nix/store",
 ];
+
+#[cfg(target_os = "macos")]
+const BASE_EXEC: &[&str] = &[];
 
 /// System configuration and devices every engine may read.
 const BASE_READ_ONLY: &[&str] = &[
@@ -403,10 +438,15 @@ pub fn launch(args: impl IntoIterator<Item = OsString>) -> ExitCode {
         let error = linux::apply_and_exec(&spec);
         launch_failure(&error)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        let error = macos::apply_and_exec(&spec);
+        launch_failure(&error)
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         let _ = spec;
-        launch_failure("the engine sandbox is only available on Linux")
+        launch_failure("the engine sandbox is only available on Linux and macOS")
     }
 }
 
@@ -433,7 +473,9 @@ fn launch_failure(message: &str) -> ExitCode {
 mod tests {
     use std::{ffi::OsString, path::PathBuf};
 
-    use super::{LaunchSpec, SandboxMode, SandboxPolicy, SandboxSupport};
+    #[cfg(target_os = "linux")]
+    use super::SandboxSupport;
+    use super::{LaunchSpec, SandboxMode, SandboxPolicy};
 
     #[test]
     fn modes_parse_their_documented_spellings_only() {
@@ -494,6 +536,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn gaps_name_missing_filesystem_and_network_isolation() {
         let full = SandboxSupport {
             platform: true,

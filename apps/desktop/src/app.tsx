@@ -1,46 +1,38 @@
 import { Badge } from "@ariadshift/ui/components/badge";
 import { Button } from "@ariadshift/ui/components/button";
 import { ThemeToggle } from "@ariadshift/ui/components/theme-toggle";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { check } from "@tauri-apps/plugin-updater";
+import { UploadIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as commands from "./bindings/commands";
 import type {
   Diagnostic,
   Inspection,
+  JobStatus,
   PackAction,
   PackRow,
   Profile,
   Settings,
   Snapshot,
 } from "./bindings/types";
+import { finishedToasts, Kbd, StatusBadge, type Toast, Toasts } from "./feedback";
+import { formats, inputExtensions, fileName as name, partitionPaths } from "./formats";
+import {
+  isActive,
+  newlyFinished,
+  nextSettled,
+  orderJobs,
+  type QueueSummary,
+  statusMap,
+  summarize,
+} from "./queue";
+import { ariaShortcut, matchShortcut, shortcutLabel, shortcutList } from "./shortcuts";
 
-const formats = ["md", "html", "docx", "epub", "pdf", "json", "xlsx", "pptx"];
-const inputExtensions: Record<string, string[]> = {
-  md: ["md", "markdown", "mdown"],
-  html: ["html", "htm"],
-  docx: ["docx"],
-  epub: ["epub"],
-  pdf: ["pdf"],
-  pptx: ["pptx"],
-  xlsx: ["xlsx"],
-  odt: ["odt"],
-  ods: ["ods"],
-  odp: ["odp"],
-  doc: ["doc"],
-  xls: ["xls"],
-  ppt: ["ppt"],
-  rtf: ["rtf"],
-  json: ["json"],
-  png: ["png"],
-  jpeg: ["jpg", "jpeg"],
-  tiff: ["tif", "tiff"],
-  webp: ["webp"],
-  "docling+json": ["json"],
-};
 const profiles: Profile[] = ["editable", "faithful", "fast", "private"];
 const tabs = [
   "Convert",
@@ -50,15 +42,93 @@ const tabs = [
   "Diagnostics",
   "Settings",
 ] as const;
+type Tab = (typeof tabs)[number];
+// The native `file_open::EVENT`: the OS file manager opened files with the app.
+const openFilesEvent = "open-files";
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
-const name = (path: string) => path.split(/[\\/]/).at(-1) ?? path;
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/** Info notices confirm an action and leave on their own; warnings and errors wait for the user. */
+type Notice = { tone: "info" | "warning" | "error"; text: string };
+export const noticeTimeout = 6000;
+const failure = (error: unknown): Notice => ({ tone: "error", text: message(error) });
+const info = (text: string): Notice => ({ tone: "info", text });
+
+function skippedNotice(skipped: string[]): Notice {
+  const names = skipped.slice(0, 5).map(name).join(", ");
+  const more = skipped.length > 5 ? ` and ${skipped.length - 5} more` : "";
+  return {
+    tone: "warning",
+    text: `Skipped ${plural(skipped.length, "item")} that ${skipped.length === 1 ? "is not a supported document" : "are not supported documents"}: ${names}${more}.`,
+  };
+}
+
+function queueText(summary: QueueSummary) {
+  const parts: string[] = [];
+  if (summary.running) parts.push(`${summary.running} converting`);
+  if (summary.queued) parts.push(`${summary.queued} waiting`);
+  if (summary.active) {
+    parts.push(`${summary.batchDone} of ${summary.batchTotal} finished`);
+    return parts.join(" · ");
+  }
+  if (summary.succeeded) parts.push(`${summary.succeeded} converted`);
+  if (summary.failed) parts.push(`${summary.failed} failed`);
+  if (summary.cancelled) parts.push(`${summary.cancelled} cancelled`);
+  return parts.length ? `All done · ${parts.join(" · ")}` : "";
+}
+
+function diagnosticsText(diagnostics: Diagnostic[]) {
+  const failing = diagnostics.filter((d) => !d.ok);
+  const required = failing.filter((d) => d.required).length;
+  if (!failing.length) return `All ${plural(diagnostics.length, "check")} passed.`;
+  return `${plural(failing.length, "check")} ${failing.length === 1 ? "needs" : "need"} attention${required ? `, ${required} required` : ""}. Each hint below says how to fix it.`;
+}
+
+type Dragging = { supported: string[]; skipped: string[] };
+
+function DropOverlay({ dragging }: { dragging: Dragging }) {
+  const { supported, skipped } = dragging;
+  const unknown = !supported.length && !skipped.length;
+  const title = unknown
+    ? "Drop to add documents"
+    : supported.length
+      ? `Drop to add ${plural(supported.length, "document")}`
+      : "These items can’t be converted";
+  const detail = supported.length
+    ? skipped.length
+      ? `${plural(skipped.length, "item")} will be skipped.`
+      : "They join the Convert selection."
+    : unknown
+      ? "They join the Convert selection."
+      : "Drop Markdown, HTML, Office, EPUB, PDF or image files.";
+  return (
+    <div
+      className="drop-overlay"
+      data-accepts={supported.length > 0 || unknown || undefined}
+      aria-hidden="true"
+    >
+      <div className="drop-overlay-card">
+        <UploadIcon />
+        <strong>{title}</strong>
+        <p>{detail}</p>
+      </div>
+    </div>
+  );
+}
 
 export function App() {
-  const [tab, setTab] = useState<(typeof tabs)[number]>("Convert");
+  const [tab, setTab] = useState<Tab>("Convert");
   const [state, setState] = useState<Snapshot>();
   const [settings, setSettings] = useState<Settings>();
+  const [savedSettings, setSavedSettings] = useState<Settings>();
   const initialized = useRef(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState<Notice>();
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [dragging, setDragging] = useState<Dragging>();
+  const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set());
+  const statuses = useRef<Map<string, JobStatus> | undefined>(undefined);
+  const currentTab = useRef(tab);
+  const heading = useRef<HTMLHeadingElement>(null);
   const [paths, setPaths] = useState<string[]>([]);
   const [typedPath, setTypedPath] = useState("");
   const [target, setTarget] = useState("html");
@@ -76,19 +146,40 @@ export function App() {
   const [watchOverwrite, setWatchOverwrite] = useState(false);
   const [watchInterval, setWatchInterval] = useState(2);
   const [watchRecursive, setWatchRecursive] = useState(false);
-  const [packs, setPacks] = useState<PackRow[]>([]);
+  const [packs, setPacks] = useState<PackRow[]>();
   const [packName, setPackName] = useState("docling");
   const [packFrom, setPackFrom] = useState("");
-  const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
+  const [diagnostics, setDiagnostics] = useState<Diagnostic[]>();
+  const [checking, setChecking] = useState(false);
   const [update, setUpdate] = useState<Awaited<ReturnType<typeof check>>>(null);
   const [updateProgress, setUpdateProgress] = useState("");
 
+  const dismissToast = useCallback(
+    (id: string) => setToasts((current) => current.filter((toast) => toast.id !== id)),
+    [],
+  );
   const refresh = useCallback(async () => {
     const next = await commands.snapshot({});
+    const finished = newlyFinished(statuses.current, next.jobs).filter(
+      (job) => job.status !== "cancelled",
+    );
+    statuses.current = statusMap(next.jobs);
+    setSettled((previous) => nextSettled(next.jobs, previous));
     setState(next);
+    // The Queue tab already shows each result, so toasts only reach users looking elsewhere.
+    if (finished.length && currentTab.current !== "Queue") {
+      const created = finishedToasts(finished, {
+        reveal: (job) => void revealItemInDir(job.output).catch((e) => setNotice(failure(e))),
+        retry: (job) => void commands.retry({ id: job.id }).catch((e) => setNotice(failure(e))),
+        viewQueue: () => setTab("Queue"),
+      });
+      const ids = new Set(created.map((toast) => toast.id));
+      setToasts((current) => [...current.filter((t) => !ids.has(t.id)), ...created].slice(-3));
+    }
     if (!initialized.current) {
       initialized.current = true;
       setSettings(next.settings);
+      setSavedSettings(next.settings);
       setProfile(next.settings.profile);
       setWatchProfile(next.settings.profile);
       setWatchOverwrite(next.settings.overwrite);
@@ -98,12 +189,12 @@ export function App() {
   }, []);
   const run = useCallback(
     async (action: () => Promise<unknown>) => {
-      setNotice("");
+      setNotice(undefined);
       try {
         await action();
         await refresh();
       } catch (error) {
-        setNotice(message(error));
+        setNotice(failure(error));
       }
     },
     [refresh],
@@ -113,6 +204,14 @@ export function App() {
     setInspection(undefined);
     setTab("Convert");
   }, []);
+  const addDropped = useCallback(
+    (dropped: string[]) => {
+      const { supported, skipped } = partitionPaths(dropped);
+      if (supported.length) addPaths(supported);
+      if (skipped.length) setNotice(skippedNotice(skipped));
+    },
+    [addPaths],
+  );
   const pick = useCallback(
     async (from?: string) => {
       const selected = await open({
@@ -131,6 +230,15 @@ export function App() {
     },
     [addPaths],
   );
+  // A failed listing still ends the loading state, so the empty state can offer a reload.
+  const loadPacks = useCallback(async () => {
+    try {
+      setPacks(await commands.packs({}));
+    } catch (error) {
+      setPacks((current) => current ?? []);
+      throw error;
+    }
+  }, []);
   const chooseFolder = async (setter: (folder: string) => void) => {
     const folder = await open({ directory: true, multiple: false });
     if (typeof folder === "string") setter(folder);
@@ -141,7 +249,7 @@ export function App() {
       try {
         if (active) await refresh();
       } catch (e) {
-        if (active) setNotice(message(e));
+        if (active) setNotice(failure(e));
       }
     };
     void poll();
@@ -170,11 +278,13 @@ export function App() {
           setProfile(link.profile);
           setTab("Convert");
           setNotice(
-            `Desktop link: ${link.from} → ${link.target} · ${link.profile}. Choose a local file.`,
+            info(
+              `Desktop link: ${link.from} → ${link.target} · ${link.profile}. Choose a local file.`,
+            ),
           );
           await pick(link.from);
         } catch (e) {
-          if (!disposed) setNotice(message(e));
+          if (!disposed) setNotice(failure(e));
         }
       }
     };
@@ -182,21 +292,42 @@ export function App() {
       void links(urls);
     })
       .then(keep)
-      .catch((e) => setNotice(message(e)));
+      .catch((e) => setNotice(failure(e)));
     void getCurrent()
       .then((urls) => urls && links(urls))
-      .catch((e) => setNotice(message(e)));
+      .catch((e) => setNotice(failure(e)));
     void getCurrentWebview()
       .onDragDropEvent((event) => {
-        if (event.payload.type === "drop") addPaths(event.payload.paths);
+        const drag = event.payload;
+        if (drag.type === "enter") setDragging(partitionPaths(drag.paths));
+        else if (drag.type === "leave") setDragging(undefined);
+        else if (drag.type === "drop") {
+          setDragging(undefined);
+          addDropped(drag.paths);
+        }
       })
       .then(keep)
-      .catch((e) => setNotice(message(e)));
+      .catch((e) => setNotice(failure(e)));
+    // Draining removes the files from the native list, so they are added even after disposal:
+    // a StrictMode remount keeps this component's state.
+    const opened = () =>
+      commands
+        .opened_files({})
+        .then((files) => {
+          if (files.length > 0) addPaths(files);
+        })
+        .catch((e) => setNotice(failure(e)));
+    // Subscribe first, then drain once: files opened before the subscription are still in the
+    // native list, and files opened after it raise the event.
+    void listen(openFilesEvent, () => void opened())
+      .then(keep)
+      .catch((e) => setNotice(failure(e)))
+      .finally(() => void opened());
     return () => {
       disposed = true;
       for (const stop of listeners) stop();
     };
-  }, [pick, addPaths]);
+  }, [pick, addPaths, addDropped]);
   useEffect(() => {
     if (!paths[0]) {
       setInspection(undefined);
@@ -205,8 +336,8 @@ export function App() {
     let active = true;
     void commands
       .inspect({ path: paths[0], target, profile })
-      .then((info) => {
-        if (active) setInspection(info);
+      .then((result) => {
+        if (active) setInspection(result);
       })
       .catch((e) => {
         if (active)
@@ -222,8 +353,19 @@ export function App() {
     };
   }, [paths, target, profile]);
   useEffect(() => {
-    if (tab === "Engine packs") void run(async () => setPacks(await commands.packs({})));
-  }, [tab, run]);
+    if (tab === "Engine packs") void run(loadPacks);
+  }, [tab, run, loadPacks]);
+  // Moving focus to the page heading announces the new tab, as a route change would.
+  useEffect(() => {
+    if (currentTab.current === tab) return;
+    currentTab.current = tab;
+    heading.current?.focus();
+  }, [tab]);
+  useEffect(() => {
+    if (notice?.tone !== "info") return;
+    const timer = setTimeout(() => setNotice(undefined), noticeTimeout);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     let active = true;
@@ -242,6 +384,7 @@ export function App() {
     };
   }, []);
 
+  const canConvert = paths.length > 0 && !working;
   const start = async () => {
     setWorking(true);
     await run(async () => {
@@ -252,6 +395,57 @@ export function App() {
     });
     setWorking(false);
   };
+  const chooseFiles = () => void run(() => pick(source || undefined));
+  const jobs = state?.jobs ?? [];
+  const summary = summarize(jobs, settled);
+  const cancelPending = () =>
+    void run(async () => {
+      for (const j of jobs) if (isActive(j.status)) await commands.cancel({ id: j.id });
+    });
+  const copyError = (error: string) =>
+    void navigator.clipboard
+      .writeText(error)
+      .then(() => setNotice(info("Error copied")))
+      .catch((e) => setNotice(failure(e)));
+
+  // The listener is installed once; the handler it calls is replaced after every render so it
+  // always sees the current selection and messages.
+  const onShortcut = useRef<((event: KeyboardEvent) => void) | undefined>(undefined);
+  useEffect(() => {
+    onShortcut.current = (event) => {
+      const action = matchShortcut(event, tabs.length);
+      if (!action) return;
+      if (action.kind === "tab") {
+        event.preventDefault();
+        setTab(tabs[action.index] ?? "Convert");
+      } else if (action.kind === "settings") {
+        event.preventDefault();
+        setTab("Settings");
+      } else if (action.kind === "open") {
+        event.preventDefault();
+        setTab("Convert");
+        chooseFiles();
+      } else if (action.kind === "convert") {
+        if (tab !== "Convert" || !canConvert) return;
+        event.preventDefault();
+        void start();
+      } else if (action.kind === "cancel") {
+        if (tab !== "Queue" || !summary.active) return;
+        event.preventDefault();
+        cancelPending();
+      } else if (!event.defaultPrevented) {
+        const latest = toasts.at(-1);
+        if (notice) setNotice(undefined);
+        else if (latest) dismissToast(latest.id);
+      }
+    };
+  });
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => onShortcut.current?.(event);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const packAction = async (action: PackAction, pack: { name: string; version?: string }) => {
     await run(async () => {
       const result = await commands.pack({
@@ -260,7 +454,7 @@ export function App() {
         action,
         from: action === "install" && packFrom ? packFrom : null,
       });
-      setNotice(result);
+      setNotice(info(result));
       setPacks(await commands.packs({}));
     });
   };
@@ -274,6 +468,8 @@ export function App() {
       </select>
     </label>
   );
+  const settingsChanged =
+    settings !== undefined && JSON.stringify(settings) !== JSON.stringify(savedSettings);
 
   return (
     <div className="desktop-shell">
@@ -285,17 +481,19 @@ export function App() {
           </div>
         </div>
         <nav aria-label="Main navigation">
-          {tabs.map((item) => (
+          {tabs.map((item, index) => (
             <button
               type="button"
               aria-current={tab === item ? "page" : undefined}
+              aria-keyshortcuts={ariaShortcut(String(index + 1))}
               key={item}
               onClick={() => setTab(item)}
             >
-              {item}
-              {item === "Queue" && state
-                ? ` (${state.jobs.filter((j) => j.status === "queued" || j.status === "running").length})`
-                : ""}
+              <span>
+                {item}
+                {item === "Queue" && state ? ` (${summary.active})` : ""}
+              </span>
+              <Kbd>{shortcutLabel(String(index + 1))}</Kbd>
             </button>
           ))}
         </nav>
@@ -308,7 +506,9 @@ export function App() {
       <main>
         <header>
           <p className="eyebrow">YOUR LOCAL WORKSPACE</p>
-          <h1>{tab}</h1>
+          <h1 ref={heading} tabIndex={-1}>
+            {tab}
+          </h1>
           <p>
             {tab === "Convert"
               ? "Turn documents into the format you need. Keep the thread of your work."
@@ -316,9 +516,18 @@ export function App() {
           </p>
         </header>
         {notice && (
-          <div role="status" className="notice">
-            {notice}
-            <button type="button" aria-label="Dismiss notice" onClick={() => setNotice("")}>
+          <div
+            role={notice.tone === "error" ? "alert" : "status"}
+            className="notice"
+            data-tone={notice.tone}
+          >
+            {notice.text}
+            <button
+              type="button"
+              aria-label="Dismiss notice"
+              aria-keyshortcuts="Escape"
+              onClick={() => setNotice(undefined)}
+            >
               ×
             </button>
           </div>
@@ -334,12 +543,16 @@ export function App() {
         {!state && <p role="status">Connecting to the desktop engine…</p>}
         {tab === "Convert" && (
           <>
-            <section className="drop-panel" aria-label="Drop documents">
+            <section
+              className="drop-panel"
+              aria-label="Drop documents"
+              data-dragging={dragging ? true : undefined}
+            >
               <div className="drop-symbol">↳</div>
               <h2>Drop your documents here</h2>
-              <p>Markdown, HTML, DOCX and EPUB · Single files or a batch</p>
-              <Button size="lg" onClick={() => void run(() => pick(source || undefined))}>
-                Choose files
+              <p>Markdown, HTML, Office, EPUB, PDF and images · Single files or a batch</p>
+              <Button size="lg" aria-keyshortcuts={ariaShortcut("o")} onClick={chooseFiles}>
+                Choose files <Kbd>{shortcutLabel("o")}</Kbd>
               </Button>
               <details>
                 <summary>Add a local file by path</summary>
@@ -438,46 +651,82 @@ export function App() {
               <Button
                 size="lg"
                 aria-label="Start conversion"
-                disabled={!paths.length || working}
+                aria-keyshortcuts={ariaShortcut("Enter")}
+                disabled={!canConvert}
                 onClick={() => void start()}
               >
                 {working
                   ? "Adding to queue…"
                   : `Convert${paths.length > 1 ? ` ${paths.length} files` : ""}`}
+                {!working && <Kbd>{shortcutLabel("Enter")}</Kbd>}
               </Button>
             </section>
           </>
         )}
         {tab === "Queue" && (
           <section className="panel">
-            <div className="row">
+            <div className="row queue-head">
               <h2>Conversion queue</h2>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  void run(async () => {
-                    for (const j of state?.jobs ?? [])
-                      if (j.status === "queued" || j.status === "running")
-                        await commands.cancel({ id: j.id });
-                  })
-                }
-              >
-                Cancel pending jobs
-              </Button>
+              <div className="actions">
+                {summary.failed > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      void run(async () => {
+                        for (const j of jobs)
+                          if (j.status === "failed") await commands.retry({ id: j.id });
+                      })
+                    }
+                  >
+                    Retry failed ({summary.failed})
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  aria-keyshortcuts={ariaShortcut(".")}
+                  disabled={!summary.active}
+                  onClick={cancelPending}
+                >
+                  Cancel pending jobs <Kbd>{shortcutLabel(".")}</Kbd>
+                </Button>
+              </div>
             </div>
+            <p role="status" className="queue-summary">
+              {queueText(summary)}
+            </p>
+            {summary.active > 0 && (
+              <progress
+                aria-label="Batch progress"
+                max={summary.batchTotal}
+                value={summary.batchDone}
+              />
+            )}
             <p>
               Concurrency: {state?.settings.concurrency ?? 2}. Engine sessions stay warm between
               jobs.
             </p>
-            {!state?.jobs.length && <p>No jobs yet. Choose files to begin.</p>}
+            {state && !jobs.length && (
+              <div className="empty-state">
+                <h3>No conversions yet</h3>
+                <p>Files you convert appear here with their progress and results.</p>
+                <Button
+                  aria-keyshortcuts={ariaShortcut("o")}
+                  onClick={() => {
+                    setTab("Convert");
+                    chooseFiles();
+                  }}
+                >
+                  Choose files <Kbd>{shortcutLabel("o")}</Kbd>
+                </Button>
+              </div>
+            )}
             <ul className="jobs">
-              {state?.jobs.toReversed().map((job) => (
-                <li key={job.id}>
+              {orderJobs(jobs).map((job) => (
+                <li key={job.id} data-status={job.status}>
                   <div>
                     <strong title={job.input}>{name(job.input)}</strong>
                     <p>
-                      {job.target.toUpperCase()} · {job.profile} ·{" "}
-                      <span data-status={job.status}>{job.status}</span>
+                      <StatusBadge status={job.status} /> {job.target.toUpperCase()} · {job.profile}
                     </p>
                     <p role="status">{job.stage}</p>
                     {job.error && <p className="error">{job.error}</p>}
@@ -487,12 +736,17 @@ export function App() {
                     <small title={job.output}>{job.output}</small>
                   </div>
                   <div className="actions">
-                    {(job.status === "queued" || job.status === "running") && (
+                    {isActive(job.status) && (
                       <Button
                         variant="outline"
                         onClick={() => void run(() => commands.cancel({ id: job.id }))}
                       >
                         Cancel
+                      </Button>
+                    )}
+                    {job.error && (
+                      <Button variant="ghost" onClick={() => copyError(job.error ?? "")}>
+                        Copy error
                       </Button>
                     )}
                     {(job.status === "failed" || job.status === "cancelled") && (
@@ -633,6 +887,15 @@ export function App() {
             </section>
             <section className="panel">
               <h2>Watched folders</h2>
+              {state && !state.watches.length && (
+                <div className="empty-state">
+                  <h3>No folders are watched yet</h3>
+                  <p>
+                    Choose a watched folder and a separate output folder above. New documents there
+                    are converted while AriadShift is open.
+                  </p>
+                </div>
+              )}
               {state?.watches.map((watch) => (
                 <article key={watch.id} className="watch">
                   <strong>{watch.route.input}</strong>
@@ -718,7 +981,20 @@ export function App() {
             </section>
             <section className="panel">
               <h2>Available and installed</h2>
-              {packs.map((pack) => (
+              {!packs && <p role="status">Loading engine packs…</p>}
+              {packs && !packs.length && (
+                <div className="empty-state">
+                  <h3>No engine packs listed</h3>
+                  <p>
+                    The pack index could not list any pack. Install from a local source above, or
+                    try again when you are online.
+                  </p>
+                  <Button variant="outline" onClick={() => void run(loadPacks)}>
+                    Reload packs
+                  </Button>
+                </div>
+              )}
+              {packs?.map((pack) => (
                 <article className="watch" key={`${pack.name}-${pack.version}`}>
                   <strong>
                     {pack.name} {pack.version}
@@ -767,13 +1043,34 @@ export function App() {
         {tab === "Diagnostics" && (
           <section className="panel">
             <h2>Environment health</h2>
-            <Button onClick={() => void run(async () => setDiagnostics(await commands.doctor({})))}>
-              Run diagnostics
+            <Button
+              disabled={checking}
+              onClick={() =>
+                void run(async () => {
+                  setChecking(true);
+                  try {
+                    setDiagnostics(await commands.doctor({}));
+                  } finally {
+                    setChecking(false);
+                  }
+                })
+              }
+            >
+              {checking ? "Checking…" : diagnostics ? "Run diagnostics again" : "Run diagnostics"}
             </Button>
+            {!diagnostics && (
+              <p>
+                Checks Pandoc, LibreOffice, engine packs, the workspace and the sandbox. Nothing
+                leaves this computer.
+              </p>
+            )}
+            {diagnostics && <p role="status">{diagnosticsText(diagnostics)}</p>}
             <ul>
-              {diagnostics.map((d) => (
+              {diagnostics?.map((d) => (
                 <li className="diagnostic" key={d.id}>
-                  <Badge>{d.ok ? "OK" : d.required ? "Required" : "Optional"}</Badge>
+                  <Badge variant={d.ok ? "default" : d.required ? "destructive" : "outline"}>
+                    {d.ok ? "OK" : d.required ? "Required" : "Optional"}
+                  </Badge>
                   <div>
                     <strong>{d.message}</strong>
                     {d.hint && <p>{d.hint}</p>}
@@ -863,20 +1160,32 @@ export function App() {
                 Opt in to telemetry
               </label>
               <p>No telemetry collection is implemented. This preference is stored locally only.</p>
-              <Button
-                onClick={() =>
-                  void run(async () => {
-                    const saved = await commands.settings(settings);
-                    setSettings(saved);
-                    setProfile(saved.profile);
-                    setOverwrite(saved.overwrite);
-                    setOutput(saved.output_policy === "folder" ? saved.output_folder : null);
-                    setNotice("Settings saved");
-                  })
-                }
-              >
-                Save settings
-              </Button>
+              <div className="row save-row">
+                <Button
+                  disabled={!settingsChanged}
+                  onClick={() =>
+                    void run(async () => {
+                      const saved = await commands.settings(settings);
+                      setSettings(saved);
+                      setSavedSettings(saved);
+                      setProfile(saved.profile);
+                      setOverwrite(saved.overwrite);
+                      setOutput(saved.output_policy === "folder" ? saved.output_folder : null);
+                      setNotice(info("Settings saved"));
+                    })
+                  }
+                >
+                  Save settings
+                </Button>
+                {settingsChanged && (
+                  <>
+                    <Button variant="ghost" onClick={() => setSettings(savedSettings)}>
+                      Discard changes
+                    </Button>
+                    <span className="unsaved">Unsaved changes</span>
+                  </>
+                )}
+              </div>
             </section>
             <section className="panel">
               <h2>App updates</h2>
@@ -924,10 +1233,25 @@ export function App() {
                 </Button>
               )}
             </section>
+            <section className="panel">
+              <h2>Keyboard shortcuts</h2>
+              <dl className="shortcuts">
+                {shortcutList(tabs).map((item) => (
+                  <div key={item.action} className="shortcut">
+                    <dt>
+                      <kbd className="kbd">{item.keys}</kbd>
+                    </dt>
+                    <dd>{item.action}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
           </>
         )}
         <footer>AriadShift · Private by default · Open source</footer>
       </main>
+      <Toasts toasts={toasts} onDismiss={dismissToast} />
+      {dragging && <DropOverlay dragging={dragging} />}
     </div>
   );
 }

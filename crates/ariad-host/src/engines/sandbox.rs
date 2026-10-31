@@ -1,4 +1,4 @@
-//! Extra filesystem access each out-of-process engine needs inside the Linux sandbox.
+//! Extra filesystem access each out-of-process engine needs inside the host sandbox.
 //!
 //! Every engine already gets the base system allow-list, execute access to its own program and
 //! read-write access to its job workspace (see [`crate::sandbox::SandboxPolicy::for_engine`]).
@@ -15,7 +15,7 @@ pub struct EnginePaths {
     pub read_only: Vec<PathBuf>,
     /// Paths the engine may read and execute (install roots, helper programs).
     pub exec: Vec<PathBuf>,
-    /// Whether hard-coded `/tmp` IPC must stay inside a private mount namespace.
+    /// Whether IPC needs a private `/tmp` mount on Linux or a dedicated directory on macOS.
     pub private_tmp: bool,
 }
 
@@ -74,7 +74,11 @@ fn libreoffice_paths() -> EnginePaths {
     exec.extend(candidates.into_iter().filter(|path| path.is_file()));
     EnginePaths {
         // Standard Linux installs may live under /opt/libreoffice<version>.
-        read_only: vec![PathBuf::from("/opt")],
+        read_only: if cfg!(target_os = "linux") {
+            vec![PathBuf::from("/opt")]
+        } else {
+            Vec::new()
+        },
         private_tmp: !exec.is_empty(),
         exec,
     }
@@ -93,8 +97,12 @@ fn docling_paths() -> EnginePaths {
     if std::env::var_os(super::docling::OVERRIDE_ENV).is_some()
         && let Some(command) = super::docling::resolve()
     {
+        // Anchor relative overrides before finding the venv and its adjacent data.
+        let Ok(program) = std::path::absolute(&command.program) else {
+            return paths;
+        };
         // Grant the venv, its base interpreter, and the adjacent model/data directories.
-        if let Some(prefix) = command.program.parent().and_then(std::path::Path::parent) {
+        if let Some(prefix) = program.parent().and_then(std::path::Path::parent) {
             paths.exec.extend(prefix.canonicalize().ok());
             if let Some(root) = prefix.parent() {
                 for name in ["models", "tessdata"] {
@@ -102,12 +110,12 @@ fn docling_paths() -> EnginePaths {
                 }
             }
         }
-        if let Ok(program) = command.program.canonicalize()
+        if let Ok(program) = program.canonicalize()
             && let Some(prefix) = program.parent().and_then(std::path::Path::parent)
         {
             paths.exec.push(prefix.to_path_buf());
         }
-        grant_editable_source(&mut paths, &command.program);
+        grant_editable_source(&mut paths, &program);
     }
     paths
 }
@@ -237,5 +245,13 @@ mod tests {
         }
         assert_eq!(paths_for("pdf"), super::EnginePaths::default());
         assert_eq!(paths_for("typst"), super::EnginePaths::default());
+    }
+
+    #[test]
+    fn libreoffice_reads_opt_only_on_linux() {
+        let reads_opt = paths_for("libreoffice")
+            .read_only
+            .contains(&std::path::PathBuf::from("/opt"));
+        assert_eq!(reads_opt, cfg!(target_os = "linux"));
     }
 }

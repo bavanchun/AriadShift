@@ -102,6 +102,10 @@ With `file://` storage the API signs and serves object URLs itself at `/v1/blobs
 
 Upload completion, on every storage backend, allows one verification claim per object and at most four active digests per API process. A concurrent call for the same pending object receives `409 conflict`; distinct objects wait for a digest slot and recheck the upload's access, status and expiry before reading it. Claims and slots are released on success, failure and cancellation. These limits are shared by cloned storage handles, not across replicas: each replica can verify the same object once, so deployments still need ingress-wide request limits. Completion already settled as `completed` returns the existing result without another digest.
 
+### MCP inline storage
+
+MCP inline Markdown and HTML use one object-store PUT for bytes already in memory. They do not consume local HTTP blob transfer slots, including while those slots are full, and do not use S3 multipart uploads. A storage or completion failure retires the upload immediately, releasing its pending-upload slot and preserving the original error. Object deletion is retried by the sweeper when immediate cleanup fails. If job admission refuses a completed inline input with `quota_exceeded`, MCP returns its reusable `upload_id`; retry with that reference after capacity returns instead of sending inline content again. Other job-creation failures retire automatic inputs. Retired or abandoned uploads still count toward daily upload limits.
+
 ### API
 
 | Variable | Default | Meaning |
@@ -110,13 +114,14 @@ Upload completion, on every storage backend, allows one verification claim per o
 | `ARIAD_SECRET` | required | At least 32 bytes. Keys the local-store URL signatures and the client-address hashes. |
 | `ARIAD_PUBLIC_URL` | unset | Public base URL of the API; required with `file://` storage. |
 | `ARIAD_PACKS` | `core` | Packs that have running workers, comma-separated. |
+| `ARIAD_GLOBAL_ACTIVE_JOBS` | `64` | Positive fleet ceiling for all queued/running jobs across API replicas, checked before subject quotas for REST and MCP. Production capacity approval remains pending. |
 | `ARIAD_CORS_ORIGINS` | unset | Allowed browser origins, comma-separated. Unset allows no cross-origin requests. |
 | `ARIAD_REQUEST_TIMEOUT_S` | `30` | Timeout for ordinary requests. Event streams and upload completion are exempt. |
 | `ARIAD_SWEEP_INTERVAL_S` | `60` | Positive seconds between retention sweeps. |
 | `ARIAD_SWEEP_BATCH` | `200` | Positive row limit per table/check in each sweep. Increase with upload rate so every live signed URL is revisited promptly. |
 | `ARIAD_TRUSTED_CLIENT_IP_HEADER` | unset | Header that carries the client address, set only behind a proxy that overwrites it, for example `CF-Connecting-IP` behind Cloudflare. Only one header value containing one IP address is accepted; lists and repeated headers fall back to the peer. |
 
-Behind a reverse proxy, configure a header that the proxy overwrites with exactly one client address, such as `CF-Connecting-IP`. Do not use an unnormalized `X-Forwarded-For` list: the leftmost entry can be client-controlled. Without the header all proxy clients share anonymous quotas and the rejected-credential throttle, so one client's failures can block everyone. The API logs a warning on the first private/loopback peer when no trusted header is configured (the peer is known only after accepting a request). Restrict direct access to the API when trusting a header.
+Behind a reverse proxy, configure a header that the proxy overwrites with exactly one client address, such as `CF-Connecting-IP`. Do not use an unnormalized `X-Forwarded-For` list: the leftmost entry can be client-controlled. Without the header all proxy clients share anonymous quotas and the rejected-credential throttle, so one client's failures can throttle other clients' rejected credentials. The API logs a warning on the first private/loopback peer when no trusted header is configured (the peer is known only after accepting a request). Restrict direct access to the API when trusting a header.
 
 The public `/readyz` and `/v1/capabilities` routes bypass caller throttling: readiness queries the database and object store, and capabilities builds the deployment graph. Restrict readiness to the orchestrator or rate-limit it at the proxy; cache/rate-limit capabilities at the proxy (its response allows a five-minute public cache). `/healthz` performs no dependency work.
 
@@ -203,7 +208,7 @@ Every account gets a workspace on its first request, on the `free` plan; move on
 
 Event streams are limited to eight open streams per subject and two per job across all API replicas. A shared database lease is renewed every 30 seconds, expires after 90 seconds on a lost process, and is released on disconnect or completion. A full limit returns `429` with `Retry-After`; terminal streams also release their lease.
 
-After 30 rejected credentials from one client address in a minute, further credential-bearing requests from that address receive `429` with `Retry-After` until the next window. This check runs before JWT verification or API key lookup.
+After 30 rejected credentials from one client address in a minute, further rejected credentials from that address receive `429` with `Retry-After` until the next window. JWT verification or API key lookup happens first: a credential that verifies is not blocked by this failure bucket, and requests without credentials never count. Normal account request limits and key quotas still apply.
 
 ## Data lifecycle
 

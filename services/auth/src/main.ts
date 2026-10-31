@@ -6,9 +6,16 @@
 import { serve } from "@hono/node-server";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { createApp } from "./app.ts";
-import { buildAuthOptions, createAuth, createPool } from "./auth.ts";
+import {
+  buildAuthOptions,
+  createAuth,
+  createPool,
+  discoveryDocuments,
+  scheduleLegacySigningKeys,
+} from "./auth.ts";
 import { ConfigError, parseConfig } from "./config.ts";
 import { migrate } from "./migrate.ts";
+import { pageOptions } from "./pages.ts";
 
 function log(level: "info" | "error", message: string, fields: Record<string, unknown> = {}) {
   const line = JSON.stringify({ time: new Date().toISOString(), level, message, ...fields });
@@ -33,14 +40,24 @@ async function main(command: string): Promise<void> {
     return;
   }
 
+  await scheduleLegacySigningKeys(pool);
   const auth = createAuth(options);
+  if (config.oauthDisabledReason) {
+    log("info", "remote MCP OAuth is off", { reason: config.oauthDisabledReason });
+  }
   const app = createApp({
     config,
     handler: (request) => auth.handler(request),
+    metadata: config.oauthDisabledReason ? undefined : discoveryDocuments(auth),
+    pages: pageOptions(config),
     peerAddress: (c) => getConnInfo(c).remote.address,
   });
   const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) =>
-    log("info", "auth service listening", { address: info.address, port: info.port }),
+    log("info", "auth service listening", {
+      address: info.address,
+      port: info.port,
+      mcpResource: config.mcpResource,
+    }),
   );
 
   const shutdown = (signal: string) => {

@@ -526,6 +526,7 @@ impl Storage {
     }
 
     /// Writes a local blob PUT, enforcing admission, size, hash and time limits.
+    /// S3 multipart requires parts of at least 5 MiB; use `put_bytes` for inline data.
     pub async fn put_stream<S, E>(
         &self,
         key: &str,
@@ -694,6 +695,13 @@ impl Storage {
             Ok(()) | Err(object_store::Error::NotFound { .. }) => Ok(()),
             Err(err) => Err(err.into()),
         }
+    }
+
+    /// Stores an in-memory object with one PUT on every backend.
+    /// Blob admission bounds slow HTTP bodies, not bytes already in memory.
+    pub async fn put_bytes(&self, key: &str, bytes: bytes::Bytes) -> Result<(), StorageError> {
+        self.store.put(&Path::from(key), bytes.into()).await?;
+        Ok(())
     }
 
     /// Cheap reachability probe for readiness checks.

@@ -113,6 +113,20 @@ LibreOffice >=24.2 is optional: DOC/RTF/ODT → DOCX, XLS/ODS → XLSX, PPT/ODP 
 
 `--to json` writes IR JSON; `--json` instead selects the conversion report on stdout.
 
+#### Package metadata name encoding
+
+The shared stamper rejects packages when the physical central-directory record
+count differs from the ZIP index, before writing output. This also protects the
+browser/WASM bridge without relying on the host's input preflight.
+
+For v1.0, DOCX/EPUB metadata stamping retains the current ZIP name normalization:
+valid UTF-8 bytes without the UTF-8 flag are written back with that flag set.
+A flag-zero `c3 a9 2e 74 78 74` name therefore changes from `├⌐.txt` to `é.txt`
+for a reader that initially follows CP437.
+The rationale is that OOXML/EPUB names are referenced from UTF-8 XML, so the
+flagged form matches the package's own references and mainstream readers already
+decode these names as UTF-8. Preserving name bytes and flags exactly is a v1.x item.
+
 #### JSON Output Shape
 
 For one input, `--json` preserves the existing report shape:
@@ -489,9 +503,62 @@ ashift doctor [OPTIONS]
 4. **Engine pack directory** (`data_dir`, not required): the pack data directory exists or can be created and is writable.
 5. **Pack signing keys** (`pack_keys`, not required): lists the ids of the minisign keys built into `ashift`; a build without keys cannot install packs.
 6. **Installed packs** (`pack_<name>`, not required): one check per installed version (receipt present, every recorded file present with its recorded size, built for this platform and `ashift` range) and per `ASHIFT_PACK_<NAME>` override. `ashift engines verify` does the full re-hash.
-7. **Sandbox**: Reports effective mode, Landlock ABI and seccomp availability. Missing isolation is an optional failed check in best-effort mode and a required failure in required mode. Required mode needs Linux.
+7. **Sandbox**: Reports effective mode, Landlock ABI and seccomp availability on Linux, or Seatbelt availability and enforcement on macOS. Missing isolation is an optional failed check in best-effort mode and a required failure in required mode. Required mode needs Linux isolation or usable macOS Seatbelt.
 8. **Docling engine** (`docling_engine`, not required): the engine from `ASHIFT_DOCLING_ENGINE` or the `docling` pack answers `describe`; the message lists the Docling version and the models found. Without an engine the check fails and the hint says how to install one.
 9. **Tesseract** (`tesseract`, not required; only when the Docling engine answered): Tesseract 5 is on `PATH` for Vietnamese OCR. Otherwise Vietnamese OCR is unavailable and the hint gives the install command.
+
+#### macOS engine sandbox
+
+On macOS, engine launches use the system `/usr/bin/sandbox-exec` when present.
+The generated Seatbelt profile denies access by default. Engines can read their
+installation and declared runtime paths, system libraries and fonts, and can
+write only their job workspace (the session directory for pooled engines), plus
+`/dev/null`. LibreOffice also gets a private IPC directory as described below.
+Read-only engine library paths permit executable memory mappings without
+permission to execute programs. The runner places engine temporary files inside
+the job workspace.
+Neither the user's home directory nor the host's general temporary directory is
+granted. Homebrew and `/usr/local` state directories (`var`, `etc`) are not
+readable through the system runtime grants. IP networking, including loopback,
+and general UNIX socket access are denied; the engine protocol and sessions use
+inherited stdin/stdout pipes. System identity is readable through `uname`. The
+launcher uses a granted working directory and keeps Apple's fixed `/var`, `/tmp`
+and `/etc` aliases scoped to the same paths. Relative engine executables and
+`ASHIFT_PANDOC` / `ASHIFT_SOFFICE` overrides resolve against the caller's working
+directory before the launcher changes directory.
+
+Paths are supplied as separate `sandbox-exec -D` parameters, so quotes,
+parentheses, backslashes and newlines in paths cannot inject profile rules.
+The launcher validates the exact profile in a disposable child before starting
+the engine, disables core dumps, and retains process-group cancellation and the
+host's resource watchdog. A profile setup error or refused enforcement probe
+fails the job with `sandbox_unavailable` in both `best-effort` and `required`
+modes; it never silently retries outside Seatbelt.
+
+The host's `doctor` diagnostics report both whether `sandbox-exec` exists and
+whether a disposable child can apply the profile, consistently in the CLI and
+desktop. A present but refused Seatbelt is a required diagnostic failure even
+in `best-effort`; both enabled modes refuse before executing the engine. On macOS, `doctor --json` adds
+`sandbox.seatbelt_available`, `sandbox.seatbelt_usable`, and
+`sandbox.seatbelt_enforced`. The last field means that the selected mode enables
+Seatbelt for engine launches and its enforcement probe succeeded; it is false
+in `off` mode. Each engine's exact profile is still checked when launched.
+When `sandbox-exec` is absent, `best-effort` runs with a
+`sandbox_unavailable` warning, while `required` refuses to start the engine
+(exit 5). `off` explicitly bypasses isolation. Apple deprecates `sandbox-exec`,
+so its availability is checked rather than assumed.
+
+LibreOffice stays inside Seatbelt on macOS. The host creates a short, private
+IPC directory with owner-only (`0700`) permissions under `/private/tmp` for each
+process and removes it after exit, cancellation or launch failure. Only this
+directory permits UNIX socket bind,
+listen and connect; sockets elsewhere, including the job workspace, remain
+denied. The launcher sets LibreOffice's `OSL_SOCKET_PATH` to that directory,
+keeping socket names below Darwin's length limit. The Office profile also permits
+`com.apple.coreservices.launchservicesd`, needed by native spell checking during
+headless conversion. The host's general `/tmp` and IP networking stay denied.
+IPC creation and canonicalization failures use fixed, path-free diagnostics.
+Linux continues to use its private `/tmp` mount.
 
 #### Exit Codes
 
@@ -599,6 +666,6 @@ The `--profile` flag guides route selection when multiple routes connect a forma
 - `ASHIFT_PACK_<NAME>`: Uses an unpacked development pack directory (holding an unsigned `pack.toml`) instead of the installed pack `<name>`; the name is upper-cased with `-` written as `_`.
 - `HTTPS_PROXY`, `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`: Proxy settings for pack downloads.
 - `SSL_CERT_FILE`, `SSL_CERT_DIR`: Trusted CA certificates for pack downloads on Linux, when the system store is not in a standard location.
-- `ASHIFT_SANDBOX`: `off`, `best-effort` (CLI default), or `required`. Linux engines run through Landlock and seccomp with workspace write access and declared runtime read/execute access. Missing kernel confinement support produces `warning[sandbox_unavailable]` in best-effort mode; required mode refuses it with exit 5. Launcher enforcement errors, including namespace setup denial for a discovered LibreOffice installation, are fatal in every mode except `off` (`sandbox_unavailable`, exit 5). On Ubuntu, allow `userns` for `ashift` in AppArmor or use `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`; default container seccomp profiles also block setup. `ASHIFT_SANDBOX=off` explicitly trades engine isolation for running without the launcher. Unknown values fail closed. macOS/Windows retain process groups or Job Objects; required mode needs Linux.
+- `ASHIFT_SANDBOX`: `off`, `best-effort` (CLI default), or `required`. Linux engines run through Landlock and seccomp with workspace write access and declared runtime read/execute access. Missing kernel confinement support produces `warning[sandbox_unavailable]` in best-effort mode; required mode refuses it with exit 5. Launcher enforcement errors, including namespace setup denial for a discovered LibreOffice installation, are fatal in every mode except `off` (`sandbox_unavailable`, exit 5). On Ubuntu, allow `userns` for `ashift` in AppArmor or use `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`; default container seccomp profiles also block setup. `ASHIFT_SANDBOX=off` explicitly trades engine isolation for running without the launcher. Unknown values fail closed. macOS uses [Seatbelt when available](#macos-engine-sandbox) and retains process groups; Windows retains Job Objects and cannot satisfy required mode.
 - Linux local IPC: `required` needs Landlock filesystem rules and seccomp, while `AF_UNIX` remains allowed. Pathname UNIX socket confinement needs Landlock ABI 9; abstract sockets and signals need ABI 6. On older kernels local services may remain reachable. `doctor --json` reports `landlock_unix_sockets` and `landlock_scopes`; use ABI 9 or stronger container isolation when local IPC must be blocked.
 - `SOURCE_DATE_EPOCH`: Unix timestamp in seconds used for deterministic, byte-reproducible ZIP archives (DOCX and EPUB) and for the Typst PDF date. LibreOffice outputs are structurally tested and are not byte-reproducible.

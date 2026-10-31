@@ -1,7 +1,7 @@
 //! Engine sandbox modes as seen by `ashift convert` users.
 //!
-//! Debug builds treat `ARIAD_TEST_SANDBOX_SUPPORT=none` as a kernel without Landlock or seccomp,
-//! so the degraded and fail-closed paths run on every CI kernel.
+//! Debug builds treat `ARIAD_TEST_SANDBOX_SUPPORT=none` as a system without Landlock/seccomp
+//! (Linux) or Seatbelt (macOS), so missing-support modes run on every CI runner.
 
 mod support;
 
@@ -77,19 +77,20 @@ fn best_effort_without_kernel_support_converts_and_reports_the_gap() {
     );
     assert!(docx.is_file());
     let codes = warning_codes(&output.stdout);
-    if cfg!(target_os = "linux") {
+    if cfg!(any(target_os = "linux", target_os = "macos")) {
         assert_eq!(codes, vec!["sandbox_unavailable"]);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains("warning[sandbox_unavailable]"), "{stderr}");
         assert!(
-            stderr.contains("Landlock"),
+            stderr.contains(if cfg!(target_os = "macos") {
+                "Seatbelt"
+            } else {
+                "Landlock"
+            }),
             "the warning names what is missing: {stderr}"
         );
     } else {
-        assert!(
-            codes.is_empty(),
-            "macOS and Windows do not use the launcher"
-        );
+        assert!(codes.is_empty(), "Windows does not use the launcher");
     }
 }
 

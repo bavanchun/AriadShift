@@ -736,11 +736,27 @@ fn doctor_reports_the_engine_sandbox() {
         .args(["doctor", "--json"])
         .output()
         .expect("run doctor --json");
-    assert_eq!(output.status.code(), Some(0));
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor JSON");
     let sandbox = &report["sandbox"];
+    #[cfg(target_os = "macos")]
+    let refused = sandbox["seatbelt_available"] == true && sandbox["seatbelt_usable"] == false;
+    #[cfg(not(target_os = "macos"))]
+    let refused = false;
+    assert_eq!(output.status.code(), Some(if refused { 5 } else { 0 }));
     assert_eq!(sandbox["mode"], "best-effort");
-    assert_eq!(sandbox["platform"], cfg!(target_os = "linux"));
+    assert_eq!(
+        sandbox["platform"],
+        cfg!(any(target_os = "linux", target_os = "macos"))
+    );
+    for key in ["seatbelt_available", "seatbelt_usable", "seatbelt_enforced"] {
+        if cfg!(target_os = "macos") {
+            assert!(sandbox[key].is_boolean(), "sandbox.{key}");
+        } else {
+            assert!(sandbox.get(key).is_none(), "sandbox.{key} is macOS-only");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    assert_eq!(sandbox["seatbelt_enforced"], sandbox["seatbelt_usable"]);
     for key in [
         "landlock_abi",
         "landlock_filesystem",
@@ -757,7 +773,10 @@ fn doctor_reports_the_engine_sandbox() {
         .iter()
         .find(|check| check["id"] == "sandbox")
         .expect("sandbox check");
-    assert_eq!(check["required"], false, "best effort never fails doctor");
+    assert_eq!(
+        check["required"], refused,
+        "refused Seatbelt is a required diagnostic failure"
+    );
     assert!(
         check["message"]
             .as_str()
@@ -1105,6 +1124,11 @@ fn doctor_json_has_no_leaked_paths() {
                     "doctor JSON string '{s}' must not leak pandoc path '{pandoc_str}'"
                 );
                 for token in s.split_whitespace() {
+                    // The fixed system launcher is public diagnostic context, not a user path.
+                    #[cfg(target_os = "macos")]
+                    if token.trim_matches(['(', ')', ';', ',']) == "/usr/bin/sandbox-exec" {
+                        continue;
+                    }
                     assert!(
                         !token.contains('/') && !token.contains('\\'),
                         "doctor JSON string '{s}' must not contain path-like token '{token}'"

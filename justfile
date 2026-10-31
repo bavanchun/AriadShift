@@ -148,6 +148,7 @@ test-winget-manifest:
 
 test-ci-scope:
     sh scripts/test-ci-scope.sh
+    uv run --no-project --with pyyaml==6.0.3 python scripts/test-fuzz-gate.py
 
 licenses:
     node scripts/generate-licenses.mjs > THIRD_PARTY_LICENSES
@@ -188,7 +189,11 @@ licenses-check:
     fi
 
 # Checks that do not depend on the OS; CI runs them once.
-static: fmt-check spell lint-workflows deny js js-licenses web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope
+static: fmt-check spell lint-workflows deny js js-licenses web-lint sdk-check py check-release-workflow licenses-check test-winget-manifest test-ci-scope test-hardening-ci-wiring
+
+# Keep mandatory database proof and workflow publication policy executable.
+test-hardening-ci-wiring:
+    bash scripts/test-hardening-ci-wiring.sh
 
 # Images for the ariad-server integration tests; ci.yml pins the same digests.
 pgmq_image := "ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7"
@@ -239,6 +244,7 @@ test-server:
     done
     cargo build -p ariad-cli --bin ashift
     ARIAD_TEST_DATABASE_URL=postgres://postgres:ariad@127.0.0.1:55442/postgres \
+    ARIAD_TEST_REQUIRE_DATABASE=1 \
     ARIAD_TEST_S3_ENDPOINT=http://127.0.0.1:58342 \
         cargo nextest run -p ariad-server
     if [ "${ARIAD_TEST_CONTAINER_SMOKE:-0}" = 1 ]; then ARIAD_TEST_DATABASE_URL=postgres://postgres:ariad@127.0.0.1:55442/postgres just test-server-container; fi
@@ -247,6 +253,14 @@ test-server:
 [linux]
 test-server-container:
     bash scripts/test-server-container.sh
+
+# Auth PostgreSQL serialization suite; requires its disposable DB URL and pg_dump 18.
+test-auth-db:
+    ARIAD_TEST_DATABASE_URL="${ARIAD_TEST_DATABASE_URL:?set a disposable PostgreSQL URL}" ARIAD_TEST_REQUIRE_DATABASE=1 pnpm --filter @ariadshift/auth exec vitest run test/oauth-postgres.test.ts
+
+# Interactive OAuth for remote MCP on the compose core profile: discovery, registration, PKCE, consent, tools/list.
+mcp-oauth-e2e:
+    bash infra/test/e2e/mcp-oauth.sh
 
 package-check:
     CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/package-check" cargo package --workspace --exclude ariad-server --exclude ariad-desktop --allow-dirty --config 'patch.crates-io.ariad-core.path="crates/ariad-core"' --config 'patch.crates-io.ariad-host.path="crates/ariad-host"' --config 'patch.crates-io.ariad-typst.path="crates/ariad-typst"'
@@ -297,10 +311,14 @@ pack-docling-test out="target/pack-docling":
 fuzz target="" seconds="60":
     #!/usr/bin/env bash
     set -euo pipefail
+    cargo test --locked --manifest-path fuzz/Cargo.toml --bin docx_meta
     if [ -n "{{target}}" ]; then
         targets=("{{target}}")
     else
-        targets=("markdown_reader" "front_matter" "html_reader" "pandoc_ast_to_ir" "docling_to_ir" "ir_json" "limits_validate" "pdf_reader" "typst_writer")
+        # Capture first so a discovery failure cannot silently run zero targets.
+        discovered=$(cargo fuzz list)
+        [ -n "$discovered" ] || { echo "no fuzz targets discovered" >&2; exit 1; }
+        mapfile -t targets <<<"$discovered"
     fi
     for t in "${targets[@]}"; do
         echo "=== Running fuzz target: $t ({{seconds}}s) ==="

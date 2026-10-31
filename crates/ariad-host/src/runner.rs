@@ -312,6 +312,36 @@ where
         || writable_paths(request),
         |workspace| vec![workspace.root().to_path_buf()],
     );
+    // Darwin UNIX socket names are short; the normal workspace path can exceed sun_path.
+    // Keep ownership in the host so cancellation, launch failure and exit all remove IPC.
+    #[cfg(target_os = "macos")]
+    let (writable, _ipc_directory) = {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = command
+            .sandbox
+            .map_or_else(sandbox::effective_mode, Ok)
+            .map_err(RunError::SandboxUnavailable)?;
+        let mut writable = writable;
+        let ipc = if mode != SandboxMode::Off
+            && crate::engines::sandbox::paths_for(&command.engine).private_tmp
+        {
+            let directory = tempfile::Builder::new()
+                .prefix("as-ipc-")
+                .permissions(std::fs::Permissions::from_mode(0o700))
+                .tempdir_in("/private/tmp")
+                .map_err(|_| {
+                    RunError::SandboxUnavailable(
+                        "could not create the LibreOffice IPC directory".to_owned(),
+                    )
+                })?;
+            writable.insert(0, directory.path().to_path_buf());
+            Some(directory)
+        } else {
+            None
+        };
+        (writable, ipc)
+    };
     let (program, args, sandbox) = prepare_launch(command, &writable)?;
     let tmp_dir = match request {
         Request::Convert { work_dir, .. } => Some(OsString::from(work_dir)),
@@ -402,7 +432,7 @@ fn writable_paths(request: &Request) -> Vec<PathBuf> {
     }
 }
 
-/// Decides how to start `command`: directly, or through its sandbox launcher on Linux.
+/// Decides how to start `command`: directly, or through its sandbox launcher on Linux or macOS.
 ///
 /// Returns the program, its arguments and the isolation the process will receive.
 pub(crate) fn prepare_launch(
@@ -421,10 +451,18 @@ pub(crate) fn prepare_launch(
     if !support.platform {
         if mode == SandboxMode::Required {
             return Err(RunError::SandboxUnavailable(
-                "the engine sandbox is only available on Linux".to_owned(),
+                "the engine sandbox is only available on Linux and macOS".to_owned(),
             ));
         }
         return direct(SandboxOutcome::NotApplicable);
+    }
+    let gaps = support.gaps();
+    #[cfg(target_os = "macos")]
+    if support.seatbelt_available && !support.seatbelt_usable {
+        return Err(RunError::SandboxUnavailable(format!(
+            "{}; set ASHIFT_SANDBOX=off to run engines without isolation",
+            gaps.join("; ")
+        )));
     }
     let Some(launcher) = &command.launcher else {
         if mode == SandboxMode::Required {
@@ -436,7 +474,6 @@ pub(crate) fn prepare_launch(
             "the engine was started without the sandbox launcher".to_owned(),
         ));
     };
-    let gaps = support.gaps();
     if mode == SandboxMode::Required && !gaps.is_empty() {
         return Err(RunError::SandboxUnavailable(gaps.join("; ")));
     }
@@ -821,8 +858,13 @@ impl EngineProcess {
     }
 }
 
-/// Parses one stdout line and applies the per-event protocol rules.
-fn parse_event(
+/// Validates one engine stdout line: artifacts must be strictly inside the output directory,
+/// capabilities require a describe request, and result success and error fields must agree.
+/// Accepted artifacts are appended exactly once; rejected lines never change the list.
+///
+/// Public only for the fuzz harness to drive this boundary; this is not a stable API.
+#[doc(hidden)]
+pub fn parse_event(
     line: &[u8],
     output_dir: Option<&str>,
     artifacts: &mut Vec<Artifact>,

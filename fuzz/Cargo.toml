@@ -17,6 +17,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "float_roundtrip"] }
 unicode-normalization = "0.1.25"
 typst = { version = "0.15.1", optional = true }
+zip = { version = "9.0.5", default-features = false }
 
 [features]
 pdf-reader = ["ariad-core/pdf"]
@@ -91,6 +92,69 @@ bench = false
 name = "typst_writer"
 required-features = ["typst-writer"]
 path = "fuzz_targets/typst_writer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "archive_preflight"
+path = "fuzz_targets/archive_preflight.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "docx_meta"
+path = "fuzz_targets/docx_meta.rs"
+test = true
+doc = false
+bench = false
+
+[[bin]]
+name = "pack_manifest"
+path = "fuzz_targets/pack_manifest.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pack_archive"
+path = "fuzz_targets/pack_archive.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "engine_protocol"
+path = "fuzz_targets/engine_protocol.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "capabilities_json"
+path = "fuzz_targets/capabilities_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "asset_resolve"
+path = "fuzz_targets/asset_resolve.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "uri_parsers"
+path = "fuzz_targets/uri_parsers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ir_json_versioned"
+path = "fuzz_targets/ir_json_versioned.rs"
 test = false
 doc = false
 bench = false

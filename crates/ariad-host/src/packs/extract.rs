@@ -208,6 +208,45 @@ pub fn scan(source: &Path, unpack: Unpack, component: &str) -> Result<Stats, Pac
     )
 }
 
+/// Runs the install-time archive writer, budgets and final link check in an existing,
+/// caller-owned isolated `root`. Public only for fuzzing and confinement regression tests.
+/// This bypasses manifest signature and component hash verification; real installs use
+/// `install`, which performs those checks before extraction.
+#[doc(hidden)]
+pub fn extract_for_fuzzing(
+    source: &Path,
+    unpack: Unpack,
+    component: &str,
+    root: &Path,
+    max_bytes: u64,
+    max_entries: u64,
+) -> Result<Stats, PackError> {
+    let cancel = CancellationToken::new();
+    let mut sink = Writer {
+        root,
+        component,
+        files: Vec::new(),
+        file_index: HashMap::new(),
+        links: Vec::new(),
+        cancel: &cancel,
+    };
+    let stats = walk(
+        source,
+        unpack,
+        component,
+        ".",
+        false,
+        Bounds {
+            max_bytes,
+            max_entries,
+        },
+        &mut sink,
+        &cancel,
+    )?;
+    check_links(root, &sink.links)?;
+    Ok(stats)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn walk(
     source: &Path,

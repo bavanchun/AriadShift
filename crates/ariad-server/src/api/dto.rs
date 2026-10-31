@@ -340,6 +340,78 @@ pub struct Capabilities {
     pub edges: Vec<CapabilityEdge>,
 }
 
+/// An allowance of the caller's plan and how much of it is used.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+pub struct Quota {
+    /// The cap; `null` when the plan sets none.
+    #[schema(required = true)]
+    pub limit: Option<u64>,
+    /// What currently counts against the cap.
+    pub used: u64,
+    /// What is left before requests are refused; `null` when unlimited.
+    #[schema(required = true)]
+    pub remaining: Option<u64>,
+}
+
+impl Quota {
+    #[must_use]
+    pub fn new(limit: Option<u64>, used: u64) -> Self {
+        Self {
+            limit,
+            used,
+            remaining: limit.map(|cap| cap.saturating_sub(used)),
+        }
+    }
+}
+
+/// Limits of every job of the plan; `null` means no limit.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ConversionLimits {
+    /// Largest accepted input file, in bytes.
+    #[schema(required = true)]
+    pub max_input_bytes: Option<u64>,
+    /// Most pages a paged input may have.
+    #[schema(required = true)]
+    pub max_pages: Option<u32>,
+    /// Longest processing time of one job, in seconds.
+    #[schema(required = true)]
+    pub timeout_s: Option<u64>,
+    /// Memory budget of one job, in MiB.
+    #[schema(required = true)]
+    pub max_memory_mb: Option<u32>,
+}
+
+/// The caller's quotas. Daily quotas count the last 24 hours.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct Quotas {
+    /// Uploads started, including deleted and abandoned ones.
+    pub uploads_per_day: Quota,
+    /// Jobs created.
+    pub jobs_per_day: Quota,
+    /// The larger of the bytes uploaded and the input bytes of jobs created.
+    pub input_bytes_per_day: Quota,
+    /// Uploads waiting for their file and `complete` call.
+    pub pending_uploads: Quota,
+    /// Jobs queued or running.
+    pub concurrent_jobs: Quota,
+}
+
+/// What the caller may convert, for showing limits before an upload.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PlanLimits {
+    /// Plan name, for example `anonymous` or `free`.
+    pub plan: String,
+    /// Whether the request carried valid credentials.
+    pub authenticated: bool,
+    /// How long inputs and outputs are kept, in seconds.
+    pub retention_s: u64,
+    /// Requests allowed per minute; `null` when unlimited.
+    #[schema(required = true)]
+    pub requests_per_minute: Option<u32>,
+    pub limits: ConversionLimits,
+    pub quotas: Quotas,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct Health {
     #[schema(example = "ok")]

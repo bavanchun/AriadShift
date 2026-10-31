@@ -1,8 +1,24 @@
 {
   "bundle": {
     "linux": {
-      "deb": { "depends": ["desktop-file-utils", "xdg-utils"] },
-      "rpm": { "depends": ["desktop-file-utils", "xdg-utils"] }
+      "deb": {
+        "depends": ["desktop-file-utils", "xdg-utils"],
+        "desktopTemplate": "../os-integration/linux/main.desktop.hbs",
+        "files": {
+          "/usr/share/ariadshift/nautilus/convert-with-ariadshift": "../os-integration/linux/nautilus/convert-with-ariadshift",
+          "/usr/share/kio/servicemenus/ariadshift-convert.desktop": "../os-integration/linux/dolphin/ariadshift-convert.desktop",
+          "/usr/share/kservices5/ServiceMenus/ariadshift-convert.desktop": "../os-integration/linux/dolphin/ariadshift-convert.desktop"
+        }
+      },
+      "rpm": {
+        "depends": ["desktop-file-utils", "xdg-utils"],
+        "desktopTemplate": "../os-integration/linux/main.desktop.hbs",
+        "files": {
+          "/usr/share/ariadshift/nautilus/convert-with-ariadshift": "../os-integration/linux/nautilus/convert-with-ariadshift",
+          "/usr/share/kio/servicemenus/ariadshift-convert.desktop": "../os-integration/linux/dolphin/ariadshift-convert.desktop",
+          "/usr/share/kservices5/ServiceMenus/ariadshift-convert.desktop": "../os-integration/linux/dolphin/ariadshift-convert.desktop"
+        }
+      }
     }
   }
 }

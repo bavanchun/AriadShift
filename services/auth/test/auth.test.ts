@@ -1,3 +1,4 @@
+import { memoryAdapter } from "better-auth/adapters/memory";
 import pg from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
@@ -6,6 +7,10 @@ import {
   buildAuthOptions,
   CLIENT_IP_HEADER,
   JWT_LIFETIME,
+  OAUTH_ACCESS_TOKEN_LIFETIME_S,
+  OAUTH_CONSENT_PATH,
+  OAUTH_REGISTRATION_RATE_LIMIT,
+  OAUTH_SIGN_IN_PATH,
 } from "../src/auth.ts";
 import { type AuthServiceConfig, parseConfig } from "../src/config.ts";
 
@@ -19,6 +24,7 @@ function config(overrides: Record<string, string> = {}): AuthServiceConfig {
     BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
     BETTER_AUTH_URL: "http://localhost:3001",
     BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+    ARIAD_PUBLIC_URL: "http://localhost:8080",
     ...overrides,
   });
 }
@@ -31,9 +37,9 @@ function plugin(options: ReturnType<typeof buildAuthOptions>, id: string) {
 }
 
 describe("buildAuthOptions", () => {
-  it("installs exactly the JWT, API key, passkey and two-factor plugins", () => {
+  it("installs exactly the JWT, API key, passkey, two-factor and OAuth provider plugins", () => {
     const ids = buildAuthOptions(config(), pool).plugins.map((p) => p.id);
-    expect(ids.sort()).toEqual(["api-key", "jwt", "passkey", "two-factor"]);
+    expect(ids.sort()).toEqual(["api-key", "jwt", "oauth-provider", "passkey", "two-factor"]);
   });
 
   it("mounts at /api/auth so the JWKS is at /api/auth/jwks", () => {
@@ -43,6 +49,8 @@ describe("buildAuthOptions", () => {
     expect(options.baseURL).toBe("http://localhost:3001");
     expect(plugin(options, "jwt").options?.jwks).toEqual({
       keyPairConfig: { alg: "EdDSA", crv: "Ed25519" },
+      rotationInterval: 2592000,
+      gracePeriod: 1800,
     });
   });
 
@@ -79,15 +87,22 @@ describe("buildAuthOptions", () => {
     expect(API_KEY_PREFIX).toBe("ashift_");
   });
 
-  it("binds passkeys to the web app origin", () => {
+  it("binds passkeys to the web app and to this service's sign-in page", () => {
     const passkey = plugin(
-      buildAuthOptions(config({ BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com" }), pool),
+      buildAuthOptions(
+        config({
+          BETTER_AUTH_URL: "https://auth.example.com",
+          BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com",
+          AUTH_PASSKEY_RP_ID: "example.com",
+        }),
+        pool,
+      ),
       "passkey",
     );
     expect(passkey.options).toMatchObject({
-      rpID: "app.example.com",
+      rpID: "example.com",
       rpName: "AriadShift",
-      origin: ["https://app.example.com"],
+      origin: ["https://app.example.com", "https://auth.example.com"],
     });
   });
 
@@ -109,8 +124,8 @@ describe("buildAuthOptions", () => {
       pool,
     );
     expect(both.socialProviders).toEqual({
-      github: { clientId: "gh-id", clientSecret: "gh-secret" },
-      google: { clientId: "g-id", clientSecret: "g-secret" },
+      github: { clientId: "gh-id", clientSecret: "gh-secret", disableSignUp: true },
+      google: { clientId: "g-id", clientSecret: "g-secret", disableSignUp: true },
     });
   });
 
@@ -169,10 +184,123 @@ describe("buildAuthOptions", () => {
     ).rejects.toBe(failure);
   });
 
+  it("refuses account deletion when its database cannot revoke API keys", async () => {
+    const options = buildAuthOptions(config(), memoryAdapter({}));
+    await expect(
+      options.user.deleteUser.beforeDelete({
+        id: "user-1",
+        name: "Ada",
+        email: "ada@example.com",
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).rejects.toThrow("API key revocation requires a PostgreSQL connection");
+  });
+
   it("does not require email verification and sends no telemetry", () => {
     const options = buildAuthOptions(config(), pool);
-    expect(options.emailAndPassword).toEqual({ enabled: true, requireEmailVerification: false });
+    expect(options.emailAndPassword).toEqual({
+      enabled: true,
+      disableSignUp: true,
+      requireEmailVerification: false,
+    });
     expect(options.telemetry).toEqual({ enabled: false });
     expect(options.database).toBe(pool);
+  });
+
+  describe("OAuth authorization server for remote MCP", () => {
+    function oauth(overrides: Record<string, string> = {}) {
+      return plugin(buildAuthOptions(config(overrides), pool), "oauth-provider").options as Record<
+        string,
+        unknown
+      >;
+    }
+
+    it("issues tokens only for the MCP resource the API derives from its public URL", () => {
+      const options = oauth({ ARIAD_PUBLIC_URL: "https://api.example.com" });
+      expect(options.resources).toEqual(["https://api.example.com/mcp"]);
+      expect(options.clientRegistrationDefaultResources).toEqual(["https://api.example.com/mcp"]);
+      // Better Auth's default: a client is limited to the resources it is linked to.
+      expect(options.enforcePerClientResources).toBeUndefined();
+    });
+
+    it("offers authorization code and refresh only, never client credentials", () => {
+      expect(oauth().grantTypes).toEqual(["authorization_code", "refresh_token"]);
+    });
+
+    it("opens dynamic client registration without an account and keeps PKCE required", () => {
+      const options = oauth();
+      expect(options).toMatchObject({
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        clientRegistrationRequirePKCE: true,
+        clientRegistrationDefaultApplicationType: "infer",
+      });
+    });
+
+    it("limits anonymous client registration per address far below Better Auth's default", () => {
+      expect(OAUTH_REGISTRATION_RATE_LIMIT).toEqual({ window: 3600, max: 20 });
+      expect(oauth().rateLimit).toEqual({ register: { window: 3600, max: 20 } });
+      // The plugin turns the option into a rule for the registration path.
+      const rules = (
+        plugin(buildAuthOptions(config(), pool), "oauth-provider") as unknown as {
+          rateLimit: { pathMatcher: (path: string) => boolean; window: number; max: number }[];
+        }
+      ).rateLimit;
+      const register = rules.filter((rule) => rule.pathMatcher("/oauth2/register"));
+      expect(register).toHaveLength(1);
+      expect(register[0]).toMatchObject({ window: 3600, max: 20 });
+    });
+
+    it("runs the two-factor check before the provider resumes an authorization", () => {
+      // Both plugins have after-hooks on /sign-in/email. Two-factor must clear
+      // the half-signed-in session first, so the provider never resumes an
+      // authorization (and issues a code) before the second factor.
+      const ids = buildAuthOptions(config(), pool).plugins.map((p) => p.id);
+      expect(ids.indexOf("two-factor")).toBeGreaterThanOrEqual(0);
+      expect(ids.indexOf("two-factor")).toBeLessThan(ids.indexOf("oauth-provider"));
+    });
+
+    it("sends sign-in and consent to this service's pages", () => {
+      const options = oauth({ BETTER_AUTH_URL: "https://auth.example.com" });
+      expect(OAUTH_SIGN_IN_PATH).toBe("/oauth/sign-in");
+      expect(OAUTH_CONSENT_PATH).toBe("/oauth/consent");
+      expect(options.loginPage).toBe("https://auth.example.com/oauth/sign-in");
+      expect(options.consentPage).toBe("https://auth.example.com/oauth/consent");
+    });
+
+    it("keeps access tokens as short-lived as the API JWT, with a refresh retry window", () => {
+      const options = oauth();
+      expect(OAUTH_ACCESS_TOKEN_LIFETIME_S).toBe(15 * 60);
+      expect(options.accessTokenExpiresIn).toBe(OAUTH_ACCESS_TOKEN_LIFETIME_S);
+      expect(options.refreshTokenReuseInterval).toBe(30);
+      expect(options.scopes).toEqual(["openid", "profile", "email", "offline_access"]);
+    });
+
+    it("signs access tokens with the JWT plugin, so they share its issuer and JWKS", () => {
+      const options = oauth();
+      expect(options.disableJwtPlugin).toBe(false);
+      expect(plugin(buildAuthOptions(config(), pool), "jwt").options?.jwt).toMatchObject({
+        issuer: "http://localhost:3001",
+      });
+    });
+
+    it("adds the OAuth tables to the schema the migration applies", () => {
+      const schema = plugin(buildAuthOptions(config(), pool), "oauth-provider").schema as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(schema)).toEqual(
+        expect.arrayContaining([
+          "oauthClient",
+          "oauthAccessToken",
+          "oauthRefreshToken",
+          "oauthConsent",
+          "oauthResource",
+          "oauthClientResource",
+        ]),
+      );
+    });
   });
 });

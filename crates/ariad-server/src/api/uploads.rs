@@ -1,4 +1,5 @@
-//! `POST /v1/uploads` and `POST /v1/uploads/{id}/complete`.
+//! `POST /v1/uploads`, `POST /v1/uploads/{id}/complete` and
+//! `DELETE /v1/uploads/{id}`.
 
 use axum::{
     Json,
@@ -242,6 +243,75 @@ pub async fn complete_upload(
     };
     tracing::info!(upload_id = %id, format = ?row.format, "upload completed");
     Ok(Json(upload_dto(&row, None)))
+}
+
+/// Delete an upload that no job uses.
+///
+/// Deletes the stored file now and retires the upload, erasing its file name,
+/// for example when the user cancels before converting. Deleting an upload
+/// that is already deleted or expired succeeds again. An upload that feeds a
+/// job is deleted with its job through `DELETE /v1/jobs/{id}`.
+#[utoipa::path(
+    delete,
+    path = "/v1/uploads/{id}",
+    tag = "uploads",
+    params(("id" = Uuid, Path, description = "Upload id")),
+    responses(
+        (status = 204, description = "Upload deleted"),
+        (status = 401, description = "Credentials rejected", body = ErrorBody),
+        (status = 404, description = "No such upload", body = ErrorBody),
+        (status = 409, description = "A job uses the upload; delete the job instead", body = ErrorBody),
+        (status = 429, description = "Rate limited", body = ErrorBody,
+         headers(("retry-after" = u64, description = "Seconds to wait before retrying; sent with the `rate_limited` code"))),
+        (status = 500, description = "Internal service error", body = ErrorBody),
+        (status = 503, description = "Identity verification is unavailable", body = ErrorBody),
+    ),
+    security((), ("bearer" = []), ("api_key" = [])),
+)]
+pub async fn delete_upload(
+    State(state): State<AppState>,
+    caller: Caller,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    let id = parse_id(&id, "upload")?;
+    let mut tx = state.db.begin().await?;
+    // The row lock orders this against job creation, which share-locks the
+    // upload before inserting a job.
+    let row: Option<(Uuid, String, String)> = sqlx::query_as(
+        "SELECT workspace_id, status, storage_key FROM uploads WHERE id = $1 FOR UPDATE",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let (_, status, storage_key) = row
+        .filter(|(workspace_id, _, _)| caller.principal.can_access(*workspace_id))
+        .ok_or_else(|| ApiError::not_found("upload"))?;
+    match status.parse().unwrap_or(UploadStatus::Deleted) {
+        UploadStatus::Pending | UploadStatus::Completed => {
+            let used: bool =
+                sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM jobs WHERE upload_id = $1)")
+                    .bind(id)
+                    .fetch_one(&mut *tx)
+                    .await?;
+            if used {
+                return Err(ApiError::conflict(
+                    "a job uses the upload; delete the job instead",
+                ));
+            }
+            db::retire_upload(&mut tx, id, UploadStatus::Deleted).await?;
+        }
+        UploadStatus::Deleted | UploadStatus::Expired => {}
+    }
+    tx.commit().await?;
+    // Deleting after the commit lets a retry finish a failed deletion; the
+    // sweeper also removes late PUTs to a deleted upload.
+    state
+        .storage
+        .delete(&storage_key)
+        .await
+        .map_err(|err| ApiError::internal(&err))?;
+    tracing::info!(upload_id = %id, "upload deleted on request");
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Returns an already completed upload, or rejects an unavailable one.

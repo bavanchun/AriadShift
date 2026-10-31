@@ -115,6 +115,90 @@ file paths cannot be supplied in the URL. Unknown or duplicate parameters are
 rejected. `ariadshift://auth/callback` is reserved and performs no authentication.
 The OS registers the scheme when the installed app runs; on macOS use the app
 installed from the disk image to test Launch Services registration.
+Finder's `file://` URLs are handled by the file-open channel and ignored by the
+preference-link parser, including percent-encoded names and localhost URLs.
+
+## OS integration
+
+The installers add "Convert with AriadShift" to the file manager for every
+supported input format except JSON. Choosing it opens the app, or focuses the
+running one, and adds the selected files to the Convert selection; pick the output
+and press Convert to queue them. Folders, missing files and unsupported extensions
+are skipped, and one launch takes at most 1,000 files. No entry becomes the
+default app for a format.
+
+- **macOS:** the app declares its document types with the `Alternate` rank, so it
+  appears under Finder's Open With and accepts files dropped on its Dock icon. The
+  Quick Action ships inside the app; install it once by opening
+  `AriadShift.app/Contents/Resources/os-integration/Convert with AriadShift.workflow`
+  (Finder: Show Package Contents) and confirming the prompt. It then appears under
+  Quick Actions and Services for supported files and remains in
+  `~/Library/Services` until you remove it there.
+- **Windows:** both the NSIS installer and MSI install for the current user.
+  The MSI uses a [custom WiX template](../apps/desktop/src-tauri/windows/per-user.wxs)
+  derived from the pinned Tauri CLI template, with limited installation privileges
+  and an installation directory under `%LOCALAPPDATA%`. Both add classic verbs under
+  `HKCU\Software\Classes\SystemFileAssociations\.<ext>\shell\AriadShift.Convert`
+  and remove them on uninstall; the MSI also registers the protocol under HKCU.
+  Explorer starts one process per selected file. A standard-library file lock
+  serializes startup until Tauri's single-instance plugin is ready to receive
+  forwarded files, which the running app collects into one selection. The lock
+  remains in the user's temporary directory and is released when its handle
+  closes, including on process exit. If the lock cannot be opened or remains
+  busy for 10 seconds, startup continues without serialization; a stalled first
+  launch can therefore still produce multiple windows. Engine and sandbox child
+  processes bypass the gate. Windows cold-start and installer behavior still
+  require the platform checks below.
+  Files and generated resource components use HKCU registry keypaths, as required
+  by WiX for files under a user profile. Explorer's existing component keeps its
+  GUID; the executable has a new fixed GUID because its keypath changed.
+  Additional binaries use Tauri's supplied component GUIDs. These file-bearing
+  components need explicit GUIDs because WiX cannot generate them for registry
+  keypaths.
+- **Linux:** the `.deb` and `.rpm` desktop entry lists the supported MIME types and
+  passes files with `%U`, so the app appears in Open With. Dolphin reads the
+  bundled service menu from `/usr/share/kio/servicemenus` (and
+  `/usr/share/kservices5/ServiceMenus` on KDE Frameworks 5). Nautilus loads
+  scripts only from the home directory; install the bundled one per user:
+
+```sh
+install -Dm755 /usr/share/ariadshift/nautilus/convert-with-ariadshift \
+  "$HOME/.local/share/nautilus/scripts/Convert with AriadShift"
+```
+
+The registrations are generated from
+[`apps/desktop/os-integration/formats.json`](../apps/desktop/os-integration/formats.json),
+which a desktop unit test keeps equal to the formats in the capability graph.
+After a format change, rerun that test with `ARIAD_UPDATE_OS_INTEGRATION=1`, then
+run `node apps/desktop/os-integration/generate.mjs` and commit the results;
+`--check` reports stale files.
+`pnpm --filter @ariadshift/desktop test:tools` runs the OS integration tests,
+including a scratch-copy check that the command rejects format/output drift.
+
+Windows packaging uses the desktop package's `tauri` command, which forwards to
+the existing signing wrapper. Its pre-bundle check runs after compilation and
+checks the native or explicit MSVC target's debug/release output, matching the
+caller's arguments and preserving the release action's artifact paths.
+`CARGO_TARGET_DIR` remains supported. Custom `--profile`/`--target-dir`, forwarded
+Cargo configuration/target overrides, `CARGO_BUILD_TARGET` and an inherited
+`TAURI_CONFIG` are rejected; pass Tauri overrides with `--config` instead.
+When Cargo configuration files exist, pass an explicit MSVC `--target` so the
+hook can determine the output layout without guessing at configured targets.
+The MSI resources are generated from the current explicit source-to-filename
+map. Directory/glob resources, implicit VC runtime bundling, elevated update tasks
+and output DLLs stop packaging until they have HKCU component authoring. The
+current MSVC WebView2 loader links statically. The hook checks root, Windows and
+CLI configuration using Tauri's merge order. If an override changes generated
+content, regenerate with that JSON patch in `TAURI_CONFIG` before building with
+the matching `--config`, then unset `TAURI_CONFIG` for the build itself.
+
+Before release, test MSI and NSIS install, upgrade and uninstall as a standard
+Windows user, confirming the installing user's verbs and protocol registrations
+and no writes to other users' hives or machine registrations. For each installer,
+quit the app, select 20 supported files and choose Convert with AriadShift;
+expect one window with all 20 files, repeated five times. On macOS, open a Finder
+selection and confirm it appears without an invalid-link notice. Linux unit
+tests cover parsing and lock behavior; they do not establish these platform results.
 
 ## Updates and release configuration
 
@@ -199,6 +283,17 @@ desktop or shared dependency paths changed from `origin/dev`.
 The same table declares the application command manifest and generates the
 `desktop-commands` permission set, granted only to the local main window. Its
 permissions are regenerated and checked alongside the TypeScript bindings.
+
+The file-open and deep-link library assertions run in the unit-test harness.
+They do not exercise the executable, so they do not need Cargo's automatic
+unoptimized app build for integration targets. Installer builds still link the
+full app. Warning denial remains enabled for every target.
+
+Known v1.x follow-up: reduce the ariad-desktop link size so the compact-unwind
+limit is not exceeded. The unoptimized macOS app can exceed Apple's 16 MiB
+`__eh_frame` offset limit, which emits a linker performance warning and fails
+builds with warnings denied. Test placement does not remove that debug-build
+limitation or alter panic unwinding.
 
 `vendor/tauri-plugin-deep-link` preserves the published stable 2.6.2 crate with
 one Linux compatibility change: its `ini::ParseOption` initializer fills added

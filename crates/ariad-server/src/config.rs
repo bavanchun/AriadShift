@@ -14,6 +14,9 @@ use crate::{packs::Pack, sandbox::SandboxMode};
 /// Minimum length of `ARIAD_SECRET`, in bytes.
 pub const MIN_SECRET_BYTES: usize = 32;
 
+/// Default fleet ceiling, configured independently of worker concurrency.
+pub const DEFAULT_GLOBAL_ACTIVE_JOBS: u32 = 64;
+
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum ConfigError {
     #[error("{0} is required")]
@@ -27,6 +30,28 @@ fn invalid(name: &'static str, reason: impl Into<String>) -> ConfigError {
         name,
         reason: reason.into(),
     }
+}
+
+/// Refuse published placeholders even when an optional provider is configured.
+fn validate_secrets(env: &Env) -> Result<(), ConfigError> {
+    for name in [
+        "ARIAD_SECRET",
+        "ARIAD_TURNSTILE_SECRET",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+    ] {
+        if env
+            .get(name)
+            .is_some_and(|value| value.starts_with("replace-with"))
+        {
+            return Err(invalid(
+                name,
+                "replace the placeholder with a private generated value",
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// A snapshot of environment variables.
@@ -336,11 +361,14 @@ pub struct ApiConfig {
     pub request_timeout: Duration,
     pub sweep_interval: Duration,
     pub sweep_batch: i64,
+    /// Fleet-wide queued plus running ceiling, shared by REST and MCP.
+    pub global_active_jobs: u32,
     pub storage: StorageConfig,
 }
 
 impl ApiConfig {
     pub fn from_env(env: &Env) -> Result<Self, ConfigError> {
+        validate_secrets(env)?;
         let secret = env.required("ARIAD_SECRET")?.as_bytes().to_vec();
         if secret.len() < MIN_SECRET_BYTES {
             return Err(invalid(
@@ -365,6 +393,14 @@ impl ApiConfig {
         if sweep_batch <= 0 {
             return Err(invalid("ARIAD_SWEEP_BATCH", "must be greater than zero"));
         }
+        let global_active_jobs =
+            env.parse_or("ARIAD_GLOBAL_ACTIVE_JOBS", DEFAULT_GLOBAL_ACTIVE_JOBS)?;
+        if global_active_jobs == 0 {
+            return Err(invalid(
+                "ARIAD_GLOBAL_ACTIVE_JOBS",
+                "must be greater than zero",
+            ));
+        }
         Ok(Self {
             bind: env.parse_or("ARIAD_BIND", SocketAddr::from(([0, 0, 0, 0], 8080)))?,
             public_url,
@@ -378,6 +414,7 @@ impl ApiConfig {
             request_timeout: env.secs_or("ARIAD_REQUEST_TIMEOUT_S", 30)?,
             sweep_interval: env.secs_or("ARIAD_SWEEP_INTERVAL_S", 60)?,
             sweep_batch,
+            global_active_jobs,
             storage,
         })
     }
@@ -399,6 +436,7 @@ pub struct WorkerConfig {
 
 impl WorkerConfig {
     pub fn from_env(env: &Env, packs: &[String]) -> Result<Self, ConfigError> {
+        validate_secrets(env)?;
         let concurrency: usize = env.parse_or("ARIAD_WORKER_CONCURRENCY", 1)?;
         if concurrency == 0 {
             return Err(invalid("ARIAD_WORKER_CONCURRENCY", "must be at least 1"));
@@ -647,7 +685,10 @@ mod debug_tests {
             format!("{:?}", api.storage),
             format!("{:?}", WorkerConfig::from_env(&env, &[]).unwrap()),
         ] {
-            assert!(!debug.contains(sentinel), "{debug}");
+            assert!(
+                !debug.contains(sentinel),
+                "configuration debug leaked a secret"
+            );
         }
     }
 }

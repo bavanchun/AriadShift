@@ -2085,3 +2085,1376 @@ tags = ["heavy-bench", "headings"]
 phase = "1b"
 routes = ["ppt->pdf"]
 companions = [{ path = "fixtures/heavy/vi-garden.ppt.truth.json", sha256 = "727522d105bd809443c80be6b5f37e4cd3576213104444773208d20cfda5ecef" }]
+
+# Parser fuzz seeds are licensed fixtures, separate from conversion documents.
+# The document fixture collection above keeps its existing path and route contract.
+
+[[fuzz_seed]]
+id = "fuzz-archive-preflight-en-epub-minimal-epub"
+target = "archive_preflight"
+path = "fuzz/seeds/archive_preflight/en-epub-minimal.epub"
+sha256 = "99f0c6fb67541d81842910c4fe05b87dcc17e73583464444d83f36c4b2294ab4"
+source = "Byte-identical copy of fixtures/epub/en-epub-minimal.epub; SHA-256 matches its fixture record."
+license = "MIT"
+license_basis = "Synthetic maintainer-authored document created for minimal EPUB 3 validation."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-archive-preflight-vi-garden-notes-doc"
+target = "archive_preflight"
+path = "fuzz/seeds/archive_preflight/vi-garden-notes.doc"
+sha256 = "d85b52c2620ba21c17165c66bcfb97c043e16542108d686aeecb1ad7e9baf037"
+source = "Byte-identical copy of fixtures/office/vi-garden-notes.doc; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-archive-preflight-vi-garden-notes-odt"
+target = "archive_preflight"
+path = "fuzz/seeds/archive_preflight/vi-garden-notes.odt"
+sha256 = "f90ced90fde81695cf33253507ae94fab46c58a6e7a74cdab9dd52c9260253e3"
+source = "Byte-identical copy of fixtures/office/vi-garden-notes.odt; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and assembled by the fixture generator."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-archive-preflight-vi-route-sheet-xls"
+target = "archive_preflight"
+path = "fuzz/seeds/archive_preflight/vi-route-sheet.xls"
+sha256 = "8085c0a6c228714c741d3ab779ee910d8beb550bc7ab2ca64fdc7bdf88d41ef2"
+source = "Byte-identical copy of fixtures/office/vi-route-sheet.xls; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-archive-preflight-vi-route-sheet-xlsx"
+target = "archive_preflight"
+path = "fuzz/seeds/archive_preflight/vi-route-sheet.xlsx"
+sha256 = "8ca56758ad6adf11e9f4335ba8c5e8067bc6d1da033c680b1e7e4ea9120b5f2d"
+source = "Byte-identical copy of fixtures/office/vi-route-sheet.xlsx; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-asset-resolve-data-uri-images-md"
+target = "asset_resolve"
+path = "fuzz/seeds/asset_resolve/data-uri-images.md"
+sha256 = "1391c650b27cea3371138325223dcc78176a37f7fc642eab30aae4f6650bfe25"
+source = "Authored regression input for asset_resolve; see fuzz/fuzz_targets/asset_resolve.rs."
+license = "Apache-2.0"
+license_basis = "Original Markdown syntax; the GIF data URI contains only the six-byte GIF89a format header, not image artwork."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-asset-resolve-escapes-md"
+target = "asset_resolve"
+path = "fuzz/seeds/asset_resolve/escapes.md"
+sha256 = "fd6d905a0cc8105d4acfef5d384c1b64e311d6ceaf38e2aff74b121ce578d1a8"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/asset_resolve/escapes.md"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-asset-resolve-local-images-md"
+target = "asset_resolve"
+path = "fuzz/seeds/asset_resolve/local-images.md"
+sha256 = "b0cd3b04840789105fdcd5697a240dfb1055357624a7312242961265e7fad48a"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/asset_resolve/local-images.md"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-capabilities-json-embedded-capabilities-json"
+target = "capabilities_json"
+path = "fuzz/seeds/capabilities_json/embedded-capabilities.json"
+sha256 = "59ccb70e417e385769b2b52eba9ebb5a75df6d6331427d71838a8de6bcaa0d7b"
+source = "Byte-identical copy of git:60586a2abb05de5ed12b6069d6df2436bc344fd8:crates/ariad-core/data/capabilities.json."
+license = "Apache-2.0"
+license_basis = "AriadShift-generated capability measurements and registry data under the repository Apache-2.0 license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-capabilities-json-small-registry-json"
+target = "capabilities_json"
+path = "fuzz/seeds/capabilities_json/small-registry.json"
+sha256 = "738fd784e0e4c94d6f6d6a55e55689707158f69fa6abf461cbea53f8dad5aba5"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/capabilities_json/small-registry.json"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docling-to-ir-en-map-room-docling-json"
+target = "docling_to_ir"
+path = "fuzz/seeds/docling_to_ir/en-map-room.docling.json"
+sha256 = "9e3936eb3386b3c576ac7ac628fd37d3eb12076a404f16ec0b0f015451fead1d"
+source = "Byte-identical copy of fixtures/docling/en-map-room.docling.json; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine from fixtures/pdf/en-map-room.pdf, which is original text authored for AriadShift."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docling-to-ir-vi-garden-300dpi-docling-json"
+target = "docling_to_ir"
+path = "fuzz/seeds/docling_to_ir/vi-garden-300dpi.docling.json"
+sha256 = "ca9daaab64d2da26f271ec812dc98e325f495fb1d03bee4651f258a44f988fb2"
+source = "Byte-identical copy of fixtures/docling/vi-garden-300dpi.docling.json; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine with Tesseract OCR from fixtures/scan/vi-garden-300dpi.png, which renders original text authored for AriadShift."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docling-to-ir-vi-garden-slides-docling-json"
+target = "docling_to_ir"
+path = "fuzz/seeds/docling_to_ir/vi-garden-slides.docling.json"
+sha256 = "73f00026ccfb7fb687329fd4522227037ada80fae951fde6d990c5ada3e03db1"
+source = "Byte-identical copy of fixtures/docling/vi-garden-slides.docling.json; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine from fixtures/pptx/vi-garden-slides.pptx, which is original text authored for AriadShift."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docling-to-ir-vi-route-table-docling-json"
+target = "docling_to_ir"
+path = "fuzz/seeds/docling_to_ir/vi-route-table.docling.json"
+sha256 = "2549a64310416c1be84f4c9327012c49ad722c2201dd0a8280e62e74d2cd7eb9"
+source = "Byte-identical copy of fixtures/docling/vi-route-table.docling.json; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "DoclingDocument JSON produced by the Docling engine from fixtures/docx/vi-route-table.docx, which is original text authored for AriadShift."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-core-created-modified-xml"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/core-created-modified.xml"
+sha256 = "76b4765b257a8197df521ce08032859a74fb69e6f6ca44036340e7bb3279e4fc"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/docx_meta/core-created-modified.xml"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-core-empty-created-xml"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/core-empty-created.xml"
+sha256 = "46c6a895d54838efebb2f71a835342b273bac51994b06a975aeaf44ff309be7e"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/docx_meta/core-empty-created.xml"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-en-epub-minimal-epub"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/en-epub-minimal.epub"
+sha256 = "99f0c6fb67541d81842910c4fe05b87dcc17e73583464444d83f36c4b2294ab4"
+source = "Byte-identical copy of fixtures/epub/en-epub-minimal.epub; SHA-256 matches its fixture record."
+license = "MIT"
+license_basis = "Synthetic maintainer-authored document created for minimal EPUB 3 validation."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-opf-date-modified-opf"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/opf-date-modified.opf"
+sha256 = "85e95e5c630952e6777a47490773b81290dad672f173ba7f84d267c56b274d73"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/docx_meta/opf-date-modified.opf"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-opf-empty-date-opf"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/opf-empty-date.opf"
+sha256 = "6278e44158d6bf3a778b7cdc9cb2f522718e50ab4835e53305e1d0fe39a5dd08"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/docx_meta/opf-empty-date.opf"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-stampable-minimal-epub"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/stampable-minimal.epub"
+sha256 = "faf68dab7560fd7c6a76cb344b9379a7f7666616050fd31dc7455fd525295c81"
+source = "Derived from fixtures/epub/en-epub-minimal.epub; only package timestamp XML differs; introduced by git:60586a2abb05de5ed12b6069d6df2436bc344fd8."
+license = "MIT"
+license_basis = "Synthetic maintainer-authored document created for minimal EPUB 3 validation. Metadata-only mutation retains the original license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-stampable-sheet-xlsx"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/stampable-sheet.xlsx"
+sha256 = "4cb30ea74426bc36635e45796ff31d6dedc4094d1f7f33f52511d11f8f6695c3"
+source = "Derived from fixtures/office/vi-route-sheet.xlsx; only package timestamp XML differs; introduced by git:60586a2abb05de5ed12b6069d6df2436bc344fd8."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source. Metadata-only mutation retains the original license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-vi-route-sheet-xlsx"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/vi-route-sheet.xlsx"
+sha256 = "8ca56758ad6adf11e9f4335ba8c5e8067bc6d1da033c680b1e7e4ea9120b5f2d"
+source = "Byte-identical copy of fixtures/office/vi-route-sheet.xlsx; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift; converted by LibreOffice from the generated OpenDocument source."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-engine-protocol-convert-events-jsonl"
+target = "engine_protocol"
+path = "fuzz/seeds/engine_protocol/convert-events.jsonl"
+sha256 = "5ff8b32c1502090124496e3959ec082c9ec54ea720bd6541031bb28bbca7e686"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/engine_protocol/convert-events.jsonl"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-engine-protocol-convert-request-jsonl"
+target = "engine_protocol"
+path = "fuzz/seeds/engine_protocol/convert-request.jsonl"
+sha256 = "eb3e9eafef44cef1b1f2044f7aed9fbf0b9c386770e328768708260013b64c5c"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/engine_protocol/convert-request.jsonl"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-engine-protocol-describe-session-jsonl"
+target = "engine_protocol"
+path = "fuzz/seeds/engine_protocol/describe-session.jsonl"
+sha256 = "e7349d9f1e3fc978b478fb5e49664fda982975417cdfc60d4f0aa7e251cc26d0"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/engine_protocol/describe-session.jsonl"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-front-matter-en-sample-yaml"
+target = "front_matter"
+path = "fuzz/seeds/front_matter/en-sample.yaml"
+sha256 = "7269974a87bb754a67588403ad090ce7059a183e7aad651acd8228326eaa3787"
+source = "git:622417485b6dff98b37558c4d40c6f91dde5dd56:fuzz/seeds/front_matter/en-sample.yaml"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-front-matter-minimal-yaml"
+target = "front_matter"
+path = "fuzz/seeds/front_matter/minimal.yaml"
+sha256 = "815e83822c08a7d46e8a5fd261c0177c39c71ae8d3a086a155cd3c91709cecf2"
+source = "git:622417485b6dff98b37558c4d40c6f91dde5dd56:fuzz/seeds/front_matter/minimal.yaml"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-front-matter-vi-front-matter-md"
+target = "front_matter"
+path = "fuzz/seeds/front_matter/vi-front-matter.md"
+sha256 = "428de57e055954ad7e53e9850d7ef095958eb0b3bdf6e28f6adefdc1b17cb906"
+source = "git:622417485b6dff98b37558c4d40c6f91dde5dd56:fuzz/seeds/front_matter/vi-front-matter.md"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-html-reader-en-map-archive-html"
+target = "html_reader"
+path = "fuzz/seeds/html_reader/en-map-archive.html"
+sha256 = "f3cd32f9f9b57a3d0d4faf78d77bf9f6f16ebb64ee707cf869e5aef33457b596"
+source = "Byte-identical copy of fixtures/html/en-map-archive.html; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-html-reader-en-repair-cafe-html"
+target = "html_reader"
+path = "fuzz/seeds/html_reader/en-repair-cafe.html"
+sha256 = "ca0bd525f52fda0c14d83f2fee77897df622cc7e07dabf4baa71e53a1d0839f5"
+source = "Byte-identical copy of fixtures/html/en-repair-cafe.html; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-html-reader-vi-garden-notice-html"
+target = "html_reader"
+path = "fuzz/seeds/html_reader/vi-garden-notice.html"
+sha256 = "b840b5ab8c790f352e8d1ce2b26acc814a17af430baa99d59292540c842a5b44"
+source = "Byte-identical copy of fixtures/html/vi-garden-notice.html; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-html-reader-vi-route-table-html"
+target = "html_reader"
+path = "fuzz/seeds/html_reader/vi-route-table.html"
+sha256 = "09518053fe190e8b00a6f086d1e73e6e1a41c684791eb557a13d0336044c621c"
+source = "Byte-identical copy of fixtures/html/vi-route-table.html; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and organized by the fixture generator."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-en-fenced-code-json"
+target = "ir_json"
+path = "fuzz/seeds/ir_json/en-fenced-code.json"
+sha256 = "42b57ac3f5852d6212f5614fa71266bdc3b4c2155424e2ab37db68c7394d9e21"
+source = "IR serialization of fixtures/md/en-fenced-code.md; retained seed bytes introduced by git:622417485b6dff98b37558c4d40c6f91dde5dd56."
+license = "Apache-2.0"
+license_basis = "IR data containing original AriadShift fixture text under Apache-2.0; no parser implementation is included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-en-footnotes-json"
+target = "ir_json"
+path = "fuzz/seeds/ir_json/en-footnotes.json"
+sha256 = "29c0860c32541f014aa880eec015ee7d858d4ef62d6a30090ea8945116759aea"
+source = "IR serialization of fixtures/md/en-footnotes.md; retained seed bytes introduced by git:622417485b6dff98b37558c4d40c6f91dde5dd56."
+license = "Apache-2.0"
+license_basis = "IR data containing original AriadShift fixture text under Apache-2.0; no parser implementation is included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-vi-aligned-table-json"
+target = "ir_json"
+path = "fuzz/seeds/ir_json/vi-aligned-table.json"
+sha256 = "6bdf12f1c5dc8a718dd87c99e6f6c941fa0411de33d546dc0f947181a18d3157"
+source = "IR serialization of fixtures/md/vi-aligned-table.md; retained seed bytes introduced by git:622417485b6dff98b37558c4d40c6f91dde5dd56."
+license = "Apache-2.0"
+license_basis = "IR data containing original AriadShift fixture text under Apache-2.0; no parser implementation is included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-vi-garden-notice-json"
+target = "ir_json"
+path = "fuzz/seeds/ir_json/vi-garden-notice.json"
+sha256 = "583d968e6fc53ef7eb1f03caa7d8e74d30d28f7261118c7bb3801e78dd89684d"
+source = "IR serialization of fixtures/html/vi-garden-notice.html; retained seed bytes introduced by git:622417485b6dff98b37558c4d40c6f91dde5dd56."
+license = "Apache-2.0"
+license_basis = "IR data containing original AriadShift fixture text under Apache-2.0; no parser implementation is included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-versioned-current-version-json"
+target = "ir_json_versioned"
+path = "fuzz/seeds/ir_json_versioned/current-version.json"
+sha256 = "4479bf1efefd0ab3c3c9552d8403ebff3dbb1b6228c73ec0df17b4e9796fbc8d"
+source = "Authored regression input for ir_json_versioned; see fuzz/fuzz_targets/ir_json_versioned.rs."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-versioned-en-fenced-code-json"
+target = "ir_json_versioned"
+path = "fuzz/seeds/ir_json_versioned/en-fenced-code.json"
+sha256 = "42b57ac3f5852d6212f5614fa71266bdc3b4c2155424e2ab37db68c7394d9e21"
+source = "Byte-identical copy of fuzz/seeds/ir_json/en-fenced-code.json; introduced by git:f57b1c11e14a29ee92592df39b83f1e961655cde."
+license = "Apache-2.0"
+license_basis = "IR data containing original AriadShift fixture text under Apache-2.0; no parser implementation is included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-versioned-en-footnotes-json"
+target = "ir_json_versioned"
+path = "fuzz/seeds/ir_json_versioned/en-footnotes.json"
+sha256 = "29c0860c32541f014aa880eec015ee7d858d4ef62d6a30090ea8945116759aea"
+source = "Byte-identical copy of fuzz/seeds/ir_json/en-footnotes.json; introduced by git:f57b1c11e14a29ee92592df39b83f1e961655cde."
+license = "Apache-2.0"
+license_basis = "IR data containing original AriadShift fixture text under Apache-2.0; no parser implementation is included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-versioned-future-version-json"
+target = "ir_json_versioned"
+path = "fuzz/seeds/ir_json_versioned/future-version.json"
+sha256 = "daefeff95e0efbf841e1b1830fed44e7585b2a85d3a309639161642bc706f597"
+source = "Authored regression input for ir_json_versioned; see fuzz/fuzz_targets/ir_json_versioned.rs."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-versioned-missing-version-json"
+target = "ir_json_versioned"
+path = "fuzz/seeds/ir_json_versioned/missing-version.json"
+sha256 = "2182fe610402b991f404fcbb99f751aabf9aa3aa6557b25ba5c83211fad074c1"
+source = "Authored regression input for ir_json_versioned; see fuzz/fuzz_targets/ir_json_versioned.rs."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-versioned-vi-aligned-table-json"
+target = "ir_json_versioned"
+path = "fuzz/seeds/ir_json_versioned/vi-aligned-table.json"
+sha256 = "6bdf12f1c5dc8a718dd87c99e6f6c941fa0411de33d546dc0f947181a18d3157"
+source = "Byte-identical copy of fuzz/seeds/ir_json/vi-aligned-table.json; introduced by git:f57b1c11e14a29ee92592df39b83f1e961655cde."
+license = "Apache-2.0"
+license_basis = "IR data containing original AriadShift fixture text under Apache-2.0; no parser implementation is included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-versioned-vi-garden-notice-json"
+target = "ir_json_versioned"
+path = "fuzz/seeds/ir_json_versioned/vi-garden-notice.json"
+sha256 = "583d968e6fc53ef7eb1f03caa7d8e74d30d28f7261118c7bb3801e78dd89684d"
+source = "Byte-identical copy of fuzz/seeds/ir_json/vi-garden-notice.json; introduced by git:f57b1c11e14a29ee92592df39b83f1e961655cde."
+license = "Apache-2.0"
+license_basis = "IR data containing original AriadShift fixture text under Apache-2.0; no parser implementation is included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-limits-validate-seed-01-ascii-txt"
+target = "limits_validate"
+path = "fuzz/seeds/limits_validate/seed-01-ascii.txt"
+sha256 = "caf065d797eb7985bcd7be14f8debe6b2bc70c740a5a3c293e2c8446d9d9c9db"
+source = "git:622417485b6dff98b37558c4d40c6f91dde5dd56:fuzz/seeds/limits_validate/seed-01-ascii.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-limits-validate-seed-02-digits-txt"
+target = "limits_validate"
+path = "fuzz/seeds/limits_validate/seed-02-digits.txt"
+sha256 = "f9a9b4452dc95561ca05dc0b2f827d41e0bb34aaa8c6e564a29a35debd9e8ad3"
+source = "git:622417485b6dff98b37558c4d40c6f91dde5dd56:fuzz/seeds/limits_validate/seed-02-digits.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-limits-validate-seed-03-symbols-txt"
+target = "limits_validate"
+path = "fuzz/seeds/limits_validate/seed-03-symbols.txt"
+sha256 = "a73c7c0a6b04076e418c8e2a8019b6bcc4af51581fb9988a53cb591336d736fe"
+source = "git:622417485b6dff98b37558c4d40c6f91dde5dd56:fuzz/seeds/limits_validate/seed-03-symbols.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-limits-validate-seed-04-text-txt"
+target = "limits_validate"
+path = "fuzz/seeds/limits_validate/seed-04-text.txt"
+sha256 = "f0627e44c9bd541232f8633f9e4021f1b5465895220bdb8659a51a77542e3c04"
+source = "git:622417485b6dff98b37558c4d40c6f91dde5dd56:fuzz/seeds/limits_validate/seed-04-text.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-markdown-reader-empty-list-quotes-md"
+target = "markdown_reader"
+path = "fuzz/seeds/markdown_reader/empty-list-quotes.md"
+sha256 = "548ede65873cdc7e7cdee656fc7effefb5514cb4a090c83248ef4b25086c5e9a"
+source = "git:66e6fe7fdbd571e97bb90c6589e9a2e2bed43ff6:fuzz/seeds/markdown_reader/empty-list-quotes.md"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-markdown-reader-en-fenced-code-md"
+target = "markdown_reader"
+path = "fuzz/seeds/markdown_reader/en-fenced-code.md"
+sha256 = "279de82c88707a0e607c0ca20203649d8f94655b399c0426e281d1c870ec0456"
+source = "Byte-identical copy of fixtures/md/en-fenced-code.md; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and distributed with the project."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-markdown-reader-en-footnotes-md"
+target = "markdown_reader"
+path = "fuzz/seeds/markdown_reader/en-footnotes.md"
+sha256 = "3cb24015ea444bb4e17f17841cde023d32df17f78d6ef8d7cc7f7520d8e539fa"
+source = "Byte-identical copy of fixtures/md/en-footnotes.md; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and distributed with the project."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-markdown-reader-mixed-kitchen-sink-md"
+target = "markdown_reader"
+path = "fuzz/seeds/markdown_reader/mixed-kitchen-sink.md"
+sha256 = "c289c6f78afd84b80ca1bbf9df5fd898a0b44e700963dd7eec181d3fe6b148d0"
+source = "Byte-identical copy of fixtures/md/mixed-kitchen-sink.md; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and distributed with the project."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-markdown-reader-vi-aligned-table-md"
+target = "markdown_reader"
+path = "fuzz/seeds/markdown_reader/vi-aligned-table.md"
+sha256 = "e4263b217adde2c2cfc9f57a9819a54d4487b924bdec19bcce59d9f6df57a244"
+source = "Byte-identical copy of fixtures/md/vi-aligned-table.md; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and distributed with the project."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-markdown-reader-vi-blockquote-md"
+target = "markdown_reader"
+path = "fuzz/seeds/markdown_reader/vi-blockquote.md"
+sha256 = "51c84bf7c918c9bf387d5dfd4a24213b29548b09be03ff1acb7320c8a99fd52d"
+source = "Byte-identical copy of fixtures/md/vi-blockquote.md; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and distributed with the project."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-chained-links-tar-gz"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/chained-links.tar.gz"
+sha256 = "518dff8de52a67850daca5bd09afe5eff3c0a8c20ec659849c82e0dbb8cc2625"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-chained-links-zip"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/chained-links.zip"
+sha256 = "b283350dbf694731a6060592020a715abb0363319616c27084005f500533a7a2"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-chained-write-tar-gz"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/chained-write.tar.gz"
+sha256 = "8b15b0a4e2bf8f1ff544e94aaef62d5d982717c0497f901fb9f88368e2477bef"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-chained-write-zip"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/chained-write.zip"
+sha256 = "0f4da3bac399905471c625bc24c6a8e876fda5df8707722e600c22429b5c3837"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-component-tar-gz"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/component.tar.gz"
+sha256 = "f71ea258109cfc8e206be918fc74b9b61d07c39397e2c97716cbdff90819de8f"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_archive/component.tar.gz"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-component-tar-zst"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/component.tar.zst"
+sha256 = "b8283cacd4a77fe1bbb470e5730d0ef892492dfbe850d94d087983f38864a869"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_archive/component.tar.zst"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-component-zip"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/component.zip"
+sha256 = "cf5f3d69bda9d1ef47c56e17c094c510cf11da1031173a4cf8edc7268fb8c8ef"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_archive/component.zip"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-dangling-link-tar-gz"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/dangling-link.tar.gz"
+sha256 = "1f4a60cee51703c4888f982b454b13dca589b97d3304cde5b7861283f5bbf0c7"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-dangling-link-zip"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/dangling-link.zip"
+sha256 = "4193829f3e7babc9c5f650be97953ca6b714786b685557b66074bd77aa457839"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-parent-escape-tar-gz"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/parent-escape.tar.gz"
+sha256 = "6606cbe94ce1cd5a05b80c326098baaa6aadaa56ebc5cd3dfe315ffa3baaa569"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-parent-escape-zip"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/parent-escape.zip"
+sha256 = "c9652b47e8c16d0b3b0e6d5e32960b92c333a32dccb4ac885eeb793447fb57cf"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-symlink-prefix-tar-gz"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/symlink-prefix.tar.gz"
+sha256 = "f2ba86094ac52b5d147a61b162740c8b7c7f3a7c18e51bd694f813689dbfb525"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-symlink-prefix-zip"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/symlink-prefix.zip"
+sha256 = "8b703fc97a81097737620c1cd11b52a55ba561fb8408c590dc6400fa673f72fb"
+source = "Original deterministic archive encoding of confinement regression cases in crates/ariad-host/tests/pack_extract_confinement.rs; generation command recorded in plans/reports/ws-3b-fuzz-packs.md."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-archive-two-frames-tar-zst"
+target = "pack_archive"
+path = "fuzz/seeds/pack_archive/two-frames.tar.zst"
+sha256 = "304c8fe1b0ee6711fa301e84d90007a1aa13c522032f2f7e79aef82419167e91"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_archive/two-frames.tar.zst"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-manifest-minimal-toml"
+target = "pack_manifest"
+path = "fuzz/seeds/pack_manifest/minimal.toml"
+sha256 = "1af5e146da7d20c3089e80b86b352c92636270b5e6ce3fb04721c11ab5bcc1b9"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_manifest/minimal.toml"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-manifest-newer-schema-toml"
+target = "pack_manifest"
+path = "fuzz/seeds/pack_manifest/newer-schema.toml"
+sha256 = "78e3474d3a4adfcb167ef42a834c74d10e267ad90f4b0c77a1caf0b6fee801a4"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_manifest/newer-schema.toml"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-manifest-signed-minimal-bin"
+target = "pack_manifest"
+path = "fuzz/seeds/pack_manifest/signed-minimal.bin"
+sha256 = "250785b932ff1f79350318d514a88de1998f38ecd1202789509d5b681e3a8acf"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_manifest/signed-minimal.bin"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-manifest-signed-with-key-bin"
+target = "pack_manifest"
+path = "fuzz/seeds/pack_manifest/signed-with-key.bin"
+sha256 = "f776c0f28844bd76280dbd445f5eb33a1095364249acc392ecf5e677cb035642"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_manifest/signed-with-key.bin"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-manifest-two-targets-toml"
+target = "pack_manifest"
+path = "fuzz/seeds/pack_manifest/two-targets.toml"
+sha256 = "2f8e23a091342757ec16bd1909267e05a99b9886394721a5b9b94f0919c637ab"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/pack_manifest/two-targets.toml"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pack-manifest-verified-throwaway-bin"
+target = "pack_manifest"
+path = "fuzz/seeds/pack_manifest/verified-throwaway.bin"
+sha256 = "3e81490bb3e1e99d0879a2dd91e3a3890e5dbbcf08a592dd7bcbc653da3d9404"
+source = "fuzz/seeds/pack_manifest/minimal.toml signed once with the existing locked minisign development dependency and an ephemeral throwaway key; only manifest, signature and public key retained."
+license = "Apache-2.0"
+license_basis = "Original Apache-2.0 manifest plus generated cryptographic fixture data; no private key retained."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pandoc-ast-to-ir-deep-blockquote-280-json"
+target = "pandoc_ast_to_ir"
+path = "fuzz/seeds/pandoc_ast_to_ir/deep-blockquote-280.json"
+sha256 = "5c3273044f9e48eb58a4c97dce17be192165a7365aa760ee9f3b9c8a5defac47"
+source = "git:622417485b6dff98b37558c4d40c6f91dde5dd56:fuzz/seeds/pandoc_ast_to_ir/deep-blockquote-280.json"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pandoc-ast-to-ir-en-footnotes-json"
+target = "pandoc_ast_to_ir"
+path = "fuzz/seeds/pandoc_ast_to_ir/en-footnotes.json"
+sha256 = "5d0964670d4d6d5192c945006c2799f5f99136cddd00b495249bdc685b1ae5bb"
+source = "Pandoc AST data for fixtures/docx/en-footnotes.docx; seed bytes introduced by git:622417485b6dff98b37558c4d40c6f91dde5dd56."
+license = "Apache-2.0"
+license_basis = "AST data containing original Apache-2.0 AriadShift fixture text; Pandoc code is not included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pandoc-ast-to-ir-en-numbered-checklist-json"
+target = "pandoc_ast_to_ir"
+path = "fuzz/seeds/pandoc_ast_to_ir/en-numbered-checklist.json"
+sha256 = "1ae4e5570e16f9d43c452896f7c3c69e2465bf1592797841938537f266da4836"
+source = "Pandoc AST data for fixtures/docx/en-numbered-checklist.docx; seed bytes introduced by git:622417485b6dff98b37558c4d40c6f91dde5dd56."
+license = "Apache-2.0"
+license_basis = "AST data containing original Apache-2.0 AriadShift fixture text; Pandoc code is not included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pandoc-ast-to-ir-vi-route-table-json"
+target = "pandoc_ast_to_ir"
+path = "fuzz/seeds/pandoc_ast_to_ir/vi-route-table.json"
+sha256 = "3dd0a164bc9f341540a147eb9e404bd33350c72d1d8879f17e92e3ff2fc6951a"
+source = "Pandoc AST data for fixtures/html/vi-route-table.html; seed bytes introduced by git:622417485b6dff98b37558c4d40c6f91dde5dd56."
+license = "Apache-2.0"
+license_basis = "AST data containing original Apache-2.0 AriadShift fixture text; Pandoc code is not included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pandoc-ast-to-ir-vi-styled-report-json"
+target = "pandoc_ast_to_ir"
+path = "fuzz/seeds/pandoc_ast_to_ir/vi-styled-report.json"
+sha256 = "2b9a0f923dc8de999187d80f39cb157f04e43139ac5da5c5074def81cb9704e7"
+source = "Pandoc AST data for fixtures/docx/vi-styled-report.docx; seed bytes introduced by git:622417485b6dff98b37558c4d40c6f91dde5dd56."
+license = "Apache-2.0"
+license_basis = "AST data containing original Apache-2.0 AriadShift fixture text; Pandoc code is not included."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-reader-encrypted-empty-password-pdf"
+target = "pdf_reader"
+path = "fuzz/seeds/pdf_reader/encrypted-empty-password.pdf"
+sha256 = "c5b4e1a1c12aff585a7b2cec784acb0e8983e23a6e387c45f5da232237e8244f"
+source = "Original synthetic PDF regression introduced by git:967995e00a7be5647cda7b834034b410faaa0712:fuzz/seeds/pdf_reader/encrypted-empty-password.pdf; related reader tests in crates/ariad-core/tests/pdf_reader.rs."
+license = "Apache-2.0"
+license_basis = "Project-authored synthetic PDF operators, fonts and sample text; no external document or font program is embedded."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-reader-helvetica-two-columns-pdf"
+target = "pdf_reader"
+path = "fuzz/seeds/pdf_reader/helvetica-two-columns.pdf"
+sha256 = "e257fd815909f9e4000a930e77dbbc46d47d13dcefd8eaf14a648897a1fca4f8"
+source = "Original synthetic PDF regression introduced by git:967995e00a7be5647cda7b834034b410faaa0712:fuzz/seeds/pdf_reader/helvetica-two-columns.pdf; related reader tests in crates/ariad-core/tests/pdf_reader.rs."
+license = "Apache-2.0"
+license_basis = "Project-authored synthetic PDF operators, fonts and sample text; no external document or font program is embedded."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-reader-inflated-page-counts-pdf"
+target = "pdf_reader"
+path = "fuzz/seeds/pdf_reader/inflated-page-counts.pdf"
+sha256 = "d8e41303d00817e0d8354950f7025f599ea564a7f60badf4d9e466c5949bc2bf"
+source = "Original synthetic PDF regression introduced by git:967995e00a7be5647cda7b834034b410faaa0712:fuzz/seeds/pdf_reader/inflated-page-counts.pdf; related reader tests in crates/ariad-core/tests/pdf_reader.rs."
+license = "Apache-2.0"
+license_basis = "Project-authored synthetic PDF operators, fonts and sample text; no external document or font program is embedded."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-reader-type0-tounicode-rotated-pdf"
+target = "pdf_reader"
+path = "fuzz/seeds/pdf_reader/type0-tounicode-rotated.pdf"
+sha256 = "54b0e59c072bd08671edd337a295ced960a55ae8f8292f5e5a9afc8b7dadd403"
+source = "Original synthetic PDF regression introduced by git:967995e00a7be5647cda7b834034b410faaa0712:fuzz/seeds/pdf_reader/type0-tounicode-rotated.pdf; related reader tests in crates/ariad-core/tests/pdf_reader.rs."
+license = "Apache-2.0"
+license_basis = "Project-authored synthetic PDF operators, fonts and sample text; no external document or font program is embedded."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-reader-type3-running-header-pdf"
+target = "pdf_reader"
+path = "fuzz/seeds/pdf_reader/type3-running-header.pdf"
+sha256 = "7b4afce5bd72ff552eebc401a6a91a3e5ab06ef30beaf070a4a01480e6733588"
+source = "Original synthetic PDF regression introduced by git:967995e00a7be5647cda7b834034b410faaa0712:fuzz/seeds/pdf_reader/type3-running-header.pdf; related reader tests in crates/ariad-core/tests/pdf_reader.rs."
+license = "Apache-2.0"
+license_basis = "Project-authored synthetic PDF operators, fonts and sample text; no external document or font program is embedded."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-reader-vi-garden-route-pdf"
+target = "pdf_reader"
+path = "fuzz/seeds/pdf_reader/vi-garden-route.pdf"
+sha256 = "2c1a8d2c1621be7fd4cde17414ab6aac07647d713727b242b08ba3e82f4e00e4"
+source = "Byte-identical copy of fixtures/pdf/vi-garden-route.pdf; SHA-256 matches its fixture record."
+license = "Apache-2.0"
+license_basis = "Original text authored for AriadShift and distributed with the project."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-typst-writer-hostile-markdown"
+target = "typst_writer"
+path = "fuzz/seeds/typst_writer/hostile-markdown"
+sha256 = "200ea77eaf79254fead8e32644bd6bc5a69b8bdf1ef225a4dba61c0a2ef33b7f"
+source = "git:967995e00a7be5647cda7b834034b410faaa0712:fuzz/seeds/typst_writer/hostile-markdown"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-typst-writer-structures-json"
+target = "typst_writer"
+path = "fuzz/seeds/typst_writer/structures.json"
+sha256 = "dec98651d1067017c4279db4f28e98da86e2dfd687bdcb7cc9f7ee5a8f47c507"
+source = "git:967995e00a7be5647cda7b834034b410faaa0712:fuzz/seeds/typst_writer/structures.json"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-anchor-trailing-whitespace-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/anchor-trailing-whitespace.txt"
+sha256 = "f9f8df433837ff7e9de8b0c5eae953e0cc251683cedd5fc148d5e5740bda8cd0"
+source = "git:f3a51346847be6d005d65fdd62c2dcfb54fc3cf7:fuzz/seeds/uri_parsers/anchor-trailing-whitespace.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-anchor-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/anchor.txt"
+sha256 = "0d175b94f0ca719cb868b41233055e414f307babad65eb1f85237b4ecade173a"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/anchor.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-file-uri-encoded-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/file-uri-encoded.txt"
+sha256 = "7c9000026bcf1d77905324202f481a361cd575fdb0b7acc288750734727f9561"
+source = "Authored regression input for uri_parsers; see fuzz/fuzz_targets/uri_parsers.rs."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-file-uri-localhost-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/file-uri-localhost.txt"
+sha256 = "87106c8e98b3eca0ad32b80da298c051dc15734d539e8b97e54c599befbdd6eb"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/file-uri-localhost.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-file-uri-remote-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/file-uri-remote.txt"
+sha256 = "1fcc8740f6fa4b7737be4b46bc32d7b09dca438616b6ede98dd2c7a52a3be186"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/file-uri-remote.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-file-uri-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/file-uri.txt"
+sha256 = "122dbc20f6a143874a88056ce2cce3b4332256abb3239007811a753c90cc4b41"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/file-uri.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-https-leading-space-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/https-leading-space.txt"
+sha256 = "36f741f9bb46b0f79392550e8147f398ac2f74d5ea12aaf6c0b457b9ab234cf3"
+source = "git:f3a51346847be6d005d65fdd62c2dcfb54fc3cf7:fuzz/seeds/uri_parsers/https-leading-space.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-https-link-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/https-link.txt"
+sha256 = "9bba0e884b76f6aed72060c81eafb9ae16ae086ad53bb54533ce842078ec0d98"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/https-link.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-javascript-link-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/javascript-link.txt"
+sha256 = "d0ee0421cce9521da249939cc55632a0cee6ec36d5f5a1940e0c47800007a0ea"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/javascript-link.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-mailto-link-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/mailto-link.txt"
+sha256 = "1748ce03f843ab4f0571296e541403304606a51b1d096dfc96956bd575f7534b"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/mailto-link.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-windows-ads-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/windows-ads.txt"
+sha256 = "b9f203fe34308feb90b67baf0be7fce581fc43c369f600b850bf9a06a0bf20fc"
+source = "Authored regression input for uri_parsers; see fuzz/fuzz_targets/uri_parsers.rs."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-windows-device-extension-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/windows-device-extension.txt"
+sha256 = "e446a20acd1d30137bda239d9a148a41a6f62e50e8d55b1e96bd0dd1614dddf6"
+source = "Authored regression input for uri_parsers; see fuzz/fuzz_targets/uri_parsers.rs."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-windows-device-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/windows-device.txt"
+sha256 = "0cc58cefc6c0270427ff42a3caf4ca8a48820cceb5f8608a30627ab974f47368"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/windows-device.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-windows-unc-ads-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/windows-unc-ads.txt"
+sha256 = "5b062e6002af2a3f2cb835231f5daecd1303538136531d381d75f20de1d8b081"
+source = "Authored regression input for uri_parsers; see fuzz/fuzz_targets/uri_parsers.rs."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-windows-verbatim-device-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/windows-verbatim-device.txt"
+sha256 = "7866eacbc8ca718a427ba9a830c183fdfe13c8cf2eabf3c59808edc8bc653af1"
+source = "Authored regression input for uri_parsers; see fuzz/fuzz_targets/uri_parsers.rs."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-uri-parsers-windows-verbatim-txt"
+target = "uri_parsers"
+path = "fuzz/seeds/uri_parsers/windows-verbatim.txt"
+sha256 = "6ed0373e01aeeb78e92107968df21cc048aa6ad6aaf75366adac629308de4edd"
+source = "git:60586a2abb05de5ed12b6069d6df2436bc344fd8:fuzz/seeds/uri_parsers/windows-verbatim.txt"
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-engine-protocol-host-event-rules-jsonl"
+target = "engine_protocol"
+path = "fuzz/seeds/engine_protocol/host-event-rules.jsonl"
+sha256 = "6844e50d634bcf3185b80ce0a4c33aff952f99c75553d140172e2dcb7fa50ad6"
+source = "Original protocol event examples authored for AriadShift; no external or private document."
+license = "Apache-2.0"
+license_basis = "Original project test data distributed under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-version-2-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-version-2.zip"
+sha256 = "bcc872826baa03b089723a7fb26e336e291961374e956fbef3b06240ab5bc8b2"
+source = "Original synthetic Unicode Path version-2 ZIP from r-3b-fuzz-fixes2-sol-artifacts/cases."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-version-0-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-version-0.zip"
+sha256 = "076445d19ba920266e5845a2aa070066ab703c438a62d772cdf6912863fc602a"
+source = "Original synthetic Unicode Path version-0 ZIP from r-3b-fuzz-fixes2-sol-artifacts/cases."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-version-255-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-version-255.zip"
+sha256 = "d5dbaf173a41e9bb4864fec2b54e5e6801f302cf1b9023a25459855814b6a8d3"
+source = "Original synthetic Unicode Path version-255 ZIP from r-3b-fuzz-fixes2-sol-artifacts/cases."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-invalid-utf8-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-invalid-utf8.zip"
+sha256 = "3a6e6a4e2f215d59262786057b45ca4f5cad1336d50306f57d0680d56a4e813d"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/v2-invalid-utf8.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-crc-mismatch-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-crc-mismatch.zip"
+sha256 = "dfe2e8ad3d7de9c7e2c08233a63f72ecd9aa300f730d3875f00bd706db812eec"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/v2-crc-mismatch.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-empty-name-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-empty-name.zip"
+sha256 = "9d4de83e44153efd9edb099623dbda774a048756c071f765a7cf99c536d90cba"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/v2-empty-name.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-invalid-then-valid-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-invalid-then-valid.zip"
+sha256 = "836e064c45e87c46522d62714f8e08262bc58792d3bceeedd86a9682b9e7e319"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/v2-bad-then-valid.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-valid-then-invalid-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-valid-then-invalid.zip"
+sha256 = "aa0d6ec119b684363aa75d8e00cb93c8d298fd5426e9ea66d3f72ea9bdaa1d88"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/v2-valid-then-bad.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-two-valid-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-two-valid.zip"
+sha256 = "9e58d9febfe97d57af2d041d6dfff7348df9b6f0b7eb9b2fca71c554a0caed0c"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/v2-two-valid.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-trailing-byte-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-trailing-byte.zip"
+sha256 = "cd34b4011071b906891c980bcccc06c7220492390588d9408b286c4480b1d910"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/trailing-extra-byte.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-truncated-content-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-truncated-content.zip"
+sha256 = "6433f96d516c9e824f5f93efc7fa53e9a31cb00bb064a1a142561ca991732291"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/truncated-extra.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-short-field-0-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-short-field-0.zip"
+sha256 = "eb92846f4834273f2509b4c22fc59f1bd36217f4237b4689e8701d14cd3e089b"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/short-field-0.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-short-field-1-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-short-field-1.zip"
+sha256 = "3e026c180f1319dea8a3bce7a5485d98b30f8141cfc02b17c9aa0e2a0ef1ea93"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/short-field-1.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-short-field-2-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-short-field-2.zip"
+sha256 = "604688beed33aa79a671b22f63f27bbcf3477d8b23be7a6eb8f9e0929e40dba7"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/short-field-2.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-short-field-3-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-short-field-3.zip"
+sha256 = "227fcdfa379c0b934b6ee8072bc35142e3350b2a0256003b9f053d2442f2720a"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/short-field-3.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-short-field-4-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-short-field-4.zip"
+sha256 = "8e5fde23ef2321e7e7ff3e9c945f311b07164c1aabfc17df6f5705d6d5937a46"
+source = "Original synthetic review package r-3b-fuzz-fixes3-sol-artifacts/cases/short-field-4.zip."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-trailing-unknown-id-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-trailing-unknown-id.zip"
+sha256 = "201291cc9a63f7cf75248a4ebaac86da9aaca77ccc730ad655dfc6e24a81f4c0"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-trailing-unknown-length-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-trailing-unknown-length.zip"
+sha256 = "2be48095121474a5c4dc18610c1d858a987fe1fd33d4cea6fcc034e47ef14ac4"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-trailing-known-id-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-trailing-known-id.zip"
+sha256 = "7afc49119761bd5bde3f3c940cd428bbf4c4e6886f316cc4c0cc32bb5c363d9a"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-trailing-known-length-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-trailing-known-length.zip"
+sha256 = "a57a9fd890a6e66124d702c51d07ce00ed3bae7ac3102b4881c8f07b60b4a6f2"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-unknown-before-valid-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-unknown-before-valid.zip"
+sha256 = "c826d7c9079f0e27b9d0998c87076709f00a0f4e086901bb4f8e172589346227"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-comment-before-valid-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-comment-before-valid.zip"
+sha256 = "79f8e268e539147a8c20c373ca4d92083a82b3867b93c40f10cea3741d2ca6b5"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-valid-then-wrong-crc-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-valid-then-wrong-crc.zip"
+sha256 = "e45445a1916d6d4b82c3fc6a3646bd21dcde8c47ac7f47f1b8307b38c6b340db"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-wrong-crc-then-valid-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-wrong-crc-then-valid.zip"
+sha256 = "965f0df211e65fc799b64c425db6d714c9fbf1c0de2966da2c788ec7aa438890"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-truncated-ignored-zip64-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-truncated-ignored-zip64.zip"
+sha256 = "fe7c98fb824b3a90a94f72df220d04b9a150983f3e8513a61f7a01aab4a5908b"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-truncated-unknown-content-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-truncated-unknown-content.zip"
+sha256 = "8b1292b581cfb504f1476a9c02095d61bbb4501fcf3c05e1f3f766761f245225"
+source = "Original synthetic stored package generated for Unicode Path framing decision tests."
+license = "Apache-2.0"
+license_basis = "Original project test content under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-non-utf8-entry-name-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/non-utf8-entry-name.zip"
+sha256 = "d6e1a35df51b83fbcbf3d2dbeef66a7bc921e04a3fea64ba2104c4b53851692a"
+source = "Saved project fixture fuzz mutation, derived from fixtures/office/vi-route-sheet.xlsx."
+license = "Apache-2.0"
+license_basis = "Original project fixture/test content and synthetic fuzz mutations under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-versioned-legacy-version-regression-json"
+target = "ir_json_versioned"
+path = "fuzz/seeds/ir_json_versioned/legacy-version-regression.json"
+sha256 = "42b57ac3f5852d6212f5614fa71266bdc3b4c2155424e2ab37db68c7394d9e21"
+source = "Saved original project IR, derived from fixtures/md/en-fenced-code.md."
+license = "Apache-2.0"
+license_basis = "Original project fixture/test content and synthetic fuzz mutations under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-unicode-alias-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/unicode-alias.zip"
+sha256 = "0d5ad9d485b7ced647b7bca0ca13e8ce0ab4d58dbdce818d9eb5cacf40dc7d59"
+source = "Original synthetic Unicode Path alias ZIP from r-3b-fuzz-fixes-sol-artifacts."
+license = "Apache-2.0"
+license_basis = "Original project fixture/test content and synthetic fuzz mutations under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-cp437-utf8-overlap-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/cp437-utf8-overlap.zip"
+sha256 = "7a76ce51184e5d6e9da0c82ff408d36fac6d6078e749ce25f31553f573671e37"
+source = "Original synthetic CP437/UTF-8 overlap ZIP from r-3b-fuzz-fixes-sol-artifacts."
+license = "Apache-2.0"
+license_basis = "Original project fixture/test content and synthetic fuzz mutations under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-cp437-ff-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/cp437-ff.zip"
+sha256 = "e3bda46fa955fbc4c8774e47e5b9b7177e9e837716c2b40a1ece22bb86cd7d51"
+source = "Original synthetic CP437 ff ZIP from r-3b-fuzz-fixes-sol-artifacts."
+license = "Apache-2.0"
+license_basis = "Original project fixture/test content and synthetic fuzz mutations under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-docx-meta-decoy-eocd-zip"
+target = "docx_meta"
+path = "fuzz/seeds/docx_meta/decoy-eocd.zip"
+sha256 = "9e6d102883675d881cc27120b84445f95dd4caf00be0c59ef7039ead4a8bc6dc"
+source = "LibFuzzer crossover of the project spreadsheet and synthetic CP437 probes; artifact crash-4fa23e8e102f63b3f05821280d8495889445287a."
+license = "Apache-2.0"
+license_basis = "Original project fixture/test content and synthetic fuzz mutations under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-invalid-asset-id-json"
+target = "ir_json"
+path = "fuzz/seeds/ir_json/invalid-asset-id.json"
+sha256 = "17d0b89746b0ab8a38b860e68ee655aa839a62412a510bdd154136e2372c001d"
+source = "Original synthetic IR invalid asset identity regression from dev commit b0c0f1fd71368cff3479773f275172a15af5a38a."
+license = "Apache-2.0"
+license_basis = "Original project-authored synthetic regression under the repository license."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-ir-json-semantic-depth-json"
+target = "ir_json"
+path = "fuzz/seeds/ir_json/semantic-depth.json"
+sha256 = "b7d681fda2dde4dcd5191decaa07d685c620f531971899bd85469af4ac23ccda"
+source = "Original synthetic IR semantic block nesting depth regression from dev commit b0c0f1fd71368cff3479773f275172a15af5a38a."
+license = "Apache-2.0"
+license_basis = "Original project-authored synthetic regression under the repository license."
+attribution = "AriadShift contributors"

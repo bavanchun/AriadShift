@@ -24,6 +24,10 @@ pub(crate) fn format_name(format: ariad_core::format::Format) -> &'static str {
 /// Parses only routing preferences. Deep links never carry filesystem paths or credentials.
 pub fn parse(value: &str) -> Result<Option<DeepLink>, String> {
     let u = url::Url::parse(value).map_err(|_| "Invalid desktop link")?;
+    // Finder also sends file opens through the deep-link plugin; file_open handles them.
+    if u.scheme() == "file" {
+        return Ok(None);
+    }
     if u.scheme() != "ariadshift"
         || !u.username().is_empty()
         || u.password().is_some()

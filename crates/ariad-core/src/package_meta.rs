@@ -3,7 +3,7 @@ use quick_xml::{
     Reader, Writer,
     events::{BytesStart, BytesText, Event},
 };
-use std::io::{self, Cursor, Read, Seek, Write};
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 use thiserror::Error;
 use zip::{ZipArchive, ZipWriter};
 const CORE_PROPERTIES: &str = "docProps/core.xml";
@@ -14,6 +14,13 @@ pub enum PackageMetaError {
     Io(#[from] io::Error),
     #[error("package archive is invalid")]
     Archive(#[from] zip::result::ZipError),
+    #[error(
+        "package central directory contains {raw_count} records but the ZIP index contains {indexed_count}"
+    )]
+    EntryCountMismatch {
+        raw_count: usize,
+        indexed_count: usize,
+    },
     #[error("package contains an entry larger than 64 MiB")]
     EntryTooLarge,
     #[error("package properties are missing")]
@@ -31,6 +38,17 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
     epub: bool,
     timestamp: &str,
 ) -> Result<W, PackageMetaError> {
+    let archive = ZipArchive::new(input)?;
+    let indexed_count = archive.len();
+    let directory_start = archive.central_directory_start();
+    let mut input = archive.into_inner();
+    let raw_count = count_central_directory_records(&mut input, directory_start)?;
+    if raw_count != indexed_count {
+        return Err(PackageMetaError::EntryCountMismatch {
+            raw_count,
+            indexed_count,
+        });
+    }
     let mut archive = ZipArchive::new(input)?;
     let mut writer = ZipWriter::new(output);
     writer.set_raw_comment(archive.comment().to_vec().into_boxed_slice())?;
@@ -86,6 +104,43 @@ pub fn stamp_bytes(bytes: &[u8], epub: bool, timestamp: &str) -> Result<Vec<u8>,
     }
     stamp_into(Cursor::new(bytes), Cursor::new(Vec::new()), epub, timestamp).map(Cursor::into_inner)
 }
+
+/// Count physical records without relying on the ZIP index, which merges aliases.
+fn count_central_directory_records<R: Read + Seek>(
+    input: &mut R,
+    start: u64,
+) -> Result<usize, PackageMetaError> {
+    let end = input.seek(SeekFrom::End(0))?;
+    input.seek(SeekFrom::Start(start))?;
+    let mut count = 0usize;
+    loop {
+        let mut header = [0; 46];
+        input.read_exact(&mut header[..4])?;
+        if matches!(&header[..4], b"PK\x05\x06" | b"PK\x06\x06" | b"PK\x05\x05") {
+            return Ok(count);
+        }
+        if &header[..4] != b"PK\x01\x02" {
+            return Err(zip::result::ZipError::InvalidArchive(
+                "invalid central directory record".into(),
+            )
+            .into());
+        }
+        input.read_exact(&mut header[4..])?;
+        let variable_bytes = u64::from(u16::from_le_bytes([header[28], header[29]]))
+            + u64::from(u16::from_le_bytes([header[30], header[31]]))
+            + u64::from(u16::from_le_bytes([header[32], header[33]]));
+        let next = input
+            .stream_position()?
+            .checked_add(variable_bytes)
+            .filter(|&next| next <= end)
+            .ok_or_else(|| io::Error::other("central directory record exceeds the archive"))?;
+        input.seek(SeekFrom::Start(next))?;
+        count = count
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("package record count overflows usize"))?;
+    }
+}
+
 #[derive(Clone, Copy)]
 enum TimestampField {
     Created,

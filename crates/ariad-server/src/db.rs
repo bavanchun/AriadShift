@@ -379,6 +379,66 @@ pub async fn get_job(pool: &PgPool, id: Uuid) -> Result<Option<JobRow>, sqlx::Er
     .await
 }
 
+/// A job of a workspace's list, with its input's original file name while
+/// the upload keeps it (deleted and expired uploads forget the name).
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct ListedJobRow {
+    #[sqlx(flatten)]
+    pub job: JobRow,
+    pub filename: Option<String>,
+}
+
+/// Selects one page of a workspace's jobs, newest first.
+pub struct JobListQuery {
+    pub workspace_id: Uuid,
+    pub status: Option<JobStatus>,
+    /// Only jobs ordered after this `(created_at, id)` position.
+    pub after: Option<(DateTime<Utc>, Uuid)>,
+    pub limit: i64,
+}
+
+macro_rules! list_jobs_sql {
+    ($after:literal) => {
+        concat!(
+            "SELECT ",
+            job_columns!(),
+            ", NULLIF((SELECT u.filename FROM uploads u WHERE u.id = jobs.upload_id), '') \
+             AS filename FROM jobs WHERE workspace_id = $1 AND ($2::text IS NULL OR status = $2)",
+            $after,
+            " ORDER BY created_at DESC, id DESC LIMIT $3"
+        )
+    };
+}
+
+/// Lists a workspace's jobs by `(created_at, id)` descending. Keyset paging
+/// keeps pages stable while new jobs are created.
+pub async fn list_jobs(
+    pool: &PgPool,
+    query: &JobListQuery,
+) -> Result<Vec<ListedJobRow>, sqlx::Error> {
+    let status = query.status.map(JobStatus::as_str);
+    match query.after {
+        None => {
+            sqlx::query_as(list_jobs_sql!(""))
+                .bind(query.workspace_id)
+                .bind(status)
+                .bind(query.limit)
+                .fetch_all(pool)
+                .await
+        }
+        Some((created_at, id)) => {
+            sqlx::query_as(list_jobs_sql!(" AND (created_at, id) < ($4, $5)"))
+                .bind(query.workspace_id)
+                .bind(status)
+                .bind(query.limit)
+                .bind(created_at)
+                .bind(id)
+                .fetch_all(pool)
+                .await
+        }
+    }
+}
+
 pub async fn job_status(pool: &PgPool, id: Uuid) -> Result<Option<JobStatus>, sqlx::Error> {
     let status: Option<String> = sqlx::query_scalar("SELECT status FROM jobs WHERE id = $1")
         .bind(id)
@@ -513,6 +573,30 @@ pub async fn job_steps(pool: &PgPool, job_id: Uuid) -> Result<Vec<StepRow>, sqlx
          WHERE job_id = $1 ORDER BY position",
     )
     .bind(job_id)
+    .fetch_all(pool)
+    .await
+}
+
+#[derive(Clone, Debug, sqlx::FromRow)]
+pub struct JobStepRow {
+    pub job_id: Uuid,
+    #[sqlx(flatten)]
+    pub step: StepRow,
+}
+
+/// The routes of several jobs in one query, each in step order.
+pub async fn steps_of_jobs(
+    pool: &PgPool,
+    job_ids: &[Uuid],
+) -> Result<Vec<JobStepRow>, sqlx::Error> {
+    if job_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    sqlx::query_as(
+        "SELECT job_id, position, from_format, to_format, engine FROM job_steps \
+         WHERE job_id = ANY($1) ORDER BY job_id, position",
+    )
+    .bind(job_ids)
     .fetch_all(pool)
     .await
 }
@@ -692,4 +776,21 @@ pub async fn lock_subject(
         .execute(&mut **tx)
         .await?;
     Ok(())
+}
+
+/// Serialize fleet admission before taking a quota subject's lock. Count and
+/// all job/message/metering writes remain in the caller's transaction.
+pub async fn admit_global_job(
+    tx: &mut Transaction<'_, Postgres>,
+    ceiling: u32,
+) -> Result<bool, sqlx::Error> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('ariad-global-admission', 0))")
+        .execute(&mut **tx)
+        .await?;
+    let active: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM (SELECT 1 FROM jobs WHERE status IN ('queued', 'running') LIMIT $1) active")
+            .bind(i64::from(ceiling))
+            .fetch_one(&mut **tx)
+            .await?;
+    Ok(active < i64::from(ceiling))
 }

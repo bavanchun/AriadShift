@@ -8,6 +8,7 @@ pub mod config;
 pub mod db;
 pub mod entitlements;
 pub mod error;
+pub mod mcp;
 pub mod packs;
 pub mod queue;
 pub mod rate_limit;

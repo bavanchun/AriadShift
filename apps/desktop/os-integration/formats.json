@@ -1,0 +1,95 @@
+{
+  "note": "Generated from ariad-core by the ariad-desktop file_open tests. Do not edit.",
+  "formats": [
+    {
+      "id": "markdown",
+      "extensions": ["md", "markdown", "mdown"],
+      "media_type": "text/markdown"
+    },
+    {
+      "id": "html",
+      "extensions": ["html", "htm"],
+      "media_type": "text/html"
+    },
+    {
+      "id": "docx",
+      "extensions": ["docx"],
+      "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    },
+    {
+      "id": "epub",
+      "extensions": ["epub"],
+      "media_type": "application/epub+zip"
+    },
+    {
+      "id": "pdf",
+      "extensions": ["pdf"],
+      "media_type": "application/pdf"
+    },
+    {
+      "id": "png",
+      "extensions": ["png"],
+      "media_type": "image/png"
+    },
+    {
+      "id": "pptx",
+      "extensions": ["pptx"],
+      "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    },
+    {
+      "id": "xlsx",
+      "extensions": ["xlsx"],
+      "media_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    },
+    {
+      "id": "odt",
+      "extensions": ["odt"],
+      "media_type": "application/vnd.oasis.opendocument.text"
+    },
+    {
+      "id": "ods",
+      "extensions": ["ods"],
+      "media_type": "application/vnd.oasis.opendocument.spreadsheet"
+    },
+    {
+      "id": "odp",
+      "extensions": ["odp"],
+      "media_type": "application/vnd.oasis.opendocument.presentation"
+    },
+    {
+      "id": "doc",
+      "extensions": ["doc"],
+      "media_type": "application/msword"
+    },
+    {
+      "id": "xls",
+      "extensions": ["xls"],
+      "media_type": "application/vnd.ms-excel"
+    },
+    {
+      "id": "ppt",
+      "extensions": ["ppt"],
+      "media_type": "application/vnd.ms-powerpoint"
+    },
+    {
+      "id": "rtf",
+      "extensions": ["rtf"],
+      "media_type": "application/rtf"
+    },
+    {
+      "id": "jpeg",
+      "extensions": ["jpg", "jpeg"],
+      "media_type": "image/jpeg"
+    },
+    {
+      "id": "webp",
+      "extensions": ["webp"],
+      "media_type": "image/webp"
+    },
+    {
+      "id": "tiff",
+      "extensions": ["tif", "tiff"],
+      "media_type": "image/tiff"
+    }
+  ]
+}

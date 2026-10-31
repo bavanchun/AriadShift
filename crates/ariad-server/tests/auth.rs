@@ -355,7 +355,8 @@ async fn rejected_credentials_are_throttled_per_client() {
         (429, "rate_limited".to_owned())
     );
     let valid = Auth::ApiKey(insert_api_key(&h.db.pool, "throttled-user").await);
-    assert_eq!(h.post(&valid, "/v1/plan", &body).await.status(), 429);
+    // A credential that verifies is not blocked by its address's failures.
+    assert_eq!(h.post(&valid, "/v1/plan", &body).await.status(), 200);
     h.stop().await;
 }
 

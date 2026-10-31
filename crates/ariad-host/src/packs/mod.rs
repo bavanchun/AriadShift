@@ -24,6 +24,8 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 pub use author::{ManifestRequest, generate_manifest};
+#[doc(hidden)]
+pub use extract::extract_for_fuzzing;
 pub use extract::{Stats, scan};
 pub use fetch::FetchPolicy;
 pub use index::{IndexEntry, entries as index_entries, lookup as index_lookup};

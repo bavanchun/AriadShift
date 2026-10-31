@@ -1,0 +1,4 @@
+{"type":"progress","stage":"layout","done":2,"total":5}
+{"type":"warning","code":"image_not_embedded","message":"Image dropped: \u00e2nh qu\u00e1 l\u1edbn"}
+{"type":"artifact","path":"/work/out/document.json","format":"ariad-ir+json"}
+{"type":"result","ok":false,"error":{"code":"limit_exceeded","message":"page limit reached"}}

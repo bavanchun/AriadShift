@@ -2,7 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/app";
 
-const { ipc, links, picker, updateCheck } = vi.hoisted(() => ({
+const { events, ipc, links, picker, updateCheck } = vi.hoisted(() => ({
+  events: { listen: vi.fn(), handlers: new Map<string, () => void>() },
   ipc: vi.fn(),
   links: {
     current: null as string[] | null,
@@ -12,6 +13,7 @@ const { ipc, links, picker, updateCheck } = vi.hoisted(() => ({
   updateCheck: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: ipc }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: events.listen }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: picker }));
 vi.mock("@tauri-apps/plugin-deep-link", () => ({
   getCurrent: async () => links.current,
@@ -37,6 +39,11 @@ const settings = {
   concurrency: 2,
 };
 beforeEach(() => {
+  events.handlers.clear();
+  events.listen.mockReset().mockImplementation(async (name: string, handler: () => void) => {
+    events.handlers.set(name, handler);
+    return () => events.handlers.delete(name);
+  });
   ipc.mockReset();
   links.current = null;
   links.handler = undefined;
@@ -91,6 +98,59 @@ describe("desktop workflow", () => {
           paths: ["/tmp/linked.md"],
           target: "html",
           profile: "faithful",
+          output_folder: null,
+          overwrite: false,
+        },
+      }),
+    );
+  });
+  it("adds files the OS opened before the window subscribed, after subscribing", async () => {
+    const original = ipc.getMockImplementation();
+    let pending = ["/tmp/cold.md", "/tmp/cold.docx"];
+    ipc.mockImplementation(async (name, args) => {
+      if (name !== "opened_files") return original?.(name, args);
+      const drained = pending;
+      pending = [];
+      return drained;
+    });
+    render(<App />);
+    await screen.findByText("cold.md");
+    expect(screen.getByText("cold.docx")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "2 selected files" })).toBeTruthy();
+    const firstDrain = ipc.mock.calls.findIndex(([name]) => name === "opened_files");
+    expect(events.listen).toHaveBeenCalledWith("open-files", expect.any(Function));
+    expect(events.listen.mock.invocationCallOrder[0]).toBeLessThan(
+      ipc.mock.invocationCallOrder[firstDrain] ?? 0,
+    );
+  });
+  it("adds files a second launch forwards to the running window", async () => {
+    const original = ipc.getMockImplementation();
+    let pending: string[] = [];
+    ipc.mockImplementation(async (name, args) => {
+      if (name !== "opened_files") return original?.(name, args);
+      const drained = pending;
+      pending = [];
+      return drained;
+    });
+    render(<App />);
+    await waitFor(() => expect(events.handlers.has("open-files")).toBe(true));
+    await waitFor(() => expect(ipc).toHaveBeenCalledWith("opened_files", { request: {} }));
+    fireEvent.click(screen.getByRole("button", { name: /^Settings$/ }));
+    pending = ["/tmp/second.md"];
+    await act(async () => events.handlers.get("open-files")?.());
+    await screen.findByText("second.md");
+    expect(screen.getByRole("heading", { name: "Convert" })).toBeTruthy();
+    pending = ["/tmp/second.md", "/tmp/third.html"];
+    await act(async () => events.handlers.get("open-files")?.());
+    await screen.findByText("third.html");
+    expect(screen.getAllByText("second.md")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Start conversion" }));
+    await waitFor(() =>
+      expect(ipc).toHaveBeenCalledWith("enqueue", {
+        request: {
+          paths: ["/tmp/second.md", "/tmp/third.html"],
+          target: "html",
+          profile: "private",
           output_folder: null,
           overwrite: false,
         },

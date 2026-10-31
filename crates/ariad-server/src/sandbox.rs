@@ -139,11 +139,33 @@ pub struct SandboxStatus {
 pub enum SandboxError {
     #[error("ARIAD_SANDBOX=required, but this host cannot isolate engines ({0})")]
     Unavailable(String),
+    #[error(
+        "ARIAD_WORKER_CONCURRENCY must be 1 in best-effort mode without filesystem confinement"
+    )]
+    UnsafeConcurrency,
 }
 
 /// Checks the configured mode against the host's actual isolation contract.
 pub fn preflight(mode: SandboxMode) -> Result<SandboxStatus, SandboxError> {
     preflight_with_support(mode, &ariad_host::sandbox::support())
+}
+
+/// Checks worker parallelism against actual kernel support. Off is an explicit
+/// weaker boundary; required still refuses every missing isolation feature.
+pub fn preflight_worker_with_support(
+    mode: SandboxMode,
+    concurrency: usize,
+    support: &ariad_host::sandbox::SandboxSupport,
+) -> Result<SandboxStatus, SandboxError> {
+    let status = preflight_with_support(mode, support)?;
+    #[cfg(target_os = "macos")]
+    let filesystem = support.seatbelt_available && support.seatbelt_usable;
+    #[cfg(not(target_os = "macos"))]
+    let filesystem = support.landlock_filesystem;
+    if mode == SandboxMode::BestEffort && concurrency > 1 && !filesystem {
+        return Err(SandboxError::UnsafeConcurrency);
+    }
+    Ok(status)
 }
 
 fn preflight_with_support(
@@ -197,10 +219,18 @@ mod tests {
         );
         let supported = SandboxSupport {
             platform: true,
+            #[cfg(target_os = "macos")]
+            seatbelt_available: true,
+            #[cfg(target_os = "macos")]
+            seatbelt_usable: true,
             landlock_filesystem: true,
             seccomp: true,
             ..SandboxSupport::default()
         };
+        assert!(
+            supported.gaps().is_empty(),
+            "fixture covers the platform's isolation contract"
+        );
         assert!(
             preflight_with_support(SandboxMode::Required, &supported)
                 .unwrap()

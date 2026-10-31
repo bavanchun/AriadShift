@@ -4,7 +4,9 @@ pub mod blobs;
 pub mod dto;
 pub mod events;
 pub mod health;
+pub mod job_list;
 pub mod jobs;
+pub mod limits;
 pub mod plan;
 pub mod uploads;
 
@@ -116,24 +118,21 @@ impl FromRequestParts<AppState> for Caller {
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
         let peer = peer_addr(parts);
-        let client = state.auth.client_hash(&parts.headers, peer);
-        let auth_bucket = format!("auth-failure:{client}");
-        if (parts
+        // Verify first so an address's rejected credentials cannot block a
+        // credential that verifies. Bare discovery requests never count.
+        let presented = parts
             .headers
             .contains_key(axum::http::header::AUTHORIZATION)
-            || parts.headers.contains_key(crate::auth::API_KEY_HEADER))
-            && let rate_limit::Decision::Limited { retry_after_s } =
-                rate_limit::check(&state.db, &auth_bucket, AUTH_FAILURES_PER_MINUTE).await?
-        {
-            return Err(ApiError::rate_limited(retry_after_s));
-        }
+            || parts.headers.contains_key(crate::auth::API_KEY_HEADER);
         let principal = match state
             .auth
             .authenticate(&state.db, &parts.headers, peer)
             .await
         {
             Ok(principal) => principal,
-            Err(err) if err.status() == StatusCode::UNAUTHORIZED => {
+            Err(err) if presented && err.status() == StatusCode::UNAUTHORIZED => {
+                let client = state.auth.client_hash(&parts.headers, peer);
+                let auth_bucket = format!("auth-failure:{client}");
                 if let rate_limit::Decision::Limited { retry_after_s } =
                     rate_limit::hit(&state.db, &auth_bucket, AUTH_FAILURES_PER_MINUTE).await?
                 {
@@ -202,21 +201,36 @@ pub fn parse_id(raw: &str, what: &str) -> Result<Uuid, ApiError> {
         description = "Convert documents in the AriadShift cloud. Upload a file with one \
                        presigned PUT, create a job, follow its events, and download the outputs \
                        through short-lived URLs. Inputs and outputs are deleted after the plan's \
-                       retention period (one hour by default).",
+                       retention period (one hour by default). `/v1` is stable: it changes only \
+                       in backward-compatible ways, and breaking changes go to a new major \
+                       version path.",
         license(name = "Apache-2.0", identifier = "Apache-2.0"),
     ),
     servers((url = "/", description = "This deployment")),
-    modifiers(&SecuritySchemes),
+    modifiers(&SecuritySchemes, &Stability),
     components(schemas(ErrorBody)),
     tags(
         (name = "uploads", description = "Send input files"),
         (name = "jobs", description = "Run and follow conversions"),
-        (name = "planning", description = "Routes and capabilities"),
+        (name = "planning", description = "Routes, capabilities and plan limits"),
         (name = "blobs", description = "Presigned file transfers of the local object store"),
         (name = "health", description = "Liveness and readiness"),
     ),
 )]
 struct ApiDoc;
+
+/// Marks the document as a stable contract (`x-stability` in `info`).
+struct Stability;
+
+impl Modify for Stability {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        openapi
+            .info
+            .extensions
+            .get_or_insert_with(Default::default)
+            .insert("x-stability".to_owned(), serde_json::json!("stable"));
+    }
+}
 
 struct SecuritySchemes;
 
@@ -254,9 +268,11 @@ impl Modify for SecuritySchemes {
 fn openapi_router(request_timeout: Duration) -> OpenApiRouter<AppState> {
     let bounded = OpenApiRouter::new()
         .routes(routes!(uploads::create_upload))
+        .routes(routes!(uploads::delete_upload))
+        .routes(routes!(limits::get_limits))
         .routes(routes!(plan::plan))
         .routes(routes!(plan::capabilities))
-        .routes(routes!(jobs::create_job))
+        .routes(routes!(job_list::list_jobs, jobs::create_job))
         .routes(routes!(jobs::get_job, jobs::delete_job))
         .routes(routes!(jobs::job_outputs))
         .routes(routes!(health::healthz))
@@ -363,8 +379,10 @@ mod tests {
         let paths: Vec<&str> = doc.paths.paths.keys().map(String::as_str).collect();
         for path in [
             "/v1/uploads",
+            "/v1/uploads/{id}",
             "/v1/uploads/{id}/complete",
             "/v1/plan",
+            "/v1/limits",
             "/v1/jobs",
             "/v1/jobs/{id}",
             "/v1/jobs/{id}/events",
@@ -386,6 +404,13 @@ mod tests {
             let operation = operation.expect("blob GET and PUT are documented");
             assert!(operation.security.is_none(), "the token is the credential");
         }
+    }
+
+    #[test]
+    fn openapi_info_marks_v1_stable() {
+        let doc = openapi();
+        let extensions = doc.info.extensions.expect("info extensions");
+        assert_eq!(extensions["x-stability"], "stable");
     }
 
     #[test]

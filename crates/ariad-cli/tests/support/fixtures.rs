@@ -57,6 +57,20 @@ const ALLOWED_TAGS: &[&str] = &[
 #[derive(Clone, Debug, Deserialize)]
 pub struct FixtureManifest {
     pub fixture: Vec<Fixture>,
+    #[serde(default)]
+    pub fuzz_seed: Vec<FuzzSeed>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct FuzzSeed {
+    pub id: String,
+    pub target: String,
+    pub path: String,
+    pub sha256: String,
+    pub source: String,
+    pub license: String,
+    pub license_basis: String,
+    pub attribution: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -112,6 +126,12 @@ pub fn fixtures_for(route: &str, phase: &str) -> Result<Vec<Fixture>, Box<dyn Er
 
 pub fn validate_manifest(manifest: &FixtureManifest) -> Vec<String> {
     validate_manifest_at(&repository_root(), manifest)
+}
+
+pub fn validate_fuzz_seed_manifest(manifest: &FixtureManifest) -> Vec<String> {
+    let mut errors = Vec::new();
+    validate_fuzz_seeds(&repository_root(), &manifest.fuzz_seed, &mut errors);
+    errors
 }
 
 fn validate_manifest_at(root: &Path, manifest: &FixtureManifest) -> Vec<String> {
@@ -234,7 +254,78 @@ fn validate_manifest_at(root: &Path, manifest: &FixtureManifest) -> Vec<String> 
 
     validate_markdown_cases(root, manifest, &mut errors);
     validate_fixture_tree(root, &listed_paths, &mut errors);
+    validate_fuzz_seeds(root, &manifest.fuzz_seed, &mut errors);
     errors
+}
+
+fn validate_fuzz_seeds(root: &Path, seeds: &[FuzzSeed], errors: &mut Vec<String>) {
+    let mut ids = HashSet::new();
+    let mut listed = HashSet::new();
+    for seed in seeds {
+        if !is_kebab_case(&seed.id) || !ids.insert(&seed.id) {
+            errors.push(format!("invalid or duplicate fuzz seed id: {}", seed.id));
+        }
+        if !listed.insert(seed.path.clone()) {
+            errors.push(format!("duplicate fuzz seed path: {}", seed.path));
+        }
+        if !ALLOWED_LICENSES.contains(&seed.license.as_str()) {
+            errors.push(format!(
+                "fuzz seed {} has disallowed license {}",
+                seed.id, seed.license
+            ));
+        }
+        if [&seed.source, &seed.license_basis, &seed.attribution]
+            .iter()
+            .any(|s| s.trim().is_empty())
+        {
+            errors.push(format!("fuzz seed {} is missing provenance", seed.id));
+        }
+        let parts: Vec<_> = seed.path.split('/').collect();
+        if parts.len() != 4
+            || parts[0] != "fuzz"
+            || parts[1] != "seeds"
+            || parts[2] != seed.target
+            || seed.target.is_empty()
+            || seed.path.contains('\\')
+            || parts
+                .iter()
+                .any(|part| matches!(*part, "" | "." | "..") || part.contains(':'))
+        {
+            errors.push(format!("unsafe fuzz seed path or target: {}", seed.path));
+            continue;
+        }
+        let mut path = root.to_path_buf();
+        let mut safe = true;
+        for part in &parts {
+            path.push(part);
+            match fs::symlink_metadata(&path) {
+                Ok(metadata) if !metadata.file_type().is_symlink() => {}
+                _ => {
+                    safe = false;
+                    break;
+                }
+            }
+        }
+        if !safe || !path.is_file() {
+            errors.push(format!(
+                "fuzz seed is missing or is not a regular confined file: {}",
+                seed.path
+            ));
+            continue;
+        }
+        match fs::read(&path) {
+            Ok(bytes) if hex::encode(Sha256::digest(&bytes)) == seed.sha256 => {}
+            Ok(_) => errors.push(format!("fuzz seed SHA-256 mismatch: {}", seed.path)),
+            Err(error) => errors.push(format!("cannot read fuzz seed {}: {error}", seed.path)),
+        }
+    }
+    let mut actual = HashSet::new();
+    if let Err(error) = collect_fixture_paths(&root.join("fuzz/seeds"), root, &mut actual) {
+        errors.push(format!("cannot inspect fuzz seeds: {error}"));
+    }
+    for path in actual.difference(&listed) {
+        errors.push(format!("fuzz seed has no manifest entry: {path}"));
+    }
 }
 
 fn is_kebab_case(value: &str) -> bool {

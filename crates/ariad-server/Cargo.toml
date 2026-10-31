@@ -26,6 +26,7 @@ opentelemetry = { workspace = true, features = ["metrics", "trace"] }
 opentelemetry-otlp = { workspace = true, features = ["http-proto", "metrics", "reqwest-client", "trace"] }
 opentelemetry_sdk = { workspace = true, features = ["metrics", "rt-tokio", "trace"] }
 reqwest = { workspace = true, features = ["form", "json", "rustls-no-provider", "stream"] }
+rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 rustls = { workspace = true, features = ["ring", "std"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
