@@ -1,12 +1,14 @@
 ---
 phase: 7
 title: "Security audit and fixes"
-status: on-hold
+status: moved
 depends_on: [5, 6]
 branch: fix/v1-security-audit
 ---
 
 # Phase 7: Security audit and fixes
+
+Moved to [plans/261031-1422-next-stage-pdf-suite/phase-20-hardening-benchmarks-and-1-0-launch.md](../261031-1422-next-stage-pdf-suite/phase-20-hardening-benchmarks-and-1-0-launch.md).
 
 ## Tasks
 

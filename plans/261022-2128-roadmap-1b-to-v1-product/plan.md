@@ -1,7 +1,7 @@
 ---
 title: "Roadmap 1b to v1.0 · complete product"
 description: "Finish the ARCHITECTURE.md roadmap after v0.1.0: engine packs and heavy routes (1b, v0.2), the local web app, the Tauri desktop app, the self-hostable cloud with REST API and SDK, then v1.0 hardening with remote MCP and OS integration."
-status: in-progress
+status: completed
 priority: P1
 effort: "~320h agent time"
 branch: dev
@@ -65,13 +65,13 @@ Not covered, because they need the user's own accounts. The pipelines stay ready
 | 2 | [Linux sandbox, memory watchdog, sessions](./phase-02-sandbox-limits-sessions.md) | none | ASUS | Done |
 | 3 | [PDF reader, Typst writer, LibreOffice engine](./phase-03-pdf-typst-office.md) ([PR #34](https://github.com/bavanchun/AriadShift/pull/34), [review follow-up](./phase-03-pdf-typst-office.md#review-follow-up), [native integration](./phase-03-pdf-typst-office.md#native-surface-integration)) | none | ASUS | Done |
 | 4 | [Docling engine, mapper and pack build](./phase-04-docling-engine-and-pack.md) | none (install path needs 1) | ASUS | Done |
-| 5 | [Heavy-route bench, freeze, v0.2.0](./phase-05-bench-freeze-release-0-2.md) | 1, 2, 3, 4 | ASUS, Mac | In progress (pending the v0.2.0 release) |
+| 5 | [Heavy-route bench, freeze, v0.2.0](./phase-05-bench-freeze-release-0-2.md) | 1, 2, 3, 4 | ASUS, Mac | Done (v0.2.0) |
 | 6 | [Web foundation and local app](./phase-06-web-foundation.md) | none | Mac | Done |
 | 7 | [Web heavy local routes and hand-offs](./phase-07-web-heavy-routes.md) ([PR #48](https://github.com/bavanchun/AriadShift/pull/48)) | 3, 6 | Mac | Done |
 | 8 | [Desktop app](./phase-08-desktop-app.md) | 1, 6 | Mac, ASUS | Done |
 | 9 | [Cloud backend](./phase-09-cloud-backend.md) | 2, 3 | ASUS | Done |
 | 10 | [Cloud web, auth, SDK, self-host](./phase-10-cloud-web-sdk-selfhost.md) | 7, 9 | ASUS | Done ([#53], [#84]) |
-| 11 | [v1.0: remote MCP, OS integration, audit, release](./phase-11-v1-release.md) | all | ASUS, Mac | Pending (on hold, next stage) |
+| 11 | [v1.0: remote MCP, OS integration, audit, release](./phase-11-v1-release.md) | all | ASUS, Mac | Moved to plans/261031-1422-next-stage-pdf-suite phase 20 |
 
 Waves:
 
