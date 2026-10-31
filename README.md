@@ -35,12 +35,14 @@ irm https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-i
 
 Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`, and ships with a `.sha256` checksum.
 
-### Package managers (not yet published)
+### Package managers
 
-The release pipeline is ready for Homebrew, crates.io and WinGet, but v0.2.0 has not reached them yet: the Homebrew formula and the crates were not published, and no WinGet submission exists. These commands work once each channel is published:
+v0.2.0 is published to crates.io (ariad-core, ariad-typst, ariad-host, ariad-cli) and the Homebrew tap, and the release smoke run passed on the Homebrew, shell installer, PowerShell installer and cargo-binstall channels; current Homebrew needs the tap trust step shown in the commands below; no WinGet submission exists yet.
 
 ```sh
-# Homebrew (macOS & Linux)
+# Homebrew (macOS & Linux; current Homebrew requires trusting third-party taps)
+brew tap bavanchun/tap
+brew trust --tap bavanchun/tap
 brew install bavanchun/tap/ashift
 
 # crates.io: prebuilt binary through cargo-binstall, or a source build

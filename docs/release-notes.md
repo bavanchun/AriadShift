@@ -2,7 +2,7 @@
 
 Changes in each AriadShift release, newest first. Installation commands and download tables for every version are on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each entry cites the pull request that merged it into `dev`.
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-10-31)
 
 Roadmap 1b. `ashift` adds PDF, Office, OCR and image routes, signed engine packs, and a Linux engine sandbox. This release also adds the desktop app and the in-browser converter. The `ariad-engine/1` engine protocol and the `ariad-ir/1` document schema are now frozen. The self-hosted cloud product, its web mode and the remote MCP endpoint are a **preview**: they are not part of the release archives or the desktop installers, and the [Known limitations](#known-limitations) list what is open.
 
@@ -104,7 +104,8 @@ Roadmap 1b. `ashift` adds PDF, Office, OCR and image routes, signed engine packs
 - **Browser limits.** The first DOCX or EPUB conversion downloads about 61 MB for `pandoc.wasm`. Inputs over 16 MB, OCR, legacy Office and LibreOffice routes need the CLI or the desktop app. The static web export does not fit the Cloudflare Pages 25 MiB file limit. Netlify, GitHub Pages (which serves it without cross-origin isolation) and Node `next start` are supported. (#36, #48)
 - **The self-hosted cloud is a preview.** `ariad-server`, the auth service, the Compose stack and the remote MCP endpoint are not in the release archives or the desktop installers; run them from a source checkout as described in [self-hosting.md](self-hosting.md). The web app's cloud mode exists only in builds that set `NEXT_PUBLIC_ARIAD_API_URL`; the default build has no cloud mode. Open items: a failed token refresh falls back to anonymous cloud requests instead of being reported ([#65](https://github.com/bavanchun/AriadShift/issues/65)), social-only accounts have no passwordless account deletion ([#66](https://github.com/bavanchun/AriadShift/issues/66)), large cloud downloads are buffered in browser memory ([#67](https://github.com/bavanchun/AriadShift/issues/67)), the fleet job ceiling's production capacity approval is pending, local file storage is single-tenant only, and Turnstile in cloud builds has not been checked in a real browser. (#53, #84, #102, #103)
 - **Desktop installers.** Windows cold-start and installer behaviour for the file-manager entries still needs platform checks. If Explorer starts several processes for a multi-file selection and the startup lock stalls for 10 seconds, more than one window can open. See [desktop.md](desktop.md#os-integration). (#103)
-- **Package channels.** 0.1.0 was not published to Homebrew, crates.io or WinGet. A channel counts as confirmed for 0.2.0 only after the release smoke workflow passes on it.
+- **Package channels.** 0.1.0 was not published to Homebrew, crates.io or WinGet; 0.2.0 is on crates.io and the Homebrew tap, and all four channels (Homebrew, shell installer, PowerShell installer and cargo-binstall) passed the release smoke run; current Homebrew needs `brew trust --tap bavanchun/tap` before installing; there is no WinGet submission yet.
+- **Docling pack.** No Docling pack is published for 0.2.0, so `ashift engines install docling` and the worker-docling image fail closed until the pack work lands (#109).
 
 ## 0.1.0 (2026-10-21)
 

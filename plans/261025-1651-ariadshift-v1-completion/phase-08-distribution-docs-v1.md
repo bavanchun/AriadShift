@@ -1,12 +1,14 @@
 ---
 phase: 8
 title: "Distribution, docs, v1.0.0 prep"
-status: on-hold
+status: moved
 depends_on: [7]
 branch: feat/v1-distribution
 ---
 
 # Phase 8: Distribution, docs, v1.0.0 prep
+
+Moved to [plans/261031-1422-next-stage-pdf-suite/phase-20-hardening-benchmarks-and-1-0-launch.md](../261031-1422-next-stage-pdf-suite/phase-20-hardening-benchmarks-and-1-0-launch.md).
 
 Applies A-1655 §3 (unsigned desktop builds) and §4 (registry scope).
 

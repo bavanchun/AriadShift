@@ -62,9 +62,16 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    - `[workspace.dependencies]` -> `ariad-typst = { path = "crates/ariad-typst", version = "X.Y.Z" }`
 
    The workspace crates (`crates/ariad-core/Cargo.toml`, `crates/ariad-typst/Cargo.toml`, `crates/ariad-host/Cargo.toml`, and `crates/ariad-cli/Cargo.toml`) inherit `version.workspace = true` and workspace dependency versions automatically.
-3. Refresh [`Cargo.lock`](../Cargo.lock) and regenerate [`THIRD_PARTY_LICENSES`](../THIRD_PARTY_LICENSES) (which embeds the workspace crate versions checked by `just licenses-check`). `cargo-about` must be exact version `0.9.2` as pinned in [`justfile`](../justfile) (`cargo_about_version := "0.9.2"`; install with `cargo install --locked cargo-about --version 0.9.2` if needed):
+3. Refresh [`Cargo.lock`](../Cargo.lock) and regenerate [`THIRD_PARTY_LICENSES`](../THIRD_PARTY_LICENSES) (which embeds the workspace crate versions checked by `just licenses-check`). Also refresh the version-bound files in the same bump: [`fuzz/Cargo.lock`](../fuzz/Cargo.lock), the server snapshot [`crates/ariad-server/tests/snapshots/openapi_v1.json`](../crates/ariad-server/tests/snapshots/openapi_v1.json), [`schemas/openapi.v1.json`](../schemas/openapi.v1.json) `info.version`, and the SDK lock [`packages/sdk/generator.lock.json`](../packages/sdk/generator.lock.json) (`pnpm --filter @ariadshift/sdk generate` then `lock`); the release pull request must pass `just sdk-check` and `cargo check --locked --manifest-path fuzz/Cargo.toml`. `cargo-about` must be exact version `0.9.2` as pinned in [`justfile`](../justfile) (`cargo_about_version := "0.9.2"`; install with `cargo install --locked cargo-about --version 0.9.2` if needed):
    ```bash
    cargo check --workspace
+   cargo update --workspace --manifest-path fuzz/Cargo.toml
+   cargo check --locked --manifest-path fuzz/Cargo.toml
+   just openapi
+   ARIAD_UPDATE_OPENAPI_BASELINE=1 cargo test --locked -p ariad-server --test openapi_v1_snapshot
+   pnpm --filter @ariadshift/sdk generate
+   pnpm --filter @ariadshift/sdk lock
+   just sdk-check
    just licenses
    ```
 4. Run the local quality gate:
@@ -78,7 +85,7 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    [browser engine distribution](web.md#build-and-deploy).
 5. Stage the explicit paths and commit as `chore(release): prepare X.Y.Z`:
    ```bash
-   git add Cargo.toml Cargo.lock THIRD_PARTY_LICENSES
+   git add Cargo.toml Cargo.lock THIRD_PARTY_LICENSES fuzz/Cargo.lock crates/ariad-server/tests/snapshots/openapi_v1.json schemas/openapi.v1.json packages/sdk/generator.lock.json
    git diff --staged
    git commit -m "chore(release): prepare X.Y.Z"
    ```
@@ -186,7 +193,7 @@ excluded from musl targets. Desktop installers and updater metadata are built by
 
 - Dispatched manually via `workflow_dispatch -f version=X.Y.Z` after `release.yml` completes (`GITHUB_TOKEN` release creation does not trigger `release: [published]` workflows).
 - Runs four clean-runner jobs in parallel:
-  - **`smoke-homebrew`**: Taps `bavanchun/homebrew-tap` on macOS, installs `ashift` (and `pandoc` via formula dependency), checks `ashift --version` and `ashift doctor`, and converts `fixtures/md/en-crlf.md` to `.docx`.
+  - **`smoke-homebrew`**: Taps `bavanchun/homebrew-tap` on macOS, trusts the tap (`brew trust --tap bavanchun/tap`), installs `ashift` (and `pandoc` via formula dependency), checks `ashift --version` and `ashift doctor`, and converts `fixtures/md/en-crlf.md` to `.docx`.
   - **`smoke-shell`**: Installs Pandoc, runs the release's `ariad-cli-installer.sh` on Linux, and verifies `--version`, `doctor`, and `.md -> .docx` conversion.
   - **`smoke-powershell`**: Installs Pandoc, runs `ariad-cli-installer.ps1` in `pwsh` on Windows, reloads `Path`, and verifies `--version`, `doctor`, and `.md -> .docx` conversion.
   - **`smoke-binstall`**: Installs Pandoc and `cargo-binstall` on Linux, installs `ariad-cli@<version>` with `--disable-strategies compile,quick-install` (forcing prebuilt binary resolution from GitHub Releases), and verifies `--version`, `doctor`, and `.md -> .docx` conversion.

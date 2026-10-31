@@ -13,7 +13,7 @@ const RELEASE = `${REPOSITORY_URL}/releases/latest/download`;
 const CHANNELS = [
   {
     title: "Homebrew (macOS and Linux)",
-    command: "brew install bavanchun/tap/ashift",
+    command: "brew tap bavanchun/tap && brew trust --tap bavanchun/tap && brew install ashift",
     note: "Available once the formula is published. Installs Pandoc too, which DOCX and EPUB routes need.",
   },
   {
