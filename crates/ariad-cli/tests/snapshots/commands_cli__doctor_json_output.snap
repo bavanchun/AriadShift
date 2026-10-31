@@ -24,6 +24,48 @@ expression: normalize_doctor_json_stdout(&output)
       "required": true,
       "message": "engine 'pandoc' passes describe round trip",
       "hint": ""
+    },
+    {
+      "id": "engine_pdf",
+      "ok": true,
+      "required": true,
+      "message": "engine 'pdf' is ready",
+      "hint": ""
+    },
+    {
+      "id": "engine_typst",
+      "ok": true,
+      "required": true,
+      "message": "engine 'typst' is ready",
+      "hint": ""
+    },
+    {
+      "id": "engine_libreoffice",
+      "ok": false,
+      "required": false,
+      "message": "engine 'libreoffice' could not find soffice",
+      "hint": "install LibreOffice 24.2 or newer from libreoffice.org or set ASHIFT_SOFFICE"
+    },
+    {
+      "id": "data_dir",
+      "ok": true,
+      "required": false,
+      "message": "engine pack directory is writable",
+      "hint": ""
+    },
+    {
+      "id": "pack_keys",
+      "ok": true,
+      "required": false,
+      "message": "engine pack signing keys: D87B0E33F55EA02B",
+      "hint": ""
+    },
+    {
+      "id": "docling_engine",
+      "ok": false,
+      "required": false,
+      "message": "docling engine is not installed; OCR, layout extraction and image routes need it",
+      "hint": "run 'ashift engines install docling', or set ASHIFT_DOCLING_ENGINE to a development engine"
     }
   ],
   "stale_workspaces": 0

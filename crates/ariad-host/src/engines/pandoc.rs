@@ -135,6 +135,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
             work_dir,
             options,
             limits,
+            session_id: _,
         } => {
             let workspace =
                 validate_convert_request(&protocol, &input, &req_output, &work_dir, &limits)?;
@@ -163,15 +164,9 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                 let input_bytes = fs::read(&input.path).map_err(|_| EngineFailure::io())?;
                 let document = ir_io::read(BufReader::new(input_bytes.as_slice()), &limits)
                     .map_err(|err| match err {
-                        ir_io::ReadError::ByteLimitExceeded { .. }
-                        | ir_io::ReadError::DepthExceeded(_)
-                        | ir_io::ReadError::BlockLimitExceeded { .. } => {
-                            EngineFailure::limit_exceeded()
-                        }
+                        error if error.is_limit_exceeded() => EngineFailure::limit_exceeded(),
                         ir_io::ReadError::Io(_) => EngineFailure::io(),
-                        ir_io::ReadError::Json(_) | ir_io::ReadError::UnsupportedVersion => {
-                            EngineFailure::invalid_request()
-                        }
+                        _ => EngineFailure::invalid_request(),
                     })?;
                 let mut mapped = from_ir(&document);
 
@@ -450,6 +445,7 @@ fn execute<W: Write>(request: Request, output: &mut W) -> Result<(), EngineFailu
                         },
                     ],
                     enforces_memory_limit: true,
+                    supports_session: false,
                     models: None,
                 },
             )
@@ -940,6 +936,7 @@ mod tests {
             work_dir: "/work/tmp".to_owned(),
             options: std::collections::BTreeMap::new(),
             limits: Limits::local(),
+            session_id: None,
         };
         let mut input_bytes = serde_json::to_vec(&request).unwrap();
         input_bytes.push(b'\n');
@@ -995,6 +992,7 @@ mod tests {
             work_dir: workspace.work_dir().to_string_lossy().into_owned(),
             options: std::collections::BTreeMap::new(),
             limits: Limits::local(),
+            session_id: None,
         };
 
         let mut input_bytes = serde_json::to_vec(&request).unwrap();
@@ -1070,6 +1068,7 @@ mod tests {
             work_dir: workspace.work_dir().to_string_lossy().into_owned(),
             options: std::collections::BTreeMap::new(),
             limits,
+            session_id: None,
         };
 
         let mut input_bytes = serde_json::to_vec(&request).unwrap();
@@ -1127,6 +1126,7 @@ mod tests {
             work_dir: workspace.work_dir().to_string_lossy().into_owned(),
             options: std::collections::BTreeMap::new(),
             limits,
+            session_id: None,
         };
 
         let mut input_bytes = serde_json::to_vec(&request).unwrap();
@@ -1269,6 +1269,7 @@ mod tests {
             work_dir: workspace.work_dir().to_string_lossy().into_owned(),
             options,
             limits: Limits::local(),
+            session_id: None,
         };
 
         let mut input_bytes = serde_json::to_vec(&request).unwrap();
@@ -1360,6 +1361,7 @@ mod tests {
             work_dir: workspace.work_dir().to_string_lossy().into_owned(),
             options: std::collections::BTreeMap::new(),
             limits: ariad_core::limits::Limits::local(),
+            session_id: None,
         };
 
         let request_bytes = serde_json::to_vec(&request).unwrap();

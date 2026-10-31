@@ -7,30 +7,36 @@ How GitHub Actions checks this repository, and how to run the same checks locall
 | Workflow | Runs on | What it does |
 |---|---|---|
 | [`ci.yml`](../.github/workflows/ci.yml) | Pull requests into `dev` or `main`, pushes to `dev` or `main`, manual | The gate for every change (below) |
-| [`bench.yml`](../.github/workflows/bench.yml) | Pull requests with `bench` label, nightly schedule, manual | Runs benchmark harness, compares metrics against baseline, and validates capabilities schema |
+| [`bench.yml`](../.github/workflows/bench.yml) | Pull requests with `bench` label, nightly schedule, manual | Runs base and heavy-route benchmarks, real Docling conformance, capabilities validation and generated public report |
 | [`codeql.yml`](../.github/workflows/codeql.yml) | Pull requests (code changes), pushes to `dev` or `main`, weekly, manual | CodeQL for Rust and for the workflows themselves; alerts go to the repository's Security tab |
 | [`security.yml`](../.github/workflows/security.yml) | Daily, manual, and pull requests that change it | `cargo deny check advisories` on `dev` and on `main`, so a newly published RustSec advisory fails a run even when no code changed |
 | [`fuzz-nightly.yml`](../.github/workflows/fuzz-nightly.yml) | Daily, manual, and pull requests that change it | Date-pinned nightly AddressSanitizer fuzzing on unsafe-adjacent parsers (10 min per target) |
+| [`pack-docling.yml`](../.github/workflows/pack-docling.yml) | Pull requests that touch the Docling engine, its mapper, `uv.lock`, the `justfile` or the workflow; tags `pack-docling-v*`; manual | Engine tests on Linux/Windows and real-engine conformance; both Linux packs always build, with x86_64 converted offline. macOS requires its authoritative OpenCV pin: missing pins produce a visible PR skip; release runs fail unless that exact omission is explicitly declared. Windows packs stay deferred. Manifests/checksums cover only planned built targets. Details in [docling.md](docling.md#ci) |
+| [`torch-docling.yml`](../.github/workflows/torch-docling.yml) | Pull requests changing the torch source build inputs, manual | Builds or reuses the MKL-free CPU wheels on native Linux and Windows x86_64, audits binaries and probes torch/torchvision. Maintainers publish reviewed outputs as checksummed toolchain inputs; see [docling.md](docling.md#the-pack). |
 | [`links.yml`](../.github/workflows/links.yml) | Weekly, manual, and pull requests that change it | lychee checks every Markdown link on `dev`, configured by [`lychee.toml`](../lychee.toml) |
 | [`dependabot.yml`](../.github/dependabot.yml) | Weekly (Monday, Asia/Saigon) | Update pull requests into `dev` for GitHub Actions, Cargo, pnpm and uv |
 | [`release.yml`](../.github/workflows/release.yml) | Tag push `'**[0-9]+.[0-9]+.[0-9]+*'`, pull requests touching release paths (build-only rehearsal) | Builds 5 targets on 3 OSes, one CycloneDX SBOM per crate, Homebrew formula, and invokes `publish-crates.yml` (pull requests scoped via `paths:` filter) |
+| [`desktop.yml`](../.github/workflows/desktop.yml) | Desktop/shared/Rust changes in pull requests, `v*` tags, manual | Builds installers on three OSes, checks generated bindings and runs the real Linux WebDriver conversion; tag jobs attach signed updates to the CLI-owned release (see [desktop.md](desktop.md)) |
+| [`cloud-e2e.yml`](../.github/workflows/cloud-e2e.yml) | Daily at 04:00 UTC on `dev`, manual, path-matched pushes and pull requests, or the `cloud-e2e` PR label | Builds all three Compose profiles, proves image-only Vietnamese PDF OCR through the completed Docling route, then checks DOCX content, deletion and quotas |
 | [`release-smoke.yml`](../.github/workflows/release-smoke.yml) | Manual dispatch (`workflow_dispatch`) | Multi-channel smoke test verifying binary installation across Homebrew, shell, PowerShell, and cargo-binstall |
 | [`publish-crates.yml`](../.github/workflows/publish-crates.yml) | Called by `release.yml` | Publishes crates (`ariad-core`, `ariad-host`, `ariad-cli`) to crates.io with API version polling and idempotence |
 
-GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, only for workflows on the default branch, `main`. A new scheduled workflow therefore starts after the next promotion; until then, its pull request run is its test.
+GitHub runs `schedule` triggers, and offers the manual "Run workflow" button, only for workflows on the default branch, `main`. A new scheduled workflow therefore starts after the next promotion; until then, its pull request run is its test. Once a workflow has run at least once, [the API and CLI can dispatch it at another branch or tag](https://github.com/github/docs/blob/main/content/actions/reference/workflows-and-actions/events-that-trigger-workflows.md#workflow_dispatch). Cloud E2E uses this API route for the already registered Docling pack workflow, including before its promotion to `main`.
 
 ## The CI gate
 
-`ci.yml` has six jobs:
+`ci.yml` has eight jobs:
 
-1. **Scope** (Linux, seconds) runs [`scripts/ci-scope.sh`](../scripts/ci-scope.sh). It picks the commit range to lint and decides whether the build, test and fuzz jobs must run.
+1. **Scope** (Linux, seconds) runs [`scripts/ci-scope.sh`](../scripts/ci-scope.sh). It picks the commit range to lint and decides whether the build, test and fuzz jobs must run, and separately whether the web job must run. The script also provides a `--classify` mode for table-driven offline testing.
 2. **Static checks** (Linux) run once for every event:
    - each new commit against the commit rules (`just lint-commits`);
-   - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), and WinGet manifest generator test (`test-winget-manifest`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
+   - `just static`: formatting, `typos`, `actionlint`, `zizmor` with online audits, `cargo deny`, pnpm and uv lockfiles, the license check of production JavaScript dependencies (`js-licenses`), Biome (`web-lint`), release workflow security guard (`check-release-workflow`), license inventory check (`licenses-check`), WinGet manifest generator test (`test-winget-manifest`), scope classifier test (`test-ci-scope`), and database/E2E/fuzz wiring regression (`test-hardening-ci-wiring`). The release workflow guard is a best-effort structural check that catches accidental regressions of the release supply chain; it is not a security boundary, which `actionlint` and `zizmor` back up.
 3. **Lint (windows-2025)** runs Clippy on Windows, for early feedback on Windows-only code.
-4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc, sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test`, `just bench-test`, `just bench-check`, and `just package-check`.
-5. **Fuzz** (Linux, `ubuntu-26.04`) runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `ir_json`, `limits_validate`), with cached corpus and crash artifact upload on failure or cancellation.
-6. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, and jobs 3, 4 and 5 either passed or were skipped by the scope decision.
+4. **Verify** runs on `ubuntu-26.04`, `macos-26` and `windows-2025`. It installs Pandoc (plus distribution-pinned LibreOffice Writer/Calc/Impress and qpdf on Linux), sets up uv, runs Clippy (Windows already has it from job 3), the WASM check (Linux only, since it does not depend on the host), `just test` (including shared engine conformance, with LibreOffice required on Linux), `just bench-test`, `just bench-check`, and `just package-check`.
+5. **Server integration** (Linux, `ubuntu-26.04`) runs the `ariad-server` tests against PostgreSQL 18 with pgmq (a service container) and SeaweedFS (started in a step, because service containers cannot take a command), with Pandoc installed and the `ashift` engine binary built. The database and S3 tests skip in the Verify job, where neither exists; `just test-server` runs the same suite locally in Docker. It installs Node.js, pnpm and the matching PostgreSQL 18 client, then runs `just test-auth-db` with mandatory database execution to prove OAuth serialization across replicas. The job also checks all three Dockerfiles, builds the server image and converts Markdown to DOCX using real Pandoc in required mode in a read-only container with tmpfs, then probes procfs access to the worker and its supervisor. The signed Docling image, the Office namespace profile and the direct-launch Kubernetes fragment are not exercised by this smoke.
+6. **Fuzz** (Linux, `ubuntu-26.04`) first runs `cargo test --locked --manifest-path fuzz/Cargo.toml --bin docx_meta`, then runs cargo-fuzz 0.13.2 on stable Rust with `-s none` for 60 seconds per target (`markdown_reader`, `front_matter`, `html_reader`, `pandoc_ast_to_ir`, `docling_to_ir`, `ir_json`, `limits_validate`, `pdf_reader`, `typst_writer`, `archive_preflight`, `docx_meta`, `pack_manifest`, `pack_archive`, `engine_protocol`, `capabilities_json`, `asset_resolve`, `uri_parsers`, `ir_json_versioned`), with cached corpus and crash artifact upload on failure or cancellation.
+7. **Web** (Linux, `ubuntu-26.04`) builds the wasm module, typechecks every JavaScript package, runs Vitest against a PostgreSQL 18/pgmq service (including mandatory auth database tests), builds the site (`just web-ci`) and runs Playwright on Chromium, Firefox and WebKit (`just web-e2e`), uploading traces on failure. See [web.md](web.md).
+8. **CI passed** is the single result to look at. It fails unless Scope and Static checks passed, jobs 3 to 6 either passed or were skipped by the scope decision, and job 7 passed when the scope asked for it and was skipped otherwise.
 
 ### When the build, test and fuzz jobs are skipped
 
@@ -43,13 +49,135 @@ The same tree is never built twice without a reason:
 | Promotion pull request into `main`, and the push to `main` after it | Skipped when the tree matches a `dev` commit whose CI push run succeeded | That exact tree was already built and tested on all three OSes |
 | Hotfix pull request into `main`, and the push after it | Run | The tree is new |
 | Change to `docs/`, `plans/`, or the root `README.md`, `ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` only | Skipped | Static checks still spell-check and lint it |
+| Change confined to the JavaScript workspace (`apps/` except `apps/desktop/src-tauri/`, `packages/`, `brand/`, `.node-version`, the root pnpm, Biome and Vitest files, or `scripts/check-js-licenses.mjs`) and prose | Skipped | No Rust code changed; the web and static jobs cover it |
+| Change confined to `infra/test/e2e/` or `.github/workflows/cloud-e2e.yml` and prose | Skipped | The cloud-e2e workflow runs the test; static checks lint the workflow |
+| Change under `apps/desktop/src-tauri/` | Run | Native desktop Rust needs the same three-OS checks as the other crates |
 | Manual run, or a push whose previous commit is unknown | Run | Nothing to compare against |
+
+The web job also installs the matching PostgreSQL 18 client before Vitest.
+This keeps auth-only pull requests covered even when Rust/server jobs are
+intentionally skipped by scope.
+
+The web job runs when a change touches `apps/`, `packages/`, `services/`, `brand/`, `.node-version`, `crates/ariad-core/`, `crates/ariad-wasm/`, the root pnpm, Biome, Vitest, Cargo or toolchain files, the `justfile`, `ci.yml`, `ci-scope.sh` or `install-wasm-bindgen.sh`, and on manual runs and pushes without a known previous commit. Promotions follow the same tree rule as the other jobs.
+
+The native Linux and web jobs download LibreOffice and browser system libraries from Ubuntu's primary archive over HTTPS, replacing Azure entries in direct sources and indirect APT mirror lists. Browser binaries come from the pinned Playwright release. Ubuntu's package signatures and the browser cache policy remain in effect. The native Linux runner also enables unprivileged user namespaces for its disposable VM and verifies user/mount namespace creation before running tests. This satisfies LibreOffice's private `/tmp` requirement; the engine still runs with Landlock, seccomp and host limits, and namespace setup failures remain fatal. The workflow setting does not change the application or configure an end user's machine.
 
 A newer push to the same pull request cancels its older run. Runs on `dev` and `main` are grouped by commit and are never cancelled.
 
 CodeQL is the one deliberate repeat: GitHub computes pull request alerts against the base branch's analysis, so `dev` and `main` are analysed on push too.
 
-The Rust cache is written only by pushes to `dev` and `main`; pull requests read it but never save their own, so they cannot evict the base branch's cache. The fuzz caches (cargo-fuzz binary, `fuzz/target`, and corpus) follow the same policy: saved on pushes to `dev` and `main`, while pull requests restore caches without saving. The nightly workflow (`fuzz-nightly.yml`) saves caches on schedule, dispatch and its own pull request runs (PR-scoped entries are not visible to `dev` or `main`); crash artifacts upload on failure or cancellation.
+CI disables development/test debug information and incremental compilation to bound Typst and package-verification artifact sizes. Every native Verify job also runs `cargo check -p ariad-cli --no-default-features` to keep the slim CLI build working.
+
+The Rust cache is written only by pushes to `dev` and `main` (the web job shares this rule, and saves the Playwright browser cache on pushes only); pull requests read it but never save their own, so they cannot evict the base branch's cache. The fuzz caches (cargo-fuzz binary, `fuzz/target`, and corpus) follow the same policy: saved on pushes to `dev` and `main`, while pull requests restore caches without saving. The nightly workflow (`fuzz-nightly.yml`) restores caches on every run and saves them only from scheduled runs; one matrix leg saves the cargo-fuzz binary and each leg saves its own corpus. Crash artifacts upload on failure or cancellation.
+
+## Cloud E2E pack dependency
+
+Pushes and pull requests use the single cloud path list in
+[`ci-scope.sh`](../scripts/ci-scope.sh) (`--classify-cloud`). It covers the web,
+shared Rust crates, workspace/toolchain inputs, image and service sources, the
+image-only fixture and its manifest. [`test-ci-scope.sh`](../scripts/test-ci-scope.sh)
+checks both included and excluded paths. Every label event recomputes scope;
+the `cloud-e2e` label forces a run. Adding another label to a cloud change
+therefore requires another real Compose result, rather than a skipped check.
+Cancellation remains scoped to the conversion job. PR events other than
+`labeled` and `unlabeled`, including a new commit's `synchronize`, may cancel
+the older running conversion. Label events preserve that running job and
+wait in the same PR group. Under GitHub's default
+[one-running, one-pending policy](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
+another arrival can still replace a pending job; preserving every
+queued label run is not guaranteed. The required status fails when its
+requested conversion fails, is cancelled or is skipped. The workflow
+currently triggers `labeled`, but does not trigger `unlabeled`.
+
+The required **Compose stack (core, office, docling)** check is an always-run
+status job. It fails if Scope failed, was cancelled, or returned an empty or
+invalid decision. An explicit `run=false` is an intentional nonmatching-path
+success; `run=true` requires the conversion job to succeed, including when a
+pack request or wait failed. The actual conversion job is named **Run Compose**.
+
+For PR, push and manual runs, Scope records one immutable source commit. PRs
+use their head commit rather than GitHub's synthetic merge commit. Compose
+uses the same direct event-ref selection as Scope: the PR head for PRs, the
+trusted `dev` branch for schedules, and `github.sha` for push and manual runs.
+It immediately verifies checkout against Scope's recorded SHA before executing
+repository code. If `dev` moves between jobs, the run fails and must be retried;
+the tested tree and pack still have to match the original SHA. Job outputs
+serve as comparison values, not checkout authority.
+
+The Compose job disables setup-uv's shared dependency cache explicitly. It
+uses no Actions cache restore/save, Rust cache, pnpm cache or remote Docker
+cache. Dockerfile cache mounts remain local to the disposable runner's builder.
+Removing dependency caching alone would not protect the default-branch cache
+token from arbitrary code, so the direct event refs and SHA check are required.
+
+The isolated **Request source-matched CI
+pack** job searches `pack-docling.yml` runs for that SHA and accepts only
+`workflow_dispatch` or `push` builds. A PR pack run's API `head_sha` identifies
+the PR head even though checkout built a merge, so those artifacts are rejected.
+If no usable pack exists, the request job dispatches **Docling pack** on the
+matching branch after checking that its ref still points to the recorded SHA.
+Only this job has `actions: write`; it executes no checked-out code.
+
+The request shell sets a polling deadline 540 minutes after it obtains a
+runner. An active waiter accounts for request overhead, the pack workflow's
+scope and engine tests, its 350-minute Linux build, and that workflow's
+runner queues. A 300-minute wait can hand off to a second 240-minute wait;
+both check the original timestamp. A waiter queued past that timestamp
+fails once its polling shell starts.
+
+This is not a hard 540-minute wall-clock limit. The deadline is enforced by
+the polling shell only once a waiter has a runner. Time spent queued before
+the request or a wait job starts is bounded only by GitHub's own queue
+limits. Their
+[`timeout-minutes` values](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idtimeout-minutes)
+limit execution, not runner queue time. The wait jobs allow 310 and 250
+minutes of execution, leaving time to report a timeout after their polling
+windows. Splitting the wait respects the
+[GitHub-hosted six-hour per-job limit](https://docs.github.com/en/actions/reference/limits#actions-limits).
+The request job allows 10 minutes of execution. Neither waiter resets the
+polling timestamp; no independent watchdog enforces it while jobs are queued.
+
+The Compose job has `actions: read` and waits for
+**Pack (x86_64-unknown-linux-gnu)** to succeed and publish both
+`docling-pack-x86_64-unknown-linux-gnu` and `docling-pack-shared`. Before
+[`gh run download`](https://cli.github.com/manual/gh_run_download), it rechecks
+the artifact run's source SHA and event against its own checkout. A mismatch
+fails with an explanation before download. It generates the unsigned manifest
+with the built server image's `ashift __pack manifest`, safely extracts the
+components, and sets `E2E_DOCLING_PACK_DIR` for the read-only bind mount override.
+This development route skips signature installation and its `requires_ashift`
+check; it proves runtime conversion, not signed installation. No component is
+borrowed from a different commit or an unverified PR merge tree.
+
+Fork tokens cannot dispatch repository workflows. A fork needs an existing
+push or dispatch pack for the exact tested commit; otherwise a maintainer must
+bring that head into a repository branch and run both workflows there. Approving
+a PR merge build alone does not establish matching sources. Expired one-day PR
+artifacts are not reused; expired push or dispatch artifacts trigger a new
+source-matched build through the dispatch mechanism.
+
+The nightly deliberately retains the production Dockerfile's signed-release
+installer. It requires a published signed pack compatible with the host version;
+a passing PR override does not establish that release prerequisite.
+
+Local Compose proof requires Docker with Compose and BuildKit, Python 3, curl, jq
+and unzip. Set `E2E_DOCLING_PACK_DIR` to a real unpacked CI pack and run
+`bash infra/test/e2e/run.sh`. The script checks the fixture hash, the final
+`GET /v1/jobs/{id}` route (`docling`), absence of `ocr_required`, and the OCR
+words “Khu vườn đọc sách” in the downloaded DOCX. Removing `tessdata` from a
+separate test copy must make the same script fail before starting the stack.
+
+The independent **Remote MCP OAuth (core)** job follows the same Scope decision,
+immutable event ref and recorded-SHA verification, with read-only repository
+permissions and its own label-aware cancellation group. It builds the core
+services without waiting for a Docling pack or publishing dependency caches.
+It checks discovery, registration, PKCE, sign-in, consent, token exchange,
+uploaded Markdown conversion, refresh, API JWT rejection at MCP and the
+PostgreSQL-backed anonymous registration cap. It does not run a browser or a 2FA
+flow. Both E2E scripts explicitly enable signup in
+their private generated environment; deployments retain the default-off setting.
+OAuth request credentials use private temporary files, and reset/cleanup refuses
+foreign project volumes.
 
 ## Commit rules
 
@@ -64,18 +192,39 @@ Dependabot's own subjects are exempt from the committed rules, not from the AI c
 
 | Command | Runs |
 |---|---|
-| `just ci` | Everything CI runs on your OS: `just static`, Clippy, the WASM check, tests, `bench-test`, `bench-check`, and `package-check` |
+| `just ci` | Shared local quality gate: `just static`, Clippy, the WASM check, tests, `bench-test`, `bench-check`, `package-check`, `web-ci` (wasm build, typecheck, Vitest, site build), and desktop-scoped `desktop-ci`; browser E2E and installer packaging run separately |
+| `just desktop-ci` | On desktop/shared dependency changes: regenerate bindings and command permissions, reject drift, build the frontend and run UI, build-tool and native tests; see [desktop.md](desktop.md) for installer and Linux smoke commands |
+| `just web-e2e` | The web job's Playwright tests; needs `just web-ci` (build and static export) and `just web-browsers` first |
 | `just bench` | Run benchmark harness on fixture suite |
 | `just bench-check` | Validate capabilities.json against schema and invariants |
 | `just bench-test` | Run unit tests for benchmark harness |
-| `just package-check` | Verify crate packaging for crates.io publishing |
+| `just package-check` | Verify core, host, CLI and internal WASM packaging; server and desktop are excluded, and desktop installers have their own workflow |
+| `just test-server-container` | Linux container build/check and required-mode worker smoke; needs a dedicated `ARIAD_TEST_DATABASE_URL`. Set `ARIAD_TEST_CONTAINER_SMOKE=1` with `just test-server` to reuse its throwaway service and clean everything up |
+| `just test-auth-db` | The auth PostgreSQL serialization suite; requires `ARIAD_TEST_DATABASE_URL` and `pg_dump` 18; missing database configuration fails instead of skipping |
+| `just test-server` | The `ariad-server` database and S3 tests in throwaway Docker containers (`ariadshift-test-pg` on 127.0.0.1:55442, `ariadshift-test-s3` on 127.0.0.1:58342), removed afterwards; an ownership label prevents removing another worktree's containers |
 | `just static` | The OS-independent checks (requires `cargo-about 0.9.2`, `uv`, `python3`, and `pwsh` in CI) |
 | `just lint-commits` | Your commits since `origin/dev`; pass a range to check others, for example `just lint-commits main..dev` |
-| `just lint-workflows` | `actionlint` and `zizmor`. Set `GH_TOKEN` (for example `GH_TOKEN=$(gh auth token)`) to enable zizmor's online audits, which CI always runs |
+| `just lint-workflows` | `actionlint` and `zizmor`. Online audits require a clean `GH_TOKEN`/`GITHUB_TOKEN` or a logged-in `gh` CLI |
 | `just deny-advisories` | The daily advisory scan |
-| `just fuzz` | Run fuzz targets locally on stable Rust (`target=""` for all, `seconds="60"`) |
+| `just fuzz` | Run package metadata oracle unit tests, discover all declared fuzz bins through `cargo fuzz list` and run them locally on stable Rust (`target=""` for all, `seconds="60"`) |
+
+The throwaway PostgreSQL in `just test-server` allows 180 seconds for `pg_ctl` operations and TCP readiness. This accommodates initialization on busy hosts; if the service never becomes ready, the recipe prints its container log and fails before compiling the test binaries.
+
+The Server job and `just test-server` set `ARIAD_TEST_REQUIRE_DATABASE=1`.
+The shared Rust database harness fails if `ARIAD_TEST_DATABASE_URL` is missing
+or blank in that mode; an unreachable configured database also fails. Ordinary
+Verify runs leave both variables unset and skip database-backed tests.
+To probe this contract, run `cargo nextest run -p ariad-server --test mcp_remote
+-E 'test(=inline_fleet_refusal_preserves_upload_allowance_for_recovery)' --no-capture`
+with both variables unset (success with a skip diagnostic), then with only
+`ARIAD_TEST_REQUIRE_DATABASE=1` (failure). `just test-server` must show a PASS
+for that test with its real throwaway database and no skip diagnostic.
+
+[`scripts/with-github-token.py`](../scripts/with-github-token.py) is the credential source for zizmor. It prefers a clean `GH_TOKEN`, then `GITHUB_TOKEN`, then captures `gh auth token` with stderr separate. Malformed environment values are ignored with a diagnostic; CLI output containing whitespace, control characters or wrapper status lines is rejected without printing the value. Only the normal trailing CLI line ending is removed. Missing credentials fail the audit with instructions to authenticate. `just test-github-token` checks these paths and runs as part of `lint-workflows`. The launcher passes the validated value directly to zizmor's environment; no shell capture or manual token export is needed.
 
 `just lint-tools` installs `actionlint` and `committed` into `.tools/bin`, verified against SHA-256 checksums pinned in [`scripts/install-lint-tools.sh`](../scripts/install-lint-tools.sh). `zizmor` runs through `uvx` at the version pinned in the `justfile`.
+
+`just package-check` builds each generated crate archive with sibling dependencies from this checkout through Cargo configuration patches. [Cargo removes path dependencies when packaging](https://doc.rust-lang.org/cargo/commands/cargo-package.html), so verification would otherwise select the published `0.1.0` siblings while new APIs await the next release. Archive extraction and build verification remain enabled. The recipe uses a separate `package-check` target directory under the workspace target directory (or `CARGO_TARGET_DIR`) so verification builds cannot overwrite the workspace's native library artifacts.
 
 ## Maintaining the pipeline
 

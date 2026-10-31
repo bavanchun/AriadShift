@@ -7,12 +7,15 @@ use std::{
     path::PathBuf,
     pin::Pin,
     process::ExitCode,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
     task::{Context, Poll},
     time::Duration,
 };
 
-use ariad_host::confine::AllowedDirs;
+use ariad_host::{
+    confine::{AllowedDirs, ProcessStagingDirectory},
+    session::{PoolConfig, SessionPool},
+};
 use clap::Args;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
@@ -59,35 +62,84 @@ pub struct McpArgs {
     pub allow_overwrite: bool,
 }
 
+const ROOTS_LIST_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Default)]
+pub(super) struct RootsRefresh {
+    generation: u64,
+    revocation_deadline: Option<tokio::time::Instant>,
+}
+
+enum RootsUpdate {
+    Success(u64),
+    Failure,
+    Deadline(tokio::time::Instant),
+}
+
 impl McpServer {
     #[allow(deprecated)]
     async fn refresh_roots_with_peer(&self, peer: &rmcp::service::Peer<RoleServer>) {
-        if let Ok(result) = peer.list_roots().await {
-            let mut roots_uris = Vec::new();
-            for root in result.roots {
-                roots_uris.push(root.uri);
+        // Starting refreshes and installing decisions share this mutex.
+        let (generation, deadline) = {
+            let mut current = self
+                .roots_refresh
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            current.generation = current.generation.wrapping_add(1);
+            let deadline = *current
+                .revocation_deadline
+                .get_or_insert_with(|| tokio::time::Instant::now() + ROOTS_LIST_TIMEOUT);
+            (current.generation, deadline)
+        };
+        let response = tokio::time::timeout(ROOTS_LIST_TIMEOUT, peer.list_roots());
+        tokio::pin!(response);
+        let response = tokio::select! {
+            result = &mut response => result,
+            _ = tokio::time::sleep_until(deadline) => {
+                self.replace_allowed_dirs(RootsUpdate::Deadline(deadline), self.allowed_for_roots(&[]));
+                // Keep the newest request answerable after revocation, within its own timeout.
+                response.await
             }
-            // Keep existing --allow-dir directories that still exist
-            let existing_allow_dirs: Vec<PathBuf> = self
-                .cli_allow_dirs
-                .iter()
-                .filter(|p| p.is_dir())
-                .cloned()
-                .collect();
-            match AllowedDirs::new(&existing_allow_dirs, &roots_uris) {
-                Ok(new_allowed) => {
-                    if let Ok(mut allowed) = self.allowed_dirs.write() {
-                        *allowed = new_allowed;
-                    }
-                }
-                Err(_) => {
-                    // Fail closed on error (empty allowed set) per M2
-                    if let Ok(mut allowed) = self.allowed_dirs.write() {
-                        *allowed = AllowedDirs::default();
-                    }
-                }
+        };
+        let (update, roots_uris) = match response {
+            Ok(Ok(result)) => (
+                RootsUpdate::Success(generation),
+                result
+                    .roots
+                    .into_iter()
+                    .map(|root| root.uri)
+                    .collect::<Vec<_>>(),
+            ),
+            // Every failure revokes client grants, regardless of response ordering.
+            _ => (RootsUpdate::Failure, Vec::new()),
+        };
+        self.replace_allowed_dirs(update, self.allowed_for_roots(&roots_uris));
+    }
+
+    fn allowed_for_roots(&self, roots_uris: &[String]) -> AllowedDirs {
+        self.explicit_allowed_dirs.with_client_roots(roots_uris)
+    }
+
+    fn replace_allowed_dirs(&self, update: RootsUpdate, new_allowed: AllowedDirs) {
+        let mut current = self
+            .roots_refresh
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match update {
+            RootsUpdate::Success(generation) if current.generation != generation => return,
+            RootsUpdate::Deadline(deadline) if current.revocation_deadline != Some(deadline) => {
+                return;
             }
+            _ => {}
         }
+        // A successful grant or a completed revocation closes this deadline window.
+        current.revocation_deadline = None;
+        let mut allowed = self
+            .allowed_dirs
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *allowed = new_allowed;
+        self.allowed_dirs.clear_poison();
     }
 }
 
@@ -133,6 +185,23 @@ impl ServerHandler for McpServer {
     }
 }
 
+/// Idle warm engine sessions survive this long between tool calls.
+const MCP_SESSION_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Closes the warm engine sessions on a blocking thread; closing waits for engines to exit.
+async fn shutdown_pool(pool: SessionPool) {
+    let _ = tokio::task::spawn_blocking(move || pool.shutdown()).await;
+}
+
+/// A stalled filesystem operation may outlive this bound; startup recovers its directory.
+async fn cleanup_staging(staging: Arc<ProcessStagingDirectory>) {
+    let _ = tokio::time::timeout(
+        Duration::from_secs(3),
+        tokio::task::spawn_blocking(move || staging.cleanup()),
+    )
+    .await;
+}
+
 /// Runs the MCP stdio server.
 pub async fn run_mcp(args: McpArgs) -> ExitCode {
     // 1. Startup stale workspace sweep (older than 24h)
@@ -154,6 +223,14 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
         }
     };
 
+    let staging = match ProcessStagingDirectory::new() {
+        Ok(directory) => Arc::new(directory),
+        Err(error) => {
+            eprintln!("error[mcp_init]: failed to create staging directory: {error}");
+            return ExitCode::from(1);
+        }
+    };
+
     let server_cancel = tokio_util::sync::CancellationToken::new();
     let serve_ct = tokio_util::sync::CancellationToken::new();
     let in_flight = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -168,10 +245,17 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
         eof_serve_ct.cancel();
     });
 
+    let pool = SessionPool::new(PoolConfig {
+        idle_timeout: MCP_SESSION_IDLE_TIMEOUT,
+        ..PoolConfig::default()
+    });
     let server = McpServer {
+        pool: pool.clone(),
+        staging: staging.clone(),
         allow_overwrite: args.allow_overwrite,
-        allowed_dirs: Arc::new(RwLock::new(initial_allowed)),
-        cli_allow_dirs: args.allow_dir,
+        allowed_dirs: Arc::new(RwLock::new(initial_allowed.clone())),
+        explicit_allowed_dirs: initial_allowed,
+        roots_refresh: Arc::new(Mutex::new(RootsRefresh::default())),
         resources: SessionResources::new(),
         engine_program,
         cancel_token: server_cancel.clone(),
@@ -194,6 +278,7 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
         Ok(r) => r,
         Err(e) => {
             eprintln!("ashift: mcp error: {e}");
+            cleanup_staging(staging).await;
             return ExitCode::from(1);
         }
     };
@@ -215,6 +300,8 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
             {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
+            shutdown_pool(pool).await;
+            cleanup_staging(staging).await;
             ExitCode::from(130)
         }
         res = async {
@@ -232,6 +319,8 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
             {
                 tokio::time::sleep(Duration::from_millis(50)).await;
             }
+            shutdown_pool(pool).await;
+            cleanup_staging(staging).await;
             match res {
                 Ok(_) => ExitCode::SUCCESS,
                 Err(e) => {
@@ -240,5 +329,64 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replaced_poisoned_roots_support_revocation_and_recovery() {
+        let explicit = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let explicit_input = explicit.path().join("note.md");
+        let root_input = root.path().join("note.md");
+        std::fs::write(&explicit_input, "# Explicit").unwrap();
+        std::fs::write(&root_input, "# Root").unwrap();
+        let cli_allow_dirs = vec![explicit.path().to_path_buf()];
+        let explicit_allowed_dirs = AllowedDirs::new(&cli_allow_dirs, &[]).unwrap();
+        let allowed_dirs =
+            Arc::new(RwLock::new(explicit_allowed_dirs.with_client_roots(&[
+                ariad_host::confine::path_to_file_uri(root.path()),
+            ])));
+        let poisoned = allowed_dirs.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poisoned.write().unwrap();
+            panic!("poison roots lock");
+        })
+        .join();
+        let server = McpServer {
+            roots_refresh: Arc::new(Mutex::new(RootsRefresh::default())),
+            allowed_dirs,
+            explicit_allowed_dirs: explicit_allowed_dirs.clone(),
+            allow_overwrite: false,
+            resources: SessionResources::new(),
+            engine_program: std::env::current_exe().unwrap(),
+            pool: SessionPool::new(PoolConfig::default()),
+            staging: Arc::new(ProcessStagingDirectory::new().unwrap()),
+            cancel_token: tokio_util::sync::CancellationToken::new(),
+            in_flight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        server.replace_allowed_dirs(RootsUpdate::Failure, explicit_allowed_dirs.clone());
+        assert!(
+            !server.allowed_dirs.is_poisoned(),
+            "replacement must clear poisoned state"
+        );
+        {
+            let allowed = server.allowed_dirs.read().unwrap();
+            assert!(ariad_host::confine::confine_input(&explicit_input, &allowed).is_ok());
+            assert!(ariad_host::confine::confine_input(&root_input, &allowed).is_err());
+        }
+        server.replace_allowed_dirs(
+            RootsUpdate::Success(0),
+            explicit_allowed_dirs
+                .with_client_roots(&[ariad_host::confine::path_to_file_uri(root.path())]),
+        );
+        assert!(
+            ariad_host::confine::confine_input(&root_input, &server.allowed_dirs.read().unwrap())
+                .is_ok()
+        );
+        server.staging.cleanup().unwrap();
     }
 }

@@ -18,6 +18,9 @@ comrak.workspace = true
 encoding_rs.workspace = true
 hex.workspace = true
 html5ever.workspace = true
+lopdf = { workspace = true, optional = true }
+quick-xml.workspace = true
+zip.workspace = true
 schemars.workspace = true
 sha2.workspace = true
 saphyr-parser.workspace = true
@@ -25,6 +28,15 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 unicode-normalization.workspace = true
+
+# getrandom, which lopdf needs, compiles for browsers only through its wasm_js backend.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+lopdf = { workspace = true, optional = true, features = ["wasm_js"] }
+
+[features]
+default = ["pdf"]
+# PDF text-layer reader built on lopdf.
+pdf = ["dep:lopdf"]
 
 [dev-dependencies]
 insta.workspace = true

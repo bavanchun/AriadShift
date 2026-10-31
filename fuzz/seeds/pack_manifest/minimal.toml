@@ -1,0 +1,19 @@
+schema = "ariad-pack/1"
+name = "sample"
+version = "1.0.0"
+description = "Sample engine pack"
+license = "Apache-2.0"
+requires_ashift = ">=0.1.0"
+
+[[targets]]
+triple = "x86_64-unknown-linux-gnu"
+entrypoint = ["bin/engine", "--root", "{root}"]
+
+[[targets.components]]
+name = "engine"
+url = "engine"
+sha256 = "abababababababababababababababababababababababababababababababab"
+size = 4
+unpack = "file"
+dest = "bin"
+executable = true

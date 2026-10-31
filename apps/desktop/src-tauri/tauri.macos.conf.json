@@ -1,0 +1,12 @@
+{
+  "bundle": {
+    "macOS": {
+      "infoPlist": "Info.plist",
+      "files": {
+        "Resources/Assets.car": "icons/macos/Assets.car",
+        "Resources/os-integration/Convert with AriadShift.workflow/Contents/Info.plist": "../os-integration/macos/Convert with AriadShift.workflow/Contents/Info.plist",
+        "Resources/os-integration/Convert with AriadShift.workflow/Contents/document.wflow": "../os-integration/macos/Convert with AriadShift.workflow/Contents/document.wflow"
+      }
+    }
+  }
+}

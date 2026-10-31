@@ -1,0 +1,27 @@
+{
+  "name": "@ariadshift/sdk",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript client for the AriadShift /v1 API, generated from schemas/openapi.v1.json. Run `generate` before importing it; src/generated/ is not committed.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check": "node scripts/check-drift.mjs",
+    "lock": "node scripts/check-drift.mjs --update",
+    "test": "vitest run",
+    "typecheck": "node scripts/generate.mjs && tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@noble/hashes": "2.4.0"
+  },
+  "devDependencies": {
+    "@ariadshift/config": "workspace:*",
+    "@hey-api/openapi-ts": "0.99.0",
+    "@types/node": "catalog:",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "catalog:"
+  }
+}

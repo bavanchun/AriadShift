@@ -182,6 +182,100 @@ pub fn read_zip_entry_names(
     Some(summary.entry_names)
 }
 
+/// Most directory sectors followed when listing the entries of an OLE2 compound file.
+const MAX_CFB_DIRECTORY_SECTORS: usize = 64;
+/// Entries of the compound file allocation table stored inside the 512-byte header.
+const CFB_HEADER_DIFAT_ENTRIES: usize = 109;
+/// Sector numbers at or above this value are markers (end of chain, free, FAT, DIFAT).
+const CFB_MAX_REGULAR_SECTOR: u32 = 0xFFFF_FFFA;
+
+/// Reads the directory entry names of an OLE2 compound file (legacy DOC, XLS, PPT).
+///
+/// The parser reads the 512-byte header, follows the directory sector chain through the FAT
+/// sectors listed in the header, and stops after [`MAX_CFB_DIRECTORY_SECTORS`] sectors, at a
+/// cycle, or at the first sector outside the file. It returns the names gathered so far when the
+/// chain needs the extended DIFAT, and `None` when the header is not a compound file header.
+pub fn read_cfb_entry_names<R: Read + Seek>(file: &mut R) -> Option<Vec<String>> {
+    let file_len = file.seek(SeekFrom::End(0)).ok()?;
+    let mut header = [0u8; 512];
+    file.seek(SeekFrom::Start(0)).ok()?;
+    file.read_exact(&mut header).ok()?;
+    if !header.starts_with(ariad_core::format::OLE_MAGIC) {
+        return None;
+    }
+    let sector_shift = u16::from_le_bytes([header[0x1E], header[0x1F]]);
+    if sector_shift != 9 && sector_shift != 12 {
+        return None;
+    }
+    let sector_size = 1u64 << sector_shift;
+    let fat_entries_per_sector = sector_size / 4;
+    let read_u32 = |bytes: &[u8], offset: usize| -> Option<u32> {
+        bytes
+            .get(offset..offset + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    let difat: Vec<u32> = (0..CFB_HEADER_DIFAT_ENTRIES)
+        .filter_map(|i| read_u32(&header, 0x4C + i * 4))
+        .collect();
+    let sector_offset = |sector: u32| -> Option<u64> {
+        let offset = u64::from(sector).checked_add(1)?.checked_mul(sector_size)?;
+        (offset.checked_add(sector_size)? <= file_len).then_some(offset)
+    };
+
+    let mut names = Vec::new();
+    let mut visited = HashSet::new();
+    let mut sector = read_u32(&header, 0x30)?;
+    let mut buffer = vec![0u8; usize::try_from(sector_size).ok()?];
+    while sector < CFB_MAX_REGULAR_SECTOR
+        && visited.len() < MAX_CFB_DIRECTORY_SECTORS
+        && visited.insert(sector)
+    {
+        let Some(offset) = sector_offset(sector) else {
+            break;
+        };
+        if file.seek(SeekFrom::Start(offset)).is_err() || file.read_exact(&mut buffer).is_err() {
+            break;
+        }
+        for entry in buffer.as_chunks::<128>().0 {
+            // Object type 1 is a storage, 2 a stream, 5 the root; 0 marks an unused slot.
+            if !matches!(entry[0x42], 1 | 2 | 5) {
+                continue;
+            }
+            let name_bytes = usize::from(u16::from_le_bytes([entry[0x40], entry[0x41]])).min(64);
+            let units: Vec<u16> = entry[..name_bytes]
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|&pair| u16::from_le_bytes(pair))
+                .take_while(|&unit| unit != 0)
+                .collect();
+            names.push(String::from_utf16_lossy(&units));
+        }
+
+        let fat_index = u64::from(sector) / fat_entries_per_sector;
+        let Some(&fat_sector) = usize::try_from(fat_index)
+            .ok()
+            .and_then(|index| difat.get(index))
+        else {
+            break;
+        };
+        if fat_sector >= CFB_MAX_REGULAR_SECTOR {
+            break;
+        }
+        let Some(fat_offset) = sector_offset(fat_sector) else {
+            break;
+        };
+        let entry_offset = fat_offset + (u64::from(sector) % fat_entries_per_sector) * 4;
+        let mut next = [0u8; 4];
+        if file.seek(SeekFrom::Start(entry_offset)).is_err() || file.read_exact(&mut next).is_err()
+        {
+            break;
+        }
+        sector = u32::from_le_bytes(next);
+    }
+    Some(names)
+}
+
 /// Summary of central directory headers parsed from an archive.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ZipArchiveSummary {
@@ -1356,5 +1450,95 @@ with zipfile.ZipFile(r'{}', 'w') as z:
             }
             other => panic!("expected CentralDirectorySizeExceeded, got {other:?}"),
         }
+    }
+
+    fn cfb_entry(name: &str, object_type: u8) -> [u8; 128] {
+        let mut entry = [0u8; 128];
+        let units: Vec<u16> = name.encode_utf16().collect();
+        for (i, unit) in units.iter().enumerate() {
+            entry[i * 2..i * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        let name_len = ((units.len() + 1) * 2) as u16;
+        entry[0x40..0x42].copy_from_slice(&name_len.to_le_bytes());
+        entry[0x42] = object_type;
+        entry
+    }
+
+    /// Builds a 512-byte-sector compound file whose FAT lives in sector 0 and whose directory
+    /// chain is given as (sector, next) pairs with entries for each directory sector.
+    fn cfb_file(chain: &[(u32, u32)], directory: &[Vec<[u8; 128]>]) -> Vec<u8> {
+        let sectors = 1 + directory.len();
+        let mut bytes = vec![0u8; 512 * (sectors + 1)];
+        bytes[..8].copy_from_slice(ariad_core::format::OLE_MAGIC);
+        bytes[0x1A..0x1C].copy_from_slice(&0x3Eu16.to_le_bytes());
+        bytes[0x1C..0x1E].copy_from_slice(&3u16.to_le_bytes());
+        bytes[0x1E..0x20].copy_from_slice(&9u16.to_le_bytes());
+        bytes[0x2C..0x30].copy_from_slice(&1u32.to_le_bytes());
+        bytes[0x30..0x34].copy_from_slice(&chain[0].0.to_le_bytes());
+        for i in 0..109 {
+            let value: u32 = if i == 0 { 0 } else { 0xFFFF_FFFF };
+            bytes[0x4C + i * 4..0x50 + i * 4].copy_from_slice(&value.to_le_bytes());
+        }
+        let fat = 512;
+        bytes[fat..fat + 4].copy_from_slice(&0xFFFF_FFFDu32.to_le_bytes());
+        for &(sector, next) in chain {
+            let at = fat + sector as usize * 4;
+            bytes[at..at + 4].copy_from_slice(&next.to_le_bytes());
+        }
+        for (index, entries) in directory.iter().enumerate() {
+            let base = 512 * (index + 2);
+            for (slot, entry) in entries.iter().enumerate() {
+                bytes[base + slot * 128..base + (slot + 1) * 128].copy_from_slice(entry);
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn cfb_entry_names_follow_the_directory_chain() {
+        let bytes = cfb_file(
+            &[(1, 2), (2, 0xFFFF_FFFE)],
+            &[
+                vec![
+                    cfb_entry("Root Entry", 5),
+                    cfb_entry("1Table", 2),
+                    cfb_entry("CompObj", 2),
+                    cfb_entry("SummaryInformation", 2),
+                ],
+                vec![cfb_entry("WordDocument", 2), cfb_entry("unused", 0)],
+            ],
+        );
+        let names = super::read_cfb_entry_names(&mut std::io::Cursor::new(bytes)).unwrap();
+        assert_eq!(
+            names,
+            [
+                "Root Entry",
+                "1Table",
+                "CompObj",
+                "SummaryInformation",
+                "WordDocument"
+            ]
+        );
+    }
+
+    #[test]
+    fn cfb_entry_names_stop_at_cycles_and_reject_other_files() {
+        let looped = cfb_file(&[(1, 1)], &[vec![cfb_entry("Root Entry", 5)]]);
+        let names = super::read_cfb_entry_names(&mut std::io::Cursor::new(looped)).unwrap();
+        assert_eq!(names, ["Root Entry"]);
+
+        let truncated = {
+            let mut bytes = cfb_file(&[(1, 0xFFFF_FFFE)], &[vec![cfb_entry("Root Entry", 5)]]);
+            bytes.truncate(700);
+            bytes
+        };
+        let names = super::read_cfb_entry_names(&mut std::io::Cursor::new(truncated)).unwrap();
+        assert!(names.is_empty());
+
+        assert!(
+            super::read_cfb_entry_names(&mut std::io::Cursor::new(b"PK\x03\x04".repeat(200)))
+                .is_none()
+        );
+        assert!(super::read_cfb_entry_names(&mut std::io::Cursor::new(Vec::new())).is_none());
     }
 }

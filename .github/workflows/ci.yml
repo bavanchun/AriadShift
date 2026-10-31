@@ -17,6 +17,12 @@ concurrency:
 permissions:
   contents: read
 
+# Typst and packaging create large artifacts; CI does not need local debug/incremental data.
+env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
 jobs:
   scope:
     name: Scope
@@ -28,6 +34,7 @@ jobs:
     outputs:
       range: ${{ steps.scope.outputs.range }}
       heavy: ${{ steps.scope.outputs.heavy }}
+      web: ${{ steps.scope.outputs.web }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,7 +75,7 @@ jobs:
           cache: false
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: just@1.58.0,cargo-deny@0.20.2,typos@1.50.3,cargo-about@0.9.2
 
@@ -79,14 +86,14 @@ jobs:
           run_install: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -161,12 +168,12 @@ jobs:
           cache-save-if: ${{ github.event_name == 'push' }}
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
           tool: just@1.58.0,cargo-nextest@0.9.146
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: 0.12.23
           python-version: "3.14"
@@ -176,6 +183,38 @@ jobs:
         with:
           path: .tools/
           key: pandoc-${{ runner.os }}-${{ hashFiles('scripts/install-pandoc.sh') }}
+
+      - name: Enable namespaces for LibreOffice sandbox tests
+        if: runner.os == 'Linux'
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --user --map-root-user --mount true
+
+      - name: Use the primary Ubuntu archive and update the package index
+        if: runner.os == 'Linux'
+        run: |
+          for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [ -f "$source" ]; then
+              sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
+            fi
+          done
+          sudo apt-get update
+
+      - name: Install system LibreOffice
+        if: runner.os == 'Linux'
+        run: |
+          packages=(libreoffice-writer libreoffice-calc libreoffice-impress qpdf)
+          pinned=()
+          for package in "${packages[@]}"; do
+            version="$(apt-cache policy "$package" | awk '/Candidate:/ {print $2}')"
+            [[ -n "$version" && "$version" != '(none)' ]]
+            pinned+=("$package=$version")
+            printf 'Selected %s=%s\n' "$package" "$version"
+          done
+          sudo apt-get install --no-install-recommends -y "${pinned[@]}"
+          soffice --version
 
       - name: Install Pandoc
         run: just pandoc
@@ -191,6 +230,17 @@ jobs:
       - name: Verify Pandoc installation
         run: '"$ASHIFT_PANDOC" --version'
 
+      - name: Install Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [ -f "$source" ]; then
+              sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
+            fi
+          done
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
       # The Windows lint job already runs Clippy there.
       - name: Run Clippy
         if: runner.os != 'Windows'
@@ -202,7 +252,12 @@ jobs:
         run: just wasm
 
       - name: Run tests
-        run: just test
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then export ARIAD_REQUIRE_OFFICE=1; fi
+          just test
+
+      - name: Check the CLI without default features
+        run: cargo check -p ariad-cli --no-default-features
 
       - name: Run benchmark harness tests
         run: just bench-test
@@ -213,12 +268,136 @@ jobs:
       - name: Check packaging
         run: just package-check
 
+  server:
+    name: Server integration (ubuntu-26.04)
+    needs: scope
+    if: needs.scope.outputs.heavy == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    services:
+      postgres: &auth-test-postgres
+        # justfile pins the same image for `just test-server`.
+        image: ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7
+        env:
+          POSTGRES_PASSWORD: ariad
+        ports:
+          - 55442:5432
+        # TCP opens only after the image's init scripts finish.
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      ARIAD_TEST_DATABASE_URL: postgres://postgres:ariad@127.0.0.1:55442/postgres
+      ARIAD_TEST_REQUIRE_DATABASE: "1"
+      ARIAD_TEST_S3_ENDPOINT: http://127.0.0.1:58342
+      ARIAD_TEST_REQUIRE_SANDBOX: "1"
+      SEAWEEDFS_IMAGE: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: just@1.58.0,cargo-nextest@0.9.146
+
+      - name: Cache Pandoc archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/
+          key: pandoc-${{ runner.os }}-${{ hashFiles('scripts/install-pandoc.sh') }}
+
+      - name: Install Pandoc
+        run: just pandoc
+
+      - name: Set native Pandoc path
+        run: printf 'ASHIFT_PANDOC=%s\n' "${GITHUB_WORKSPACE}/.tools/pandoc/bin/pandoc" >> "$GITHUB_ENV"
+
+      # Service containers cannot take a command, so SeaweedFS starts here.
+      - name: Start SeaweedFS
+        run: |
+          docker run -d --name ariadshift-test-s3 -p 127.0.0.1:58342:8333 \
+            -v "${GITHUB_WORKSPACE}/infra/test/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro" \
+            "$SEAWEEDFS_IMAGE" server -s3 -s3.config=/etc/seaweedfs/s3.json -dir=/data \
+            -volume.max=32 -master.volumeSizeLimitMB=16
+          for _ in $(seq 1 60); do
+            if docker exec ariadshift-test-s3 sh -c 'echo "s3.bucket.create -name ariad-test" | weed shell' 2>/dev/null | grep -q 'created bucket'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs --tail 200 ariadshift-test-s3
+          exit 1
+
+      - name: Build the engine program
+        run: cargo build -p ariad-cli --bin ashift
+
+      - name: Run server tests
+        run: cargo nextest run -p ariad-server
+
+      - name: Check required sandbox failure through the helper
+        env:
+          ARIAD_TEST_SANDBOX_SUPPORT: none
+          ASHIFT_SANDBOX: off
+        run: cargo nextest run -p ariad-server --test isolated -E 'test(required_mode_reaches_the_engine_through_the_helper)'
+
+      - name: Check images and run a required-mode Pandoc container job
+        run: just test-server-container
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.9.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install JavaScript dependencies
+        run: just js
+
+      # The existing suite uses pg_dump with the service's major version.
+      - name: Install the PostgreSQL 18 client
+        run: |
+          sudo apt-get update
+          version="$(apt-cache policy postgresql-client-18 | awk '/Candidate:/ {print $2}')"
+          [[ -n "$version" && "$version" != '(none)' ]]
+          printf 'Selected postgresql-client-18=%s\n' "$version"
+          sudo apt-get install --no-install-recommends -y "postgresql-client-18=$version"
+          pg_dump --version | grep -q ' 18\.'
+
+      - name: Run the auth service's PostgreSQL suite
+        run: just test-auth-db
+
+      - name: Stop SeaweedFS
+        if: always()
+        run: docker rm -f ariadshift-test-s3 || true
+
   fuzz:
     name: Fuzz
     needs: scope
     if: needs.scope.outputs.heavy == 'true'
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    # 18 targets x 60 s of fuzzing plus three feature builds on a possibly cold fuzz/target cache.
+    timeout-minutes: 45
     permissions:
       contents: read
     defaults:
@@ -272,13 +451,21 @@ jobs:
           restore-keys: |
             fuzz-corpus-${{ runner.os }}-
 
+      - name: Test package metadata fuzz oracle
+        run: cargo test --locked --manifest-path fuzz/Cargo.toml --bin docx_meta
+
       - name: Run fuzz targets
         run: |
-          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir ir_json limits_validate"
+          targets="markdown_reader front_matter html_reader pandoc_ast_to_ir docling_to_ir ir_json limits_validate pdf_reader typst_writer archive_preflight docx_meta pack_manifest pack_archive engine_protocol capabilities_json asset_resolve uri_parsers ir_json_versioned"
           for t in $targets; do
             echo "=== Running fuzz target: $t ==="
             mkdir -p "fuzz/corpus/$t"
-            cargo fuzz run -s none "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=60 -timeout=10 -rss_limit_mb=2048
+            build_options=()
+            case "$t" in
+              pdf_reader) build_options=(--dev --features pdf-reader) ;;
+              typst_writer) build_options=(--dev --features typst-writer) ;;
+            esac
+            cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time=60 -timeout=10 -rss_limit_mb=2048
           done
 
       - name: Save fuzz target cache
@@ -297,15 +484,116 @@ jobs:
 
       - name: Upload crash artifacts on failure
         if: failure() || cancelled()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-artifacts
           path: fuzz/artifacts/
           retention-days: 14
 
+  web:
+    name: Web
+    needs: scope
+    if: needs.scope.outputs.web == 'true'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Auth-only changes skip the Rust/server jobs but still run web Vitest.
+      ARIAD_TEST_DATABASE_URL: postgres://postgres:ariad@127.0.0.1:55442/postgres
+      ARIAD_TEST_REQUIRE_DATABASE: "1"
+    services:
+      postgres: *auth-test-postgres
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          target: wasm32-unknown-unknown
+          cache-save-if: ${{ github.event_name == 'push' }}
+
+      - name: Install command-line tools
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: just@1.58.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.9.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install JavaScript dependencies
+        run: just js
+
+      # The existing suite uses pg_dump with the service's major version.
+      - name: Install the PostgreSQL 18 client
+        run: |
+          sudo apt-get update
+          version="$(apt-cache policy postgresql-client-18 | awk '/Candidate:/ {print $2}')"
+          [[ -n "$version" && "$version" != '(none)' ]]
+          printf 'Selected postgresql-client-18=%s\n' "$version"
+          sudo apt-get install --no-install-recommends -y "postgresql-client-18=$version"
+          pg_dump --version | grep -q ' 18\.'
+
+      # Builds the wasm module, then typechecks, runs Vitest and builds the site.
+      - name: Typecheck, unit tests and production build
+        run: just web-ci
+
+      - name: Restore Playwright browsers
+        id: restore-playwright
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Use the primary Ubuntu archive for browser libraries
+        run: |
+          for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [ -f "$source" ]; then
+              sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
+            fi
+          done
+
+      - name: Install Playwright browsers and their system packages
+        run: just web-browsers --with-deps
+
+      - name: Save Playwright browsers
+        if: github.event_name == 'push' && steps.restore-playwright.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Run end-to-end tests on Chromium, Firefox and WebKit
+        run: just web-e2e
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-traces
+          path: apps/web/test-results/
+          retention-days: 14
+
   ci-passed:
     name: CI passed
-    needs: [scope, static, lint-windows, verify, fuzz]
+    needs: [scope, static, lint-windows, verify, server, fuzz, web]
     if: always()
     runs-on: ubuntu-26.04
     timeout-minutes: 5
@@ -314,17 +602,25 @@ jobs:
       - name: Check job results
         env:
           HEAVY: ${{ needs.scope.outputs.heavy }}
+          WEB_SCOPE: ${{ needs.scope.outputs.web }}
           SCOPE: ${{ needs.scope.result }}
           STATIC: ${{ needs.static.result }}
           WINDOWS: ${{ needs.lint-windows.result }}
           VERIFY: ${{ needs.verify.result }}
+          SERVER: ${{ needs.server.result }}
           FUZZ: ${{ needs.fuzz.result }}
+          WEB: ${{ needs.web.result }}
         run: |
-          printf 'scope=%s static=%s lint-windows=%s verify=%s fuzz=%s heavy=%s\n' \
-            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$FUZZ" "$HEAVY"
+          printf 'scope=%s static=%s lint-windows=%s verify=%s server=%s fuzz=%s web=%s heavy=%s web-scope=%s\n' \
+            "$SCOPE" "$STATIC" "$WINDOWS" "$VERIFY" "$SERVER" "$FUZZ" "$WEB" "$HEAVY" "$WEB_SCOPE"
           [ "$SCOPE" = success ] && [ "$STATIC" = success ] || exit 1
           if [ "$HEAVY" = true ]; then
-            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$FUZZ" = success ] || exit 1
+            [ "$WINDOWS" = success ] && [ "$VERIFY" = success ] && [ "$SERVER" = success ] && [ "$FUZZ" = success ] || exit 1
           else
-            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
+            [ "$WINDOWS" = skipped ] && [ "$VERIFY" = skipped ] && [ "$SERVER" = skipped ] && [ "$FUZZ" = skipped ] || exit 1
+          fi
+          if [ "$WEB_SCOPE" = true ]; then
+            [ "$WEB" = success ] || exit 1
+          else
+            [ "$WEB" = skipped ] || exit 1
           fi

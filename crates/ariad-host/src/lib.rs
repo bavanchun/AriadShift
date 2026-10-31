@@ -10,8 +10,14 @@ pub mod engines;
 pub mod ir_io;
 pub(crate) mod media;
 pub mod package_meta;
+pub mod packs;
 pub mod pandoc_bin;
 pub mod runner;
+pub mod sandbox;
+pub mod session;
+#[cfg(feature = "typst")]
+pub mod typst_render;
+pub mod watchdog;
 pub mod workspace;
 
 pub use convert::{ArchiveToIrOutput, read_archive_to_ir};

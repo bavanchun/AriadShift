@@ -29,7 +29,7 @@ jobs:
         (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'bench'))
       ))
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       contents: read
     defaults:
@@ -48,25 +48,67 @@ jobs:
           cache: true
 
       - name: Set up uv and Python
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: 0.12.23
           python-version: "3.14"
 
       - name: Install command-line tools
-        uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
         with:
-          tool: just@1.58.0
+          tool: just@1.58.0,cargo-nextest@0.9.146
 
       - name: Install Pandoc
         run: bash scripts/install-pandoc.sh
 
+      - name: Install document engines
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends tesseract-ocr libreoffice-writer libreoffice-calc libreoffice-impress
+          soffice --version
+          tesseract --version
+
+      - name: Cache models and OCR data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0 # zizmor: ignore[cache-poisoning]
+        with:
+          path: ~/.cache/ariadshift/docling
+          key: docling-assets-${{ hashFiles('engines/docling/pack/pins.toml') }}
+
+      - name: Set up the Docling engine
+        run: just docling-dev
+
       - name: Build ashift CLI
-        run: cargo build --release -p ariad-cli
+        run: cargo build --release -p ariad-cli --features ariad-host/test-probe
+
+      - name: Run real Docling conformance
+        env:
+          ASHIFT_DOCLING_ENGINE: '"${{ github.workspace }}/.tools/docling/python-env/bin/python" -I -m ariad_docling'
+          ASHIFT_PANDOC: ${{ github.workspace }}/.tools/pandoc/bin/pandoc
+        run: >-
+          cargo nextest run --release -p ariad-cli --features ariad-host/test-probe
+          --run-ignored ignored-only --test-threads 2 -E 'binary(docling_engine)'
 
       - name: Run benchmark harness
         run: |
           PATH="$PWD/.tools/pandoc/bin:$PATH" ASHIFT_PANDOC="$PWD/.tools/pandoc/bin/pandoc" just bench | tee bench-run.log
+
+      - name: Measure heavy routes
+        env:
+          ASHIFT_DOCLING_ENGINE: '"${{ github.workspace }}/.tools/docling/python-env/bin/python" -I -m ariad_docling'
+        run: just bench-heavy
+
+      - name: Generate the public report
+        run: just bench-report
+
+      - name: Upload measured capabilities and report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: benchmark-results
+          path: |
+            crates/ariad-core/data/capabilities.json
+            bench/results/heavy-routes.json
+            docs/bench-report.md
+          if-no-files-found: error
 
       - name: Generate diff summary
         run: |

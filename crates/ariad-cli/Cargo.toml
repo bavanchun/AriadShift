@@ -21,10 +21,14 @@ rmcp = { workspace = true, features = ["server", "macros", "transport-io"] }
 schemars.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 tokio-util = { workspace = true, features = ["rt"] }
 
 [features]
+default = ["pdf", "typst"]
+pdf = ["ariad-host/pdf"]
+typst = ["ariad-host/typst"]
 test-probe = ["ariad-host/test-probe"]
 
 [dev-dependencies]
@@ -33,6 +37,7 @@ assert_cmd.workspace = true
 hex.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
+minisign.workspace = true
 quick-xml.workspace = true
 serde = { workspace = true, features = ["derive"] }
 sha2.workspace = true
@@ -51,6 +56,16 @@ path = "src/main.rs"
 [[test]]
 name = "commands_cli"
 path = "tests/commands_cli.rs"
+required-features = ["ariad-host/test-probe"]
+
+[[test]]
+name = "packs_cli"
+path = "tests/packs_cli.rs"
+required-features = ["ariad-host/test-probe"]
+
+[[test]]
+name = "docling_pack"
+path = "tests/docling_pack.rs"
 required-features = ["ariad-host/test-probe"]
 
 [[test]]

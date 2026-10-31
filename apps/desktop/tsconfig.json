@@ -1,0 +1,4 @@
+{
+  "extends": "@ariadshift/config/tsconfig/react.json",
+  "include": ["src", "vite.config.ts", "vitest.config.ts", "test"]
+}

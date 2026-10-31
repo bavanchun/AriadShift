@@ -11,7 +11,7 @@
       "$ref": "#/$defs/Event"
     }
   ],
-  "x-status": "draft",
+  "x-status": "final",
   "$defs": {
     "EngineError": {
       "type": "object",
@@ -69,6 +69,11 @@
               "items": {
                 "$ref": "#/$defs/RouteCapability"
               }
+            },
+            "supports_session": {
+              "description": "Whether the engine serves several `convert` jobs of one `session_id` in one process.",
+              "type": "boolean",
+              "default": false
             },
             "tool": {
               "$ref": "#/$defs/ToolStatus"
@@ -339,6 +344,13 @@
             },
             "protocol": {
               "type": "string"
+            },
+            "session_id": {
+              "description": "Warm session this job belongs to. An engine that reports `supports_session: true`\nkeeps running after the `result` and reads the next request of the same session.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "work_dir": {
               "type": "string"

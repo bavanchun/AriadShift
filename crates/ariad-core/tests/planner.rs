@@ -1065,3 +1065,168 @@ fn reachable_formats_does_not_stop_early_at_png() {
     assert!(reachable.contains(&Format::Html));
     assert!(reachable.contains(&Format::Docx));
 }
+
+#[test]
+fn restricted_capabilities_keep_only_edges_of_one_runtime() {
+    let wasm = embedded().restricted_to(Runtime::Wasm);
+    assert!(!wasm.edges.is_empty());
+    assert!(
+        wasm.edges
+            .iter()
+            .all(|e| e.runtime.contains(&Runtime::Wasm))
+    );
+    assert_eq!(wasm.version, embedded().version);
+
+    let engines = wasm.registered_engines();
+    let route = plan(
+        &wasm,
+        Format::Markdown,
+        Format::Html,
+        Profile::Editable,
+        &engines,
+    )
+    .expect("markdown to html runs in the browser");
+    assert!(route.steps.iter().all(|s| s.engine == "ariad-core"));
+    let heavy = plan(
+        &wasm,
+        Format::Markdown,
+        Format::Docx,
+        Profile::Editable,
+        &engines,
+    )
+    .unwrap();
+    assert_eq!(heavy.steps.last().unwrap().engine, "pandoc");
+    assert!(matches!(
+        plan(
+            &wasm,
+            Format::Odt,
+            Format::Docx,
+            Profile::Editable,
+            &engines
+        ),
+        Err(PlanError::NoRoute { .. })
+    ));
+}
+
+#[test]
+fn measured_pdf_routes_select_structure_or_speed_for_the_requested_profile() {
+    let engines = ["ariad-core", "pdf", "docling", "pandoc"].map(str::to_owned);
+    for target in [Format::Markdown, Format::Docx] {
+        for (profile, expected) in [(Profile::Editable, "docling"), (Profile::Fast, "pdf")] {
+            let route = plan(embedded(), Format::Pdf, target, profile, &engines).unwrap();
+            assert!(route.measured, "PDF route must use measured edges");
+            assert_eq!(route.steps[0].engine, expected, "{profile:?}: {route:?}");
+        }
+    }
+}
+
+#[test]
+fn source_only_engines_never_render_an_intermediate() {
+    let metrics = |fidelity: f64| {
+        Some(EdgeMetrics {
+            fidelity,
+            editability: fidelity,
+            p50_ms: 10.0,
+            peak_mem_mb: 16.0,
+            samples: 2,
+        })
+    };
+    let caps = synthetic_caps(vec![
+        edge(
+            Format::Markdown,
+            Format::Docx,
+            "pandoc",
+            &[Runtime::Local],
+            metrics(1.0),
+        ),
+        edge(
+            Format::Docx,
+            Format::Pdf,
+            "libreoffice",
+            &[Runtime::Local],
+            metrics(1.0),
+        ),
+        edge(
+            Format::Markdown,
+            Format::Pdf,
+            "typst",
+            &[Runtime::Local],
+            metrics(0.1),
+        ),
+    ]);
+    let engines = ["pandoc", "libreoffice", "typst"].map(str::to_owned);
+    for profile in [
+        Profile::Editable,
+        Profile::Faithful,
+        Profile::Fast,
+        Profile::Private,
+    ] {
+        // The better-scored chain is refused because LibreOffice would render Pandoc output.
+        let markdown = plan(&caps, Format::Markdown, Format::Pdf, profile, &engines).unwrap();
+        assert_eq!(markdown.steps.len(), 1, "{profile:?}: {markdown:?}");
+        assert_eq!(markdown.steps[0].engine, "typst");
+        assert!(
+            markdown.alternatives.is_empty(),
+            "{profile:?}: {markdown:?}"
+        );
+        // A user-supplied DOCX still starts with LibreOffice.
+        let docx = plan(&caps, Format::Docx, Format::Pdf, profile, &engines).unwrap();
+        assert_eq!(docx.steps[0].engine, "libreoffice");
+    }
+    let without_typst = ["pandoc", "libreoffice"].map(str::to_owned);
+    let err = plan(
+        &caps,
+        Format::Markdown,
+        Format::Pdf,
+        Profile::Editable,
+        &without_typst,
+    )
+    .unwrap_err();
+    assert!(matches!(err, PlanError::NoRoute { .. }), "{err:?}");
+}
+
+#[test]
+fn ir_family_inputs_write_pdf_through_typst_in_every_profile() {
+    let caps = embedded();
+    let engines = caps.registered_engines();
+    for from in [
+        Format::Markdown,
+        Format::Html,
+        Format::AriadIrJson,
+        Format::Epub,
+    ] {
+        for profile in [
+            Profile::Editable,
+            Profile::Faithful,
+            Profile::Fast,
+            Profile::Private,
+        ] {
+            let route = plan(caps, from, Format::Pdf, profile, &engines).unwrap();
+            assert_eq!(
+                route.steps.last().map(|step| step.engine.as_str()),
+                Some("typst"),
+                "{from:?} {profile:?}: {route:?}"
+            );
+            let all_routes = std::iter::once(&route).chain(&route.alternatives);
+            for candidate in all_routes {
+                assert!(
+                    candidate
+                        .steps
+                        .iter()
+                        .all(|step| step.engine != "libreoffice"),
+                    "{from:?} {profile:?}: {candidate:?}"
+                );
+            }
+        }
+    }
+    // Office spreadsheets keep LibreOffice's direct rendering instead of a Pandoc DOCX detour.
+    let xlsx = plan(caps, Format::Xlsx, Format::Pdf, Profile::Editable, &engines).unwrap();
+    assert_eq!(
+        xlsx.steps,
+        [PlanStep {
+            from: Format::Xlsx,
+            to: Format::Pdf,
+            engine: "libreoffice".to_owned(),
+        }]
+    );
+}

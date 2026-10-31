@@ -1,10 +1,10 @@
 {
   "version": "ariad-capabilities/0",
-  "generated_at": "2026-10-07T03:29:05Z",
+  "generated_at": "2026-10-24T19:47:44Z",
   "bench": {
-    "fixture_count": 41,
+    "fixture_count": 69,
     "pandoc_version": "3.12",
-    "ashift_version": "0.0.0"
+    "ashift_version": "0.1.0"
   },
   "edges": [
     {
@@ -12,15 +12,16 @@
       "to": "docx",
       "engine": "pandoc",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
-        "fidelity": 0.991,
-        "editability": 0.971,
-        "p50_ms": 100.0,
-        "peak_mem_mb": 216.0,
-        "samples": 30
+        "fidelity": 0.992,
+        "editability": 0.974,
+        "p50_ms": 160.0,
+        "peak_mem_mb": 232.0,
+        "samples": 34
       }
     },
     {
@@ -28,14 +29,15 @@
       "to": "epub",
       "engine": "pandoc",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
         "fidelity": 0.851,
         "editability": 0.786,
-        "p50_ms": 80.0,
-        "peak_mem_mb": 242.0,
+        "p50_ms": 130.0,
+        "peak_mem_mb": 257.0,
         "samples": 28
       }
     },
@@ -51,8 +53,8 @@
       "metrics": {
         "fidelity": 1.0,
         "editability": 1.0,
-        "p50_ms": 0.0,
-        "peak_mem_mb": 8.0,
+        "p50_ms": 10.0,
+        "peak_mem_mb": 16.0,
         "samples": 30
       }
     },
@@ -66,11 +68,28 @@
       ],
       "license": "Apache-2.0",
       "metrics": {
-        "fidelity": 0.989,
-        "editability": 0.981,
-        "p50_ms": 0.0,
-        "peak_mem_mb": 8.0,
-        "samples": 13
+        "fidelity": 0.994,
+        "editability": 0.989,
+        "p50_ms": 10.0,
+        "peak_mem_mb": 15.0,
+        "samples": 23
+      }
+    },
+    {
+      "from": "docling+json",
+      "to": "ariad-ir+json",
+      "engine": "ariad-core",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": {
+        "fidelity": 0.995,
+        "editability": 1.0,
+        "p50_ms": 10.0,
+        "peak_mem_mb": 15.0,
+        "samples": 12
       }
     },
     {
@@ -78,15 +97,32 @@
       "to": "ariad-ir+json",
       "engine": "pandoc",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
         "fidelity": 1.0,
         "editability": 1.0,
-        "p50_ms": 200.0,
-        "peak_mem_mb": 145.0,
-        "samples": 5
+        "p50_ms": 290.0,
+        "peak_mem_mb": 160.0,
+        "samples": 7
+      }
+    },
+    {
+      "from": "docx",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": {
+        "fidelity": 0.667,
+        "editability": 1.0,
+        "p50_ms": 8360.0,
+        "peak_mem_mb": 697.0,
+        "samples": 2
       }
     },
     {
@@ -94,14 +130,15 @@
       "to": "ariad-ir+json",
       "engine": "pandoc",
       "runtime": [
+        "wasm",
         "local"
       ],
       "license": "GPL-2.0-or-later",
       "metrics": {
         "fidelity": 1.0,
         "editability": 1.0,
-        "p50_ms": 80.0,
-        "peak_mem_mb": 44.0,
+        "p50_ms": 120.0,
+        "peak_mem_mb": 59.0,
         "samples": 4
       }
     },
@@ -117,10 +154,20 @@
       "metrics": {
         "fidelity": 1.0,
         "editability": 1.0,
-        "p50_ms": 0.0,
-        "peak_mem_mb": 8.0,
+        "p50_ms": 10.0,
+        "peak_mem_mb": 15.0,
         "samples": 4
       }
+    },
+    {
+      "from": "jpeg",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
     },
     {
       "from": "markdown",
@@ -134,9 +181,375 @@
       "metrics": {
         "fidelity": 1.0,
         "editability": 1.0,
-        "p50_ms": 0.0,
-        "peak_mem_mb": 9.0,
-        "samples": 28
+        "p50_ms": 10.0,
+        "peak_mem_mb": 16.0,
+        "samples": 30
+      }
+    },
+    {
+      "from": "pdf",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": {
+        "fidelity": 0.665,
+        "editability": 0.562,
+        "p50_ms": 21270.0,
+        "peak_mem_mb": 2321.0,
+        "samples": 4
+      }
+    },
+    {
+      "from": "png",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": {
+        "fidelity": 0.69,
+        "editability": 0.75,
+        "p50_ms": 28550.0,
+        "peak_mem_mb": 2337.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "pptx",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": {
+        "fidelity": 1.0,
+        "editability": 1.0,
+        "p50_ms": 10730.0,
+        "peak_mem_mb": 697.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "tiff",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
+    },
+    {
+      "from": "webp",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": null
+    },
+    {
+      "from": "xlsx",
+      "to": "docling+json",
+      "engine": "docling",
+      "runtime": [
+        "local"
+      ],
+      "license": "MIT",
+      "metrics": {
+        "fidelity": 1.0,
+        "editability": 1.0,
+        "p50_ms": 5850.0,
+        "peak_mem_mb": 698.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "ariad-ir+json",
+      "to": "pdf",
+      "engine": "typst",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": {
+        "fidelity": 0.394,
+        "editability": 0.25,
+        "p50_ms": 20.0,
+        "peak_mem_mb": 30.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "doc",
+      "to": "docx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.889,
+        "editability": 1.0,
+        "p50_ms": 1490.0,
+        "peak_mem_mb": 253.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "doc",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.667,
+        "editability": 0.75,
+        "p50_ms": 1610.0,
+        "peak_mem_mb": 254.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "docx",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.533,
+        "editability": 0.75,
+        "p50_ms": 20980.0,
+        "peak_mem_mb": 471.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "odp",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.5,
+        "editability": 0.0,
+        "p50_ms": 2410.0,
+        "peak_mem_mb": 240.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "odp",
+      "to": "pptx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "ods",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.621,
+        "editability": 0.0,
+        "p50_ms": 3510.0,
+        "peak_mem_mb": 325.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "ods",
+      "to": "xlsx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "odt",
+      "to": "docx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.889,
+        "editability": 1.0,
+        "p50_ms": 2110.0,
+        "peak_mem_mb": 409.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "odt",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.667,
+        "editability": 0.75,
+        "p50_ms": 2310.0,
+        "peak_mem_mb": 408.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "pdf",
+      "to": "ariad-ir+json",
+      "engine": "pdf",
+      "runtime": [
+        "wasm",
+        "local"
+      ],
+      "license": "Apache-2.0",
+      "metrics": {
+        "fidelity": 0.458,
+        "editability": 0.25,
+        "p50_ms": 10.0,
+        "peak_mem_mb": 14.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "ppt",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.5,
+        "editability": 0.0,
+        "p50_ms": 1360.0,
+        "peak_mem_mb": 206.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "ppt",
+      "to": "pptx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "pptx",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.667,
+        "editability": 0.5,
+        "p50_ms": 49990.0,
+        "peak_mem_mb": 340.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "rtf",
+      "to": "docx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.889,
+        "editability": 1.0,
+        "p50_ms": 3120.0,
+        "peak_mem_mb": 299.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "rtf",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.667,
+        "editability": 0.75,
+        "p50_ms": 3130.0,
+        "peak_mem_mb": 300.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "xls",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.288,
+        "editability": 0.0,
+        "p50_ms": 2360.0,
+        "peak_mem_mb": 262.0,
+        "samples": 2
+      }
+    },
+    {
+      "from": "xls",
+      "to": "xlsx",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": null
+    },
+    {
+      "from": "xlsx",
+      "to": "pdf",
+      "engine": "libreoffice",
+      "runtime": [
+        "local"
+      ],
+      "license": "MPL-2.0",
+      "metrics": {
+        "fidelity": 0.632,
+        "editability": 0.0,
+        "p50_ms": 3140.0,
+        "peak_mem_mb": 303.0,
+        "samples": 2
       }
     }
   ]

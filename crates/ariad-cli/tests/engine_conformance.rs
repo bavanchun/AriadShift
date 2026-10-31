@@ -50,6 +50,7 @@ fn request_for(workspace: &ariad_host::workspace::Workspace) -> Request {
         work_dir: workspace.work_dir().to_string_lossy().into_owned(),
         options: BTreeMap::new(),
         limits: Limits::local(),
+        session_id: None,
     }
 }
 
@@ -58,8 +59,12 @@ fn run_engine(request: &Request) -> Output {
 }
 
 fn run_engine_line(request: &[u8]) -> Output {
+    run_builtin_line("pandoc", request)
+}
+
+fn run_builtin_line(engine: &str, request: &[u8]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_ashift"))
-        .args(["__engine", "pandoc"])
+        .args(["__engine", engine])
         .env("ASHIFT_PANDOC", pandoc_path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -76,42 +81,7 @@ fn run_engine_line(request: &[u8]) -> Output {
 }
 
 fn validate_stdout(output: &Output) -> Vec<Value> {
-    let root = support::fixtures::repository_root();
-    let schema: Value = serde_json::from_slice(
-        &fs::read(root.join("schemas/engine-protocol.v1.json")).expect("read protocol schema"),
-    )
-    .expect("parse protocol schema");
-    let validator = jsonschema::validator_for(&schema).expect("compile protocol schema");
-    let text = std::str::from_utf8(&output.stdout).expect("engine stdout is UTF-8");
-    let values = text
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("engine line is JSON"))
-        .collect::<Vec<Value>>();
-    assert!(!values.is_empty(), "engine must emit a protocol event");
-    for value in &values {
-        let errors = validator
-            .iter_errors(value)
-            .map(|error| error.to_string())
-            .collect::<Vec<_>>();
-        assert!(
-            errors.is_empty(),
-            "protocol schema errors: {}",
-            errors.join("\n")
-        );
-    }
-    let result_positions = values
-        .iter()
-        .enumerate()
-        .filter(|(_, value)| value["type"] == "result")
-        .map(|(index, _)| index)
-        .collect::<Vec<_>>();
-    assert_eq!(result_positions.len(), 1, "exactly one result is required");
-    assert_eq!(
-        result_positions[0],
-        values.len() - 1,
-        "result must come last"
-    );
-    values
+    support::protocol::validate_stdout(&output.stdout)
 }
 
 #[test]
@@ -208,4 +178,122 @@ fn engine_rejects_describe_with_wrong_protocol() {
     let events = validate_stdout(&run_engine(&describe_request));
     assert_eq!(events.last().unwrap()["ok"], false);
     assert_eq!(events.last().unwrap()["error"]["code"], "invalid_request");
+}
+
+#[test]
+fn native_engines_conform_on_describe_conversion_and_invalid_requests() {
+    let root = support::fixtures::repository_root();
+    let mut engines = vec!["libreoffice"];
+    if cfg!(feature = "pdf") {
+        engines.push("pdf");
+    }
+    if cfg!(feature = "typst") {
+        engines.push("typst");
+    }
+    for engine in engines {
+        let describe = Request::Describe {
+            protocol: PROTOCOL.to_owned(),
+            job: "conformance-describe".to_owned(),
+        };
+        let output = run_builtin_line(engine, &serde_json::to_vec(&describe).unwrap());
+        assert!(output.status.success(), "{engine}: {output:?}");
+        let events = validate_stdout(&output);
+        assert_eq!(events[0]["engine"], engine);
+        assert_eq!(events[0]["type"], "capabilities");
+        assert_eq!(events.last().unwrap()["ok"], true);
+        assert!(events[0]["tool"].get("path").is_none());
+        let available = events[0]["tool"]["status"] == "found";
+        if !available {
+            assert_ne!(
+                std::env::var("ARIAD_REQUIRE_OFFICE").as_deref(),
+                Ok("1"),
+                "LibreOffice must be available for conformance"
+            );
+            eprintln!("skipping LibreOffice conversion: system tool unavailable");
+        }
+        let invalid = validate_stdout(&run_builtin_line(engine, b"{}\n"));
+        assert_eq!(invalid.last().unwrap()["error"]["code"], "invalid_request");
+        let wrong = Request::Describe {
+            protocol: "ariad-engine/999".to_owned(),
+            job: "conformance-invalid".to_owned(),
+        };
+        let invalid = validate_stdout(&run_builtin_line(
+            engine,
+            &serde_json::to_vec(&wrong).unwrap(),
+        ));
+        assert_eq!(invalid.last().unwrap()["error"]["code"], "invalid_request");
+        if !available {
+            continue;
+        }
+
+        let workspace = ariad_host::workspace::Workspace::new().unwrap();
+        let mut request = request_for(&workspace);
+        if let Request::Convert { input, output, .. } = &mut request {
+            match engine {
+                "pdf" => {
+                    let path = workspace.input_dir().join("document.pdf");
+                    fs::copy(root.join("fixtures/pdf/vi-garden-route.pdf"), &path).unwrap();
+                    input.path = path.display().to_string();
+                    input.format = "pdf".to_owned();
+                    output.format = "ariad-ir+json".to_owned();
+                }
+                "typst" => output.format = "pdf".to_owned(),
+                "libreoffice" => {
+                    let path = workspace.input_dir().join("document.docx");
+                    fs::copy(root.join("fixtures/docx/vi-styled-report.docx"), &path).unwrap();
+                    input.path = path.display().to_string();
+                    input.format = "docx".to_owned();
+                    output.format = "pdf".to_owned();
+                }
+                _ => unreachable!(),
+            }
+        }
+        let output = run_builtin_line(engine, &serde_json::to_vec(&request).unwrap());
+        assert!(output.status.success(), "{engine}: {output:?}");
+        let events = validate_stdout(&output);
+        assert_eq!(events.last().unwrap()["ok"], true, "{engine}: {events:?}");
+        assert!(events.iter().all(|event| event["type"] != "capabilities"));
+        let artifacts: Vec<_> = events
+            .iter()
+            .filter(|event| event["type"] == "artifact")
+            .collect();
+        assert_eq!(artifacts.len(), 1);
+        let artifact = Path::new(artifacts[0]["path"].as_str().unwrap());
+        assert!(artifact.starts_with(workspace.output_dir()));
+        assert!(artifact.is_file());
+
+        let mut unsupported = request.clone();
+        if let Request::Convert { input, output, .. } = &mut unsupported {
+            input.format = "png".to_owned();
+            output.format = "epub".to_owned();
+        }
+        let events = validate_stdout(&run_builtin_line(
+            engine,
+            &serde_json::to_vec(&unsupported).unwrap(),
+        ));
+        assert_eq!(events.last().unwrap()["ok"], false);
+        assert_eq!(
+            events.last().unwrap()["error"]["code"],
+            "unsupported_route",
+            "{engine}: {events:?}"
+        );
+
+        if let Request::Convert { input, .. } = &mut request {
+            input.path = workspace
+                .input_dir()
+                .join("missing.input")
+                .display()
+                .to_string();
+        }
+        let events = validate_stdout(&run_builtin_line(
+            engine,
+            &serde_json::to_vec(&request).unwrap(),
+        ));
+        assert_eq!(events.last().unwrap()["ok"], false);
+        assert_eq!(
+            events.last().unwrap()["error"]["code"],
+            "io",
+            "{engine}: {events:?}"
+        );
+    }
 }

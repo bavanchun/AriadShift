@@ -3,6 +3,7 @@
 pub mod html;
 pub mod markdown;
 pub mod sanitize;
+pub mod typst;
 
 use crate::{
     ir::{AssetRef, Block, Document, Inline, ListItem, Metadata, TableCell},
@@ -99,8 +100,10 @@ pub fn strip_html_tags(html: &str) -> String {
         if let Some(tag_name) = special_skip_tag {
             let rest = &html[idx..];
             if let Some(after_close) = rest.strip_prefix("</")
-                && after_close.len() >= tag_name.len()
-                && after_close[..tag_name.len()].eq_ignore_ascii_case(tag_name)
+                && after_close
+                    .as_bytes()
+                    .get(..tag_name.len())
+                    .is_some_and(|prefix| prefix.eq_ignore_ascii_case(tag_name.as_bytes()))
             {
                 let next_b = after_close.as_bytes().get(tag_name.len()).copied();
                 if next_b.is_none()
@@ -142,8 +145,10 @@ pub fn strip_html_tags(html: &str) -> String {
                 chars.next(); // '-'
             } else {
                 let after_open = &rest[1..];
-                if after_open.len() >= 6
-                    && after_open[..6].eq_ignore_ascii_case("script")
+                if after_open
+                    .as_bytes()
+                    .get(..6)
+                    .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"script"))
                     && matches!(
                         after_open.as_bytes().get(6).copied(),
                         None | Some(b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'/')
@@ -155,8 +160,10 @@ pub fn strip_html_tags(html: &str) -> String {
                             break;
                         }
                     }
-                } else if after_open.len() >= 5
-                    && after_open[..5].eq_ignore_ascii_case("style")
+                } else if after_open
+                    .as_bytes()
+                    .get(..5)
+                    .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"style"))
                     && matches!(
                         after_open.as_bytes().get(5).copied(),
                         None | Some(b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'/')

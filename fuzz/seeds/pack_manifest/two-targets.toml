@@ -1,0 +1,45 @@
+schema = "ariad-pack/1"
+name = "docling"
+version = "2.1.0"
+description = "OCR and layout engine"
+license = "MIT AND Apache-2.0"
+requires_ashift = ">=0.2.0, <2.0.0"
+notices = ["licenses/NOTICE.txt", "licenses/THIRD_PARTY.txt"]
+
+[[targets]]
+triple = "aarch64-apple-darwin"
+entrypoint = ["python/bin/python3", "-m", "engine"]
+env = { TESSDATA_PREFIX = "{root}/tessdata" }
+options = { models = "{root}/models", threads = 4, ocr = true, langs = ["vie", "eng"] }
+
+[[targets.components]]
+name = "runtime.tar.zst"
+url = "https://example.invalid/runtime.tar.zst"
+sha256 = "abababababababababababababababababababababababababababababababab"
+size = 1024
+unpack = "tar.zst"
+unpacked_size = 4096
+entries = 3
+
+[[targets.components]]
+name = "models.zip"
+url = "models.zip"
+sha256 = "abababababababababababababababababababababababababababababababab"
+size = 2048
+unpack = "zip"
+dest = "models"
+unpacked_size = 8192
+entries = 2
+
+[[targets]]
+triple = "x86_64-unknown-linux-gnu"
+entrypoint = ["python/bin/python3"]
+
+[[targets.components]]
+name = "runtime.tar.gz"
+url = "runtime.tar.gz"
+sha256 = "abababababababababababababababababababababababababababababababab"
+size = 1024
+unpack = "tar.gz"
+unpacked_size = 4096
+entries = 3

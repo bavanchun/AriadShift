@@ -215,5 +215,5 @@ input_file: fixtures/md/mixed-kitchen-sink.md
     "title": "A Shared Route"
   },
   "provenance": null,
-  "version": "ariad-ir/0"
+  "version": "ariad-ir/1"
 }

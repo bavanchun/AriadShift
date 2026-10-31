@@ -1,0 +1,2535 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AriadShift API",
+    "description": "Convert documents in the AriadShift cloud. Upload a file with one presigned PUT, create a job, follow its events, and download the outputs through short-lived URLs. Inputs and outputs are deleted after the plan's retention period (one hour by default). `/v1` is stable: it changes only in backward-compatible ways, and breaking changes go to a new major version path.",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    },
+    "version": "0.1.0",
+    "x-stability": "stable"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "This deployment"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Liveness: the process serves HTTP.",
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "description": "The process is alive",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Readiness: the database and object storage answer.",
+        "operationId": "readyz",
+        "responses": {
+          "200": {
+            "description": "Ready to serve",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "A dependency is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/blobs/{token}": {
+      "get": {
+        "tags": [
+          "blobs"
+        ],
+        "summary": "Download a file through a presigned URL.",
+        "description": "The URL comes from `GET /v1/jobs/{id}/outputs`. The signed token in the\npath is the only credential.",
+        "operationId": "get_blob",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "Signed token issued by the API",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file",
+            "headers": {
+              "content-length": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "File size in bytes"
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The URL is invalid or has expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The file was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The transfer timed out before response headers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The global transfer budget is busy",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "blobs"
+        ],
+        "summary": "Upload a file through a presigned URL.",
+        "description": "The URL comes from `POST /v1/uploads`; send exactly the declared bytes.\nThe signed token in the path is the only credential.",
+        "operationId": "put_blob",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "Signed token issued by the API",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "The file: exactly the declared size, with the declared SHA-256",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Stored"
+          },
+          "403": {
+            "description": "The URL is invalid or has expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "The transfer timed out or its URL expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body does not match the declared size or SHA-256",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The global transfer budget or upload key is busy",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/capabilities": {
+      "get": {
+        "tags": [
+          "planning"
+        ],
+        "summary": "List formats and conversion edges.",
+        "description": "Only edges whose engines run on this deployment's worker packs are listed.",
+        "operationId": "capabilities",
+        "responses": {
+          "200": {
+            "description": "Formats and edges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List the caller's jobs.",
+        "description": "Returns the jobs of the caller's account, newest first, including failed,\ncanceled and expired jobs whose record still exists. Pages are stable:\njobs created after the first page never shift later pages. Anonymous\njobs are not listed; their ids are their only handle.",
+        "operationId": "list_jobs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Jobs per page, from 1 to 100.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "The previous page's `next_cursor`, to read the page after it.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only jobs with this status.",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/JobStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's jobs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials missing or rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid `limit`, `cursor` or `status`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create a conversion job.",
+        "description": "Plans the route for the upload's format, checks the plan's quotas, and\nqueues the job for the worker pack that runs the route.",
+        "operationId": "create_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Job queued",
+            "headers": {
+              "location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "URL of the job"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The upload is not complete or no longer available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Input exceeds the conversion limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request or unsupported route (`unsupported_route`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited or quota exceeded",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/jobs/{id}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get a job.",
+        "operationId": "get_job",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Delete a job's files now.",
+        "description": "Cancels the job if it is still queued or running, and deletes its input\nupload and outputs at once. Other jobs created from the same upload lose\ntheir input.",
+        "operationId": "delete_job",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Files deleted"
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/jobs/{id}/events": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Follow a job's events.",
+        "description": "A Server-Sent Events stream. Each message's `event` is the kind, `id` is the\nevent id, and `data` is a `JobEvent`. Reconnect with `Last-Event-ID` to\nresume. The stream closes after the job's final event.",
+        "operationId": "job_events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "description": "Resume after this event id",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEvent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/jobs/{id}/outputs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get download URLs for a job's outputs.",
+        "description": "Each URL is valid for five minutes; call again for fresh URLs.",
+        "operationId": "job_outputs",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Output files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outputs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The job has not succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The outputs were deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/limits": {
+      "get": {
+        "tags": [
+          "planning"
+        ],
+        "summary": "Get the caller's plan limits, quotas and retention.",
+        "description": "Lets a client show what it may upload before it uploads. The quotas are\nthe ones `POST /v1/uploads` and `POST /v1/jobs` enforce for this caller:\nper workspace with credentials, per client address without.",
+        "operationId": "get_limits",
+        "responses": {
+          "200": {
+            "description": "The caller's limits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanLimits"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/plan": {
+      "post": {
+        "tags": [
+          "planning"
+        ],
+        "summary": "Plan a conversion without running it.",
+        "description": "Returns the route the planner picks for the deployment's worker packs, its\nbenchmark scores, and up to two alternatives.",
+        "operationId": "plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The planned route",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The upload is not complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request or unsupported route (`unsupported_route`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/uploads": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Start an upload.",
+        "description": "Returns one presigned `PUT` request. Send the file body with the returned\nheaders, then call `complete`. Anonymous callers may need a Turnstile token.",
+        "operationId": "create_upload",
+        "parameters": [
+          {
+            "name": "cf-turnstile-response",
+            "in": "header",
+            "description": "Cloudflare Turnstile token; required for anonymous callers when the deployment enables Turnstile",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Upload created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Turnstile check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File exceeds the plan's input limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited or upload quota exceeded",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/uploads/{id}": {
+      "delete": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Delete an upload that no job uses.",
+        "description": "Deletes the stored file now and retires the upload, erasing its file name,\nfor example when the user cancels before converting. Deleting an upload\nthat is already deleted or expired succeeds again. An upload that feeds a\njob is deleted with its job through `DELETE /v1/jobs/{id}`.",
+        "operationId": "delete_upload",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Upload id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Upload deleted"
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A job uses the upload; delete the job instead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    },
+    "/v1/uploads/{id}/complete": {
+      "post": {
+        "tags": [
+          "uploads"
+        ],
+        "summary": "Complete an upload.",
+        "description": "Checks that the stored file has the declared size and SHA-256 and detects\nits format. A mismatching file is deleted.",
+        "operationId": "complete_upload",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Upload id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upload verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Upload"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credentials rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The file is missing, the upload is no longer live, or another call is verifying it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The file does not match the declared size or hash",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "headers": {
+              "retry-after": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Seconds to wait before retrying; sent with the `rate_limited` code"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal service error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Identity verification is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearer": []
+          },
+          {
+            "api_key": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Capabilities": {
+        "type": "object",
+        "required": [
+          "version",
+          "generated_at",
+          "packs",
+          "formats",
+          "edges"
+        ],
+        "properties": {
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapabilityEdge"
+            },
+            "description": "Edges the deployment can run."
+          },
+          "formats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormatInfo"
+            }
+          },
+          "generated_at": {
+            "type": "string"
+          },
+          "packs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Pack"
+            },
+            "description": "Packs with workers on this deployment."
+          },
+          "version": {
+            "type": "string",
+            "description": "Version of the capabilities registry, for example `ariad-capabilities/0`."
+          }
+        }
+      },
+      "CapabilityEdge": {
+        "type": "object",
+        "description": "One conversion edge an engine provides.",
+        "required": [
+          "from",
+          "to",
+          "engine",
+          "pack",
+          "license"
+        ],
+        "properties": {
+          "engine": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "license": {
+            "type": "string"
+          },
+          "metrics": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EdgeMetrics",
+                "description": "`null` until the benchmark measures the edge."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pack": {
+            "$ref": "#/components/schemas/Pack"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "ConversionLimits": {
+        "type": "object",
+        "description": "Limits of every job of the plan; `null` means no limit.",
+        "required": [
+          "max_input_bytes",
+          "max_pages",
+          "timeout_s",
+          "max_memory_mb"
+        ],
+        "properties": {
+          "max_input_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Largest accepted input file, in bytes.",
+            "minimum": 0
+          },
+          "max_memory_mb": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Memory budget of one job, in MiB.",
+            "minimum": 0
+          },
+          "max_pages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Most pages a paged input may have.",
+            "minimum": 0
+          },
+          "timeout_s": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Longest processing time of one job, in seconds.",
+            "minimum": 0
+          }
+        }
+      },
+      "CreateJobRequest": {
+        "type": "object",
+        "description": "Creates a conversion job.",
+        "required": [
+          "upload_id",
+          "to"
+        ],
+        "properties": {
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "to": {
+            "type": "string",
+            "description": "Target format id or extension.",
+            "example": "docx"
+          },
+          "upload_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A completed upload."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateUploadRequest": {
+        "type": "object",
+        "description": "Starts an upload.",
+        "required": [
+          "filename",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original file name. Used for the output name and title fallback; never logged.",
+            "example": "report.docx",
+            "maxLength": 255
+          },
+          "sha256": {
+            "type": "string",
+            "description": "SHA-256 of the file, lowercase hex.",
+            "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Exact size in bytes.",
+            "example": 48213,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "EdgeMetrics": {
+        "type": "object",
+        "description": "Benchmark measurements of one conversion edge.",
+        "required": [
+          "fidelity",
+          "editability",
+          "p50_ms",
+          "peak_mem_mb",
+          "samples"
+        ],
+        "properties": {
+          "editability": {
+            "type": "number",
+            "format": "double"
+          },
+          "fidelity": {
+            "type": "number",
+            "format": "double"
+          },
+          "p50_ms": {
+            "type": "number",
+            "format": "double"
+          },
+          "peak_mem_mb": {
+            "type": "number",
+            "format": "double"
+          },
+          "samples": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "ErrorBody": {
+        "type": "object",
+        "description": "Body of every error response.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        }
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Stable machine-readable code, for example `not_found` or `limit_exceeded`."
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable explanation. Never contains document content."
+          }
+        }
+      },
+      "FormatInfo": {
+        "type": "object",
+        "description": "A format the service knows.",
+        "required": [
+          "id",
+          "extensions",
+          "media_type"
+        ],
+        "properties": {
+          "extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": "string",
+            "example": "markdown"
+          },
+          "media_type": {
+            "type": "string"
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          }
+        }
+      },
+      "Job": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "upload_id",
+          "from",
+          "to",
+          "profile",
+          "pack",
+          "route",
+          "warnings",
+          "attempts",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "attempts": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Worker attempts so far.",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ErrorDetail",
+                "description": "Set when the job failed."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When inputs and outputs are deleted."
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "from": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pack": {
+            "$ref": "#/components/schemas/Pack"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "route": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteStep"
+            },
+            "description": "Planned route; replaced by the executed route when the job succeeds."
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "to": {
+            "type": "string"
+          },
+          "upload_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobWarning"
+            },
+            "maxItems": 64
+          }
+        }
+      },
+      "JobEvent": {
+        "type": "object",
+        "description": "One entry of a job's event stream (the `data` of an SSE message).",
+        "required": [
+          "id",
+          "job_id",
+          "kind",
+          "data",
+          "created_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "type": "object",
+            "description": "Kind-specific details, for example `{\"stage\": \"write\"}`."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Monotonic event id; also the SSE `id`, usable as `Last-Event-ID`."
+          },
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`queued`, `started`, `progress`, `warning`, `retrying`, `succeeded`, `failed`, `canceled` or `expired`.",
+            "example": "progress"
+          }
+        }
+      },
+      "JobList": {
+        "type": "object",
+        "description": "One page of the caller's jobs, newest first.",
+        "required": [
+          "jobs",
+          "next_cursor"
+        ],
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobListItem"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to read the next page; `null` on the last page."
+          }
+        }
+      },
+      "JobListItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Job"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "filename": {
+                "type": "string",
+                "description": "The input's original file name. Absent once the input is deleted or\nexpired, since the service forgets the name with the file.",
+                "example": "report.docx"
+              }
+            }
+          }
+        ],
+        "description": "A job of the caller's list: every `Job` property plus the input's name."
+      },
+      "JobStatus": {
+        "type": "string",
+        "description": "Lifecycle of a job: `queued → running → succeeded | failed | canceled → expired`.",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "canceled",
+          "expired"
+        ]
+      },
+      "JobWarning": {
+        "type": "object",
+        "description": "A warning reported by the conversion.",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 512
+          }
+        }
+      },
+      "OutputFile": {
+        "type": "object",
+        "description": "A produced file.",
+        "required": [
+          "id",
+          "filename",
+          "format",
+          "media_type",
+          "size",
+          "sha256",
+          "url",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The URL stops working at this time (five minutes after issue)."
+          },
+          "filename": {
+            "type": "string",
+            "example": "report.docx"
+          },
+          "format": {
+            "type": "string",
+            "example": "docx"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "url": {
+            "type": "string",
+            "description": "Presigned download URL."
+          }
+        }
+      },
+      "Outputs": {
+        "type": "object",
+        "required": [
+          "job_id",
+          "outputs"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutputFile"
+            }
+          }
+        }
+      },
+      "Pack": {
+        "type": "string",
+        "description": "A worker image class. Each pack consumes its own queue.",
+        "enum": [
+          "core",
+          "office",
+          "docling"
+        ]
+      },
+      "PlanAlternative": {
+        "type": "object",
+        "required": [
+          "route",
+          "score",
+          "measured",
+          "pack"
+        ],
+        "properties": {
+          "measured": {
+            "type": "boolean"
+          },
+          "pack": {
+            "$ref": "#/components/schemas/Pack"
+          },
+          "route": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteStep"
+            }
+          },
+          "score": {
+            "$ref": "#/components/schemas/RouteScore"
+          }
+        }
+      },
+      "PlanLimits": {
+        "type": "object",
+        "description": "What the caller may convert, for showing limits before an upload.",
+        "required": [
+          "plan",
+          "authenticated",
+          "retention_s",
+          "requests_per_minute",
+          "limits",
+          "quotas"
+        ],
+        "properties": {
+          "authenticated": {
+            "type": "boolean",
+            "description": "Whether the request carried valid credentials."
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ConversionLimits"
+          },
+          "plan": {
+            "type": "string",
+            "description": "Plan name, for example `anonymous` or `free`."
+          },
+          "quotas": {
+            "$ref": "#/components/schemas/Quotas"
+          },
+          "requests_per_minute": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Requests allowed per minute; `null` when unlimited.",
+            "minimum": 0
+          },
+          "retention_s": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How long inputs and outputs are kept, in seconds.",
+            "minimum": 0
+          }
+        }
+      },
+      "PlanRequest": {
+        "type": "object",
+        "description": "Plans a route without converting.",
+        "required": [
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Source format id or extension (`markdown`, `md`, `docx`). Required unless `upload_id` is given.",
+            "example": "md"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "to": {
+            "type": "string",
+            "description": "Target format id or extension.",
+            "example": "docx"
+          },
+          "upload_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "A completed upload whose detected format is the source."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlanResponse": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "profile",
+          "pack",
+          "route",
+          "score",
+          "measured",
+          "alternatives"
+        ],
+        "properties": {
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanAlternative"
+            }
+          },
+          "from": {
+            "type": "string"
+          },
+          "measured": {
+            "type": "boolean",
+            "description": "Whether every step has benchmark measurements."
+          },
+          "pack": {
+            "$ref": "#/components/schemas/Pack",
+            "description": "Worker pack that runs the route."
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "route": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteStep"
+            }
+          },
+          "score": {
+            "$ref": "#/components/schemas/RouteScore"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "PresignedRequest": {
+        "type": "object",
+        "description": "The single request that transfers a file to or from storage.",
+        "required": [
+          "method",
+          "url",
+          "headers",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "headers": {
+            "type": "object",
+            "description": "Headers to send unchanged.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "method": {
+            "type": "string",
+            "description": "HTTP method, `PUT` for uploads.",
+            "example": "PUT"
+          },
+          "url": {
+            "type": "string",
+            "description": "Presigned URL."
+          }
+        }
+      },
+      "Profile": {
+        "type": "string",
+        "description": "Route selection priorities.",
+        "enum": [
+          "editable",
+          "faithful",
+          "fast"
+        ]
+      },
+      "Quota": {
+        "type": "object",
+        "description": "An allowance of the caller's plan and how much of it is used.",
+        "required": [
+          "limit",
+          "used",
+          "remaining"
+        ],
+        "properties": {
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The cap; `null` when the plan sets none.",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "What is left before requests are refused; `null` when unlimited.",
+            "minimum": 0
+          },
+          "used": {
+            "type": "integer",
+            "format": "int64",
+            "description": "What currently counts against the cap.",
+            "minimum": 0
+          }
+        }
+      },
+      "Quotas": {
+        "type": "object",
+        "description": "The caller's quotas. Daily quotas count the last 24 hours.",
+        "required": [
+          "uploads_per_day",
+          "jobs_per_day",
+          "input_bytes_per_day",
+          "pending_uploads",
+          "concurrent_jobs"
+        ],
+        "properties": {
+          "concurrent_jobs": {
+            "$ref": "#/components/schemas/Quota",
+            "description": "Jobs queued or running."
+          },
+          "input_bytes_per_day": {
+            "$ref": "#/components/schemas/Quota",
+            "description": "The larger of the bytes uploaded and the input bytes of jobs created."
+          },
+          "jobs_per_day": {
+            "$ref": "#/components/schemas/Quota",
+            "description": "Jobs created."
+          },
+          "pending_uploads": {
+            "$ref": "#/components/schemas/Quota",
+            "description": "Uploads waiting for their file and `complete` call."
+          },
+          "uploads_per_day": {
+            "$ref": "#/components/schemas/Quota",
+            "description": "Uploads started, including deleted and abandoned ones."
+          }
+        }
+      },
+      "RouteScore": {
+        "type": "object",
+        "description": "Benchmark-derived scores of a route; `null` where unmeasured.",
+        "properties": {
+          "editability": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "estimated_duration_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "fidelity": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "RouteStep": {
+        "type": "object",
+        "description": "One conversion step.",
+        "required": [
+          "from",
+          "to",
+          "engine"
+        ],
+        "properties": {
+          "engine": {
+            "type": "string",
+            "example": "ariad-core"
+          },
+          "from": {
+            "type": "string",
+            "example": "markdown"
+          },
+          "to": {
+            "type": "string",
+            "example": "ariad-ir+json"
+          }
+        }
+      },
+      "Upload": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "filename",
+          "size",
+          "sha256",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the stored file is deleted."
+          },
+          "filename": {
+            "type": "string"
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Detected format registry id, once the upload is complete."
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/UploadStatus"
+          },
+          "upload": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PresignedRequest",
+                "description": "Present while the upload is pending."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "UploadStatus": {
+        "type": "string",
+        "description": "Lifecycle of an upload.",
+        "enum": [
+          "pending",
+          "completed",
+          "deleted",
+          "expired"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "api_key": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "An API key issued by the AriadShift auth service (Better Auth API-key plugin). Disabled, expired or exhausted keys are refused."
+      },
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "A JWT issued by the AriadShift auth service (Better Auth JWT plugin, 15-minute lifetime). The API verifies its signature against the auth service's JWKS, selecting the key by `kid` and accepting only the asymmetric algorithm that key declares, and requires `exp`, `iss`, `aud` and a non-empty `sub` (the user id)."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "uploads",
+      "description": "Send input files"
+    },
+    {
+      "name": "jobs",
+      "description": "Run and follow conversions"
+    },
+    {
+      "name": "planning",
+      "description": "Routes, capabilities and plan limits"
+    },
+    {
+      "name": "blobs",
+      "description": "Presigned file transfers of the local object store"
+    },
+    {
+      "name": "health",
+      "description": "Liveness and readiness"
+    }
+  ]
+}

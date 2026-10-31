@@ -1,10 +1,10 @@
 //! Inspect command: format sniffing, document metrics, counts, and reachable targets.
 
-use std::{collections::BTreeMap, path::Path};
+use std::path::Path;
 
 use ariad_core::{
     format::Format,
-    ir::{Block, Document, Inline, Metadata},
+    ir::{Document, Metadata},
     limits::Limits,
     planner::{self, Profile},
 };
@@ -13,24 +13,61 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    convert::{ConvertError, ConvertWarning, read_archive_to_ir},
+    convert::{ConvertError, ConvertWarning, read_to_ir_with_engine},
+    engines::EngineInvocation,
     workspace::Workspace,
 };
 
 pub use crate::convert::{
     FileClassification, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_NAME_BYTES, classify_file,
 };
+pub use ariad_core::inspect::{DocumentCounts, count_document};
 
-/// Structural block, inline, and word counts for an inspected document.
+/// Page and text-layer facts of an inspected PDF.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DocumentCounts {
-    pub headings: BTreeMap<u8, usize>,
-    pub paragraphs: usize,
-    pub tables: usize,
-    pub images: usize,
-    pub links: usize,
-    pub footnotes: usize,
-    pub words: usize,
+pub struct PdfSummary {
+    /// Number of pages.
+    pub pages: u32,
+    /// Pages with a text layer.
+    pub text_pages: u32,
+    /// Pages without text that show at least one image, typically scans.
+    pub image_only_pages: u32,
+    /// Whether at least one page lacks a text layer, so reading it fully needs OCR.
+    pub needs_ocr: bool,
+    /// Whether the file is encrypted (and opened with the empty user password).
+    pub encrypted: bool,
+    /// The `/Producer` entry of the document information dictionary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<String>,
+}
+
+impl PdfSummary {
+    /// Reads the statistics the PDF engine stores in the IR provenance under `pdf`.
+    #[must_use]
+    pub fn from_document(document: &Document) -> Option<Self> {
+        #[derive(Deserialize)]
+        struct Stats {
+            pages: u32,
+            text_pages: u32,
+            image_only_pages: u32,
+            #[serde(default)]
+            encrypted: bool,
+            #[serde(default)]
+            producer: Option<String>,
+        }
+        let value = document.provenance.as_ref()?.0.get("pdf")?;
+        let stats: Stats = serde_json::from_value(value.clone()).ok()?;
+        Some(Self {
+            pages: stats.pages,
+            text_pages: stats.text_pages,
+            image_only_pages: stats.image_only_pages,
+            needs_ocr: stats.text_pages < stats.pages,
+            encrypted: stats.encrypted,
+            producer: stats
+                .producer
+                .map(|producer| crate::convert::sanitize_identifier(&producer, 256)),
+        })
+    }
 }
 
 /// Result of inspecting a document.
@@ -42,101 +79,10 @@ pub struct InspectOutput {
     pub page_count: Option<u64>,
     pub meta: Option<Metadata>,
     pub counts: Option<DocumentCounts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pdf: Option<PdfSummary>,
     pub warnings: Vec<ConvertWarning>,
     pub reachable: Vec<Format>,
-}
-
-/// Recursively computes structural counts across a document's body and furniture.
-#[must_use]
-pub fn count_document(doc: &Document) -> DocumentCounts {
-    let mut counts = DocumentCounts::default();
-    count_blocks(&doc.body, &mut counts);
-    count_blocks(&doc.furniture, &mut counts);
-    counts
-}
-
-fn count_blocks(blocks: &[Block], counts: &mut DocumentCounts) {
-    for block in blocks {
-        match block {
-            Block::Heading { level, content } => {
-                *counts.headings.entry(*level).or_default() += 1;
-                count_inlines(content, counts);
-            }
-            Block::Paragraph { content } => {
-                counts.paragraphs += 1;
-                count_inlines(content, counts);
-            }
-            Block::Code { text, .. } => {
-                counts.words += text.split_whitespace().count();
-            }
-            Block::Math { .. } => {}
-            Block::Quote { blocks } => {
-                count_blocks(blocks, counts);
-            }
-            Block::PageBreak {} => {}
-            Block::List { items, .. } => {
-                for item in items {
-                    count_blocks(&item.blocks, counts);
-                }
-            }
-            Block::Table {
-                caption,
-                head,
-                body,
-                footnotes,
-                ..
-            } => {
-                counts.tables += 1;
-                if let Some(caption) = caption {
-                    count_inlines(caption, counts);
-                }
-                for row in head.iter().chain(body.iter()) {
-                    for cell in row {
-                        count_blocks(&cell.blocks, counts);
-                    }
-                }
-                count_inlines(footnotes, counts);
-            }
-            Block::Figure { caption, .. } => {
-                counts.images += 1;
-                count_inlines(caption, counts);
-            }
-            Block::Footnote { blocks, .. } => {
-                counts.footnotes += 1;
-                count_blocks(blocks, counts);
-            }
-            Block::Raw { .. } => {}
-        }
-    }
-}
-
-fn count_inlines(inlines: &[Inline], counts: &mut DocumentCounts) {
-    for inline in inlines {
-        match inline {
-            Inline::Text { text } | Inline::Code { text } => {
-                counts.words += text.split_whitespace().count();
-            }
-            Inline::Emph { content }
-            | Inline::Strong { content }
-            | Inline::Strikeout { content }
-            | Inline::Superscript { content }
-            | Inline::Subscript { content } => {
-                count_inlines(content, counts);
-            }
-            Inline::Link { content, .. } => {
-                counts.links += 1;
-                count_inlines(content, counts);
-            }
-            Inline::Image { .. } => {
-                counts.images += 1;
-            }
-            Inline::FootnoteRef { .. } => {}
-            Inline::SoftBreak {}
-            | Inline::LineBreak {}
-            | Inline::Math { .. }
-            | Inline::Raw { .. } => {}
-        }
-    }
 }
 
 /// Returns the user-facing format targets reachable from `from`.
@@ -144,7 +90,7 @@ fn count_inlines(inlines: &[Inline], counts: &mut DocumentCounts) {
 pub fn reachable_from(from: Format, caps: &planner::Capabilities) -> Vec<Format> {
     let registered = caps.registered_engines();
     let mut targets = planner::reachable_formats(caps, from, Profile::Editable, &registered);
-    targets.retain(|&f| f != Format::AriadIrJson && f != Format::PandocJson && f != from);
+    targets.retain(|&f| f.is_user_facing() && f != from);
     targets.sort_by_key(|f| f.id());
     targets.dedup();
     targets
@@ -179,22 +125,6 @@ pub fn inspect(
 
     let reachable = reachable_from(format, caps);
 
-    if format == Format::Pdf {
-        warnings.push(ConvertWarning {
-            code: "engine_missing".to_owned(),
-            message: "requires the docling engine (roadmap 1b)".to_owned(),
-        });
-        return Ok(InspectOutput {
-            format,
-            bytes: classification.bytes,
-            page_count: None,
-            meta: None,
-            counts: None,
-            warnings,
-            reachable,
-        });
-    }
-
     if limits
         .max_input_bytes
         .is_some_and(|max| classification.bytes > max)
@@ -202,8 +132,30 @@ pub fn inspect(
         return Err(ConvertError::LimitExceeded);
     }
 
-    if format == Format::Docx || format == Format::Epub {
+    if format.is_zip_container() {
         crate::archive::preflight_archive(path, &limits)?;
+    }
+
+    // Formats without a structural reader in the host report their kind, size and routes only.
+    if !matches!(
+        format,
+        Format::Markdown
+            | Format::Html
+            | Format::Docx
+            | Format::Epub
+            | Format::Pdf
+            | Format::DoclingJson
+    ) {
+        return Ok(InspectOutput {
+            format,
+            bytes: classification.bytes,
+            page_count: None,
+            meta: None,
+            counts: None,
+            pdf: None,
+            warnings,
+            reachable,
+        });
     }
 
     if classification.bytes > crate::convert::ANALYSIS_MAX_BYTES {
@@ -220,51 +172,51 @@ pub fn inspect(
             page_count: None,
             meta: None,
             counts: None,
+            pdf: None,
             warnings,
             reachable,
         });
     }
 
     let document = match format {
+        Format::DoclingJson => {
+            let read = crate::convert::read_docling_to_ir(path, &limits)?;
+            warnings.extend(read.warnings);
+            read.document
+        }
+
         Format::Markdown => {
-            let res = crate::convert::read_document_to_ir(
-                path,
-                crate::convert::DocumentFormat::Markdown,
-                &limits,
-            )?;
+            let res = crate::convert::read_document_to_ir(path, Format::Markdown, &limits)?;
             warnings.extend(res.warnings);
             res.document
         }
         Format::Html => {
-            let res = crate::convert::read_document_to_ir(
-                path,
-                crate::convert::DocumentFormat::Html,
-                &limits,
-            )?;
+            let res = crate::convert::read_document_to_ir(path, Format::Html, &limits)?;
             warnings.extend(res.warnings);
             res.document
         }
-        Format::Docx | Format::Epub => {
-            let format_str = if format == Format::Docx {
-                "docx"
+        Format::Docx | Format::Epub | Format::Pdf => {
+            let engine = if format == Format::Pdf {
+                crate::engines::PDF.id
             } else {
-                "epub"
+                crate::engines::PANDOC.id
             };
             let default_exe = std::env::current_exe().map_err(|_| ConvertError::Failed)?;
-            let engine = engine_program.unwrap_or(&default_exe);
+            let program = engine_program.unwrap_or(&default_exe);
             let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
-            let res = read_archive_to_ir(
+            let res = read_to_ir_with_engine(
                 path,
-                format_str,
+                format,
+                engine,
                 &mut workspace,
                 &limits,
-                engine,
+                &EngineInvocation::new(program),
                 cancel.clone(),
             );
             let _ = workspace.close();
-            let archive_out = res?;
-            warnings.extend(archive_out.warnings);
-            archive_out.document
+            let read = res?;
+            warnings.extend(read.warnings);
+            read.document
         }
         _ => {
             return Err(ConvertError::UnsupportedRoute {
@@ -274,14 +226,19 @@ pub fn inspect(
     };
 
     let counts = count_document(&document);
+    let pdf = (format == Format::Pdf)
+        .then(|| PdfSummary::from_document(&document))
+        .flatten();
+    let page_count = pdf.as_ref().map(|summary| u64::from(summary.pages));
     let meta = Some(document.meta);
 
     Ok(InspectOutput {
         format,
         bytes: classification.bytes,
-        page_count: None,
+        page_count,
         meta,
         counts: Some(counts),
+        pdf,
         warnings,
         reachable,
     })

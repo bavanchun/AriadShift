@@ -1,0 +1,9 @@
+# Engine packs that `ashift engines install <name>` knows by name.
+# `manifest` is a URL template: `{name}` and `{version}` are substituted.
+schema = "ariad-pack-index/1"
+
+[[packs]]
+name = "docling"
+version = "0.2.0"
+description = "Docling: PDF, scanned documents, Office files and images, with OCR"
+manifest = "https://github.com/bavanchun/AriadShift/releases/download/pack-{name}-v{version}/pack.toml"

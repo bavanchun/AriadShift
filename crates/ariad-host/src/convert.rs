@@ -1,3 +1,6 @@
+pub mod isolated;
+pub(crate) mod routing;
+
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -9,9 +12,11 @@ use std::{
 
 pub use ariad_core::planner::Profile;
 use ariad_core::{
+    docling,
     format::Format,
+    ir::Document,
     limits::Limits,
-    planner::{self, Plan, PlanError},
+    planner::{self, Plan, PlanError, PlanStep},
     protocol::{ErrorCode, Event, Input, Output, PROTOCOL, Request},
     reader::{html as reader_html, markdown as reader_markdown},
     warning::Warning,
@@ -24,129 +29,49 @@ use uuid::Uuid;
 
 use crate::{
     archive::{self, ArchiveError},
-    assets, engines, package_meta,
-    runner::{self, RunError},
+    assets::{self, AssetBase},
+    engines::{self, EngineInvocation, IN_PROCESS_ENGINE},
+    package_meta,
+    runner::{self, EngineCommand, RunError},
+    session::{Lease, SessionPool},
     workspace::{Workspace, WorkspaceError},
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ReaderEdge {
-    NativeMarkdown,
-    NativeHtml,
-    PandocDocx,
-    PandocEpub,
+/// Where a conversion gets its engine processes from.
+#[derive(Clone, Copy)]
+enum Engines<'pool> {
+    /// A fresh process per engine job.
+    OneShot,
+    /// Warm sessions from a pool for engines that support them.
+    Pool(&'pool SessionPool),
 }
 
-impl ReaderEdge {
-    /// All reader edges supported by the host executor.
-    pub const ALL: &'static [Self] = &[
-        Self::NativeMarkdown,
-        Self::NativeHtml,
-        Self::PandocDocx,
-        Self::PandocEpub,
-    ];
-
-    /// The format transformation and engine capability represented by this edge.
-    #[must_use]
-    pub const fn capability(self) -> (Format, Format, &'static str) {
+impl<'pool> Engines<'pool> {
+    fn lease(
+        self,
+        command: EngineCommand,
+        cancel: &CancellationToken,
+    ) -> Result<Lease<'pool>, ConvertError> {
         match self {
-            Self::NativeMarkdown => (
-                Format::Markdown,
-                Format::AriadIrJson,
-                engines::IN_PROCESS_ENGINE,
-            ),
-            Self::NativeHtml => (
-                Format::Html,
-                Format::AriadIrJson,
-                engines::IN_PROCESS_ENGINE,
-            ),
-            Self::PandocDocx => (Format::Docx, Format::AriadIrJson, "pandoc"),
-            Self::PandocEpub => (Format::Epub, Format::AriadIrJson, "pandoc"),
+            Self::OneShot => Ok(Lease::one_shot(command)),
+            Self::Pool(pool) => pool.lease(&command, cancel.clone()).map_err(map_run_error),
         }
     }
-
-    /// Finds the reader edge corresponding to a specific format pair and engine.
-    #[must_use]
-    pub fn for_capability(from: Format, to: Format, engine: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|e| {
-            let (f, t, eng) = e.capability();
-            f == from && t == to && eng == engine
-        })
-    }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WriterEdge {
-    NativeMarkdown,
-    NativeHtml,
-    PandocDocx,
-    PandocEpub,
-}
-
-impl WriterEdge {
-    /// All writer edges supported by the host executor.
-    pub const ALL: &'static [Self] = &[
-        Self::NativeMarkdown,
-        Self::NativeHtml,
-        Self::PandocDocx,
-        Self::PandocEpub,
-    ];
-
-    /// The format transformation and engine capability represented by this edge.
-    #[must_use]
-    pub const fn capability(self) -> (Format, Format, &'static str) {
-        match self {
-            Self::NativeMarkdown => (
-                Format::AriadIrJson,
-                Format::Markdown,
-                engines::IN_PROCESS_ENGINE,
-            ),
-            Self::NativeHtml => (
-                Format::AriadIrJson,
-                Format::Html,
-                engines::IN_PROCESS_ENGINE,
-            ),
-            Self::PandocDocx => (Format::AriadIrJson, Format::Docx, "pandoc"),
-            Self::PandocEpub => (Format::AriadIrJson, Format::Epub, "pandoc"),
-        }
-    }
-
-    /// Finds the writer edge corresponding to a specific format pair and engine.
-    #[must_use]
-    pub fn for_capability(from: Format, to: Format, engine: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|e| {
-            let (f, t, eng) = e.capability();
-            f == from && t == to && eng == engine
-        })
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// A planner route the host can execute: one or more steps from the input to the output format.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Route {
-    pub input_format: DocumentFormat,
-    pub output_format: DocumentFormat,
-    pub reader: ReaderEdge,
-    pub writer: WriterEdge,
+    pub input_format: Format,
+    pub output_format: Format,
+    pub steps: Vec<PlanStep>,
 }
 
 impl Route {
-    /// Returns the sequence of planner steps corresponding to this route.
+    /// Returns the sequence of planner steps of this route.
     #[must_use]
-    pub fn steps(&self) -> Vec<ariad_core::planner::PlanStep> {
-        let (r_from, r_to, r_eng) = self.reader.capability();
-        let (w_from, w_to, w_eng) = self.writer.capability();
-        vec![
-            ariad_core::planner::PlanStep {
-                from: r_from,
-                to: r_to,
-                engine: r_eng.to_owned(),
-            },
-            ariad_core::planner::PlanStep {
-                from: w_from,
-                to: w_to,
-                engine: w_eng.to_owned(),
-            },
-        ]
+    pub fn steps(&self) -> Vec<PlanStep> {
+        self.steps.clone()
     }
 }
 
@@ -155,142 +80,57 @@ impl std::fmt::Display for Route {
         write!(
             f,
             "{} -> {}",
-            self.input_format.as_str(),
-            self.output_format.as_str()
+            self.input_format.user_name(),
+            self.output_format.user_name()
         )
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum DocumentFormat {
-    Markdown,
-    Html,
-    Docx,
-    Epub,
-}
-
-impl DocumentFormat {
-    #[must_use]
-    pub fn from_extension(ext: &str) -> Option<Self> {
-        if ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown") {
-            Some(Self::Markdown)
-        } else if ext.eq_ignore_ascii_case("html") || ext.eq_ignore_ascii_case("htm") {
-            Some(Self::Html)
-        } else if ext.eq_ignore_ascii_case("docx") {
-            Some(Self::Docx)
-        } else if ext.eq_ignore_ascii_case("epub") {
-            Some(Self::Epub)
-        } else {
-            None
-        }
-    }
-
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        Self::from_extension(s)
-    }
-
-    #[must_use]
-    pub const fn default_extension(self) -> &'static str {
-        match self {
-            Self::Markdown => "md",
-            Self::Html => "html",
-            Self::Docx => "docx",
-            Self::Epub => "epub",
-        }
-    }
-
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Markdown => "md",
-            Self::Html => "html",
-            Self::Docx => "docx",
-            Self::Epub => "epub",
-        }
-    }
-}
-
-impl From<DocumentFormat> for Format {
-    fn from(doc_fmt: DocumentFormat) -> Self {
-        match doc_fmt {
-            DocumentFormat::Markdown => Self::Markdown,
-            DocumentFormat::Html => Self::Html,
-            DocumentFormat::Docx => Self::Docx,
-            DocumentFormat::Epub => Self::Epub,
-        }
-    }
-}
-
-impl TryFrom<Format> for DocumentFormat {
-    type Error = ();
-
-    fn try_from(fmt: Format) -> Result<Self, Self::Error> {
-        match fmt {
-            Format::Markdown => Ok(Self::Markdown),
-            Format::Html => Ok(Self::Html),
-            Format::Docx => Ok(Self::Docx),
-            Format::Epub => Ok(Self::Epub),
-            _ => Err(()),
-        }
-    }
-}
-
+/// Builds an executable route from a plan, or `None` when a step has no executor or the steps do
+/// not chain.
 #[must_use]
 pub fn route_from_plan(plan: &Plan) -> Option<Route> {
-    if plan.steps.len() != 2 {
-        return None;
-    }
-    let reader_step = &plan.steps[0];
-    let writer_step = &plan.steps[1];
-
-    if reader_step.to != Format::AriadIrJson || writer_step.from != Format::AriadIrJson {
-        return None;
-    }
-
-    let input_format = DocumentFormat::try_from(reader_step.from).ok()?;
-    let output_format = DocumentFormat::try_from(writer_step.to).ok()?;
-
-    let reader = ReaderEdge::for_capability(reader_step.from, reader_step.to, &reader_step.engine)?;
-    let writer = WriterEdge::for_capability(writer_step.from, writer_step.to, &writer_step.engine)?;
-
-    Some(Route {
-        input_format,
-        output_format,
-        reader,
-        writer,
+    let first = plan.steps.first()?;
+    let last = plan.steps.last()?;
+    let chained = plan.steps.windows(2).all(|pair| pair[0].to == pair[1].from);
+    let executable = plan
+        .steps
+        .iter()
+        .all(|step| engines::is_executable(step.from, step.to, &step.engine));
+    (chained && executable).then(|| Route {
+        input_format: first.from,
+        output_format: last.to,
+        steps: plan.steps.clone(),
     })
 }
 
 /// Returns the capability edges supported by the host executor.
 #[must_use]
 pub fn executor_edges() -> Vec<(Format, Format, &'static str)> {
-    let mut edges = Vec::with_capacity(ReaderEdge::ALL.len() + WriterEdge::ALL.len());
-    for r in ReaderEdge::ALL {
-        edges.push(r.capability());
-    }
-    for w in WriterEdge::ALL {
-        edges.push(w.capability());
-    }
-    edges
+    let native = engines::NATIVE_ROUTES
+        .iter()
+        .map(|&(from, to)| (from, to, IN_PROCESS_ENGINE));
+    let external = engines::REGISTRY
+        .iter()
+        .flat_map(|spec| spec.routes.iter().map(|&(from, to)| (from, to, spec.id)));
+    native.chain(external).collect()
 }
 
+/// Detects a user-facing format from a path's extension.
 #[must_use]
-pub fn detect_format_from_path(path: &Path) -> Option<DocumentFormat> {
+pub fn detect_format_from_path(path: &Path) -> Option<Format> {
     let ext = path.extension()?.to_str()?;
-    DocumentFormat::from_extension(ext)
+    Format::from_extension(ext)
 }
 
 #[must_use]
-pub fn is_supported_route(input: DocumentFormat, output: DocumentFormat) -> bool {
+pub fn is_supported_route(input: Format, output: Format) -> bool {
     if input == output {
         return false;
     }
     let caps = planner::embedded();
-    let from = Format::from(input);
-    let to = Format::from(output);
     let engines = caps.registered_engines();
-    planner::plan(caps, from, to, Profile::Editable, &engines).is_ok()
+    planner::plan(caps, input, output, Profile::Editable, &engines).is_ok()
 }
 
 #[must_use]
@@ -318,7 +158,7 @@ fn stem_without_ir(path: &Path) -> Option<String> {
     Some(stem.strip_suffix(".ir").unwrap_or(stem).to_owned())
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ConvertRequest {
     pub input: PathBuf,
     pub output: PathBuf,
@@ -328,6 +168,9 @@ pub struct ConvertRequest {
     pub engine_program: PathBuf,
     pub title_fallback: Option<String>,
     pub asset_base_dir: Option<PathBuf>,
+    /// Optional engine that must read the input; later mapping and writing remain automatic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reader_engine: Option<String>,
 }
 
 impl ConvertRequest {
@@ -347,6 +190,7 @@ impl ConvertRequest {
             engine_program: engine_program.into(),
             title_fallback: None,
             asset_base_dir: None,
+            reader_engine: None,
         }
     }
 }
@@ -357,10 +201,10 @@ pub struct ConvertWarning {
     pub message: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConvertReport {
     pub output: PathBuf,
-    pub route: Vec<ariad_core::planner::PlanStep>,
+    pub route: Vec<PlanStep>,
     pub warnings: Vec<ConvertWarning>,
     pub elapsed: Duration,
     pub output_bytes: u64,
@@ -371,7 +215,7 @@ pub struct ConvertReport {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ConvertOutput {
     pub output: String,
-    pub route: Vec<ariad_core::planner::PlanStep>,
+    pub route: Vec<PlanStep>,
     pub warnings: Vec<ConvertWarning>,
     pub elapsed_ms: u64,
 }
@@ -387,14 +231,30 @@ impl From<&ConvertReport> for ConvertOutput {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ConvertError {
-    UnsupportedRoute { detail: Option<String> },
+    UnsupportedRoute {
+        detail: Option<String>,
+    },
     DestinationSameAsInput,
     InputIo,
     OutputIo,
     LimitExceeded,
+    /// The engine process tree exceeded `limits.max_memory_mb`.
+    MemoryLimitExceeded {
+        limit_mb: u32,
+    },
+    /// Required sandbox mode could not isolate the engine.
+    SandboxUnavailable(String),
+    /// Pandoc is missing or has an unsupported version.
     ToolMissing,
+    DoclingMissing,
+    DoclingToolMissing,
+    /// Another engine's tool is missing or has an unsupported version.
+    EngineMissing {
+        engine: String,
+        hint: String,
+    },
     DestinationExists,
     Interrupted,
     UnsupportedIrVersion,
@@ -415,10 +275,28 @@ impl std::fmt::Display for ConvertError {
             Self::InputIo => write!(f, "the input file could not be read"),
             Self::OutputIo => write!(f, "could not write to stdout"),
             Self::LimitExceeded => write!(f, "conversion limit exceeded"),
+            Self::MemoryLimitExceeded { limit_mb } => write!(
+                f,
+                "conversion limit exceeded: the engine used more than max_memory_mb ({limit_mb} MB)"
+            ),
+            Self::SandboxUnavailable(detail) => {
+                write!(f, "the engine sandbox is unavailable: {detail}")
+            }
+            Self::DoclingMissing => write!(
+                f,
+                "the docling engine is not installed; run `ashift engines install docling` or set ASHIFT_DOCLING_ENGINE for development"
+            ),
+            Self::DoclingToolMissing => write!(
+                f,
+                "the docling engine is missing Tesseract 5 or its models for this document; run `ashift doctor` for details"
+            ),
             Self::ToolMissing => write!(
                 f,
                 "Pandoc is missing or unsupported. Run `just pandoc` or set ASHIFT_PANDOC."
             ),
+            Self::EngineMissing { engine, hint } => {
+                write!(f, "the {engine} engine is missing or unsupported; {hint}")
+            }
             Self::DestinationExists => {
                 write!(
                     f,
@@ -456,8 +334,12 @@ impl ConvertError {
         match self {
             Self::DestinationSameAsInput => 2,
             Self::UnsupportedRoute { .. } => 3,
-            Self::LimitExceeded => 4,
-            Self::ToolMissing => 5,
+            Self::LimitExceeded | Self::MemoryLimitExceeded { .. } => 4,
+            Self::ToolMissing
+            | Self::DoclingMissing
+            | Self::DoclingToolMissing
+            | Self::EngineMissing { .. }
+            | Self::SandboxUnavailable(_) => 5,
             Self::DestinationExists => 6,
             Self::Interrupted => 130,
             Self::InputIo
@@ -474,8 +356,12 @@ impl ConvertError {
         match self {
             Self::DestinationSameAsInput => "destination_same_as_input",
             Self::UnsupportedRoute { .. } => "unsupported_route",
-            Self::LimitExceeded => "limit_exceeded",
-            Self::ToolMissing => "tool_missing",
+            Self::LimitExceeded | Self::MemoryLimitExceeded { .. } => "limit_exceeded",
+            Self::SandboxUnavailable(_) => "sandbox_unavailable",
+            Self::ToolMissing
+            | Self::DoclingMissing
+            | Self::DoclingToolMissing
+            | Self::EngineMissing { .. } => "tool_missing",
             Self::DestinationExists => "destination_exists",
             Self::Interrupted => "interrupted",
             Self::InputIo => "input_io",
@@ -485,14 +371,29 @@ impl ConvertError {
             Self::Failed => "failed",
         }
     }
+
+    /// The error reported when an engine's tool is unavailable.
+    #[must_use]
+    pub fn missing_engine(engine: &str) -> Self {
+        if engine == engines::docling::ENGINE_ID {
+            return Self::DoclingMissing;
+        }
+        match engines::spec(engine) {
+            Some(spec) if spec.id != engines::PANDOC.id => Self::EngineMissing {
+                engine: spec.id.to_owned(),
+                hint: spec.install_hint.to_owned(),
+            },
+            _ => Self::ToolMissing,
+        }
+    }
 }
 
 pub fn reachable_targets_detail(from_str: &str, reachable: &[Format]) -> String {
     let mut sorted_targets: Vec<&'static str> = reachable
         .iter()
         .copied()
-        .filter(|&f| f != Format::AriadIrJson)
-        .map(|f| DocumentFormat::try_from(f).map_or(f.id(), DocumentFormat::as_str))
+        .filter(|f| f.is_user_facing())
+        .map(Format::user_name)
         .collect();
     sorted_targets.sort_unstable();
     sorted_targets.dedup();
@@ -512,6 +413,8 @@ pub enum ConvertEvent {
 }
 
 /// Converts a supported input document with custom engine args and limits.
+///
+/// Non-empty `engine_args` replace `__engine <id>` for every out-of-process engine.
 #[doc(hidden)]
 #[allow(clippy::too_many_arguments)]
 pub fn convert_custom<F>(
@@ -537,8 +440,23 @@ where
         engine_program: engine_program.to_path_buf(),
         title_fallback: None,
         asset_base_dir: None,
+        reader_engine: None,
     };
-    convert_executor(&request, None, engine_args, limits, cancel, on_event)
+    let invocation = if engine_args.is_empty() {
+        EngineInvocation::new(engine_program)
+    } else {
+        EngineInvocation::with_args(engine_program, engine_args)
+    };
+    convert_executor(
+        &request,
+        None,
+        &invocation,
+        None,
+        limits,
+        Engines::OneShot,
+        cancel,
+        on_event,
+    )
 }
 
 /// Converts a supported document into the requested target format through the route executor.
@@ -550,8 +468,66 @@ pub fn convert<F>(
 where
     F: FnMut(ConvertEvent),
 {
-    let args = [OsString::from("__engine"), OsString::from("pandoc")];
-    convert_executor(request, None, &args, Limits::local(), cancel, on_event)
+    let invocation = EngineInvocation::new(&request.engine_program);
+    convert_executor(
+        request,
+        None,
+        &invocation,
+        None,
+        Limits::local(),
+        Engines::OneShot,
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts like [`convert`], taking engine processes from `pool` so engines that support
+/// sessions stay warm across calls.
+pub fn convert_in<F>(
+    pool: &SessionPool,
+    request: &ConvertRequest,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let invocation = EngineInvocation::new(&request.engine_program);
+    convert_executor(
+        request,
+        None,
+        &invocation,
+        None,
+        Limits::local(),
+        Engines::Pool(pool),
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts under the cloud job's explicit resource limits.
+pub fn convert_with_limits<F>(
+    request: &ConvertRequest,
+    limits: Limits,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    if limits.validate().is_err() {
+        return Err(ConvertError::LimitExceeded);
+    }
+    convert_executor(
+        request,
+        None,
+        &EngineInvocation::new(&request.engine_program),
+        None,
+        limits,
+        Engines::OneShot,
+        cancel,
+        on_event,
+    )
 }
 
 /// Converts a supported document into the requested target format using capability-based promotion.
@@ -565,19 +541,89 @@ pub fn convert_confined<F>(
 where
     F: FnMut(ConvertEvent),
 {
-    let args = [OsString::from("__engine"), OsString::from("pandoc")];
+    let invocation = EngineInvocation::new(&request.engine_program);
     convert_executor(
         request,
-        Some((destination_parent, file_name)),
-        &args,
+        Some(Confinement {
+            destination_parent,
+            file_name,
+            asset_base: None,
+        }),
+        &invocation,
+        None,
         Limits::local(),
+        Engines::OneShot,
         cancel,
         on_event,
     )
 }
 
-/// Maximum input bytes allowed for document inspection and structural analysis (32 MiB).
-pub const ANALYSIS_MAX_BYTES: u64 = 32 * 1024 * 1024;
+/// Converts like [`convert_confined`], taking engine processes from `pool`.
+///
+/// Retains the original image resolution policy and call signature. Call
+/// [`convert_confined_assets_in`] to bind image reads to a confined directory handle.
+pub fn convert_confined_in<F>(
+    pool: &SessionPool,
+    request: &ConvertRequest,
+    destination_parent: &cap_std::fs::Dir,
+    file_name: &Path,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let invocation = EngineInvocation::new(&request.engine_program);
+    convert_executor(
+        request,
+        Some(Confinement {
+            destination_parent,
+            file_name,
+            asset_base: None,
+        }),
+        &invocation,
+        None,
+        Limits::local(),
+        Engines::Pool(pool),
+        cancel,
+        on_event,
+    )
+}
+
+/// Converts like [`convert_confined`], taking engine processes from `pool`.
+///
+/// Images referenced by a Markdown or HTML input resolve beneath `asset_base`, never through
+/// `request.asset_base_dir` or the input's path, so they stay within the authorized directory.
+pub fn convert_confined_assets_in<F>(
+    pool: &SessionPool,
+    request: &ConvertRequest,
+    destination_parent: &cap_std::fs::Dir,
+    file_name: &Path,
+    asset_base: &AssetBase,
+    cancel: CancellationToken,
+    on_event: F,
+) -> Result<ConvertReport, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let invocation = EngineInvocation::new(&request.engine_program);
+    convert_executor(
+        request,
+        Some(Confinement {
+            destination_parent,
+            file_name,
+            asset_base: Some(asset_base),
+        }),
+        &invocation,
+        None,
+        Limits::local(),
+        Engines::Pool(pool),
+        cancel,
+        on_event,
+    )
+}
+
+pub use ariad_core::inspect::ANALYSIS_MAX_BYTES;
 
 /// Maximum input bytes for parsing document body in plan summary (4 MiB).
 pub const PLAN_SUMMARY_MAX_BYTES: u64 = 4 * 1024 * 1024;
@@ -609,13 +655,17 @@ pub fn classify_file(path: &Path) -> Result<FileClassification, std::io::Error> 
 
     let ext = path.extension().and_then(|e| e.to_str());
 
-    let zip_entries: Option<Vec<String>> = if prefix.starts_with(b"PK\x03\x04") {
+    let container_entries: Option<Vec<String>> = if prefix
+        .starts_with(ariad_core::format::ZIP_MAGIC)
+    {
         crate::archive::read_zip_entry_names(&mut file, MAX_ZIP_ENTRIES, MAX_ZIP_ENTRY_NAME_BYTES)
+    } else if prefix.starts_with(ariad_core::format::OLE_MAGIC) {
+        crate::archive::read_cfb_entry_names(&mut file)
     } else {
         None
     };
 
-    let entry_refs: Option<Vec<&str>> = zip_entries
+    let entry_refs: Option<Vec<&str>> = container_entries
         .as_ref()
         .map(|entries| entries.iter().map(|s| s.as_str()).collect());
 
@@ -745,12 +795,12 @@ pub struct ReadDocumentResult {
 /// using strict bounds and UTF-8 verification.
 pub fn read_document_to_ir(
     path: &Path,
-    format: DocumentFormat,
+    format: Format,
     limits: &Limits,
 ) -> Result<ReadDocumentResult, ConvertError> {
     let mut warnings = Vec::new();
     let document = match format {
-        DocumentFormat::Markdown => {
+        Format::Markdown => {
             let bytes = read_bounded_file(path, limits.max_input_bytes)?;
             let text = String::from_utf8(bytes).map_err(|_| ConvertError::InputIo)?;
             let parsed = reader_markdown::read(&text, limits).map_err(|err| match err {
@@ -764,7 +814,7 @@ pub fn read_document_to_ir(
             }
             parsed.document
         }
-        DocumentFormat::Html => {
+        Format::Html => {
             let bytes = read_bounded_file(path, limits.max_input_bytes)?;
             let parsed = reader_html::read(&bytes, limits).map_err(|err| match err {
                 reader_html::ReadError::NestingTooDeep { .. }
@@ -782,7 +832,7 @@ pub fn read_document_to_ir(
             return Err(ConvertError::UnsupportedRoute {
                 detail: Some(format!(
                     "cannot read {} directly to IR in-process",
-                    format.as_str()
+                    format.user_name()
                 )),
             });
         }
@@ -798,15 +848,417 @@ pub fn sanitize_identifier(s: &str, max_len: usize) -> String {
         .collect()
 }
 
-/// Converts a supported input document with custom engine args and limits for an explicit Route.
-pub(crate) fn convert_for_route<F>(
+/// Where the document lives between two route steps.
+enum Stage {
+    /// The user's input file, not yet copied anywhere.
+    Source,
+    /// A file an earlier step produced, kept alive with the workspace that holds it.
+    File {
+        workspace: Box<Workspace>,
+        path: PathBuf,
+    },
+    /// An IR document in memory.
+    Ir(Box<Document>),
+}
+
+/// Capability handles that tie a confined conversion's reads and writes to directories that
+/// were authorized before it started.
+#[derive(Clone, Copy)]
+struct Confinement<'a> {
+    destination_parent: &'a cap_std::fs::Dir,
+    file_name: &'a Path,
+    /// Base for images referenced by the source document; `None` resolves them by path.
+    asset_base: Option<&'a AssetBase>,
+}
+
+/// State shared by the steps of one route execution.
+struct RouteRun<'a, F> {
+    request: &'a ConvertRequest,
+    asset_base: Option<&'a AssetBase>,
+    invocation: &'a EngineInvocation<'a>,
+    engines: Engines<'a>,
+    limits: &'a Limits,
+    cancel: &'a CancellationToken,
+    warnings: Vec<ConvertWarning>,
+    on_event: F,
+}
+
+impl<F> RouteRun<'_, F>
+where
+    F: FnMut(ConvertEvent),
+{
+    fn title_fallback(&self) -> String {
+        self.request
+            .title_fallback
+            .clone()
+            .or_else(|| stem_without_ir(&self.request.input))
+            .unwrap_or_else(|| "Untitled".to_owned())
+    }
+
+    fn step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
+        if self.cancel.is_cancelled() {
+            return Err(ConvertError::Interrupted);
+        }
+        let stage = if step.from == Format::AriadIrJson {
+            self.load_ir(stage)?
+        } else {
+            stage
+        };
+        if step.engine == IN_PROCESS_ENGINE {
+            self.native_step(stage, step)
+        } else {
+            self.engine_step(stage, step)
+        }
+    }
+
+    fn load_ir(&self, stage: Stage) -> Result<Stage, ConvertError> {
+        let path = match &stage {
+            Stage::Ir(_) => return Ok(stage),
+            Stage::Source => &self.request.input,
+            Stage::File { path, .. } => path,
+        };
+        let bytes = read_bounded_file(path, Some(self.limits.max_ir_json_bytes))?;
+        let document =
+            crate::ir_io::read_versioned(&bytes, self.limits).map_err(|err| match err {
+                error if error.is_limit_exceeded() => ConvertError::LimitExceeded,
+                crate::ir_io::ReadError::UnsupportedVersion => ConvertError::UnsupportedIrVersion,
+                crate::ir_io::ReadError::Io(_) => ConvertError::InputIo,
+                crate::ir_io::ReadError::Json(_)
+                | crate::ir_io::ReadError::Validation(_)
+                | crate::ir_io::ReadError::ByteLimitExceeded { .. }
+                | crate::ir_io::ReadError::DepthExceeded(_)
+                | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::Failed,
+            })?;
+        Ok(Stage::Ir(Box::new(document)))
+    }
+
+    fn native_step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
+        match (step.from, step.to) {
+            (Format::DoclingJson, Format::AriadIrJson) => {
+                let read = match &stage {
+                    Stage::Source => read_docling_to_ir(&self.request.input, self.limits)?,
+                    Stage::File { path, .. } => {
+                        read_docling_with_cap(path, self.limits, self.limits.max_ir_json_bytes)?
+                    }
+                    Stage::Ir(_) => return Err(ConvertError::Failed),
+                };
+                self.warnings.extend(read.warnings);
+                Ok(Stage::Ir(Box::new(read.document)))
+            }
+
+            (Format::Markdown | Format::Html, Format::AriadIrJson) => {
+                let (path, base_dir) = match &stage {
+                    Stage::Source => (
+                        self.request.input.as_path(),
+                        self.request
+                            .asset_base_dir
+                            .as_deref()
+                            .or_else(|| self.request.input.parent())
+                            .unwrap_or_else(|| Path::new(".")),
+                    ),
+                    Stage::File { path, .. } => (
+                        path.as_path(),
+                        path.parent().unwrap_or_else(|| Path::new(".")),
+                    ),
+                    Stage::Ir(_) => return Err(ConvertError::Failed),
+                };
+                let confined_base = if matches!(stage, Stage::Source) {
+                    self.asset_base
+                } else {
+                    None
+                };
+                let read = read_document_to_ir(path, step.from, self.limits)?;
+                self.warnings.extend(read.warnings);
+                let mut document = read.document;
+                if self.cancel.is_cancelled() {
+                    return Err(ConvertError::Interrupted);
+                }
+                // A confined source resolves images only through its authorized handle.
+                let asset_warnings = match confined_base {
+                    Some(base) => assets::resolve_in(&mut document, base, self.limits),
+                    None => assets::resolve(&mut document, base_dir, self.limits)
+                        .map_err(|_| ConvertError::InputIo)?,
+                };
+                self.warnings
+                    .extend(asset_warnings.iter().map(safe_warning));
+                Ok(Stage::Ir(Box::new(document)))
+            }
+            (Format::AriadIrJson, Format::Markdown | Format::Html) => {
+                let Stage::Ir(document) = stage else {
+                    return Err(ConvertError::Failed);
+                };
+                let output = if step.to == Format::Markdown {
+                    writer_markdown::write(&document)
+                } else {
+                    writer_html::write_with_title_fallback(
+                        &document,
+                        Some(self.title_fallback().as_str()),
+                    )
+                };
+                self.warnings
+                    .extend(output.warnings.iter().map(safe_warning));
+                let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+                let path = workspace
+                    .output_dir()
+                    .join(format!("document.{}", step.to.user_name()));
+                fs::write(&path, output.content.as_bytes()).map_err(|_| ConvertError::Failed)?;
+                Ok(Stage::File {
+                    workspace: Box::new(workspace),
+                    path,
+                })
+            }
+            _ => Err(ConvertError::UnsupportedRoute {
+                detail: Some(format!(
+                    "no reachable targets from {}",
+                    step.from.user_name()
+                )),
+            }),
+        }
+    }
+
+    fn engine_step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
+        let docling = if step.engine == engines::docling::ENGINE_ID {
+            Some(engines::docling::resolve().ok_or(ConvertError::DoclingMissing)?)
+        } else {
+            None
+        };
+        let command = docling.as_ref().map_or_else(
+            || self.invocation.command_for(&step.engine),
+            |command| command.runner_command(self.invocation.program),
+        );
+        let mut lease = self.engines.lease(command, self.cancel)?;
+        let mut workspace = lease.workspace().map_err(|_| ConvertError::Failed)?;
+        let input_path = match stage {
+            Stage::Ir(document) => write_ir_input(&document, &workspace)?,
+            Stage::Source => copy_and_preflight_input(
+                &self.request.input,
+                step.from.id(),
+                &workspace,
+                self.limits,
+            )?,
+            Stage::File {
+                path,
+                workspace: previous,
+            } => {
+                let copied =
+                    copy_and_preflight_input(&path, step.from.id(), &workspace, self.limits)?;
+                drop(previous);
+                copied
+            }
+        };
+
+        let mut options = docling.map(|command| command.options).unwrap_or_default();
+        options.insert(
+            "profile".to_owned(),
+            serde_json::Value::String(self.request.profile.as_str().to_owned()),
+        );
+        if step.to != Format::AriadIrJson {
+            options.insert(
+                "title_fallback".to_owned(),
+                serde_json::Value::String(self.title_fallback()),
+            );
+        }
+        // Writers stamp their output with the conversion time, which honours SOURCE_DATE_EPOCH.
+        let stamps_package =
+            step.engine == engines::PANDOC.id && matches!(step.to, Format::Docx | Format::Epub);
+        let timestamp = if step.to == Format::AriadIrJson {
+            None
+        } else {
+            Some(package_meta::conversion_time().map_err(|_| ConvertError::Failed)?)
+        };
+        if let Some(timestamp) = timestamp {
+            options.insert(
+                "timestamp".to_owned(),
+                serde_json::Value::from(timestamp.as_second()),
+            );
+        }
+
+        let artifact = run_engine(
+            &mut lease,
+            &step.engine,
+            step.to,
+            EngineInput {
+                path: &input_path,
+                format: step.from,
+            },
+            &workspace,
+            self.limits,
+            options,
+            self.cancel,
+            &mut self.warnings,
+            &mut self.on_event,
+        )?;
+
+        if step.to == Format::AriadIrJson {
+            let document = read_ir_artifact(&artifact, &workspace, self.limits)?;
+            drop(lease);
+            let _ = workspace.close();
+            return Ok(Stage::Ir(Box::new(document)));
+        }
+
+        // A warm engine can still mutate its output. Read through the captured directory
+        // handle into a host-only workspace before stamping or using the next route step.
+        let snapshot = Workspace::new().map_err(map_workspace_error)?;
+        let path = snapshot
+            .output_dir()
+            .join(format!("document.{}", step.to.user_name()));
+        let source = workspace
+            .open_artifact(&artifact)
+            .map_err(map_workspace_error)?;
+        let length = source.metadata().map_err(|_| ConvertError::Failed)?.len();
+        if step.to == Format::DoclingJson && length > self.limits.max_ir_json_bytes {
+            return Err(ConvertError::LimitExceeded);
+        }
+        let mut destination = fs::File::create(&path).map_err(|_| ConvertError::Failed)?;
+        std::io::copy(&mut source.take(length), &mut destination)
+            .map_err(|_| ConvertError::Failed)?;
+        drop(destination);
+        drop(lease);
+        let _ = workspace.close();
+        if let (true, Some(timestamp)) = (stamps_package, timestamp) {
+            let stamped = if step.to == Format::Docx {
+                package_meta::stamp_docx(&path, timestamp)
+            } else {
+                package_meta::stamp_epub(&path, timestamp)
+            };
+            stamped.map_err(|_| ConvertError::Failed)?;
+        }
+        Ok(Stage::File {
+            workspace: Box::new(snapshot),
+            path,
+        })
+    }
+}
+
+/// Reads bounded DoclingDocument JSON without starting an external engine.
+pub fn read_docling_to_ir(
+    input: &Path,
+    limits: &Limits,
+) -> Result<ReadDocumentResult, ConvertError> {
+    let cap = limits
+        .max_input_bytes
+        .map_or(limits.max_ir_json_bytes, |max| {
+            max.min(limits.max_ir_json_bytes)
+        });
+    read_docling_with_cap(input, limits, cap)
+}
+
+fn read_docling_with_cap(
+    input: &Path,
+    limits: &Limits,
+    cap: u64,
+) -> Result<ReadDocumentResult, ConvertError> {
+    let bytes = read_bounded_file(input, Some(cap))?;
+    let mut warnings = Vec::new();
+    let output = docling::read(&bytes, limits).map_err(|error| match error {
+        docling::ReadError::InvalidLimits(_)
+        | docling::ReadError::InputTooLarge { .. }
+        | docling::ReadError::JsonTooDeep(_)
+        | docling::ReadError::NestingTooDeep { .. }
+        | docling::ReadError::TooManyBlocks { .. }
+        | docling::ReadError::ContentTooLarge { .. } => ConvertError::LimitExceeded,
+        docling::ReadError::InvalidJson { .. }
+        | docling::ReadError::NotDoclingDocument
+        | docling::ReadError::UnsupportedVersion => ConvertError::Failed,
+    })?;
+    warnings.extend(output.warnings.iter().map(safe_warning));
+    Ok(ReadDocumentResult {
+        document: output.document,
+        warnings,
+    })
+}
+
+fn write_ir_input(document: &Document, workspace: &Workspace) -> Result<PathBuf, ConvertError> {
+    let path = workspace.input_dir().join("document.ir.json");
+    let file = fs::File::create(&path).map_err(|_| ConvertError::Failed)?;
+    let mut writer = std::io::BufWriter::new(file);
+    serde_json::to_writer(&mut writer, document).map_err(|_| ConvertError::Failed)?;
+    writer.flush().map_err(|_| ConvertError::Failed)?;
+    Ok(path)
+}
+
+fn read_ir_artifact(
+    path: &Path,
+    workspace: &Workspace,
+    limits: &Limits,
+) -> Result<Document, ConvertError> {
+    let file = workspace.open_artifact(path).map_err(map_workspace_error)?;
+    crate::ir_io::read(std::io::BufReader::new(file), limits).map_err(|err| match err {
+        error if error.is_limit_exceeded() => ConvertError::LimitExceeded,
+        _ => ConvertError::Failed,
+    })
+}
+
+/// The file an engine step reads, already inside its workspace `in/`.
+struct EngineInput<'a> {
+    path: &'a Path,
+    format: Format,
+}
+
+/// Runs one out-of-process engine step and returns the path of its `output` artifact.
+#[allow(clippy::too_many_arguments)]
+fn run_engine<F>(
+    lease: &mut Lease<'_>,
+    engine: &str,
+    output: Format,
+    input: EngineInput<'_>,
+    workspace: &Workspace,
+    limits: &Limits,
+    options: BTreeMap<String, serde_json::Value>,
+    cancel: &CancellationToken,
+    warnings: &mut Vec<ConvertWarning>,
+    on_event: &mut F,
+) -> Result<PathBuf, ConvertError>
+where
+    F: FnMut(ConvertEvent),
+{
+    let request = Request::Convert {
+        protocol: PROTOCOL.to_owned(),
+        job: Uuid::new_v4().simple().to_string(),
+        input: Input {
+            path: input.path.to_string_lossy().into_owned(),
+            format: input.format.id().to_owned(),
+        },
+        output: Output {
+            dir: workspace.output_dir().to_string_lossy().into_owned(),
+            format: output.id().to_owned(),
+        },
+        work_dir: workspace.work_dir().to_string_lossy().into_owned(),
+        options,
+        limits: limits.clone(),
+        session_id: None,
+    };
+    let outcome = lease
+        .run(&request, cancel.clone(), |event| match event {
+            Event::Progress { stage, .. } => on_event(ConvertEvent::Progress { stage }),
+            Event::Warning { code, message } => warnings.push(sanitize_warning(&code, &message)),
+            Event::Artifact { .. } | Event::Result { .. } | Event::Capabilities { .. } => {}
+        })
+        .map_err(|error| map_engine_error(engine, error))?;
+    push_sandbox_warning(warnings, &outcome);
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+    outcome
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.format == output.id())
+        .map(|artifact| artifact.path.clone())
+        .ok_or(ConvertError::Failed)
+}
+
+/// Converts a supported input document through an explicit route.
+#[allow(clippy::too_many_arguments)]
+fn convert_for_route<F>(
     request: &ConvertRequest,
-    destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
+    confinement: Option<Confinement<'_>>,
     route: &Route,
-    engine_args: &[OsString],
+    pdf_read: Option<ArchiveToIrOutput>,
+    invocation: &EngineInvocation<'_>,
     limits: Limits,
+    engines: Engines<'_>,
     cancel: CancellationToken,
-    mut on_event: F,
+    on_event: F,
 ) -> Result<ConvertReport, ConvertError>
 where
     F: FnMut(ConvertEvent),
@@ -815,11 +1267,11 @@ where
         return Err(ConvertError::Interrupted);
     }
 
-    if route.input_format == route.output_format {
+    if route.input_format == route.output_format || route.steps.is_empty() {
         return Err(ConvertError::UnsupportedRoute {
             detail: Some(format!(
                 "no reachable targets from {}",
-                route.input_format.as_str()
+                route.input_format.user_name()
             )),
         });
     }
@@ -829,88 +1281,72 @@ where
     }
 
     let started = Instant::now();
+    let (mut stage, start_step, warnings) = match pdf_read {
+        Some(read)
+            if route.steps.first().is_some_and(|step| {
+                step.engine == engines::PDF.id && step.to == Format::AriadIrJson
+            }) =>
+        {
+            (Stage::Ir(Box::new(read.document)), 1, read.warnings)
+        }
+        _ => (Stage::Source, 0, Vec::new()),
+    };
+    let mut run = RouteRun {
+        request,
+        asset_base: confinement.and_then(|confinement| confinement.asset_base),
+        invocation,
+        engines,
+        limits: &limits,
+        cancel: &cancel,
+        warnings,
+        on_event,
+    };
+    for step in route.steps.iter().skip(start_step) {
+        stage = run.step(stage, step)?;
+    }
+    let mut warnings = run.warnings;
 
-    // Step 1: Reader dispatched via route.reader
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
-
-    let mut warnings = Vec::new();
-    let (mut document, asset_base_dir) = match route.reader {
-        ReaderEdge::NativeMarkdown => {
-            let res = read_document_to_ir(&request.input, DocumentFormat::Markdown, &limits)?;
-            warnings.extend(res.warnings);
-            let base_dir = request
-                .asset_base_dir
-                .as_deref()
-                .or_else(|| request.input.parent())
-                .unwrap_or_else(|| Path::new("."));
-            (res.document, Some(base_dir))
+    let (mut workspace, artifact_path) = match stage {
+        Stage::File { workspace, path } => (*workspace, path),
+        Stage::Ir(document) => {
+            let workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
+            let path = workspace.output_dir().join("document.ir.json");
+            let file = fs::File::create(&path).map_err(|_| ConvertError::Failed)?;
+            let mut writer = std::io::BufWriter::new(file);
+            serde_json::to_writer_pretty(&mut writer, &document)
+                .map_err(|_| ConvertError::Failed)?;
+            writer.flush().map_err(|_| ConvertError::Failed)?;
+            (workspace, path)
         }
-        ReaderEdge::NativeHtml => {
-            let res = read_document_to_ir(&request.input, DocumentFormat::Html, &limits)?;
-            warnings.extend(res.warnings);
-            let base_dir = request
-                .asset_base_dir
-                .as_deref()
-                .or_else(|| request.input.parent())
-                .unwrap_or_else(|| Path::new("."));
-            (res.document, Some(base_dir))
-        }
-        ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => {
-            let format_str = if route.reader == ReaderEdge::PandocDocx {
-                "docx"
-            } else {
-                "epub"
-            };
-            let mut archive_workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
-            let res = read_archive_to_ir(
-                &request.input,
-                format_str,
-                &mut archive_workspace,
-                &limits,
-                &request.engine_program,
-                cancel.clone(),
-            );
-            let _ = archive_workspace.close();
-            let archive_out = res?;
-            warnings.extend(archive_out.warnings);
-            (archive_out.document, None)
-        }
+        Stage::Source => return Err(ConvertError::Failed),
     };
 
-    // Step 2: Asset resolution for md and html input
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-    if let Some(base_dir) = asset_base_dir {
-        let asset_warnings =
-            assets::resolve(&mut document, base_dir, &limits).map_err(|_| ConvertError::InputIo)?;
-        for w in &asset_warnings {
-            warnings.push(safe_warning(w));
-        }
-    }
+    let output_bytes = fs::metadata(&artifact_path).map(|m| m.len()).unwrap_or(0);
+    let inline_markdown = if route.output_format == Format::Markdown && output_bytes <= 256 * 1024 {
+        fs::read_to_string(&artifact_path).ok()
+    } else {
+        None
+    };
 
-    // Step 3, 4, 5: Workspace execution (writer dispatched via route.writer, stamp, promote)
+    // Promotion is the commit point.
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
-    let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
-    let result = write_in_workspace(
-        &mut workspace,
-        &document,
-        route.writer,
-        request,
-        destination_parent,
-        engine_args,
-        limits,
-        cancel,
-        &mut warnings,
-        &mut on_event,
-    );
-    let cleanup = workspace.close();
-    let (output_bytes, inline_markdown) = result?;
-    if cleanup.is_err() {
+    let promoted = match confinement {
+        Some(confinement) => workspace.promote_into(
+            &artifact_path,
+            confinement.destination_parent,
+            confinement.file_name,
+            request.overwrite,
+        ),
+        None => workspace.promote(&artifact_path, &request.output, request.overwrite),
+    };
+    promoted.map_err(map_workspace_error)?;
+
+    if workspace.close().is_err() {
         warnings.push(ConvertWarning {
             code: "workspace_cleanup".to_owned(),
             message: "Temporary workspace cleanup failed.".to_owned(),
@@ -984,248 +1420,51 @@ impl WriteFromIrRequest {
     }
 }
 
-/// Converts a document to AriadShift IR (single reader edge).
+/// Converts a document to AriadShift IR JSON.
 pub fn convert_to_ir<F>(
     request: &ConvertToIrRequest,
     cancel: CancellationToken,
-    _on_event: F,
+    on_event: F,
 ) -> Result<ConvertReport, ConvertError>
 where
     F: FnMut(ConvertEvent),
 {
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-
-    if paths_refer_to_same_file(&request.input, &request.output) {
-        return Err(ConvertError::DestinationSameAsInput);
-    }
-
-    let (input_format, extension_mismatch) = match classify_file(&request.input) {
-        Ok(c) => {
-            let fmt = c
-                .format
-                .and_then(|f| DocumentFormat::try_from(f).ok())
-                .ok_or_else(|| {
-                    let ext = request
-                        .input
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("unknown");
-                    let clean_ext = sanitize_identifier(ext, 32);
-                    ConvertError::UnsupportedRoute {
-                        detail: Some(format!("no reachable targets from {clean_ext}")),
-                    }
-                })?;
-            (fmt, c.extension_mismatch)
-        }
-        Err(_) => {
-            if request.input.is_dir() {
-                return Err(ConvertError::InputIo);
-            }
-            let ext = request
-                .input
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("unknown");
-            let clean_ext = sanitize_identifier(ext, 32);
-            if DocumentFormat::from_extension(&clean_ext).is_none() {
-                return Err(ConvertError::UnsupportedRoute {
-                    detail: Some(format!("no reachable targets from {clean_ext}")),
-                });
-            }
-            return Err(ConvertError::InputIo);
-        }
-    };
-
-    let limits = Limits::local();
-    let started = Instant::now();
-    let mut warnings = Vec::new();
-    if extension_mismatch {
-        warnings.push(ConvertWarning {
-            code: "format_mismatch".to_owned(),
-            message: "The input file extension does not match the detected format.".to_owned(),
-        });
-    }
-
-    let reader = ReaderEdge::ALL
-        .iter()
-        .copied()
-        .find(|e| {
-            let (from, to, _) = e.capability();
-            from == Format::from(input_format) && to == Format::AriadIrJson
-        })
-        .ok_or_else(|| ConvertError::UnsupportedRoute {
-            detail: Some(format!(
-                "no reachable targets from {}",
-                input_format.as_str()
-            )),
-        })?;
-
-    let (_, _, engine) = reader.capability();
-    let engine_args = [OsString::from("__engine"), OsString::from(engine)];
-    if engine != engines::IN_PROCESS_ENGINE {
-        let avail = engines::availability(&request.engine_program, &engine_args, cancel.clone())
-            .map_err(map_run_error)?;
-        if !avail.is_available(engine) {
-            return Err(ConvertError::ToolMissing);
-        }
-    }
-
-    let (mut document, asset_base_dir) = match reader {
-        ReaderEdge::NativeMarkdown => {
-            let res = read_document_to_ir(&request.input, DocumentFormat::Markdown, &limits)?;
-            warnings.extend(res.warnings);
-            let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
-            (res.document, Some(base_dir))
-        }
-        ReaderEdge::NativeHtml => {
-            let res = read_document_to_ir(&request.input, DocumentFormat::Html, &limits)?;
-            warnings.extend(res.warnings);
-            let base_dir = request.input.parent().unwrap_or_else(|| Path::new("."));
-            (res.document, Some(base_dir))
-        }
-        ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => {
-            let format_str = if reader == ReaderEdge::PandocDocx {
-                "docx"
-            } else {
-                "epub"
-            };
-            let mut archive_workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
-            let res = read_archive_to_ir(
-                &request.input,
-                format_str,
-                &mut archive_workspace,
-                &limits,
-                &request.engine_program,
-                cancel.clone(),
-            );
-            let _ = archive_workspace.close();
-            let archive_out = res?;
-            warnings.extend(archive_out.warnings);
-            (archive_out.document, None)
-        }
-    };
-
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-    if let Some(base_dir) = asset_base_dir {
-        let asset_warnings =
-            assets::resolve(&mut document, base_dir, &limits).map_err(|_| ConvertError::InputIo)?;
-        for w in &asset_warnings {
-            warnings.push(safe_warning(w));
-        }
-    }
-
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-
-    let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
-    let ir_path = workspace.output_dir().join("document.ir.json");
-    let ir_file = fs::File::create(&ir_path).map_err(|_| ConvertError::Failed)?;
-    let mut buf_writer = std::io::BufWriter::new(ir_file);
-    serde_json::to_writer_pretty(&mut buf_writer, &document).map_err(|_| ConvertError::Failed)?;
-    buf_writer.flush().map_err(|_| ConvertError::Failed)?;
-
-    let output_bytes = fs::metadata(&ir_path).map(|m| m.len()).unwrap_or(0);
-    workspace
-        .promote(&ir_path, &request.output, request.overwrite)
-        .map_err(|error| match error {
-            WorkspaceError::DestinationExists => ConvertError::DestinationExists,
-            other => map_workspace_error(other),
-        })?;
-
-    let cleanup = workspace.close();
-    if cleanup.is_err() {
-        warnings.push(ConvertWarning {
-            code: "workspace_cleanup".to_owned(),
-            message: "Temporary workspace cleanup failed.".to_owned(),
-        });
-    }
-
-    Ok(ConvertReport {
+    let convert_request = ConvertRequest {
+        input: request.input.clone(),
         output: request.output.clone(),
-        route: vec![ariad_core::planner::PlanStep {
-            from: Format::from(input_format),
-            to: Format::AriadIrJson,
-            engine: match reader {
-                ReaderEdge::NativeMarkdown | ReaderEdge::NativeHtml => {
-                    engines::IN_PROCESS_ENGINE.to_owned()
-                }
-                ReaderEdge::PandocDocx | ReaderEdge::PandocEpub => "pandoc".to_owned(),
-            },
-        }],
-        warnings,
-        elapsed: started.elapsed(),
-        output_bytes,
-        inline_markdown: None,
-    })
+        target_format: Format::AriadIrJson.id().to_owned(),
+        profile: Profile::Editable,
+        overwrite: request.overwrite,
+        engine_program: request.engine_program.clone(),
+        title_fallback: None,
+        asset_base_dir: None,
+        reader_engine: None,
+    };
+    let invocation = EngineInvocation::new(&request.engine_program);
+    convert_executor(
+        &convert_request,
+        None,
+        &invocation,
+        None,
+        Limits::local(),
+        Engines::OneShot,
+        cancel,
+        on_event,
+    )
 }
 
-/// Writes an AriadShift IR document to a target format (single writer edge).
+/// Writes an AriadShift IR document to a target format.
+///
+/// The input is read as IR JSON whatever its extension.
 pub fn write_from_ir<F>(
     request: &WriteFromIrRequest,
     cancel: CancellationToken,
-    mut on_event: F,
+    on_event: F,
 ) -> Result<ConvertReport, ConvertError>
 where
     F: FnMut(ConvertEvent),
 {
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-
-    if paths_refer_to_same_file(&request.input, &request.output) {
-        return Err(ConvertError::DestinationSameAsInput);
-    }
-
-    let target_format = DocumentFormat::parse(&request.target_format).ok_or_else(|| {
-        let clean_target = sanitize_identifier(&request.target_format, 64);
-        ConvertError::UnsupportedRoute {
-            detail: Some(format!("unknown target format '{clean_target}'")),
-        }
-    })?;
-
-    let limits = Limits::local();
-    let started = Instant::now();
-
-    let bytes = read_bounded_file(&request.input, Some(limits.max_ir_json_bytes))?;
-    let document = crate::ir_io::read_versioned(&bytes, &limits).map_err(|err| match err {
-        crate::ir_io::ReadError::ByteLimitExceeded { .. }
-        | crate::ir_io::ReadError::DepthExceeded(_)
-        | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
-        crate::ir_io::ReadError::UnsupportedVersion => ConvertError::UnsupportedIrVersion,
-        crate::ir_io::ReadError::Io(_) => ConvertError::InputIo,
-        _ => ConvertError::Failed,
-    })?;
-
-    let writer = WriterEdge::ALL
-        .iter()
-        .copied()
-        .find(|e| {
-            let (from, to, _) = e.capability();
-            from == Format::AriadIrJson && to == Format::from(target_format)
-        })
-        .ok_or_else(|| {
-            let clean_target = sanitize_identifier(&request.target_format, 64);
-            ConvertError::UnsupportedRoute {
-                detail: Some(format!("unknown target format '{clean_target}'")),
-            }
-        })?;
-
-    let (_, _, engine) = writer.capability();
-    let engine_args = [OsString::from("__engine"), OsString::from(engine)];
-    if engine != engines::IN_PROCESS_ENGINE {
-        let avail = engines::availability(&request.engine_program, &engine_args, cancel.clone())
-            .map_err(map_run_error)?;
-        if !avail.is_available(engine) {
-            return Err(ConvertError::ToolMissing);
-        }
-    }
-
-    let convert_req = ConvertRequest {
+    let convert_request = ConvertRequest {
         input: request.input.clone(),
         output: request.output.clone(),
         target_format: request.target_format.clone(),
@@ -1237,56 +1476,138 @@ where
             .clone()
             .or_else(|| stem_without_ir(&request.input)),
         asset_base_dir: None,
+        reader_engine: None,
     };
-
-    let mut warnings = Vec::new();
-
-    let mut workspace = Workspace::new().map_err(|_| ConvertError::Failed)?;
-    let result = write_in_workspace(
-        &mut workspace,
-        &document,
-        writer,
-        &convert_req,
+    let invocation = EngineInvocation::new(&request.engine_program);
+    convert_executor(
+        &convert_request,
         None,
-        &engine_args,
-        limits,
+        &invocation,
+        Some(Format::AriadIrJson),
+        Limits::local(),
+        Engines::OneShot,
         cancel,
-        &mut warnings,
-        &mut on_event,
-    );
-    let cleanup = workspace.close();
-    let (output_bytes, inline_markdown) = result?;
-    if cleanup.is_err() {
-        warnings.push(ConvertWarning {
-            code: "workspace_cleanup".to_owned(),
-            message: "Temporary workspace cleanup failed.".to_owned(),
-        });
-    }
-
-    Ok(ConvertReport {
-        output: request.output.clone(),
-        route: vec![ariad_core::planner::PlanStep {
-            from: Format::AriadIrJson,
-            to: Format::from(target_format),
-            engine: match writer {
-                WriterEdge::NativeMarkdown | WriterEdge::NativeHtml => {
-                    engines::IN_PROCESS_ENGINE.to_owned()
-                }
-                WriterEdge::PandocDocx | WriterEdge::PandocEpub => "pandoc".to_owned(),
-            },
-        }],
-        warnings,
-        elapsed: started.elapsed(),
-        output_bytes,
-        inline_markdown,
-    })
+        on_event,
+    )
 }
 
+/// Resolves the input format of a conversion from the file's content and extension.
+fn classify_input(request: &ConvertRequest) -> Result<(Format, bool), ConvertError> {
+    let clean_ext = || {
+        let ext = request
+            .input
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("unknown");
+        sanitize_identifier(ext, 32)
+    };
+    match classify_file(&request.input) {
+        Ok(classification) => match classification.format {
+            Some(format) => Ok((format, classification.extension_mismatch)),
+            None => Err(ConvertError::UnsupportedRoute {
+                detail: Some(format!("no reachable targets from {}", clean_ext())),
+            }),
+        },
+        Err(_) => {
+            if request.input.is_dir() {
+                return Err(ConvertError::InputIo);
+            }
+            let ext = clean_ext();
+            let Some(format) = Format::from_extension(&ext) else {
+                return Err(ConvertError::UnsupportedRoute {
+                    detail: Some(format!("no reachable targets from {ext}")),
+                });
+            };
+            if Format::from_user_name(&request.target_format) == Some(format) {
+                let caps = planner::embedded();
+                let registered = caps.registered_engines();
+                let reachable =
+                    planner::reachable_formats(caps, format, request.profile, &registered);
+                return Err(ConvertError::UnsupportedRoute {
+                    detail: Some(reachable_targets_detail(format.user_name(), &reachable)),
+                });
+            }
+            Err(ConvertError::InputIo)
+        }
+    }
+}
+
+fn plan_error(error: PlanError, input: Format) -> ConvertError {
+    match error {
+        PlanError::NoRoute { reachable, .. } => ConvertError::UnsupportedRoute {
+            detail: Some(reachable_targets_detail(input.user_name(), &reachable)),
+        },
+        PlanError::InvalidCapabilities(err) => ConvertError::InvalidCapabilities(err.to_string()),
+        PlanError::SameFormat { .. } => ConvertError::UnsupportedRoute {
+            detail: Some(format!("no reachable targets from {}", input.user_name())),
+        },
+    }
+}
+
+/// Keeps the planned route when its engines are available; otherwise plans again over the
+/// engines that are, and names the first missing engine when nothing else reaches the target.
+fn plan_with_available_engines(
+    caps: &planner::Capabilities,
+    initial: Plan,
+    profile: Profile,
+    invocation: &EngineInvocation<'_>,
+    cancel: &CancellationToken,
+) -> Result<Plan, ConvertError> {
+    let needed: Vec<&str> = initial
+        .steps
+        .iter()
+        .map(|step| step.engine.as_str())
+        .filter(|engine| *engine != IN_PROCESS_ENGINE)
+        .collect();
+    if needed.is_empty() {
+        return Ok(initial);
+    }
+    let report =
+        engines::availability_of(invocation, &needed, cancel.clone()).map_err(map_run_error)?;
+    for engine in &needed {
+        if let Some(detail) = report
+            .get(engine)
+            .and_then(|entry| entry.startup_failure.as_ref())
+        {
+            return Err(ConvertError::SandboxUnavailable(detail.clone()));
+        }
+    }
+    let Some(missing) = needed
+        .iter()
+        .find(|engine| !report.is_available(engine))
+        .map(|engine| (*engine).to_owned())
+    else {
+        return Ok(initial);
+    };
+
+    let registered = caps.registered_engines();
+    let registered: Vec<&str> = registered.iter().map(String::as_str).collect();
+    let report =
+        engines::availability_of(invocation, &registered, cancel.clone()).map_err(map_run_error)?;
+    let (Some(first), Some(last)) = (initial.steps.first(), initial.steps.last()) else {
+        return Ok(initial);
+    };
+    match planner::plan(
+        caps,
+        first.from,
+        last.to,
+        profile,
+        &report.available_engine_ids(),
+    ) {
+        Ok(plan) => Ok(plan),
+        Err(PlanError::NoRoute { .. }) => Err(ConvertError::missing_engine(&missing)),
+        Err(error) => Err(plan_error(error, first.from)),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn convert_executor<F>(
     request: &ConvertRequest,
-    destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
-    engine_args: &[OsString],
+    confinement: Option<Confinement<'_>>,
+    invocation: &EngineInvocation<'_>,
+    forced_input: Option<Format>,
     limits: Limits,
+    engines: Engines<'_>,
     cancel: CancellationToken,
     on_event: F,
 ) -> Result<ConvertReport, ConvertError>
@@ -1297,179 +1618,73 @@ where
         return Err(ConvertError::Interrupted);
     }
 
-    let (input_format, extension_mismatch) = match classify_file(&request.input) {
-        Ok(c) => {
-            let fmt = match c.format.and_then(|f| DocumentFormat::try_from(f).ok()) {
-                Some(fmt) => fmt,
-                None => {
-                    let ext = request
-                        .input
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("unknown");
-                    let clean_ext = sanitize_identifier(ext, 32);
-                    return Err(ConvertError::UnsupportedRoute {
-                        detail: Some(format!("no reachable targets from {clean_ext}")),
-                    });
-                }
-            };
-            (fmt, c.extension_mismatch)
-        }
-        Err(_) => {
-            if request.input.is_dir() {
-                return Err(ConvertError::InputIo);
-            }
-            let ext = request
-                .input
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("unknown");
-            let clean_ext = sanitize_identifier(ext, 32);
-            let fmt = match DocumentFormat::from_extension(&clean_ext) {
-                Some(f) => f,
-                None => {
-                    return Err(ConvertError::UnsupportedRoute {
-                        detail: Some(format!("no reachable targets from {clean_ext}")),
-                    });
-                }
-            };
-            if let Some(target) = DocumentFormat::parse(&request.target_format)
-                && fmt == target
-            {
-                let caps = planner::embedded();
-                let registered = caps.registered_engines();
-                let reachable = planner::reachable_formats(
-                    caps,
-                    Format::from(fmt),
-                    request.profile,
-                    &registered,
-                );
-                let detail = reachable_targets_detail(fmt.as_str(), &reachable);
-                return Err(ConvertError::UnsupportedRoute {
-                    detail: Some(detail),
-                });
-            }
-            return Err(ConvertError::InputIo);
-        }
+    let started = Instant::now();
+    let (input_format, extension_mismatch) = match forced_input {
+        Some(format) => (format, false),
+        None => classify_input(request)?,
     };
 
     let caps = planner::embedded();
-    let from_fmt = Format::from(input_format);
-
-    let target_format = match DocumentFormat::parse(&request.target_format) {
-        Some(fmt) => fmt,
-        None => {
-            let clean_target = sanitize_identifier(&request.target_format, 64);
-            let registered = caps.registered_engines();
-            let reachable =
-                planner::reachable_formats(caps, from_fmt, request.profile, &registered);
-            let detail = if reachable.is_empty() {
-                format!(
-                    "unknown target format '{clean_target}'; no reachable targets from {}",
-                    input_format.as_str()
-                )
-            } else {
-                format!(
-                    "unknown target format '{clean_target}'; {}",
-                    reachable_targets_detail(input_format.as_str(), &reachable)
-                )
-            };
-            return Err(ConvertError::UnsupportedRoute {
-                detail: Some(detail),
-            });
-        }
+    let registered_engines = caps.registered_engines();
+    let reachable_detail = || {
+        let reachable =
+            planner::reachable_formats(caps, input_format, request.profile, &registered_engines);
+        reachable_targets_detail(input_format.user_name(), &reachable)
     };
 
-    let to_fmt = Format::from(target_format);
+    let Some(target_format) = Format::from_user_name(&request.target_format) else {
+        let clean_target = sanitize_identifier(&request.target_format, 64);
+        return Err(ConvertError::UnsupportedRoute {
+            detail: Some(format!(
+                "unknown target format '{clean_target}'; {}",
+                reachable_detail()
+            )),
+        });
+    };
 
     if input_format == target_format {
-        let registered = caps.registered_engines();
-        let reachable = planner::reachable_formats(caps, from_fmt, request.profile, &registered);
-        let detail = reachable_targets_detail(input_format.as_str(), &reachable);
         return Err(ConvertError::UnsupportedRoute {
-            detail: Some(detail),
+            detail: Some(reachable_detail()),
         });
     }
 
-    let registered_engines = caps.registered_engines();
-    let initial_plan =
-        match planner::plan(caps, from_fmt, to_fmt, request.profile, &registered_engines) {
-            Ok(p) => p,
-            Err(PlanError::NoRoute { reachable, .. }) => {
-                let detail = reachable_targets_detail(input_format.as_str(), &reachable);
-                return Err(ConvertError::UnsupportedRoute {
-                    detail: Some(detail),
-                });
-            }
-            Err(PlanError::InvalidCapabilities(err)) => {
-                return Err(ConvertError::InvalidCapabilities(err.to_string()));
-            }
-            Err(PlanError::SameFormat { .. }) => {
-                let detail = format!("no reachable targets from {}", input_format.as_str());
-                return Err(ConvertError::UnsupportedRoute {
-                    detail: Some(detail),
-                });
-            }
-        };
+    let selected = routing::select(
+        &request.input,
+        input_format,
+        target_format,
+        request.profile,
+        caps,
+        invocation,
+        request.reader_engine.as_deref(),
+        &limits,
+        &cancel,
+    )?;
+    let plan = plan_with_available_engines(
+        &selected.capabilities,
+        selected.plan,
+        request.profile,
+        invocation,
+        &cancel,
+    )?;
 
-    let is_pure_core = initial_plan
-        .steps
-        .iter()
-        .all(|s| s.engine == engines::IN_PROCESS_ENGINE);
-    let plan = if is_pure_core {
-        initial_plan
-    } else {
-        let avail = engines::availability(&request.engine_program, engine_args, cancel.clone())
-            .map_err(map_run_error)?;
-        let available_engine_ids = avail.available_engine_ids();
-
-        let all_needed_available = initial_plan
-            .steps
-            .iter()
-            .all(|s| available_engine_ids.contains(&s.engine));
-
-        if all_needed_available {
-            initial_plan
-        } else {
-            match planner::plan(
-                caps,
-                from_fmt,
-                to_fmt,
-                request.profile,
-                &available_engine_ids,
-            ) {
-                Ok(p) => p,
-                Err(PlanError::NoRoute { .. }) => {
-                    return Err(ConvertError::ToolMissing);
-                }
-                Err(PlanError::InvalidCapabilities(err)) => {
-                    return Err(ConvertError::InvalidCapabilities(err.to_string()));
-                }
-                Err(PlanError::SameFormat { .. }) => {
-                    let detail = format!("no reachable targets from {}", input_format.as_str());
-                    return Err(ConvertError::UnsupportedRoute {
-                        detail: Some(detail),
-                    });
-                }
-            }
-        }
-    };
-
-    let route = route_from_plan(&plan).ok_or_else(|| {
-        let detail = format!("no reachable targets from {}", input_format.as_str());
-        ConvertError::UnsupportedRoute {
-            detail: Some(detail),
-        }
+    let route = route_from_plan(&plan).ok_or_else(|| ConvertError::UnsupportedRoute {
+        detail: Some(format!(
+            "no reachable targets from {}",
+            input_format.user_name()
+        )),
     })?;
     let mut report = convert_for_route(
         request,
-        destination_parent,
+        confinement,
         &route,
-        engine_args,
+        selected.pdf,
+        invocation,
         limits,
+        engines,
         cancel,
         on_event,
     )?;
+    report.elapsed = started.elapsed();
     if extension_mismatch {
         report.warnings.insert(
             0,
@@ -1480,166 +1695,6 @@ where
         );
     }
     Ok(report)
-}
-
-// Helper coordinating writer invocation, stamping, and atomic promotion.
-#[allow(clippy::too_many_arguments)]
-fn write_in_workspace<F>(
-    workspace: &mut Workspace,
-    document: &ariad_core::ir::Document,
-    writer: WriterEdge,
-    request: &ConvertRequest,
-    destination_parent: Option<(&cap_std::fs::Dir, &Path)>,
-    engine_args: &[OsString],
-    limits: Limits,
-    cancel: CancellationToken,
-    warnings: &mut Vec<ConvertWarning>,
-    on_event: &mut F,
-) -> Result<(u64, Option<String>), ConvertError>
-where
-    F: FnMut(ConvertEvent),
-{
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-
-    let artifact_path = match writer {
-        WriterEdge::NativeMarkdown => {
-            let write_output = writer_markdown::write(document);
-            for w in &write_output.warnings {
-                warnings.push(safe_warning(w));
-            }
-            let path = workspace.output_dir().join("document.md");
-            fs::write(&path, write_output.content.as_bytes()).map_err(|_| ConvertError::Failed)?;
-            path
-        }
-        WriterEdge::NativeHtml => {
-            let fallback_stem = stem_without_ir(&request.input);
-            let title_fallback = request
-                .title_fallback
-                .as_deref()
-                .or(fallback_stem.as_deref());
-            let write_output = writer_html::write_with_title_fallback(document, title_fallback);
-            for w in &write_output.warnings {
-                warnings.push(safe_warning(w));
-            }
-            let path = workspace.output_dir().join("document.html");
-            fs::write(&path, write_output.content.as_bytes()).map_err(|_| ConvertError::Failed)?;
-            path
-        }
-        WriterEdge::PandocDocx | WriterEdge::PandocEpub => {
-            let ir_path = workspace.input_dir().join("document.ir.json");
-            let ir_file = fs::File::create(&ir_path).map_err(|_| ConvertError::Failed)?;
-            let mut buf_writer = std::io::BufWriter::new(ir_file);
-            serde_json::to_writer(&mut buf_writer, document).map_err(|_| ConvertError::Failed)?;
-            buf_writer.flush().map_err(|_| ConvertError::Failed)?;
-
-            let target_str = if writer == WriterEdge::PandocDocx {
-                "docx"
-            } else {
-                "epub"
-            };
-            let mut options = BTreeMap::new();
-            options.insert(
-                "profile".to_owned(),
-                serde_json::Value::String(request.profile.as_str().to_owned()),
-            );
-            let title_fallback = request.title_fallback.clone().unwrap_or_else(|| {
-                stem_without_ir(&request.input).unwrap_or_else(|| "Untitled".to_owned())
-            });
-            options.insert(
-                "title_fallback".to_owned(),
-                serde_json::Value::String(title_fallback),
-            );
-
-            let engine_req = Request::Convert {
-                protocol: PROTOCOL.to_owned(),
-                job: Uuid::new_v4().simple().to_string(),
-                input: Input {
-                    path: ir_path.to_string_lossy().into_owned(),
-                    format: "ariad-ir+json".to_owned(),
-                },
-                output: Output {
-                    dir: workspace.output_dir().to_string_lossy().into_owned(),
-                    format: target_str.to_owned(),
-                },
-                work_dir: workspace.work_dir().to_string_lossy().into_owned(),
-                options,
-                limits,
-            };
-
-            let outcome = runner::run(
-                &request.engine_program,
-                engine_args,
-                &engine_req,
-                cancel.clone(),
-                |event| match event {
-                    Event::Progress { stage, .. } => on_event(ConvertEvent::Progress { stage }),
-                    Event::Warning { code, message } => {
-                        warnings.push(sanitize_warning(&code, &message));
-                    }
-                    Event::Artifact { .. } | Event::Result { .. } | Event::Capabilities { .. } => {}
-                },
-            )
-            .map_err(map_run_error)?;
-
-            if cancel.is_cancelled() {
-                return Err(ConvertError::Interrupted);
-            }
-
-            let artifact = outcome
-                .artifacts
-                .iter()
-                .find(|artifact| artifact.format == target_str)
-                .ok_or(ConvertError::Failed)?;
-
-            let artifact_path = PathBuf::from(&artifact.path);
-
-            // Step 4: Metadata stamp for docx and epub
-            let timestamp = package_meta::conversion_time().map_err(|_| ConvertError::Failed)?;
-            if writer == WriterEdge::PandocDocx {
-                package_meta::stamp_docx(&artifact_path, timestamp)
-                    .map_err(|_| ConvertError::Failed)?;
-            } else if writer == WriterEdge::PandocEpub {
-                package_meta::stamp_epub(&artifact_path, timestamp)
-                    .map_err(|_| ConvertError::Failed)?;
-            }
-
-            artifact_path
-        }
-    };
-
-    let output_bytes = fs::metadata(&artifact_path).map(|m| m.len()).unwrap_or(0);
-    let inline_markdown = if writer == WriterEdge::NativeMarkdown && output_bytes <= 256 * 1024 {
-        fs::read_to_string(&artifact_path).ok()
-    } else {
-        None
-    };
-
-    // Step 5: Promotion (Commit point)
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-    match destination_parent {
-        Some((parent_dir, file_name)) => {
-            workspace
-                .promote_into(&artifact_path, parent_dir, file_name, request.overwrite)
-                .map_err(|error| match error {
-                    WorkspaceError::DestinationExists => ConvertError::DestinationExists,
-                    other => map_workspace_error(other),
-                })?;
-        }
-        None => {
-            workspace
-                .promote(&artifact_path, &request.output, request.overwrite)
-                .map_err(|error| match error {
-                    WorkspaceError::DestinationExists => ConvertError::DestinationExists,
-                    other => map_workspace_error(other),
-                })?;
-        }
-    }
-
-    Ok((output_bytes, inline_markdown))
 }
 
 /// Copies an untrusted input file into the workspace `in/` directory, bounded by `max_input_bytes`.
@@ -1660,7 +1715,7 @@ pub fn copy_and_preflight_input(
         .unwrap_or("input.bin");
     let dest_path = workspace.input_dir().join(file_name);
 
-    let mut source = fs::File::open(input).map_err(|_| ConvertError::InputIo)?;
+    let mut source = open_regular_input(input)?;
     let mut dest = fs::File::create(&dest_path).map_err(|_| ConvertError::Failed)?;
 
     let mut buffer = [0u8; 64 * 1024];
@@ -1684,9 +1739,10 @@ pub fn copy_and_preflight_input(
     dest.flush().map_err(|_| ConvertError::Failed)?;
     drop(dest);
 
-    let is_archive = input_format.eq_ignore_ascii_case("docx")
-        || input_format.eq_ignore_ascii_case("epub")
-        || input_format.eq_ignore_ascii_case("zip");
+    let is_archive = input_format.eq_ignore_ascii_case("zip")
+        || Format::ALL.iter().any(|format| {
+            format.is_zip_container() && input_format.eq_ignore_ascii_case(format.id())
+        });
 
     if is_archive {
         archive::preflight_archive(&dest_path, limits).map_err(|err| {
@@ -1698,14 +1754,14 @@ pub fn copy_and_preflight_input(
     Ok(dest_path)
 }
 
-/// The outcome of converting an archive input to AriadShift IR.
+/// The outcome of converting an input to AriadShift IR through an engine.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArchiveToIrOutput {
     pub document: ariad_core::ir::Document,
     pub warnings: Vec<ConvertWarning>,
 }
 
-/// Converts an untrusted archive input (DOCX or EPUB) to AriadShift IR.
+/// Converts an untrusted archive input (DOCX or EPUB) to AriadShift IR through Pandoc.
 ///
 /// Order of operations (structural TOCTOU defense):
 /// 1. The host copies the source file into workspace `in/`, bounded by `max_input_bytes`.
@@ -1722,75 +1778,98 @@ pub fn read_archive_to_ir(
     engine_program: &Path,
     cancel: CancellationToken,
 ) -> Result<ArchiveToIrOutput, ConvertError> {
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-
-    let copied_path = copy_and_preflight_input(input, input_format, workspace, limits)?;
-
-    let request = Request::Convert {
-        protocol: PROTOCOL.to_owned(),
-        job: Uuid::new_v4().simple().to_string(),
-        input: Input {
-            path: copied_path.to_string_lossy().into_owned(),
-            format: input_format.to_owned(),
-        },
-        output: Output {
-            dir: workspace.output_dir().to_string_lossy().into_owned(),
-            format: "ariad-ir+json".to_owned(),
-        },
-        work_dir: workspace.work_dir().to_string_lossy().into_owned(),
-        options: BTreeMap::new(),
-        limits: limits.clone(),
-    };
-
-    let mut warnings = Vec::new();
-    let engine_args = [OsString::from("__engine"), OsString::from("pandoc")];
-    let outcome = runner::run(
-        engine_program,
-        &engine_args,
-        &request,
-        cancel.clone(),
-        |event| {
-            if let Event::Warning { code, message } = event {
-                warnings.push(sanitize_warning(&code, &message));
-            }
-        },
+    let format = Format::from_user_name(input_format)
+        .ok_or(ConvertError::UnsupportedRoute { detail: None })?;
+    read_to_ir_with_engine(
+        input,
+        format,
+        engines::PANDOC.id,
+        workspace,
+        limits,
+        &EngineInvocation::new(engine_program),
+        cancel,
     )
-    .map_err(map_run_error)?;
-
-    if cancel.is_cancelled() {
-        return Err(ConvertError::Interrupted);
-    }
-
-    let artifact = outcome
-        .artifacts
-        .iter()
-        .find(|a| a.format == "ariad-ir+json")
-        .ok_or(ConvertError::Failed)?;
-
-    let ir_file = fs::File::open(&artifact.path).map_err(|_| ConvertError::Failed)?;
-    let buf_reader = std::io::BufReader::new(ir_file);
-    let doc = crate::ir_io::read(buf_reader, limits).map_err(|err| match err {
-        crate::ir_io::ReadError::ByteLimitExceeded { .. }
-        | crate::ir_io::ReadError::DepthExceeded(_)
-        | crate::ir_io::ReadError::BlockLimitExceeded { .. } => ConvertError::LimitExceeded,
-        _ => ConvertError::Failed,
-    })?;
-
-    Ok(ArchiveToIrOutput {
-        document: doc,
-        warnings,
-    })
 }
 
-fn map_run_error(error: RunError) -> ConvertError {
+/// Converts an untrusted input to AriadShift IR through the out-of-process `engine`, with the
+/// same copy-then-read order as [`read_archive_to_ir`].
+pub fn read_to_ir_with_engine(
+    input: &Path,
+    format: Format,
+    engine: &str,
+    workspace: &mut Workspace,
+    limits: &Limits,
+    invocation: &EngineInvocation<'_>,
+    cancel: CancellationToken,
+) -> Result<ArchiveToIrOutput, ConvertError> {
+    if cancel.is_cancelled() {
+        return Err(ConvertError::Interrupted);
+    }
+
+    let copied_path = copy_and_preflight_input(input, format.id(), workspace, limits)?;
+    let mut warnings = Vec::new();
+    let mut lease = Lease::one_shot(invocation.command_for(engine));
+    let artifact = run_engine(
+        &mut lease,
+        engine,
+        Format::AriadIrJson,
+        EngineInput {
+            path: &copied_path,
+            format,
+        },
+        workspace,
+        limits,
+        BTreeMap::new(),
+        &cancel,
+        &mut warnings,
+        &mut |_| {},
+    )?;
+    let document = read_ir_artifact(&artifact, workspace, limits)?;
+    Ok(ArchiveToIrOutput { document, warnings })
+}
+
+/// Records reduced engine isolation once per conversion.
+fn push_sandbox_warning(warnings: &mut Vec<ConvertWarning>, outcome: &runner::RunOutcome) {
+    let Some(gap) = outcome.sandbox.gap() else {
+        return;
+    };
+    let warning = ConvertWarning {
+        code: "sandbox_unavailable".to_owned(),
+        message: format!("The engine ran with reduced isolation: {gap}."),
+    };
+    if !warnings.contains(&warning) {
+        warnings.push(warning);
+    }
+}
+
+pub(crate) fn map_run_error(error: RunError) -> ConvertError {
+    map_engine_error(engines::PANDOC.id, error)
+}
+
+fn map_engine_error(engine: &str, error: RunError) -> ConvertError {
+    if engine == engines::docling::ENGINE_ID {
+        match &error {
+            RunError::EngineFailed {
+                code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
+                ..
+            } => return ConvertError::DoclingToolMissing,
+            RunError::Spawn(_) => return ConvertError::DoclingMissing,
+            _ => {}
+        }
+    }
     match error {
         RunError::Cancelled => ConvertError::Interrupted,
+        RunError::MemoryLimitExceeded { limit_mb } => {
+            ConvertError::MemoryLimitExceeded { limit_mb }
+        }
+        RunError::SandboxUnavailable(detail) | RunError::SandboxLaunchFailed(detail) => {
+            ConvertError::SandboxUnavailable(detail)
+        }
+        RunError::Timeout => ConvertError::LimitExceeded,
         RunError::EngineFailed {
             code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
             ..
-        } => ConvertError::ToolMissing,
+        } => ConvertError::missing_engine(engine),
         RunError::EngineFailed {
             code: ErrorCode::LimitExceeded,
             ..
@@ -1839,6 +1918,14 @@ fn safe_warning_message(code: &str) -> String {
         "footnote_missing" => "A footnote reference could not be resolved.",
         "footnote_unused" => "An unused footnote was omitted.",
         "format_mismatch" => "The input file extension does not match the detected format.",
+        "ocr_fallback" => "OCR was skipped because no suitable OCR engine is installed.",
+        "ocr_language_unsupported" => {
+            "OCR is not available for a requested language; another language was used."
+        }
+        "partial_conversion" => "Some pages or elements could not be converted.",
+        "ocr_required" => "A page has no text layer; reading it needs OCR.",
+        "text_unmapped" => "Some characters have no Unicode mapping and were replaced.",
+        "math_not_converted" => "Math could not be converted and was kept as TeX text.",
         _ => "The document could not be converted without a warning.",
     };
     msg.to_owned()
@@ -1849,52 +1936,87 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        ConvertError, DocumentFormat, detect_format_from_path, is_supported_route,
-        open_regular_input, paths_refer_to_same_file, read_bounded_file, read_document_to_ir,
-        safe_warning, sanitize_warning,
+        ConvertError, detect_format_from_path, is_supported_route, open_regular_input,
+        paths_refer_to_same_file, read_bounded_file, read_document_to_ir, safe_warning,
+        sanitize_warning,
     };
     use ariad_core::{
+        format::Format,
         limits::Limits,
         warning::{Warning, WarningCode},
     };
+
+    #[cfg(unix)]
+    #[test]
+    fn engine_ir_artifacts_cannot_escape_or_block_on_special_files() {
+        use super::{Workspace, read_ir_artifact};
+        use std::os::unix::fs::symlink;
+        let workspace = Workspace::new().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let secret = outside.path().join("private.ir.json");
+        std::fs::write(
+            &secret,
+            serde_json::to_vec(&ariad_core::ir::Document::default()).unwrap(),
+        )
+        .unwrap();
+        let artifact = workspace.output_dir().join("document.ir.json");
+        symlink(&secret, &artifact).unwrap();
+        assert_eq!(
+            read_ir_artifact(&artifact, &workspace, &Limits::local()).err(),
+            Some(ConvertError::Failed)
+        );
+        std::fs::remove_file(&artifact).unwrap();
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&artifact)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let started = std::time::Instant::now();
+        assert_eq!(
+            read_ir_artifact(&artifact, &workspace, &Limits::local()).err(),
+            Some(ConvertError::Failed)
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
 
     #[test]
     fn detects_supported_document_formats() {
         assert_eq!(
             detect_format_from_path(Path::new("notes.md")),
-            Some(DocumentFormat::Markdown)
+            Some(Format::Markdown)
         );
         assert_eq!(
             detect_format_from_path(Path::new("notes.MARKDOWN")),
-            Some(DocumentFormat::Markdown)
+            Some(Format::Markdown)
         );
         assert_eq!(
             detect_format_from_path(Path::new("page.html")),
-            Some(DocumentFormat::Html)
+            Some(Format::Html)
         );
         assert_eq!(
             detect_format_from_path(Path::new("page.HTM")),
-            Some(DocumentFormat::Html)
+            Some(Format::Html)
         );
         assert_eq!(
             detect_format_from_path(Path::new("doc.docx")),
-            Some(DocumentFormat::Docx)
+            Some(Format::Docx)
         );
         assert_eq!(
             detect_format_from_path(Path::new("book.epub")),
-            Some(DocumentFormat::Epub)
+            Some(Format::Epub)
         );
-        assert_eq!(detect_format_from_path(Path::new("file.pdf")), None);
+        assert_eq!(
+            detect_format_from_path(Path::new("file.pdf")),
+            Some(Format::Pdf)
+        );
+        assert_eq!(detect_format_from_path(Path::new("file.unknown")), None);
     }
 
     #[test]
     fn supports_all_distinct_format_pairs_and_refuses_same_format() {
-        let all_formats = [
-            DocumentFormat::Markdown,
-            DocumentFormat::Html,
-            DocumentFormat::Docx,
-            DocumentFormat::Epub,
-        ];
+        let all_formats = [Format::Markdown, Format::Html, Format::Docx, Format::Epub];
         for from in all_formats {
             for to in all_formats {
                 if from == to {
@@ -1931,6 +2053,27 @@ mod tests {
             &file_a,
             &temp_dir.path().join("file_b.docx")
         ));
+    }
+
+    #[test]
+    fn extracted_docling_json_uses_the_ir_budget_instead_of_the_upload_budget() {
+        use super::{read_docling_to_ir, read_docling_with_cap};
+        let input = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/docling/en-map-room.docling.json");
+        let mut limits = Limits::cloud();
+        limits.max_input_bytes = Some(64);
+        assert_eq!(
+            read_docling_to_ir(&input, &limits),
+            Err(ConvertError::LimitExceeded)
+        );
+        let output = read_docling_with_cap(&input, &limits, limits.max_ir_json_bytes)
+            .expect("extracted JSON can be larger than the uploaded document");
+        assert!(!output.document.body.is_empty());
+        limits.max_ir_json_bytes = 64;
+        assert_eq!(
+            read_docling_with_cap(&input, &limits, limits.max_ir_json_bytes),
+            Err(ConvertError::LimitExceeded)
+        );
     }
 
     #[test]
@@ -2001,6 +2144,7 @@ mod tests {
 
         // Execute convert request through engine pointing to copy
         let request = Request::Convert {
+            session_id: None,
             protocol: PROTOCOL.to_owned(),
             job: "test-toctou".to_owned(),
             input: Input {
@@ -2124,9 +2268,9 @@ mod tests {
 
     #[test]
     fn executor_dispatches_through_route_edges_not_target_format() {
-        use super::{
-            ConvertRequest, DocumentFormat, ReaderEdge, Route, WriterEdge, convert_for_route,
-        };
+        use super::{ConvertRequest, Route, convert_for_route};
+        use crate::engines::{EngineInvocation, IN_PROCESS_ENGINE};
+        use ariad_core::planner::PlanStep;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let in_file = temp_dir.path().join("input.md");
@@ -2135,40 +2279,49 @@ mod tests {
         let out_file = temp_dir.path().join("output.txt");
         let cancel = tokio_util::sync::CancellationToken::new();
 
-        // Target format string says "html", but route specifies WriterEdge::NativeMarkdown
+        // Target format string says "html", but the route's last step writes Markdown.
         let mut req = ConvertRequest::new(&in_file, &out_file, "html", "ashift");
         req.overwrite = true;
 
+        let step = |from, to| PlanStep {
+            from,
+            to,
+            engine: IN_PROCESS_ENGINE.to_owned(),
+        };
         let swapped_route = Route {
-            input_format: DocumentFormat::Markdown,
-            output_format: DocumentFormat::Html,
-            reader: ReaderEdge::NativeMarkdown,
-            writer: WriterEdge::NativeMarkdown, // Swapped writer edge!
+            input_format: Format::Markdown,
+            output_format: Format::Html,
+            steps: vec![
+                step(Format::Markdown, Format::AriadIrJson),
+                step(Format::AriadIrJson, Format::Markdown),
+            ],
         };
 
+        let program = Path::new("ashift");
         let report = convert_for_route(
             &req,
             None,
             &swapped_route,
-            &[],
+            None,
+            &EngineInvocation::new(program),
             ariad_core::limits::Limits::local(),
+            super::Engines::OneShot,
             cancel,
             |_| {},
         )
         .expect("conversion through swapped route succeeds");
 
         let content = std::fs::read_to_string(&report.output).unwrap();
-        // Since writer edge is NativeMarkdown, output is Markdown (# Custom Dispatch Test), NOT HTML (<!DOCTYPE html>)
+        // The last step writes Markdown, so the output is Markdown, not HTML.
         assert!(content.contains("# Custom Dispatch Test"));
         assert!(!content.contains("<!DOCTYPE html>"));
     }
 
     #[test]
     fn convert_for_route_rejects_same_format_route() {
-        use super::{
-            ConvertError, ConvertRequest, DocumentFormat, ReaderEdge, Route, WriterEdge,
-            convert_for_route,
-        };
+        use super::{ConvertRequest, Route, convert_for_route};
+        use crate::engines::{EngineInvocation, IN_PROCESS_ENGINE};
+        use ariad_core::planner::PlanStep;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let in_file = temp_dir.path().join("input.md");
@@ -2177,18 +2330,23 @@ mod tests {
 
         let req = ConvertRequest::new(&in_file, &out_file, "md", "ashift");
         let same_route = Route {
-            input_format: DocumentFormat::Markdown,
-            output_format: DocumentFormat::Markdown,
-            reader: ReaderEdge::NativeMarkdown,
-            writer: WriterEdge::NativeMarkdown,
+            input_format: Format::Markdown,
+            output_format: Format::Markdown,
+            steps: vec![PlanStep {
+                from: Format::Markdown,
+                to: Format::AriadIrJson,
+                engine: IN_PROCESS_ENGINE.to_owned(),
+            }],
         };
 
         let result = convert_for_route(
             &req,
             None,
             &same_route,
-            &[],
+            None,
+            &EngineInvocation::new(Path::new("ashift")),
             ariad_core::limits::Limits::local(),
+            super::Engines::OneShot,
             tokio_util::sync::CancellationToken::new(),
             |_| {},
         );
@@ -2337,8 +2495,7 @@ for line in sys.stdin:
         let file_path = temp.path().join("bad.md");
         std::fs::write(&file_path, b"# Title\n\nHello \xff\xfe world\n").unwrap();
 
-        let err = read_document_to_ir(&file_path, DocumentFormat::Markdown, &Limits::local())
-            .unwrap_err();
+        let err = read_document_to_ir(&file_path, Format::Markdown, &Limits::local()).unwrap_err();
         assert_eq!(err, ConvertError::InputIo);
     }
 

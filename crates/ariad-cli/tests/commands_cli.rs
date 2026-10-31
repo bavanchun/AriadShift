@@ -13,8 +13,254 @@ fn cli() -> Command {
     command
         .env("ASHIFT_PANDOC", pandoc_path())
         .env("SOURCE_DATE_EPOCH", "1700000000")
-        .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path());
+        .env("ASHIFT_TEST_CAPABILITIES", test_capabilities_path())
+        .env("ASHIFT_DATA_DIR", data_dir_path())
+        // Snapshots describe a machine without the optional Docling engine.
+        .env_remove("ASHIFT_DOCLING_ENGINE")
+        // Snapshots must not depend on whether this machine has LibreOffice.
+        .env(
+            "ASHIFT_SOFFICE",
+            repository_root().join(".tools/no-soffice"),
+        )
+        .env_remove("ASHIFT_TEST_PACK_KEYS");
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("ASHIFT_PACK_") {
+            command.env_remove(key);
+        }
+    }
     command
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn namespace_denial_reports_installed_engine_and_preserves_the_planned_route() {
+    use std::os::unix::fs::PermissionsExt;
+    let installation = tempfile::tempdir().unwrap();
+    let soffice = installation.path().join("soffice");
+    std::fs::write(&soffice, "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(&soffice, std::fs::Permissions::from_mode(0o755)).unwrap();
+    for mode in ["best-effort", "required"] {
+        if mode == "required" && !ariad_host::sandbox::support().gaps().is_empty() {
+            continue;
+        }
+        let run = |args: &[&str]| {
+            cli()
+                .env("ASHIFT_SANDBOX", mode)
+                .env("ASHIFT_SOFFICE", &soffice)
+                .env("ARIAD_TEST_SANDBOX_SUPPORT", "namespace-denied")
+                .env_remove("ASHIFT_TEST_CAPABILITIES")
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        let doctor = run(&["doctor", "--json"]);
+        let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+        let check = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|check| check["id"] == "engine_libreoffice")
+            .unwrap();
+        assert_eq!(check["ok"], false);
+        assert!(
+            check["message"]
+                .as_str()
+                .unwrap()
+                .contains("installed but cannot start")
+        );
+        assert!(
+            check["message"]
+                .as_str()
+                .unwrap()
+                .contains("private /tmp requires user and mount namespaces")
+        );
+        assert!(
+            check["hint"]
+                .as_str()
+                .unwrap()
+                .contains("kernel.apparmor_restrict_unprivileged_userns=0")
+        );
+        assert!(
+            !check["hint"]
+                .as_str()
+                .unwrap()
+                .contains("install LibreOffice")
+        );
+
+        let engines = run(&["engines", "--json"]);
+        assert!(engines.status.success());
+        let rows: serde_json::Value = serde_json::from_slice(&engines.stdout).unwrap();
+        let office = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "libreoffice")
+            .unwrap();
+        assert_eq!(office["status"], "cannot start");
+        assert!(
+            office["note"]
+                .as_str()
+                .unwrap()
+                .contains("installed, cannot start")
+        );
+        assert!(
+            office["note"]
+                .as_str()
+                .unwrap()
+                .contains("Permission denied")
+        );
+        let human = run(&["engines"]);
+        assert!(
+            String::from_utf8_lossy(&human.stdout)
+                .contains("private /tmp requires user and mount namespaces")
+        );
+
+        let input = repository_root().join("fixtures/office/en-map-room-slides.pptx");
+        let plan = run(&["plan", input.to_str().unwrap(), "--to", "pdf"]);
+        assert!(plan.status.success(), "{plan:?}");
+        let human = String::from_utf8_lossy(&plan.stdout);
+        let primary_score = human
+            .lines()
+            .find(|line| line.starts_with("score "))
+            .expect("primary route score");
+        assert!(
+            primary_score.contains("startup_failure (libreoffice)"),
+            "{human}"
+        );
+        assert!(primary_score.contains("Permission denied"), "{human}");
+        assert!(!primary_score.contains("engine missing"), "{human}");
+        let json = run(&["plan", input.to_str().unwrap(), "--to", "pdf", "--json"]);
+        let json: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
+        assert!(json.get("startup_failure").is_none());
+
+        let directory = tempfile::tempdir().unwrap();
+        // PPTX needs LibreOffice; DOCX also has a working Pandoc/Typst alternative.
+        for fixture in [
+            "office/en-map-room-slides.pptx",
+            "docx/vi-styled-report.docx",
+        ] {
+            let input = repository_root().join("fixtures").join(fixture);
+            let output = directory
+                .path()
+                .join(input.file_name().unwrap())
+                .with_extension("pdf");
+            let converted = run(&[
+                "convert",
+                input.to_str().unwrap(),
+                "--to",
+                "pdf",
+                "--json",
+                "-o",
+                output.to_str().unwrap(),
+            ]);
+            assert_eq!(converted.status.code(), Some(5), "{converted:?}");
+            let stderr = String::from_utf8_lossy(&converted.stderr);
+            assert!(stderr.contains("sandbox_unavailable"), "{stderr}");
+            assert!(
+                stderr.contains("private /tmp requires user and mount namespaces"),
+                "{stderr}"
+            );
+            assert!(!stderr.contains("install LibreOffice"), "{stderr}");
+            assert!(!output.exists());
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn namespace_denial_keeps_missing_office_optional_and_allows_fallback() {
+    for mode in ["best-effort", "required"] {
+        if mode == "required" && !ariad_host::sandbox::support().gaps().is_empty() {
+            continue;
+        }
+        let run = |args: &[&str]| {
+            cli()
+                .env("ASHIFT_SANDBOX", mode)
+                .env("ARIAD_TEST_SANDBOX_SUPPORT", "namespace-denied")
+                .env_remove("ASHIFT_TEST_CAPABILITIES")
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        let doctor = run(&["doctor", "--json"]);
+        assert!(doctor.status.success(), "{doctor:?}");
+        let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+        let check = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|check| check["id"] == "engine_libreoffice")
+            .unwrap();
+        assert_eq!(check["ok"], false);
+        assert_eq!(check["required"], false);
+        assert!(
+            check["hint"]
+                .as_str()
+                .unwrap()
+                .contains("install LibreOffice")
+        );
+        assert!(
+            check["message"]
+                .as_str()
+                .unwrap()
+                .contains("could not find soffice")
+        );
+        let engines = run(&["engines", "--json"]);
+        assert!(engines.status.success());
+        let rows: serde_json::Value = serde_json::from_slice(&engines.stdout).unwrap();
+        let office = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "libreoffice")
+            .unwrap();
+        assert_eq!(office["status"], "missing");
+        assert!(office["note"].as_str().unwrap().contains("optional"));
+
+        let directory = tempfile::tempdir().unwrap();
+        for (fixture, succeeds) in [
+            ("docx/vi-styled-report.docx", true),
+            ("office/en-map-room-slides.pptx", false),
+        ] {
+            let input = repository_root().join("fixtures").join(fixture);
+            let output = directory
+                .path()
+                .join(input.file_name().unwrap())
+                .with_extension("pdf");
+            let converted = run(&[
+                "convert",
+                input.to_str().unwrap(),
+                "--to",
+                "pdf",
+                "--json",
+                "-o",
+                output.to_str().unwrap(),
+            ]);
+            if succeeds {
+                assert!(converted.status.success(), "{converted:?}");
+                let report: serde_json::Value = serde_json::from_slice(&converted.stdout).unwrap();
+                let engines: Vec<_> = report["route"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|step| step["engine"].as_str().unwrap())
+                    .collect();
+                assert_eq!(engines, ["pandoc", "typst"]);
+                assert!(output.exists());
+            } else {
+                assert_eq!(converted.status.code(), Some(5), "{converted:?}");
+                let stderr = String::from_utf8_lossy(&converted.stderr);
+                assert!(stderr.contains("install LibreOffice"), "{stderr}");
+                assert!(!stderr.contains("sandbox_unavailable"), "{stderr}");
+                assert!(!output.exists());
+            }
+        }
+    }
+}
+
+/// An engine pack data directory with no packs, so engine and doctor output is stable.
+fn data_dir_path() -> PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR")).join("commands-cli-data")
 }
 
 fn pandoc_path() -> PathBuf {
@@ -72,7 +318,8 @@ fn normalize_engines_human_stdout(output: &Output) -> String {
     let raw = normalize_stdout(output);
     let mut lines = Vec::new();
     for line in raw.lines() {
-        if (line.starts_with("pandoc ") || line.starts_with("ariad-core ")) && line.len() > 21 {
+        let versioned = ["pandoc ", "ariad-core ", "pdf ", "typst ", "libreoffice "];
+        if versioned.iter().any(|prefix| line.starts_with(prefix)) && line.len() > 21 {
             let col0 = &line[..12];
             let rest = &line[21..];
             lines.push(format!("{col0}{:<9}{rest}", "[VERSION]"));
@@ -105,14 +352,64 @@ fn normalize_engines_json_stdout(output: &Output) -> String {
     res
 }
 
+/// Lines of the sandbox check depend on the OS and kernel; `doctor_reports_the_engine_sandbox`
+/// checks them, so the cross-platform snapshots leave them out.
+fn without_sandbox_lines(raw: &str) -> String {
+    let mut kept = Vec::new();
+    let mut skipping_hint = false;
+    for line in raw.lines() {
+        if line.contains("engine sandbox:") {
+            skipping_hint = true;
+            continue;
+        }
+        if skipping_hint && line.starts_with("  hint:") {
+            continue;
+        }
+        skipping_hint = false;
+        kept.push(line);
+    }
+    let mut res = kept.join("\n");
+    if !res.is_empty() {
+        res.push('\n');
+    }
+    res
+}
+
+fn without_sandbox_json(raw: &str) -> String {
+    use ariad_host::commands::doctor::{DoctorCheck, DoctorReport};
+
+    #[derive(serde::Serialize)]
+    struct Snapshot<'a> {
+        checks: Vec<&'a DoctorCheck>,
+        stale_workspaces: usize,
+    }
+
+    let report: DoctorReport = serde_json::from_str(raw).expect("doctor JSON");
+    let snapshot = Snapshot {
+        checks: report
+            .checks
+            .iter()
+            .filter(|check| check.id != "sandbox")
+            .collect(),
+        stale_workspaces: report.stale_workspaces,
+    };
+    let mut res = serde_json::to_string_pretty(&snapshot).expect("serialize doctor JSON");
+    res.push('\n');
+    res
+}
+
 fn normalize_doctor_human_stdout(output: &Output) -> String {
-    let raw = normalize_stdout(output);
+    let raw = without_sandbox_lines(&normalize_stdout(output));
     let p_path = pandoc_path().display().to_string();
+    let data_path = data_dir_path().display().to_string();
     let mut lines = Vec::new();
     for line in raw.lines() {
         let mut line_str = line.to_string();
         if line_str.contains(&p_path) {
             line_str = line_str.replace(&p_path, "[PANDOC_PATH]");
+        }
+        if line_str.contains(&data_path) {
+            line_str = line_str.replace(&data_path, "[DATA_DIR]");
         }
         if line_str.contains("found in >=") {
             line_str = redact_pandoc_version_token(&line_str);
@@ -127,7 +424,7 @@ fn normalize_doctor_human_stdout(output: &Output) -> String {
 }
 
 fn normalize_doctor_json_stdout(output: &Output) -> String {
-    let raw = normalize_stdout(output);
+    let raw = without_sandbox_json(&normalize_stdout(output));
     let mut lines = Vec::new();
     for line in raw.lines() {
         if line.contains("found in >=") {
@@ -181,7 +478,7 @@ fn inspect_pdf_human_output() {
         .expect("run inspect");
     assert_eq!(output.status.code(), Some(0));
     insta::assert_snapshot!(normalize_stdout(&output));
-    assert!(normalize_stderr(&output).contains("requires the docling engine (roadmap 1b)"));
+    assert!(!normalize_stderr(&output).contains("engine_missing"));
 }
 
 #[test]
@@ -434,6 +731,98 @@ fn doctor_json_output() {
 }
 
 #[test]
+fn doctor_reports_the_engine_sandbox() {
+    let output = cli()
+        .args(["doctor", "--json"])
+        .output()
+        .expect("run doctor --json");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor JSON");
+    let sandbox = &report["sandbox"];
+    #[cfg(target_os = "macos")]
+    let refused = sandbox["seatbelt_available"] == true && sandbox["seatbelt_usable"] == false;
+    #[cfg(not(target_os = "macos"))]
+    let refused = false;
+    assert_eq!(output.status.code(), Some(if refused { 5 } else { 0 }));
+    assert_eq!(sandbox["mode"], "best-effort");
+    assert_eq!(
+        sandbox["platform"],
+        cfg!(any(target_os = "linux", target_os = "macos"))
+    );
+    for key in ["seatbelt_available", "seatbelt_usable", "seatbelt_enforced"] {
+        if cfg!(target_os = "macos") {
+            assert!(sandbox[key].is_boolean(), "sandbox.{key}");
+        } else {
+            assert!(sandbox.get(key).is_none(), "sandbox.{key} is macOS-only");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    assert_eq!(sandbox["seatbelt_enforced"], sandbox["seatbelt_usable"]);
+    for key in [
+        "landlock_abi",
+        "landlock_filesystem",
+        "landlock_network",
+        "landlock_scopes",
+        "landlock_unix_sockets",
+        "seccomp",
+    ] {
+        assert!(sandbox.get(key).is_some(), "sandbox.{key} is reported");
+    }
+    let check = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["id"] == "sandbox")
+        .expect("sandbox check");
+    assert_eq!(
+        check["required"], refused,
+        "refused Seatbelt is a required diagnostic failure"
+    );
+    assert!(
+        check["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("engine sandbox: best-effort")
+    );
+
+    let human = cli().args(["doctor"]).output().expect("run doctor");
+    assert!(String::from_utf8_lossy(&human.stdout).contains("engine sandbox: best-effort"));
+}
+
+#[test]
+fn doctor_fails_in_required_mode_without_sandbox_support() {
+    let output = cli()
+        .args(["doctor", "--json"])
+        .env("ASHIFT_SANDBOX", "required")
+        .env("ARIAD_TEST_SANDBOX_SUPPORT", "none")
+        .output()
+        .expect("run doctor --json");
+    assert_eq!(output.status.code(), Some(5));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor JSON");
+    assert_eq!(report["sandbox"]["mode"], "required");
+    assert_eq!(report["sandbox"]["landlock_filesystem"], false);
+    let check = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["id"] == "sandbox")
+        .expect("sandbox check");
+    assert_eq!(check["ok"], false);
+    assert_eq!(check["required"], true);
+}
+
+#[test]
+fn doctor_reports_an_unknown_sandbox_mode() {
+    let output = cli()
+        .args(["doctor", "--json"])
+        .env("ASHIFT_SANDBOX", "strict")
+        .output()
+        .expect("run doctor --json");
+    assert_eq!(output.status.code(), Some(5));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("doctor JSON");
+    assert!(report["sandbox"]["mode"].is_null());
+}
+
+#[test]
 fn doctor_missing_pandoc_exit_code_5() {
     let output = cli()
         .env("ASHIFT_PANDOC", "/non_existent_path/pandoc")
@@ -613,9 +1002,13 @@ fn cli_interrupt_signal_handling() {
     let dir = tempfile::tempdir().expect("tempdir");
     let input_md = dir.path().join("input.md");
     std::fs::write(&input_md, b"# Document Title\n\nSome body paragraphs.\n").unwrap();
-    let docx_fixture =
+    let docx_source =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/docx/vi-styled-report.docx");
-    assert!(docx_fixture.is_file(), "fixture must exist");
+    assert!(docx_source.is_file(), "fixture must exist");
+    // Keep input I/O on the temporary filesystem so a busy workspace volume cannot
+    // consume the process-start deadline before the interrupt probe runs.
+    let docx_fixture = dir.path().join("input.docx");
+    std::fs::copy(&docx_source, &docx_fixture).expect("copy interrupt fixture");
 
     let out_docx = dir.path().join("out.docx");
 
@@ -661,8 +1054,11 @@ fn cli_interrupt_signal_handling() {
             perms.set_mode(0o755);
             std::fs::set_permissions(&script_path, perms).unwrap();
 
+            // The fake Pandoc records its PID outside any workspace, which the engine sandbox
+            // forbids; this test is about signal handling, so it runs without the sandbox.
             let mut child = Command::new(env!("CARGO_BIN_EXE_ashift"))
                 .env("ASHIFT_PANDOC", &script_path)
+                .env("ASHIFT_SANDBOX", "off")
                 .args(*args)
                 .spawn()
                 .unwrap_or_else(|e| panic!("spawn ashift {} with {}: {}", cmd_name, style, e));
@@ -728,6 +1124,11 @@ fn doctor_json_has_no_leaked_paths() {
                     "doctor JSON string '{s}' must not leak pandoc path '{pandoc_str}'"
                 );
                 for token in s.split_whitespace() {
+                    // The fixed system launcher is public diagnostic context, not a user path.
+                    #[cfg(target_os = "macos")]
+                    if token.trim_matches(['(', ')', ';', ',']) == "/usr/bin/sandbox-exec" {
+                        continue;
+                    }
                     assert!(
                         !token.contains('/') && !token.contains('\\'),
                         "doctor JSON string '{s}' must not contain path-like token '{token}'"

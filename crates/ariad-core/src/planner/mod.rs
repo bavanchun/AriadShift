@@ -16,6 +16,15 @@ pub use cost::{
 };
 pub use graph::{plan, reachable_formats};
 
+/// Engines that may only run as the first step of a route.
+///
+/// LibreOffice renders documents the user supplied. Its measurements come from authored
+/// Office files, so they say nothing about re-rendering an intermediate that another engine
+/// produced (for example Pandoc DOCX built from Markdown). Allowing such hops would let the
+/// heavy, sandbox-dependent Office renderer replace the IR's own writers, such as Typst for
+/// PDF. Routes from an Office source still start with LibreOffice when it scores best.
+pub const SOURCE_ONLY_ENGINES: &[&str] = &["libreoffice"];
+
 /// The root capabilities registry specifying format conversion edges and empirical metrics.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -319,6 +328,20 @@ impl Capabilities {
         engines.sort_unstable();
         engines.dedup();
         engines
+    }
+
+    /// Returns a copy that keeps only the edges able to run in `runtime`.
+    #[must_use]
+    pub fn restricted_to(&self, runtime: Runtime) -> Self {
+        Self {
+            edges: self
+                .edges
+                .iter()
+                .filter(|edge| edge.runtime.contains(&runtime))
+                .cloned()
+                .collect(),
+            ..self.clone()
+        }
     }
 
     /// Validates the structural integrity, version, and metric bounds of the capabilities.

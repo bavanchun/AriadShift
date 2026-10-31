@@ -4,7 +4,7 @@ use ariad_core::{
     format::Format,
     planner::{self, Profile},
 };
-use ariad_host::convert::{DocumentFormat, executor_edges, route_from_plan};
+use ariad_host::convert::{executor_edges, route_from_plan};
 
 #[test]
 fn every_executor_edge_appears_in_embedded_capabilities_and_vice_versa() {
@@ -27,93 +27,208 @@ fn every_executor_edge_appears_in_embedded_capabilities_and_vice_versa() {
     );
     assert_eq!(
         caps.edges.len(),
-        8,
-        "expected exactly 8 capability edges in initial bootstrap capabilities"
+        exec_edges.len(),
+        "duplicate capability edges"
     );
 }
 
 #[test]
-fn every_non_identical_format_pair_can_be_planned_and_resolved_to_executor_route() {
+fn every_plannable_format_pair_resolves_to_an_executor_route() {
     let caps = planner::embedded();
-    let doc_formats = [
-        DocumentFormat::Markdown,
-        DocumentFormat::Html,
-        DocumentFormat::Docx,
-        DocumentFormat::Epub,
-    ];
-    let engines = [String::from("ariad-core"), String::from("pandoc")];
+    let engines = caps.registered_engines();
+    let mut planned = 0;
 
-    for &from in &doc_formats {
-        for &to in &doc_formats {
-            if from == to {
+    for &from in Format::ALL {
+        for &to in Format::ALL {
+            if from == to || !from.is_user_facing() || !to.is_user_facing() {
                 continue;
             }
-            let plan = planner::plan(
-                caps,
-                Format::from(from),
-                Format::from(to),
-                Profile::Editable,
-                &engines,
-            )
-            .expect("planning must succeed for supported document formats");
-
-            assert_eq!(
-                plan.steps.len(),
-                2,
-                "planned route from {from:?} to {to:?} must consist of exactly 2 steps (reader + writer)"
-            );
-
-            let route = route_from_plan(&plan)
-                .expect("executor must be able to construct an execution route from plan");
+            let Ok(plan) = planner::plan(caps, from, to, Profile::Editable, &engines) else {
+                continue;
+            };
+            planned += 1;
+            let route = route_from_plan(&plan).unwrap_or_else(|| {
+                panic!("planned route {from:?} -> {to:?} has no executor route: {plan:?}")
+            });
             assert_eq!(route.input_format, from);
             assert_eq!(route.output_format, to);
+            for alternative in &plan.alternatives {
+                assert!(
+                    route_from_plan(alternative).is_some(),
+                    "alternative for {from:?} -> {to:?} has no executor route"
+                );
+            }
         }
     }
+    assert!(planned > 12, "only {planned} format pairs are plannable");
 }
 
 #[test]
-fn reader_and_writer_edge_all_arrays_are_exhaustive() {
-    for &edge in ariad_host::convert::ReaderEdge::ALL {
-        match edge {
-            ariad_host::convert::ReaderEdge::NativeMarkdown => {}
-            ariad_host::convert::ReaderEdge::NativeHtml => {}
-            ariad_host::convert::ReaderEdge::PandocDocx => {}
-            ariad_host::convert::ReaderEdge::PandocEpub => {}
-        }
-    }
-    assert!(
-        ariad_host::convert::ReaderEdge::ALL
-            .contains(&ariad_host::convert::ReaderEdge::NativeMarkdown)
+fn the_planner_chains_office_pdf_and_ir_routes() {
+    let caps = planner::embedded();
+    let engines = caps.registered_engines();
+    let route = |from, to| -> Vec<String> {
+        planner::plan(caps, from, to, Profile::Editable, &engines)
+            .unwrap_or_else(|error| panic!("{from:?} -> {to:?}: {error}"))
+            .steps
+            .iter()
+            .map(|step| format!("{}-{}->{}", step.from.id(), step.engine, step.to.id()))
+            .collect()
+    };
+
+    assert_eq!(
+        route(Format::Doc, Format::Markdown),
+        [
+            "doc-libreoffice->docx",
+            "docx-pandoc->ariad-ir+json",
+            "ariad-ir+json-ariad-core->markdown"
+        ]
     );
-    assert!(
-        ariad_host::convert::ReaderEdge::ALL.contains(&ariad_host::convert::ReaderEdge::NativeHtml)
+    assert_eq!(
+        route(Format::Markdown, Format::Pdf),
+        [
+            "markdown-ariad-core->ariad-ir+json",
+            "ariad-ir+json-typst->pdf"
+        ]
     );
-    assert!(
-        ariad_host::convert::ReaderEdge::ALL.contains(&ariad_host::convert::ReaderEdge::PandocDocx)
+    assert_eq!(
+        route(Format::Pdf, Format::Markdown),
+        [
+            "pdf-docling->docling+json",
+            "docling+json-ariad-core->ariad-ir+json",
+            "ariad-ir+json-ariad-core->markdown"
+        ]
     );
-    assert!(
-        ariad_host::convert::ReaderEdge::ALL.contains(&ariad_host::convert::ReaderEdge::PandocEpub)
+    assert_eq!(route(Format::Pptx, Format::Pdf), ["pptx-libreoffice->pdf"]);
+    assert_eq!(route(Format::Docx, Format::Pdf), ["docx-libreoffice->pdf"]);
+    assert_eq!(
+        route(Format::Markdown, Format::AriadIrJson),
+        ["markdown-ariad-core->ariad-ir+json"]
+    );
+    assert_eq!(
+        route(Format::AriadIrJson, Format::Docx),
+        ["ariad-ir+json-pandoc->docx"]
     );
 
-    for &edge in ariad_host::convert::WriterEdge::ALL {
-        match edge {
-            ariad_host::convert::WriterEdge::NativeMarkdown => {}
-            ariad_host::convert::WriterEdge::NativeHtml => {}
-            ariad_host::convert::WriterEdge::PandocDocx => {}
-            ariad_host::convert::WriterEdge::PandocEpub => {}
+    // Without LibreOffice, DOCX still reaches PDF through IR and Typst.
+    let without_office: Vec<String> = engines
+        .iter()
+        .filter(|engine| *engine != "libreoffice")
+        .cloned()
+        .collect();
+    let fallback = planner::plan(
+        caps,
+        Format::Docx,
+        Format::Pdf,
+        Profile::Editable,
+        &without_office,
+    )
+    .expect("docx reaches pdf without LibreOffice");
+    assert_eq!(
+        fallback.steps.last().map(|s| s.engine.as_str()),
+        Some("typst")
+    );
+    let slides_fallback = planner::plan(
+        caps,
+        Format::Pptx,
+        Format::Pdf,
+        Profile::Editable,
+        &without_office,
+    )
+    .expect("Docling and Typst can convert slides without LibreOffice");
+    assert_eq!(slides_fallback.steps[0].engine, "docling");
+    assert_eq!(slides_fallback.steps.last().unwrap().engine, "typst");
+}
+
+#[test]
+fn docling_inputs_plan_through_extraction_mapping_and_a_writer() {
+    let caps = planner::embedded();
+    let engines = [
+        String::from("ariad-core"),
+        String::from("pandoc"),
+        String::from("docling"),
+    ];
+    let inputs = [
+        Format::Pdf,
+        Format::Pptx,
+        Format::Xlsx,
+        Format::Png,
+        Format::Jpeg,
+        Format::Tiff,
+        Format::Webp,
+    ];
+    let outputs = [Format::Markdown, Format::Html, Format::Docx, Format::Epub];
+    for &from in &inputs {
+        for &to in &outputs {
+            let plan = planner::plan(caps, from, to, Profile::Editable, &engines)
+                .expect("Docling inputs reach every writer");
+            assert_eq!(plan.steps.len(), 3, "{from:?} -> {to:?}");
+            assert_eq!(plan.steps[0].engine, "docling");
+            assert_eq!(plan.steps[1].from, Format::DoclingJson);
+            let route = route_from_plan(&plan).expect("three-step plans resolve to a route");
+            assert_eq!(route.input_format, from);
+            assert_eq!(route.output_format, to);
+            assert_eq!(route.steps[0].engine, "docling");
         }
     }
-    assert!(
-        ariad_host::convert::WriterEdge::ALL
-            .contains(&ariad_host::convert::WriterEdge::NativeMarkdown)
+
+    let plan = planner::plan(
+        caps,
+        Format::DoclingJson,
+        Format::Markdown,
+        Profile::Editable,
+        &engines[..1],
+    )
+    .expect("DoclingDocument JSON converts without any engine");
+    let route = route_from_plan(&plan).expect("mapper route");
+    assert_eq!(route.input_format, Format::DoclingJson);
+    assert!(route.steps.iter().all(|step| step.engine != "docling"));
+
+    let docx = planner::plan(
+        caps,
+        Format::Docx,
+        Format::Markdown,
+        Profile::Editable,
+        &engines,
+    )
+    .expect("DOCX still converts");
+    assert_eq!(
+        docx.steps[0].engine, "pandoc",
+        "Pandoc preserves more DOCX structure in the measured corpus"
     );
-    assert!(
-        ariad_host::convert::WriterEdge::ALL.contains(&ariad_host::convert::WriterEdge::NativeHtml)
-    );
-    assert!(
-        ariad_host::convert::WriterEdge::ALL.contains(&ariad_host::convert::WriterEdge::PandocDocx)
-    );
-    assert!(
-        ariad_host::convert::WriterEdge::ALL.contains(&ariad_host::convert::WriterEdge::PandocEpub)
-    );
+}
+
+/// Pins the default-profile PDF writer for IR-family inputs. A bench or capabilities refresh
+/// must not silently move these routes off Typst.
+#[test]
+fn default_markdown_html_and_ir_json_to_pdf_routes_use_typst() {
+    const WHY: &str = "Typst is the default PDF writer for Markdown, HTML and IR JSON: it is the \
+        one IR -> PDF writer shared by CLI, desktop, server and browser, its output is \
+        byte-reproducible under SOURCE_DATE_EPOCH, it runs in milliseconds, and it needs no \
+        LibreOffice namespace sandbox (which stock Ubuntu denies). LibreOffice only renders \
+        the user's own Office file (SOURCE_ONLY_ENGINES); see ARCHITECTURE.md decision \
+        'IR → PDF writer'";
+    let caps = planner::embedded();
+    let engines = caps.registered_engines();
+    for (from, reader) in [
+        (Format::Markdown, Some("markdown-ariad-core->ariad-ir+json")),
+        (Format::Html, Some("html-ariad-core->ariad-ir+json")),
+        (Format::AriadIrJson, None),
+    ] {
+        let plan = planner::plan(caps, from, Format::Pdf, Profile::default(), &engines)
+            .unwrap_or_else(|error| panic!("{from:?} -> pdf must plan: {error}. {WHY}"));
+        let steps: Vec<String> = plan
+            .steps
+            .iter()
+            .map(|step| format!("{}-{}->{}", step.from.id(), step.engine, step.to.id()))
+            .collect();
+        let expected: Vec<&str> = reader
+            .into_iter()
+            .chain(["ariad-ir+json-typst->pdf"])
+            .collect();
+        assert_eq!(
+            steps, expected,
+            "default {from:?} -> pdf route changed. {WHY}"
+        );
+    }
 }

@@ -1,0 +1,371 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "document": {
+    "assets": {},
+    "body": [
+      {
+        "content": [
+          {
+            "text": "Khu vườn đọc sách",
+            "type": "text"
+          }
+        ],
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "Một khoảng sân nhỏ sau thư viện phường",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      },
+      {
+        "content": [
+          {
+            "text": "Lịch chăm vườn",
+            "type": "text"
+          }
+        ],
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "items": [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Thứ bảy: tưới cây và đổi sách",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "checked": null
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Ngày nắng: học bài dưới giàn hoa giấy",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "checked": null
+          },
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Ngày mưa: chuyển vào mái hiên",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "checked": null
+          }
+        ],
+        "ordered": false,
+        "start": null,
+        "tight": true,
+        "type": "list"
+      },
+      {
+        "content": [
+          {
+            "text": "Sách được đổi trong tháng",
+            "type": "text"
+          }
+        ],
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "body": [
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Truyện tranh",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "24",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ],
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Sách nấu ăn",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "11",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ]
+        ],
+        "caption": null,
+        "columns": [
+          {
+            "align": "default"
+          },
+          {
+            "align": "default"
+          }
+        ],
+        "head": [
+          [
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Loại sách",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            },
+            {
+              "blocks": [
+                {
+                  "content": [
+                    {
+                      "text": "Số quyển",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "colspan": 1,
+              "rowspan": 1
+            }
+          ]
+        ],
+        "type": "table"
+      },
+      {
+        "content": [
+          {
+            "text": "Ghi chép",
+            "type": "text"
+          }
+        ],
+        "level": 1,
+        "type": "heading"
+      },
+      {
+        "items": [
+          {
+            "blocks": [
+              {
+                "content": [
+                  {
+                    "text": "Mỗi sáng thứ bảy, một nhóm hàng xóm tưới cây và đổi sách. Trẻ nhỏ chọn truyện tranh; người lớn mang đến sách nấu ăn, bản đồ cũ và tạp chí khoa học. Những quyển sách được bọc giấy nâu để mưa không làm cong góc.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "checked": null
+          }
+        ],
+        "ordered": false,
+        "start": null,
+        "tight": true,
+        "type": "list"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "body/0": {
+          "bbox": {
+            "bottom": 283.5,
+            "left": 54.0,
+            "right": 666.0,
+            "top": 167.75
+          },
+          "page_no": 1
+        },
+        "body/1": {
+          "bbox": {
+            "bottom": 444.0,
+            "left": 108.0,
+            "right": 612.0,
+            "top": 306.0
+          },
+          "page_no": 1
+        },
+        "body/2": {
+          "bbox": {
+            "bottom": 111.625,
+            "left": 36.0,
+            "right": 684.0,
+            "top": 21.625
+          },
+          "page_no": 2
+        },
+        "body/3/items/0/blocks/0": {
+          "bbox": {
+            "bottom": 482.375,
+            "left": 36.0,
+            "right": 684.0,
+            "top": 126.0
+          },
+          "page_no": 2
+        },
+        "body/3/items/1/blocks/0": {
+          "bbox": {
+            "bottom": 482.375,
+            "left": 36.0,
+            "right": 684.0,
+            "top": 126.0
+          },
+          "page_no": 2
+        },
+        "body/3/items/2/blocks/0": {
+          "bbox": {
+            "bottom": 482.375,
+            "left": 36.0,
+            "right": 684.0,
+            "top": 126.0
+          },
+          "page_no": 2
+        },
+        "body/4": {
+          "bbox": {
+            "bottom": 111.625,
+            "left": 36.0,
+            "right": 684.0,
+            "top": 21.625
+          },
+          "page_no": 3
+        },
+        "body/5": {
+          "bbox": {
+            "bottom": 252.0,
+            "left": 72.0,
+            "right": 504.0,
+            "top": 144.0
+          },
+          "page_no": 3
+        },
+        "body/6": {
+          "bbox": {
+            "bottom": 111.625,
+            "left": 36.0,
+            "right": 684.0,
+            "top": 21.625
+          },
+          "page_no": 4
+        },
+        "body/7/items/0/blocks/0": {
+          "bbox": {
+            "bottom": 482.375,
+            "left": 36.0,
+            "right": 684.0,
+            "top": 126.0
+          },
+          "page_no": 4
+        }
+      },
+      "pages": [
+        {
+          "height": 540.0,
+          "page_no": 1,
+          "width": 720.0
+        },
+        {
+          "height": 540.0,
+          "page_no": 2,
+          "width": 720.0
+        },
+        {
+          "height": 540.0,
+          "page_no": 3,
+          "width": 720.0
+        },
+        {
+          "height": 540.0,
+          "page_no": 4,
+          "width": 720.0
+        }
+      ]
+    },
+    "meta": {
+      "authors": [],
+      "date": null,
+      "keywords": [],
+      "language": null,
+      "source_format": "pptx",
+      "subject": null,
+      "title": "Khu vườn đọc sách"
+    },
+    "provenance": null,
+    "version": "ariad-ir/1"
+  },
+  "warnings": []
+}

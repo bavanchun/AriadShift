@@ -1,0 +1,226 @@
+# Runtime dependency versions from python-build-standalone 20261021 downloads.json
+# and cpython-windows/build.py (patched CPython libffi source revision).
+# Keep in sync with the pinned Python release; texts come from upstream releases.
+python_release = "20261021"
+version_source = "https://github.com/astral-sh/python-build-standalone/blob/20261021/pythonbuild/downloads.json"
+
+[[libraries]]
+name = "openssl"
+version = "3.5.9"
+license = "Apache-2.0"
+text = "openssl.txt"
+source = "https://raw.githubusercontent.com/openssl/openssl/openssl-3.5.9/LICENSE.txt"
+sha256 = "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+macos = ["lib/libpython3.14.dylib"]
+windows = [
+    "DLLs/_ssl.pyd",
+    "DLLs/_hashlib.pyd",
+    "DLLs/libcrypto-3-x64.dll",
+    "DLLs/libssl-3-x64.dll",
+]
+
+[[libraries]]
+name = "expat"
+version = "2.9.0"
+license = "MIT"
+text = "expat.txt"
+source = "https://raw.githubusercontent.com/libexpat/libexpat/R_2_9_0/expat/COPYING"
+sha256 = "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+macos = ["lib/libpython3.14.dylib"]
+windows = ["DLLs/pyexpat.pyd"]
+
+[[libraries]]
+name = "libffi"
+version = "3.8.0"
+license = "MIT"
+platform = "unix"
+text = "libffi.txt"
+source = "https://raw.githubusercontent.com/libffi/libffi/v3.8.0/LICENSE"
+sha256 = "17b64dc60f3b6897a60f971e288b973f655c2edcdf08b25f3c3dd5549857881c"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+macos = ["lib/libpython3.14.dylib"]
+
+[[libraries]]
+name = "libmpdec"
+version = "4.0.0"
+license = "BSD-2-Clause"
+text = "libmpdec.txt"
+source = "https://www.bytereef.org/software/mpdecimal/releases/mpdecimal-4.0.0.tar.gz"
+sha256 = "2713324211652ce4a60e6e21e54f9dc3004299e591b0933a352f1a89c5fb53c2"
+archive_member = "mpdecimal-4.0.0/COPYRIGHT.txt"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+macos = ["lib/libpython3.14.dylib"]
+windows = ["DLLs/_decimal.pyd"]
+
+[[libraries]]
+name = "bzip2"
+version = "1.0.8"
+license = "bzip2-1.0.6"
+text = "bzip2.txt"
+source = "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz"
+sha256 = "c6dbbf828498be844a89eaa3b84adbab3199e342eb5cb2ed2f0d4ba7ec0f38a3"
+archive_member = "bzip2-1.0.8/LICENSE"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+macos = ["lib/libpython3.14.dylib"]
+windows = ["DLLs/_bz2.pyd"]
+
+[[libraries]]
+name = "liblzma"
+version = "5.8.4"
+license = "0BSD"
+text = "liblzma.txt"
+source = "https://raw.githubusercontent.com/tukaani-project/xz/v5.8.4/COPYING.0BSD"
+sha256 = "0b01625d853911cd0e2e088dcfb743261034a091bb379246cb25a14cc4c74bf1"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+macos = ["lib/libpython3.14.dylib"]
+windows = ["DLLs/_lzma.pyd"]
+
+[[libraries]]
+name = "zlib"
+version = "1.3.2"
+license = "Zlib"
+text = "zlib.txt"
+source = "https://raw.githubusercontent.com/madler/zlib/v1.3.2/LICENSE"
+sha256 = "e32ff4e00d9d94930537635291da39e7e612703334bf6fde8c7f1686fe8a45a2"
+platform = "linux"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+
+[[libraries]]
+name = "zlib-ng"
+version = "2.2.4"
+license = "Zlib"
+text = "zlib-ng.txt"
+source = "https://raw.githubusercontent.com/python/cpython-source-deps/zlib-ng-2.2.4/LICENSE.md"
+sha256 = "6c9f0d975b41afaa34d22f55bb8986ce69e5cb7ad327cb2b28820cd425edf5ee"
+platform = "windows"
+[libraries.native_files]
+windows = ["DLLs/zlib1.dll"]
+
+[[libraries]]
+name = "zstd"
+version = "1.5.7"
+license = "BSD-3-Clause"
+text = "zstd.txt"
+source = "https://raw.githubusercontent.com/python/cpython-source-deps/zstd-1.5.7/LICENSE"
+sha256 = "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+macos = ["lib/libpython3.14.dylib"]
+windows = ["DLLs/_zstd.pyd"]
+
+[[libraries]]
+name = "sqlite"
+version = "3.53.1.0"
+license = "blessing"
+text = "sqlite.txt"
+source = "https://www.sqlite.org/2026/sqlite-autoconf-3530100.tar.gz"
+sha256 = "8f09bb1b80b97a41f413108eff6e00968d7d4e339707166952ab2addee07abd2"
+archive_member = "sqlite-autoconf-3530100/sqlite3.h"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+macos = ["lib/libpython3.14.dylib"]
+windows = ["DLLs/sqlite3.dll", "DLLs/_sqlite3.pyd"]
+
+[[libraries]]
+name = "ncurses"
+version = "6.5"
+license = "X11"
+text = "ncurses.txt"
+source = "https://ftp.gnu.org/pub/gnu/ncurses/ncurses-6.5.tar.gz"
+sha256 = "b2feb54f39529abe226f709a292584fde48a2e5721559fee417d2cdd51cb7cc1"
+archive_member = "ncurses-6.5/COPYING"
+platform = "linux"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+
+[[libraries]]
+name = "libedit"
+version = "20240808-3.1"
+license = "BSD-3-Clause"
+text = "libedit.txt"
+source = "https://thrysoee.dk/editline/libedit-20240808-3.1.tar.gz"
+sha256 = "9da6c9c74987a36c84302982799d17d2f748ba1c1c0c471425716173c1d07649"
+archive_member = "libedit-20240808-3.1/COPYING"
+platform = "linux"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+
+[[libraries]]
+name = "libuuid"
+version = "1.0.3"
+license = "BSD-3-Clause"
+text = "libuuid.txt"
+source = "https://sourceforge.net/projects/libuuid/files/libuuid-1.0.3.tar.gz"
+sha256 = "69e49cbaf76b419e11a78086cbe139a7bc338591201d02733862c5989da715e1"
+archive_member = "libuuid-1.0.3/copy.c (licence header)"
+platform = "linux"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*"]
+
+[[libraries]]
+name = "libffi"
+version = "3.4.2 (CPython patches at 16fad4855b3d8c03b5910e405ff3a04395b39a98)"
+license = "MIT"
+platform = "windows"
+text = "libffi-windows.txt"
+source = "https://raw.githubusercontent.com/python/cpython-source-deps/16fad4855b3d8c03b5910e405ff3a04395b39a98/LICENSE"
+sha256 = "a61d06e8f7be57928e71e800eb9273b05cb8868c484108afe41e4305bb320dde"
+[libraries.native_files]
+windows = ["DLLs/libffi-8.dll", "DLLs/_ctypes.pyd"]
+
+[[libraries]]
+name = "cpython"
+version = "3.14.9"
+license = "PSF-2.0"
+# Already copied verbatim from the hash-verified runtime archive, including Windows additions.
+notice = "notices/Python-LICENSE.txt"
+source = "https://raw.githubusercontent.com/python/cpython/v3.14.9/LICENSE"
+[libraries.native_files]
+linux = ["lib/libpython3.14.so*", "lib/libpython3.so"]
+macos = ["lib/libpython3.14.dylib"]
+windows = [
+    "DLLs/_asyncio.pyd",
+    "DLLs/_bz2.pyd",
+    "DLLs/_ctypes.pyd",
+    "DLLs/_ctypes_test.pyd",
+    "DLLs/_decimal.pyd",
+    "DLLs/_elementtree.pyd",
+    "DLLs/_hashlib.pyd",
+    "DLLs/_lzma.pyd",
+    "DLLs/_multiprocessing.pyd",
+    "DLLs/_overlapped.pyd",
+    "DLLs/_queue.pyd",
+    "DLLs/_remote_debugging.pyd",
+    "DLLs/_socket.pyd",
+    "DLLs/_sqlite3.pyd",
+    "DLLs/_ssl.pyd",
+    "DLLs/_testbuffer.pyd",
+    "DLLs/_testcapi.pyd",
+    "DLLs/_testclinic.pyd",
+    "DLLs/_testclinic_limited.pyd",
+    "DLLs/_testconsole.pyd",
+    "DLLs/_testimportmultiple.pyd",
+    "DLLs/_testinternalcapi.pyd",
+    "DLLs/_testlimitedcapi.pyd",
+    "DLLs/_testmultiphase.pyd",
+    "DLLs/_testsinglephase.pyd",
+    "DLLs/_uuid.pyd",
+    "DLLs/_wmi.pyd",
+    "DLLs/_zoneinfo.pyd",
+    "DLLs/_zstd.pyd",
+    "DLLs/pyexpat.pyd",
+    "DLLs/select.pyd",
+    "DLLs/unicodedata.pyd",
+    "DLLs/winsound.pyd",
+    "python3.dll",
+    "python314.dll",
+]

@@ -50,16 +50,7 @@ pub fn locate_with(
     cancel: Option<&tokio_util::sync::CancellationToken>,
     own_group: bool,
 ) -> Result<PandocBinary, PandocBinaryError> {
-    let path = match env::var_os("ASHIFT_PANDOC").filter(|value| !value.is_empty()) {
-        Some(explicit) => {
-            let path = PathBuf::from(explicit);
-            if !path.is_file() {
-                return Err(PandocBinaryError::Missing);
-            }
-            path
-        }
-        None => find_in_path(env::var_os("PATH").as_deref()).ok_or(PandocBinaryError::Missing)?,
-    };
+    let path = resolve_path().ok_or(PandocBinaryError::Missing)?;
 
     use process_wrap::std::CommandWrap;
     #[cfg(windows)]
@@ -132,6 +123,15 @@ pub fn locate_with(
     }
 
     Ok(PandocBinary { path, version })
+}
+
+/// Resolves the Pandoc executable from `ASHIFT_PANDOC` or `PATH` without running it.
+#[must_use]
+pub fn resolve_path() -> Option<PathBuf> {
+    match env::var_os("ASHIFT_PANDOC").filter(|value| !value.is_empty()) {
+        Some(explicit) => Some(PathBuf::from(explicit)).filter(|path| path.is_file()),
+        None => find_in_path(env::var_os("PATH").as_deref()),
+    }
 }
 
 fn find_in_path(path: Option<&OsStr>) -> Option<PathBuf> {

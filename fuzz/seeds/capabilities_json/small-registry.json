@@ -1,0 +1,6 @@
+{"version":"ariad-capabilities/0","generated_at":"2026-10-06T00:00:00Z","bench":{"fixture_count":2,"pandoc_version":"3.12.1","ashift_version":"0.2.0"},"edges":[
+{"from":"markdown","to":"ariad-ir+json","engine":"ariad-core","runtime":["wasm","local"],"license":"Apache-2.0","metrics":{"fidelity":1.0,"editability":1.0,"p50_ms":2.0,"peak_mem_mb":8.0,"samples":4}},
+{"from":"ariad-ir+json","to":"docx","engine":"pandoc","runtime":["local"],"license":"GPL-2.0-or-later","metrics":{"fidelity":0.9,"editability":0.95,"p50_ms":120.0,"peak_mem_mb":64.0,"samples":4}},
+{"from":"markdown","to":"docx","engine":"pandoc","runtime":["local","cloud"],"license":"GPL-2.0-or-later","metrics":null},
+{"from":"docx","to":"pdf","engine":"libreoffice","runtime":["cloud"],"license":"MPL-2.0","metrics":{"fidelity":0.8,"editability":0.1,"p50_ms":900.0,"peak_mem_mb":512.0,"samples":2}}
+]}

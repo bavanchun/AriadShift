@@ -151,14 +151,14 @@ fn maps_usage_route_limit_tool_and_input_errors_to_documented_exit_codes() {
 
     let unsupported = cli()
         .args(["convert"])
-        .arg(directory.path().join("note.pdf"))
+        .arg(directory.path().join("note.djvu"))
         .args(["--to", "docx"])
         .output()
         .expect("start ashift");
     assert_eq!(unsupported.status.code(), Some(3));
     let stderr = String::from_utf8_lossy(&unsupported.stderr);
     assert!(stderr.contains("unsupported conversion route"));
-    assert!(stderr.contains("no reachable targets from pdf"));
+    assert!(stderr.contains("no reachable targets from djvu"));
 
     let limited = run_convert(&source, &output);
     assert_eq!(limited.status.code(), Some(4));
@@ -399,7 +399,7 @@ fn same_format_routes_are_refused_with_exit_code_3() {
         .expect("start ashift");
     assert_eq!(result_md.status.code(), Some(3));
     let stderr_md = String::from_utf8_lossy(&result_md.stderr);
-    assert!(stderr_md.contains("reachable targets from md: docx, epub, html"));
+    assert!(stderr_md.contains("reachable targets from md: docx, epub, html, json, pdf"));
 
     let result_docx = cli()
         .args(["convert"])
@@ -409,7 +409,7 @@ fn same_format_routes_are_refused_with_exit_code_3() {
         .expect("start ashift");
     assert_eq!(result_docx.status.code(), Some(3));
     let stderr_docx = String::from_utf8_lossy(&result_docx.stderr);
-    assert!(stderr_docx.contains("reachable targets from docx: epub, html, md"));
+    assert!(stderr_docx.contains("reachable targets from docx: epub, html, json, md, pdf"));
 }
 
 #[test]
@@ -728,7 +728,7 @@ fn hidden_hooks_ir_and_write_end_to_end() {
     assert!(ir_file.is_file());
 
     let ir_content = fs::read_to_string(&ir_file).expect("read doc.ir.json");
-    assert!(ir_content.contains("\"version\": \"ariad-ir/0\""));
+    assert!(ir_content.contains("\"version\": \"ariad-ir/1\""));
     assert!(ir_content.contains("\"body\""));
 
     // 2. Overwrite check without --overwrite returns exit code 6
@@ -1170,7 +1170,21 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
         (ConvertError::DestinationSameAsInput, 2),
         (ConvertError::UnsupportedRoute { detail: None }, 3),
         (ConvertError::LimitExceeded, 4),
+        (ConvertError::MemoryLimitExceeded { limit_mb: 64 }, 4),
         (ConvertError::ToolMissing, 5),
+        (
+            ConvertError::SandboxUnavailable("no Landlock".to_owned()),
+            5,
+        ),
+        (
+            ConvertError::EngineMissing {
+                engine: "libreoffice".to_owned(),
+                hint: "install LibreOffice".to_owned(),
+            },
+            5,
+        ),
+        (ConvertError::DoclingMissing, 5),
+        (ConvertError::DoclingToolMissing, 5),
         (ConvertError::DestinationExists, 6),
         (ConvertError::Interrupted, 130),
     ];
@@ -1192,7 +1206,12 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::DestinationSameAsInput => {}
             ConvertError::UnsupportedRoute { .. } => {}
             ConvertError::LimitExceeded => {}
+            ConvertError::MemoryLimitExceeded { .. } => {}
             ConvertError::ToolMissing => {}
+            ConvertError::SandboxUnavailable(_) => {}
+            ConvertError::DoclingMissing => {}
+            ConvertError::DoclingToolMissing => {}
+            ConvertError::EngineMissing { .. } => {}
             ConvertError::DestinationExists => {}
             ConvertError::Interrupted => {}
         }

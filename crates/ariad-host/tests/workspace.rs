@@ -343,3 +343,57 @@ fn sweep_stale_and_count_stale_refuse_symlinks() {
         assert!(target_dir.exists(), "target dir must NEVER be touched");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn output_directory_replacement_cannot_redirect_artifact_reads() {
+    use std::os::unix::fs::symlink;
+    let workspace = Workspace::new().unwrap();
+    let artifact = workspace.output_dir().join("document.docx");
+    fs::write(&artifact, b"engine output").unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("document.docx"), b"host secret").unwrap();
+    fs::rename(workspace.output_dir(), workspace.root().join("old-out")).unwrap();
+    symlink(outside.path(), workspace.output_dir()).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    let path = destination.path().join("plain.docx");
+    workspace.promote(&artifact, &path, false).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"engine output");
+    let parent =
+        cap_std::fs::Dir::open_ambient_dir(destination.path(), cap_std::ambient_authority())
+            .unwrap();
+    workspace
+        .promote_into(&artifact, &parent, Path::new("confined.docx"), false)
+        .unwrap();
+    assert_eq!(
+        fs::read(destination.path().join("confined.docx")).unwrap(),
+        b"engine output"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn artifact_reads_refuse_symlinks_and_non_regular_files() {
+    use std::os::unix::fs::symlink;
+    let workspace = Workspace::new().unwrap();
+    let external = tempfile::NamedTempFile::new().unwrap();
+    let link = workspace.output_dir().join("linked.docx");
+    symlink(external.path(), &link).unwrap();
+    assert!(workspace.open_artifact(&link).is_err());
+    let pipe = workspace.output_dir().join("pipe.docx");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&pipe)
+            .status()
+            .unwrap()
+            .success()
+    );
+    assert!(matches!(
+        workspace.open_artifact(&pipe),
+        Err(WorkspaceError::ArtifactNotFile)
+    ));
+    assert!(matches!(
+        workspace.open_artifact(workspace.output_dir()),
+        Err(WorkspaceError::ArtifactOutsideOutput)
+    ));
+}

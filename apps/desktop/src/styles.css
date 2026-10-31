@@ -1,0 +1,494 @@
+@import "@ariadshift/ui/globals.css";
+@source "../../../packages/ui/src";
+:root {
+  font-synthesis: none;
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+}
+p {
+  line-height: 1.65;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.desktop-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+aside {
+  padding: 28px 18px;
+  border-right: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 750;
+  font-size: 19px;
+  margin-bottom: 40px;
+}
+.brand small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+  margin-top: 3px;
+}
+nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+nav button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  cursor: pointer;
+}
+nav button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in oklch, currentColor 35%, transparent);
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: inherit;
+}
+/* Shortcut hints stay quiet until the row is hovered, focused or current. */
+nav .kbd {
+  opacity: 0;
+}
+nav button:hover .kbd,
+nav button:focus-visible .kbd,
+nav button[aria-current] .kbd {
+  opacity: 1;
+}
+nav button:hover {
+  background: var(--muted);
+}
+nav button[aria-current] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 650;
+}
+.local-note {
+  margin-top: auto;
+  padding: 20px 8px 0;
+}
+.local-note p {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin: 12px 0;
+}
+main {
+  width: 100%;
+  max-width: 1120px;
+  margin: auto;
+  padding: 36px 40px;
+  min-width: 0;
+}
+header {
+  margin-bottom: 28px;
+}
+h1:focus:not(:focus-visible) {
+  outline: none;
+}
+h1 {
+  font-size: 32px;
+  font-weight: 750;
+  letter-spacing: -1px;
+  margin: 6px 0 10px;
+}
+h2 {
+  font-size: 17px;
+  font-weight: 650;
+  margin-bottom: 12px;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--primary);
+  font-weight: 700;
+}
+.panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  margin: 18px 0;
+}
+.drop-panel {
+  border: 1px dashed var(--primary);
+  background: color-mix(in oklch, var(--primary) 3%, var(--background));
+  border-radius: 18px;
+  text-align: center;
+  padding: 38px 24px;
+}
+.drop-panel[data-dragging] {
+  border-style: solid;
+  background: color-mix(in oklch, var(--primary) 10%, var(--background));
+}
+/* The whole window accepts a drop, so the overlay covers it and shows what will be added. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in oklch, var(--background) 82%, transparent);
+  pointer-events: none;
+}
+.drop-overlay-card {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: min(100%, 520px);
+  padding: 40px 28px;
+  border: 2px dashed var(--destructive);
+  border-radius: 20px;
+  background: var(--card);
+  text-align: center;
+  font-size: 18px;
+}
+.drop-overlay[data-accepts] .drop-overlay-card {
+  border-color: var(--primary);
+}
+.drop-overlay svg {
+  width: 32px;
+  height: 32px;
+  color: var(--primary);
+}
+.drop-overlay p {
+  margin: 0;
+}
+.drop-panel p {
+  margin-bottom: 20px;
+}
+.drop-symbol {
+  font-size: 36px;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+.drop-panel details {
+  margin: 20px auto 0;
+  max-width: 500px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+summary {
+  cursor: pointer;
+}
+.row {
+  display: flex;
+  gap: 14px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.row > label {
+  flex: 1;
+  min-width: 160px;
+}
+input:not([type="checkbox"]),
+select {
+  display: block;
+  width: 100%;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 7px;
+  font: inherit;
+  color: var(--foreground);
+}
+select {
+  max-width: 330px;
+}
+input:focus,
+select:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.check {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-weight: 400;
+}
+.check input {
+  accent-color: var(--primary);
+}
+.path {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.route-note {
+  border-left: 3px solid var(--primary);
+  background: var(--muted);
+  padding: 14px 18px;
+  margin: 20px 0;
+  font-size: 12px;
+}
+.route-note p {
+  margin: 8px 0;
+}
+.notice {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.notice button {
+  cursor: pointer;
+}
+.notice[data-tone="warning"] {
+  border-left: 3px solid var(--gold);
+}
+.notice[data-tone="error"] {
+  border-left: 3px solid var(--destructive);
+  color: var(--foreground);
+}
+.toasts {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  width: min(380px, calc(100vw - 40px));
+}
+.toast {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: 0 10px 30px color-mix(in oklch, var(--foreground) 14%, transparent);
+}
+.toast[data-tone="error"] {
+  border-left-color: var(--destructive);
+}
+.toast > svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--primary);
+}
+.toast[data-tone="error"] > svg {
+  color: var(--destructive);
+}
+.toast p {
+  margin: 0;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+.toast-actions {
+  grid-column: 2;
+  align-items: center;
+}
+.queue-head {
+  justify-content: space-between;
+  align-items: center;
+}
+.queue-head h2 {
+  margin: 0;
+}
+.queue-summary {
+  margin: 0 0 8px;
+  color: var(--foreground);
+  font-weight: 600;
+}
+progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--primary);
+}
+.empty-state {
+  padding: 28px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+}
+.empty-state h3 {
+  font-size: 14px;
+  font-weight: 650;
+  margin: 0;
+}
+.empty-state p {
+  margin: 6px 0 14px;
+}
+.save-row {
+  align-items: center;
+}
+.unsaved {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.shortcuts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+.shortcut {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+}
+.shortcuts dd {
+  margin: 0;
+}
+.file-list li,
+.jobs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 15px 0;
+  font-size: 13px;
+}
+.jobs li > div:first-child {
+  min-width: 0;
+}
+.jobs li[data-status="failed"] {
+  box-shadow: inset 3px 0 0 var(--destructive);
+  padding-left: 12px;
+}
+.jobs li p:first-of-type {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.jobs small {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.watch {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.watch p {
+  margin: 8px 0;
+}
+.diagnostic {
+  display: flex;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.error {
+  color: var(--destructive);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+/* Motion only reinforces state and runs only when the system allows it, so every change stays
+   visible with Reduce Motion on; the running badge's spinner then stands still. */
+@media (prefers-reduced-motion: no-preference) {
+  nav button,
+  nav .kbd {
+    transition:
+      background-color 120ms ease-out,
+      opacity 120ms ease-out;
+  }
+  .drop-panel {
+    transition:
+      background-color 150ms ease-out,
+      border-color 150ms ease-out;
+  }
+  .drop-overlay {
+    animation: fade-in 120ms ease-out;
+  }
+  .toast {
+    animation: toast-in 180ms ease-out;
+  }
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+}
+footer {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  margin: 32px 0 0;
+}
+@media (max-width: 900px) {
+  .desktop-shell {
+    grid-template-columns: 180px 1fr;
+  }
+  main {
+    padding: 24px;
+  }
+  aside {
+    padding: 24px 12px;
+  }
+  .brand {
+    font-size: 16px;
+  }
+  .jobs li {
+    align-items: start;
+    flex-direction: column;
+  }
+}

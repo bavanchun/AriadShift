@@ -5,13 +5,38 @@ expression: normalize_stdout(&output)
 {
   "format": "pdf",
   "bytes": 67775,
-  "meta": null,
-  "counts": null,
-  "warnings": [
-    {
-      "code": "engine_missing",
-      "message": "requires the docling engine (roadmap 1b)"
-    }
-  ],
+  "page_count": 1,
+  "meta": {
+    "title": "GAO-08-35 Homeland Security: Federal Efforts Are Helping to Alleviate Some Challenges Encountered by State and Local Information Fusion Centers",
+    "authors": [
+      "U.S. Government Accountability Office, http://www.gao.gov"
+    ],
+    "language": null,
+    "date": null,
+    "subject": null,
+    "keywords": [],
+    "source_format": "pdf"
+  },
+  "counts": {
+    "headings": {
+      "1": 1,
+      "2": 1,
+      "3": 4
+    },
+    "paragraphs": 11,
+    "tables": 0,
+    "images": 0,
+    "links": 0,
+    "footnotes": 0,
+    "words": 760
+  },
+  "pdf": {
+    "pages": 1,
+    "text_pages": 1,
+    "image_only_pages": 0,
+    "needs_ocr": false,
+    "encrypted": false
+  },
+  "warnings": [],
   "reachable": []
 }

@@ -6,69 +6,56 @@ AriadShift is an open-source, local-first document transformation platform in
 early development. Its goal is to turn documents into clean Markdown and
 structured data through a shared engine used by local and hosted interfaces.
 
-The repository provides local conversion across Markdown, HTML, DOCX, and EPUB.
+The repository converts Markdown, HTML, DOCX and EPUB, extracts digital PDF text, writes PDF with embedded Vietnamese fonts, and exports IR JSON. A system LibreOffice adds legacy Office and ODF conversion.
 
-## Installation (from v0.1.0)
+The website converts Markdown, HTML, DOCX, EPUB and AriadShift IR JSON entirely
+in the browser, reads digital PDF text and writes PDF; files never leave the device.
 
-Prebuilt standalone binaries will be distributed starting from v0.1.0 for Linux (x86_64, aarch64 musl), macOS (Apple Silicon, Intel), and Windows (x86_64).
+## Installation
+
+Prebuilt standalone binaries are published on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases) for Linux (`x86_64` and `aarch64` static musl), macOS (Apple Silicon and Intel), and Windows (`x86_64`).
 
 > [!NOTE]
 > AriadShift invokes Pandoc (`>= 3.12, < 4`) as an external, out-of-process executable for DOCX and EPUB conversions.
-> Homebrew installs Pandoc automatically as a package dependency. On other channels, download and install Pandoc from the [official release](https://github.com/jgm/pandoc/releases) (distribution packages are frequently older than 3.12) or set `ASHIFT_PANDOC` to the executable path. On Intel macOS (`x86_64-apple-darwin`), using the official Pandoc installer package is recommended and significantly faster than building Pandoc from source via Homebrew.
-
-### Homebrew (macOS & Linux)
-
-Available once v0.1.0 is tagged:
-
-```sh
-brew tap bavanchun/homebrew-tap
-brew install ashift
-```
+> Install Pandoc from the [official release](https://github.com/jgm/pandoc/releases) (distribution packages are frequently older than 3.12) or set `ASHIFT_PANDOC` to the executable path. The Homebrew formula, once published, installs Pandoc as a dependency; on Intel macOS (`x86_64-apple-darwin`) Homebrew builds Pandoc from source, so the official Pandoc installer package is significantly faster there.
 
 ### Shell Installer (Linux & macOS)
 
-Available once v0.1.0 is published:
-
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bavanchun/AriadShift/releases/download/v0.1.0/ariad-cli-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-installer.sh | sh
 ```
 
 ### PowerShell Installer (Windows)
 
-Available once v0.1.0 is published:
-
 ```powershell
-irm https://github.com/bavanchun/AriadShift/releases/download/v0.1.0/ariad-cli-installer.ps1 | iex
-```
-
-### Windows Package Manager (WinGet)
-
-Available after the initial package submission is accepted by Microsoft:
-
-```powershell
-winget install VChun.AriadShift
-```
-
-### Cargo & cargo-binstall
-
-Available once published to crates.io:
-
-```sh
-# Fast prebuilt binary installation (resolves binary from GitHub Releases):
-cargo binstall ariad-cli
-
-# Or compile from source:
-cargo install ariad-cli
+irm https://github.com/bavanchun/AriadShift/releases/latest/download/ariad-cli-installer.ps1 | iex
 ```
 
 ### Manual Download
 
-Starting with v0.1.0, standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`.
+Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each archive includes `ashift`, `LICENSE`, `NOTICE`, and `THIRD_PARTY_LICENSES`, and ships with a `.sha256` checksum.
 
+### Package managers (not yet published)
+
+The release pipeline is ready for Homebrew, crates.io and WinGet, but v0.2.0 has not reached them yet: the Homebrew formula and the crates were not published, and no WinGet submission exists. These commands work once each channel is published:
+
+```sh
+# Homebrew (macOS & Linux)
+brew install bavanchun/tap/ashift
+
+# crates.io: prebuilt binary through cargo-binstall, or a source build
+cargo binstall ariad-cli
+cargo install ariad-cli
+```
+
+```powershell
+# Windows Package Manager
+winget install VChun.AriadShift
+```
 
 ## Convert Documents
 
-Convert between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`) with `ashift convert`:
+Convert between supported formats (`md`/`markdown`, `html`/`htm`, `docx`, and `epub`) with `ashift convert`; PDF and IR JSON are also supported:
 
 ```sh
 just pandoc
@@ -76,6 +63,13 @@ ashift convert notes.md --to docx
 ashift convert notes.md --to html
 ashift convert report.docx --to md
 ashift convert book.epub --to md
+ashift convert draft.md notes.md --to docx -o output/  # existing directory
+ashift convert report.pdf --to md
+ashift convert notes.md --to pdf
+ashift convert notes.md --to json
+# Requires system LibreOffice >=24.2 (or set ASHIFT_SOFFICE)
+ashift convert legacy.doc --to md
+ashift convert slides.pptx --to pdf
 ```
 
 The default output is `<input stem>.<target extension>` beside the input. Use `-o` to choose another
@@ -85,6 +79,10 @@ are refused with exit code 3; destinations matching the input path are refused w
 contains the output path; warnings are written to stderr. Press Ctrl-C (or send SIGTERM/SIGHUP) to cancel a running
 conversion and clean up its temporary workspace. Set `ASHIFT_PANDOC` to select
 an existing Pandoc executable instead of installing the repository-pinned one.
+
+With several inputs, conversion continues after individual failures and returns the first
+failure's exit code. `--json` returns a `results` array. Linux engines use a Landlock/seccomp
+sandbox by default; `ashift doctor` reports kernel support and `ASHIFT_SANDBOX` controls the mode.
 
 ## Inspect, Plan, and Diagnose
 
@@ -99,6 +97,23 @@ ashift doctor
 
 Add `--json` to any command for structured machine-readable output. See [`docs/cli.md`](docs/cli.md) for the complete reference.
 
+Heavy engines such as Docling ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the first published pack, docling, arrives with v0.2.0 and adds PDF, PPTX, XLSX and image inputs, with OCR for scans. See [`docs/packs.md`](docs/packs.md) and [`docs/docling.md`](docs/docling.md).
+
+## Convert in the Browser
+
+The web app in [`apps/web`](apps/web) runs the same core compiled to
+WebAssembly. Files stay in the browser's private storage, the converter keeps
+working offline with the engines already downloaded, and every route shows
+its measured quality when benchmark data exists. Run it locally:
+
+```sh
+just js
+just web-dev   # http://localhost:3200
+```
+
+See [`docs/web.md`](docs/web.md) for building, testing, and deploying it as a
+static site or a Node.js server.
+
 ## Model Context Protocol (MCP)
 
 Run an MCP server over standard I/O for AI assistants (such as Claude Code, Claude Desktop, or Cursor):
@@ -108,6 +123,13 @@ ashift mcp --allow-dir ~/Documents
 ```
 
 The server exposes 4 tools (`list_engines`, `inspect`, `plan`, and `convert`) with strict path confinement, capability-based directory access, dynamic roots synchronization, and `resources/read` support. See [`docs/mcp.md`](docs/mcp.md) for configuration and tool details.
+
+## Desktop app
+
+The Tauri app in `apps/desktop` converts local files and batches, watches folders,
+manages signed engine packs and opens `ariadshift://` links. Run `just desktop-dev`
+for development or `just desktop-build` for installers. See
+[the desktop guide](docs/desktop.md) for setup, dependencies and updates.
 
 ## Development
 
@@ -153,15 +175,24 @@ just fixtures
 `just pandoc` downloads Pandoc 3.12 and verifies its archive checksum. Run it
 before working on tasks that use Pandoc.
 
+`just test-server` runs the `ariad-server` database and S3 tests against
+throwaway PostgreSQL (with pgmq) and SeaweedFS containers; it needs Docker.
+
 Install JavaScript workspace dependencies with `just js`; then build the brand
 with `pnpm --dir brand build`. The root `package.json`,
-`pnpm-workspace.yaml`, and `pnpm-lock.yaml` own the JavaScript workspace.
+`pnpm-workspace.yaml`, and `pnpm-lock.yaml` own the JavaScript workspace
+(`apps/*`, `packages/*`, and `brand`). `just ci` also builds the wasm module
+and the web app; `just web-browsers` and `just web-e2e` run its browser tests.
 
 ## Project documents
 
 - [CLI reference](docs/cli.md)
 - [MCP server reference](docs/mcp.md)
+- [Web app](docs/web.md)
+- [Cloud API reference](docs/api.md) and [cloud server operation](docs/server.md)
+- [Desktop app](docs/desktop.md)
 - [System architecture](ARCHITECTURE.md)
 - [Security reporting](docs/SECURITY.md)
 - [Git workflow](docs/git-workflow.md)
+- [Release procedure](docs/releasing.md)
 - [License](LICENSE) and [third-party notices](NOTICE)

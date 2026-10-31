@@ -39,6 +39,7 @@ fn make_request(workspace: &Workspace, timeout_s: Option<u64>) -> Request {
         work_dir: workspace.work_dir().display().to_string(),
         options: BTreeMap::new(),
         limits,
+        session_id: None,
     }
 }
 
@@ -372,37 +373,29 @@ fn assert_heartbeat_stopped(path: &Path) {
 }
 
 #[test]
-fn runner_describe_and_memory_limit_refusal() {
-    let args = [OsString::from("describe-no-memory-limit")];
+fn describe_reports_whether_an_engine_enforces_memory_limits() {
     let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
-    let event =
-        runner::describe(&probe, &args, CancellationToken::new()).expect("describe succeeds");
-    let Event::Capabilities {
-        enforces_memory_limit,
-        ..
-    } = event
-    else {
-        panic!("expected capabilities event");
-    };
-    assert!(!enforces_memory_limit);
-
-    let mut limits = Limits::local();
-    limits.max_memory_mb = Some(512);
-    let check =
-        runner::check_memory_limit_support(&probe, &args, &limits, CancellationToken::new());
-    assert!(matches!(
-        check,
-        Err(RunError::EngineFailed {
-            code: ariad_core::protocol::ErrorCode::LimitExceeded,
+    for (operation, expected) in [
+        ("describe-no-memory-limit", false),
+        ("describe-enforces-memory", true),
+    ] {
+        let event = runner::describe(
+            &probe,
+            &[OsString::from(operation)],
+            CancellationToken::new(),
+        )
+        .expect("describe succeeds");
+        let Event::Capabilities {
+            enforces_memory_limit,
+            supports_session,
             ..
-        })
-    ));
-
-    limits.max_memory_mb = None;
-    assert!(
-        runner::check_memory_limit_support(&probe, &args, &limits, CancellationToken::new())
-            .is_ok()
-    );
+        } = event
+        else {
+            panic!("expected capabilities event");
+        };
+        assert_eq!(enforces_memory_limit, expected);
+        assert!(!supports_session);
+    }
 }
 
 #[test]
@@ -432,7 +425,7 @@ fn describe_times_out_on_hung_engine() {
 }
 
 #[test]
-fn convert_refuses_unenforced_memory_limit_before_starting_conversion() {
+fn convert_runs_an_engine_that_does_not_enforce_memory_limits_under_the_watchdog() {
     let workspace = Workspace::new().expect("create workspace");
     let input_path = workspace.work_dir().join("input.md");
     fs::write(&input_path, "# Sample\n\nContent paragraph.").expect("write input markdown");
@@ -456,11 +449,11 @@ fn convert_refuses_unenforced_memory_limit_before_starting_conversion() {
         |_| {},
     );
 
-    assert_eq!(result, Err(ConvertError::LimitExceeded));
     assert!(
-        !output_path.exists(),
-        "conversion must be refused before creating or promoting the output artifact"
+        result.is_ok(),
+        "an engine below the limit converts even if it does not enforce the limit: {result:?}"
     );
+    assert!(output_path.exists(), "output artifact should be promoted");
 }
 
 #[test]
@@ -514,7 +507,7 @@ fn runner_run_rejects_invalid_convert_limits() {
 }
 
 #[test]
-fn runner_run_convert_refuses_unenforced_memory_limit() {
+fn runner_runs_an_unenforcing_engine_with_a_memory_limit() {
     let workspace = Workspace::new().expect("create workspace");
     let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
     let args = [OsString::from("describe-no-memory-limit")];
@@ -522,12 +515,104 @@ fn runner_run_convert_refuses_unenforced_memory_limit() {
     if let Request::Convert { limits, .. } = &mut request {
         limits.max_memory_mb = Some(512);
     }
+    let outcome = runner::run(&probe, &args, &request, CancellationToken::new(), |_| {})
+        .expect("the watchdog replaces the refusal of unenforcing engines");
+    assert_eq!(outcome.artifacts.len(), 1);
+}
+
+fn run_with_memory_limit(
+    operation: &[&str],
+    limit_mb: u32,
+) -> (Result<RunOutcome, RunError>, Duration) {
+    let workspace = Workspace::new().expect("create workspace");
+    let probe = PathBuf::from(env!("CARGO_BIN_EXE_engine-probe"));
+    let args: Vec<OsString> = operation.iter().map(OsString::from).collect();
+    let mut request = make_request(&workspace, Some(60));
+    if let Request::Convert { limits, .. } = &mut request {
+        limits.max_memory_mb = Some(limit_mb);
+    }
+    let started = Instant::now();
     let result = runner::run(&probe, &args, &request, CancellationToken::new(), |_| {});
-    assert!(matches!(
-        result,
-        Err(RunError::EngineFailed {
-            code: ariad_core::protocol::ErrorCode::LimitExceeded,
-            ..
-        })
-    ));
+    (result, started.elapsed())
+}
+
+#[test]
+fn the_watchdog_kills_an_engine_that_exceeds_max_memory_mb() {
+    let (result, elapsed) = run_with_memory_limit(&["hog", "1024"], 96);
+    assert!(
+        matches!(result, Err(RunError::MemoryLimitExceeded { limit_mb: 96 })),
+        "a memory hog must be killed with limit_exceeded: {result:?}"
+    );
+    assert!(
+        elapsed < Duration::from_secs(30),
+        "the watchdog must stop the hog quickly, took {elapsed:?}"
+    );
+}
+
+#[test]
+fn the_watchdog_counts_memory_of_the_engines_children() {
+    let (result, _) = run_with_memory_limit(&["hog-child", "1024"], 96);
+    assert!(
+        matches!(result, Err(RunError::MemoryLimitExceeded { limit_mb: 96 })),
+        "a hog started by the engine must count against the limit: {result:?}"
+    );
+}
+
+#[test]
+fn the_watchdog_runs_while_the_engine_is_not_reading_its_request() {
+    let workspace = Workspace::new().expect("create workspace");
+    let mut request = make_request(&workspace, Some(10));
+    if let Request::Convert {
+        limits, options, ..
+    } = &mut request
+    {
+        limits.max_memory_mb = Some(96);
+        options.insert(
+            "padding".to_owned(),
+            serde_json::json!("x".repeat(512 * 1024)),
+        );
+    }
+    let result = runner::run(
+        Path::new(env!("CARGO_BIN_EXE_engine-probe")),
+        &[OsString::from("hog"), OsString::from("512")],
+        &request,
+        CancellationToken::new(),
+        |_| {},
+    );
+    assert!(
+        matches!(result, Err(RunError::MemoryLimitExceeded { limit_mb: 96 })),
+        "request backpressure must not suspend the memory limit: {result:?}"
+    );
+}
+
+#[test]
+fn convert_reports_the_memory_limit_it_enforced() {
+    let workspace = Workspace::new().expect("create workspace");
+    let input_path = workspace.work_dir().join("input.md");
+    fs::write(&input_path, "# Sample\n").expect("write input markdown");
+    let output_path = workspace.work_dir().join("output.docx");
+    let mut limits = Limits::local();
+    limits.max_memory_mb = Some(96);
+    limits.timeout_s = Some(60);
+
+    let result = convert::convert_custom(
+        &input_path,
+        &output_path,
+        "docx",
+        Path::new(env!("CARGO_BIN_EXE_engine-probe")),
+        &[OsString::from("describe-enforces-memory")],
+        false,
+        limits,
+        CancellationToken::new(),
+        |_| {},
+    );
+    assert!(
+        result.is_ok(),
+        "a small engine stays under the limit: {result:?}"
+    );
+
+    let error = ConvertError::MemoryLimitExceeded { limit_mb: 96 };
+    assert_eq!(error.code(), "limit_exceeded");
+    assert_eq!(error.exit_code(), 4);
+    assert!(error.to_string().contains("max_memory_mb (96 MB)"));
 }

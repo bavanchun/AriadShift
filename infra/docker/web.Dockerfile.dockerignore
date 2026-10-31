@@ -1,0 +1,14 @@
+# Context for the web image: sources only, no local build output.
+.git
+target
+.tools
+**/node_modules
+**/.next
+apps/web/out
+packages/ariad-wasm/pkg
+fuzz/target
+fuzz/corpus
+fuzz/artifacts
+**/.venv
+**/.env*
+.run

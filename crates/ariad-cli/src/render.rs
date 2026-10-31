@@ -93,6 +93,23 @@ pub fn render_inspect_human(output: &InspectOutput) -> io::Result<()> {
             "counts:    {total_headings} {heading_label}{heading_detail}, {p_str}, {t_str}, {img_str}, {lk_str}, {fn_str}, {w_str}",
         )?;
     }
+    if let Some(ref pdf) = output.pdf {
+        let mut parts = vec![
+            plural(pdf.pages as usize, "page", "pages"),
+            format!("{} with text", pdf.text_pages),
+            format!("{} image-only", pdf.image_only_pages),
+        ];
+        if pdf.needs_ocr {
+            parts.push("needs OCR".to_owned());
+        }
+        if pdf.encrypted {
+            parts.push("encrypted".to_owned());
+        }
+        writeln!(out, "pdf:       {}", parts.join(", "))?;
+        if let Some(ref producer) = pdf.producer {
+            writeln!(out, "producer:  {}", escape_control_chars(producer))?;
+        }
+    }
     if output.reachable.is_empty() {
         writeln!(out, "reachable: (none)")?;
     } else {
@@ -135,10 +152,17 @@ fn format_score(
     measured: bool,
     runs_locally: bool,
     missing_engine: Option<&str>,
+    startup_failure: Option<&str>,
 ) -> String {
     let check = check_mark();
     let local_suffix = if runs_locally {
         format!("runs locally {check}")
+    } else if let Some(detail) = startup_failure {
+        format!(
+            "startup_failure ({}): {}",
+            escape_control_chars(missing_engine.unwrap_or("engine")),
+            escape_control_chars(detail)
+        )
     } else if let Some(engine) = missing_engine {
         format!("engine missing ({})", escape_control_chars(engine))
     } else {
@@ -183,7 +207,8 @@ pub fn render_plan_human(output: &ariad_host::commands::plan::PlanOutput) -> io:
             &output.score,
             output.measured,
             output.runs_locally,
-            output.missing_engine.as_deref()
+            output.missing_engine.as_deref(),
+            output.startup_failure.as_deref()
         )
     )?;
     for alt in &output.alternatives {
@@ -195,7 +220,8 @@ pub fn render_plan_human(output: &ariad_host::commands::plan::PlanOutput) -> io:
                 &alt.score,
                 alt.measured,
                 alt.runs_locally,
-                alt.missing_engine.as_deref()
+                alt.missing_engine.as_deref(),
+                alt.startup_failure.as_deref()
             )
         )?;
     }
@@ -235,6 +261,37 @@ pub fn render_engines_human(rows: &[ariad_host::commands::engines::EngineRow]) -
             row.id, row.version, row.license, status_str, routes_str
         )?;
     }
+    writeln!(out)?;
+    let packs: Vec<&ariad_host::commands::engines::EnginePack> =
+        rows.iter().filter_map(|row| row.pack.as_ref()).collect();
+    if packs.is_empty() {
+        writeln!(out, "no engine packs installed")?;
+        return out.flush();
+    }
+    writeln!(
+        out,
+        "{:<12} {:<9} {:<26} STATE",
+        "PACK", "VERSION", "TARGET"
+    )?;
+    for pack in packs {
+        let state = if pack.source == "override" {
+            "development override"
+        } else {
+            "active"
+        };
+        writeln!(
+            out,
+            "{:<12} {:<9} {:<26} {state}",
+            pack.name, pack.version, pack.target
+        )?;
+        for version in pack.versions.iter().filter(|v| **v != pack.version) {
+            writeln!(
+                out,
+                "{:<12} {:<9} {:<26} installed",
+                pack.name, version, "-"
+            )?;
+        }
+    }
     out.flush()
 }
 
@@ -257,9 +314,13 @@ pub fn render_doctor_human(report: &ariad_host::commands::doctor::DoctorReport) 
     let mut out = io::stdout().lock();
     for check in &report.checks {
         let icon = if check.ok { check_mark() } else { fail_icon() };
-        if check.id == "pandoc_version"
-            && check.ok
-            && let Some(ref path) = report.tool_path
+        let path = match check.id.as_str() {
+            "pandoc_version" => report.tool_path.as_ref(),
+            "data_dir" => report.data_dir.as_ref(),
+            _ => None,
+        };
+        if check.ok
+            && let Some(path) = path
         {
             writeln!(
                 out,
@@ -285,4 +346,79 @@ pub fn render_convert_json(report: &ariad_host::convert::ConvertReport) -> io::R
     stdout.write_all(&json_bytes)?;
     stdout.write_all(b"\n")?;
     stdout.flush()
+}
+
+/// Renders any serializable report as pretty-printed JSON to stdout.
+pub fn render_json<T: serde::Serialize>(value: &T) -> io::Result<()> {
+    let json_bytes = serde_json::to_vec_pretty(value).map_err(io::Error::other)?;
+    let mut stdout = io::stdout().lock();
+    stdout.write_all(&json_bytes)?;
+    stdout.write_all(b"\n")?;
+    stdout.flush()
+}
+
+/// Renders a pack install report as human-readable text to stdout.
+pub fn render_pack_install_human(report: &ariad_host::packs::InstallReport) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    let root = escape_control_chars(&report.root.display().to_string());
+    match report.status {
+        ariad_host::packs::InstallStatus::Installed => writeln!(
+            out,
+            "installed {} {} ({}) in {root}",
+            report.name, report.version, report.target
+        )?,
+        ariad_host::packs::InstallStatus::AlreadyInstalled => writeln!(
+            out,
+            "{} {} ({}) is already installed in {root}",
+            report.name, report.version, report.target
+        )?,
+    }
+    if report.name == "docling" {
+        writeln!(
+            out,
+            "Vietnamese OCR requires Tesseract 5 on PATH; run 'ashift doctor' for installation guidance."
+        )?;
+        if cfg!(windows) {
+            writeln!(
+                out,
+                "Docling requires the latest Microsoft Visual C++ Redistributable (x64); install it from https://aka.ms/vc14/vc_redist.x64.exe and run 'ashift doctor'."
+            )?;
+        }
+    }
+    out.flush()
+}
+
+/// Renders a pack removal report as human-readable text to stdout.
+pub fn render_pack_remove_human(report: &ariad_host::packs::RemoveReport) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    writeln!(out, "removed {} {}", report.name, report.removed.join(", "))?;
+    if let Some(active) = &report.active {
+        writeln!(out, "active version: {active}")?;
+    }
+    out.flush()
+}
+
+/// Renders a pack verification report as human-readable text to stdout.
+pub fn render_pack_verify_human(report: &ariad_host::packs::VerifyReport) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    let icon = if report.ok { check_mark() } else { fail_icon() };
+    let signer = report
+        .key_id
+        .as_deref()
+        .map_or_else(String::new, |key| format!(", signed by key {key}"));
+    writeln!(
+        out,
+        "{icon} {} {} ({}): {} entries checked{signer}",
+        report.name, report.version, report.target, report.checked
+    )?;
+    for path in &report.modified {
+        writeln!(out, "  modified: {}", escape_control_chars(path))?;
+    }
+    for path in &report.missing {
+        writeln!(out, "  missing: {}", escape_control_chars(path))?;
+    }
+    for problem in &report.problems {
+        writeln!(out, "  problem: {}", escape_control_chars(problem))?;
+    }
+    out.flush()
 }

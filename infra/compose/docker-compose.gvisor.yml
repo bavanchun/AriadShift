@@ -1,0 +1,32 @@
+# Runs the conversion workers under gVisor (runsc) instead of runc.
+#
+#   docker compose -f infra/compose/docker-compose.yml \
+#     -f infra/compose/docker-compose.gvisor.yml --profile core up -d --wait
+#
+# The host must register the runtime as "runsc" in /etc/docker/daemon.json;
+# docs/self-hosting.md has the steps.
+#
+# gVisor puts a user-space kernel between the worker and the host kernel, but
+# it does not implement Landlock, so the engine sandbox's required mode cannot
+# start there (docs/server.md). These workers therefore run with
+# ARIAD_SANDBOX=best-effort: gVisor is the isolation boundary, and the engine
+# keeps the seccomp network filter and the non-dumpable worker, but engines
+# lose Landlock filesystem confinement inside the sandbox. Use this override
+# only when that trade is the one you want; the default runc stack keeps
+# required mode.
+
+services:
+  worker-core:
+    runtime: runsc
+    environment:
+      ARIAD_SANDBOX: best-effort
+
+  worker-office:
+    runtime: runsc
+    environment:
+      ARIAD_SANDBOX: best-effort
+
+  worker-docling:
+    runtime: runsc
+    environment:
+      ARIAD_SANDBOX: best-effort

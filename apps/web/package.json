@@ -1,0 +1,52 @@
+{
+  "name": "@ariadshift/web",
+  "private": true,
+  "type": "module",
+  "description": "AriadShift website and in-browser converter.",
+  "scripts": {
+    "sync-brand": "node scripts/sync-brand.mjs",
+    "generate-sdk": "pnpm --filter @ariadshift/sdk generate",
+    "dev": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/sync-notices.mjs && node scripts/write-service-worker.mjs --dev && next dev --port 3200",
+    "build": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/sync-notices.mjs && next build --analyze && node scripts/write-service-worker.mjs && node scripts/sync-notices.mjs --check",
+    "export": "pnpm run generate-sdk && node scripts/sync-brand.mjs && node scripts/sync-pandoc.mjs && node scripts/sync-notices.mjs && node scripts/export.mjs && node scripts/sync-notices.mjs --check",
+    "start": "next start --port 3100",
+    "typecheck": "pnpm run generate-sdk && node scripts/sync-brand.mjs && next typegen && tsc --noEmit -p .",
+    "test": "pnpm run generate-sdk && vitest run",
+    "e2e": "playwright test",
+    "lighthouse": "node scripts/lighthouse.mjs"
+  },
+  "dependencies": {
+    "@ariadshift/ariad-wasm": "workspace:*",
+    "@ariadshift/sdk": "workspace:*",
+    "@ariadshift/ui": "workspace:*",
+    "@better-auth/api-key": "catalog:",
+    "@better-auth/passkey": "catalog:",
+    "@bjorn3/browser_wasi_shim": "catalog:",
+    "@uppy/aws-s3": "6.3.0",
+    "@uppy/core": "6.3.0",
+    "better-auth": "catalog:",
+    "lucide-react": "catalog:",
+    "next": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "@ariadshift/ariad-typst": "workspace:*"
+  },
+  "devDependencies": {
+    "@ariadshift/config": "workspace:*",
+    "@fontsource/plus-jakarta-sans": "catalog:",
+    "@playwright/test": "catalog:",
+    "@tailwindcss/postcss": "catalog:",
+    "@testing-library/dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "chrome-launcher": "catalog:",
+    "jsdom": "catalog:",
+    "lighthouse": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

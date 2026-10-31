@@ -9,6 +9,25 @@ targets = [
 [advisories]
 yanked = "deny"
 unmaintained = "workspace"
+ignore = [
+    # The Marvin attack is a timing side channel in RSA private-key
+    # operations. rsa reaches the build only through jsonwebtoken's verifier
+    # in ariad-server, which checks signatures with public keys and never
+    # holds an RSA private key.
+    { id = "RUSTSEC-2023-0071", reason = "ariad-server only verifies RSA signatures with public keys" },
+    # crypto-bigint reaches production only through jsonwebtoken's public-key
+    # verifier (p256/p384). JwtVerifier uses DecodingKey::from_jwk and decode;
+    # no private integers or signing keys enter this arithmetic. Remove when
+    # a stable jsonwebtoken release adopts the patched RustCrypto dependency.
+    # Reassess if the server adds JWT signing.
+    { id = "RUSTSEC-2026-0387", reason = "ariad-server only verifies JWT signatures with public JWKS keys; no secret integer operations" },
+    # quick-xml 0.38 reaches the binary only through typst-library -> hayagriva ->
+    # citationberg, which parses CSL styles and locales for bibliographies. The Typst
+    # markup ashift generates never loads a bibliography or a CSL file, so these XML
+    # parsing paths never run. Drop both entries once citationberg moves to >= 0.41.
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml via citationberg; CSL parsing unreachable from generated Typst markup" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml via citationberg; CSL parsing unreachable from generated Typst markup" },
+]
 
 [licenses]
 allow = [
@@ -33,6 +52,35 @@ name = "cssparser"
 [[licenses.exceptions]]
 allow = ["MPL-2.0"]
 name = "dtoa-short"
+
+# Transitive dependency of directories (platform data directory for engine packs).
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "option-ext"
+# rustls-platform-verifier (through reqwest in ariad-server) selects this
+# certificate bundle only for wasm32, a target ariad-server never builds for.
+[[licenses.exceptions]]
+allow = ["CDLA-Permissive-2.0"]
+name = "webpki-root-certs"
+
+# compile-time only (proc-macro dependency of const-random-macro); not present in distributed binaries
+[[licenses.exceptions]]
+allow = ["CC0-1.0"]
+name = "tiny-keccak"
+
+# Unmodified Tauri HTML processing dependencies.
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "selectors"
+
+[[licenses.exceptions]]
+allow = ["MPL-2.0"]
+name = "cssparser-macros"
+
+# Typst's roman-numeral helper is dual-licensed 0BSD OR CC0-1.0; we take 0BSD.
+[[licenses.exceptions]]
+allow = ["0BSD"]
+name = "roman-numerals-rs"
 
 [bans]
 multiple-versions = "warn"

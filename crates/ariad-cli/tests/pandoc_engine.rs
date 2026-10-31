@@ -35,6 +35,7 @@ fn request_for(workspace: &Workspace, document: &Document, limits: Limits) -> Re
         work_dir: workspace.work_dir().to_string_lossy().into_owned(),
         options: BTreeMap::new(),
         limits,
+        session_id: None,
     }
 }
 
@@ -164,20 +165,27 @@ fn eight_megabyte_memory_limit_is_a_typed_limit_exceeded_error() {
     limits.max_memory_mb = Some(8);
     let request = request_for(&workspace, &document, limits);
 
-    let Err(runner::RunError::EngineFailed { code, .. }) = run_engine(&request) else {
-        panic!("the 8 MiB cap should return a typed limit error");
-    };
-    assert_eq!(code, ErrorCode::LimitExceeded);
+    // Pandoc's `+RTS -M` and the host memory watchdog both enforce the cap; whichever fires
+    // first, the outcome is a typed limit error.
+    match run_engine(&request) {
+        Err(runner::RunError::EngineFailed { code, .. }) => {
+            assert_eq!(code, ErrorCode::LimitExceeded);
+        }
+        Err(runner::RunError::MemoryLimitExceeded { limit_mb }) => assert_eq!(limit_mb, 8),
+        other => panic!("the 8 MiB cap should return a typed limit error: {other:?}"),
+    }
     workspace.close().expect("remove engine workspace");
 }
 
 #[test]
-fn unknown_hidden_engine_command_uses_the_usage_exit_code() {
+fn unknown_hidden_engine_returns_no_protocol_output() {
     let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
         .args(["__engine", "unrecognized"])
         .output()
         .expect("start ashift");
     assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unknown built-in engine"));
 }
 
 #[test]

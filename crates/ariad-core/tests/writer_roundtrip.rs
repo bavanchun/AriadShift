@@ -286,7 +286,11 @@ fn escaping_markdown_syntax_characters_in_text() {
 #[test]
 fn asset_backed_images_are_embedded_as_data_uris() {
     let mut doc = Document::default();
-    let image_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRfakeimage";
+    let image_bytes = fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/md/assets/vietnamese-route.png"),
+    )
+    .expect("real PNG fixture");
     doc.assets.insert(
         "abc123".to_owned(),
         Asset {
@@ -313,22 +317,30 @@ fn asset_backed_images_are_embedded_as_data_uris() {
     assert!(written.content.contains(" \"System architecture\")"));
 
     let read_back = markdown::read(&written.content, &Limits::local()).expect("read back");
+    assert!(read_back.warnings.is_empty());
+    assert_eq!(read_back.document.assets.len(), 1);
     match &read_back.document.body[0] {
         Block::Paragraph { content } => match &content[0] {
             Inline::Image { target, alt, title } => {
                 assert_eq!(alt, "diagram");
                 assert_eq!(title.as_deref(), Some("System architecture"));
                 match target {
-                    AssetRef::Url { href } => {
-                        assert!(href.starts_with("data:image/png;base64,"));
+                    AssetRef::Asset { id } => {
+                        let asset = &read_back.document.assets[id];
+                        assert_eq!(asset.media_type, "image/png");
+                        assert_eq!(asset.bytes, image_bytes);
                     }
-                    other => panic!("expected Url target, got {other:?}"),
+                    other => panic!("expected embedded image asset, got {other:?}"),
                 }
             }
             other => panic!("expected Image inline, got {other:?}"),
         },
         other => panic!("expected Paragraph block, got {other:?}"),
     }
+    assert_eq!(
+        writer::markdown::write(&read_back.document).content,
+        written.content
+    );
 }
 
 #[test]
@@ -2697,5 +2709,32 @@ fn test_footnote_id_ending_in_backslash_percent_encoded() {
     assert!(
         re_read.document.body.iter().any(|b| matches!(b, Block::Paragraph { content } if content.iter().any(|i| matches!(i, Inline::FootnoteRef { .. })))),
         "footnote ref must be preserved on read-back"
+    );
+}
+
+#[test]
+fn ordered_list_numbering_saturates_instead_of_overflowing() {
+    let item = |text: &str| ListItem {
+        checked: None,
+        blocks: vec![Block::Paragraph {
+            content: vec![Inline::Text {
+                text: text.to_owned(),
+            }],
+        }],
+    };
+    let mut doc = Document::default();
+    doc.body.push(Block::List {
+        ordered: true,
+        start: Some(u64::MAX),
+        tight: true,
+        items: vec![item("first"), item("second")],
+    });
+
+    let out = writer::markdown::write(&doc);
+    assert!(
+        out.content.contains("18446744073709551615. first")
+            && out.content.contains("18446744073709551615. second"),
+        "numbers past the limit must stay at the limit: {}",
+        out.content
     );
 }

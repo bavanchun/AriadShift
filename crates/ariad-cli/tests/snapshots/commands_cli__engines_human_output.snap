@@ -5,4 +5,9 @@ expression: normalize_engines_human_stdout(&output)
 ENGINE       VERSION   LICENSE            STATUS                             ROUTES
 ariad-core  [VERSION]  Apache-2.0         ready                              ariad-ir+json -> html, ariad-ir+json -> markdown, html -> ariad-ir+json, markdown -> ariad-ir+json
 pandoc      [VERSION]  GPL-2.0-or-later   ready                              ariad-ir+json -> docx, ariad-ir+json -> epub, docx -> ariad-ir+json, epub -> ariad-ir+json
+pdf         [VERSION]  Apache-2.0         ready                              (none)
+typst       [VERSION]  Apache-2.0         ready                              (none)
+libreoffice [VERSION]  MPL-2.0            missing (optional)                 (none)
 docling      -         Apache-2.0         not installed (available in v0.2)  docx -> ariad-ir+json
+
+no engine packs installed

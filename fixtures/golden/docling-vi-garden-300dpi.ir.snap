@@ -1,0 +1,70 @@
+---
+source: crates/ariad-core/tests/ir_snapshots.rs
+---
+{
+  "document": {
+    "assets": {},
+    "body": [
+      {
+        "content": [
+          {
+            "text": "Khu vườn đọc sách",
+            "type": "text"
+          }
+        ],
+        "level": 2,
+        "type": "heading"
+      },
+      {
+        "content": [
+          {
+            "text": "Khu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.",
+            "type": "text"
+          }
+        ],
+        "type": "paragraph"
+      }
+    ],
+    "layout": {
+      "blocks": {
+        "body/0": {
+          "bbox": {
+            "bottom": 77.0,
+            "left": 224.333,
+            "right": 369.333,
+            "top": 61.333
+          },
+          "page_no": 1
+        },
+        "body/1": {
+          "bbox": {
+            "bottom": 133.333,
+            "left": 61.667,
+            "right": 532.0,
+            "top": 107.0
+          },
+          "page_no": 1
+        }
+      },
+      "pages": [
+        {
+          "height": 841.922,
+          "page_no": 1,
+          "width": 595.201
+        }
+      ]
+    },
+    "meta": {
+      "authors": [],
+      "date": null,
+      "keywords": [],
+      "language": null,
+      "source_format": "png",
+      "subject": null,
+      "title": null
+    },
+    "provenance": null,
+    "version": "ariad-ir/1"
+  },
+  "warnings": []
+}

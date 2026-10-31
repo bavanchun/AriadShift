@@ -1,4 +1,4 @@
-//! Typed messages for the draft AriadShift engine protocol.
+//! Typed messages for the frozen AriadShift engine protocol.
 
 use std::collections::BTreeMap;
 
@@ -24,6 +24,10 @@ pub enum Request {
         #[serde(default)]
         options: BTreeMap<String, Value>,
         limits: Limits,
+        /// Warm session this job belongs to. An engine that reports `supports_session: true`
+        /// keeps running after the `result` and reads the next request of the same session.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
     },
     Describe {
         protocol: String,
@@ -45,6 +49,15 @@ impl Request {
     pub fn job(&self) -> &str {
         match self {
             Self::Convert { job, .. } | Self::Describe { job, .. } => job,
+        }
+    }
+
+    /// Returns the session identifier of a `convert` request, if it belongs to a session.
+    #[must_use]
+    pub fn session_id(&self) -> Option<&str> {
+        match self {
+            Self::Convert { session_id, .. } => session_id.as_deref(),
+            Self::Describe { .. } => None,
         }
     }
 }
@@ -123,6 +136,9 @@ pub enum Event {
         license: String,
         routes: Vec<RouteCapability>,
         enforces_memory_limit: bool,
+        /// Whether the engine serves several `convert` jobs of one `session_id` in one process.
+        #[serde(default)]
+        supports_session: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         models: Option<Vec<String>>,
     },
@@ -237,7 +253,8 @@ mod tests {
             },
             "license": "GPL-2.0-or-later",
             "routes": [{"input":"ariad-ir+json","output":"docx"}],
-            "enforces_memory_limit": true
+            "enforces_memory_limit": true,
+            "supports_session": false
         });
         let cap_event: Event =
             serde_json::from_value(cap_example.clone()).expect("capabilities deserializes");
@@ -277,10 +294,72 @@ mod tests {
             work_dir: "/work/tmp".to_owned(),
             options: BTreeMap::from([("profile".to_owned(), Value::String("editable".to_owned()))]),
             limits: Limits::local(),
+            session_id: None,
         };
         let value = serde_json::to_value(request).unwrap();
         assert_eq!(value["op"], "convert");
         assert_eq!(value["options"]["profile"], "editable");
+    }
+
+    #[test]
+    fn session_id_is_optional_on_convert_and_omitted_when_absent() {
+        let one_shot = json!({
+            "op": "convert",
+            "protocol": PROTOCOL,
+            "job": "job-1",
+            "input": {"path": "/work/in/a.pdf", "format": "pdf"},
+            "output": {"dir": "/work/out", "format": "docling+json"},
+            "work_dir": "/work/tmp",
+            "limits": {"max_nesting_depth": 64},
+        });
+        let request: Request = serde_json::from_value(one_shot).expect("one-shot request");
+        assert_eq!(request.session_id(), None);
+        assert!(
+            serde_json::to_value(&request)
+                .unwrap()
+                .get("session_id")
+                .is_none()
+        );
+
+        let mut in_session = serde_json::to_value(&request).unwrap();
+        in_session["session_id"] = json!("session-7");
+        let request: Request = serde_json::from_value(in_session).expect("session request");
+        assert_eq!(request.session_id(), Some("session-7"));
+        assert_eq!(
+            serde_json::to_value(&request).unwrap()["session_id"],
+            "session-7"
+        );
+
+        let describe = Request::Describe {
+            protocol: PROTOCOL.to_owned(),
+            job: "d".to_owned(),
+        };
+        assert_eq!(describe.session_id(), None);
+    }
+
+    #[test]
+    fn supports_session_defaults_to_false_and_is_always_written() {
+        let without = json!({
+            "type": "capabilities",
+            "engine": "legacy",
+            "version": "0.1.0",
+            "tool": {"name": "legacy", "status": "found"},
+            "license": "MIT",
+            "routes": [],
+            "enforces_memory_limit": false
+        });
+        let event: Event = serde_json::from_value(without).expect("capabilities without the field");
+        assert!(matches!(
+            event,
+            Event::Capabilities {
+                supports_session: false,
+                ..
+            }
+        ));
+        assert_eq!(
+            serde_json::to_value(&event).unwrap()["supports_session"],
+            false
+        );
     }
 
     #[test]

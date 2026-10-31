@@ -1,0 +1,306 @@
+import { memoryAdapter } from "better-auth/adapters/memory";
+import pg from "pg";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import {
+  API_KEY_PREFIX,
+  BASE_PATH,
+  buildAuthOptions,
+  CLIENT_IP_HEADER,
+  JWT_LIFETIME,
+  OAUTH_ACCESS_TOKEN_LIFETIME_S,
+  OAUTH_CONSENT_PATH,
+  OAUTH_REGISTRATION_RATE_LIMIT,
+  OAUTH_SIGN_IN_PATH,
+} from "../src/auth.ts";
+import { type AuthServiceConfig, parseConfig } from "../src/config.ts";
+
+// A pool connects lazily, so building options never touches a database.
+const pool = new pg.Pool({ connectionString: "postgres://nobody@127.0.0.1:1/none" });
+afterAll(() => pool.end());
+
+function config(overrides: Record<string, string> = {}): AuthServiceConfig {
+  return parseConfig({
+    DATABASE_URL: "postgres://ariad_auth:pw@postgres:5432/ariadshift",
+    BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
+    BETTER_AUTH_URL: "http://localhost:3001",
+    BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+    ARIAD_PUBLIC_URL: "http://localhost:8080",
+    ...overrides,
+  });
+}
+
+function plugin(options: ReturnType<typeof buildAuthOptions>, id: string) {
+  const found = options.plugins.find((p) => p.id === id);
+  if (!found) throw new Error(`plugin ${id} is missing`);
+  // Plugins carry differently typed options; the tests read them loosely.
+  return found as unknown as { id: string; options?: Record<string, unknown>; schema?: unknown };
+}
+
+describe("buildAuthOptions", () => {
+  it("installs exactly the JWT, API key, passkey, two-factor and OAuth provider plugins", () => {
+    const ids = buildAuthOptions(config(), pool).plugins.map((p) => p.id);
+    expect(ids.sort()).toEqual(["api-key", "jwt", "oauth-provider", "passkey", "two-factor"]);
+  });
+
+  it("mounts at /api/auth so the JWKS is at /api/auth/jwks", () => {
+    const options = buildAuthOptions(config(), pool);
+    expect(BASE_PATH).toBe("/api/auth");
+    expect(options.basePath).toBe(BASE_PATH);
+    expect(options.baseURL).toBe("http://localhost:3001");
+    expect(plugin(options, "jwt").options?.jwks).toEqual({
+      keyPairConfig: { alg: "EdDSA", crv: "Ed25519" },
+      rotationInterval: 2592000,
+      gracePeriod: 1800,
+    });
+  });
+
+  it("issues 15-minute tokens whose iss and aud are the service origin", async () => {
+    const options = buildAuthOptions(config({ BETTER_AUTH_URL: "https://auth.example.com" }), pool);
+    const jwt = plugin(options, "jwt").options?.jwt as {
+      issuer: string;
+      audience: string;
+      expirationTime: string;
+      definePayload: () => unknown;
+    };
+    expect(JWT_LIFETIME).toBe("15m");
+    expect(jwt.expirationTime).toBe(JWT_LIFETIME);
+    expect(jwt.issuer).toBe("https://auth.example.com");
+    expect(jwt.audience).toBe("https://auth.example.com");
+    // Only registered claims; `sub` stays Better Auth's default, the user id.
+    expect(await jwt.definePayload()).toEqual({});
+  });
+
+  it("creates API keys in the apikey table ariad-server reads", () => {
+    const apiKey = plugin(buildAuthOptions(config(), pool), "api-key");
+    const schema = apiKey.schema as { apikey: { fields: Record<string, unknown> } };
+    expect(Object.keys(schema.apikey.fields)).toEqual(
+      expect.arrayContaining([
+        "key",
+        "referenceId",
+        "configId",
+        "enabled",
+        "expiresAt",
+        "remaining",
+        "rateLimitEnabled",
+      ]),
+    );
+    expect(API_KEY_PREFIX).toBe("ashift_");
+  });
+
+  it("binds passkeys to the web app and to this service's sign-in page", () => {
+    const passkey = plugin(
+      buildAuthOptions(
+        config({
+          BETTER_AUTH_URL: "https://auth.example.com",
+          BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com",
+          AUTH_PASSKEY_RP_ID: "example.com",
+        }),
+        pool,
+      ),
+      "passkey",
+    );
+    expect(passkey.options).toMatchObject({
+      rpID: "example.com",
+      rpName: "AriadShift",
+      origin: ["https://app.example.com", "https://auth.example.com"],
+    });
+  });
+
+  it("names the app in authenticator entries", () => {
+    expect(plugin(buildAuthOptions(config(), pool), "two-factor").options).toMatchObject({
+      issuer: "AriadShift",
+    });
+  });
+
+  it("enables social providers only when configured", () => {
+    expect(buildAuthOptions(config(), pool).socialProviders).toEqual({});
+    const both = buildAuthOptions(
+      config({
+        GITHUB_CLIENT_ID: "gh-id",
+        GITHUB_CLIENT_SECRET: "gh-secret",
+        GOOGLE_CLIENT_ID: "g-id",
+        GOOGLE_CLIENT_SECRET: "g-secret",
+      }),
+      pool,
+    );
+    expect(both.socialProviders).toEqual({
+      github: { clientId: "gh-id", clientSecret: "gh-secret", disableSignUp: true },
+      google: { clientId: "g-id", clientSecret: "g-secret", disableSignUp: true },
+    });
+  });
+
+  it("keeps rate limiting on, shared in the database, keyed by the pinned client header", () => {
+    const options = buildAuthOptions(config(), pool);
+    expect(options.rateLimit).toMatchObject({ enabled: true, storage: "database" });
+    expect(options.advanced.ipAddress.ipAddressHeaders).toEqual([CLIENT_IP_HEADER]);
+  });
+
+  it("trusts the web origins and sets secure cookies only over https", () => {
+    const local = buildAuthOptions(config(), pool);
+    expect(local.trustedOrigins).toEqual(["http://localhost:3000"]);
+    expect(local.advanced.useSecureCookies).toBe(false);
+    expect(local.advanced.defaultCookieAttributes).toEqual({ sameSite: "lax", httpOnly: true });
+
+    const tls = buildAuthOptions(config({ BETTER_AUTH_URL: "https://auth.example.com" }), pool);
+    expect(tls.advanced.useSecureCookies).toBe(true);
+  });
+
+  it("lets users delete their own account without an emailed confirmation", () => {
+    const options = buildAuthOptions(config(), pool);
+    expect(options.user.deleteUser.enabled).toBe(true);
+  });
+
+  it("revokes every API key of the deleted user without touching other owners", async () => {
+    const query = vi.fn().mockResolvedValue({ rowCount: 2 });
+    const database = { query } as unknown as pg.Pool;
+    const options = buildAuthOptions(config(), database);
+    await options.user.deleteUser.beforeDelete({
+      id: "user-'1",
+      name: "Ada",
+      email: "ada@example.com",
+      emailVerified: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    expect(query).toHaveBeenCalledExactlyOnceWith(
+      'DELETE FROM "auth"."apikey" WHERE "referenceId" = $1',
+      ["user-'1"],
+    );
+  });
+
+  it("refuses account deletion when API key revocation fails", async () => {
+    const failure = new Error("database unavailable");
+    const database = { query: vi.fn().mockRejectedValue(failure) } as unknown as pg.Pool;
+    const options = buildAuthOptions(config(), database);
+    await expect(
+      options.user.deleteUser.beforeDelete({
+        id: "user-1",
+        name: "Ada",
+        email: "ada@example.com",
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).rejects.toBe(failure);
+  });
+
+  it("refuses account deletion when its database cannot revoke API keys", async () => {
+    const options = buildAuthOptions(config(), memoryAdapter({}));
+    await expect(
+      options.user.deleteUser.beforeDelete({
+        id: "user-1",
+        name: "Ada",
+        email: "ada@example.com",
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).rejects.toThrow("API key revocation requires a PostgreSQL connection");
+  });
+
+  it("does not require email verification and sends no telemetry", () => {
+    const options = buildAuthOptions(config(), pool);
+    expect(options.emailAndPassword).toEqual({
+      enabled: true,
+      disableSignUp: true,
+      requireEmailVerification: false,
+    });
+    expect(options.telemetry).toEqual({ enabled: false });
+    expect(options.database).toBe(pool);
+  });
+
+  describe("OAuth authorization server for remote MCP", () => {
+    function oauth(overrides: Record<string, string> = {}) {
+      return plugin(buildAuthOptions(config(overrides), pool), "oauth-provider").options as Record<
+        string,
+        unknown
+      >;
+    }
+
+    it("issues tokens only for the MCP resource the API derives from its public URL", () => {
+      const options = oauth({ ARIAD_PUBLIC_URL: "https://api.example.com" });
+      expect(options.resources).toEqual(["https://api.example.com/mcp"]);
+      expect(options.clientRegistrationDefaultResources).toEqual(["https://api.example.com/mcp"]);
+      // Better Auth's default: a client is limited to the resources it is linked to.
+      expect(options.enforcePerClientResources).toBeUndefined();
+    });
+
+    it("offers authorization code and refresh only, never client credentials", () => {
+      expect(oauth().grantTypes).toEqual(["authorization_code", "refresh_token"]);
+    });
+
+    it("opens dynamic client registration without an account and keeps PKCE required", () => {
+      const options = oauth();
+      expect(options).toMatchObject({
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        clientRegistrationRequirePKCE: true,
+        clientRegistrationDefaultApplicationType: "infer",
+      });
+    });
+
+    it("limits anonymous client registration per address far below Better Auth's default", () => {
+      expect(OAUTH_REGISTRATION_RATE_LIMIT).toEqual({ window: 3600, max: 20 });
+      expect(oauth().rateLimit).toEqual({ register: { window: 3600, max: 20 } });
+      // The plugin turns the option into a rule for the registration path.
+      const rules = (
+        plugin(buildAuthOptions(config(), pool), "oauth-provider") as unknown as {
+          rateLimit: { pathMatcher: (path: string) => boolean; window: number; max: number }[];
+        }
+      ).rateLimit;
+      const register = rules.filter((rule) => rule.pathMatcher("/oauth2/register"));
+      expect(register).toHaveLength(1);
+      expect(register[0]).toMatchObject({ window: 3600, max: 20 });
+    });
+
+    it("runs the two-factor check before the provider resumes an authorization", () => {
+      // Both plugins have after-hooks on /sign-in/email. Two-factor must clear
+      // the half-signed-in session first, so the provider never resumes an
+      // authorization (and issues a code) before the second factor.
+      const ids = buildAuthOptions(config(), pool).plugins.map((p) => p.id);
+      expect(ids.indexOf("two-factor")).toBeGreaterThanOrEqual(0);
+      expect(ids.indexOf("two-factor")).toBeLessThan(ids.indexOf("oauth-provider"));
+    });
+
+    it("sends sign-in and consent to this service's pages", () => {
+      const options = oauth({ BETTER_AUTH_URL: "https://auth.example.com" });
+      expect(OAUTH_SIGN_IN_PATH).toBe("/oauth/sign-in");
+      expect(OAUTH_CONSENT_PATH).toBe("/oauth/consent");
+      expect(options.loginPage).toBe("https://auth.example.com/oauth/sign-in");
+      expect(options.consentPage).toBe("https://auth.example.com/oauth/consent");
+    });
+
+    it("keeps access tokens as short-lived as the API JWT, with a refresh retry window", () => {
+      const options = oauth();
+      expect(OAUTH_ACCESS_TOKEN_LIFETIME_S).toBe(15 * 60);
+      expect(options.accessTokenExpiresIn).toBe(OAUTH_ACCESS_TOKEN_LIFETIME_S);
+      expect(options.refreshTokenReuseInterval).toBe(30);
+      expect(options.scopes).toEqual(["openid", "profile", "email", "offline_access"]);
+    });
+
+    it("signs access tokens with the JWT plugin, so they share its issuer and JWKS", () => {
+      const options = oauth();
+      expect(options.disableJwtPlugin).toBe(false);
+      expect(plugin(buildAuthOptions(config(), pool), "jwt").options?.jwt).toMatchObject({
+        issuer: "http://localhost:3001",
+      });
+    });
+
+    it("adds the OAuth tables to the schema the migration applies", () => {
+      const schema = plugin(buildAuthOptions(config(), pool), "oauth-provider").schema as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(schema)).toEqual(
+        expect.arrayContaining([
+          "oauthClient",
+          "oauthAccessToken",
+          "oauthRefreshToken",
+          "oauthConsent",
+          "oauthResource",
+          "oauthClientResource",
+        ]),
+      );
+    });
+  });
+});

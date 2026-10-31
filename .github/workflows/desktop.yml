@@ -1,0 +1,246 @@
+name: Desktop
+on:
+  pull_request:
+    branches: [dev, main]
+    paths: ["apps/desktop/**", "packages/**", "crates/**", "Cargo.*", "pnpm-*.yaml", "package.json", "justfile", "scripts/desktop-*", ".github/workflows/desktop.yml"]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  CARGO_BUILD_JOBS: "4"
+  NEXTEST_TEST_THREADS: "2"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+jobs:
+  check:
+    name: Desktop (${{ matrix.os }})
+    if: github.event_name != 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, macos-26, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.9.1
+          run_install: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        with:
+          tool: just@1.58.0,cargo-nextest@0.9.149
+      - name: Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [[ -f "$source" ]]; then
+              sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
+            fi
+          done
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils webkitgtk-webdriver xvfb dbus-daemon at-spi2-core libreoffice-impress
+          command -v update-desktop-database && command -v xdg-mime
+      - name: Enable namespaces for LibreOffice sandbox tests
+        if: runner.os == 'Linux'
+        run: |
+          if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --user --map-root-user --mount true
+      - run: pnpm install --frozen-lockfile
+      - run: just pandoc
+      - run: just desktop-bindings-check
+      - run: pnpm --filter @ariadshift/desktop test
+      - run: pnpm --filter @ariadshift/desktop test:tools
+      - run: cargo nextest run -p ariad-desktop
+      - name: Verify cached Linux bundler tools
+        if: runner.os == 'Linux'
+        run: node apps/desktop/scripts/linux-tools.mjs
+      - name: Build platform installers without publishing
+        if: runner.os != 'macOS'
+        run: just desktop-build
+      - name: Build macOS installers and assert updater signature without Apple credentials
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE: ""
+          APPLE_CERTIFICATE_PASSWORD: ""
+          APPLE_SIGNING_IDENTITY: ""
+          APPLE_ID: ""
+          APPLE_PASSWORD: ""
+          APPLE_TEAM_ID: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          key_dir=$(mktemp -d "$RUNNER_TEMP/desktop-updater.XXXXXX")
+          trap 'rm -rf "$key_dir"' EXIT
+          umask 077
+          pnpm --filter @ariadshift/desktop tauri signer generate --ci --password '' --write-keys "$key_dir/updater.key" >/dev/null 2>&1
+          node --input-type=module - "$key_dir" <<'JS'
+          import { readFileSync, writeFileSync } from "node:fs";
+          const dir = process.argv[2];
+          writeFileSync(`${dir}/updater.json`, JSON.stringify({
+            bundle: { createUpdaterArtifacts: true },
+            plugins: { updater: { pubkey: readFileSync(`${dir}/updater.key.pub`, "utf8").trim() } },
+          }));
+          JS
+          TAURI_SIGNING_PRIVATE_KEY="$(cat "$key_dir/updater.key")"
+          export TAURI_SIGNING_PRIVATE_KEY
+          pnpm --filter @ariadshift/desktop tauri build --config "$key_dir/updater.json"
+          test -s target/release/bundle/macos/AriadShift.app.tar.gz.sig
+          echo 'Verified nonempty AriadShift.app.tar.gz.sig without Apple credentials.'
+      - name: Convert PDF and Office through the packaged AppImage
+        if: runner.os == 'Linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: just desktop-engine-smoke
+      - name: Install WebDriver
+        if: runner.os == 'Linux'
+        run: cargo install tauri-driver --version 2.1.0 --locked
+      - name: Convert Markdown through the real app
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dbus-run-session -- just desktop-smoke
+  release:
+    name: Desktop release (${{ matrix.os }})
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, macos-26, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      HAS_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          version: 12.9.1
+          run_install: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Require updater signing material
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: test -n "$TAURI_SIGNING_PRIVATE_KEY" && test -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+      - name: Linux desktop prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          for source in /etc/apt/apt-mirrors*.txt /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+            if [ -f "$source" ]; then
+              sudo sed -i -E 's#https?://azure\.archive\.ubuntu\.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' "$source"
+            fi
+          done
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev patchelf desktop-file-utils xdg-utils
+      - run: pnpm install --frozen-lockfile
+      - name: Verify cached Linux bundler tools
+        if: runner.os == 'Linux'
+        run: node apps/desktop/scripts/linux-tools.mjs
+      - name: Configure release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node apps/desktop/scripts/release-config.mjs
+      - name: Import Windows signing certificate when configured
+        if: runner.os == 'Windows' && env.HAS_WINDOWS_CERTIFICATE == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'desktop-signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          try {
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+            $path = 'apps/desktop/src-tauri/tauri.release.local.json'
+            $config = Get-Content $path -Raw | ConvertFrom-Json -AsHashtable
+            $config.bundle.windows = @{certificateThumbprint=$cert.Thumbprint;digestAlgorithm='sha256';timestampUrl='http://timestamp.digicert.com'}
+            $config | ConvertTo-Json -Depth 10 | Set-Content $path
+          } finally { Remove-Item $pfx -Force }
+      - name: Wait for the CLI workflow to create the release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          for ((attempt = 0; attempt < 270; attempt++)); do
+            if release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.id' 2>/dev/null); then
+              [[ "$release_id" =~ ^[0-9]+$ ]] || exit 1
+              printf 'id=%s\n' "$release_id" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo 'The CLI release was not created; desktop assets will not be published.' >&2
+          exit 1
+      - name: Build and attach installers and signed updater metadata
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tauriScript: pnpm tauri
+          projectPath: apps/desktop
+          releaseId: ${{ steps.release.outputs.id }}
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: --config src-tauri/tauri.release.local.json
+  verify-release:
+    name: Verify desktop updater release
+    needs: release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - run: sudo apt-get update && sudo apt-get install -y minisign
+      - name: Verify all attached updater signatures with the committed key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node apps/desktop/scripts/verify-release.mjs

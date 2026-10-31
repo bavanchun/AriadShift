@@ -1,26 +1,51 @@
 [default]
 locale = "en"
+# Abbreviated Git commit hash referenced in review reports.
+extend-ignore-re = ["\\bc234afe\\b"]
 
 [default.extend-words]
 # Correct names and acronyms in the public planning and research files.
 Ba = "Ba"
 Nam = "Nam"
 OER = "OER"
+HSI = "HSI"
 # EPUB package document (content.opf) and the Python CA bundle package.
 opf = "opf"
 certifi = "certifi"
+# macOS wheel shared-library bundler paired with auditwheel and delvewheel.
+delocate = "delocate"
+# OpenDocument Format and the flate2 compression crate.
+ODF = "ODF"
+flate = "flate"
+# Tesseract's language data name for Thai.
+tha = "tha"
+# XML Formatting Objects namespace used by OpenDocument styles.
+fo = "fo"
 
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".
 PNGs = "PNGs"
+# Linux procfs names this field for inheritable process capabilities.
+CapInh = "CapInh"
 
 [files]
 extend-exclude = [
     "THIRD_PARTY_LICENSES",
+    "apps/desktop/THIRD_PARTY_JS_LICENSES",
+    "vendor/**",
+    # Full upstream notices; the pack checks their reviewed SHA-256 digests.
+    "engines/docling/pack/licenses/*-notice*.txt",
     "fixtures/md/vi-*.md",
     "fixtures/md/mixed-*.md",
     "fixtures/gen/src/ariad_fixture_gen/text/vietnamese-*.md",
     "fixtures/golden/*.snap",
     "fixtures/**/*.truth.json",
+    # Engine output with JSON-escaped non-ASCII text, which the checker splits into fragments.
+    "fixtures/docling/*.docling.json",
     "fuzz/seeds/**",
 ]
+
+# Original wheel RECORD receipts contain URL-safe SHA-256 digests.
+[type.wheel-record]
+extend-glob = ["*.record"]
+extend-ignore-re = ["sha256=[A-Za-z0-9_-]+"]

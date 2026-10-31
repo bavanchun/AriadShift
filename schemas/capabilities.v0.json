@@ -172,7 +172,20 @@
         "pdf",
         "png",
         "ariad-ir+json",
-        "pandoc+json"
+        "pandoc+json",
+        "docling+json",
+        "pptx",
+        "xlsx",
+        "odt",
+        "ods",
+        "odp",
+        "doc",
+        "xls",
+        "ppt",
+        "rtf",
+        "jpeg",
+        "webp",
+        "tiff"
       ]
     },
     "Runtime": {

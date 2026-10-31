@@ -1,0 +1,10 @@
+{"type":"artifact","path":"/work/out/../etc/passwd","format":"docx"}
+{"type":"artifact","path":"/work/outside/a.docx","format":"docx"}
+{"type":"artifact","path":"/work/out","format":"docx"}
+{"type":"artifact","path":"/work/out/./a.docx","format":"docx"}
+{"type":"artifact","path":"relative.docx","format":"docx"}
+{"type":"result","ok":true,"error":{"code":"limit_exceeded","message":"x"}}
+{"type":"result","ok":false}
+{"type":"result","ok":true}
+{"type":"result","ok":false,"error":{"code":"limit_exceeded","message":"x"}}
+{"type":"capabilities","engine":"probe","version":"0.1.0","tool":{"name":"probe","status":"found"},"license":"MIT","routes":[],"enforces_memory_limit":false}
