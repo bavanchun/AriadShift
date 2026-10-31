@@ -1,0 +1,281 @@
+{
+  "$id": "https://ariadshift.ariadnev.com/schemas/tools.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolDescriptor",
+  "description": "Owned, JSON-serializable tool descriptor matching `schemas/tools.v1.json` and `ashift tools --json`.",
+  "type": "object",
+  "properties": {
+    "engine": {
+      "description": "Executing engine identifier.",
+      "type": "string"
+    },
+    "group": {
+      "description": "Functional group.",
+      "$ref": "#/$defs/ToolGroup"
+    },
+    "id": {
+      "description": "Canonical tool identifier.",
+      "$ref": "#/$defs/ToolId"
+    },
+    "input_formats": {
+      "description": "Accepted input format identifiers.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "inputs": {
+      "description": "Required input file count.",
+      "$ref": "#/$defs/InputArity"
+    },
+    "output_format": {
+      "description": "Produced output format identifier.",
+      "type": "string"
+    },
+    "params_schema": {
+      "description": "JSON Schema for the tool's `params` object.",
+      "$ref": "#/$defs/Schema"
+    },
+    "runtimes": {
+      "description": "Supported execution runtimes.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ToolRuntime"
+      },
+      "minItems": 1
+    },
+    "secret_params": {
+      "description": "Parameter field names marked `\"x-ariad-secret\": true`.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "description": "One-line human-readable description.",
+      "type": "string"
+    },
+    "tier": {
+      "description": "Access tier (`free` or `pro`).",
+      "$ref": "#/$defs/Tier"
+    },
+    "version": {
+      "description": "Tool contract version string.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "group",
+    "summary",
+    "inputs",
+    "input_formats",
+    "output_format",
+    "tier",
+    "runtimes",
+    "engine",
+    "secret_params",
+    "params_schema"
+  ],
+  "tools": [
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.info",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "InfoParams",
+        "description": "Parameters for `pdf.info`.\n\n`pdf.info` takes no parameters (`{}`) and rejects any unknown fields.",
+        "type": "object",
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Inspect PDF version, page count, encryption status, geometry, metadata, and structural features.",
+      "tier": "free",
+      "version": "1"
+    }
+  ],
+  "x-status": "draft",
+  "$defs": {
+    "InputArity": {
+      "description": "Required input file count for a tool (`docs/tools.md` §3).",
+      "oneOf": [
+        {
+          "description": "Exactly 1 input file is required.",
+          "type": "object",
+          "properties": {
+            "arity": {
+              "type": "string",
+              "const": "one"
+            }
+          },
+          "required": [
+            "arity"
+          ]
+        },
+        {
+          "description": "Between `min` and `max` input files (inclusive) are required (`1 <= min <= max`).",
+          "type": "object",
+          "properties": {
+            "arity": {
+              "type": "string",
+              "const": "many"
+            },
+            "max": {
+              "description": "Maximum number of input files (`>= min`).",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 1
+            },
+            "min": {
+              "description": "Minimum number of input files (`>= 1`).",
+              "type": "integer",
+              "format": "uint",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "arity",
+            "min",
+            "max"
+          ]
+        }
+      ]
+    },
+    "Schema": {
+      "type": [
+        "object",
+        "boolean"
+      ]
+    },
+    "Tier": {
+      "description": "Access tier of a registered tool (`docs/tools.md` §10).",
+      "oneOf": [
+        {
+          "description": "Available on all plans (`Free`, `Pro`, `Team`, `Enterprise`).",
+          "type": "string",
+          "const": "free"
+        },
+        {
+          "description": "Requires a plan that grants Pro access (`Pro`, `Team`, `Enterprise`).",
+          "type": "string",
+          "const": "pro"
+        }
+      ]
+    },
+    "ToolGroup": {
+      "description": "Functional category of a registered document tool (`docs/tools.md` §2).",
+      "oneOf": [
+        {
+          "description": "Page and document structure manipulation (`pdf.info`, `pdf.merge`, `pdf.rotate`, etc.).",
+          "type": "string",
+          "const": "organize"
+        },
+        {
+          "description": "Multi-artifact or specialized document conversions (`pdf.render`, `image.to_pdf`, etc.).",
+          "type": "string",
+          "const": "convert"
+        },
+        {
+          "description": "File size reduction, stream recompression, linearization, repair.",
+          "type": "string",
+          "const": "optimize"
+        },
+        {
+          "description": "Encryption, decryption, permission flags, sanitization.",
+          "type": "string",
+          "const": "security"
+        },
+        {
+          "description": "Stamps, page numbers, headers/footers, watermarks, background overlays.",
+          "type": "string",
+          "const": "overlay"
+        },
+        {
+          "description": "Optical character recognition, deskewing, blank page removal.",
+          "type": "string",
+          "const": "ocr"
+        },
+        {
+          "description": "Highlights, notes, freehand ink, geometric markups, comment flattening.",
+          "type": "string",
+          "const": "annotate"
+        },
+        {
+          "description": "AcroForm field inspection, filling, creation, and flattening.",
+          "type": "string",
+          "const": "forms"
+        },
+        {
+          "description": "PAdES digital signing, timestamping, and signature verification.",
+          "type": "string",
+          "const": "sign"
+        },
+        {
+          "description": "True object-stream and raster redaction with verification report.",
+          "type": "string",
+          "const": "redact"
+        },
+        {
+          "description": "Visual overlay comparison and semantic content comparison.",
+          "type": "string",
+          "const": "compare"
+        },
+        {
+          "description": "Stateless page-mode in-place edits and document-mode export helpers.",
+          "type": "string",
+          "const": "edit"
+        },
+        {
+          "description": "Offline-first summarization, Q&A with citations, translation, table extraction.",
+          "type": "string",
+          "const": "ai"
+        },
+        {
+          "description": "Batch recipe execution and folder watch automation.",
+          "type": "string",
+          "const": "automation"
+        }
+      ]
+    },
+    "ToolId": {
+      "description": "Validated UTF-8 tool identifier matching `^[a-z]+(\\.[a-z0-9_]+)+$`.",
+      "type": "string",
+      "pattern": "^[a-z]+(\\.[a-z0-9_]+)+$"
+    },
+    "ToolRuntime": {
+      "description": "Execution runtime environment supported by a tool (`docs/tools.md` §2).",
+      "oneOf": [
+        {
+          "description": "Browser WebAssembly (`ariad-wasm`).",
+          "type": "string",
+          "const": "wasm"
+        },
+        {
+          "description": "Local host execution (`ashift` CLI, local MCP, `apps/macos`).",
+          "type": "string",
+          "const": "local"
+        },
+        {
+          "description": "Remote cloud worker execution (`ariad-server`).",
+          "type": "string",
+          "const": "cloud"
+        }
+      ]
+    }
+  }
+}
