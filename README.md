@@ -124,7 +124,7 @@ Run an MCP server over standard I/O for AI assistants (such as Claude Code, Clau
 ashift mcp --allow-dir ~/Documents
 ```
 
-The server exposes 4 tools (`list_engines`, `inspect`, `plan`, and `convert`) with strict path confinement, capability-based directory access, dynamic roots synchronization, and `resources/read` support. See [`docs/mcp.md`](docs/mcp.md) for configuration and tool details.
+The server exposes 6 tools (`list_engines`, `inspect`, `plan`, `convert`, `list_doc_tools`, and `run_doc_tool`) with strict path confinement, capability-based directory access, dynamic roots synchronization, and `resources/read` support. See [`docs/mcp.md`](docs/mcp.md) for configuration and tool details.
 
 ## Desktop app
 

@@ -18,6 +18,9 @@ All conversion and transformation logic lives in `ariad-host` and `ariad-core`; 
   - [`ashift engines remove`](#ashift-engines-remove)
   - [`ashift engines verify`](#ashift-engines-verify)
   - [`ashift doctor`](#ashift-doctor)
+  - [`ashift tools`](#ashift-tools)
+  - [`ashift tool`](#ashift-tool)
+  - [`ashift recipe run`](#ashift-recipe-run)
 - [Profiles](#profiles)
 - [Environment Variables](#environment-variables)
 
@@ -43,6 +46,11 @@ All CLI commands adhere to a single unified exit-code table:
 | `4` | Limit Exceeded | Document size, nesting depth, node count, or engine process-tree memory exceeded configured security limits. Engine packs: an archive unpacks beyond its declared size or entry count. |
 | `5` | Tool Missing | Required external tool (such as Pandoc `>= 3.12, < 4`) is missing, inaccessible, has an unsupported version, or required engine sandbox isolation is unavailable. The Docling engine is not installed, or its Tesseract 5 or models are missing for the document. Engine packs: the pack requires a different `ashift` version. |
 | `6` | Destination Exists | Destination file already exists and `--overwrite` was not specified. |
+| `8` | Unknown Tool | Requested tool ID (`ashift tool <id>`) is not in the tool registry (`error[unknown_tool]`). |
+| `9` | Invalid Params | Tool parameters failed JSON Schema validation, violated `x-ariad-secret` rules (such as an inline secret on `--param` or `--params-json`), or an imported recipe was not confirmed (`error[invalid_params]`). |
+| `10` | Wrong Input | Input file count or sniffed document format does not match the tool's `ToolSpec` (`error[wrong_input]`). |
+| `11` | Tier Not Allowed | Requested tool requires `Tier::Pro` or a batch/recipe run exceeds Free-plan quotas (`error[tier_not_allowed]`). |
+| `12` | Encrypted Input | Input PDF is encrypted and requires a password or `pdf.decrypt` (`error[encrypted_input]`). |
 | `130` | Interrupted | Interrupted by signal (SIGINT / Ctrl-C on Unix, Ctrl-C / Ctrl-Break on Windows). Temporary workspaces and partial files are cleaned up. |
 
 ---
@@ -643,6 +651,71 @@ No local filesystem paths are exposed in the JSON output. Sandbox values depend 
   }
 }
 ```
+
+---
+
+### `ashift tools`
+
+Lists all registered document manipulation tools from `ariad-core::tools`, optionally filtered by functional group. See [tools.md](tools.md) for the full tool contract.
+
+```bash
+ashift tools [--group <GROUP>] [--json]
+```
+
+#### Options
+
+- `--group <GROUP>`: Filter tools by group (`organize`, `convert`, `optimize`, `security`, `overlay`, `ocr`, `annotate`, `forms`, `sign`, `redact`, `compare`, `edit`, `ai`, `automation`). Unknown group names fail with exit code `2` (`error[usage]`).
+- `--json`: Emit the array of `ToolDescriptor` objects as JSON (including resolved Draft 2020-12 `params_schema`, `tier`, `runtimes`, `engine`, and `secret_params`).
+
+---
+
+### `ashift tool`
+
+Executes a single registered document manipulation tool on one or more input files.
+
+```bash
+ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--params-json <FILE|->] [--secret <NAME=@FILE|->]... [--overwrite] [--json]
+```
+
+#### Arguments and Options
+
+- `<ID>`: Canonical `<domain>.<action>` tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
+- `<INPUT>...`: One or more input document paths.
+- `-o, --output <DIR_OR_FILE>`: Explicit output file or directory. When omitted, single-output and multi-output tools publish beside the first input using default naming, while `pdf.info` prints its inspection summary (or structured JSON with `--json`) without writing a file to disk.
+- `--param <KEY=VALUE>`: Repeatable parameter override (`VALUE` is parsed as JSON when valid, otherwise as a string).
+- `--params-json <FILE|->`: Read the tool parameter JSON object from a file or `-` (stdin). Explicit `--param` flags override keys from `--params-json`.
+- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
+- `--overwrite`: Replace existing destination file(s).
+- `--json`: Emit structured JSON output to stdout (`PdfInfo` directly for `pdf.info` when no `-o` file is written; `ToolOutcome` otherwise).
+
+#### Examples
+
+```bash
+# Inspect PDF structure, page boxes, metadata, forms, and xref repair status as JSON
+ashift tool pdf.info fixtures/pdf-tools/multipage-20.pdf --json
+
+# Write pdf.info output to a file
+ashift tool pdf.info report.pdf -o report.info.json
+```
+
+---
+
+### `ashift recipe run`
+
+Executes a multi-step `ariad-recipe/1` JSON pipeline (`Step::Tool` and `Step::Convert`) inside an isolated workspace and atomically publishes the final step's outputs into the target directory.
+
+```bash
+ashift recipe run <RECIPE.JSON> <INPUT>... -o <DIR> [--yes] [--overwrite] [--json]
+```
+
+#### Arguments and Options
+
+- `<RECIPE.JSON>`: Path to a recipe file conforming to `schemas/recipe.v1.json` (`"version": "ariad-recipe/1"`).
+- `<INPUT>...`: Input files fed into step 1 of the recipe. On the Free plan, batch runs are capped at 25 files and 250 MB total (`exit_code: 11`, `error[tier_not_allowed]`).
+- `-o, --output <DIR>`: Destination directory for published outputs.
+- `--yes`: Confirm running an imported recipe without an interactive terminal prompt. Recipes loaded from `.json` files are classified as `Imported`, print their step summary to stderr, forbid `watch` and network-fetch tools (`pdf.from_url`, `web.to_pdf`), and require `--yes` in non-interactive scripts (otherwise exiting with code `9`, `error[invalid_params]`).
+- `--overwrite`: Replace existing destination files in `<DIR>`.
+- `--json`: Emit the `RecipeOutcome` JSON report to stdout.
 
 ---
 

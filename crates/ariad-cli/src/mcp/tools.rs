@@ -5,7 +5,14 @@ use std::{
     sync::{Arc, Mutex, RwLock},
 };
 
-use ariad_core::{limits::Limits, planner::Profile};
+use ariad_core::{
+    limits::Limits,
+    planner::Profile,
+    tools::{
+        InputArity, KNOWN_SECRET_FIELD_NAMES, SecretSource, Tier, ToolGroup, ToolRuntime, ToolSpec,
+        validate_secret_fields, validate_secret_params,
+    },
+};
 use ariad_host::{
     assets::AssetBase,
     commands::{active_capabilities, engines, inspect, plan},
@@ -15,6 +22,7 @@ use ariad_host::{
     },
     convert::{ConvertError, ConvertOutput, ConvertRequest, convert_confined_assets_in},
     session::SessionPool,
+    tools::{InputRef, OutputTarget, ToolError, ToolOutcome, ToolRequest, run_tool_with_events},
 };
 use rmcp::{
     ErrorData,
@@ -23,7 +31,7 @@ use rmcp::{
     tool, tool_router,
 };
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use super::resources::{SessionResources, mime_type_for_path, path_to_file_uri};
@@ -84,6 +92,62 @@ pub struct ConvertArgs {
     pub profile: Option<String>,
 }
 
+/// Arguments for `list_doc_tools` tool.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ListDocToolsArgs {
+    /// Optional tool group filter (`organize`, `convert`, `optimize`, `security`, `overlay`, `ocr`, `annotate`, `forms`, `sign`, `redact`, `compare`, `edit`, `ai`, `automation`).
+    pub group: Option<String>,
+}
+
+/// Descriptor returned by `list_doc_tools`, combining `ToolDescriptor` with live engine status.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct McpToolDescriptor {
+    /// Canonical `<domain>.<action>` identifier.
+    pub id: ariad_core::tools::ToolId,
+    /// Schema/contract version string (`"1"`).
+    pub version: String,
+    /// Functional group.
+    pub group: ToolGroup,
+    /// One-line human description.
+    pub summary: String,
+    /// Input arity contract.
+    pub inputs: InputArity,
+    /// Accepted input format identifiers.
+    pub input_formats: Vec<String>,
+    /// Output format identifier.
+    pub output_format: String,
+    /// Resolved JSON Schema (Draft 2020-12) for `params`.
+    pub params_schema: schemars::Schema,
+    /// Subscription tier (`free` or `pro`).
+    pub tier: Tier,
+    /// Supported execution runtimes (`wasm`, `local`, `cloud`).
+    pub runtimes: Vec<ToolRuntime>,
+    /// Executing engine identifier.
+    pub engine: String,
+    /// Live availability status of the backing engine (`available`, `missing`, `incompatible`).
+    pub engine_status: String,
+    /// Parameter field names annotated with `"x-ariad-secret": true`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secret_params: Vec<String>,
+}
+
+/// Arguments for `run_doc_tool` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RunDocToolArgs {
+    /// Canonical tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
+    pub tool: String,
+    /// Input document filesystem paths or `file://` URIs inside `--allow-dir`.
+    pub inputs: Vec<String>,
+    /// Optional directory inside `--allow-dir` for published outputs (defaults to the first input's parent directory).
+    pub output_dir: Option<String>,
+    /// Optional explicit output file or directory path inside `--allow-dir`.
+    pub output: Option<String>,
+    /// Optional JSON object matching the tool's `params_schema`. Secret fields are rejected over MCP in this phase (`exit_code: 9`).
+    pub params: Option<serde_json::Value>,
+    /// Allow overwriting existing destination files (only honoured if server has `--allow-overwrite`).
+    pub overwrite: Option<bool>,
+}
+
 /// The core MCP server state and tool router.
 #[derive(Clone)]
 pub struct McpServer {
@@ -126,6 +190,76 @@ fn tool_confine_error(err: &ConfineError) -> CallToolResult {
 
 fn tool_convert_error(err: &ConvertError) -> CallToolResult {
     tool_error(err.code(), err.exit_code(), err.to_string())
+}
+
+fn tool_run_error(err: &ToolError) -> CallToolResult {
+    let code = err.code();
+    let exit_code = err.exit_code();
+    let msg = err.to_string();
+    let val = serde_json::json!({
+        "code": code,
+        "exit_code": exit_code,
+        "message": &msg,
+        "error": {
+            "code": code,
+            "exit_code": exit_code,
+            "message": &msg,
+        },
+    });
+    let mut res = CallToolResult::structured_error(val);
+    res.content = vec![ContentBlock::text(format!("ashift: error[{code}]: {msg}"))];
+    res
+}
+
+fn validate_mcp_tool_params(
+    tool_id: &str,
+    params: Option<&serde_json::Value>,
+) -> Result<serde_json::Value, ToolError> {
+    let Some(raw) = params else {
+        return Ok(serde_json::Value::Object(serde_json::Map::new()));
+    };
+    if raw.is_null() {
+        return Ok(serde_json::Value::Object(serde_json::Map::new()));
+    }
+    let Some(map) = raw.as_object() else {
+        return Err(ToolError::InvalidParams(
+            "params must be a JSON object".to_owned(),
+        ));
+    };
+
+    let spec = ariad_core::tools::find(tool_id);
+    if let Some(spec) = spec {
+        validate_secret_params(spec, raw, SecretSource::Mcp).map_err(|err| {
+            ToolError::InvalidParams(format!(
+                "{err}; secret fields over MCP are rejected in this phase because secret_put handles are not implemented yet"
+            ))
+        })?;
+    }
+    validate_secret_fields(KNOWN_SECRET_FIELD_NAMES, raw, SecretSource::Mcp).map_err(|err| {
+        ToolError::InvalidParams(format!(
+            "{err}; secret fields over MCP are rejected in this phase because secret_put handles are not implemented yet"
+        ))
+    })?;
+
+    for (key, value) in map {
+        if value.is_null() {
+            continue;
+        }
+        let is_secret_key = spec.is_some_and(|s| s.secret_params.contains(&key.as_str()))
+            || KNOWN_SECRET_FIELD_NAMES
+                .iter()
+                .any(|s| s.eq_ignore_ascii_case(key));
+        let has_secret_ref = value
+            .as_object()
+            .is_some_and(|obj| obj.contains_key("$secret"));
+        if is_secret_key || has_secret_ref {
+            return Err(ToolError::InvalidParams(format!(
+                "parameter '{key}' is marked x-ariad-secret; secret fields over MCP are rejected in this phase because secret_put handles are not implemented yet"
+            )));
+        }
+    }
+
+    Ok(raw.clone())
 }
 
 fn input_error(err: &std::io::Error) -> ConvertError {
@@ -468,6 +602,192 @@ impl McpServer {
 
         let convert_output = ConvertOutput::from(&report);
         tool_success(&convert_output, extra_blocks)
+    }
+
+    /// List registered document manipulation tools, parameter schemas, and engine availability.
+    #[tool(
+        description = "List registered document manipulation tools, parameter schemas, and engine availability",
+        output_schema = rmcp::handler::server::tool::schema_for_output::<Vec<McpToolDescriptor>>()
+    )]
+    pub async fn list_doc_tools(
+        &self,
+        Parameters(args): Parameters<ListDocToolsArgs>,
+        ct: CancellationToken,
+    ) -> Result<CallToolResult, ErrorData> {
+        let specs: Vec<&'static ToolSpec> = match args.group.as_deref() {
+            Some(group_str) => match group_str.parse::<ToolGroup>() {
+                Ok(group) => ariad_core::tools::by_group(group)
+                    .filter(|spec| spec.supports_runtime(ToolRuntime::Local))
+                    .collect(),
+                Err(err) => return Ok(tool_run_error(&ToolError::Usage(err.to_string()))),
+            },
+            None => ariad_core::tools::all()
+                .iter()
+                .filter(|spec| spec.supports_runtime(ToolRuntime::Local))
+                .collect(),
+        };
+
+        let needs_external_probe = specs
+            .iter()
+            .any(|spec| spec.engine != "ariad-pdf" && spec.engine != "ariad-core");
+        let external_statuses = if needs_external_probe {
+            let caps = match active_capabilities() {
+                Ok(c) => c,
+                Err(e) => return Ok(tool_convert_error(&e)),
+            };
+            let engine_prog = self.engine_program.clone();
+            let rows =
+                tokio::task::spawn_blocking(move || engines::engines(&engine_prog, &caps, ct))
+                    .await
+                    .map_err(|e| {
+                        ErrorData::internal_error(format!("blocking task failed: {e}"), None)
+                    })?;
+            match rows {
+                Ok(rows) => rows,
+                Err(e) => return Ok(tool_convert_error(&e)),
+            }
+        } else {
+            Vec::new()
+        };
+
+        let descriptors: Vec<McpToolDescriptor> = specs
+            .into_iter()
+            .map(|spec| {
+                let d = spec.to_descriptor();
+                let engine_status = if d.engine == "ariad-pdf" || d.engine == "ariad-core" {
+                    "available".to_owned()
+                } else {
+                    external_statuses
+                        .iter()
+                        .find(|row| row.id == d.engine)
+                        .map_or_else(
+                            || "missing".to_owned(),
+                            |row| match row.status.as_str() {
+                                "ready" => "available".to_owned(),
+                                "wrong version" | "cannot start" => "incompatible".to_owned(),
+                                _ => "missing".to_owned(),
+                            },
+                        )
+                };
+                McpToolDescriptor {
+                    id: d.id,
+                    version: d.version,
+                    group: d.group,
+                    summary: d.summary,
+                    inputs: d.inputs,
+                    input_formats: d.input_formats,
+                    output_format: d.output_format,
+                    params_schema: d.params_schema,
+                    tier: d.tier,
+                    runtimes: d.runtimes,
+                    engine: d.engine,
+                    engine_status,
+                    secret_params: d.secret_params,
+                }
+            })
+            .collect();
+
+        tool_success(&descriptors, vec![])
+    }
+
+    /// Execute a registered document manipulation tool inside configured allowed directories.
+    #[tool(
+        description = "Execute a registered document manipulation tool inside configured allowed directories",
+        output_schema = rmcp::handler::server::tool::schema_for_output::<ToolOutcome>()
+    )]
+    pub async fn run_doc_tool(
+        &self,
+        Parameters(args): Parameters<RunDocToolArgs>,
+        ct: CancellationToken,
+    ) -> Result<CallToolResult, ErrorData> {
+        let params = match validate_mcp_tool_params(&args.tool, args.params.as_ref()) {
+            Ok(p) => p,
+            Err(err) => return Ok(tool_run_error(&err)),
+        };
+
+        if args.output.is_some() && args.output_dir.is_some() {
+            return Ok(tool_run_error(&ToolError::Usage(
+                "specify at most one of 'output' or 'output_dir'".to_owned(),
+            )));
+        }
+
+        let mut input_refs = Vec::with_capacity(args.inputs.len());
+        for raw_in in &args.inputs {
+            match parse_path_or_uri(raw_in) {
+                Ok(path) => input_refs.push(InputRef::new(path)),
+                Err(err) => return Ok(tool_confine_error(&err)),
+            }
+        }
+
+        let output_target = if let Some(ref out_str) = args.output {
+            match parse_path_or_uri(out_str) {
+                Ok(path) => OutputTarget::Path(path),
+                Err(err) => return Ok(tool_confine_error(&err)),
+            }
+        } else if let Some(ref dir_str) = args.output_dir {
+            match parse_path_or_uri(dir_str) {
+                Ok(dir) => OutputTarget::Directory(dir),
+                Err(err) => return Ok(tool_confine_error(&err)),
+            }
+        } else {
+            OutputTarget::DefaultBesideInput
+        };
+
+        let allowed = self
+            .allowed_dirs
+            .read()
+            .map_err(|_| ErrorData::internal_error("internal lock error", None))?
+            .clone();
+
+        let request = ToolRequest::new(args.tool, input_refs, output_target)
+            .with_params(params)
+            .with_secret_source(SecretSource::Mcp)
+            .with_overwrite(args.overwrite.unwrap_or(false))
+            .with_allow_overwrite(self.allow_overwrite)
+            .with_allowed_dirs(allowed)
+            .with_engine_program(self.engine_program.clone());
+
+        let res = self
+            .blocking_job(ct, move |cancel| {
+                let req = request.with_cancel(cancel);
+                run_tool_with_events(&req, |_| {})
+            })
+            .await?;
+
+        let outcome = match res {
+            Ok(outcome) => outcome,
+            Err(err) => return Ok(tool_run_error(&err)),
+        };
+
+        let mut extra_blocks = Vec::new();
+        for artifact in &outcome.artifacts {
+            let canonical_path =
+                std::fs::canonicalize(&artifact.path).unwrap_or_else(|_| artifact.path.clone());
+            let file_uri = path_to_file_uri(&canonical_path);
+            let mime = mime_type_for_path(&canonical_path);
+            self.resources
+                .record(file_uri.clone(), canonical_path.clone());
+
+            let mut resource = Resource::new(
+                file_uri,
+                canonical_path
+                    .file_name()
+                    .map(|f| f.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "output".to_owned()),
+            )
+            .with_mime_type(mime);
+            resource.size = Some(artifact.bytes);
+            extra_blocks.push(ContentBlock::resource_link(resource));
+        }
+
+        if let Some(ref inline_json) = outcome.inline_json
+            && let Ok(inline_str) = serde_json::to_string_pretty(inline_json)
+            && inline_str.len() <= 256 * 1024
+        {
+            extra_blocks.push(ContentBlock::text(inline_str));
+        }
+
+        tool_success(&outcome, extra_blocks)
     }
 }
 

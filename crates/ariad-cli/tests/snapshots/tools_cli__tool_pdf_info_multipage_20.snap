@@ -1,0 +1,207 @@
+---
+source: crates/ariad-cli/tests/tools_cli.rs
+expression: actual
+---
+{
+  "encrypted": false,
+  "has_annotations": false,
+  "has_attachments": false,
+  "has_forms": false,
+  "has_javascript": false,
+  "linearized": false,
+  "metadata": {
+    "author": "AriadShift contributors",
+    "creation_date": "D:20231114221320Z",
+    "creator": "AriadShift fixture generator",
+    "language": "en",
+    "mod_date": "D:20231114221320Z",
+    "producer": "AriadShift fixture generator",
+    "title": "Twenty-Page Survey Manual"
+  },
+  "outline_count": 6,
+  "page_count": 20,
+  "pages": [
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 1,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 2,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 3,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 4,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 5,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 6,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 7,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 8,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 9,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 10,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 11,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 12,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 13,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 14,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 15,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 16,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 17,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 18,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 19,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 20,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    }
+  ],
+  "repaired_xref": false,
+  "version": "1.5"
+}

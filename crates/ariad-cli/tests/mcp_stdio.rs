@@ -456,8 +456,10 @@ fn test_server_info_and_tools_list() {
     assert!(tool_names.contains(&"inspect"));
     assert!(tool_names.contains(&"plan"));
     assert!(tool_names.contains(&"convert"));
+    assert!(tool_names.contains(&"list_doc_tools"));
+    assert!(tool_names.contains(&"run_doc_tool"));
 
-    // Verify outputSchema is declared for all 4 tools (H5)
+    // Verify outputSchema is declared for all 6 tools (H5)
     for tool in tools {
         let name = tool["name"].as_str().unwrap();
         assert!(
@@ -470,8 +472,10 @@ fn test_server_info_and_tools_list() {
             "outputSchema for {name} must be an object schema"
         );
         match name {
-            "list_engines" => assert_eq!(output_schema["type"], "array"),
-            "inspect" | "plan" | "convert" => assert_eq!(output_schema["type"], "object"),
+            "list_engines" | "list_doc_tools" => assert_eq!(output_schema["type"], "array"),
+            "inspect" | "plan" | "convert" | "run_doc_tool" => {
+                assert_eq!(output_schema["type"], "object")
+            }
             _ => panic!("unexpected tool: {name}"),
         }
     }
@@ -2578,4 +2582,203 @@ mod pinned_explicit_grants {
     fn roots_timeout_keeps_startup_explicit_grants_after_symlink_replacement() {
         symlink_replacement_does_not_change_grants(Some(RootsFailure::Timeout));
     }
+}
+
+#[test]
+fn test_list_doc_tools_and_run_doc_tool_round_trip() {
+    let temp_dir = TempDir::new().unwrap();
+    let sample_src = repository_root().join("fixtures/pdf-tools/broken-xref.pdf");
+    let sample_in = temp_dir.path().join("broken-xref.pdf");
+    fs::copy(&sample_src, &sample_in).unwrap();
+
+    let mut client = McpTestClient::spawn(
+        &["--allow-dir", temp_dir.path().to_str().unwrap()],
+        Vec::new(),
+    );
+    client.initialize();
+
+    // 1. list_doc_tools without filter
+    client.send_request(
+        700,
+        "tools/call",
+        json!({
+            "name": "list_doc_tools",
+            "arguments": {}
+        }),
+    );
+    let list_resp = client.read_response(700);
+    assert_eq!(list_resp["result"]["isError"], false, "{list_resp}");
+    let listed = list_resp["result"]["structuredContent"]
+        .as_array()
+        .expect("list_doc_tools array");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["id"], "pdf.info");
+    assert_eq!(listed[0]["group"], "organize");
+    assert_eq!(listed[0]["engine"], "ariad-pdf");
+    assert_eq!(listed[0]["engine_status"], "available");
+
+    // 2. list_doc_tools with group filter
+    client.send_request(
+        701,
+        "tools/call",
+        json!({
+            "name": "list_doc_tools",
+            "arguments": { "group": "security" }
+        }),
+    );
+    let empty_resp = client.read_response(701);
+    assert_eq!(empty_resp["result"]["isError"], false, "{empty_resp}");
+    assert_eq!(empty_resp["result"]["structuredContent"], json!([]));
+
+    // 3. run_doc_tool pdf.info without output_dir (inline JSON only, no file written)
+    client.send_request(
+        702,
+        "tools/call",
+        json!({
+            "name": "run_doc_tool",
+            "arguments": {
+                "tool": "pdf.info",
+                "inputs": [sample_in]
+            }
+        }),
+    );
+    let info_resp = client.read_response(702);
+    assert_eq!(info_resp["result"]["isError"], false, "{info_resp}");
+    let structured = &info_resp["result"]["structuredContent"];
+    assert_eq!(structured["tool"], "pdf.info");
+    assert_eq!(structured["engine"], "ariad-pdf");
+    assert_eq!(structured["artifacts"], json!([]));
+    let inline_json = &structured["inline_json"];
+    assert_eq!(inline_json["page_count"], 1);
+    assert_eq!(inline_json["repaired_xref"], true);
+    assert!(inline_json["warnings"].is_array());
+
+    // Verify inline_json matches truth file pdf_info
+    let truth_raw =
+        fs::read_to_string(repository_root().join("fixtures/pdf-tools/broken-xref.truth.json"))
+            .unwrap();
+    let truth_val: Value = serde_json::from_str(&truth_raw).unwrap();
+    assert_eq!(inline_json, &truth_val["pdf_info"]);
+
+    // 4. run_doc_tool pdf.info with output_dir publishes artifact and registers resource_link
+    let out_dir = temp_dir.path().join("published");
+    fs::create_dir_all(&out_dir).unwrap();
+    client.send_request(
+        703,
+        "tools/call",
+        json!({
+            "name": "run_doc_tool",
+            "arguments": {
+                "tool": "pdf.info",
+                "inputs": [sample_in],
+                "output_dir": out_dir
+            }
+        }),
+    );
+    let pub_resp = client.read_response(703);
+    let expected_artifact = out_dir.join("broken-xref.info.json");
+    let resource_uri = converted_resource_uri(&pub_resp, &expected_artifact);
+    client.send_request(704, "resources/read", json!({ "uri": resource_uri }));
+    let read_resp = client.read_response(704);
+    assert!(read_resp.get("result").is_some(), "{read_resp}");
+
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn test_run_doc_tool_error_codes_and_secret_rejection() {
+    let temp_dir = TempDir::new().unwrap();
+    let sample_src = repository_root().join("fixtures/pdf-tools/multipage-20.pdf");
+    let sample_in = temp_dir.path().join("multipage-20.pdf");
+    fs::copy(&sample_src, &sample_in).unwrap();
+
+    let mut client = McpTestClient::spawn(
+        &["--allow-dir", temp_dir.path().to_str().unwrap()],
+        Vec::new(),
+    );
+    client.initialize();
+
+    // 1. Unknown tool -> exit_code 8 (unknown_tool)
+    client.send_request(
+        710,
+        "tools/call",
+        json!({
+            "name": "run_doc_tool",
+            "arguments": {
+                "tool": "pdf.nonexistent",
+                "inputs": [sample_in]
+            }
+        }),
+    );
+    let resp_8 = client.read_response(710);
+    assert_eq!(resp_8["result"]["isError"], true);
+    assert_eq!(
+        resp_8["result"]["structuredContent"]["code"],
+        "unknown_tool"
+    );
+    assert_eq!(resp_8["result"]["structuredContent"]["exit_code"], 8);
+
+    // 2. Secret literal over MCP -> exit_code 9 (invalid_params)
+    client.send_request(
+        711,
+        "tools/call",
+        json!({
+            "name": "run_doc_tool",
+            "arguments": {
+                "tool": "pdf.info",
+                "inputs": [sample_in],
+                "params": { "password": "hunter2-mcp-inline" }
+            }
+        }),
+    );
+    let resp_9_lit = client.read_response(711);
+    assert_eq!(resp_9_lit["result"]["isError"], true);
+    assert_eq!(
+        resp_9_lit["result"]["structuredContent"]["code"],
+        "invalid_params"
+    );
+    assert_eq!(resp_9_lit["result"]["structuredContent"]["exit_code"], 9);
+
+    // 3. Secret handle ($secret) over MCP -> exit_code 9 in this phase
+    client.send_request(
+        712,
+        "tools/call",
+        json!({
+            "name": "run_doc_tool",
+            "arguments": {
+                "tool": "pdf.info",
+                "inputs": [sample_in],
+                "params": { "password": { "$secret": "sec_01JABCDEF" } }
+            }
+        }),
+    );
+    let resp_9_handle = client.read_response(712);
+    assert_eq!(resp_9_handle["result"]["isError"], true);
+    assert_eq!(
+        resp_9_handle["result"]["structuredContent"]["code"],
+        "invalid_params"
+    );
+    assert_eq!(resp_9_handle["result"]["structuredContent"]["exit_code"], 9);
+
+    // 4. Wrong input arity -> exit_code 10 (wrong_input)
+    client.send_request(
+        713,
+        "tools/call",
+        json!({
+            "name": "run_doc_tool",
+            "arguments": {
+                "tool": "pdf.info",
+                "inputs": [sample_in, sample_in]
+            }
+        }),
+    );
+    let resp_10 = client.read_response(713);
+    assert_eq!(resp_10["result"]["isError"], true);
+    assert_eq!(
+        resp_10["result"]["structuredContent"]["code"],
+        "wrong_input"
+    );
+    assert_eq!(resp_10["result"]["structuredContent"]["exit_code"], 10);
+
+    client.close_and_assert_purity();
 }

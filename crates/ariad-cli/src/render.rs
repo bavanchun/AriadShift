@@ -1,5 +1,6 @@
 use std::io::{self, Write};
 
+use ariad_core::tools::{InputArity, ToolDescriptor};
 use ariad_host::commands::inspect::InspectOutput;
 
 /// Renders inspection output as pretty-printed JSON to stdout.
@@ -419,6 +420,74 @@ pub fn render_pack_verify_human(report: &ariad_host::packs::VerifyReport) -> io:
     }
     for problem in &report.problems {
         writeln!(out, "  problem: {}", escape_control_chars(problem))?;
+    }
+    out.flush()
+}
+
+/// Renders the `ashift tools` human-readable table to stdout.
+pub fn render_tools_human(tools: &[ToolDescriptor]) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    writeln!(
+        out,
+        "{:<18} {:<12} {:<6} {:<12} {:<10} {:<8} SUMMARY",
+        "ID", "GROUP", "TIER", "ENGINE", "INPUTS", "OUTPUT"
+    )?;
+    for tool in tools {
+        let inputs = match tool.inputs {
+            InputArity::One => "1".to_owned(),
+            InputArity::Many { min, max } => format!("{min}..={max}"),
+        };
+        writeln!(
+            out,
+            "{:<18} {:<12} {:<6} {:<12} {:<10} {:<8} {}",
+            tool.id,
+            tool.group.as_str(),
+            tool.tier.as_str(),
+            tool.engine,
+            inputs,
+            tool.output_format,
+            tool.summary
+        )?;
+    }
+    out.flush()
+}
+
+/// Renders a human-readable summary of a `pdf.info` JSON payload when neither `--json` nor `-o` is given.
+pub fn render_pdf_info_human(info: &serde_json::Value) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    let version = info
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("unknown");
+    let page_count = info
+        .get("page_count")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let encrypted = info
+        .get("encrypted")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let linearized = info
+        .get("linearized")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let repaired_xref = info
+        .get("repaired_xref")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+
+    writeln!(out, "pdf_version: {version}")?;
+    writeln!(out, "pages:       {page_count}")?;
+    writeln!(out, "encrypted:   {encrypted}")?;
+    writeln!(out, "linearized:  {linearized}")?;
+    writeln!(out, "repaired_xref: {repaired_xref}")?;
+    if let Some(meta) = info.get("metadata").and_then(serde_json::Value::as_object) {
+        if let Some(title) = meta.get("title").and_then(serde_json::Value::as_str) {
+            writeln!(out, "title:       {}", escape_control_chars(title))?;
+        }
+        if let Some(author) = meta.get("author").and_then(serde_json::Value::as_str) {
+            writeln!(out, "author:      {}", escape_control_chars(author))?;
+        }
     }
     out.flush()
 }
