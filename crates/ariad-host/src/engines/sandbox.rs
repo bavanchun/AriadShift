@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::pandoc_bin;
+use crate::{pandoc_bin, sandbox::SandboxMode};
 
 /// Paths an engine needs beyond the base allow-list, its program and its workspace.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -29,6 +29,13 @@ pub const ENGINE_PATHS: &[(&str, EnginePathsFn)] = &[
     ("pdf", EnginePaths::default),
     ("typst", EnginePaths::default),
     ("libreoffice", libreoffice_paths),
+    ("pdfium", EnginePaths::default),
+    ("qpdf", EnginePaths::default),
+    ("tesseract", EnginePaths::default),
+    ("sign", EnginePaths::default),
+    ("verapdf", EnginePaths::default),
+    ("ai", EnginePaths::default),
+    ("inpaint", EnginePaths::default),
     ("probe", EnginePaths::default),
 ];
 
@@ -40,6 +47,21 @@ pub fn paths_for(engine: &str) -> EnginePaths {
         .find(|(id, _)| *id == engine)
         .map(|(_, paths)| paths())
         .unwrap_or_default()
+}
+
+/// Returns `true` when `engine` must refuse to launch if OS sandbox isolation is unavailable
+/// under `mode`.
+///
+/// `SandboxMode::Required` always requires isolation; in `SandboxMode::BestEffort`, engines
+/// whose [`super::EngineSpec`] sets `sandbox_required: true` (`pdfium`, `qpdf`, `tesseract`, etc.)
+/// also require isolation and refuse to degrade. `SandboxMode::Off` explicitly disables isolation.
+#[must_use]
+pub fn requires_isolation(engine: &str, mode: SandboxMode) -> bool {
+    match mode {
+        SandboxMode::Off => false,
+        SandboxMode::Required => true,
+        SandboxMode::BestEffort => super::spec(engine).is_some_and(|spec| spec.sandbox_required),
+    }
 }
 
 /// The Pandoc engine runs the Pandoc binary found through `ASHIFT_PANDOC` or `PATH`. Only that

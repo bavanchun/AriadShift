@@ -13,15 +13,15 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ariad_core::protocol::{ErrorCode, Event, Request};
+use ariad_core::protocol::{ErrorCode, Event, Request, v2::RequestV2};
 use tempfile::TempDir;
 use tokio::runtime::{Builder, Runtime};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     runner::{
-        self, DESCRIBE_TIMEOUT, EngineCommand, EngineProcess, JobMode, JobSpec, RunError,
-        RunOutcome,
+        self, DESCRIBE_TIMEOUT, EngineCommand, EngineProcess, JobMode, JobRequest, JobSpec,
+        RunError, RunOutcome,
     },
     sandbox::SandboxOutcome,
     workspace::{self, Workspace, WorkspaceError},
@@ -336,24 +336,30 @@ impl Session {
     fn run<S>(
         &mut self,
         command: &EngineCommand,
-        request: &Request,
+        request: &JobRequest,
         cancel: CancellationToken,
         sink: S,
     ) -> Result<RunOutcome, RunError>
     where
         S: FnMut(Event),
     {
-        let Request::Convert { .. } = request else {
-            return Err(RunError::ProtocolViolation(
-                "a session only serves convert requests",
-            ));
-        };
         let mut request = request.clone();
-        if let Request::Convert { session_id, .. } = &mut request {
-            *session_id = Some(self.id.clone());
+        match &mut request {
+            JobRequest::V1(Request::Convert { session_id, .. })
+            | JobRequest::V2(RequestV2::Convert { session_id, .. }) => {
+                *session_id = Some(self.id.clone());
+            }
+            JobRequest::V1(Request::Describe { .. })
+            | JobRequest::V2(RequestV2::Describe { .. })
+            | JobRequest::V2(RequestV2::RunTool { .. }) => {
+                return Err(RunError::ProtocolViolation(
+                    "a session only serves convert requests",
+                ));
+            }
         }
-        let line = runner::encode_request(&request)?;
-        let job = JobSpec::for_request(&request, None, cancel);
+        debug_assert_eq!(request.session_key(), Some(self.id.as_str()));
+        let line = runner::encode_job_request(&request)?;
+        let job = JobSpec::for_job_request(&request, None, cancel);
         self.jobs += 1;
         let Self {
             directory,
@@ -495,7 +501,7 @@ impl<'pool> Lease<'pool> {
         }
     }
 
-    /// Runs one job. After a cancellation, timeout, exceeded limit, crash or protocol violation
+    /// Runs one `/1` job. After a cancellation, timeout, exceeded limit, crash or protocol violation
     /// the session's process tree is killed at once and the next lease starts a fresh process.
     pub fn run<S>(
         &mut self,
@@ -506,8 +512,22 @@ impl<'pool> Lease<'pool> {
     where
         S: FnMut(Event),
     {
+        self.run_job(&JobRequest::V1(request.clone()), cancel, sink)
+    }
+
+    /// Runs one [`JobRequest`] (`/1` or `/2`). `run_tool` requests never use warm sessions and are
+    /// rejected if dispatched to an active session lease.
+    pub fn run_job<S>(
+        &mut self,
+        request: &JobRequest,
+        cancel: CancellationToken,
+        sink: S,
+    ) -> Result<RunOutcome, RunError>
+    where
+        S: FnMut(Event),
+    {
         let Some(session) = self.session.as_mut() else {
-            return runner::run_command(&self.command, request, cancel, sink);
+            return runner::run_job(&self.command, request, cancel, sink);
         };
         let result = session.run(&self.command, request, cancel, sink);
         let reusable = match &result {

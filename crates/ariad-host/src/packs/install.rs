@@ -11,11 +11,12 @@
 //! ```
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     fs::{self, File, OpenOptions, TryLockError},
     io,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime},
+    sync::{LazyLock, Mutex},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use schemars::JsonSchema;
@@ -704,17 +705,157 @@ fn active_version(layout: &Layout, name: &str) -> Option<String> {
     }
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct FileStamp {
+    #[cfg(unix)]
+    dev: u64,
+    #[cfg(unix)]
+    ino: u64,
+    mtime_sec: u64,
+    mtime_nsec: u32,
+    size: u64,
+}
+
+impl FileStamp {
+    fn from_metadata(metadata: &fs::Metadata) -> Option<Self> {
+        let modified = metadata.modified().ok()?;
+        let since_epoch = modified.duration_since(UNIX_EPOCH).ok()?;
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        Some(Self {
+            #[cfg(unix)]
+            dev: metadata.dev(),
+            #[cfg(unix)]
+            ino: metadata.ino(),
+            mtime_sec: since_epoch.as_secs(),
+            mtime_nsec: since_epoch.subsec_nanos(),
+            size: metadata.len(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CachedDigest {
+    stamp: FileStamp,
+    sha256: String,
+}
+
+static VERIFY_CACHE: LazyLock<Mutex<HashMap<PathBuf, CachedDigest>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn verified_sha256(path: &Path, metadata: &fs::Metadata) -> Result<String, PackError> {
+    let stamp = FileStamp::from_metadata(metadata);
+    if let Some(ref stamp) = stamp {
+        let cache = VERIFY_CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(entry) = cache.get(path)
+            && &entry.stamp == stamp
+        {
+            return Ok(entry.sha256.clone());
+        }
+    }
+    let cancel = CancellationToken::new();
+    let (digest, _) = fetch::sha256_file(path, &cancel)?;
+    crate::engines::resolve::record_hash_computation(path);
+    if let Some(stamp) = stamp {
+        let mut cache = VERIFY_CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        cache.insert(
+            path.to_path_buf(),
+            CachedDigest {
+                stamp,
+                sha256: digest.clone(),
+            },
+        );
+    }
+    Ok(digest)
+}
+
+fn any_version_directory(layout: &Layout, name: &str) -> Option<String> {
+    let mut versions: Vec<semver::Version> = fs::read_dir(layout.pack_dir(name))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .filter_map(|entry| semver::Version::parse(entry.file_name().to_str()?).ok())
+        .collect();
+    versions.sort_by(|a, b| b.cmp(a));
+    versions.into_iter().next().map(|v| v.to_string())
+}
+
+fn verification_failed(name: &str, version: &str, reason: impl std::fmt::Display) -> PackError {
+    PackError::VerificationFailed {
+        name: name.to_owned(),
+        version: version.to_owned(),
+        detail: format!("tool_missing: {reason}; run 'ashift engines install {name}' to reinstall"),
+    }
+}
+
 pub(crate) fn resolve_installed(
     context: &PackContext,
     name: &str,
 ) -> Result<Option<InstalledPack>, PackError> {
     let layout = Layout::new(context);
-    let Some(version) = active_version(&layout, name) else {
+    let Some(version) =
+        active_version(&layout, name).or_else(|| any_version_directory(&layout, name))
+    else {
         return Ok(None);
     };
     let root = layout.version_dir(name, &version);
-    let receipt = read_receipt(&root, name)?;
-    let manifest = Manifest::parse(&receipt.manifest)?;
+    let receipt =
+        read_receipt(&root, name).map_err(|error| verification_failed(name, &version, error))?;
+    if receipt.version != version {
+        return Err(verification_failed(
+            name,
+            &version,
+            format!(
+                "receipt version '{}' does not match installed directory '{version}'",
+                receipt.version
+            ),
+        ));
+    }
+    if root.join(MANIFEST_FILE).exists()
+        && fs::read_to_string(root.join(MANIFEST_FILE)).ok().as_deref()
+            != Some(receipt.manifest.as_str())
+    {
+        return Err(verification_failed(
+            name,
+            &version,
+            "pack.toml on disk does not match the signed receipt manifest",
+        ));
+    }
+    if root.join(SIGNATURE_FILE).exists()
+        && fs::read_to_string(root.join(SIGNATURE_FILE))
+            .ok()
+            .as_deref()
+            != Some(receipt.signature.as_str())
+    {
+        return Err(verification_failed(
+            name,
+            &version,
+            "pack.toml.minisig on disk does not match the signed receipt signature",
+        ));
+    }
+    context
+        .keys
+        .verify(
+            receipt.manifest.as_bytes(),
+            &receipt.signature,
+            &receipt.name,
+            &receipt.version,
+        )
+        .map_err(|error| verification_failed(name, &version, error))?;
+    let manifest = Manifest::parse(&receipt.manifest)
+        .map_err(|error| verification_failed(name, &version, error))?;
+    if manifest.name != name || manifest.version != version {
+        return Err(verification_failed(
+            name,
+            &version,
+            "signed manifest identity does not match installed pack",
+        ));
+    }
     manifest.check_ashift()?;
     if !context.targets.contains(&receipt.target) {
         return Err(PackError::UnsupportedTarget {
@@ -728,11 +869,60 @@ pub(crate) fn resolve_installed(
         .targets
         .iter()
         .find(|target| target.triple == receipt.target)
-        .ok_or_else(|| PackError::InvalidReceipt {
-            name: name.to_owned(),
-            detail: format!("the manifest has no target '{}'", receipt.target),
+        .ok_or_else(|| {
+            verification_failed(
+                name,
+                &version,
+                format!("the manifest has no target '{}'", receipt.target),
+            )
         })?;
-    InstalledPack::from_manifest(&manifest, target, root, PackSource::Installed).map(Some)
+    for link in &receipt.links {
+        let path = extract::join_parts(&root, &link.path);
+        match fs::read_link(&path) {
+            Ok(actual) if actual == Path::new(&link.target) => {}
+            Ok(_) => {
+                return Err(verification_failed(
+                    name,
+                    &version,
+                    format!("symlink '{}' was modified", link.path),
+                ));
+            }
+            Err(_) => {
+                return Err(verification_failed(
+                    name,
+                    &version,
+                    format!("symlink '{}' is missing", link.path),
+                ));
+            }
+        }
+    }
+    for file in &receipt.files {
+        let path = extract::join_parts(&root, &file.path);
+        let metadata = fs::symlink_metadata(&path).map_err(|_| {
+            verification_failed(name, &version, format!("file '{}' is missing", file.path))
+        })?;
+        if !metadata.is_file() || metadata.len() != file.size {
+            return Err(verification_failed(
+                name,
+                &version,
+                format!("file '{}' size or type was modified", file.path),
+            ));
+        }
+        let actual_sha256 = verified_sha256(&path, &metadata)?;
+        if actual_sha256 != file.sha256 {
+            return Err(verification_failed(
+                name,
+                &version,
+                format!(
+                    "SHA-256 mismatch for '{}' (expected {}, got {actual_sha256})",
+                    file.path, file.sha256
+                ),
+            ));
+        }
+    }
+    InstalledPack::from_manifest(&manifest, target, root, PackSource::Installed)
+        .map(Some)
+        .map_err(|error| verification_failed(name, &version, error))
 }
 
 /// Every installed pack version.

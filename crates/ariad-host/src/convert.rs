@@ -375,8 +375,14 @@ impl ConvertError {
     /// The error reported when an engine's tool is unavailable.
     #[must_use]
     pub fn missing_engine(engine: &str) -> Self {
-        if engine == engines::docling::ENGINE_ID {
-            return Self::DoclingMissing;
+        if let Some(spec) = engines::pack_spec(engine) {
+            if spec.id == engines::docling::ENGINE_ID {
+                return Self::DoclingMissing;
+            }
+            return Self::EngineMissing {
+                engine: spec.id.to_owned(),
+                hint: spec.install_hint.to_owned(),
+            };
         }
         match engines::spec(engine) {
             Some(spec) if spec.id != engines::PANDOC.id => Self::EngineMissing {
@@ -1017,15 +1023,15 @@ where
     }
 
     fn engine_step(&mut self, stage: Stage, step: &PlanStep) -> Result<Stage, ConvertError> {
-        let docling = if step.engine == engines::docling::ENGINE_ID {
-            Some(engines::docling::resolve().ok_or(ConvertError::DoclingMissing)?)
+        let (command, mut options) = if engines::is_pack_engine(&step.engine) {
+            engines::resolve_pack_with_options(&step.engine, Some(self.invocation.program))
+                .map_err(|_| ConvertError::missing_engine(&step.engine))?
         } else {
-            None
+            (
+                self.invocation.command_for(&step.engine),
+                std::collections::BTreeMap::new(),
+            )
         };
-        let command = docling.as_ref().map_or_else(
-            || self.invocation.command_for(&step.engine),
-            |command| command.runner_command(self.invocation.program),
-        );
         let mut lease = self.engines.lease(command, self.cancel)?;
         let mut workspace = lease.workspace().map_err(|_| ConvertError::Failed)?;
         let input_path = match stage {
@@ -1047,7 +1053,6 @@ where
             }
         };
 
-        let mut options = docling.map(|command| command.options).unwrap_or_default();
         options.insert(
             "profile".to_owned(),
             serde_json::Value::String(self.request.profile.as_str().to_owned()),
@@ -1847,13 +1852,15 @@ pub(crate) fn map_run_error(error: RunError) -> ConvertError {
 }
 
 fn map_engine_error(engine: &str, error: RunError) -> ConvertError {
-    if engine == engines::docling::ENGINE_ID {
+    if engines::is_pack_engine(engine) {
         match &error {
             RunError::EngineFailed {
                 code: ErrorCode::ToolMissing | ErrorCode::ToolVersion,
                 ..
-            } => return ConvertError::DoclingToolMissing,
-            RunError::Spawn(_) => return ConvertError::DoclingMissing,
+            } if engine == engines::docling::ENGINE_ID => {
+                return ConvertError::DoclingToolMissing;
+            }
+            RunError::Spawn(_) => return ConvertError::missing_engine(engine),
             _ => {}
         }
     }
