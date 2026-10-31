@@ -11,6 +11,7 @@ cargo-fuzz = true
 arbitrary = { version = "1.4.2", features = ["derive"] }
 ariad-core = { path = "../crates/ariad-core", default-features = false }
 ariad-host = { path = "../crates/ariad-host", default-features = false }
+ariad-pdf = { path = "../crates/ariad-pdf", optional = true }
 libfuzzer-sys = "0.4.13"
 saphyr-parser = "0.2.2"
 serde = { version = "1.0.229", features = ["derive"] }
@@ -20,7 +21,7 @@ typst = { version = "0.15.1", optional = true }
 zip = { version = "9.0.5", default-features = false }
 
 [features]
-pdf-reader = ["ariad-core/pdf"]
+pdf-reader = ["ariad-core/pdf", "dep:ariad-pdf"]
 typst-writer = ["ariad-host/typst", "dep:typst"]
 
 [lib]
@@ -155,6 +156,28 @@ bench = false
 [[bin]]
 name = "ir_json_versioned"
 path = "fuzz_targets/ir_json_versioned.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "page_range"
+path = "fuzz_targets/page_range.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "recipe_json"
+path = "fuzz_targets/recipe_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pdf_open_bounded"
+required-features = ["pdf-reader"]
+path = "fuzz_targets/pdf_open_bounded.rs"
 test = false
 doc = false
 bench = false

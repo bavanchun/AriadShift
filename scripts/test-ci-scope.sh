@@ -36,6 +36,8 @@ echo "=== Table tests: scripts/ci-scope.sh classification ==="
 
 # 1. core and wasm
 assert_classification "core (ariad-core)" "crates/ariad-core/src/lib.rs" "true" "true" "code change"
+assert_classification "pdf (ariad-pdf)" "crates/ariad-pdf/src/lib.rs" "true" "true" "code change"
+assert_classification "engine-io (ariad-engine-io)" "crates/ariad-engine-io/src/lib.rs" "true" "true" "code change"
 assert_classification "wasm (ariad-wasm)" "crates/ariad-wasm/src/lib.rs" "true" "true" "code change"
 
 assert_classification "typst (ariad-typst)" "crates/ariad-typst/src/lib.rs" "true" "true" "code change"
@@ -112,6 +114,7 @@ assert_cloud() {
 }
 for path in infra/test/e2e/run.sh infra/docker/web.Dockerfile \
   apps/web/src/app/page.tsx crates/ariad-core/src/lib.rs \
+  crates/ariad-pdf/src/lib.rs crates/ariad-engine-io/src/lib.rs \
   crates/ariad-host/src/lib.rs crates/ariad-cli/src/main.rs \
   crates/ariad-server/src/worker.rs crates/ariad-wasm/src/lib.rs \
   crates/ariad-typst/src/lib.rs services/auth/src/auth.ts \
