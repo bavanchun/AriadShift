@@ -1,0 +1,169 @@
+{
+  "$id": "https://ariadshift.ariadnev.com/schemas/recipe.v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Recipe",
+  "description": "A reproducible multi-step tool and conversion pipeline (`ariad-recipe/1`, `docs/tools.md` §9).",
+  "type": "object",
+  "properties": {
+    "naming": {
+      "description": "Optional output naming template (`[A-Za-z0-9._ -]` plus `{stem}`, `{n}`, `{date}`).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "steps": {
+      "description": "Ordered pipeline steps executed sequentially.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "minItems": 1
+    },
+    "version": {
+      "description": "Schema version, always `\"ariad-recipe/1\"`.",
+      "type": "string",
+      "const": "ariad-recipe/1"
+    },
+    "watch": {
+      "description": "Optional watch-folder path (forbidden when `origin` is [`RecipeOrigin::Imported`]).",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "steps"
+  ],
+  "x-status": "draft",
+  "$defs": {
+    "ConvertTarget": {
+      "description": "Target format and optional routing profile of a conversion step in a [`Recipe`].",
+      "type": "object",
+      "properties": {
+        "profile": {
+          "description": "Optional routing profile (`editable`, `faithful`, `fast`, `private`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Profile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to": {
+          "description": "Target format identifier (e.g. `Format::Docx`, `Format::Markdown`).",
+          "$ref": "#/$defs/Format"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "to"
+      ]
+    },
+    "Format": {
+      "description": "A format supported by the core registry.",
+      "type": "string",
+      "enum": [
+        "markdown",
+        "html",
+        "docx",
+        "epub",
+        "pdf",
+        "png",
+        "ariad-ir+json",
+        "pandoc+json",
+        "docling+json",
+        "pptx",
+        "xlsx",
+        "odt",
+        "ods",
+        "odp",
+        "doc",
+        "xls",
+        "ppt",
+        "rtf",
+        "jpeg",
+        "webp",
+        "tiff"
+      ]
+    },
+    "Profile": {
+      "description": "User routing profile specifying conversion priorities.",
+      "oneOf": [
+        {
+          "description": "Semantic accuracy, structure, headings, lists, tables (default).",
+          "type": "string",
+          "const": "editable"
+        },
+        {
+          "description": "Visual and page layout preservation.",
+          "type": "string",
+          "const": "faithful"
+        },
+        {
+          "description": "Execution speed.",
+          "type": "string",
+          "const": "fast"
+        },
+        {
+          "description": "Only local and wasm runtimes; cloud edges are pruned.",
+          "type": "string",
+          "const": "private"
+        }
+      ]
+    },
+    "RawConvertStep": {
+      "type": "object",
+      "properties": {
+        "convert": {
+          "description": "Standard format conversion step.",
+          "$ref": "#/$defs/ConvertTarget"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "convert"
+      ]
+    },
+    "RawToolStep": {
+      "type": "object",
+      "properties": {
+        "params": {
+          "description": "Tool parameters object (defaults to `{}`).",
+          "type": "object",
+          "additionalProperties": true,
+          "default": {}
+        },
+        "tool": {
+          "description": "Tool identifier to execute.",
+          "$ref": "#/$defs/ToolId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "tool"
+      ]
+    },
+    "Step": {
+      "description": "A single sequential step in a [`Recipe`] (`docs/tools.md` §9).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RawToolStep"
+        },
+        {
+          "$ref": "#/$defs/RawConvertStep"
+        }
+      ]
+    },
+    "ToolId": {
+      "description": "Validated UTF-8 tool identifier matching `^[a-z]+(\\.[a-z0-9_]+)+$`.",
+      "type": "string",
+      "pattern": "^[a-z]+(\\.[a-z0-9_]+)+$"
+    }
+  }
+}
