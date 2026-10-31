@@ -186,7 +186,7 @@ excluded from musl targets. Desktop installers and updater metadata are built by
 
 - Dispatched manually via `workflow_dispatch -f version=X.Y.Z` after `release.yml` completes (`GITHUB_TOKEN` release creation does not trigger `release: [published]` workflows).
 - Runs four clean-runner jobs in parallel:
-  - **`smoke-homebrew`**: Taps `bavanchun/homebrew-tap` on macOS, installs `ashift` (and `pandoc` via formula dependency), checks `ashift --version` and `ashift doctor`, and converts `fixtures/md/en-crlf.md` to `.docx`.
+  - **`smoke-homebrew`**: Taps `bavanchun/homebrew-tap` on macOS, trusts the tap (`brew trust --tap bavanchun/tap`), installs `ashift` (and `pandoc` via formula dependency), checks `ashift --version` and `ashift doctor`, and converts `fixtures/md/en-crlf.md` to `.docx`.
   - **`smoke-shell`**: Installs Pandoc, runs the release's `ariad-cli-installer.sh` on Linux, and verifies `--version`, `doctor`, and `.md -> .docx` conversion.
   - **`smoke-powershell`**: Installs Pandoc, runs `ariad-cli-installer.ps1` in `pwsh` on Windows, reloads `Path`, and verifies `--version`, `doctor`, and `.md -> .docx` conversion.
   - **`smoke-binstall`**: Installs Pandoc and `cargo-binstall` on Linux, installs `ariad-cli@<version>` with `--disable-strategies compile,quick-install` (forcing prebuilt binary resolution from GitHub Releases), and verifies `--version`, `doctor`, and `.md -> .docx` conversion.
