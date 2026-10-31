@@ -1,0 +1,534 @@
+{
+  "$id": "https://ariadshift.ariadnev.com/schemas/engine-protocol.v2.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MessageV2",
+  "description": "Either direction of one JSONL `ariad-engine/2` protocol message.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/RequestV2"
+    },
+    {
+      "$ref": "#/$defs/EventV2"
+    }
+  ],
+  "x-status": "draft",
+  "$defs": {
+    "EngineError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "unsupported_route",
+        "limit_exceeded",
+        "engine_failure",
+        "tool_missing",
+        "tool_version",
+        "io"
+      ]
+    },
+    "EventV2": {
+      "description": "A single NDJSON event emitted by an `ariad-engine/2` engine.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "enforces_memory_limit": {
+              "type": "boolean"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "license": {
+              "type": "string"
+            },
+            "models": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "protocol": {
+              "description": "Protocol version advertised by the engine; defaults to `\"ariad-engine/1\"` when\nreading `/1` capability events.",
+              "type": "string",
+              "default": "ariad-engine/1"
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/RouteCapability"
+              }
+            },
+            "supports_session": {
+              "description": "Whether the engine serves several `convert` jobs of one `session_id` in one process.",
+              "type": "boolean",
+              "default": false
+            },
+            "tool": {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            "tools": {
+              "description": "Supported document tools advertised by an `ariad-engine/2` engine.",
+              "type": "array",
+              "default": [],
+              "items": {
+                "$ref": "#/$defs/ToolCapability"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "capabilities"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "engine",
+            "version",
+            "tool",
+            "license",
+            "routes",
+            "enforces_memory_limit"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "done": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "stage": {
+              "type": "string"
+            },
+            "total": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "progress"
+            }
+          },
+          "required": [
+            "type",
+            "stage"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "warning"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "format": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "artifact"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "format"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/EngineError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "metrics": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
+            },
+            "ok": {
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "result"
+            }
+          },
+          "required": [
+            "type",
+            "ok"
+          ]
+        }
+      ]
+    },
+    "Input": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "format"
+      ]
+    },
+    "Limits": {
+      "description": "Resource limits applied to one conversion.\n\nCloud plan entitlements (§9.5) fill this shape; `None` means unlimited.",
+      "type": "object",
+      "properties": {
+        "max_archive_entries": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 20000,
+          "minimum": 0
+        },
+        "max_asset_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "max_blocks": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 10000000,
+          "minimum": 0
+        },
+        "max_decompressed_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 4294967296,
+          "minimum": 0
+        },
+        "max_front_matter_bytes": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 65536,
+          "minimum": 0
+        },
+        "max_input_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "max_ir_json_bytes": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 6442450944,
+          "minimum": 0
+        },
+        "max_memory_mb": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "max_nesting_depth": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 64,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "max_pages": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "timeout_s": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      }
+    },
+    "Output": {
+      "type": "object",
+      "properties": {
+        "dir": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dir",
+        "format"
+      ]
+    },
+    "OutputDir": {
+      "description": "Target output directory for a tool execution in `ariad-engine/2`.",
+      "type": "object",
+      "properties": {
+        "dir": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dir"
+      ]
+    },
+    "RequestV2": {
+      "description": "An `ariad-engine/2` request sent on stdin as a single NDJSON line.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "inputs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Input"
+              },
+              "minItems": 1
+            },
+            "job": {
+              "type": "string"
+            },
+            "limits": {
+              "$ref": "#/$defs/Limits"
+            },
+            "op": {
+              "type": "string",
+              "const": "run_tool"
+            },
+            "output": {
+              "$ref": "#/$defs/OutputDir"
+            },
+            "params": {
+              "default": {}
+            },
+            "params_file": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "protocol": {
+              "type": "string"
+            },
+            "tool": {
+              "type": "string"
+            },
+            "work_dir": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "protocol",
+            "job",
+            "tool",
+            "inputs",
+            "output",
+            "work_dir",
+            "limits"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "input": {
+              "$ref": "#/$defs/Input"
+            },
+            "job": {
+              "type": "string"
+            },
+            "limits": {
+              "$ref": "#/$defs/Limits"
+            },
+            "op": {
+              "type": "string",
+              "const": "convert"
+            },
+            "options": {
+              "type": "object",
+              "additionalProperties": true,
+              "default": {}
+            },
+            "output": {
+              "$ref": "#/$defs/Output"
+            },
+            "protocol": {
+              "type": "string"
+            },
+            "session_id": {
+              "description": "Warm session this job belongs to. An engine that reports `supports_session: true`\nkeeps running after the `result` and reads the next request of the same session.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "work_dir": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "protocol",
+            "job",
+            "input",
+            "output",
+            "work_dir",
+            "limits"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "job": {
+              "type": "string"
+            },
+            "op": {
+              "type": "string",
+              "const": "describe"
+            },
+            "protocol": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "protocol",
+            "job"
+          ]
+        }
+      ]
+    },
+    "RouteCapability": {
+      "description": "A supported conversion route reported by an engine.",
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "string"
+        },
+        "output": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ]
+    },
+    "ToolAvailability": {
+      "description": "Availability of the underlying external tool executed by an engine.",
+      "type": "string",
+      "enum": [
+        "found",
+        "missing",
+        "wrong_version"
+      ]
+    },
+    "ToolCapability": {
+      "description": "A supported document tool reported by an `ariad-engine/2` engine.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ]
+    },
+    "ToolStatus": {
+      "description": "Discovery status of an engine's underlying external executable or runtime.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ToolAvailability"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "status"
+      ]
+    }
+  }
+}

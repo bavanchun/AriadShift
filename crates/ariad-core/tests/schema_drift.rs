@@ -51,6 +51,98 @@ fn engine_protocol_schema_matches_the_generated_request_schema() {
 }
 
 #[test]
+#[ignore]
+fn regenerate_engine_protocol_v2_schema() {
+    let path = support::engine_protocol_v2_schema_path();
+    let expected = support::generated_engine_protocol_v2_schema();
+    fs::create_dir_all(path.parent().expect("schema path has a parent"))
+        .expect("create schema directory");
+    fs::write(&path, expected).expect("write generated engine protocol v2 schema");
+}
+
+#[test]
+fn engine_protocol_v2_schema_matches_the_generated_request_schema() {
+    let path = support::engine_protocol_v2_schema_path();
+    let expected = support::generated_engine_protocol_v2_schema();
+
+    if std::env::var("ARIAD_BLESS_SCHEMAS").as_deref() == Ok("1") {
+        fs::create_dir_all(path.parent().expect("schema path has a parent"))
+            .expect("create schema directory");
+        fs::write(&path, expected).expect("write generated engine protocol v2 schema");
+        return;
+    }
+
+    let actual = fs::read_to_string(&path).unwrap_or_else(|error| {
+        panic!(
+            "could not read {}: {error}. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift",
+            path.display()
+        )
+    });
+    assert_eq!(
+        actual, expected,
+        "engine protocol v2 schema drifted. Run ARIAD_BLESS_SCHEMAS=1 cargo test -p ariad-core --test schema_drift to update it."
+    );
+}
+
+#[test]
+fn engine_protocol_v2_schema_validates_messages_and_rejects_invalid_requests() {
+    let schema_path = support::engine_protocol_v2_schema_path();
+    let schema_text = fs::read_to_string(&schema_path).expect("read engine-protocol.v2.json");
+    let schema_val: serde_json::Value =
+        serde_json::from_str(&schema_text).expect("parse engine-protocol.v2.json");
+    assert_eq!(schema_val["x-status"], "draft");
+    let validator =
+        jsonschema::validator_for(&schema_val).expect("compile engine-protocol.v2.json validator");
+
+    let valid_run_tool = serde_json::json!({
+        "protocol": "ariad-engine/2",
+        "job": "job_01KXYZ",
+        "op": "run_tool",
+        "tool": "pdf.rotate",
+        "inputs": [{"path": "/work/in/0.pdf", "format": "pdf"}],
+        "output": {"dir": "/work/out"},
+        "params": {"pages": "1-3,5", "angle": 90},
+        "work_dir": "/work/tmp",
+        "limits": {"max_pages": null, "timeout_s": null, "max_memory_mb": null, "max_nesting_depth": 64}
+    });
+    assert!(
+        validator.is_valid(&valid_run_tool),
+        "valid run_tool must pass v2 schema"
+    );
+
+    let valid_capabilities = serde_json::json!({
+        "type": "capabilities",
+        "protocol": "ariad-engine/2",
+        "engine": "pdfium",
+        "version": "0.1.0",
+        "tool": {"name": "pdfium", "version": "158.0.8125.0", "status": "found"},
+        "license": "BSD-3-Clause AND Apache-2.0",
+        "routes": [],
+        "tools": [{"id": "pdf.rotate", "version": "1"}],
+        "enforces_memory_limit": false,
+        "supports_session": false
+    });
+    assert!(
+        validator.is_valid(&valid_capabilities),
+        "valid v2 capabilities must pass v2 schema"
+    );
+
+    let mut unknown_op = valid_run_tool.clone();
+    unknown_op["op"] = serde_json::json!("unknown_op");
+    assert!(
+        !validator.is_valid(&unknown_op),
+        "v2 schema must reject unknown op"
+    );
+
+    let mut empty_inputs = valid_run_tool.clone();
+    empty_inputs["inputs"] = serde_json::json!([]);
+    assert!(
+        !validator.is_valid(&empty_inputs),
+        "v2 schema must reject empty inputs"
+    );
+}
+
+#[test]
 fn capabilities_schema_matches_the_generated_capabilities_schema() {
     let path = support::capabilities_schema_path();
     let expected = support::generated_capabilities_schema();
