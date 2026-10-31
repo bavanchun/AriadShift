@@ -11,6 +11,15 @@ dependencies = [
     "python-pptx==1.0.2",
     "typst==0.15.0",
 ]
+classifiers = [
+    "Private :: Do Not Upload",
+]
+
+# Dev/test-only PDF structure/encryption/form generator dependency (MPL-2.0); never distributed.
+[dependency-groups]
+dev = [
+    "pikepdf==10.17.0",
+]
 
 [build-system]
 requires = ["uv_build==0.13.1"]

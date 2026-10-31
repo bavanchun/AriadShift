@@ -1,0 +1,111 @@
+{
+  "version": "ariad-truth/0",
+  "id": "encrypted-rc4-40",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.4",
+  "page_count": 1,
+  "encrypted": true,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0
+  ],
+  "metadata": {
+    "title": "Encrypted Document (RC4-40 Legacy)",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": false,
+  "field_names": [],
+  "form_fields": [],
+  "has_annotations": false,
+  "annotations": [],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.4",
+    "page_count": 1,
+    "encrypted": true,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "Encrypted Document (RC4-40 Legacy)",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": false,
+    "has_annotations": false,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Encrypted Document (RC4-40 Legacy)\nPlaintext source for test-time encrypted-rc4-40 (RC4-40, R=2).",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "generated_at_test_time": true,
+  "plaintext_source": "fixtures/pdf-tools/encrypted-rc4-40.plaintext.pdf",
+  "plaintext_sha256": "cf010e7a30660f5e0cdd7e38324f85aae1339a9e2f010d220b529f8345d54198",
+  "target_path": "fixtures/pdf-tools/encrypted-rc4-40.pdf",
+  "encryption": {
+    "algorithm": "RC4-40",
+    "revision": 2,
+    "version": 1,
+    "needs_user_password": true,
+    "has_owner_password": true,
+    "empty_user_password": false,
+    "permissions": {
+      "print": true,
+      "extract": true
+    }
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "version": "ariad-truth/0",
+  "id": "mixed-sizes",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 3,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 2,
+      "width_pt": 612.0,
+      "height_pt": 792.0,
+      "paper": "Letter",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 3,
+      "width_pt": 1190.55,
+      "height_pt": 841.89,
+      "paper": "A3",
+      "orientation": "landscape",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    },
+    {
+      "page": 2,
+      "width_pt": 612.0,
+      "height_pt": 792.0,
+      "paper": "Letter",
+      "orientation": "portrait"
+    },
+    {
+      "page": 3,
+      "width_pt": 1190.55,
+      "height_pt": 841.89,
+      "paper": "A3",
+      "orientation": "landscape"
+    }
+  ],
+  "rotations": [
+    0,
+    0,
+    0
+  ],
+  "metadata": {
+    "title": "Mixed Paper Sizes Portfolio",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": false,
+  "field_names": [],
+  "form_fields": [],
+  "has_annotations": false,
+  "annotations": [],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 3,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      },
+      {
+        "page": 2,
+        "width_pt": 612.0,
+        "height_pt": 792.0,
+        "paper": "Letter",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      },
+      {
+        "page": 3,
+        "width_pt": 1190.55,
+        "height_pt": 841.89,
+        "paper": "A3",
+        "orientation": "landscape",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "Mixed Paper Sizes Portfolio",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": false,
+    "has_annotations": false,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Mixed Paper Sizes Portfolio\nPage 1: ISO A4 Portrait (595.28 x 841.89 pt)\nPage 2: US Letter Portrait (612 x 792 pt)\nPage 3: ISO A3 Landscape (1190.55 x 841.89 pt)",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  }
+}
