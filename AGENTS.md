@@ -62,8 +62,7 @@ The next stage ([plans/261031-1422-next-stage-pdf-suite/plan.md](plans/261031-14
 
 - Follow [docs/git-workflow.md](docs/git-workflow.md) for the full Git workflow.
 - Work lands on `dev`. `main` is the stable branch: it receives `dev` only through a promotion, plus hotfixes, and release tags are cut on it.
-- Commit only when the user asks; an authorized plan run counts as that request for commits within the plan's scope.
-- Pushes and GitHub settings require the user's explicit go-ahead.
+- Commit and push permissions (including pull request merges into `dev`) follow an authorized plan run, where the plan or the maintainer's directive records the grant. Promotions to `main`, release tags, public deploys and GitHub or ruleset settings require the maintainer's explicit written go-ahead.
 - Stage explicit paths. Never run `git add -A` or `git add .` at the repository root.
 - Use conventional commits (`feat(brand): …`, `docs: …`) with no AI or tool references.
-- Never commit `node_modules/`, `.env*`, credentials or private keys.
+- Never commit `node_modules/`, `.env*`, secrets, credentials or private keys.
