@@ -1,7 +1,7 @@
 ---
 title: Native desktop link measurements
 date: 2026-10-31
-summary: Paired app links exposed an unnecessary ordinary-bin test build.
+summary: Paired native links exposed an unnecessary app build during tests.
 ---
 
 # Native desktop link measurements
@@ -25,17 +25,21 @@ Desktop, including packaging and a real PDF to IR to Typst PDF conversion.
 The preferred cause-aligned alternative moves the two pure library tests
 into the unit harness unchanged except for their crate import. Local
 validation passed all 29 desktop tests with warnings denied. Native
-Verify and Desktop validation of this alternative is still in progress.
+Verify and Desktop also passed on image 20261026.0455.2, including 1,255
+workspace tests, installer/signature checks and packaged PDF conversion.
 
-The experiment is isolated on exp/macos-link-103. The PR remains at
-65f20aa while native evidence is collected. No unwind-encoding or panic
-strategy change is authorized or applied.
+The experiment stayed isolated on exp/macos-link-103 while the PR remained
+at 65f20aa. The selected repair keeps every warning denied, preserves the
+public assertions and changes no production runtime code. No unwind
+encoding or panic strategy changed.
 
-## Next steps
+## Delivery and remaining work
 
-Complete native validation, preserve the measurements and image versions,
-and make one normal push with the selected fix and report. Remove the
-throwaway branch after collecting evidence. Keep the Ubuntu WebDriver
-transport failure listed as a rerun candidate without adding retries.
+The source gate at d5c986a passed desktop tests, Clippy, static checks and
+commit lint. The report links the final delivery and single-push receipts,
+per-run images and saved experiment source. The Ubuntu WebDriver transport
+failure remains a rerun candidate; no retry policy changed. Reducing the
+already oversized unoptimized app is recorded as a v1.x follow-up in the
+owning desktop documentation.
 
 > Historical work record — not durable authority. Prefer docs/specs/ADRs for current decisions.
