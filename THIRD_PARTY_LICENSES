@@ -8,7 +8,7 @@ Table of Contents
 -----------------
 - Apache License 2.0 (Apache-2.0): 591 component(s)
 - MIT License (MIT): 199 component(s)
-- Unicode License v3 (Unicode-3.0): 29 component(s)
+- Unicode License v3 (Unicode-3.0): 30 component(s)
 - ISC License (ISC): 18 component(s)
 - BSD 3-Clause "New" or "Revised" License (BSD-3-Clause): 14 component(s)
 - BSD 2-Clause "Simplified" License (BSD-2-Clause): 7 component(s)
@@ -10263,7 +10263,7 @@ Used by:
   - unicode-bidi-mirroring 0.4.0 (https://github.com/RazrFalcon/unicode-bidi-mirroring)
   - unicode-bidi 0.3.18 (https://github.com/servo/unicode-bidi)
   - unicode-ccc 0.4.0 (https://github.com/RazrFalcon/unicode-ccc)
-  - unicode-normalization 0.1.25 (https://github.com/unicode-rs/unicode-normalization)
+  - unicode-normalization 0.1.26 (https://github.com/unicode-rs/unicode-normalization)
   - unicode-properties 0.1.4 (https://github.com/unicode-rs/unicode-properties)
   - unicode-segmentation 1.13.3 (https://github.com/unicode-rs/unicode-segmentation)
   - unicode-vo 0.1.0 (https://github.com/RazrFalcon/unicode-vo)
@@ -14973,7 +14973,7 @@ Used by:
   - itoa 1.0.18 (https://github.com/dtolnay/itoa)
   - krilla-svg 0.8.1 (https://github.com/LaurenzV/krilla)
   - krilla 0.8.2 (https://github.com/LaurenzV/krilla)
-  - libc 0.2.190 (https://github.com/rust-lang/libc)
+  - libc 0.2.191 (https://github.com/rust-lang/libc)
   - linebender_resource_handle 0.1.1 (https://github.com/linebender/raw_resource_handle)
   - miniz_oxide 0.8.9 (https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide)
   - miniz_oxide 0.9.1 (https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide)
@@ -21697,6 +21697,7 @@ License: Unicode License v3 (Unicode-3.0)
 Used by:
   - emojis 0.9.1 (https://github.com/rossmacarthur/emojis)
   - unicode-ident 1.0.26 (https://github.com/dtolnay/unicode-ident)
+  - unicode-normalization 0.1.26 (https://github.com/unicode-rs/unicode-normalization)
 
 License Text:
 -------------
