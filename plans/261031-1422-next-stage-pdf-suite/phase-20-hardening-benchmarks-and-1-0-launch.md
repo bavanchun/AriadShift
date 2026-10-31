@@ -17,6 +17,10 @@ milestone: F (1.0)
 
 Prove 1.0 quality with evidence — security, correctness, performance, accessibility, translations, licences — then launch web and macOS 1.0.
 
+## Inputs
+
+- the remote branch `fix/v1-security-audit` (kept on origin, not merged) holds the earlier security-audit material this phase consumes: docs/security/threat-model.md, docs/security/dependency-policy.md, plans/reports/security-audit-261025-v1.md, plans/reports/code-review-261025-phase7-final.md, plans/reports/worker-7-*.md, apps/web/test/headers.test.ts and apps/web/src/components/account/cloud-config.ts; recover with `git checkout origin/fix/v1-security-audit -- <path>` and re-validate against dev before use.
+
 ## Requirements
 
 1. **Security audit** (threat model refresh for PDFium/qpdf/Tesseract/AI/inpaint engines, Page-mode edits, signing keys in memory, web OPFS data, Sparkle updates): findings fixed or accepted in ARCHITECTURE §11 residual risks.
