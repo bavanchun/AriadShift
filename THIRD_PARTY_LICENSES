@@ -6,7 +6,7 @@ components included in or used to build this binary distribution.
 
 Table of Contents
 -----------------
-- Apache License 2.0 (Apache-2.0): 591 component(s)
+- Apache License 2.0 (Apache-2.0): 592 component(s)
 - MIT License (MIT): 199 component(s)
 - Unicode License v3 (Unicode-3.0): 30 component(s)
 - ISC License (ISC): 18 component(s)
@@ -14921,6 +14921,7 @@ Used by:
   - ariad-desktop 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-cli 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-core 0.2.0 (https://github.com/bavanchun/AriadShift)
+  - ariad-engine-io 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-host 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-server 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-typst 0.2.0 (https://github.com/bavanchun/AriadShift)
