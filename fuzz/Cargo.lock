@@ -111,12 +111,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ariad-engine-io"
+version = "0.2.0"
+dependencies = [
+ "ariad-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ariad-fuzz"
 version = "0.0.0"
 dependencies = [
  "arbitrary",
  "ariad-core",
  "ariad-host",
+ "ariad-pdf",
  "libfuzzer-sys",
  "saphyr-parser",
  "serde",
@@ -131,6 +141,8 @@ name = "ariad-host"
 version = "0.2.0"
 dependencies = [
  "ariad-core",
+ "ariad-engine-io",
+ "ariad-pdf",
  "ariad-typst",
  "base64 0.23.1",
  "cap-std",
@@ -166,6 +178,19 @@ dependencies = [
  "ureq",
  "uuid",
  "zip",
+]
+
+[[package]]
+name = "ariad-pdf"
+version = "0.2.0"
+dependencies = [
+ "ariad-core",
+ "lopdf",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "unicode-normalization",
 ]
 
 [[package]]
