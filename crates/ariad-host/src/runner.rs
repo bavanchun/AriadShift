@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, VecDeque},
     ffi::{OsStr, OsString},
     future, io,
@@ -8,13 +9,19 @@ use std::{
     time::Duration,
 };
 
-use ariad_core::protocol::{EngineError, ErrorCode, Event, PROTOCOL, Request};
+use ariad_core::{
+    limits::Limits,
+    protocol::{
+        EngineError, ErrorCode, Event, PROTOCOL, Request,
+        v2::{EventV2, MAX_INLINE_PARAMS_BYTES, PROTOCOL_V2, RequestV2},
+    },
+};
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
 use process_wrap::tokio::{ChildWrapper, CommandWrap};
 #[cfg(windows)]
 use process_wrap::tokio::{JobObject, KillOnDrop};
-use serde_json::Value;
+use serde_json::{Value, json};
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
@@ -26,6 +33,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    engines::Protocol,
     sandbox::{self, SandboxMode, SandboxOutcome, SandboxPolicy},
     watchdog::{self, MemoryWatchdog},
 };
@@ -163,6 +171,122 @@ impl EngineCommand {
             },
         }
     }
+
+    /// Sets the sandbox launcher binary (`ashift` or `engine-probe`) for this command.
+    #[must_use]
+    pub fn with_launcher(mut self, launcher: impl Into<PathBuf>) -> Self {
+        self.launcher = Some(launcher.into());
+        self
+    }
+
+    /// Wire protocol version spoken by this engine (`ariad-engine/1` or `ariad-engine/2`).
+    #[must_use]
+    pub fn protocol(&self) -> Protocol {
+        crate::engines::spec(&self.engine).map_or(Protocol::V1, |spec| spec.protocol)
+    }
+
+    /// Whether this engine requires OS sandbox isolation even in `best-effort` mode.
+    #[must_use]
+    pub fn sandbox_required(&self) -> bool {
+        crate::engines::spec(&self.engine).is_some_and(|spec| spec.sandbox_required)
+    }
+}
+
+/// Wire request sent to an out-of-process engine (`ariad-engine/1` or `ariad-engine/2`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum JobRequest {
+    /// `ariad-engine/1` (`convert` or `describe`).
+    V1(Request),
+    /// `ariad-engine/2` (`convert`, `run_tool`, or `describe`).
+    V2(RequestV2),
+}
+
+impl From<Request> for JobRequest {
+    fn from(request: Request) -> Self {
+        Self::V1(request)
+    }
+}
+
+impl From<RequestV2> for JobRequest {
+    fn from(request: RequestV2) -> Self {
+        Self::V2(request)
+    }
+}
+
+impl JobRequest {
+    /// Wire protocol version of this request.
+    #[must_use]
+    pub const fn protocol(&self) -> Protocol {
+        match self {
+            Self::V1(_) => Protocol::V1,
+            Self::V2(_) => Protocol::V2,
+        }
+    }
+
+    /// Returns `true` when the request is `describe`.
+    #[must_use]
+    pub const fn is_describe(&self) -> bool {
+        matches!(
+            self,
+            Self::V1(Request::Describe { .. }) | Self::V2(RequestV2::Describe { .. })
+        )
+    }
+
+    /// Output directories that artifacts must be confined to (empty for `describe`).
+    #[must_use]
+    pub fn output_dirs(&self) -> Vec<&Path> {
+        match self {
+            Self::V1(Request::Convert { output, .. })
+            | Self::V2(RequestV2::Convert { output, .. }) => vec![Path::new(&output.dir)],
+            Self::V2(RequestV2::RunTool { output, .. }) => vec![Path::new(&output.dir)],
+            Self::V1(Request::Describe { .. }) | Self::V2(RequestV2::Describe { .. }) => Vec::new(),
+        }
+    }
+
+    /// Single output directory string slice, if this request produces artifacts.
+    #[must_use]
+    pub fn output_dir(&self) -> Option<&str> {
+        match self {
+            Self::V1(Request::Convert { output, .. })
+            | Self::V2(RequestV2::Convert { output, .. }) => Some(&output.dir),
+            Self::V2(RequestV2::RunTool { output, .. }) => Some(&output.dir),
+            Self::V1(Request::Describe { .. }) | Self::V2(RequestV2::Describe { .. }) => None,
+        }
+    }
+
+    /// Per-job resource limits (`None` for `describe`).
+    #[must_use]
+    pub const fn limits(&self) -> Option<&Limits> {
+        match self {
+            Self::V1(Request::Convert { limits, .. })
+            | Self::V2(RequestV2::Convert { limits, .. })
+            | Self::V2(RequestV2::RunTool { limits, .. }) => Some(limits),
+            Self::V1(Request::Describe { .. }) | Self::V2(RequestV2::Describe { .. }) => None,
+        }
+    }
+
+    /// Per-job private scratch directory (`TMPDIR`), or `None` for `describe`.
+    #[must_use]
+    pub fn work_dir(&self) -> Option<&Path> {
+        match self {
+            Self::V1(Request::Convert { work_dir, .. })
+            | Self::V2(RequestV2::Convert { work_dir, .. })
+            | Self::V2(RequestV2::RunTool { work_dir, .. }) => Some(Path::new(work_dir)),
+            Self::V1(Request::Describe { .. }) | Self::V2(RequestV2::Describe { .. }) => None,
+        }
+    }
+
+    /// Warm session identifier (`None` for `describe` and `run_tool`, which never use warm sessions).
+    #[must_use]
+    pub fn session_key(&self) -> Option<&str> {
+        match self {
+            Self::V1(Request::Convert { session_id, .. })
+            | Self::V2(RequestV2::Convert { session_id, .. }) => session_id.as_deref(),
+            Self::V1(Request::Describe { .. })
+            | Self::V2(RequestV2::Describe { .. })
+            | Self::V2(RequestV2::RunTool { .. }) => None,
+        }
+    }
 }
 
 /// Starts an engine synchronously while Tokio handles its bounded streams internally.
@@ -204,17 +328,76 @@ where
     run_command(&command, request, cancel, sink)
 }
 
-/// Runs one request in a fresh engine process that exits after its `result`.
+/// Runs one `/1` request in a fresh engine process that exits after its `result`.
 pub fn run_command<S>(
     command: &EngineCommand,
     request: &Request,
     cancel: CancellationToken,
-    sink: S,
+    mut sink: S,
 ) -> Result<RunOutcome, RunError>
 where
     S: FnMut(Event),
 {
-    run_one_shot(command, request, None, cancel, sink)
+    run_one_shot(
+        command,
+        &JobRequest::V1(request.clone()),
+        None,
+        cancel,
+        |event| sink(Event::from(event)),
+    )
+}
+
+/// Runs one [`JobRequest`] (`/1` or `/2`) in a fresh engine process that exits after its `result`.
+pub fn run_job<S>(
+    command: &EngineCommand,
+    request: &JobRequest,
+    cancel: CancellationToken,
+    mut sink: S,
+) -> Result<RunOutcome, RunError>
+where
+    S: FnMut(Event),
+{
+    run_one_shot(command, request, None, cancel, |event| {
+        sink(Event::from(event))
+    })
+}
+
+/// Runs one `ariad-engine/2` request in a fresh engine process, streaming [`EventV2`] events.
+pub fn run_command_v2<S>(
+    command: &EngineCommand,
+    request: &RequestV2,
+    cancel: CancellationToken,
+    sink: S,
+) -> Result<RunOutcome, RunError>
+where
+    S: FnMut(EventV2),
+{
+    run_one_shot(
+        command,
+        &JobRequest::V2(request.clone()),
+        None,
+        cancel,
+        sink,
+    )
+}
+
+/// Starts an `ariad-engine/2` process synchronously and streams [`EventV2`] events.
+pub fn run_v2<S>(
+    program: &Path,
+    args: &[OsString],
+    request: &RequestV2,
+    cancel: CancellationToken,
+    sink: S,
+) -> Result<RunOutcome, RunError>
+where
+    S: FnMut(EventV2),
+{
+    run_command_v2(
+        &EngineCommand::from_parts(program, args),
+        request,
+        cancel,
+        sink,
+    )
 }
 
 /// Fixed timeout for engine `describe` requests.
@@ -242,6 +425,20 @@ pub fn describe(
     describe_with_timeout(program, args, DESCRIBE_TIMEOUT, cancel)
 }
 
+/// Queries an `ariad-engine/2` (or `/1`) engine's capabilities with a fixed 30s timeout,
+/// returning the full [`EventV2::Capabilities`] event (including `protocol` and `tools`).
+pub fn describe_v2(
+    program: &Path,
+    args: &[OsString],
+    cancel: CancellationToken,
+) -> Result<EventV2, RunError> {
+    describe_command_v2(
+        &EngineCommand::from_parts(program, args),
+        DESCRIBE_TIMEOUT,
+        cancel,
+    )
+}
+
 /// Like [`describe`], adding explicit settings to the cleared engine environment.
 pub fn describe_with_env(
     program: &Path,
@@ -260,14 +457,31 @@ pub fn describe_command(
     timeout: Duration,
     cancel: CancellationToken,
 ) -> Result<Event, RunError> {
-    let request = Request::Describe {
-        protocol: PROTOCOL.to_owned(),
-        job: format!("describe-{}", std::process::id()),
+    describe_command_v2(command, timeout, cancel).map(Event::from)
+}
+
+/// Runs `describe` for `command` (selecting `/1` or `/2` from [`EngineCommand::protocol`]) and
+/// returns its single [`EventV2::Capabilities`] event.
+pub fn describe_command_v2(
+    command: &EngineCommand,
+    timeout: Duration,
+    cancel: CancellationToken,
+) -> Result<EventV2, RunError> {
+    let job_id = format!("describe-{}", std::process::id());
+    let request = match command.protocol() {
+        Protocol::V1 => JobRequest::V1(Request::Describe {
+            protocol: PROTOCOL.to_owned(),
+            job: job_id,
+        }),
+        Protocol::V2 => JobRequest::V2(RequestV2::Describe {
+            protocol: PROTOCOL_V2.to_owned(),
+            job: job_id,
+        }),
     };
     let mut capabilities = None;
     let mut count = 0_usize;
     run_one_shot(command, &request, Some(timeout), cancel, |event| {
-        if let Event::Capabilities { .. } = &event {
+        if let EventV2::Capabilities { .. } = &event {
             count += 1;
             capabilities = Some(event);
         }
@@ -282,24 +496,156 @@ pub fn describe_command(
     ))
 }
 
+/// Writes `params` to `<work_dir>/params.json` with mode `0600` (owner read/write only).
+pub fn write_params_file(work_dir: &Path, params: &Value) -> Result<PathBuf, RunError> {
+    let path = work_dir.join("params.json");
+    write_private_params_file(&path, params)?;
+    Ok(path)
+}
+
+fn write_private_params_file(path: &Path, params: &Value) -> Result<(), RunError> {
+    let bytes = serde_json::to_vec(params)
+        .map_err(|_| RunError::ProtocolViolation("could not encode tool params"))?;
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(RunError::Io)?;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(RunError::Io)?;
+        file.write_all(&bytes).map_err(RunError::Io)?;
+        file.sync_all().map_err(RunError::Io)?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, &bytes).map_err(RunError::Io)?;
+    }
+    Ok(())
+}
+
+struct ParamsFileGuard(Option<PathBuf>);
+
+impl Drop for ParamsFileGuard {
+    fn drop(&mut self) {
+        if let Some(path) = self.0.take() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+fn has_secret_params(tool: &str, params: &Value) -> bool {
+    if let Some(spec) = ariad_core::tools::find(tool)
+        && let Some(obj) = params.as_object()
+        && spec
+            .secret_params
+            .iter()
+            .any(|field| obj.get(*field).is_some_and(|v| !v.is_null()))
+    {
+        return true;
+    }
+    value_contains_known_secret_key(params)
+}
+
+fn value_contains_known_secret_key(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => map.iter().any(|(k, v)| {
+            (!v.is_null()
+                && ariad_core::tools::KNOWN_SECRET_FIELD_NAMES
+                    .iter()
+                    .any(|secret| secret.eq_ignore_ascii_case(k)))
+                || value_contains_known_secret_key(v)
+        }),
+        Value::Array(items) => items.iter().any(value_contains_known_secret_key),
+        _ => false,
+    }
+}
+
+/// Spills oversized (`> 256 KiB`) or secret-bearing `run_tool` parameters to `<work_dir>/params.json`
+/// with mode `0600` and arms a drop guard that deletes the file as soon as the job finishes.
+fn prepare_job_request(
+    request: &JobRequest,
+) -> Result<(Cow<'_, JobRequest>, ParamsFileGuard), RunError> {
+    let JobRequest::V2(RequestV2::RunTool {
+        protocol,
+        job,
+        tool,
+        inputs,
+        output,
+        params,
+        params_file,
+        work_dir,
+        limits,
+    }) = request
+    else {
+        return Ok((Cow::Borrowed(request), ParamsFileGuard(None)));
+    };
+    let work_dir_path = Path::new(work_dir);
+    if work_dir.trim().is_empty() || !work_dir_path.is_dir() {
+        return Ok((Cow::Borrowed(request), ParamsFileGuard(None)));
+    }
+    let encoded_len = serde_json::to_vec(params)
+        .map_err(|_| RunError::ProtocolViolation("could not encode tool params"))?
+        .len();
+    let should_spill = encoded_len > MAX_INLINE_PARAMS_BYTES
+        || has_secret_params(tool, params)
+        || params_file.is_some();
+    if !should_spill {
+        return Ok((Cow::Borrowed(request), ParamsFileGuard(None)));
+    }
+    let target_path = params_file
+        .clone()
+        .unwrap_or_else(|| work_dir_path.join("params.json"));
+    let inline_is_empty = params.as_object().is_some_and(serde_json::Map::is_empty);
+    if !inline_is_empty || !target_path.exists() {
+        write_private_params_file(&target_path, params)?;
+    } else {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&target_path, std::fs::Permissions::from_mode(0o600))
+                .map_err(RunError::Io)?;
+        }
+    }
+    let spilled = JobRequest::V2(RequestV2::RunTool {
+        protocol: protocol.clone(),
+        job: job.clone(),
+        tool: tool.clone(),
+        inputs: inputs.clone(),
+        output: output.clone(),
+        params: json!({}),
+        params_file: Some(target_path.clone()),
+        work_dir: work_dir.clone(),
+        limits: limits.clone(),
+    });
+    Ok((Cow::Owned(spilled), ParamsFileGuard(Some(target_path))))
+}
+
 fn run_one_shot<S>(
     command: &EngineCommand,
-    request: &Request,
+    request: &JobRequest,
     describe_timeout: Option<Duration>,
     cancel: CancellationToken,
     sink: S,
 ) -> Result<RunOutcome, RunError>
 where
-    S: FnMut(Event),
+    S: FnMut(EventV2),
 {
     if cancel.is_cancelled() {
         return Err(RunError::Cancelled);
     }
-    let request_line = encode_request(request)?;
+    let (prepared_request, _params_file_guard) = prepare_job_request(request)?;
+    let request = prepared_request.as_ref();
+    let request_line = encode_job_request(request)?;
     // Describe has no request workspace, but some tools still need private system-temp IPC.
     let describe_workspace =
         if cfg!(target_os = "linux")
-            && matches!(request, Request::Describe { .. })
+            && request.is_describe()
             && crate::engines::sandbox::paths_for(&command.engine).private_tmp
         {
             Some(crate::workspace::Workspace::new().map_err(|_| {
@@ -309,9 +655,10 @@ where
             None
         };
     let writable = describe_workspace.as_ref().map_or_else(
-        || writable_paths(request),
+        || writable_paths_for_job(request),
         |workspace| vec![workspace.root().to_path_buf()],
     );
+    let read_only = read_only_paths_for_job(request);
     // Darwin UNIX socket names are short; the normal workspace path can exceed sun_path.
     // Keep ownership in the host so cancellation, launch failure and exit all remove IPC.
     #[cfg(target_os = "macos")]
@@ -342,14 +689,16 @@ where
         };
         (writable, ipc)
     };
-    let (program, args, sandbox) = prepare_launch(command, &writable)?;
-    let tmp_dir = match request {
-        Request::Convert { work_dir, .. } => Some(OsString::from(work_dir)),
-        Request::Describe { .. } => describe_workspace
-            .as_ref()
-            .map(|workspace| workspace.work_dir().as_os_str().to_owned()),
-    };
-    let job = JobSpec::for_request(request, describe_timeout, cancel);
+    let (program, args, sandbox) = prepare_launch_with_read_only(command, &writable, &read_only)?;
+    let tmp_dir = request.work_dir().map_or_else(
+        || {
+            describe_workspace
+                .as_ref()
+                .map(|workspace| workspace.work_dir().as_os_str().to_owned())
+        },
+        |work_dir| Some(work_dir.as_os_str().to_owned()),
+    );
+    let job = JobSpec::for_job_request(request, describe_timeout, cancel);
 
     let runtime = Builder::new_current_thread()
         .enable_all()
@@ -359,7 +708,7 @@ where
         let mut process =
             EngineProcess::spawn(&program, &args, &command.env, tmp_dir.as_deref()).await?;
         let result = process
-            .run_job(&request_line, &job, JobMode::OneShot, sink)
+            .run_job_v2(&request_line, &job, JobMode::OneShot, sink)
             .await;
         process.reap(result.is_err()).await;
         let (artifacts, metrics) = match result {
@@ -393,15 +742,23 @@ where
     })
 }
 
-/// Serializes a request as one bounded NDJSON line after checking its limits.
-pub(crate) fn encode_request(request: &Request) -> Result<Vec<u8>, RunError> {
-    if let Request::Convert { limits, .. } = request {
+/// Serializes a [`JobRequest`] (`/1` or `/2`) as one bounded NDJSON line after checking its limits.
+pub(crate) fn encode_job_request(request: &JobRequest) -> Result<Vec<u8>, RunError> {
+    if let Some(limits) = request.limits() {
         limits
             .validate()
             .map_err(|_| RunError::ProtocolViolation("request contains invalid limits"))?;
     }
-    let mut request_line =
-        serde_json::to_vec(request).map_err(|error| RunError::Io(io::Error::other(error)))?;
+    let mut request_line = match request {
+        JobRequest::V1(v1) => {
+            serde_json::to_vec(v1).map_err(|error| RunError::Io(io::Error::other(error)))?
+        }
+        JobRequest::V2(v2) => {
+            v2.validate()
+                .map_err(|_| RunError::ProtocolViolation("request violates ariad-engine/2"))?;
+            serde_json::to_vec(v2).map_err(|error| RunError::Io(io::Error::other(error)))?
+        }
+    };
     if request_line.len() > MAX_NDJSON_LINE_BYTES {
         return Err(RunError::ProtocolViolation(
             "request line exceeds the 1 MiB limit",
@@ -413,23 +770,92 @@ pub(crate) fn encode_request(request: &Request) -> Result<Vec<u8>, RunError> {
 
 /// The directories a one-shot convert request may write: the job workspace that contains
 /// `work_dir` and `output.dir`, or those directories themselves outside the standard layout.
+#[cfg(test)]
 fn writable_paths(request: &Request) -> Vec<PathBuf> {
-    let Request::Convert {
-        work_dir, output, ..
-    } = request
+    writable_paths_for_job(&JobRequest::V1(request.clone()))
+}
+
+/// Writable filesystem roots for a [`JobRequest`].
+///
+/// - `describe`: none (`[]`).
+/// - `convert` (`/1` and `/2`): the job workspace root when `work_dir` and `output.dir` share one
+///   parent directory, or `[work_dir, output.dir]` otherwise.
+/// - `run_tool` (`/2`): strictly `[output.dir, work_dir]` (`<ws>/out` + private `tmp`), leaving
+///   `<ws>/in` read-only.
+pub fn writable_paths_for_job(request: &JobRequest) -> Vec<PathBuf> {
+    match request {
+        JobRequest::V1(Request::Describe { .. }) | JobRequest::V2(RequestV2::Describe { .. }) => {
+            Vec::new()
+        }
+        JobRequest::V1(Request::Convert {
+            work_dir, output, ..
+        })
+        | JobRequest::V2(RequestV2::Convert {
+            work_dir, output, ..
+        }) => {
+            let work_dir = Path::new(work_dir);
+            let output_dir = Path::new(&output.dir);
+            match (work_dir.parent(), output_dir.parent()) {
+                (Some(root), Some(output_root))
+                    if root == output_root && work_dir.is_absolute() && root.parent().is_some() =>
+                {
+                    vec![root.to_path_buf()]
+                }
+                _ => vec![work_dir.to_path_buf(), output_dir.to_path_buf()],
+            }
+        }
+        JobRequest::V2(RequestV2::RunTool { .. }) => {
+            let mut paths: Vec<PathBuf> = request
+                .output_dirs()
+                .into_iter()
+                .map(Path::to_path_buf)
+                .collect();
+            if let Some(work_dir) = request.work_dir() {
+                let work_dir = work_dir.to_path_buf();
+                if !paths.contains(&work_dir) {
+                    paths.push(work_dir);
+                }
+            }
+            paths
+        }
+    }
+}
+
+/// Extra read-only paths granted to a [`JobRequest`] so `run_tool` can read staged inputs in
+/// `<ws>/in` while keeping writable roots restricted to `<ws>/out` and `work_dir`.
+fn read_only_paths_for_job(request: &JobRequest) -> Vec<PathBuf> {
+    let JobRequest::V2(RequestV2::RunTool {
+        inputs,
+        output,
+        work_dir,
+        ..
+    }) = request
     else {
         return Vec::new();
     };
-    let work_dir = Path::new(work_dir);
-    let output_dir = Path::new(&output.dir);
-    match (work_dir.parent(), output_dir.parent()) {
-        (Some(root), Some(output_root))
-            if root == output_root && work_dir.is_absolute() && root.parent().is_some() =>
+    let out_parent = Path::new(&output.dir).parent();
+    let work_parent = Path::new(work_dir).parent();
+    let mut read_only = Vec::new();
+    for input in inputs {
+        let input_path = Path::new(&input.path);
+        if let Some(parent) = input_path.parent()
+            && parent.file_name() == Some(OsStr::new("in"))
+            && (parent.parent() == out_parent || parent.parent() == work_parent)
         {
-            vec![root.to_path_buf()]
+            let dir = parent.to_path_buf();
+            if !read_only.contains(&dir) {
+                read_only.push(dir);
+            }
+            continue;
         }
-        _ => vec![work_dir.to_path_buf(), output_dir.to_path_buf()],
+        if input_path.exists() {
+            let file = input_path.to_path_buf();
+            if !read_only.contains(&file) {
+                read_only.push(file);
+            }
+        }
     }
+    read_only
 }
 
 /// Decides how to start `command`: directly, or through its sandbox launcher on Linux or macOS.
@@ -439,6 +865,14 @@ pub(crate) fn prepare_launch(
     command: &EngineCommand,
     writable: &[PathBuf],
 ) -> Result<(PathBuf, Vec<OsString>, SandboxOutcome), RunError> {
+    prepare_launch_with_read_only(command, writable, &[])
+}
+
+pub(crate) fn prepare_launch_with_read_only(
+    command: &EngineCommand,
+    writable: &[PathBuf],
+    read_only: &[PathBuf],
+) -> Result<(PathBuf, Vec<OsString>, SandboxOutcome), RunError> {
     let mode = match command.sandbox {
         Some(mode) => mode,
         None => sandbox::effective_mode().map_err(RunError::SandboxUnavailable)?,
@@ -447,9 +881,24 @@ pub(crate) fn prepare_launch(
     if mode == SandboxMode::Off {
         return direct(SandboxOutcome::Off);
     }
+    let strict = crate::engines::sandbox::requires_isolation(&command.engine, mode);
+    #[cfg(debug_assertions)]
+    let support = if command
+        .env
+        .iter()
+        .any(|(name, value)| name == "ARIAD_TEST_SANDBOX_SUPPORT" && value == "none")
+    {
+        sandbox::SandboxSupport {
+            platform: cfg!(any(target_os = "linux", target_os = "macos")),
+            ..sandbox::SandboxSupport::default()
+        }
+    } else {
+        sandbox::support()
+    };
+    #[cfg(not(debug_assertions))]
     let support = sandbox::support();
     if !support.platform {
-        if mode == SandboxMode::Required {
+        if strict {
             return Err(RunError::SandboxUnavailable(
                 "the engine sandbox is only available on Linux and macOS".to_owned(),
             ));
@@ -465,7 +914,7 @@ pub(crate) fn prepare_launch(
         )));
     }
     let Some(launcher) = &command.launcher else {
-        if mode == SandboxMode::Required {
+        if strict {
             return Err(RunError::SandboxUnavailable(
                 "the engine has no sandbox launcher".to_owned(),
             ));
@@ -474,7 +923,7 @@ pub(crate) fn prepare_launch(
             "the engine was started without the sandbox launcher".to_owned(),
         ));
     };
-    if mode == SandboxMode::Required && !gaps.is_empty() {
+    if strict && !gaps.is_empty() {
         return Err(RunError::SandboxUnavailable(gaps.join("; ")));
     }
     if !command.program.exists() {
@@ -487,11 +936,12 @@ pub(crate) fn prepare_launch(
     if let Some(root) = &command.install_root {
         policy.exec.push(root.clone());
     }
-    let args = policy.launcher_args(
-        mode == SandboxMode::Required,
-        &command.program,
-        &command.args,
-    );
+    for path in read_only {
+        if !policy.read_only.contains(path) {
+            policy.read_only.push(path.clone());
+        }
+    }
+    let args = policy.launcher_args(strict, &command.program, &command.args);
     let outcome = if gaps.is_empty() {
         SandboxOutcome::Applied
     } else {
@@ -509,6 +959,7 @@ pub(crate) enum JobMode {
 
 /// Per-job bounds derived from the request.
 pub(crate) struct JobSpec {
+    pub(crate) protocol: Protocol,
     pub(crate) output_dir: Option<String>,
     pub(crate) deadline: Option<Instant>,
     pub(crate) memory_limit_mb: Option<u32>,
@@ -516,24 +967,24 @@ pub(crate) struct JobSpec {
 }
 
 impl JobSpec {
-    pub(crate) fn for_request(
-        request: &Request,
+    pub(crate) fn for_job_request(
+        request: &JobRequest,
         describe_timeout: Option<Duration>,
         cancel: CancellationToken,
     ) -> Self {
-        let (output_dir, timeout, memory_limit_mb) = match request {
-            Request::Convert { output, limits, .. } => (
-                Some(output.dir.clone()),
+        let output_dir = request
+            .output_dirs()
+            .first()
+            .map(|dir| dir.display().to_string());
+        let (timeout, memory_limit_mb) = match request.limits() {
+            Some(limits) => (
                 limits.timeout_s.map(Duration::from_secs),
                 limits.max_memory_mb,
             ),
-            Request::Describe { .. } => (
-                None,
-                Some(describe_timeout.unwrap_or(DESCRIBE_TIMEOUT)),
-                None,
-            ),
+            None => (Some(describe_timeout.unwrap_or(DESCRIBE_TIMEOUT)), None),
         };
         Self {
+            protocol: request.protocol(),
             output_dir,
             deadline: timeout.and_then(|duration| Instant::now().checked_add(duration)),
             memory_limit_mb,
@@ -657,6 +1108,20 @@ impl EngineProcess {
     where
         S: FnMut(Event),
     {
+        self.run_job_v2(request_line, job, mode, |event| sink(Event::from(event)))
+            .await
+    }
+
+    pub(crate) async fn run_job_v2<S>(
+        &mut self,
+        request_line: &[u8],
+        job: &JobSpec,
+        mode: JobMode,
+        mut sink: S,
+    ) -> Result<(Vec<Artifact>, Option<BTreeMap<String, Value>>), RunError>
+    where
+        S: FnMut(EventV2),
+    {
         if mode == JobMode::Session && self.is_stale().await {
             return Err(RunError::ProtocolViolation(
                 "output or exit before the next request",
@@ -726,8 +1191,19 @@ impl EngineProcess {
                             if result.is_some() {
                                 return Err(RunError::ProtocolViolation("line follows the result event"));
                             }
-                            let event = parse_event(&line, job.output_dir.as_deref(), &mut artifacts)?;
-                            if let Event::Result { ok, metrics, error } = &event {
+                            let event = match job.protocol {
+                                Protocol::V1 => EventV2::from(parse_event(
+                                    &line,
+                                    job.output_dir.as_deref(),
+                                    &mut artifacts,
+                                )?),
+                                Protocol::V2 => parse_event_v2(
+                                    &line,
+                                    job.output_dir.as_deref(),
+                                    &mut artifacts,
+                                )?,
+                            };
+                            if let EventV2::Result { ok, metrics, error } = &event {
                                 result = Some((*ok, metrics.clone(), error.clone()));
                             }
                             sink(event);
@@ -877,21 +1353,7 @@ pub fn parse_event(
         ));
     }
     if let Event::Artifact { path, format } = &event {
-        let artifact_path = Path::new(path);
-        let Some(dir) = output_dir else {
-            return Err(RunError::ProtocolViolation(
-                "artifact emitted for request without output directory",
-            ));
-        };
-        if !artifact_is_confined(artifact_path, Path::new(dir)) {
-            return Err(RunError::ProtocolViolation(
-                "artifact path is outside output.dir",
-            ));
-        }
-        artifacts.push(Artifact {
-            path: artifact_path.to_path_buf(),
-            format: format.clone(),
-        });
+        validate_and_record_artifact(path, format, output_dir, artifacts)?;
     }
     if let Event::Result { ok, error, .. } = &event
         && ((*ok && error.is_some()) || (!*ok && error.is_none()))
@@ -901,6 +1363,58 @@ pub fn parse_event(
         ));
     }
     Ok(event)
+}
+
+/// Validates one `ariad-engine/2` stdout line with the same confinement and result invariants as
+/// [`parse_event`].
+#[doc(hidden)]
+pub fn parse_event_v2(
+    line: &[u8],
+    output_dir: Option<&str>,
+    artifacts: &mut Vec<Artifact>,
+) -> Result<EventV2, RunError> {
+    let event: EventV2 = serde_json::from_slice(line)
+        .map_err(|_| RunError::ProtocolViolation("event line is not valid protocol JSON"))?;
+    if matches!(&event, EventV2::Capabilities { .. }) && output_dir.is_some() {
+        return Err(RunError::ProtocolViolation(
+            "capabilities emitted for job request with output directory",
+        ));
+    }
+    if let EventV2::Artifact { path, format } = &event {
+        validate_and_record_artifact(path, format, output_dir, artifacts)?;
+    }
+    if let EventV2::Result { ok, error, .. } = &event
+        && ((*ok && error.is_some()) || (!*ok && error.is_none()))
+    {
+        return Err(RunError::ProtocolViolation(
+            "result ok and error fields disagree",
+        ));
+    }
+    Ok(event)
+}
+
+fn validate_and_record_artifact(
+    path: &str,
+    format: &str,
+    output_dir: Option<&str>,
+    artifacts: &mut Vec<Artifact>,
+) -> Result<(), RunError> {
+    let artifact_path = Path::new(path);
+    let Some(dir) = output_dir else {
+        return Err(RunError::ProtocolViolation(
+            "artifact emitted for request without output directory",
+        ));
+    };
+    if !artifact_is_confined(artifact_path, Path::new(dir)) {
+        return Err(RunError::ProtocolViolation(
+            "artifact path is outside output.dir",
+        ));
+    }
+    artifacts.push(Artifact {
+        path: artifact_path.to_path_buf(),
+        format: format.to_owned(),
+    });
+    Ok(())
 }
 
 fn artifact_is_confined(artifact: &Path, output_dir: &Path) -> bool {
