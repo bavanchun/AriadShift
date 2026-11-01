@@ -18,7 +18,7 @@ use ariad_core::{
     planner::Profile,
     tools::{
         InputArity, Plan, RECIPE_VERSION, Recipe, RecipeOrigin, RunSize, SecretSource, Step, Tier,
-        access::within_run_quota,
+        ToolSpec, access::within_run_quota, validate_secret_params,
     },
 };
 use schemars::JsonSchema;
@@ -73,6 +73,8 @@ pub struct RecipeRequest {
     pub engine_program: Option<PathBuf>,
     /// Optional explicit engine command override (for integration tests).
     pub engine_command: Option<EngineCommand>,
+    /// Optional tool specification overrides keyed by tool ID (for integration tests).
+    pub spec_overrides: BTreeMap<String, ToolSpec>,
     /// Optional 0-based artifact index at which final atomic publication should inject a failure.
     pub fail_publish_at_index: Option<usize>,
     /// Cooperative cancellation token.
@@ -97,6 +99,7 @@ impl RecipeRequest {
             allowed_dirs: None,
             engine_program: None,
             engine_command: None,
+            spec_overrides: BTreeMap::new(),
             fail_publish_at_index: None,
             cancel: CancellationToken::new(),
         }
@@ -163,6 +166,13 @@ impl RecipeRequest {
     #[must_use]
     pub fn with_engine_command(mut self, command: EngineCommand) -> Self {
         self.engine_command = Some(command);
+        self
+    }
+
+    /// Registers a [`ToolSpec`] override for a step's tool ID (used by integration tests).
+    #[must_use]
+    pub fn with_spec(mut self, spec: ToolSpec) -> Self {
+        self.spec_overrides.insert(spec.id.to_owned(), spec);
         self
     }
 
@@ -251,6 +261,14 @@ fn run_recipe_inner(
         .recipe
         .validate(request.origin)
         .map_err(|e| ToolError::InvalidParams(scrubber.scrub(&e.to_string())))?;
+    for step in &request.recipe.steps {
+        if let Step::Tool { tool, params } = step
+            && let Some(spec) = request.spec_overrides.get(tool.as_str())
+        {
+            validate_secret_params(spec, params, SecretSource::Recipe)
+                .map_err(|e| ToolError::InvalidParams(scrubber.scrub(&e.to_string())))?;
+        }
+    }
 
     // 2. Imported recipes require explicit user confirmation (`--yes` on CLI or dialog on UI).
     if request.origin.requires_confirmation() && !request.confirmed {
@@ -373,7 +391,10 @@ fn run_recipe_inner(
 
         match step {
             Step::Tool { tool, params } => {
-                let spec = ariad_core::tools::find(tool.as_str())
+                let spec = request
+                    .spec_overrides
+                    .get(tool.as_str())
+                    .or_else(|| ariad_core::tools::find(tool.as_str()))
                     .ok_or_else(|| ToolError::UnknownTool(tool.to_string()))?;
 
                 let mut next_items = Vec::new();
@@ -385,7 +406,7 @@ fn run_recipe_inner(
 
                         let outcome = execute_recipe_tool_call(
                             request,
-                            tool.as_str(),
+                            spec,
                             params,
                             vec![InputRef::new(&item.path)],
                             &item_out_dir,
@@ -410,7 +431,7 @@ fn run_recipe_inner(
                         .collect();
                     let outcome = execute_recipe_tool_call(
                         request,
-                        tool.as_str(),
+                        spec,
                         params,
                         step_inputs,
                         &step_dir,
@@ -539,25 +560,29 @@ fn run_recipe_inner(
 
 fn execute_recipe_tool_call(
     recipe_req: &RecipeRequest,
-    tool_id: &str,
+    spec: &ToolSpec,
     params: &serde_json::Value,
     inputs: Vec<InputRef>,
     step_out_dir: &Path,
     on_event: &mut dyn FnMut(ToolEvent),
 ) -> Result<crate::tools::run::ToolOutcome, ToolError> {
+    let step_secrets = recipe_req.secrets.filter_for_spec(spec, params);
     let mut tool_req = ToolRequest::new(
-        tool_id,
+        spec.id,
         inputs,
         OutputTarget::Directory(step_out_dir.to_path_buf()),
     )
     .with_params(params.clone())
-    .with_secrets(recipe_req.secrets.clone())
+    .with_secrets(step_secrets)
     .with_secret_source(SecretSource::Recipe)
     .with_limits(recipe_req.limits.clone())
     .with_plan(recipe_req.plan)
     .with_overwrite(true)
     .with_cancel(recipe_req.cancel.clone());
 
+    if recipe_req.spec_overrides.contains_key(spec.id) {
+        tool_req = tool_req.with_spec(*spec);
+    }
     if let Some(ref prog) = recipe_req.engine_program {
         tool_req = tool_req.with_engine_program(prog.clone());
     }

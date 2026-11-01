@@ -2783,6 +2783,10 @@ fn test_run_doc_tool_error_codes_and_secret_rejection() {
         "invalid_params"
     );
     assert_eq!(resp_9_lit["result"]["structuredContent"]["exit_code"], 9);
+    assert!(
+        !resp_9_lit.to_string().contains("hunter2-mcp-inline"),
+        "secret literal must never be echoed in MCP error response"
+    );
 
     // 3. Secret handle ($secret) over MCP -> exit_code 9 in this phase
     client.send_request(
@@ -2804,6 +2808,10 @@ fn test_run_doc_tool_error_codes_and_secret_rejection() {
         "invalid_params"
     );
     assert_eq!(resp_9_handle["result"]["structuredContent"]["exit_code"], 9);
+    assert!(
+        !resp_9_handle.to_string().contains("sec_01JABCDEF"),
+        "secret handle must never be echoed in MCP error response"
+    );
 
     // 4. Wrong input arity -> exit_code 10 (wrong_input)
     client.send_request(
