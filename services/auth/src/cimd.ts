@@ -104,6 +104,7 @@ export type CimdErrorCode =
   | "timeout"
   | "redirect_not_allowed"
   | "unexpected_status"
+  | "temporary_status"
   | "invalid_content_type"
   | "response_too_large"
   | "invalid_json"
@@ -409,10 +410,10 @@ export function parseCimdClientIdUrl(clientId: string): URL {
   if (!url.hostname) {
     throw new CimdError("invalid_client_id_url", "CIMD client_id must include a hostname");
   }
-  const rawMatch = /^https:\/\/[^/?#]+(\/[^?#]*)?(?:\?[^#]*)?$/i.exec(clientId);
   if (net.isIP(stripIpv6Brackets(url.hostname.replace(/\.$/, "")))) {
     throw new CimdError("invalid_client_id_url", "CIMD client_id must not use an IP literal");
   }
+  const rawMatch = /^https:\/\/[^/?#]+(\/[^?#]*)?(?:\?[^#]*)?$/i.exec(clientId);
   const rawPath = rawMatch?.[1] ?? "";
   if (!rawPath || rawPath === "/" || url.pathname === "/") {
     throw new CimdError("invalid_client_id_url", "CIMD client_id must include a non-root path");
@@ -1023,7 +1024,12 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
         );
       }
       if (response.status !== 200) {
-        throw new CimdError("unexpected_status", `CIMD fetch failed with HTTP ${response.status}`);
+        throw new CimdError(
+          response.status === 429 || response.status >= 500
+            ? "temporary_status"
+            : "unexpected_status",
+          `CIMD fetch failed with HTTP ${response.status}`,
+        );
       }
 
       const contentType = getHeaderValue(response.headers, "content-type");
@@ -1179,13 +1185,13 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
         return existing ?? null;
       }
       try {
+        let chargeHost = async () => true;
         if (!existing && ctx.context.options.rateLimit?.enabled !== false) {
           const ip = getIP(ctx.headers ?? new Headers(), ctx.context.options) ?? "no-trusted-ip";
           const adapter = ctx.context.adapter;
           const { window, max } = options.registrationRateLimit ?? { window: 3600, max: 20 };
           const consume = async (key: string): Promise<boolean> => {
             const row = (
-        let chargeHost = async () => true;
               await adapter.findMany<{ key: string; count: number; lastRequest: number }>({
                 model: "rateLimit",
                 where: [{ field: "key", value: key }],
@@ -1238,13 +1244,13 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           chargeHost = () => consume(`cimd-host|${host}`);
         }
         const result = await fetcher.fetchDocument(clientId);
+        if (!(await chargeHost())) return null;
         if (
           existing &&
           existing.clientDiscoveryId === CIMD_DISCOVERY_ID &&
           result.fromCache &&
           syncedRevisionByClient.get(clientId) === result.expiresAt
         ) {
-        if (!(await chargeHost())) return null;
           syncedRevisionByClient.delete(clientId);
           syncedRevisionByClient.set(clientId, result.expiresAt);
           return existing;
@@ -1273,6 +1279,20 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           ctx.context.logger.warn(
             `CIMD resolution failed: ${error.code} (${new URL(clientId).hostname})`,
           );
+          const updated = existing?.updatedAt ?? existing?.createdAt;
+          const updatedAt = updated ? new Date(updated).getTime() : NaN;
+          const hardExpiry = updatedAt + CIMD_MAX_CACHE_TTL_MS;
+          const explicitExpiry = existing?.expiresAt
+            ? new Date(existing.expiresAt).getTime()
+            : Infinity;
+          if (
+            existing?.clientDiscoveryId === CIMD_DISCOVERY_ID &&
+            ["timeout", "network_error", "dns_lookup_failed", "temporary_status"].includes(
+              error.code,
+            ) &&
+            (options.now ?? Date.now)() < Math.min(hardExpiry, explicitExpiry)
+          )
+            return existing;
           return null;
         }
         ctx.context.logger.error("CIMD client registration failed", error);

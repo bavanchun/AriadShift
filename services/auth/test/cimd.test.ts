@@ -913,6 +913,95 @@ describe("OAuth authorization flow with CIMD client_id", () => {
   });
 });
 
+describe("CIMD stored clients", () => {
+  it("keeps a stored client on temporary refresh failures only until hard expiry", async () => {
+    let now = Date.now();
+    let status = 200;
+    const id = "https://refresh.example/client.json";
+    const { app } = createService(undefined, false, {
+      now: () => now,
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => ({
+        status,
+        headers: { "content-type": "application/json", "cache-control": "max-age=60" },
+        body: JSON.stringify({ client_id: id, redirect_uris: [REDIRECT_URI] }),
+      }),
+    });
+    const { challenge } = pkce();
+    const request = () =>
+      app.request(authorizeUrl(id, { code_challenge: challenge, code_challenge_method: "S256" }));
+    expect((await request()).headers.get("location")).toContain("/oauth/sign-in?");
+    now += 61_000;
+    status = 503;
+    expect((await request()).headers.get("location")).toContain("/oauth/sign-in?");
+    expect((await request()).headers.get("location")).toContain("/oauth/sign-in?");
+    now += CIMD_MAX_CACHE_TTL_MS;
+    expect(new URL((await request()).headers.get("location") ?? "").searchParams.get("error")).toBe(
+      "invalid_client",
+    );
+  });
+
+  it("rejects a stored client after a permanent refresh failure", async () => {
+    let now = Date.now();
+    let status = 200;
+    const id = "https://permanent.example/client.json";
+    const { app } = createService(undefined, false, {
+      now: () => now,
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => ({
+        status,
+        headers: { "content-type": "application/json", "cache-control": "max-age=60" },
+        body: JSON.stringify({ client_id: id, redirect_uris: [REDIRECT_URI] }),
+      }),
+    });
+    const { challenge } = pkce();
+    const request = () =>
+      app.request(authorizeUrl(id, { code_challenge: challenge, code_challenge_method: "S256" }));
+    expect((await request()).headers.get("location")).toContain("/oauth/sign-in?");
+    now += 61_000;
+    status = 404;
+    expect(new URL((await request()).headers.get("location") ?? "").searchParams.get("error")).toBe(
+      "invalid_client",
+    );
+  });
+
+  it("refuses existing metadata clients at authorize and token when disabled", async () => {
+    const id = "https://disabled.example/client.json";
+    const { app, db } = createService(undefined, false, {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => ({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ client_id: id, redirect_uris: [REDIRECT_URI] }),
+      }),
+    });
+    const { challenge } = pkce();
+    const url = authorizeUrl(id, { code_challenge: challenge, code_challenge_method: "S256" });
+    expect((await app.request(url)).headers.get("location")).toContain("/oauth/sign-in?");
+    const disabled = createAuth(
+      buildAuthOptions({ ...config, cimdEnabled: false }, memoryAdapter(db)),
+    );
+    const authorize = await disabled.handler(new Request(url));
+    expect(new URL(authorize.headers.get("location") ?? "").searchParams.get("error")).toBe(
+      "invalid_client",
+    );
+    const tokenRequest = () =>
+      new Request(`${AUTH}/api/auth/oauth2/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: "invalid",
+          client_id: id,
+        }),
+      });
+    const enabledResponse = await app.request(tokenRequest());
+    expect(((await enabledResponse.json()) as { error: string }).error).toBe("invalid_grant");
+    const response = await disabled.handler(tokenRequest());
+    expect(((await response.json()) as { error: string }).error).toBe("invalid_client");
+  });
+});
+
 describe("CIMD registration budget", () => {
   it("applies deny and allow host policies before fetching", async () => {
     let fetches = 0;
@@ -946,6 +1035,35 @@ describe("CIMD registration budget", () => {
     }
     expect(fetches).toBe(0);
   });
+  it("does not charge a host for invalid documents", async () => {
+    let fetches = 0;
+    const { auth } = createService(undefined, true, {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async ({ url }) => {
+        fetches++;
+        return url.pathname === "/valid.json"
+          ? {
+              status: 200,
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ client_id: url.href, redirect_uris: [REDIRECT_URI] }),
+            }
+          : { status: 404, headers: {}, body: "" };
+      },
+    });
+    const { challenge } = pkce();
+    for (const name of [...Array.from({ length: 20 }, (_, i) => `bad${i}`), "valid"]) {
+      await auth.handler(
+        new Request(
+          authorizeUrl(`https://budget.example/${name}.json`, {
+            code_challenge: challenge,
+            code_challenge_method: "S256",
+          }),
+          { headers: { "x-ariadshift-client-ip": name === "valid" ? "192.0.2.2" : "192.0.2.1" } },
+        ),
+      );
+    }
+    expect(fetches).toBe(21);
+  });
   it("shares the dynamic registration budget", async () => {
     let fetches = 0;
     const { app } = createService(undefined, true, {
@@ -977,32 +1095,3 @@ describe("CIMD registration budget", () => {
     expect(fetches).toBe(0);
   });
 });
-  it("does not charge a host for invalid documents", async () => {
-    let fetches = 0;
-    const { auth } = createService(undefined, true, {
-      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
-      transport: async ({ url }) => {
-        fetches++;
-        return url.pathname === "/valid.json"
-          ? {
-              status: 200,
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ client_id: url.href, redirect_uris: [REDIRECT_URI] }),
-            }
-          : { status: 404, headers: {}, body: "" };
-      },
-    });
-    const { challenge } = pkce();
-    for (const name of [...Array.from({ length: 20 }, (_, i) => `bad${i}`), "valid"]) {
-      await auth.handler(
-        new Request(
-          authorizeUrl(`https://budget.example/${name}.json`, {
-            code_challenge: challenge,
-            code_challenge_method: "S256",
-          }),
-          { headers: { "x-ariadshift-client-ip": name === "valid" ? "192.0.2.2" : "192.0.2.1" } },
-        ),
-      );
-    }
-    expect(fetches).toBe(21);
-  });
