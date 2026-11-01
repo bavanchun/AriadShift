@@ -1185,6 +1185,7 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           const { window, max } = options.registrationRateLimit ?? { window: 3600, max: 20 };
           const consume = async (key: string): Promise<boolean> => {
             const row = (
+        let chargeHost = async () => true;
               await adapter.findMany<{ key: string; count: number; lastRequest: number }>({
                 model: "rateLimit",
                 where: [{ field: "key", value: key }],
@@ -1233,8 +1234,8 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
             });
             return updated ? true : consume(key);
           };
-          if (!(await consume(`${ip}|/oauth2/register`)) || !(await consume(`cimd-host|${host}`)))
-            return null;
+          if (!(await consume(`${ip}|/oauth2/register`))) return null;
+          chargeHost = () => consume(`cimd-host|${host}`);
         }
         const result = await fetcher.fetchDocument(clientId);
         if (
@@ -1243,6 +1244,7 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           result.fromCache &&
           syncedRevisionByClient.get(clientId) === result.expiresAt
         ) {
+        if (!(await chargeHost())) return null;
           syncedRevisionByClient.delete(clientId);
           syncedRevisionByClient.set(clientId, result.expiresAt);
           return existing;

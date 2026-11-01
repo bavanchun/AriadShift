@@ -977,3 +977,32 @@ describe("CIMD registration budget", () => {
     expect(fetches).toBe(0);
   });
 });
+  it("does not charge a host for invalid documents", async () => {
+    let fetches = 0;
+    const { auth } = createService(undefined, true, {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async ({ url }) => {
+        fetches++;
+        return url.pathname === "/valid.json"
+          ? {
+              status: 200,
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ client_id: url.href, redirect_uris: [REDIRECT_URI] }),
+            }
+          : { status: 404, headers: {}, body: "" };
+      },
+    });
+    const { challenge } = pkce();
+    for (const name of [...Array.from({ length: 20 }, (_, i) => `bad${i}`), "valid"]) {
+      await auth.handler(
+        new Request(
+          authorizeUrl(`https://budget.example/${name}.json`, {
+            code_challenge: challenge,
+            code_challenge_method: "S256",
+          }),
+          { headers: { "x-ariadshift-client-ip": name === "valid" ? "192.0.2.2" : "192.0.2.1" } },
+        ),
+      );
+    }
+    expect(fetches).toBe(21);
+  });
