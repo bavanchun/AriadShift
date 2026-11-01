@@ -21,7 +21,7 @@ import {
   isForbiddenCimdClientMetadataField,
   registerClientMetadataDocument,
 } from "@better-auth/oauth-provider/internal";
-import { getIP } from "better-auth/api";
+import { APIError, getIP } from "better-auth/api";
 
 /** Client discovery provenance identifier stored on CIMD `oauthClient` rows. */
 export const CIMD_DISCOVERY_ID = "cimd";
@@ -183,6 +183,7 @@ export interface CimdFetchResult {
 
 export interface CimdFetcher {
   fetchDocument: (clientId: string) => Promise<CimdFetchResult>;
+  evictDocument: (clientId: string) => void;
   clearCache: () => void;
 }
 
@@ -1164,6 +1165,9 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
 
   return {
     fetchDocument,
+    evictDocument: (clientId) => {
+      cache.delete(clientId);
+    },
     clearCache: () => {
       cache.clear();
       failures.clear();
@@ -1188,11 +1192,10 @@ export function createCimdExtension(
     matches: (clientId: string) => isCimdClientId(clientId),
     resolve: async (ctx, clientId, existing) => {
       const path = ctx.path?.replace(/\/+$/, "");
-      if (!enabled) {
-        return path === "/oauth2/revoke" || path === "/oauth2/delete-consent"
-          ? (existing ?? null)
-          : null;
+      if (path === "/oauth2/revoke" || path === "/oauth2/delete-consent") {
+        return existing ?? null;
       }
+      if (!enabled) return null;
       const host = new URL(clientId).hostname.toLowerCase().replace(/\.$/, "");
       if (
         options.deniedHosts?.some((entry) => entry.toLowerCase().replace(/\.$/, "") === host) ||
@@ -1200,6 +1203,20 @@ export function createCimdExtension(
           !options.allowedHosts.some((entry) => entry.toLowerCase().replace(/\.$/, "") === host))
       )
         return null;
+      if (
+        path === "/oauth2/token" &&
+        ctx.body?.grant_type === "refresh_token" &&
+        existing?.clientDiscoveryId === CIMD_DISCOVERY_ID
+      ) {
+        const updated = existing.updatedAt ?? existing.createdAt;
+        const timestamp = updated ? new Date(updated).getTime() : NaN;
+        if (
+          !Number.isFinite(timestamp) ||
+          (options.now ?? Date.now)() - timestamp >= CIMD_MAX_CACHE_TTL_MS
+        ) {
+          throw new APIError("BAD_REQUEST", { error: "invalid_grant" });
+        }
+      }
       if (
         !ctx.path ||
         [
@@ -1273,7 +1290,7 @@ export function createCimdExtension(
         let result = await fetcher.fetchDocument(clientId);
         // A cached document must never advance the stored successful-fetch time.
         if (result.fromCache && !existing) {
-          fetcher.clearCache();
+          fetcher.evictDocument(clientId);
           result = await fetcher.fetchDocument(clientId);
         }
         if (!(await chargeHost())) return null;

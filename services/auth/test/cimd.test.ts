@@ -30,6 +30,7 @@ import {
   AUTH,
   audiences,
   authorizeUrl,
+  browserFlow,
   config,
   createService,
   decode,
@@ -1011,6 +1012,7 @@ describe("OAuth authorization flow with CIMD client_id", () => {
       resource: RESOURCE,
     });
     expect(await json(stale)).toMatchObject({ error: "invalid_grant" });
+    expect(stale.headers.get("cache-control")).toBe("no-store");
     const basic = await app.request(`${AUTH}/api/auth/oauth2/token`, {
       method: "POST",
       headers: {
@@ -1027,7 +1029,7 @@ describe("OAuth authorization flow with CIMD client_id", () => {
       client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
       client_assertion: assertion,
     });
-    expect(await json(jwt)).toMatchObject({ error: "invalid_grant" });
+    expect(await json(jwt)).toMatchObject({ error: "invalid_client" });
     const disabled = createAuth(
       buildAuthOptions({ ...config, cimdEnabled: false }, memoryAdapter(db)),
     );
@@ -1055,7 +1057,126 @@ describe("OAuth authorization flow with CIMD client_id", () => {
   });
 });
 
+describe("CIMD cache isolation", () => {
+  it("refetches a missing client without clearing other documents or host failures", async () => {
+    const counts = new Map<string, number>();
+    let failedLookups = 0;
+    const { app, db } = createService(undefined, false, {
+      lookup: async (host) => {
+        if (host === "unavailable.example") {
+          failedLookups++;
+          throw Object.assign(new Error("temporary DNS failure"), { code: "EAI_AGAIN" });
+        }
+        return [{ address: "93.184.216.34", family: 4 }];
+      },
+      transport: async ({ url }) => {
+        counts.set(url.href, (counts.get(url.href) ?? 0) + 1);
+        return {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ client_id: url.href, redirect_uris: [REDIRECT_URI] }),
+        };
+      },
+    });
+    const { challenge } = pkce();
+    const request = (id: string) =>
+      app.request(
+        authorizeUrl(id, {
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+        }),
+      );
+    const missing = "https://missing-row.example/client.json";
+    const other = "https://other-cache.example/client.json";
+    await request(missing);
+    await request(other);
+    await request("https://unavailable.example/first.json");
+    const rows = db.oauthClient as Array<{ clientId: string }>;
+    rows.splice(
+      rows.findIndex((row) => row.clientId === missing),
+      1,
+    );
+    await request(missing);
+    await request(other);
+    await request("https://unavailable.example/first.json");
+    await request("https://unavailable.example/second.json");
+    expect(counts.get(missing)).toBe(2);
+    expect(counts.get(other)).toBe(1);
+    expect(failedLookups).toBe(1);
+  });
+});
+
 describe("CIMD stored clients", () => {
+  it("allows a previously issued token to be revoked after its host is denied", async () => {
+    const id = "https://later-denied.example/client.json";
+    const options = {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 as const }],
+      transport: async () => ({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          client_id: id,
+          redirect_uris: [REDIRECT_URI],
+          token_endpoint_auth_method: "none",
+          grant_types: ["authorization_code", "refresh_token"],
+        }),
+      }),
+    };
+    const { app, db } = createService(undefined, false, options);
+    const flow = await browserFlow(app, id);
+    const issued = await flow.issue();
+    const denied = createAuth(
+      buildAuthOptions(
+        { ...config, cimdDeniedHosts: ["later-denied.example"] },
+        memoryAdapter(db),
+        options,
+      ),
+    );
+    const response = await denied.handler(
+      new Request(`${AUTH}/api/auth/oauth2/revoke`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ client_id: id, token: issued.refresh_token as string }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await json(await flow.refresh(issued.refresh_token as string))).toMatchObject({
+      error: "invalid_grant",
+    });
+  });
+
+  it("omits discovery support and performs no fetch when disabled", async () => {
+    let fetches = 0;
+    const { app } = createService(
+      undefined,
+      false,
+      {
+        lookup: async () => {
+          fetches++;
+          return [{ address: "93.184.216.34", family: 4 }];
+        },
+        transport: async () => {
+          fetches++;
+          return { status: 404, headers: {}, body: "" };
+        },
+      },
+      { ...config, cimdEnabled: false },
+    );
+    for (const path of ["oauth-authorization-server", "openid-configuration"]) {
+      expect(await json(await app.request(`${AUTH}/.well-known/${path}`))).not.toHaveProperty(
+        "client_id_metadata_document_supported",
+      );
+    }
+    const { challenge } = pkce();
+    await app.request(
+      authorizeUrl("https://disabled.example/client.json", {
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      }),
+    );
+    expect(fetches).toBe(0);
+  });
+
   it("keeps a stored client on temporary refresh failures only until hard expiry", async () => {
     let now = Date.now();
     let status = 200;

@@ -13,12 +13,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { jwt, twoFactor } from "better-auth/plugins";
 import pg from "pg";
 import type { DiscoveryDocument } from "./app.ts";
-import {
-  CIMD_DISCOVERY_ID,
-  CIMD_MAX_CACHE_TTL_MS,
-  type CimdFetcherOptions,
-  createCimdExtension,
-} from "./cimd.ts";
+import { type CimdFetcherOptions, createCimdExtension } from "./cimd.ts";
 import { AUTH_SCHEMA, type AuthServiceConfig } from "./config.ts";
 import { OAUTH_TOKEN_LIMITS, serializedOAuthHandler } from "./oauth-lock.ts";
 
@@ -262,59 +257,6 @@ export function buildAuthOptions(
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        if (config.cimdEnabled && ctx.path?.replace(/\/+$/, "") === "/oauth2/token") {
-          const body = ctx.body as
-            | { grant_type?: unknown; client_id?: unknown; client_assertion?: unknown }
-            | undefined;
-          if (body?.grant_type === "refresh_token") {
-            const ids = new Set<string>();
-            if (typeof body.client_id === "string") ids.add(body.client_id);
-            const authorization = ctx.headers?.get("authorization");
-            const basic = authorization?.match(/^Basic\s+(.+)$/i);
-            if (basic?.[1]) {
-              try {
-                const credentials = Buffer.from(basic[1], "base64").toString("utf8");
-                const separator = credentials.indexOf(":");
-                if (separator >= 0)
-                  ids.add(decodeURIComponent(credentials.slice(0, separator).replace(/\+/g, " ")));
-              } catch {
-                /* The provider will reject malformed credentials. */
-              }
-            }
-            if (typeof body.client_assertion === "string") {
-              try {
-                const payload = JSON.parse(
-                  Buffer.from(body.client_assertion.split(".")[1] ?? "", "base64url").toString(
-                    "utf8",
-                  ),
-                ) as { iss?: unknown };
-                if (typeof payload.iss === "string") ids.add(payload.iss);
-              } catch {
-                /* The provider will reject malformed assertions. */
-              }
-            }
-            for (const id of ids) {
-              const client = await ctx.context.adapter.findOne<{
-                clientDiscoveryId?: string;
-                updatedAt?: Date;
-                createdAt?: Date;
-              }>({ model: "oauthClient", where: [{ field: "clientId", value: id }] });
-              if (client?.clientDiscoveryId === CIMD_DISCOVERY_ID) {
-                const updated = client.updatedAt ?? client.createdAt;
-                const timestamp = updated ? new Date(updated).getTime() : NaN;
-                if (
-                  !Number.isFinite(timestamp) ||
-                  (cimd?.now ?? Date.now)() - timestamp >= CIMD_MAX_CACHE_TTL_MS
-                ) {
-                  return ctx.json(
-                    { error: "invalid_grant" },
-                    { status: 400, headers: { "Cache-Control": "no-store", Pragma: "no-cache" } },
-                  );
-                }
-              }
-            }
-          }
-        }
         if (ctx.path === "/delete-user") {
           const session = await getSessionFromCtx(ctx);
           if (!session) return;

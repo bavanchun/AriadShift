@@ -40,3 +40,34 @@ Suggested PR body: Fix #163 by refusing stale CIMD refresh grants without
 fetching under the token lock, retaining revocation when discovery is disabled,
 and correcting DNS failure and timeout handling. Add regression coverage and
 operator guidance. PostgreSQL coverage requires the database-enabled CI job.
+
+## Round 2
+
+Assumption: when a cached document has no client row, a new successful fetch
+must precede registration, so its timestamp is not advanced by a cache hit.
+The previous branch cleared all positive and negative entries for this case.
+It now evicts only that document and refetches it. The token resolver checks
+staleness using the provider's client ID, and revoke and consent deletion bypass
+host policy for existing clients. Disabled discovery remains silent. The guide
+now describes the refresh deadline and NXDOMAIN behavior.
+
+Regression tests: `refetches a missing client without clearing other documents
+or host failures`, `allows a previously issued token to be revoked after its
+host is denied`, and `omits discovery support and performs no fetch when
+disabled`. The existing OAuth flow checks the stale response and cache header;
+the PostgreSQL test remains unchanged. An invalid JWT assertion is rejected by
+the provider before discovery, and is expected to return `invalid_client`.
+The pre-fix regression run waited behind the shared lock and was stopped before
+execution; source inspection established the original cache-wide deletion.
+- PASS: focused CIMD and OAuth flow tests, 55 passed.
+- PASS: full auth suite, 245 passed and 33 skipped.
+- PASS: auth typecheck, after correcting the test address family type.
+- PASS: Biome on changed TypeScript and Markdown files.
+- PostgreSQL-dependent cases, including the serialized stale-refresh test,
+  require database-enabled CI. No PostgreSQL container was started.
+
+Suggested PR title: `fix(auth): expire stale CIMD grants`
+
+Suggested PR body: Fix #163 by refusing stale metadata client refreshes without
+network I/O, isolating cache invalidation, preserving revocation, and documenting
+metadata expiry and NXDOMAIN behavior. Run PostgreSQL coverage in CI.
