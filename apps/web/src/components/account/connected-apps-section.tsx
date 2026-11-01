@@ -149,8 +149,8 @@ export function ConnectedAppsSection() {
           title={`Revoke ${revoking.label}?`}
           description={
             revoking.kind === "consent"
-              ? "This app will lose access to your account and its active refresh tokens will stop working until you authorize it again."
-              : "Deleting this registered OAuth client revokes its credentials, consents, and active tokens."
+              ? "Revoking stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire."
+              : "Deleting this registered OAuth client revokes its credentials and consents and stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire."
           }
           onClose={() => setRevoking(null)}
           returnFocus={() => document.getElementById(headingId)}
