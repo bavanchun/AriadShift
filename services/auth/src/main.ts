@@ -13,6 +13,7 @@ import {
   discoveryDocuments,
   scheduleLegacySigningKeys,
 } from "./auth.ts";
+import { CIMD_CLEANUP_INTERVAL_MS, cleanupUnusedCimdClients } from "./cimd.ts";
 import { ConfigError, parseConfig } from "./config.ts";
 import { migrate } from "./migrate.ts";
 import { pageOptions } from "./pages.ts";
@@ -41,6 +42,24 @@ async function main(command: string): Promise<void> {
   }
 
   await scheduleLegacySigningKeys(pool);
+  let cleaning = false;
+  const cleanCimd = async () => {
+    if (cleaning) return;
+    cleaning = true;
+    try {
+      await cleanupUnusedCimdClients((sql, parameters) => pool.query(sql, parameters));
+    } catch (error) {
+      log("error", "CIMD client cleanup failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      cleaning = false;
+    }
+  };
+  const cleanupTimer = config.oauthDisabledReason
+    ? undefined
+    : setInterval(() => void cleanCimd(), CIMD_CLEANUP_INTERVAL_MS).unref();
+  if (cleanupTimer) void cleanCimd();
   const auth = createAuth(options);
   if (config.oauthDisabledReason) {
     log("info", "remote MCP OAuth is off", { reason: config.oauthDisabledReason });
@@ -62,6 +81,7 @@ async function main(command: string): Promise<void> {
 
   const shutdown = (signal: string) => {
     log("info", "shutting down", { signal });
+    if (cleanupTimer) clearInterval(cleanupTimer);
     server.close(() => {
       pool.end().finally(() => process.exit(0));
     });

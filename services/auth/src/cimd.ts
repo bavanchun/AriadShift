@@ -26,6 +26,29 @@ import { getIP } from "better-auth/api";
 /** Client discovery provenance identifier stored on CIMD `oauthClient` rows. */
 export const CIMD_DISCOVERY_ID = "cimd";
 
+/** Retain unused clients long enough for abandoned authorization flows to expire. */
+export const CIMD_UNUSED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const CIMD_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Delete a bounded batch atomically; foreign keys protect concurrent uses. */
+export async function cleanupUnusedCimdClients(
+  query: (sql: string, parameters: [string, string]) => Promise<unknown>,
+  now = Date.now(),
+): Promise<void> {
+  await query(
+    `DELETE FROM "oauthClient" WHERE "clientId" IN (
+      SELECT c."clientId" FROM "oauthClient" c
+      WHERE c."clientDiscoveryId" = $1 AND c."disabled" IS NOT TRUE
+        AND COALESCE(c."updatedAt", c."createdAt") < $2
+        AND NOT EXISTS (SELECT 1 FROM "oauthConsent" x WHERE x."clientId" = c."clientId")
+        AND NOT EXISTS (SELECT 1 FROM "oauthAccessToken" x WHERE x."clientId" = c."clientId")
+        AND NOT EXISTS (SELECT 1 FROM "oauthRefreshToken" x WHERE x."clientId" = c."clientId")
+      LIMIT 100
+    )`,
+    [CIMD_DISCOVERY_ID, new Date(now - CIMD_UNUSED_RETENTION_MS).toISOString()],
+  );
+}
+
 /** Deadline (ms) covering DNS, TLS, headers, and the response body. */
 export const CIMD_TIMEOUT_MS = 5_000;
 

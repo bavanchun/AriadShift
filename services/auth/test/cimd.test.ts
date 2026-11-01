@@ -4,21 +4,25 @@ import https from "node:https";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   CIMD_DEFAULT_CACHE_TTL_MS,
   CIMD_MAX_BODY_BYTES,
   CIMD_MAX_CACHE_TTL_MS,
   CIMD_TIMEOUT_MS,
+  CIMD_UNUSED_RETENTION_MS,
   type CimdError,
   type CimdRawResponse,
   classifyIpAddress,
+  cleanupUnusedCimdClients,
   createCimdFetcher,
   isAllowedCimdAddress,
   isCimdClientId,
   parseCacheControlTtlMs,
   validateCimdMetadataDocument,
 } from "../src/cimd.ts";
+
 import {
   AUTH,
   audiences,
@@ -35,6 +39,66 @@ import {
   signedQuery,
   token,
 } from "./oauth-helpers.ts";
+
+describe("unused CIMD client cleanup", () => {
+  it("removes only old unused enabled CIMD clients and their resource links", async () => {
+    const db = new DatabaseSync(":memory:");
+    try {
+      db.exec(`
+        PRAGMA foreign_keys = ON;
+        CREATE TABLE "oauthClient" ("clientId" TEXT PRIMARY KEY, "clientDiscoveryId" TEXT,
+          "disabled" BOOLEAN, "createdAt" TEXT, "updatedAt" TEXT);
+        CREATE TABLE "oauthClientResource" ("clientId" TEXT REFERENCES "oauthClient"("clientId") ON DELETE CASCADE);
+        CREATE TABLE "oauthConsent" ("clientId" TEXT REFERENCES "oauthClient"("clientId"));
+        CREATE TABLE "oauthAccessToken" ("clientId" TEXT REFERENCES "oauthClient"("clientId"));
+        CREATE TABLE "oauthRefreshToken" ("clientId" TEXT REFERENCES "oauthClient"("clientId"));
+      `);
+      const now = Date.parse("2026-11-02T00:00:00Z");
+      const old = new Date(now - CIMD_UNUSED_RETENTION_MS - 1000).toISOString();
+      const recent = new Date(now - 1000).toISOString();
+      const add = db.prepare('INSERT INTO "oauthClient" VALUES (?, ?, ?, ?, ?)');
+      for (const id of [
+        "unused",
+        "consent",
+        "access",
+        "refresh",
+        "disabled",
+        "recent",
+        "updated",
+        "other",
+      ]) {
+        add.run(
+          id,
+          id === "other" ? "other" : "cimd",
+          id === "disabled" ? 1 : 0,
+          id === "recent" ? recent : old,
+          id === "updated" ? recent : null,
+        );
+      }
+      for (const [table, id] of [
+        ["oauthConsent", "consent"],
+        ["oauthAccessToken", "access"],
+        ["oauthRefreshToken", "refresh"],
+        ["oauthClientResource", "unused"],
+      ] as const) {
+        db.prepare(`INSERT INTO "${table}" VALUES (?)`).run(id);
+      }
+      await cleanupUnusedCimdClients(
+        async (sql, parameters) => db.prepare(sql).run({ $1: parameters[0], $2: parameters[1] }),
+        now,
+      );
+      expect(
+        db
+          .prepare('SELECT "clientId" FROM "oauthClient" ORDER BY "clientId"')
+          .all()
+          .map((row) => row.clientId),
+      ).toEqual(["access", "consent", "disabled", "other", "recent", "refresh", "updated"]);
+      expect(db.prepare('SELECT * FROM "oauthClientResource"').all()).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+});
 
 function generateTestCertificate(hostname: string): { key: string; cert: string } {
   const dir = mkdtempSync(join(tmpdir(), "ariad-cimd-cert-"));
