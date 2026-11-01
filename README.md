@@ -136,7 +136,7 @@ for development or `just desktop-build` for installers. See
 ## Development
 
 Install Rust 1.99.0 with the `rustfmt`, `clippy`, and
-`wasm32-unknown-unknown` components, `just` 1.58.0, Node.js 24.21.0, pnpm
+`wasm32-unknown-unknown` components, `just` 1.58.0, Node.js 26.13.0, pnpm
 12.9.1, Python 3.14 or newer, and uv 0.12.23. The Rust and Node versions are
 recorded in [`rust-toolchain.toml`](rust-toolchain.toml) and
 [`.node-version`](.node-version); uv's required version is in
