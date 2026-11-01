@@ -988,7 +988,7 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs).unref();
     try {
       const vettedAddress = await resolveAndVetHost(url.hostname, lookup, controller.signal);
       let response: CimdRawResponse;

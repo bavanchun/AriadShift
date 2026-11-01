@@ -28,8 +28,7 @@ async function main(command: string): Promise<void> {
     throw new ConfigError(`unknown command "${command}"; expected serve or migrate`);
   }
   const config = parseConfig(process.env);
-  const pool = createPool(config);
-  pool.on("error", (err) =>
+  const pool = createPool(config, (err) =>
     log("error", "idle database connection failed", { error: err.message }),
   );
 
@@ -42,24 +41,23 @@ async function main(command: string): Promise<void> {
   }
 
   await scheduleLegacySigningKeys(pool);
-  let cleaning = false;
-  const cleanCimd = async () => {
-    if (cleaning) return;
-    cleaning = true;
-    try {
-      await cleanupUnusedCimdClients((sql, parameters) => pool.query(sql, parameters));
-    } catch (error) {
-      log("error", "CIMD client cleanup failed", {
-        error: error instanceof Error ? error.message : String(error),
+  let cleanupTask: Promise<void> | undefined;
+  const cleanCimd = () => {
+    if (cleanupTask) return;
+    cleanupTask = cleanupUnusedCimdClients((sql, parameters) => pool.query(sql, parameters))
+      .catch((error: unknown) => {
+        log("error", "CIMD client cleanup failed", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        cleanupTask = undefined;
       });
-    } finally {
-      cleaning = false;
-    }
   };
   const cleanupTimer = config.oauthDisabledReason
     ? undefined
-    : setInterval(() => void cleanCimd(), CIMD_CLEANUP_INTERVAL_MS).unref();
-  if (cleanupTimer) void cleanCimd();
+    : setInterval(cleanCimd, CIMD_CLEANUP_INTERVAL_MS).unref();
+  if (cleanupTimer) cleanCimd();
   const auth = createAuth(options);
   if (config.oauthDisabledReason) {
     log("info", "remote MCP OAuth is off", { reason: config.oauthDisabledReason });
@@ -83,7 +81,18 @@ async function main(command: string): Promise<void> {
     log("info", "shutting down", { signal });
     if (cleanupTimer) clearInterval(cleanupTimer);
     server.close(() => {
-      pool.end().finally(() => process.exit(0));
+      void (async () => {
+        await cleanupTask;
+        await pool.end();
+      })().then(
+        () => process.exit(0),
+        (error: unknown) => {
+          log("error", "auth database shutdown failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          process.exit(1);
+        },
+      );
     });
     // Do not wait forever on keep-alive connections.
     setTimeout(() => process.exit(0), 10_000).unref();

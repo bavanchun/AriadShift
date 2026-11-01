@@ -172,14 +172,20 @@ export const OAUTH_REGISTRATION_RATE_LIMIT = { window: 60 * 60, max: 20 } as con
 export const CLIENT_IP_HEADER = "x-ariadshift-client-ip";
 
 /** Opens the pool with every unqualified table name resolving to `auth`. */
-export function createPool(config: AuthServiceConfig): pg.Pool {
-  return new pg.Pool({
+export function createPool(
+  config: AuthServiceConfig,
+  onIdleError: (error: Error) => void = (error) =>
+    console.error("Idle auth database connection failed:", error.message),
+): pg.Pool {
+  const pool = new pg.Pool({
     connectionString: config.databaseUrl,
     // A search_path in DATABASE_URL takes precedence over this one.
     options: `-c search_path=${AUTH_SCHEMA}`,
     max: 10,
     connectionTimeoutMillis: OAUTH_TOKEN_LIMITS.checkoutMs,
   });
+  pool.on("error", onIdleError);
+  return pool;
 }
 
 /**
