@@ -75,14 +75,14 @@ All CLI commands adhere to a single unified exit-code table:
 Converts Markdown, HTML, DOCX and EPUB to/from IR JSON (`json`), reads PDF text, writes PDF through Typst, and uses system LibreOffice for legacy Office and ODF routes. With the [Docling engine](docling.md) (the `docling` pack, or `ASHIFT_DOCLING_ENGINE` during development) it also reads `pdf`, `pptx`, `xlsx` and the images `png`, `jpeg`, `tiff` and `webp`, with OCR for scans; DoclingDocument JSON (`*.docling.json`) converts without any engine.
 
 ```bash
-ashift convert [OPTIONS] --to <FORMAT> <INPUT>...
+ashift convert [OPTIONS] [--to <FORMAT>] <INPUT>...
 ```
 
 #### Arguments and Options
 
 - `<INPUT>...`: One or more input document paths, processed in order.
-- `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input.
-- `-o, --output <OUTPUT>`: With one input, an explicit output file path. With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
+- `--to <FORMAT>`: Target format identifier (`md`, `markdown`, `html`, `docx`, `epub`, `pdf`, `json`, `xlsx`, `pptx`), when reachable from the input. Optional for a single input when `-o <OUTPUT>` has a known format extension; an explicit `--to` always overrides the output extension. Required when `-o` is omitted, when `-o` has an unknown extension, or when converting several inputs.
+- `-o, --output <OUTPUT>`: With one input, an explicit output file path (its extension infers the target format when `--to` is omitted). With several inputs, an existing output directory; each file keeps its stem and receives the target extension. If omitted, each output goes beside its input. Duplicate destinations are refused before conversion (exit 2).
 - `--engine <ENGINE>`: Select the input reader (for example, `pdf` or `docling` for PDF). Later mapping and writer steps are planned normally. A requested reader never silently falls back to a different reader.
 - `--profile <PROFILE>`: Routing optimization profile: `editable` (default), `faithful`, `fast`, or `private`.
 - `--overwrite`: Overwrite the destination file if it already exists.
@@ -93,6 +93,9 @@ ashift convert [OPTIONS] --to <FORMAT> <INPUT>...
 ```bash
 # Convert Markdown to DOCX (default output: draft.docx)
 ashift convert draft.md --to docx
+
+# Convert Markdown to DOCX, inferring the target format from -o
+ashift convert draft.md -o out.docx
 
 # Convert DOCX to Markdown with explicit output path
 ashift convert report.docx --to md -o output/report.md
