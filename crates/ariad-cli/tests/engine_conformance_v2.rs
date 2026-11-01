@@ -160,7 +160,11 @@ fn v2_run_tool_multi_input_multi_artifact_and_warning_events_conform_to_schema()
     assert_eq!(artifacts.len(), 2);
     for artifact in artifacts {
         let path = Path::new(artifact["path"].as_str().expect("artifact path"));
-        assert!(path.starts_with(workspace.output_dir()));
+        assert!(
+            std::fs::canonicalize(path)
+                .unwrap()
+                .starts_with(std::fs::canonicalize(workspace.output_dir()).unwrap())
+        );
         assert!(path.is_file());
     }
 }

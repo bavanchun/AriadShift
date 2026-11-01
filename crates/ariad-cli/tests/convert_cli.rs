@@ -54,6 +54,18 @@ fn has_docx_document(path: &Path) -> bool {
     archive.by_name("word/document.xml").is_ok()
 }
 
+fn assert_printed_path(stdout: &[u8], expected: &Path) {
+    let text = std::str::from_utf8(stdout).expect("stdout is UTF-8");
+    let mut lines = text.lines();
+    let path = lines.next().expect("one output path");
+    assert!(lines.next().is_none(), "stdout contains more than one line");
+    assert!(text.ends_with('\n'), "stdout must end with a newline");
+    assert_eq!(
+        fs::canonicalize(path).unwrap(),
+        fs::canonicalize(expected).unwrap()
+    );
+}
+
 #[test]
 fn converts_to_default_and_explicit_output_paths_with_stdout_only_containing_the_path() {
     let directory = tempdir().expect("create test directory");
@@ -68,20 +80,14 @@ fn converts_to_default_and_explicit_output_paths_with_stdout_only_containing_the
         .output()
         .expect("start ashift");
     assert!(default_result.status.success());
-    assert_eq!(
-        default_result.stdout,
-        format!("{}\n", default_output.display()).as_bytes()
-    );
+    assert_printed_path(&default_result.stdout, &default_output);
     assert!(default_result.stderr.is_empty());
     assert!(has_docx_document(&default_output));
 
     let explicit_output = directory.path().join("named-output.docx");
     let explicit_result = run_convert(&input, &explicit_output);
     assert!(explicit_result.status.success());
-    assert_eq!(
-        explicit_result.stdout,
-        format!("{}\n", explicit_output.display()).as_bytes()
-    );
+    assert_printed_path(&explicit_result.stdout, &explicit_output);
     assert!(explicit_result.stderr.is_empty());
     assert!(has_docx_document(&explicit_output));
 }
@@ -457,10 +463,7 @@ fn default_output_uses_target_format_extension() {
     assert!(result_html.status.success());
     let expected_html = directory.path().join("doc.html");
     assert!(expected_html.is_file());
-    assert_eq!(
-        String::from_utf8_lossy(&result_html.stdout).trim(),
-        expected_html.to_string_lossy()
-    );
+    assert_printed_path(&result_html.stdout, &expected_html);
 
     // Convert md -> epub with default output (if pandoc available)
     if let Ok(pandoc) = std::env::var("ASHIFT_PANDOC") {
@@ -1238,10 +1241,7 @@ fn target_format_inferred_from_output_extension_and_overridden_by_to_flag() {
         "expected -o out.docx without --to to succeed, stderr: {}",
         String::from_utf8_lossy(&inferred.stderr)
     );
-    assert_eq!(
-        inferred.stdout,
-        format!("{}\n", out_docx.display()).as_bytes()
-    );
+    assert_printed_path(&inferred.stdout, &out_docx);
     assert!(inferred.stderr.is_empty());
     assert!(has_docx_document(&out_docx));
 

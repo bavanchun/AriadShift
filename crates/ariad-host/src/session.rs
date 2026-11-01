@@ -359,7 +359,7 @@ impl Session {
         }
         debug_assert_eq!(request.session_key(), Some(self.id.as_str()));
         let line = runner::encode_job_request(&request)?;
-        let job = JobSpec::for_job_request(&request, None, cancel);
+        let job = JobSpec::for_job_request(&request, None, cancel)?;
         self.jobs += 1;
         let Self {
             directory,

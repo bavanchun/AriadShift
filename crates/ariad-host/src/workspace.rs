@@ -140,21 +140,30 @@ impl Workspace {
     /// Opens an artifact relative to the output handle captured before the engine starts.
     /// Directory replacements cannot redirect this read outside that original directory.
     pub fn open_artifact(&self, artifact: &Path) -> Result<fs::File, WorkspaceError> {
-        let relative = artifact
-            .strip_prefix(&self.output_dir)
-            .map_err(|_| WorkspaceError::ArtifactOutsideOutput)?;
-        if relative.as_os_str().is_empty()
-            || !relative
+        if !artifact.is_absolute()
+            || artifact
                 .components()
-                .all(|component| matches!(component, Component::Normal(_)))
+                .any(|component| matches!(component, Component::ParentDir))
         {
             return Err(WorkspaceError::ArtifactOutsideOutput);
         }
+        let parent = artifact
+            .parent()
+            .ok_or(WorkspaceError::ArtifactOutsideOutput)?;
+        let name = artifact
+            .file_name()
+            .ok_or(WorkspaceError::ArtifactOutsideOutput)?;
+        let canonical_output = fs::canonicalize(&self.output_dir)?;
+        let canonical_parent = fs::canonicalize(parent)?;
+        let relative_parent = canonical_parent
+            .strip_prefix(&canonical_output)
+            .map_err(|_| WorkspaceError::ArtifactOutsideOutput)?;
+        let relative = relative_parent.join(name);
         let directory = self
             .output_handle
             .as_ref()
             .ok_or_else(|| io::Error::other("workspace is closed"))?;
-        let file = crate::confine::open_file_nofollow(directory, relative)?;
+        let file = crate::confine::open_file_nofollow(directory, &relative)?;
         if !file.metadata()?.is_file() {
             return Err(WorkspaceError::ArtifactNotFile);
         }
