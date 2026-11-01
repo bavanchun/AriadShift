@@ -1352,6 +1352,31 @@ fn preflight_content(
                     )
                     .ok_or_else(EngineFailure::limit_exceeded)?;
             }
+            Some(Object::Name(name)) if name == b"RunLengthDecode" || name == b"RL" => {
+                cursor += inline_run_length_len(ctx, &bytes[cursor..], decoded_cap)?;
+            }
+            Some(Object::Name(name)) if name == b"LZWDecode" || name == b"LZW" => {
+                let early = match dict.get(b"DP").or_else(|_| dict.get(b"DecodeParms")) {
+                    Ok(value) => {
+                        let params = resolve(Some(doc), value)?
+                            .1
+                            .as_dict()
+                            .map_err(|_| EngineFailure::limit_exceeded())?;
+                        match params.get(b"EarlyChange") {
+                            Ok(value) => resolve(Some(doc), value)?
+                                .1
+                                .as_i64()
+                                .map_err(|_| EngineFailure::limit_exceeded())?,
+                            Err(_) => 1,
+                        }
+                    }
+                    Err(_) => 1,
+                };
+                if !matches!(early, 0 | 1) {
+                    return Err(EngineFailure::limit_exceeded());
+                }
+                cursor += inline_lzw_len(ctx, &bytes[cursor..], decoded_cap, early as usize)?;
+            }
             _ => return Err(EngineFailure::limit_exceeded()),
         }
         if cursor - data_start > data_cap {
@@ -1364,6 +1389,102 @@ fn preflight_content(
         }
     }
     Ok(invoked)
+}
+
+fn inline_run_length_len(
+    ctx: &ToolContext<'_>,
+    data: &[u8],
+    cap: usize,
+) -> Result<usize, EngineFailure> {
+    let mut pos = 0usize;
+    let mut output = 0usize;
+    let mut steps = 0usize;
+    loop {
+        if steps.is_multiple_of(1024) {
+            ctx.check()?;
+        }
+        steps += 1;
+        let code = *data.get(pos).ok_or_else(EngineFailure::limit_exceeded)?;
+        pos += 1;
+        if code == 128 {
+            return Ok(pos);
+        }
+        let (input, decoded) = if code < 128 {
+            (usize::from(code) + 1, usize::from(code) + 1)
+        } else {
+            (1, 257 - usize::from(code))
+        };
+        output = output
+            .checked_add(decoded)
+            .filter(|n| *n <= cap)
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        pos = pos
+            .checked_add(input)
+            .filter(|n| *n <= data.len())
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+    }
+}
+
+fn inline_lzw_len(
+    ctx: &ToolContext<'_>,
+    data: &[u8],
+    cap: usize,
+    early: usize,
+) -> Result<usize, EngineFailure> {
+    let mut lengths = [0usize; 4096];
+    lengths[..256].fill(1);
+    let mut bit = 0usize;
+    let mut width = 9usize;
+    let mut next = 258usize;
+    let mut previous: Option<usize> = None;
+    let mut output = 0usize;
+    loop {
+        if bit % 8192 < width {
+            ctx.check()?;
+        }
+        let mut code = 0usize;
+        for _ in 0..width {
+            let byte = *data
+                .get(bit / 8)
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            code = (code << 1) | usize::from((byte >> (7 - bit % 8)) & 1);
+            bit += 1;
+        }
+        if code == 256 {
+            width = 9;
+            next = 258;
+            previous = None;
+            continue;
+        }
+        if code == 257 {
+            return Ok(bit.div_ceil(8));
+        }
+        let len = if code < next && lengths[code] != 0 {
+            lengths[code]
+        } else if code == next {
+            previous
+                .and_then(|n| n.checked_add(1))
+                .ok_or_else(EngineFailure::limit_exceeded)?
+        } else {
+            return Err(EngineFailure::limit_exceeded());
+        };
+        output = output
+            .checked_add(len)
+            .filter(|n| *n <= cap)
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        if let Some(prev) = previous
+            && next < 4096
+        {
+            lengths[next] = prev
+                .checked_add(1)
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            next += 1;
+            if width < 12 && next + early == 1 << width {
+                width += 1;
+            }
+        }
+        previous = Some(len);
+    }
 }
 
 fn next_content_token(
@@ -2646,6 +2767,52 @@ mod corpus_tests {
             let mut work = 0;
             assert!(
                 preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err(),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn preflight_bounds_inline_lossless_filters() {
+        for name in [
+            "inline-lzw-small.pdf",
+            "inline-lzw-large.pdf",
+            "inline-rl-small.pdf",
+            "inline-rl-large.pdf",
+        ] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let work = dir.path().canonicalize().expect("workspace");
+            for sub in ["in", "out", "tmp"] {
+                fs::create_dir(work.join(sub)).expect("directory");
+            }
+            let input = work.join("in/doc.pdf");
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../fixtures/pdf")
+                    .join(name),
+                &input,
+            )
+            .expect("fixture");
+            let paths = RunToolPaths {
+                workspace: work.clone(),
+                inputs: vec![input],
+                output_dir: work.join("out"),
+                work_dir: work.join("tmp"),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "filter",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
+            let page = *doc.inner().get_pages().values().next().expect("page");
+            let mut work = 0;
+            assert_eq!(
+                preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_ok(),
+                name.contains("small"),
                 "{name}"
             );
         }

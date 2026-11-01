@@ -4168,3 +4168,67 @@ attribution = "AriadShift contributors"
 sha256 = "b9398ea6ae2fb69493e5df29012b45f8f802f34feb92ff389d8018bf105531d0"
 pages = 1
 tags = []
+
+[[fixture]]
+id = "inline-lzw-small-pdf"
+path = "fixtures/pdf/inline-lzw-small.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline lossless filter preflight"
+origin = "generated"
+generated_by = "fixtures/gen/inline_lossless_filters.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5547c08bb342749018fa681bb5c1626736a6f9ae26c9efa8276c0d231a69d989"
+pages = 1
+tags = []
+
+[[fixture]]
+id = "inline-lzw-large-pdf"
+path = "fixtures/pdf/inline-lzw-large.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline lossless filter preflight"
+origin = "generated"
+generated_by = "fixtures/gen/inline_lossless_filters.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "45b891fe3d0cd6b93382b36baec3a50dcd9b5447673a16d1d0f850de9a769434"
+pages = 1
+tags = []
+
+[[fixture]]
+id = "inline-rl-small-pdf"
+path = "fixtures/pdf/inline-rl-small.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline lossless filter preflight"
+origin = "generated"
+generated_by = "fixtures/gen/inline_lossless_filters.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "3cd8e4886231927ed245447bfc154cef3a5d83f2da1762edf6580ebe932fe66b"
+pages = 1
+tags = []
+
+[[fixture]]
+id = "inline-rl-large-pdf"
+path = "fixtures/pdf/inline-rl-large.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline lossless filter preflight"
+origin = "generated"
+generated_by = "fixtures/gen/inline_lossless_filters.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "afeb4d5699c6081864660c291e388699484cbfa05c9cebb9b96ea86bc1d0115e"
+pages = 1
+tags = []
