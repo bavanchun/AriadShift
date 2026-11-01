@@ -6,8 +6,8 @@ components included in or used to build this binary distribution.
 
 Table of Contents
 -----------------
-- Apache License 2.0 (Apache-2.0): 593 component(s)
-- MIT License (MIT): 199 component(s)
+- Apache License 2.0 (Apache-2.0): 601 component(s)
+- MIT License (MIT): 214 component(s)
 - Unicode License v3 (Unicode-3.0): 30 component(s)
 - ISC License (ISC): 18 component(s)
 - BSD 3-Clause "New" or "Revised" License (BSD-3-Clause): 14 component(s)
@@ -16,6 +16,7 @@ Table of Contents
 - zlib License (Zlib): 3 component(s)
 - BSD Zero Clause License (0BSD): 1 component(s)
 - Creative Commons Zero v1.0 Universal (CC0-1.0): 1 component(s)
+- MIT No Attribution (MIT-0): 1 component(s)
 - Unicode License Agreement - Data Files and Software (2016) (Unicode-DFS-2016): 1 component(s)
 
 ================================================================================
@@ -5146,7 +5147,9 @@ License: Apache License 2.0 (Apache-2.0)
 --------------------------------------------------------------------------------
 
 Used by:
+  - bytecount 0.6.9 (https://github.com/llogiq/bytecount)
   - json-patch 4.2.0 (https://github.com/idubrov/json-patch)
+  - unicode-general-category 1.1.0 (https://github.com/yeslogic/unicode-general-category)
   - winapi 0.3.9 (https://github.com/retep998/winapi-rs)
 
 License Text:
@@ -10101,6 +10104,7 @@ License: Apache License 2.0 (Apache-2.0)
 --------------------------------------------------------------------------------
 
 Used by:
+  - ahash 0.8.12 (https://github.com/tkaitchuck/ahash)
   - ambient-authority 0.0.2 (https://github.com/sunfishcode/ambient-authority)
   - arrayvec 0.7.8 (https://github.com/bluss/arrayvec)
   - async-channel 2.5.0 (https://github.com/smol-rs/async-channel)
@@ -10157,6 +10161,7 @@ Used by:
   - flate2 1.1.10 (https://github.com/rust-lang/flate2-rs)
   - fnv 1.0.7 (https://github.com/servo/rust-fnv)
   - form_urlencoded 1.2.2 (https://github.com/servo/rust-url)
+  - fraction 0.17.0 (https://github.com/dnsl48/fraction.git)
   - fs-set-times 0.20.3 (https://github.com/bytecodealliance/fs-set-times)
   - futures-lite 2.6.1 (https://github.com/smol-rs/futures-lite)
   - glob 0.3.4 (https://github.com/rust-lang/glob)
@@ -10193,9 +10198,12 @@ Used by:
   - muda 0.20.0 (https://github.com/tauri-apps/muda)
   - num-bigint-dig 0.8.6 (https://github.com/dignifiedquire/num-bigint)
   - num-bigint 0.4.8 (https://github.com/rust-num/num-bigint)
+  - num-complex 0.4.6 (https://github.com/rust-num/num-complex)
   - num-integer 0.1.47 (https://github.com/rust-num/num-integer)
   - num-iter 0.1.46 (https://github.com/rust-num/num-iter)
+  - num-rational 0.4.2 (https://github.com/rust-num/num-rational)
   - num-traits 0.2.19 (https://github.com/rust-num/num-traits)
+  - num 0.4.3 (https://github.com/rust-num/num)
   - object 0.39.1 (https://github.com/gimli-rs/object)
   - once_cell 1.21.4 (https://github.com/matklad/once_cell)
   - openssl-probe 0.2.1 (https://github.com/rustls/openssl-probe)
@@ -14979,6 +14987,7 @@ Used by:
   - linebender_resource_handle 0.1.1 (https://github.com/linebender/raw_resource_handle)
   - miniz_oxide 0.8.9 (https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide)
   - miniz_oxide 0.9.1 (https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide)
+  - num-cmp 0.1.0 (https://github.com/lifthrasiir/num-cmp)
   - num-conv 0.2.2 (https://github.com/jhpratt/num-conv)
   - objc2-app-kit 0.3.2 (https://github.com/madsmtm/objc2)
   - objc2-core-foundation 0.3.2 (https://github.com/madsmtm/objc2)
@@ -18213,6 +18222,39 @@ License: MIT License (MIT)
 --------------------------------------------------------------------------------
 
 Used by:
+  - micromap 0.3.0 (https://github.com/yegor256/micromap)
+  - micromap 0.3.0 (https://github.com/yegor256/micromap)
+
+License Text:
+-------------
+Copyright (c) 2023-2026 Yegor Bugayenko
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
   - zbus 5.19.0 (https://github.com/z-galaxy/zbus/)
   - zbus_macros 5.19.0 (https://github.com/z-galaxy/zbus/)
   - zbus_names 4.3.5 (https://github.com/z-galaxy/zbus/)
@@ -18865,13 +18907,49 @@ License: MIT License (MIT)
 
 Used by:
   - strum 0.27.2 (https://github.com/Peternator7/strum)
+  - strum 0.28.0 (https://github.com/Peternator7/strum)
   - strum_macros 0.27.2 (https://github.com/Peternator7/strum)
+  - strum_macros 0.28.0 (https://github.com/Peternator7/strum)
 
 License Text:
 -------------
 MIT License
 
 Copyright (c) 2019 Peter Glotfelty
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
+  - email_address 0.2.9 (https://github.com/johnstonskj/rust-email_address.git)
+
+License Text:
+-------------
+MIT License
+
+Copyright (c) 2019 Simon Johnston
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -18995,6 +19073,41 @@ License: MIT License (MIT)
 --------------------------------------------------------------------------------
 
 Used by:
+  - jsonschema 0.59.0 (https://github.com/Stranger6667/jsonschema)
+  - referencing 0.59.0 (https://github.com/Stranger6667/jsonschema)
+
+License Text:
+-------------
+MIT License
+
+Copyright (c) 2020-2026 Dmitry Dygalo
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
   - urlpattern 0.6.0 (https://github.com/denoland/rust-urlpattern)
 
 License Text:
@@ -19089,6 +19202,39 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
+  - outref 0.5.2 (https://github.com/Nugine/outref)
+
+License Text:
+-------------
+MIT License
+
+Copyright (c) 2022 Nugine
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ================================================================================
 
@@ -19239,12 +19385,47 @@ License: MIT License (MIT)
 --------------------------------------------------------------------------------
 
 Used by:
+  - fluent-uri 0.4.1 (https://github.com/yescallop/fluent-uri-rs)
+
+License Text:
+-------------
+MIT License
+
+Copyright (c) 2024 Scallop Ye
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
   - block2 0.6.2 (https://github.com/madsmtm/objc2)
   - brotli-decompressor 5.0.3 (https://github.com/dropbox/rust-brotli-decompressor)
   - brotli-decompressor 6.0.1 (https://github.com/dropbox/rust-brotli-decompressor)
   - dlopen2 0.8.2 (https://github.com/OpenByteDev/dlopen2)
   - dlopen2_derive 0.4.3 (https://github.com/OpenByteDev/dlopen2)
   - dpi 0.1.2 (https://github.com/rust-windowing/winit)
+  - jsonschema-regex 0.59.0 (https://github.com/Stranger6667/jsonschema)
+  - jsonschema-value 0.59.0 (https://github.com/Stranger6667/jsonschema)
   - libm 0.2.16 (https://github.com/rust-lang/compiler-builtins)
   - minisign-verify 0.3.0 (https://github.com/jedisct1/rust-minisign-verify)
   - objc2-encode 4.1.0 (https://github.com/madsmtm/objc2)
@@ -19252,6 +19433,8 @@ Used by:
   - objc2 0.6.5 (https://github.com/madsmtm/objc2)
   - ts-rs-macros 12.0.1 (https://github.com/Aleph-Alpha/ts-rs)
   - ts-rs 12.0.1 (https://github.com/Aleph-Alpha/ts-rs)
+  - uuid-simd 0.8.0 (https://github.com/Nugine/simd)
+  - vsimd 0.8.0 (https://github.com/Nugine/simd)
   - webview2-com-macros 0.8.1 (https://github.com/wravery/webview2-rs)
   - webview2-com-sys 0.39.1 (https://github.com/wravery/webview2-rs)
   - webview2-com 0.39.1 (https://github.com/wravery/webview2-rs)
@@ -19550,6 +19733,7 @@ License: MIT License (MIT)
 
 Used by:
   - fancy-regex 0.16.2 (https://github.com/fancy-regex/fancy-regex)
+  - fancy-regex 0.19.2 (https://github.com/fancy-regex/fancy-regex)
 
 License Text:
 -------------
@@ -19979,6 +20163,41 @@ License Text:
 The MIT License (MIT)
 
 Copyright (c) 2015 Vincent Prouillet
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
+  - data-encoding 2.11.1 (https://github.com/ia0/data-encoding)
+
+License Text:
+-------------
+The MIT License (MIT)
+
+Copyright (c) 2015-2020 Julien Cretin
+Copyright (c) 2017-2020 Google Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -20528,6 +20747,36 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT No Attribution (MIT-0)
+--------------------------------------------------------------------------------
+
+Used by:
+  - borrow-or-share 0.2.4 (https://github.com/yescallop/borrow-or-share)
+
+License Text:
+-------------
+MIT No Attribution
+
+Copyright 2024 Scallop Ye
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ================================================================================
 
