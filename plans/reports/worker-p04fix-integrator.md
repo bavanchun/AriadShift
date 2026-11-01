@@ -1,9 +1,7 @@
 # PDFium fix-round integration
 
-Status: incomplete. The extraction worker reports its branch pushed, but the
-integration instruction requires a separate manager readiness signal before
-merging it. No such signal was received in this session. The final gate must run
-on the merged result.
+The extraction branch was merged after the manager readiness signal. The final
+Linux gate results and handoff status are recorded in the external gate handoff.
 
 - Form traversal and scan coverage: `35118068`; see
   [worker report](worker-p04fix-form-traversal.md) for cause, tests and results.
@@ -26,6 +24,10 @@ on the merged result.
 - Handoff corrections: `be69dbfb` corrects the arm64 hash against
   `engines/pdfium/pack/targets.txt` and the WASM refusal in the prior report.
 
-The inline-image digest change remains pending the required extraction merge.
+Inline-image deduplication uses SHA-256 (`d7cd2da`); the identical and distinct
+image regression passed with the PDFium pack. The extraction preflight and its
+compatibility constraints are documented in [the worker report](worker-p04fix-extract-decode.md).
+
 Musl targets remain a follow-up: removing targets changes release coverage and is
-not a one-line exclusion. `cargo fmt --all --check` passed after formatting. Full gate results and the manager's merge signal are pending; prior worker checks are not a substitute for a gate on the final head.
+not a one-line exclusion. `cargo fmt --all --check` passed after formatting. The final gate handoff records
+the post-merge results.

@@ -136,5 +136,5 @@ All heavy commands were executed under `/home/vchun/Codes/01-AriadShift/.run/coo
 ## Fix-round status
 
 The fix-round integration and its focused checks are recorded in
-[worker-p04fix-integrator.md](worker-p04fix-integrator.md). The final extraction
-merge and complete gate remain pending the manager's readiness signal.
+[worker-p04fix-integrator.md](worker-p04fix-integrator.md). The extraction branch was merged following the manager readiness signal; the
+external gate handoff records the complete gate results.
