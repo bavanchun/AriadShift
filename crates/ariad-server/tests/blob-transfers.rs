@@ -280,7 +280,9 @@ async fn idle_timeout_cleans_staging_and_releases_admission() {
 #[tokio::test]
 async fn total_deadline_stops_dripping_uploads_and_releases_admission() {
     let dir = tempfile::tempdir().unwrap();
-    let storage = storage(dir.path(), 1, WAIT, Duration::from_millis(250));
+    let storage = storage(dir.path(), 1, WAIT, Duration::from_millis(250))
+        .with_blob_max_transfer_timeout(Duration::from_millis(250))
+        .unwrap();
     let body = stream::unfold((), |()| async {
         tokio::time::sleep(Duration::from_millis(1)).await;
         Some((Ok::<_, Infallible>(Bytes::from_static(b"x")), ()))
@@ -480,6 +482,208 @@ fn transfer_limits_cannot_be_disabled_with_zero_values() {
                 .is_err()
         );
     }
+    let dir = tempfile::tempdir().unwrap();
+    assert!(
+        storage(dir.path(), 1, WAIT, WAIT)
+            .with_blob_min_rate_bps(0)
+            .is_err()
+    );
+    assert!(
+        storage(dir.path(), 1, WAIT, WAIT)
+            .with_blob_max_transfer_timeout(Duration::ZERO)
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn large_transfer_at_acceptable_rate_passes_beyond_base_timeout() {
+    let dir = tempfile::tempdir().unwrap();
+    // Base timeout is 80ms, but 6,000 bytes at min_rate_bps = 10,000 B/s
+    // grants a 600ms size-aware deadline.
+    let storage = storage(dir.path(), 1, WAIT, Duration::from_millis(80))
+        .with_blob_min_rate_bps(10_000)
+        .unwrap()
+        .with_blob_max_transfer_timeout(WAIT)
+        .unwrap();
+    let router = app(storage.clone());
+    let payload = vec![b'a'; 6_000];
+    let sha = hex::encode(Sha256::digest(&payload));
+    let signed = storage
+        .presign_put("large-ok", payload.len() as u64, &sha)
+        .await
+        .unwrap();
+    let path = signed.url.path().to_owned();
+    let chunks: Vec<Bytes> = payload.chunks(1_000).map(Bytes::copy_from_slice).collect();
+    let body = Body::from_stream(stream::unfold(chunks.into_iter(), |mut iter| async move {
+        let next = iter.next()?;
+        tokio::time::sleep(Duration::from_millis(35)).await;
+        Some((Ok::<_, Infallible>(next), iter))
+    }));
+    let response = timeout(
+        WAIT,
+        router
+            .clone()
+            .oneshot(Request::put(path).body(body).unwrap()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let digested = storage.digest("large-ok", 10_000).await.unwrap();
+    assert_eq!(digested.size, 6_000);
+    assert_eq!(digested.sha256, sha);
+
+    // A slow body below the minimum rate (4,000 bytes at 20,000 B/s = 200ms
+    // allowance, trickling indefinitely) still fails with 408 transfer_timeout.
+    let slow_storage = storage.with_blob_min_rate_bps(20_000).unwrap();
+    let slow_router = app(slow_storage.clone());
+    let slow_signed = slow_storage
+        .presign_put("large-slow", 4_000, &"0".repeat(64))
+        .await
+        .unwrap();
+    let slow_body = Body::from_stream(stream::unfold((), |()| async {
+        tokio::time::sleep(Duration::from_millis(40)).await;
+        Some((Ok::<_, Infallible>(Bytes::from_static(&[b'x'; 200])), ()))
+    }));
+    let slow_response = timeout(
+        WAIT,
+        slow_router.oneshot(
+            Request::put(slow_signed.url.path())
+                .body(slow_body)
+                .unwrap(),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(slow_response.status(), StatusCode::REQUEST_TIMEOUT);
+    let err_body = to_bytes(slow_response.into_body(), 4096).await.unwrap();
+    assert!(String::from_utf8_lossy(&err_body).contains("transfer_timeout"));
+    assert_slot_released(&slow_storage).await;
+}
+
+#[tokio::test]
+async fn stalled_body_fails_on_idle_timeout_despite_large_size_allowance() {
+    let dir = tempfile::tempdir().unwrap();
+    // 50,000 bytes at 1,000 B/s grants a 50s size-aware deadline, but an idle
+    // body must still fail after the 100ms idle_timeout.
+    let storage = storage(
+        dir.path(),
+        1,
+        Duration::from_millis(100),
+        Duration::from_millis(50),
+    )
+    .with_blob_min_rate_bps(1_000)
+    .unwrap();
+    let router = app(storage.clone());
+    let signed = storage
+        .presign_put("stalled-large", 50_000, &"0".repeat(64))
+        .await
+        .unwrap();
+    let (body, _) = held_body();
+    let response = timeout(
+        WAIT,
+        router.oneshot(Request::put(signed.url.path()).body(body).unwrap()),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+    let err_body = to_bytes(response.into_body(), 4096).await.unwrap();
+    assert!(String::from_utf8_lossy(&err_body).contains("transfer_timeout"));
+    assert_no_files(dir.path()).await;
+    round_trip(&storage, "stalled-large").await;
+}
+
+#[tokio::test]
+async fn absurd_declared_size_is_capped_by_hard_maximum_and_url_expiry() {
+    let dir = tempfile::tempdir().unwrap();
+    // u64::MAX / 1,000 B/s would be ~584 million years without the hard cap.
+    let storage = storage(dir.path(), 1, WAIT, Duration::from_millis(50))
+        .with_blob_min_rate_bps(1_000)
+        .unwrap()
+        .with_blob_max_transfer_timeout(Duration::from_millis(220))
+        .unwrap();
+    let dripping = || {
+        stream::unfold((), |()| async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            Some((Ok::<_, Infallible>(Bytes::from_static(b"x")), ()))
+        })
+        .boxed()
+    };
+    let start = tokio::time::Instant::now();
+    let result = timeout(
+        WAIT,
+        storage.put_stream("absurd", dripping(), u64::MAX, &"0".repeat(64)),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(result, Err(StorageError::Timeout)));
+    assert!(start.elapsed() < Duration::from_secs(2));
+    assert_no_files(dir.path()).await;
+    assert_slot_released(&storage).await;
+
+    // Even when the hard cap is generous, a signed URL expiry still caps the
+    // deadline so a transfer never outlives its token.
+    let url_capped = storage
+        .with_blob_max_transfer_timeout(Duration::from_secs(60))
+        .unwrap();
+    let expires = Utc::now() + chrono::Duration::milliseconds(200);
+    let result = timeout(
+        WAIT,
+        url_capped.put_stream_until(
+            "absurd-url",
+            dripping(),
+            u64::MAX,
+            &"0".repeat(64),
+            Some(expires),
+        ),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(result, Err(StorageError::Timeout)));
+    assert_no_files(dir.path()).await;
+    round_trip(&url_capped, "absurd-url").await;
+}
+
+#[test]
+fn config_rejects_zero_or_invalid_blob_min_rate() {
+    use ariad_server::config::{ConfigError, DEFAULT_BLOB_MIN_RATE_BPS};
+
+    let base = [
+        ("ARIAD_SECRET", SIGNING_KEY.as_str()),
+        ("ARIAD_STORAGE_URL", "s3://unused"),
+    ];
+    let default_cfg = ApiConfig::from_env(&Env::from_pairs(base)).unwrap();
+    assert_eq!(default_cfg.blob_min_rate_bps, DEFAULT_BLOB_MIN_RATE_BPS);
+
+    for invalid_value in ["0", "-100", "garbage", "12.5"] {
+        let mut pairs: Vec<(&str, &str)> = base.into();
+        pairs.push(("ARIAD_BLOB_MIN_RATE_BPS", invalid_value));
+        let err = ApiConfig::from_env(&Env::from_pairs(pairs)).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                ConfigError::Invalid {
+                    name: "ARIAD_BLOB_MIN_RATE_BPS",
+                    ..
+                }
+            ),
+            "expected invalid ARIAD_BLOB_MIN_RATE_BPS for {invalid_value:?}, got {err:?}"
+        );
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let file_url = Url::from_directory_path(dir.path()).unwrap().to_string();
+    let valid_env = Env::from_pairs([
+        ("ARIAD_SECRET", SIGNING_KEY.as_str()),
+        ("ARIAD_STORAGE_URL", file_url.as_str()),
+        ("ARIAD_PUBLIC_URL", "http://localhost:8080"),
+        ("ARIAD_BLOB_MIN_RATE_BPS", "262144"),
+    ]);
+    let cfg = ApiConfig::from_env(&valid_env).unwrap();
+    assert_eq!(cfg.blob_min_rate_bps, 262_144);
+    assert_eq!(cfg.storage.blob_min_rate_bps(), 262_144);
 }
 
 #[test]

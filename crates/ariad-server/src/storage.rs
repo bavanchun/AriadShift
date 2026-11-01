@@ -36,7 +36,9 @@ use tokio::{
 use url::Url;
 use uuid::Uuid;
 
-use crate::config::{BlobTransferLimits, StorageConfig};
+use crate::config::{
+    BlobTransferLimits, DEFAULT_BLOB_MIN_RATE_BPS, MAX_BLOB_TRANSFER_TIMEOUT, StorageConfig,
+};
 
 type HmacSha256 = hmac::Hmac<Sha256>;
 
@@ -211,6 +213,8 @@ pub struct Storage {
     prefix: String,
     signing: Signing,
     blob_limits: BlobTransferLimits,
+    min_rate_bps: u64,
+    max_transfer_timeout: Duration,
     active: Arc<Mutex<ActiveTransfers>>,
     digests: Arc<DigestSlots>,
 }
@@ -223,6 +227,12 @@ impl Storage {
         public_url: Option<&Url>,
         secret: Option<&[u8]>,
     ) -> Result<Self, StorageError> {
+        let min_rate_bps = config.blob_min_rate_bps();
+        if min_rate_bps == 0 {
+            return Err(StorageError::Config(
+                "blob minimum transfer rate must be positive".to_owned(),
+            ));
+        }
         match config {
             StorageConfig::S3 {
                 bucket,
@@ -245,11 +255,13 @@ impl Storage {
                     prefix: prefix.clone(),
                     signing: Signing::S3(signer),
                     blob_limits: BlobTransferLimits::default(),
+                    min_rate_bps: DEFAULT_BLOB_MIN_RATE_BPS,
+                    max_transfer_timeout: MAX_BLOB_TRANSFER_TIMEOUT,
                     active: Arc::default(),
                     digests: Arc::default(),
                 })
             }
-            StorageConfig::Local { root } => {
+            StorageConfig::Local { root } | StorageConfig::LocalWithRate { root, .. } => {
                 std::fs::create_dir_all(root)?;
                 let store = Arc::new(LocalFileSystem::new_with_prefix(root)?);
                 let signing = match (public_url, secret) {
@@ -264,6 +276,8 @@ impl Storage {
                     prefix: String::new(),
                     signing,
                     blob_limits: BlobTransferLimits::default(),
+                    min_rate_bps,
+                    max_transfer_timeout: MAX_BLOB_TRANSFER_TIMEOUT,
                     active: Arc::default(),
                     digests: Arc::default(),
                 })
@@ -288,6 +302,31 @@ impl Storage {
         Ok(self)
     }
 
+    /// Overrides the minimum average transfer rate (bytes/s) for size-aware deadlines.
+    pub fn with_blob_min_rate_bps(mut self, min_rate_bps: u64) -> Result<Self, StorageError> {
+        if min_rate_bps == 0 {
+            return Err(StorageError::Config(
+                "blob minimum transfer rate must be positive".to_owned(),
+            ));
+        }
+        self.min_rate_bps = min_rate_bps;
+        Ok(self)
+    }
+
+    /// Overrides the hard maximum transfer duration for a single local blob transfer.
+    pub fn with_blob_max_transfer_timeout(
+        mut self,
+        max_transfer_timeout: Duration,
+    ) -> Result<Self, StorageError> {
+        if max_transfer_timeout.is_zero() {
+            return Err(StorageError::Config(
+                "blob maximum transfer timeout must be positive".to_owned(),
+            ));
+        }
+        self.max_transfer_timeout = max_transfer_timeout;
+        Ok(self)
+    }
+
     fn admit(&self, upload: Option<&str>) -> Result<TransferPermit, StorageError> {
         let mut active = self.active.lock().unwrap_or_else(|err| err.into_inner());
         if active.count >= self.blob_limits.max_concurrent
@@ -306,11 +345,27 @@ impl Storage {
         })
     }
 
-    fn transfer_deadline(&self, expires: Option<DateTime<Utc>>) -> Instant {
-        let remaining = expires.map_or(self.blob_limits.transfer_timeout, |expires| {
-            (expires - Utc::now()).to_std().unwrap_or(Duration::ZERO)
-        });
-        Instant::now() + remaining.min(self.blob_limits.transfer_timeout)
+    /// Size-aware transfer allowance `max(base_timeout, size / min_rate_bps)`,
+    /// capped at `max_transfer_timeout`.
+    fn transfer_duration(&self, size: u64) -> Duration {
+        self.blob_limits
+            .transfer_timeout
+            .max(rate_allowance(size, self.min_rate_bps))
+            .min(self.max_transfer_timeout)
+    }
+
+    fn transfer_deadline(&self, size: u64, expires: Option<DateTime<Utc>>) -> Instant {
+        let allowed = self.transfer_duration(size);
+        let duration = match expires {
+            Some(expires) => {
+                let remaining = (expires - Utc::now()).to_std().unwrap_or(Duration::ZERO);
+                allowed.min(remaining)
+            }
+            None => allowed,
+        };
+        Instant::now()
+            .checked_add(duration)
+            .unwrap_or_else(|| Instant::now() + MAX_BLOB_TRANSFER_TIMEOUT)
     }
 
     /// The key of an object: `t/{tenant}/{owner}/{in|out}/{sha256}`, where the
@@ -338,9 +393,9 @@ impl Storage {
         size: u64,
         sha256_hex: &str,
     ) -> Result<Presigned, StorageError> {
-        let expires_at = expiry(UPLOAD_URL_TTL);
         match &self.signing {
             Signing::S3(signer) => {
+                let expires_at = expiry(UPLOAD_URL_TTL);
                 let digest = hex::decode(sha256_hex)
                     .map_err(|_| StorageError::Config("sha256 is not hex".to_owned()))?;
                 let checksum = STANDARD.encode(digest);
@@ -362,6 +417,8 @@ impl Storage {
                 })
             }
             Signing::Local { base, secret } => {
+                let ttl = UPLOAD_URL_TTL.max(self.transfer_duration(size));
+                let expires_at = expiry(ttl);
                 let claims = BlobClaims {
                     method: "PUT".to_owned(),
                     key: key.to_owned(),
@@ -380,17 +437,21 @@ impl Storage {
         }
     }
 
-    /// A presigned `GET` valid for [`DOWNLOAD_URL_TTL`].
+    /// A presigned `GET` valid for at least [`DOWNLOAD_URL_TTL`].
     pub async fn presign_get(&self, key: &str) -> Result<(Url, DateTime<Utc>), StorageError> {
-        let expires_at = expiry(DOWNLOAD_URL_TTL);
         match &self.signing {
             Signing::S3(signer) => {
+                let expires_at = expiry(DOWNLOAD_URL_TTL);
                 let url = signer
                     .signed_url(Method::GET, &Path::from(key), DOWNLOAD_URL_TTL)
                     .await?;
                 Ok((url, expires_at))
             }
             Signing::Local { base, secret } => {
+                let size = self.size(key).await?.unwrap_or(0);
+                let ttl = DOWNLOAD_URL_TTL
+                    .max(rate_allowance(size, self.min_rate_bps).min(self.max_transfer_timeout));
+                let expires_at = expiry(ttl);
                 let claims = BlobClaims {
                     method: "GET".to_owned(),
                     key: key.to_owned(),
@@ -557,7 +618,7 @@ impl Storage {
     {
         // Refuse without polling the body or allocating a buffered writer.
         let _permit = self.admit(Some(key))?;
-        let deadline = self.transfer_deadline(expires);
+        let deadline = self.transfer_deadline(size, expires);
         let mut writer = timeout_at(deadline, self.store.put_multipart(&Path::from(key)))
             .await
             .map_err(|_| StorageError::Timeout)??;
@@ -636,11 +697,12 @@ impl Storage {
         StorageError,
     > {
         let permit = self.admit(None)?;
-        let deadline = self.transfer_deadline(expires);
-        let result = timeout_at(deadline, self.store.get(&Path::from(key)))
+        let initial_deadline = self.transfer_deadline(0, expires);
+        let result = timeout_at(initial_deadline, self.store.get(&Path::from(key)))
             .await
             .map_err(|_| StorageError::Timeout)??;
         let size = result.meta.size;
+        let deadline = self.transfer_deadline(size, expires);
         let mut stream = result.into_stream();
         let idle = self.blob_limits.idle_timeout;
         let (sender, receiver) = tokio::sync::mpsc::channel(1);
@@ -729,8 +791,24 @@ fn s3_builder(bucket: &str, aws: &[(String, String)]) -> Result<AmazonS3Builder,
     Ok(builder)
 }
 
+fn rate_allowance(size: u64, min_rate_bps: u64) -> Duration {
+    if size == 0 || min_rate_bps == 0 {
+        return Duration::ZERO;
+    }
+    let nanos = (u128::from(size) * 1_000_000_000u128).div_ceil(u128::from(min_rate_bps));
+    let secs = u64::try_from(nanos / 1_000_000_000).unwrap_or(u64::MAX);
+    let subsec_nanos = if secs == u64::MAX {
+        999_999_999
+    } else {
+        (nanos % 1_000_000_000) as u32
+    };
+    Duration::new(secs, subsec_nanos)
+}
+
 fn expiry(ttl: Duration) -> DateTime<Utc> {
-    Utc::now() + chrono::Duration::from_std(ttl).unwrap_or_else(|_| chrono::Duration::minutes(5))
+    let clamped = ttl.min(MAX_BLOB_TRANSFER_TIMEOUT);
+    Utc::now()
+        + chrono::Duration::from_std(clamped).unwrap_or_else(|_| chrono::Duration::minutes(5))
 }
 
 fn blob_url(base: &Url, secret: &[u8], claims: &BlobClaims) -> Result<Url, StorageError> {
