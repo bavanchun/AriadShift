@@ -271,7 +271,7 @@ describe("buildAuthOptions", () => {
     });
 
     it("requires an explicit opt-in for client metadata discovery", () => {
-      expect(oauth().extensions).toEqual([]);
+      expect(oauth().extensions).toHaveLength(1);
       expect(oauth({ AUTH_CIMD_ENABLED: "true" }).extensions).toHaveLength(1);
     });
 

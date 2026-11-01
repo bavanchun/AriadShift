@@ -101,6 +101,7 @@ export type CimdErrorCode =
   | "invalid_client_id_url"
   | "forbidden_address"
   | "dns_lookup_failed"
+  | "dns_name_not_found"
   | "timeout"
   | "redirect_not_allowed"
   | "unexpected_status"
@@ -650,20 +651,34 @@ export function validateCimdMetadataDocument(raw: unknown, expectedClientId: str
 
 const defaultDnsLookup: CimdDnsLookup = async (hostname, signal) => {
   const resolver = new dns.promises.Resolver({ timeout: CIMD_TIMEOUT_MS, tries: 1 });
-  const cancel = () => resolver.cancel();
+  const ipv6Resolver = new dns.promises.Resolver({ timeout: 1_000, tries: 1 });
+  const cancel = () => {
+    resolver.cancel();
+    ipv6Resolver.cancel();
+  };
   signal.addEventListener("abort", cancel, { once: true });
   try {
-    const results = await Promise.allSettled([
-      resolver.resolve4(hostname),
-      resolver.resolve6(hostname),
-    ]);
+    let ipv6Timer: ReturnType<typeof setTimeout> | undefined;
+    const ipv6 = Promise.race([
+      ipv6Resolver.resolve6(hostname),
+      new Promise<never>((_, reject) => {
+        ipv6Timer = setTimeout(() => {
+          ipv6Resolver.cancel();
+          reject(new Error("AAAA lookup timed out"));
+        }, 1_000);
+      }),
+    ]).finally(() => clearTimeout(ipv6Timer));
+    const results = await Promise.allSettled([resolver.resolve4(hostname), ipv6]);
     const addresses = results.flatMap((result, index) =>
       result.status === "fulfilled"
         ? result.value.map((address) => ({ address, family: (index === 0 ? 4 : 6) as 4 | 6 }))
         : [],
     );
     if (addresses.length === 0) {
-      const failure = results.find((result) => result.status === "rejected");
+      const missing = results.find(
+        (result) => result.status === "rejected" && result.reason?.code === "ENOTFOUND",
+      );
+      const failure = missing ?? results.find((result) => result.status === "rejected");
       if (failure?.status === "rejected") throw failure.reason;
     }
     return addresses;
@@ -710,7 +725,11 @@ async function resolveAndVetHost(
     if (signal.aborted) {
       throw new CimdError("timeout", "CIMD DNS lookup timed out", { cause: error });
     }
-    throw new CimdError("dns_lookup_failed", `DNS lookup failed for ${bareHost}`, {
+    const code =
+      (error as NodeJS.ErrnoException)?.code === "ENOTFOUND"
+        ? "dns_name_not_found"
+        : "dns_lookup_failed";
+    throw new CimdError(code, `DNS lookup failed for ${bareHost}`, {
       cause: error,
     });
   }
@@ -1121,7 +1140,9 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
             failures.delete(oldest);
           }
           failures.set(clientId, { error, expiresAt: now() + CIMD_NEGATIVE_TTL_MS });
-          if (error.code === "dns_lookup_failed" || error.code === "forbidden_address") {
+          if (
+            ["dns_lookup_failed", "dns_name_not_found", "forbidden_address"].includes(error.code)
+          ) {
             hostFailures.delete(host);
             while (hostFailures.size >= maxCacheEntries) {
               const oldest = hostFailures.keys().next().value;
@@ -1155,17 +1176,23 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
  * Builds the Better Auth `ClientDiscovery` and `OAuthProviderExtension` for
  * Client ID Metadata Documents.
  */
-export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProviderExtension {
+export function createCimdExtension(
+  options: CimdFetcherOptions = {},
+  enabled = true,
+): OAuthProviderExtension {
   const fetcher = createCimdFetcher(options);
-  const syncedRevisionByClient = new Map<string, number>();
 
   const clientDiscovery: ClientDiscovery = {
     id: CIMD_DISCOVERY_ID,
-    discoveryMetadata: {
-      client_id_metadata_document_supported: true,
-    },
+    discoveryMetadata: enabled ? { client_id_metadata_document_supported: true } : {},
     matches: (clientId: string) => isCimdClientId(clientId),
     resolve: async (ctx, clientId, existing) => {
+      const path = ctx.path?.replace(/\/+$/, "");
+      if (!enabled) {
+        return path === "/oauth2/revoke" || path === "/oauth2/delete-consent"
+          ? (existing ?? null)
+          : null;
+      }
       const host = new URL(clientId).hostname.toLowerCase().replace(/\.$/, "");
       if (
         options.deniedHosts?.some((entry) => entry.toLowerCase().replace(/\.$/, "") === host) ||
@@ -1243,16 +1270,14 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           if (!(await consume(`${ip}|/oauth2/register`))) return null;
           chargeHost = () => consume(`cimd-host|${host}`);
         }
-        const result = await fetcher.fetchDocument(clientId);
+        let result = await fetcher.fetchDocument(clientId);
+        // A cached document must never advance the stored successful-fetch time.
+        if (result.fromCache && !existing) {
+          fetcher.clearCache();
+          result = await fetcher.fetchDocument(clientId);
+        }
         if (!(await chargeHost())) return null;
-        if (
-          existing &&
-          existing.clientDiscoveryId === CIMD_DISCOVERY_ID &&
-          result.fromCache &&
-          syncedRevisionByClient.get(clientId) === result.expiresAt
-        ) {
-          syncedRevisionByClient.delete(clientId);
-          syncedRevisionByClient.set(clientId, result.expiresAt);
+        if (existing?.clientDiscoveryId === CIMD_DISCOVERY_ID && result.fromCache) {
           return existing;
         }
 
@@ -1267,12 +1292,6 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           clientDiscoveryId: CIMD_DISCOVERY_ID,
           existingClient: existing ?? undefined,
         });
-        syncedRevisionByClient.delete(clientId);
-        if (syncedRevisionByClient.size >= CIMD_MAX_CACHE_ENTRIES) {
-          const oldest = syncedRevisionByClient.keys().next().value;
-          if (oldest !== undefined) syncedRevisionByClient.delete(oldest);
-        }
-        syncedRevisionByClient.set(clientId, result.expiresAt);
         return registered.client as SchemaClient<Scope[]>;
       } catch (error) {
         if (error instanceof CimdError) {

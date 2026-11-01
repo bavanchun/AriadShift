@@ -335,6 +335,95 @@ describe("CIMD URL validation and fetch policy", () => {
       resolve6.mockRestore();
     }
   });
+  it("uses an A answer when the AAAA lookup hangs", async () => {
+    const a = vi
+      .spyOn(dns.promises.Resolver.prototype, "resolve4")
+      .mockResolvedValue(["93.184.216.34"]);
+    const aaaa = vi
+      .spyOn(dns.promises.Resolver.prototype, "resolve6")
+      .mockImplementation(() => new Promise(() => {}));
+    try {
+      const fetcher = createCimdFetcher({
+        timeoutMs: 3_000,
+        transport: async ({ url }) => ({
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ client_id: url.href, redirect_uris: [REDIRECT_URI] }),
+        }),
+      });
+      await expect(
+        fetcher.fetchDocument("https://hanging.example/client.json"),
+      ).resolves.toBeDefined();
+    } finally {
+      a.mockRestore();
+      aaaa.mockRestore();
+    }
+  });
+  it("classifies NXDOMAIN as permanent", async () => {
+    const missing = Object.assign(new Error("name not found"), { code: "ENOTFOUND" });
+    const a = vi.spyOn(dns.promises.Resolver.prototype, "resolve4").mockRejectedValue(missing);
+    const aaaa = vi.spyOn(dns.promises.Resolver.prototype, "resolve6").mockRejectedValue(missing);
+    try {
+      await expect(
+        createCimdFetcher().fetchDocument("https://missing.example/client.json"),
+      ).rejects.toMatchObject({ code: "dns_name_not_found" });
+    } finally {
+      a.mockRestore();
+      aaaa.mockRestore();
+    }
+  });
+  it("caches failures until their negative TTL expires", async () => {
+    let now = 0;
+    let calls = 0;
+    const fetcher = createCimdFetcher({
+      now: () => now,
+      lookup: async () => {
+        calls++;
+        throw new Error("unavailable");
+      },
+    });
+    const id = "https://negative.example/client.json";
+    await expect(fetcher.fetchDocument(id)).rejects.toMatchObject({ code: "dns_lookup_failed" });
+    await expect(fetcher.fetchDocument(id)).rejects.toMatchObject({ code: "dns_lookup_failed" });
+    expect(calls).toBe(1);
+    now += 30_000;
+    await expect(fetcher.fetchDocument(id)).rejects.toMatchObject({ code: "dns_lookup_failed" });
+    expect(calls).toBe(2);
+  });
+  it("limits concurrent outbound requests and releases capacity", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetcher = createCimdFetcher({
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async ({ url }) => {
+        await gate;
+        return {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ client_id: url.href, redirect_uris: [REDIRECT_URI] }),
+        };
+      },
+    });
+    const requests = Array.from({ length: 8 }, (_, i) =>
+      fetcher.fetchDocument(`https://cap${i}.example/client.json`),
+    );
+    try {
+      await expect(
+        fetcher.fetchDocument("https://overflow.example/client.json"),
+      ).rejects.toMatchObject({
+        code: "network_error",
+        message: "CIMD outbound capacity exhausted",
+      });
+    } finally {
+      release();
+      await Promise.all(requests);
+    }
+    await expect(
+      fetcher.fetchDocument("https://overflow.example/client.json"),
+    ).resolves.toBeDefined();
+  });
   it("rejects public IPv4 and IPv6 literal client identifiers", () => {
     for (const id of [
       "https://93.184.216.34/client.json",
@@ -756,7 +845,7 @@ describe("OAuth authorization flow with CIMD client_id", () => {
   const mismatchedClientId = "https://mcp-client.example/oauth/mismatch.json";
   let fetchCount = 0;
 
-  const { app } = createService(undefined, false, {
+  const { app, db } = createService(undefined, false, {
     lookup: async () => [{ address: "93.184.216.34", family: 4 }],
     transport: async ({ url }): Promise<CimdRawResponse> => {
       fetchCount += 1;
@@ -908,6 +997,59 @@ describe("OAuth authorization flow with CIMD client_id", () => {
       resource: RESOURCE,
     });
     expect(refreshed.status).toBe(200);
+    const rotated = await json(refreshed);
+    const client = (db.oauthClient as Array<{ clientId: string; updatedAt: Date }>).find(
+      (row) => row.clientId === cimdClientId,
+    );
+    expect(client).toBeDefined();
+    if (!client) throw new Error("missing client");
+    client.updatedAt = new Date(Date.now() - CIMD_MAX_CACHE_TTL_MS);
+    const stale = await token(app, {
+      grant_type: "refresh_token",
+      client_id: cimdClientId,
+      refresh_token: rotated.refresh_token as string,
+      resource: RESOURCE,
+    });
+    expect(await json(stale)).toMatchObject({ error: "invalid_grant" });
+    const basic = await app.request(`${AUTH}/api/auth/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: `basic ${Buffer.from(`${encodeURIComponent(cimdClientId)}:secret`).toString("base64")}`,
+      },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: "invalid" }),
+    });
+    expect(await json(basic)).toMatchObject({ error: "invalid_grant" });
+    const assertion = `x.${Buffer.from(JSON.stringify({ iss: cimdClientId })).toString("base64url")}.x`;
+    const jwt = await token(app, {
+      grant_type: "refresh_token",
+      refresh_token: "invalid",
+      client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+      client_assertion: assertion,
+    });
+    expect(await json(jwt)).toMatchObject({ error: "invalid_grant" });
+    const disabled = createAuth(
+      buildAuthOptions({ ...config, cimdEnabled: false }, memoryAdapter(db)),
+    );
+    const revoked = await disabled.handler(
+      new Request(`${AUTH}/api/auth/oauth2/revoke`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: cimdClientId,
+          token: rotated.refresh_token as string,
+        }),
+      }),
+    );
+    expect(revoked.status).toBe(200);
+    client.updatedAt = new Date();
+    const afterRevoke = await token(app, {
+      grant_type: "refresh_token",
+      client_id: cimdClientId,
+      refresh_token: rotated.refresh_token as string,
+      resource: RESOURCE,
+    });
+    expect(await json(afterRevoke)).toMatchObject({ error: "invalid_grant" });
     // The cached CIMD document served all follow-up lookups in the flow.
     expect(fetchCount).toBe(initialFetchCount);
   });
@@ -960,6 +1102,33 @@ describe("CIMD stored clients", () => {
     expect((await request()).headers.get("location")).toContain("/oauth/sign-in?");
     now += 61_000;
     status = 404;
+    expect(new URL((await request()).headers.get("location") ?? "").searchParams.get("error")).toBe(
+      "invalid_client",
+    );
+  });
+
+  it("rejects a stored client when DNS reports NXDOMAIN", async () => {
+    let now = Date.now();
+    let missing = false;
+    const id = "https://gone.example/client.json";
+    const { app } = createService(undefined, false, {
+      now: () => now,
+      lookup: async () => {
+        if (missing) throw Object.assign(new Error("not found"), { code: "ENOTFOUND" });
+        return [{ address: "93.184.216.34", family: 4 }];
+      },
+      transport: async () => ({
+        status: 200,
+        headers: { "content-type": "application/json", "cache-control": "max-age=60" },
+        body: JSON.stringify({ client_id: id, redirect_uris: [REDIRECT_URI] }),
+      }),
+    });
+    const { challenge } = pkce();
+    const request = () =>
+      app.request(authorizeUrl(id, { code_challenge: challenge, code_challenge_method: "S256" }));
+    expect((await request()).headers.get("location")).toContain("/oauth/sign-in?");
+    now += 61_000;
+    missing = true;
     expect(new URL((await request()).headers.get("location") ?? "").searchParams.get("error")).toBe(
       "invalid_client",
     );
