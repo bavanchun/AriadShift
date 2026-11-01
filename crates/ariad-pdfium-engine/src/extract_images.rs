@@ -276,6 +276,7 @@ pub fn extract_document_images(
                 }
 
                 let extracted = decode_xobject_image(
+                    ctx,
                     &pdf_doc,
                     &pdfium_doc,
                     &pdfium_page,
@@ -754,6 +755,7 @@ fn normalize_filter_name(raw: &[u8]) -> String {
 
 #[allow(clippy::too_many_arguments)]
 fn decode_xobject_image(
+    ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
     pdfium_doc: &PdfDocument<'_>,
     pdfium_page: &PdfPage<'_>,
@@ -807,18 +809,17 @@ fn decode_xobject_image(
             });
         }
 
-        let dyn_img = image::load_from_memory_with_format(&raw_jpeg, ImageFormat::Jpeg)
-            .ok()
-            .or_else(|| {
-                decode_via_pdfium_page_object(
+        let dyn_img =
+            match image::load_from_memory_with_format(&raw_jpeg, ImageFormat::Jpeg).ok() {
+                Some(img) => Some(img),
+                None => decode_via_pdfium_page_object(
+                    ctx,
                     pdfium_doc,
                     pdfium_page,
-                    width,
-                    height,
                     appearance_idx,
                     max_depth,
-                )
-            })
+                )?,
+            }
             .ok_or_else(|| {
                 EngineFailure::new(
                     ErrorCode::EngineFailure,
@@ -854,21 +855,17 @@ fn decode_xobject_image(
             max_decompressed,
             max_depth,
         )?;
-        let dyn_img = decode_via_pdfium_page_object(
-            pdfium_doc,
-            pdfium_page,
-            width,
-            height,
-            appearance_idx,
-            max_depth,
-        )
-        .or_else(|| decode_lopdf_raster_stream(pdf_doc, obj_id, width, height, max_decompressed))
-        .ok_or_else(|| {
-            EngineFailure::new(
-                ErrorCode::EngineFailure,
-                "Failed to decode embedded JPEG 2000 (JPXDecode) image stream.",
-            )
-        })?;
+        let dyn_img =
+            decode_via_pdfium_page_object(ctx, pdfium_doc, pdfium_page, appearance_idx, max_depth)?
+                .or_else(|| {
+                    decode_lopdf_raster_stream(pdf_doc, obj_id, width, height, max_decompressed)
+                })
+                .ok_or_else(|| {
+                    EngineFailure::new(
+                        ErrorCode::EngineFailure,
+                        "Failed to decode embedded JPEG 2000 (JPXDecode) image stream.",
+                    )
+                })?;
         let png_bytes = encode_png(&dyn_img)?;
         return Ok(ExtractedImage {
             page,
@@ -889,26 +886,21 @@ fn decode_xobject_image(
     }
 
     let dyn_img = if !has_soft_mask {
-        decode_lopdf_raster_stream(pdf_doc, obj_id, width, height, max_decompressed).or_else(|| {
-            decode_via_pdfium_page_object(
+        match decode_lopdf_raster_stream(pdf_doc, obj_id, width, height, max_decompressed) {
+            Some(img) => Some(img),
+            None => decode_via_pdfium_page_object(
+                ctx,
                 pdfium_doc,
                 pdfium_page,
-                width,
-                height,
                 appearance_idx,
                 max_depth,
-            )
-        })
+            )?,
+        }
     } else {
-        decode_via_pdfium_page_object(
-            pdfium_doc,
-            pdfium_page,
-            width,
-            height,
-            appearance_idx,
-            max_depth,
-        )
-        .or_else(|| decode_lopdf_raster_stream(pdf_doc, obj_id, width, height, max_decompressed))
+        decode_via_pdfium_page_object(ctx, pdfium_doc, pdfium_page, appearance_idx, max_depth)?
+            .or_else(|| {
+                decode_lopdf_raster_stream(pdf_doc, obj_id, width, height, max_decompressed)
+            })
     }
     .ok_or_else(|| {
         EngineFailure::new(
@@ -1154,76 +1146,71 @@ fn resolve_color_space_name(pdf_doc: &PdfDoc, obj_id: PdfObjectId) -> Option<Str
 }
 
 fn decode_via_pdfium_page_object(
+    ctx: &ToolContext<'_>,
     pdfium_doc: &PdfDocument<'_>,
     pdfium_page: &PdfPage<'_>,
-    expected_width: u32,
-    expected_height: u32,
     appearance_idx: usize,
     max_depth: usize,
-) -> Option<DynamicImage> {
-    let mut decoded = Vec::new();
-    collect_decoded_pdfium_images(
-        pdfium_doc,
-        pdfium_page.objects().iter(),
-        0,
-        max_depth,
-        &mut decoded,
-    );
-
-    if let Some(Some(img)) = decoded.get(appearance_idx)
-        && img.width() == expected_width
-        && img.height() == expected_height
-    {
-        return Some(img.clone());
-    }
-
-    for item in decoded.iter().flatten() {
-        if item.width() == expected_width && item.height() == expected_height {
-            return Some(item.clone());
+) -> Result<Option<DynamicImage>, EngineFailure> {
+    let mut index = 0;
+    let mut decoded = None;
+    visit_pdfium_images(pdfium_page.objects().iter(), 0, max_depth, &mut |img| {
+        if index == appearance_idx {
+            decoded = extract_dynamic_image_from_pdfium_obj(ctx, pdfium_doc, img)?;
+            return Ok(true);
         }
-    }
-
-    decoded.get(appearance_idx).and_then(Clone::clone)
+        index += 1;
+        Ok(false)
+    })?;
+    Ok(decoded)
 }
 
-fn collect_decoded_pdfium_images<'a>(
-    pdfium_doc: &PdfDocument<'_>,
+fn visit_pdfium_images<'a>(
     iter: PdfPageObjectsIterator<'a>,
     depth: usize,
     max_depth: usize,
-    out: &mut Vec<Option<DynamicImage>>,
-) {
+    visit: &mut impl FnMut(&PdfPageImageObject<'_>) -> Result<bool, EngineFailure>,
+) -> Result<bool, EngineFailure> {
     if depth > max_depth {
-        return;
+        return Ok(false);
     }
     for obj in iter {
         match obj {
-            PdfPageObject::Image(img) => {
-                out.push(extract_dynamic_image_from_pdfium_obj(pdfium_doc, &img));
-            }
-            PdfPageObject::XObjectForm(form) => {
-                collect_decoded_pdfium_images(pdfium_doc, form.iter(), depth + 1, max_depth, out);
+            PdfPageObject::Image(img) if visit(&img)? => return Ok(true),
+            PdfPageObject::XObjectForm(form)
+                if visit_pdfium_images(form.iter(), depth + 1, max_depth, visit)? =>
+            {
+                return Ok(true);
             }
             _ => {}
         }
     }
+    Ok(false)
 }
 
 fn extract_dynamic_image_from_pdfium_obj(
+    ctx: &ToolContext<'_>,
     pdfium_doc: &PdfDocument<'_>,
     img_obj: &PdfPageImageObject<'_>,
-) -> Option<DynamicImage> {
+) -> Result<Option<DynamicImage>, EngineFailure> {
+    let (Ok(width), Ok(height)) = (img_obj.width(), img_obj.height()) else {
+        return Ok(None);
+    };
+    let (Ok(width), Ok(height)) = (u64::try_from(width), u64::try_from(height)) else {
+        return Err(EngineFailure::limit_exceeded());
+    };
+    ctx.check_pixels(width, height)?;
     if let Ok(raw_bitmap) = img_obj.get_raw_bitmap()
         && let Some(img) = pdf_bitmap_to_dynamic_image(&raw_bitmap)
     {
-        return Some(img);
+        return Ok(Some(img));
     }
     if let Ok(proc_bitmap) = img_obj.get_processed_bitmap(pdfium_doc)
         && let Some(img) = pdf_bitmap_to_dynamic_image(&proc_bitmap)
     {
-        return Some(img);
+        return Ok(Some(img));
     }
-    None
+    Ok(None)
 }
 
 fn pdf_bitmap_to_dynamic_image(bitmap: &PdfBitmap<'_>) -> Option<DynamicImage> {
@@ -1273,34 +1260,28 @@ fn extract_inline_pdfium_images(
     seen_hashes: &mut HashSet<[u8; 32]>,
     outcome: &mut ExtractImagesOutcome,
 ) -> Result<(), EngineFailure> {
-    let mut decoded = Vec::new();
-    collect_decoded_pdfium_images(
-        pdfium_doc,
-        pdfium_page.objects().iter(),
-        0,
-        max_depth,
-        &mut decoded,
-    );
-
     let mut page_index: u32 = 0;
-    for dyn_img in decoded.into_iter().flatten() {
+    visit_pdfium_images(pdfium_page.objects().iter(), 0, max_depth, &mut |img| {
         ctx.check()?;
+        let Some(dyn_img) = extract_dynamic_image_from_pdfium_obj(ctx, pdfium_doc, img)? else {
+            return Ok(false);
+        };
         let width = dyn_img.width();
         let height = dyn_img.height();
         if width == 0 || height == 0 {
-            continue;
+            return Ok(false);
         }
         ctx.check_pixels(u64::from(width), u64::from(height))?;
         if width < params.min_px || height < params.min_px {
             outcome.images_skipped_min_px += 1;
-            continue;
+            return Ok(false);
         }
 
         let png_bytes = encode_png(&dyn_img)?;
         let digest = fnv1a_256(&png_bytes);
         if !seen_hashes.insert(digest) {
             outcome.images_deduplicated += 1;
-            continue;
+            return Ok(false);
         }
 
         page_index += 1;
@@ -1316,7 +1297,8 @@ fn extract_inline_pdfium_images(
             raw_stream_bytes: None,
             bytes: png_bytes,
         });
-    }
+        Ok(false)
+    })?;
     Ok(())
 }
 

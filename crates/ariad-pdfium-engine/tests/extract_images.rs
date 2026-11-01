@@ -404,3 +404,68 @@ fn refuses_image_exceeding_max_image_pixels_and_encrypted_pdfs() {
     assert_eq!(enc_err.code, ErrorCode::EngineFailure);
     assert!(enc_err.message.contains("pdf.decrypt"));
 }
+
+#[test]
+fn inline_images_check_dimensions_before_decoding() {
+    let lib_dir = require_pdfium!();
+    let mut content = Vec::new();
+    for _ in 0..40 {
+        content.extend_from_slice(
+            b"q 1 0 0 1 0 0 cm BI /W 1000 /H 1000 /BPC 8 /CS /G /F /AHx ID 00> EI Q\n",
+        );
+    }
+    let pdf = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>".to_vec(),
+        stream_object("", &content),
+    ]);
+    let ws = TestWorkspace::from_bytes("inline.pdf", &pdf);
+    let mut sink = Vec::new();
+    let mut limits = Limits::local();
+    limits.max_decompressed_bytes = 2_000_000;
+    let mut ctx = ToolContext::new(
+        "inline-limit",
+        "pdf.extract_images",
+        ws.paths,
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("oversized inline images must be rejected before decoding");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn extracts_single_inline_image_pixels() {
+    let lib_dir = require_pdfium!();
+    let content = b"q 1 0 0 1 0 0 cm BI /W 1 /H 1 /BPC 8 /CS /RGB /F /AHx ID FF0000> EI Q";
+    let pdf = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>".to_vec(),
+        stream_object("", content),
+    ]);
+    let ws = TestWorkspace::from_bytes("inline.pdf", &pdf);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "inline-pixel",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let params = ExtractImagesParams {
+        min_px: 1,
+        ..ExtractImagesParams::default()
+    };
+    let outcome =
+        extract_images::extract_document_images(&mut ctx, &params).expect("extract image");
+    assert_eq!(outcome.images.len(), 1);
+    let image = image::load_from_memory_with_format(&outcome.images[0].bytes, ImageFormat::Png)
+        .expect("valid png")
+        .to_rgb8();
+    assert_eq!(image.as_raw(), &[255, 0, 0]);
+}
