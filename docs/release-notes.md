@@ -8,6 +8,8 @@ Preview of the PDF suite. `ashift` gains typed document tools: 25 structural PDF
 
 ### Upgrade notes
 
+- **OAuth signup challenge configuration.** When signup is enabled and `AUTH_TURNSTILE_SECRET` is set, auth requires its paired `AUTH_TURNSTILE_SITE_KEY`. Deployments with signup disabled can set the secret without the site key.
+
 - **Two new crates are published.** `ariad-pdf` (pure-Rust PDF manipulation) and `ariad-engine-io` (shared engine protocol helpers) join `ariad-core`, `ariad-typst`, `ariad-host` and `ariad-cli` on crates.io. `ariad-host` now depends on both, so a source build or `cargo install ariad-cli` pulls them in.
 - **New exit codes `8` to `12`.** Tool commands report an unknown tool (8), invalid parameters (9), wrong input count or format (10), a tool not allowed by the caller's tier (11) and encrypted input (12). Codes `0` to `6` and `130` keep their meaning. See [cli.md](cli.md#exit-codes) and [tools.md](tools.md#tool-error-exit-codes).
 - **Tools never overwrite silently.** A destination that already exists fails with exit 6 unless `--overwrite` is passed. With `--overwrite`, the previous file is moved aside first and restored byte-identical if publication fails, so a multi-file result is published completely or not at all.

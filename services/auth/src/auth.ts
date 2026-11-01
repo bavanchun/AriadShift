@@ -418,6 +418,9 @@ export function buildAuthOptions(
               // Absolute, so redirects and JSON `url` answers name this service
               // even when a client resolves them against another base.
               loginPage: `${config.baseUrl}${OAUTH_SIGN_IN_PATH}`,
+              // The provider resumes the signed request and validates its registered
+              // client redirect; it may return that callback directly when consent
+              // is unnecessary, so a same-origin consent-only guard would reject it.
               consentPage: `${config.baseUrl}${OAUTH_CONSENT_PATH}`,
               signup: { page: `${config.baseUrl}${OAUTH_SIGN_IN_PATH}` },
               scopes: OAUTH_SCOPES,
