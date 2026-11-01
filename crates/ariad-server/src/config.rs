@@ -160,9 +160,6 @@ pub enum StorageConfig {
     },
     /// A local directory. The API signs and serves object URLs itself.
     Local { root: PathBuf },
-    /// A local directory with a non-default minimum transfer rate floor.
-    #[doc(hidden)]
-    LocalWithRate { root: PathBuf, min_rate_bps: u64 },
 }
 
 fn parse_blob_min_rate_bps(env: &Env) -> Result<u64, ConfigError> {
@@ -175,25 +172,9 @@ fn parse_blob_min_rate_bps(env: &Env) -> Result<u64, ConfigError> {
 }
 
 impl StorageConfig {
-    /// Whether this configuration uses the local filesystem backend.
-    #[must_use]
-    pub fn is_local(&self) -> bool {
-        matches!(self, Self::Local { .. } | Self::LocalWithRate { .. })
-    }
-
-    /// Configured minimum transfer rate in bytes per second for local blobs.
-    #[must_use]
-    pub fn blob_min_rate_bps(&self) -> u64 {
-        match self {
-            Self::LocalWithRate { min_rate_bps, .. } => *min_rate_bps,
-            Self::S3 { .. } | Self::Local { .. } => DEFAULT_BLOB_MIN_RATE_BPS,
-        }
-    }
-
-    /// Reads `ARIAD_STORAGE_URL`, `ARIAD_BLOB_MIN_RATE_BPS` and, for S3, the `AWS_*` settings.
+    /// Reads `ARIAD_STORAGE_URL` and, for S3, the `AWS_*` settings.
     pub fn from_env(env: &Env) -> Result<Self, ConfigError> {
         const NAME: &str = "ARIAD_STORAGE_URL";
-        let min_rate_bps = parse_blob_min_rate_bps(env)?;
         let raw = env.required(NAME)?;
         let url = Url::parse(raw).map_err(|e| invalid(NAME, e.to_string()))?;
         match url.scheme() {
@@ -221,11 +202,7 @@ impl StorageConfig {
                 let root = url
                     .to_file_path()
                     .map_err(|()| invalid(NAME, "file URLs need an absolute path"))?;
-                if min_rate_bps == DEFAULT_BLOB_MIN_RATE_BPS {
-                    Ok(Self::Local { root })
-                } else {
-                    Ok(Self::LocalWithRate { root, min_rate_bps })
-                }
+                Ok(Self::Local { root })
             }
             other => Err(invalid(
                 NAME,
@@ -424,7 +401,7 @@ impl ApiConfig {
             }
             None => None,
         };
-        if storage.is_local() && public_url.is_none() {
+        if matches!(storage, StorageConfig::Local { .. }) && public_url.is_none() {
             return Err(invalid(
                 "ARIAD_PUBLIC_URL",
                 "is required with file:// storage, because the API serves object URLs",
@@ -601,9 +578,7 @@ mod tests {
                 assert_eq!(bucket, "bucket");
                 assert_eq!(prefix, "some/prefix");
             }
-            StorageConfig::Local { .. } | StorageConfig::LocalWithRate { .. } => {
-                panic!("expected s3")
-            }
+            StorageConfig::Local { .. } => panic!("expected s3"),
         }
     }
 

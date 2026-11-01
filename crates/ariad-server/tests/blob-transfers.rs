@@ -683,7 +683,10 @@ fn config_rejects_zero_or_invalid_blob_min_rate() {
     ]);
     let cfg = ApiConfig::from_env(&valid_env).unwrap();
     assert_eq!(cfg.blob_min_rate_bps, 262_144);
-    assert_eq!(cfg.storage.blob_min_rate_bps(), 262_144);
+    Storage::from_config(&cfg.storage, cfg.public_url.as_ref(), Some(&cfg.secret))
+        .unwrap()
+        .with_blob_min_rate_bps(cfg.blob_min_rate_bps)
+        .unwrap();
 }
 
 #[test]

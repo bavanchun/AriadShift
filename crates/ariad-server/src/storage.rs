@@ -227,12 +227,6 @@ impl Storage {
         public_url: Option<&Url>,
         secret: Option<&[u8]>,
     ) -> Result<Self, StorageError> {
-        let min_rate_bps = config.blob_min_rate_bps();
-        if min_rate_bps == 0 {
-            return Err(StorageError::Config(
-                "blob minimum transfer rate must be positive".to_owned(),
-            ));
-        }
         match config {
             StorageConfig::S3 {
                 bucket,
@@ -261,7 +255,7 @@ impl Storage {
                     digests: Arc::default(),
                 })
             }
-            StorageConfig::Local { root } | StorageConfig::LocalWithRate { root, .. } => {
+            StorageConfig::Local { root } => {
                 std::fs::create_dir_all(root)?;
                 let store = Arc::new(LocalFileSystem::new_with_prefix(root)?);
                 let signing = match (public_url, secret) {
@@ -276,7 +270,7 @@ impl Storage {
                     prefix: String::new(),
                     signing,
                     blob_limits: BlobTransferLimits::default(),
-                    min_rate_bps,
+                    min_rate_bps: DEFAULT_BLOB_MIN_RATE_BPS,
                     max_transfer_timeout: MAX_BLOB_TRANSFER_TIMEOUT,
                     active: Arc::default(),
                     digests: Arc::default(),
