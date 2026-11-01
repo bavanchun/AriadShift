@@ -45,3 +45,19 @@ end-to-end PDFium CLI regression failed before this fix and passed afterward.
 Musl targets remain a follow-up: removing targets changes release coverage and is
 not a one-line exclusion. `cargo fmt --all --check` passed after formatting. The final gate handoff records
 the post-merge results.
+
+## Round 4 (incomplete)
+
+- String `Do` operands: `23ff7db` parses literal and hexadecimal strings in
+  both preflight and extraction traversal. `string_operands_resolve_xobject_names`
+  passed. The regression was not run against the original revision.
+- Memory hints: `4b2f8a8` reserves the hint for process crashes and keeps typed
+  engine failure messages free of it. `memory_hint_is_limited_to_crashes` and
+  `memory_hint_is_only_added_to_crashes` passed. The changed regression was not
+  run against the original revision.
+- The per-page cumulative budget, compact scope memoization, and inline-image
+  compatibility work remain unfinished. A scope-table hashing experiment was
+  discarded because recomputing it per object produces quadratic CPU work.
+- Focused clippy passed for `ariad-pdfium-engine` and `ariad-host` with
+  `test-probe`. The full gate, pack rebuild, push, and macOS checks were not run.
+  The Linux gate is red until the remaining work and complete gate succeed.
