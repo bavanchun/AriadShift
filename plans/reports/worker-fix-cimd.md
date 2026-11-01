@@ -1,8 +1,7 @@
 # CIMD security review follow-up
 
-Status: incomplete. The implementation has not been validated against PostgreSQL,
-including the token-lock regression. Cleanup of unused stored CIMD clients requested
-in the review has not been implemented. Do not merge as a completed review fix.
+Status: implementation complete. PostgreSQL validation, including the token-lock
+regression and cleanup query, remains for CI or the Mac.
 
 The prior implementation performed metadata resolution from client discovery,
 including under the shared token lock, and used an unbounded DNS lookup and client
@@ -12,8 +11,10 @@ uses a cancellable resolver and deadline, caches failures and no-store responses
 and bounds fetching and the revision map. It shares the registration budget,
 adds host policy and an opt-in switch, removes metadata passthrough, checks canonical
 URLs and port 443, logs failures, and shows the metadata host on consent. It fixes
-the cache-order dependency and removes the dead scheme entry. Existing clients are
-not garbage-collected. The fix commit includes the registration body-limit documentation correction.
+the cache-order dependency and removes the dead scheme entry. A periodic bounded
+cleanup removes enabled CIMD clients with no consent or tokens when their metadata
+has not been updated for 30 days. Disabled clients remain blocked. The fix commit includes the registration
+body-limit documentation correction.
 
 Regression coverage includes a hanging lookup, cache and concurrency bounds,
 canonical URLs, host policy, registration budget, consent host and a slow lookup
@@ -24,7 +25,8 @@ data was modified.
 
 Checks, sequentially through the shared build lock:
 
-- Focused CIMD and OAuth flow tests: PASS, 35 tests.
+- Focused CIMD and OAuth flow tests: PASS, 35 tests before cleanup; CIMD after
+  cleanup: PASS, 29 tests, including the SQLite-backed cleanup test.
 - Auth typecheck: PASS.
 - Biome on auth and affected docs: PASS, with one existing optional-chain warning.
 - Auth test suite: PASS, 207 passed and 32 skipped; PostgreSQL suites were skipped.
@@ -44,4 +46,4 @@ Suggested PR title: `fix(auth): harden client metadata discovery`
 
 Suggested PR body: Harden CIMD discovery against lock contention and resource abuse,
 and add operator controls. Include the review findings and the PostgreSQL test
-results after completing the remaining cleanup and database validation.
+results after database validation.
