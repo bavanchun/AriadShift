@@ -4,7 +4,7 @@
 // with PKCE through the sign-in and consent steps, the token exchange and a
 // refresh, and checks the access token the way ariad-server verifies it.
 
-import { createPublicKey, type JsonWebKey, verify } from "node:crypto";
+import { createPublicKey, type JsonWebKeyInput, verify } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   AUTH,
@@ -184,7 +184,7 @@ describe("OAuth authorization for remote MCP", () => {
       (key) => key.kid === access.header.kid,
     );
     expect(jwk).toBeDefined();
-    const key = createPublicKey({ key: jwk as JsonWebKey, format: "jwk" });
+    const key = createPublicKey({ key: jwk as JsonWebKeyInput["key"], format: "jwk" });
     expect(verify(null, Buffer.from(access.signed), key, access.signature)).toBe(true);
 
     // The session's ordinary API JWT keeps the auth origin as its audience,

@@ -36,10 +36,11 @@ export interface ListJobsOptions {
 export type JobsApi = Pick<
   AriadClient,
   "getJob" | "events" | "outputs" | "download" | "deleteJob" | "createJob"
-> & {
-  /** Lists the signed-in workspace's jobs, newest first. */
-  listJobs(options?: ListJobsOptions): Promise<JobListPage>;
-};
+> &
+  Partial<Pick<AriadClient, "downloadToStream">> & {
+    /** Lists the signed-in workspace's jobs, newest first. */
+    listJobs(options?: ListJobsOptions): Promise<JobListPage>;
+  };
 
 /** Statuses meaning the API has no `GET /v1/jobs` route (an older deployment). */
 const UNSUPPORTED_LIST_STATUSES = new Set([404, 405, 501]);
@@ -115,18 +116,4 @@ export function createJobsApi(apiUrl: string, auth: AuthApi, signedIn: boolean):
     ...(signedIn ? { credentials: { bearer: () => requireBearerToken(auth) } } : {}),
   });
   return { ...client, listJobs: (options) => listJobs(client, options) };
-}
-
-/** Saves a downloaded file through a temporary object URL. */
-export function saveBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.rel = "noopener";
-  document.body.append(link);
-  link.click();
-  link.remove();
-  // Revoke after the browser has started reading the URL.
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

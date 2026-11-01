@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import type { Job, JobEvent, OutputFile } from "@ariadshift/sdk";
+import type { DownloadStreamTarget, Job, JobEvent, OutputFile } from "@ariadshift/sdk";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { AccountShell } from "@/components/account/account-shell";
 import type { AccountUser, AuthApi } from "@/components/account/auth-api";
 import { JOB_HISTORY_KEY, type JobHistoryEntry } from "@/components/account/job-history";
 import type { JobListPage, JobsApi, ListedJob } from "@/components/account/jobs-api";
 import { JobsPanel } from "@/components/account/jobs-panel";
+import { STREAM_DOWNLOAD_THRESHOLD_BYTES } from "@/lib/cloud/cloud-job";
 import { resolveCloudConfig } from "@/lib/cloud/config";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/jobs" }));
@@ -164,9 +165,43 @@ describe("jobs page", () => {
 
     const download = await within(item).findByRole("button", { name: "Download report.docx" });
     fireEvent.click(download);
-    await waitFor(() => expect(api.download).toHaveBeenCalledWith(OUTPUT));
+    await waitFor(() =>
+      expect(api.download).toHaveBeenCalledWith(
+        OUTPUT,
+        expect.objectContaining({ verifySha256: true }),
+      ),
+    );
     // Fresh presigned URLs are requested for the download itself.
     expect(api.outputs).toHaveBeenCalledTimes(2);
+    expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
+  });
+
+  it("streams a large output through downloadToStream without calling download()", async () => {
+    seed(entry("done"));
+    const largeOutput: OutputFile = {
+      ...OUTPUT,
+      size: STREAM_DOWNLOAD_THRESHOLD_BYTES + 1,
+    };
+    const api = fakeJobs({ done: job("done") });
+    api.outputs.mockResolvedValue({ job_id: "done", outputs: [largeOutput] });
+    api.downloadToStream = vi.fn(async (_out: OutputFile, target: DownloadStreamTarget) => {
+      await target.write(new TextEncoder().encode("streamed docx"));
+      await target.close();
+    });
+
+    renderJobs(api);
+    const item = await row("done.pdf");
+    const download = await within(item).findByRole("button", { name: "Download report.docx" });
+    fireEvent.click(download);
+
+    await waitFor(() =>
+      expect(api.downloadToStream).toHaveBeenCalledWith(
+        largeOutput,
+        expect.anything(),
+        expect.objectContaining({ verifySha256: true }),
+      ),
+    );
+    expect(api.download).not.toHaveBeenCalled();
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalled();
   });
 
