@@ -166,4 +166,24 @@ describe("parseConfig", () => {
       ConfigError,
     );
   });
+
+  it("requires AUTH_TURNSTILE_SITE_KEY when AUTH_TURNSTILE_SECRET is set", () => {
+    expect(() => parseConfig(env({ AUTH_TURNSTILE_SECRET: "turnstile-secret" }))).toThrow(
+      /AUTH_TURNSTILE_SITE_KEY is required when AUTH_TURNSTILE_SECRET is set/,
+    );
+    expect(() =>
+      parseConfig(
+        env({ AUTH_TURNSTILE_SECRET: "turnstile-secret", AUTH_TURNSTILE_SITE_KEY: "   " }),
+      ),
+    ).toThrow(/AUTH_TURNSTILE_SITE_KEY is required when AUTH_TURNSTILE_SECRET is set/);
+
+    const configured = parseConfig(
+      env({
+        AUTH_TURNSTILE_SECRET: "turnstile-secret",
+        AUTH_TURNSTILE_SITE_KEY: "site-key-prod",
+      }),
+    );
+    expect(configured.turnstileSecret).toBe("turnstile-secret");
+    expect(configured.turnstileSiteKey).toBe("site-key-prod");
+  });
 });
