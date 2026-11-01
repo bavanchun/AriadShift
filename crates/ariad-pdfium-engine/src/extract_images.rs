@@ -609,14 +609,19 @@ impl<'a> XobjectScope<'a> {
     }
 
     fn child(&'a self, objects: BTreeMap<Vec<u8>, PdfObjectId>, id: PdfObjectId) -> Self {
-        let mut hash = Sha256::new();
-        hash.update(self.digest);
-        hash.update(id.0.to_be_bytes());
-        hash.update(id.1.to_be_bytes());
+        let digest = if objects.is_empty() {
+            self.digest
+        } else {
+            let mut hash = Sha256::new();
+            hash.update(self.digest);
+            hash.update(id.0.to_be_bytes());
+            hash.update(id.1.to_be_bytes());
+            hash.finalize().into()
+        };
         Self {
             objects,
             parent: Some(self),
-            digest: hash.finalize().into(),
+            digest,
         }
     }
 
@@ -2813,6 +2818,7 @@ mod corpus_tests {
         assert_eq!(first.get(b"X1"), Some(&(30_000, 0)));
         assert_eq!(second.get(b"X1"), Some(&(1, 0)));
         assert_ne!(first.digest, second.digest);
+        assert_eq!(parent.digest, second.digest);
     }
 
     #[test]
