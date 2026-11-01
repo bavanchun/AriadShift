@@ -968,6 +968,7 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
         Err(err) => return report_error("tool", &ToolError::InputIo(err.to_string())),
     };
     let is_json = args.json;
+    let renders_info_human = args.tool == "pdf.info";
     let stderr_is_terminal = io::stderr().is_terminal();
     let inputs: Vec<InputRef> = args.inputs.into_iter().map(InputRef::new).collect();
     let output = match args.output {
@@ -1013,8 +1014,12 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
             } else if outcome.artifacts.is_empty()
                 && let Some(ref inline_json) = outcome.inline_json
             {
-                render::render_pdf_info_human(inline_json)
-                    .map_err(|err| ToolError::OutputIo(err.to_string()))
+                if renders_info_human {
+                    render::render_pdf_info_human(inline_json)
+                } else {
+                    render::render_json(inline_json)
+                }
+                .map_err(|err| ToolError::OutputIo(err.to_string()))
             } else {
                 let mut stdout = io::stdout().lock();
                 for artifact in &outcome.artifacts {
