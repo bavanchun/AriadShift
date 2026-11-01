@@ -1,0 +1,63 @@
+---
+source: crates/ariad-pdf/tests/booklet.rs
+expression: info_json
+---
+{
+  "encrypted": false,
+  "has_annotations": false,
+  "has_attachments": false,
+  "has_forms": false,
+  "has_javascript": false,
+  "linearized": false,
+  "metadata": {
+    "author": "AriadShift contributors",
+    "creation_date": "D:20081105220923Z",
+    "creator": "AriadShift fixture generator",
+    "language": "en",
+    "mod_date": "D:20081105220923Z",
+    "producer": "AriadShift fixture generator",
+    "title": "Batch Scan with Blank Separator Pages"
+  },
+  "outline_count": 0,
+  "page_count": 4,
+  "pages": [
+    {
+      "blank": false,
+      "height_pt": 595.28,
+      "orientation": "landscape",
+      "page": 1,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 841.89
+    },
+    {
+      "blank": false,
+      "height_pt": 595.28,
+      "orientation": "landscape",
+      "page": 2,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 841.89
+    },
+    {
+      "blank": true,
+      "height_pt": 595.28,
+      "orientation": "landscape",
+      "page": 3,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 841.89
+    },
+    {
+      "blank": false,
+      "height_pt": 595.28,
+      "orientation": "landscape",
+      "page": 4,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 841.89
+    }
+  ],
+  "repaired_xref": false,
+  "version": "1.5"
+}
