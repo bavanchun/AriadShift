@@ -61,10 +61,11 @@ pub fn run(
 
     let inserted_total = (after_set.len() as u64).saturating_mul(u64::from(params.count));
     let total_output_pages = (orig_pages.len() as u64).saturating_add(inserted_total);
-    if total_output_pages > reorder::MAX_OUTPUT_PAGES {
+    let cap = super::page_set::output_page_cap(ctx.max_pages);
+    if total_output_pages > cap {
         return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
             actual: total_output_pages,
-            limit: reorder::MAX_OUTPUT_PAGES as u32,
+            limit: u32::try_from(cap).unwrap_or(u32::MAX),
         }));
     }
 

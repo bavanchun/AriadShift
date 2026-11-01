@@ -27,9 +27,6 @@ const MAX_OUTLINE_DEPTH: usize = 32;
 /// Maximum number of indirect reference hops followed when inspecting outline dictionaries.
 const MAX_REF_HOPS: usize = 8;
 
-/// Hard upper bound on total output pages produced by layout/expansion tools.
-pub(crate) const MAX_OUTPUT_PAGES: u32 = 10_000;
-
 /// Places multiple input pages onto each output sheet in an N-up grid layout.
 pub fn run(
     inputs: &[PdfDoc],
@@ -94,10 +91,11 @@ pub fn run(
 
     let per_sheet = usize::from(params.per_sheet);
     let out_page_count = src_pages.len().div_ceil(per_sheet);
-    if (out_page_count as u64) > u64::from(MAX_OUTPUT_PAGES) {
+    let cap = super::page_set::output_page_cap(ctx.max_pages);
+    if (out_page_count as u64) > cap {
         return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
             actual: out_page_count as u64,
-            limit: MAX_OUTPUT_PAGES,
+            limit: u32::try_from(cap).unwrap_or(u32::MAX),
         }));
     }
     let mut new_page_ids = Vec::with_capacity(out_page_count);

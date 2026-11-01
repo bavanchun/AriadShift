@@ -32,6 +32,9 @@ pub struct ToolCtx {
     pub deadline: Option<Instant>,
     /// Shared cancellation flag checked cooperatively by page and object loops.
     pub cancel: Arc<AtomicBool>,
+    /// Optional run-level page limit (`Limits.max_pages`), used to lower the 10,000-page output
+    /// ceiling when a smaller limit is configured.
+    pub max_pages: Option<u32>,
 }
 
 impl ToolCtx {
@@ -47,6 +50,7 @@ impl ToolCtx {
         Self {
             deadline: Some(deadline),
             cancel: Arc::new(AtomicBool::new(false)),
+            max_pages: None,
         }
     }
 
@@ -56,7 +60,15 @@ impl ToolCtx {
         Self {
             deadline: None,
             cancel,
+            max_pages: None,
         }
+    }
+
+    /// Sets the run-level `max_pages` ceiling on this context.
+    #[must_use]
+    pub const fn with_max_pages(mut self, max_pages: Option<u32>) -> Self {
+        self.max_pages = max_pages;
+        self
     }
 
     /// Checks whether the cancellation flag has been set or the deadline has elapsed.

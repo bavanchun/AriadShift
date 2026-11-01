@@ -18,9 +18,8 @@ use crate::{
     tools::{
         OutputDoc,
         nup::{
-            MAX_OUTPUT_PAGES, append_clipped_xobject, collect_ordered_page_ids,
-            convert_page_with_budget, effective_version, finalize_layout_document,
-            insert_sheet_page,
+            append_clipped_xobject, collect_ordered_page_ids, convert_page_with_budget,
+            effective_version, finalize_layout_document, insert_sheet_page,
         },
     },
     xobject::{self, ObjectCopier, PdfRect},
@@ -58,10 +57,11 @@ pub fn run(
     let padded_total = page_count.div_ceil(4) * 4;
     let num_sheets = padded_total / 4;
     let total_out_pages = num_sheets.saturating_mul(2);
-    if (total_out_pages as u64) > u64::from(MAX_OUTPUT_PAGES) {
+    let cap = super::page_set::output_page_cap(ctx.max_pages);
+    if (total_out_pages as u64) > cap {
         return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
             actual: total_out_pages as u64,
-            limit: MAX_OUTPUT_PAGES,
+            limit: u32::try_from(cap).unwrap_or(u32::MAX),
         }));
     }
 

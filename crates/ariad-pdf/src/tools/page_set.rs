@@ -96,6 +96,7 @@ fn too_many_pages(actual: u64, cap: u64) -> PdfError {
 
 /// Expands `range` against `page_count` while enforcing [`MAX_OUTPUT_PAGES`] before allocating an
 /// unbounded page vector when `DuplicatePolicy::KeepInOrder` is used.
+#[cfg(test)]
 pub(crate) fn expand_page_range_bounded(
     range: &PageRange,
     page_count: u32,
@@ -104,8 +105,8 @@ pub(crate) fn expand_page_range_bounded(
     expand_page_range_capped(range, page_count, policy, None)
 }
 
-/// Like [`expand_page_range_bounded`], with the cap lowered to `max_pages` (the run's
-/// `limits.max_pages`) when that is smaller than [`MAX_OUTPUT_PAGES`].
+/// Expands `range` against `page_count` while enforcing `min(MAX_OUTPUT_PAGES, max_pages)` before
+/// allocating an unbounded page vector when `DuplicatePolicy::KeepInOrder` is used.
 pub(crate) fn expand_page_range_capped(
     range: &PageRange,
     page_count: u32,
@@ -163,30 +164,9 @@ fn estimate_keep_in_order_len(range: &PageRange, page_count: u32) -> u64 {
 }
 
 /// Builds a new [`PdfDoc`] containing the 1-based `selected_pages` from `source` in the
-/// exact order given (preserving document-level attachments).
-pub(crate) fn build_extracted_doc(
-    source: &PdfDoc,
-    selected_pages: &[u32],
-    ctx: &ToolCtx,
-) -> Result<PdfDoc, PdfError> {
-    build_page_set_doc(source, selected_pages, PageSetOptions::default(), ctx)
-}
-
-/// Builds a new [`PdfDoc`] containing the 1-based `selected_pages` from `source` in the
-/// exact order given (supporting duplicate page selections and [`PageSetOptions`]).
-///
-/// Warnings raised while building are discarded; use [`build_page_set_output`] to keep them.
-pub(crate) fn build_page_set_doc(
-    source: &PdfDoc,
-    selected_pages: &[u32],
-    options: PageSetOptions,
-    ctx: &ToolCtx,
-) -> Result<PdfDoc, PdfError> {
-    build_page_set_doc_with_warnings(source, selected_pages, options, ctx).map(|(doc, _)| doc)
-}
-
-/// Builds the page-set document like [`build_page_set_doc`] and wraps it in an [`OutputDoc`]
-/// carrying the warnings raised while building (for example [`TAGGED_STRUCTURE_WARNING`]).
+/// exact order given (supporting duplicate page selections and [`PageSetOptions`]) and wraps it in
+/// an [`OutputDoc`] carrying the warnings raised while building (for example
+/// [`TAGGED_STRUCTURE_WARNING`]).
 pub(crate) fn build_page_set_output(
     source: &PdfDoc,
     selected_pages: &[u32],
@@ -216,11 +196,9 @@ fn build_page_set_doc_with_warnings(
             "selected page list must not be empty".to_owned(),
         ));
     }
-    if selected_pages.len() as u64 > MAX_OUTPUT_PAGES {
-        return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
-            actual: selected_pages.len() as u64,
-            limit: MAX_OUTPUT_PAGES as u32,
-        }));
+    let cap = output_page_cap(ctx.max_pages);
+    if selected_pages.len() as u64 > cap {
+        return Err(too_many_pages(selected_pages.len() as u64, cap));
     }
 
     let src_doc = source.inner();

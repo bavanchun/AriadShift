@@ -11,7 +11,6 @@ use ariad_core::{
 };
 use lopdf::{Dictionary, Document, Object, ObjectId, dictionary};
 
-pub(crate) use super::page_set::MAX_OUTPUT_PAGES;
 use crate::{
     document::{PdfDoc, ToolCtx},
     error::PdfError,
@@ -19,8 +18,9 @@ use crate::{
     tools::{
         OutputDoc,
         page_set::{
-            self, build_page_labels_object, collect_named_destinations, default_xyz_tail,
-            expand_page_range_bounded, parse_page_labels, remap_page_labels_for_selection,
+            self, TAGGED_STRUCTURE_WARNING, build_page_labels_object, collect_named_destinations,
+            default_xyz_tail, expand_page_range_capped, output_page_cap, parse_page_labels,
+            remap_page_labels_for_selection,
         },
     },
     xobject,
@@ -31,18 +31,6 @@ const MAX_TREE_DEPTH: usize = 64;
 
 /// Maximum number of name-tree nodes visited while pruning `/Names /Dests`.
 const MAX_NAME_TREE_NODES: usize = 100_000;
-
-/// Warning emitted when a page subset cannot keep the document's tagged structure.
-const TAGGED_STRUCTURE_WARNING: &str = "tagged structure (StructTreeRoot) is not kept for a page subset; the output is not a tagged PDF";
-
-/// Effective output-page cap: the fixed [`MAX_OUTPUT_PAGES`] ceiling, lowered to the run's
-/// `limits.max_pages` when that is smaller.
-#[must_use]
-fn output_page_cap(max_pages: Option<u32>) -> u64 {
-    max_pages.map_or(MAX_OUTPUT_PAGES, |limit| {
-        MAX_OUTPUT_PAGES.min(u64::from(limit))
-    })
-}
 
 /// Reorders pages in a PDF document using a preset or explicit page range sequence.
 ///
@@ -68,13 +56,13 @@ pub fn run(
     let orig_pages = collect_page_ids(inner, ctx)?;
     let page_count = u32::try_from(orig_pages.len()).map_err(|_| PdfError::Malformed)?;
 
-    let target_seq = expand_reorder_sequence(&params.order, page_count)?;
+    let target_seq = expand_reorder_sequence(&params.order, page_count, ctx.max_pages)?;
     if target_seq.is_empty() {
         return Err(PdfError::InvalidParams(
             "reorder target page sequence must not be empty".to_owned(),
         ));
     }
-    let cap = output_page_cap(None);
+    let cap = output_page_cap(ctx.max_pages);
     if target_seq.len() as u64 > cap {
         return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
             actual: target_seq.len() as u64,
@@ -160,22 +148,27 @@ pub fn run(
 }
 
 /// Expands a [`ReorderSpec`] against `page_count` into a 1-based page number sequence.
-fn expand_reorder_sequence(spec: &ReorderSpec, page_count: u32) -> Result<Vec<u32>, PdfError> {
+fn expand_reorder_sequence(
+    spec: &ReorderSpec,
+    page_count: u32,
+    max_pages: Option<u32>,
+) -> Result<Vec<u32>, PdfError> {
+    let cap = output_page_cap(max_pages);
     match spec {
         ReorderSpec::Preset(ReorderPreset::Reverse) => {
-            if u64::from(page_count) > MAX_OUTPUT_PAGES {
+            if u64::from(page_count) > cap {
                 return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
                     actual: u64::from(page_count),
-                    limit: MAX_OUTPUT_PAGES as u32,
+                    limit: u32::try_from(cap).unwrap_or(u32::MAX),
                 }));
             }
             Ok((1..=page_count).rev().collect())
         }
         ReorderSpec::Preset(ReorderPreset::DuplexInterleave) => {
-            if u64::from(page_count) > MAX_OUTPUT_PAGES {
+            if u64::from(page_count) > cap {
                 return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
                     actual: u64::from(page_count),
-                    limit: MAX_OUTPUT_PAGES as u32,
+                    limit: u32::try_from(cap).unwrap_or(u32::MAX),
                 }));
             }
             let mut seq = Vec::with_capacity(page_count as usize);
@@ -192,10 +185,10 @@ fn expand_reorder_sequence(spec: &ReorderSpec, page_count: u32) -> Result<Vec<u3
             Ok(seq)
         }
         ReorderSpec::Preset(ReorderPreset::OddThenEven) => {
-            if u64::from(page_count) > MAX_OUTPUT_PAGES {
+            if u64::from(page_count) > cap {
                 return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
                     actual: u64::from(page_count),
-                    limit: MAX_OUTPUT_PAGES as u32,
+                    limit: u32::try_from(cap).unwrap_or(u32::MAX),
                 }));
             }
             let mut seq = Vec::with_capacity(page_count as usize);
@@ -218,7 +211,7 @@ fn expand_reorder_sequence(spec: &ReorderSpec, page_count: u32) -> Result<Vec<u3
             Ok(seq)
         }
         ReorderSpec::Pages(range) => {
-            expand_page_range_bounded(range, page_count, DuplicatePolicy::KeepInOrder)
+            expand_page_range_capped(range, page_count, DuplicatePolicy::KeepInOrder, max_pages)
         }
     }
 }

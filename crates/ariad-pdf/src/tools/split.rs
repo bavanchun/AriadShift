@@ -15,10 +15,10 @@ use crate::{
     error::PdfError,
     info, naming,
     tools::{
-        OutputDoc,
+        OutputDoc, OutputPayload,
         page_set::{
-            MAX_OUTPUT_PAGES, OutlineNode, PageSetOptions, build_page_set_doc, doc_page_count,
-            expand_page_range_bounded, parse_outline_tree,
+            OutlineNode, PageSetOptions, build_page_set_output, doc_page_count,
+            expand_page_range_capped, output_page_cap, parse_outline_tree,
         },
     },
     writer,
@@ -33,7 +33,7 @@ const SPLIT_PART_OPTIONS: PageSetOptions = PageSetOptions {
 /// instead of accumulating in memory.
 struct PartSink {
     budget: DecodeBudget,
-    parts: Vec<Vec<u8>>,
+    parts: Vec<(Vec<u8>, Vec<String>)>,
 }
 
 impl PartSink {
@@ -44,14 +44,18 @@ impl PartSink {
         }
     }
 
-    fn push(&mut self, mut part: PdfDoc, ctx: &ToolCtx) -> Result<(), PdfError> {
-        let bytes = writer::save(&mut part, ctx)?;
-        self.push_bytes(bytes)
+    fn push(&mut self, part: OutputDoc, ctx: &ToolCtx) -> Result<(), PdfError> {
+        let (bytes, warnings) = serialize_part_output(part, ctx)?;
+        self.push_bytes_with_warnings(bytes, warnings)
     }
 
-    fn push_bytes(&mut self, bytes: Vec<u8>) -> Result<(), PdfError> {
+    fn push_bytes_with_warnings(
+        &mut self,
+        bytes: Vec<u8>,
+        warnings: Vec<String>,
+    ) -> Result<(), PdfError> {
         self.budget.charge(bytes.len())?;
-        self.parts.push(bytes);
+        self.parts.push((bytes, warnings));
         Ok(())
     }
 
@@ -60,21 +64,14 @@ impl PartSink {
         self.parts
             .into_iter()
             .enumerate()
-            .map(|(idx, bytes)| {
+            .map(|(idx, (bytes, warnings))| {
                 let name = naming::part_output_name(stem, idx + 1, total_parts);
-                OutputDoc::from_bytes(name, "pdf", bytes)
+                let mut out = OutputDoc::from_bytes(name, "pdf", bytes);
+                out.warnings = warnings;
+                out
             })
             .collect()
     }
-}
-
-/// Effective output-page cap: the fixed [`MAX_OUTPUT_PAGES`] ceiling, lowered to the run's
-/// `limits.max_pages` when that is smaller.
-#[must_use]
-fn output_page_cap(max_pages: Option<u32>) -> u64 {
-    max_pages.map_or(MAX_OUTPUT_PAGES, |limit| {
-        MAX_OUTPUT_PAGES.min(u64::from(limit))
-    })
 }
 
 /// Fails when `total` pages across all parts exceed `min(MAX_OUTPUT_PAGES, max_pages)`.
@@ -141,15 +138,19 @@ pub fn run(
             let mut total_pages = 0_u64;
             for range in ranges {
                 ctx.check()?;
-                let expanded =
-                    expand_page_range_bounded(range, page_count, DuplicatePolicy::KeepInOrder)?;
+                let expanded = expand_page_range_capped(
+                    range,
+                    page_count,
+                    DuplicatePolicy::KeepInOrder,
+                    ctx.max_pages,
+                )?;
                 if expanded.is_empty() {
                     return Err(PdfError::InvalidParams(
                         "a split range expanded to 0 pages".to_owned(),
                     ));
                 }
                 total_pages = total_pages.saturating_add(expanded.len() as u64);
-                ensure_total_pages_within_cap(total_pages, None)?;
+                ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
                 out.push(expanded);
             }
             out
@@ -163,7 +164,7 @@ pub fn run(
                     "every split mode requires 'every' >= 1".to_owned(),
                 ));
             }
-            ensure_total_pages_within_cap(u64::from(page_count), None)?;
+            ensure_total_pages_within_cap(u64::from(page_count), ctx.max_pages)?;
             let all_pages: Vec<u32> = (1..=page_count).collect();
             all_pages
                 .chunks(every as usize)
@@ -191,12 +192,15 @@ pub fn run(
         SplitMode::Size => unreachable!("handled above"),
     };
 
-    ensure_total_pages_within_cap(groups.iter().map(|group| group.len() as u64).sum(), None)?;
+    ensure_total_pages_within_cap(
+        groups.iter().map(|group| group.len() as u64).sum(),
+        ctx.max_pages,
+    )?;
 
     let mut sink = PartSink::new(source);
     for group in groups {
         ctx.check()?;
-        let part_doc = build_page_set_doc(source, &group, SPLIT_PART_OPTIONS, ctx)?;
+        let part_doc = build_page_set_output(source, &group, SPLIT_PART_OPTIONS, ctx)?;
         sink.push(part_doc, ctx)?;
     }
 
@@ -308,6 +312,19 @@ fn compute_blank_separator_groups(
     Ok(groups)
 }
 
+fn serialize_part_output(
+    part: OutputDoc,
+    ctx: &ToolCtx,
+) -> Result<(Vec<u8>, Vec<String>), PdfError> {
+    let bytes = match part.payload {
+        OutputPayload::Pdf(mut doc) => {
+            writer::save_with_options(&mut doc, ctx, &part.save_options)?
+        }
+        OutputPayload::Bytes(raw) => raw,
+    };
+    Ok((bytes, part.warnings))
+}
+
 /// Greedily accumulates pages into parts whose serialized byte size (`writer::save`) is
 /// at most `max_bytes`. A single page that exceeds `max_bytes` on its own is emitted as a 1-page
 /// part so forward progress is always guaranteed.
@@ -318,24 +335,25 @@ fn split_by_size(
     max_bytes: u64,
     ctx: &ToolCtx,
 ) -> Result<Vec<OutputDoc>, PdfError> {
-    ensure_total_pages_within_cap(u64::from(page_count), None)?;
+    ensure_total_pages_within_cap(u64::from(page_count), ctx.max_pages)?;
     let mut sink = PartSink::new(source);
     let mut start_page = 1_u32;
 
     while start_page <= page_count {
         ctx.check()?;
         let single_range = [start_page];
-        let mut best_doc = build_page_set_doc(source, &single_range, SPLIT_PART_OPTIONS, ctx)?;
-        let single_serialized = writer::save(&mut best_doc, ctx)?;
+        let best_doc = build_page_set_output(source, &single_range, SPLIT_PART_OPTIONS, ctx)?;
+        let (single_serialized, single_warnings) = serialize_part_output(best_doc, ctx)?;
         let single_bytes = single_serialized.len() as u64;
 
         if single_bytes >= max_bytes || start_page == page_count {
-            sink.push_bytes(single_serialized)?;
+            sink.push_bytes_with_warnings(single_serialized, single_warnings)?;
             start_page += 1;
             continue;
         }
 
         let mut accepted_bytes = single_serialized;
+        let mut accepted_warnings = single_warnings;
         let mut last_ok_end = start_page;
         let mut step = 1_u32;
         let mut first_over_end: Option<u32> = None;
@@ -344,14 +362,16 @@ fn split_by_size(
             ctx.check()?;
             let candidate_end = last_ok_end.saturating_add(step).min(page_count);
             let candidate_pages: Vec<u32> = (start_page..=candidate_end).collect();
-            let mut candidate_doc =
-                build_page_set_doc(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
-            let candidate_serialized = writer::save(&mut candidate_doc, ctx)?;
+            let candidate_doc =
+                build_page_set_output(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
+            let (candidate_serialized, candidate_warnings) =
+                serialize_part_output(candidate_doc, ctx)?;
             let candidate_size = candidate_serialized.len() as u64;
 
             if candidate_size <= max_bytes {
                 last_ok_end = candidate_end;
                 accepted_bytes = candidate_serialized;
+                accepted_warnings = candidate_warnings;
                 if candidate_end == page_count {
                     break;
                 }
@@ -368,13 +388,15 @@ fn split_by_size(
                 ctx.check()?;
                 let mid = lo + (hi - lo) / 2;
                 let candidate_pages: Vec<u32> = (start_page..=mid).collect();
-                let mut candidate_doc =
-                    build_page_set_doc(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
-                let candidate_serialized = writer::save(&mut candidate_doc, ctx)?;
+                let candidate_doc =
+                    build_page_set_output(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
+                let (candidate_serialized, candidate_warnings) =
+                    serialize_part_output(candidate_doc, ctx)?;
                 let candidate_size = candidate_serialized.len() as u64;
                 if candidate_size <= max_bytes {
                     lo = mid;
                     accepted_bytes = candidate_serialized;
+                    accepted_warnings = candidate_warnings;
                 } else {
                     hi = mid;
                 }
@@ -382,7 +404,7 @@ fn split_by_size(
             last_ok_end = lo;
         }
 
-        sink.push_bytes(accepted_bytes)?;
+        sink.push_bytes_with_warnings(accepted_bytes, accepted_warnings)?;
         start_page = last_ok_end + 1;
     }
 

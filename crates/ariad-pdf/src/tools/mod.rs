@@ -373,9 +373,13 @@ pub fn run_tool(
         "pdf.metadata" => {
             dispatch_structural::<MetadataParams, _>(tool_id, inputs, params, ctx, metadata::run)
         }
-        "pdf.outline" => {
-            dispatch_structural::<OutlineParams, _>(tool_id, inputs, params, ctx, outline::run)
-        }
+        "pdf.outline" => dispatch_structural_inputs::<OutlineParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            outline::run_inputs,
+        ),
         "pdf.attachments" => dispatch_structural_inputs::<AttachmentsParams, _>(
             tool_id,
             inputs,
@@ -472,10 +476,17 @@ where
         )));
     }
 
+    let max_pages = inputs
+        .iter()
+        .filter_map(|i| i.limits.max_pages)
+        .chain(ctx.max_pages)
+        .min();
+    let local_ctx = ctx.clone().with_max_pages(max_pages);
+
     let mut opened_docs = Vec::with_capacity(inputs.len());
     for input in inputs {
-        ctx.check()?;
-        opened_docs.push(input.open_for_mutation(ctx)?);
+        local_ctx.check()?;
+        opened_docs.push(input.open_for_mutation(&local_ctx)?);
     }
 
     let first_stem = inputs
@@ -483,8 +494,8 @@ where
         .map(InputDoc::clean_stem)
         .unwrap_or_else(|| "document".to_owned());
 
-    let output_docs = runner(&opened_docs, &typed_params, ctx)?;
-    finalize_tool_output(tool_id, &opened_docs, &first_stem, output_docs, ctx)
+    let output_docs = runner(&opened_docs, &typed_params, &local_ctx)?;
+    finalize_tool_output(tool_id, &opened_docs, &first_stem, output_docs, &local_ctx)
 }
 
 /// Deserializes `params` into `P`, passes raw [`InputDoc`] handles to `runner` so tools that accept
@@ -510,13 +521,20 @@ where
         )));
     }
 
+    let max_pages = inputs
+        .iter()
+        .filter_map(|i| i.limits.max_pages)
+        .chain(ctx.max_pages)
+        .min();
+    let local_ctx = ctx.clone().with_max_pages(max_pages);
+
     let first_stem = inputs
         .first()
         .map(InputDoc::clean_stem)
         .unwrap_or_else(|| "document".to_owned());
 
-    let (opened_docs, output_docs) = runner(inputs, &typed_params, ctx)?;
-    finalize_tool_output(tool_id, &opened_docs, &first_stem, output_docs, ctx)
+    let (opened_docs, output_docs) = runner(inputs, &typed_params, &local_ctx)?;
+    finalize_tool_output(tool_id, &opened_docs, &first_stem, output_docs, &local_ctx)
 }
 
 /// Serializes [`OutputDoc`]s into [`OutputArtifact`]s via [`writer::save_with_options`] and

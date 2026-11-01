@@ -372,4 +372,64 @@ mod output_caps {
             "expected the decode budget error, got {err:?}"
         );
     }
+
+    #[test]
+    fn caller_max_pages_limit_and_tagged_structure_warning_are_enforced() {
+        let bytes = doc_with_shared_resource(4, 16);
+        let mut limits = Limits::local();
+        limits.max_pages = Some(6);
+        let constrained = InputDoc::with_limits("small", bytes, limits);
+
+        // 2 repetitions of 4 pages = 8 output pages > limits.max_pages (6).
+        for (tool_id, params) in [
+            ("pdf.extract_pages", json!({ "pages": "1-last,1-last" })),
+            ("pdf.reorder", json!({ "order": "1-last,1-last" })),
+            (
+                "pdf.split",
+                json!({ "mode": "ranges", "ranges": ["1-last", "1-last"] }),
+            ),
+        ] {
+            let err = run_tool(
+                tool_id,
+                std::slice::from_ref(&constrained),
+                &params,
+                &ToolCtx::default(),
+            )
+            .expect_err("output pages exceeding limits.max_pages must fail");
+            assert_eq!(
+                err,
+                PdfError::LimitExceeded(ReadError::TooManyPages {
+                    actual: 8,
+                    limit: 6,
+                }),
+                "unexpected error for {tool_id}"
+            );
+        }
+
+        // Splitting a tagged PDF emits the tagged-structure warning once on the ToolOutput.
+        let mut tagged_doc = Document::load_mem(&doc_with_shared_resource(2, 16)).unwrap();
+        let struct_root = tagged_doc.add_object(dictionary! { "Type" => "StructTreeRoot" });
+        let cat_id = tagged_doc
+            .trailer
+            .get(b"Root")
+            .unwrap()
+            .as_reference()
+            .unwrap();
+        if let Ok(cat) = tagged_doc.get_dictionary_mut(cat_id) {
+            cat.set("StructTreeRoot", Object::Reference(struct_root));
+            cat.set("MarkInfo", dictionary! { "Marked" => true });
+        }
+        let mut tagged_bytes = Vec::new();
+        tagged_doc.save_to(&mut tagged_bytes).unwrap();
+        let out = run_split(
+            &[InputDoc::new("tagged", tagged_bytes)],
+            &json!({ "mode": "every", "every": 1 }),
+        )
+        .expect("split tagged pdf");
+        assert_eq!(out.artifacts.len(), 2);
+        assert_eq!(
+            out.warnings,
+            vec!["tagged structure (StructTreeRoot) is not kept for a page subset; the output is not a tagged PDF".to_owned()]
+        );
+    }
 }

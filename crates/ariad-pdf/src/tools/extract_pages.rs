@@ -30,7 +30,7 @@ pub fn run(
         &params.pages,
         page_count,
         DuplicatePolicy::KeepInOrder,
-        None,
+        ctx.max_pages,
     )?;
     if selected.is_empty() {
         return Err(PdfError::InvalidParams(

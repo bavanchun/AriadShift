@@ -15,11 +15,11 @@ use crate::{
     tools::{
         OutputDoc,
         page_set::{
-            MAX_OUTPUT_PAGES, PageLabelRule, RenderedOutlineNode, SelectiveCopier,
-            build_page_labels_object, collect_pages_tree_ids, default_xyz_tail, doc_page_count,
-            filter_outlines_for_pages, inherited_page_attr, parse_outline_tree, parse_page_labels,
-            resolve_dict, resolve_inherited_page_rotation, resolve_merged_resources,
-            resolve_object, resolve_source_info_dict, write_outline_tree,
+            PageLabelRule, RenderedOutlineNode, SelectiveCopier, build_page_labels_object,
+            collect_pages_tree_ids, default_xyz_tail, doc_page_count, filter_outlines_for_pages,
+            inherited_page_attr, parse_outline_tree, parse_page_labels, resolve_dict,
+            resolve_inherited_page_rotation, resolve_merged_resources, resolve_object,
+            resolve_source_info_dict, write_outline_tree,
         },
     },
 };
@@ -55,10 +55,11 @@ pub fn run(
         }
         total_pages_u64 = total_pages_u64.saturating_add(u64::from(count));
     }
-    if total_pages_u64 > MAX_OUTPUT_PAGES {
+    let cap = super::page_set::output_page_cap(ctx.max_pages);
+    if total_pages_u64 > cap {
         return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
             actual: total_pages_u64,
-            limit: MAX_OUTPUT_PAGES as u32,
+            limit: u32::try_from(cap).unwrap_or(u32::MAX),
         }));
     }
     let total_pages = total_pages_u64 as u32;
