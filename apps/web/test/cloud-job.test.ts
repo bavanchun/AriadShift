@@ -1,14 +1,23 @@
 import {
   AriadApiError,
   type AriadClient,
+  createAriadClient,
+  DownloadIntegrityError,
+  type DownloadStreamTarget,
   type Job,
   type JobEvent,
   type OutputFile,
+  sha256Hex,
   type Upload,
 } from "@ariadshift/sdk";
 import type { JobHistoryEntry } from "@/components/account/job-history";
 import type { CloudApi, EventConnection } from "@/lib/cloud/api";
-import { CloudJob, type CloudJobDependencies } from "@/lib/cloud/cloud-job";
+import {
+  CloudJob,
+  type CloudJobDependencies,
+  downloadAndSaveOutput,
+  STREAM_DOWNLOAD_THRESHOLD_BYTES,
+} from "@/lib/cloud/cloud-job";
 import type { Transfer } from "@/lib/cloud/transfer";
 
 const NOW = Date.parse("2026-10-25T11:00:00Z");
@@ -492,5 +501,195 @@ describe("CloudJob", () => {
     state.final = { ...second, status: "succeeded" } as Job;
     await job.retry();
     expect(remembered.map((entry) => entry.id)).toEqual([JOB.id, second.id]);
+  });
+
+  it("streams large outputs without buffering through download() and deletes after completion", async () => {
+    const chunks = ["PK-", "streamed-", "docx-", "payload"];
+    const fullText = chunks.join("");
+    const digest = await sha256Hex(new TextEncoder().encode(fullText));
+    const largeOutput: OutputFile = {
+      ...OUTPUT,
+      size: STREAM_DOWNLOAD_THRESHOLD_BYTES + 1,
+      sha256: digest,
+    };
+
+    const state = fake();
+    state.client.outputs = async () => {
+      state.calls.push("outputs");
+      return { job_id: JOB.id, outputs: [largeOutput] };
+    };
+    state.client.downloadToStream = async (
+      output: OutputFile,
+      target: DownloadStreamTarget,
+      options: { verifySha256?: boolean },
+    ) => {
+      state.calls.push(`downloadToStream ${output.id} ${options.verifySha256}`);
+      for (const part of chunks) {
+        await target.write(new TextEncoder().encode(part));
+      }
+      await target.close();
+    };
+
+    const { job, saved } = controller(state);
+    await job.start({ to: "docx" });
+    state.calls.length = 0;
+
+    await job.download(largeOutput, true);
+    expect(saved).toEqual(["report.docx"]);
+    expect(state.calls).toEqual([
+      "outputs",
+      `downloadToStream ${largeOutput.id} true`,
+      `deleteJob ${JOB.id}`,
+    ]);
+    expect(job.state.phase).toBe("deleted");
+  });
+});
+
+describe("downloadAndSaveOutput", () => {
+  function streamResponse(...parts: string[]): Response {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        for (const part of parts) {
+          ctrl.enqueue(encoder.encode(part));
+        }
+        ctrl.close();
+      },
+    });
+    return new Response(stream, { status: 200 });
+  }
+
+  it("streams multi-chunk bodies to a writable target with the right bytes and digest", async () => {
+    const parts = ["chunk-one|", "chunk-two|", "chunk-three"];
+    const expectedText = parts.join("");
+    const expectedBytes = new TextEncoder().encode(expectedText);
+    const sha256 = await sha256Hex(expectedBytes);
+    const output: OutputFile = {
+      ...OUTPUT,
+      size: expectedBytes.byteLength,
+      sha256,
+    };
+    const client = createAriadClient({
+      baseUrl: "https://api.example.com",
+      fetch: async () => streamResponse(...parts),
+    });
+
+    const written: Uint8Array[] = [];
+    let closed = false;
+    let aborted = false;
+    const saved = await downloadAndSaveOutput(client, output, {
+      thresholdBytes: 4,
+      openTarget: async () => ({
+        target: {
+          write(chunk) {
+            written.push(chunk.slice());
+          },
+          close() {
+            closed = true;
+          },
+          abort() {
+            aborted = true;
+          },
+        },
+      }),
+    });
+
+    expect(saved).toBe(true);
+    expect(closed).toBe(true);
+    expect(aborted).toBe(false);
+    const merged = new Uint8Array(written.reduce((n, c) => n + c.byteLength, 0));
+    let offset = 0;
+    for (const c of written) {
+      merged.set(c, offset);
+      offset += c.byteLength;
+    }
+    expect(new TextDecoder().decode(merged)).toBe(expectedText);
+    expect(await sha256Hex(merged)).toBe(sha256);
+  });
+
+  it("aborts the writable on a corrupted chunk, throws DownloadIntegrityError and saves nothing", async () => {
+    const expectedBytes = new TextEncoder().encode("valid-document-bytes");
+    const sha256 = await sha256Hex(expectedBytes);
+    const output: OutputFile = {
+      ...OUTPUT,
+      size: expectedBytes.byteLength,
+      sha256,
+    };
+    const client = createAriadClient({
+      baseUrl: "https://api.example.com",
+      fetch: async () => streamResponse("valid-document-", "wrong"),
+    });
+
+    let partialFile: Uint8Array[] | null = [];
+    let closed = false;
+    const savedBlobs: string[] = [];
+
+    const error = await downloadAndSaveOutput(client, output, {
+      thresholdBytes: 4,
+      save: (_blob, name) => savedBlobs.push(name),
+      openTarget: async () => ({
+        target: {
+          write(chunk) {
+            partialFile?.push(chunk.slice());
+          },
+          close() {
+            closed = true;
+          },
+          abort() {
+            partialFile = null;
+          },
+        },
+      }),
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(DownloadIntegrityError);
+    expect(error).toMatchObject({
+      code: "download_failed",
+      reason: "download_hash_mismatch",
+    });
+    expect(closed).toBe(false);
+    expect(partialFile).toBeNull();
+    expect(savedBlobs).toEqual([]);
+  });
+
+  it("keeps the fallback path bounded and discards partial bytes on overflow or corruption", async () => {
+    const text = "bounded-fallback-payload";
+    const bytes = new TextEncoder().encode(text);
+    const sha256 = await sha256Hex(bytes);
+    const output: OutputFile = {
+      ...OUTPUT,
+      size: bytes.byteLength,
+      sha256,
+    };
+    const client = createAriadClient({
+      baseUrl: "https://api.example.com",
+      fetch: async () => streamResponse("bounded-", "fallback-", "payload"),
+    });
+
+    const savedBlobs: Blob[] = [];
+    await expect(
+      downloadAndSaveOutput(client, output, {
+        thresholdBytes: 4,
+        fallbackLimitBytes: 10,
+        openTarget: async () => null,
+        save: (blob) => savedBlobs.push(blob),
+      }),
+    ).rejects.toMatchObject({
+      status: 413,
+      code: "download_failed",
+    });
+    expect(savedBlobs).toEqual([]);
+
+    // Within the fallback bound, multi-chunk streaming succeeds and saves the verified blob.
+    await expect(
+      downloadAndSaveOutput(client, output, {
+        thresholdBytes: 4,
+        fallbackLimitBytes: 64,
+        openTarget: async () => null,
+        save: (blob) => savedBlobs.push(blob),
+      }),
+    ).resolves.toBe(true);
+    expect(savedBlobs).toHaveLength(1);
+    expect(await savedBlobs[0]?.text()).toBe(text);
   });
 });
