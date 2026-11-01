@@ -166,6 +166,8 @@ struct ReceiptFile {
     path: String,
     sha256: String,
     size: u64,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    executable: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -424,30 +426,44 @@ pub fn install(
     fs::create_dir(&staging).map_err(|error| PackError::io("could not create", &staging, error))?;
     let mut staging_cleanup = Cleanup::new(staging.clone());
 
+    let declared_executables = manifest_allowed_executables(&target);
+    let notice_paths: BTreeSet<String> = manifest
+        .notices
+        .iter()
+        .filter_map(|notice| relative_path(notice).ok().map(|parts| parts.join("/")))
+        .collect();
     let mut files: Vec<FileRecord> = Vec::new();
     let mut links: Vec<LinkRecord> = Vec::new();
     for (component, path) in target.components.iter().zip(&cached) {
         progress(PackEvent::Stage(format!("extract {}", component.name)));
-        let extracted = extract::extract(
+        let mut extracted = extract::extract(
             path,
             component,
             &staging,
             Bounds::for_component(component),
             cancel,
         )?;
+        for file in &mut extracted.files {
+            file.executable = if component.unpack.is_archive() {
+                let extracted_path = extract::join_parts(&staging, &file.path);
+                (file.executable
+                    || fs::symlink_metadata(&extracted_path)
+                        .is_ok_and(|metadata| is_executable_file(&extracted_path, &metadata)))
+                    && (!notice_paths.contains(&file.path)
+                        || declared_executables.contains(&file.path))
+            } else {
+                component.executable || declared_executables.contains(&file.path)
+            };
+        }
         files.extend(extracted.files);
         links.extend(extracted.links);
     }
     extract::check_links(&staging, &links)?;
     check_installed_paths(&staging, &manifest, &target)?;
 
-    let mut manifest_executables = manifest_allowed_executables(&target);
+    let mut manifest_executables = declared_executables;
     for file in &files {
-        let path = extract::join_parts(&staging, &file.path);
-        let is_exec = file.executable
-            || fs::symlink_metadata(&path)
-                .is_ok_and(|metadata| is_executable_file(&path, &metadata));
-        if is_exec {
+        if file.executable {
             manifest_executables.insert(file.path.clone());
         }
     }
@@ -459,6 +475,7 @@ pub fn install(
             path: file.path.clone(),
             sha256: file.sha256.clone(),
             size: file.size,
+            executable: file.executable,
         })
         .collect();
     let receipt_links: Vec<ReceiptLink> = links
@@ -985,8 +1002,9 @@ fn manifest_verified_entries(
     layout: &Layout,
     name: &str,
     version: &str,
-    manifest_text: &str,
+    manifest: &Manifest,
     target: &super::Target,
+    receipt: &Receipt,
 ) -> Result<VerifiedManifestEntries, PackError> {
     let record_path = layout.manifest_record(name, version);
     let record_text = fs::read_to_string(&record_path).map_err(|_| {
@@ -999,7 +1017,7 @@ fn manifest_verified_entries(
             format!("manifest file digest record is invalid: {error}"),
         )
     })?;
-    let expected_manifest_sha256 = sha256_bytes(manifest_text.as_bytes());
+    let expected_manifest_sha256 = sha256_bytes(receipt.manifest.as_bytes());
     if record.manifest_sha256 != expected_manifest_sha256 || record.target != target.triple {
         return Err(verification_failed(
             name,
@@ -1008,24 +1026,46 @@ fn manifest_verified_entries(
         ));
     }
 
-    #[cfg(unix)]
     let declared_executables = manifest_allowed_executables(target);
-    let recorded_file_paths: BTreeSet<&str> =
-        record.files.iter().map(|file| file.path.as_str()).collect();
-    #[cfg(unix)]
+    let notice_paths: BTreeSet<String> = manifest
+        .notices
+        .iter()
+        .filter_map(|notice| relative_path(notice).ok().map(|parts| parts.join("/")))
+        .collect();
+    let receipt_executable_files: BTreeSet<&str> = receipt
+        .files
+        .iter()
+        .filter(|file| file.executable)
+        .map(|file| file.path.as_str())
+        .collect();
+    let recorded_executable_files: BTreeSet<&str> = record
+        .files
+        .iter()
+        .filter(|file| file.executable && receipt_executable_files.contains(file.path.as_str()))
+        .map(|file| file.path.as_str())
+        .collect();
     let mut allowed_executables = declared_executables.clone();
-    #[cfg(not(unix))]
-    let mut allowed_executables = manifest_allowed_executables(target);
-    for exec in &record.executables {
-        if recorded_file_paths.contains(exec.as_str()) {
-            allowed_executables.insert(exec.clone());
+    if target
+        .components
+        .iter()
+        .any(|component| component.unpack.is_archive())
+    {
+        for exec in &record.executables {
+            if recorded_executable_files.contains(exec.as_str()) && !notice_paths.contains(exec) {
+                allowed_executables.insert(exec.clone());
+            }
         }
     }
 
-    let mut by_path: HashMap<&str, (&str, u64)> = record
+    let mut by_path: HashMap<&str, (&str, u64, bool)> = record
         .files
         .iter()
-        .map(|file| (file.path.as_str(), (file.sha256.as_str(), file.size)))
+        .map(|file| {
+            (
+                file.path.as_str(),
+                (file.sha256.as_str(), file.size, file.executable),
+            )
+        })
         .collect();
     for component in &target.components {
         if component.unpack == super::Unpack::File {
@@ -1033,7 +1073,12 @@ fn manifest_verified_entries(
                 .map(|parts| parts.join("/"))
                 .map_err(|error| verification_failed(name, version, error))?;
             match by_path.get(rel.as_str()) {
-                Some(&(sha256, size)) if sha256 == component.sha256 && size == component.size => {}
+                Some(&(sha256, size, executable))
+                    if sha256 == component.sha256
+                        && size == component.size
+                        && (!executable
+                            || component.executable
+                            || declared_executables.contains(&rel)) => {}
                 _ => {
                     return Err(verification_failed(
                         name,
@@ -1045,7 +1090,6 @@ fn manifest_verified_entries(
                     ));
                 }
             }
-            #[cfg(unix)]
             if !component.executable && !declared_executables.contains(&rel) {
                 allowed_executables.remove(&rel);
             }
@@ -1199,7 +1243,7 @@ pub(crate) fn resolve_installed(
         files: expected_files,
         links: expected_links,
         allowed_executables,
-    } = manifest_verified_entries(&layout, name, &version, &receipt.manifest, target)?;
+    } = manifest_verified_entries(&layout, name, &version, &manifest, target, &receipt)?;
     for exec_path in &scan.found_executables {
         if !allowed_executables.contains(exec_path) {
             return Err(verification_failed(
@@ -1415,8 +1459,8 @@ pub fn verify(
             .iter()
             .find(|target| target.triple == receipt.target)
         && let Err(error) =
-            manifest_verified_entries(&layout, name, &version, &receipt.manifest, target).and_then(
-                |verified| {
+            manifest_verified_entries(&layout, name, &version, &manifest, target, &receipt)
+                .and_then(|verified| {
                     check_receipt_matches_manifest_record(
                         name,
                         &version,
@@ -1424,8 +1468,7 @@ pub fn verify(
                         &verified.files,
                         &verified.links,
                     )
-                },
-            )
+                })
     {
         report.problems.push(error.to_string());
     }
