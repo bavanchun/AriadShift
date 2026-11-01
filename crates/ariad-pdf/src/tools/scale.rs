@@ -7,7 +7,7 @@ use ariad_core::tools::{page_range::DuplicatePolicy, params::scale::ScaleParams}
 use lopdf::{Document, Object, ObjectId, Stream, dictionary};
 
 use crate::{
-    document::{DecodeBudget, PdfDoc, ToolCtx},
+    document::{PdfDoc, ToolCtx},
     error::PdfError,
     paper::resolve_paper_size,
     tools::{
@@ -51,9 +51,8 @@ pub fn run(
     for page_num in selected_pages {
         ctx.check()?;
         let page_id = page_ids[(page_num - 1) as usize];
-        charge_page_contents(inner, page_id, &mut budget, ctx)?;
 
-        let form = xobject::page_to_form_xobject_in_place(inner, page_id, ctx)?;
+        let form = xobject::page_to_form_xobject_in_place(inner, page_id, &mut budget, ctx)?;
         let matrix = xobject::placement_matrix(form.bbox, form.rotation, target_rect, params.fit);
 
         let content_bytes = xobject::render_place_xobject(b"Fm0", matrix);
@@ -66,55 +65,6 @@ pub fn run(
     }
 
     Ok(vec![OutputDoc::unnamed_pdf(doc)])
-}
-
-/// Decodes and charges every content stream referenced by `page_id` against `budget`.
-pub(crate) fn charge_page_contents(
-    doc: &Document,
-    page_id: ObjectId,
-    budget: &mut DecodeBudget,
-    ctx: &ToolCtx,
-) -> Result<(), PdfError> {
-    ctx.check()?;
-    let Ok(page_dict) = doc.get_dictionary(page_id) else {
-        return Ok(());
-    };
-    let Ok(contents_obj) = page_dict.get(b"Contents") else {
-        return Ok(());
-    };
-
-    let mut stream_ids = Vec::new();
-    match contents_obj {
-        Object::Reference(id) => match doc.get_object(*id) {
-            Ok(Object::Array(arr)) => {
-                for item in arr {
-                    if let Ok(sid) = item.as_reference() {
-                        stream_ids.push(sid);
-                    }
-                }
-            }
-            _ => stream_ids.push(*id),
-        },
-        Object::Array(arr) => {
-            for item in arr {
-                if let Ok(sid) = item.as_reference() {
-                    stream_ids.push(sid);
-                }
-            }
-        }
-        Object::Stream(stream) => {
-            budget.decode(stream)?;
-        }
-        _ => {}
-    }
-
-    for sid in stream_ids {
-        ctx.check()?;
-        if let Ok(Object::Stream(stream)) = doc.get_object(sid) {
-            budget.decode(stream)?;
-        }
-    }
-    Ok(())
 }
 
 /// Applies the new `target_rect`, Form XObject resource `/Fm0`, and placement `content_id` to
@@ -240,7 +190,7 @@ pub(crate) fn transform_page_annotations(
 fn parse_annot_rect(doc: &Document, obj: &Object) -> Option<PdfRect> {
     let arr = match obj {
         Object::Array(a) => a,
-        Object::Reference(id) => doc.get_object(*id).ok()?.as_array().ok()?,
+        Object::Reference(id) => doc.objects.get(id)?.as_array().ok()?,
         _ => return None,
     };
     if arr.len() < 4 {
@@ -250,7 +200,7 @@ fn parse_annot_rect(doc: &Document, obj: &Object) -> Option<PdfRect> {
         match o {
             Object::Integer(i) => Some(*i as f64),
             Object::Real(r) => Some(f64::from(*r)),
-            Object::Reference(id) => match doc.get_object(*id).ok()? {
+            Object::Reference(id) => match doc.objects.get(id)? {
                 Object::Integer(i) => Some(*i as f64),
                 Object::Real(r) => Some(f64::from(*r)),
                 _ => None,

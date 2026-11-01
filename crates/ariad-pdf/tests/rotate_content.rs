@@ -29,7 +29,10 @@ fn assert_json_snapshot(name: &str, value: &Value) {
         "---\nsource: crates/ariad-pdf/tests/rotate_content.rs\nexpression: info_json\n---\n{body}\n"
     );
     let path = snapshot_path(name);
-    if std::env::var("BLESS_SNAPSHOTS").as_deref() == Ok("1") {
+    if std::env::var_os("UPDATE_SNAPSHOTS").is_some()
+        || std::env::var("INSTA_UPDATE").as_deref() == Ok("always")
+        || std::env::var("BLESS_SNAPSHOTS").as_deref() == Ok("1")
+    {
         std::fs::create_dir_all(path.parent().unwrap()).expect("create snapshots dir");
         std::fs::write(&path, &full).expect("write snapshot");
     }

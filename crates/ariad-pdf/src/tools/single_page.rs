@@ -16,7 +16,7 @@ use crate::{
     tools::{
         OutputDoc,
         rotate::{collect_page_ids, materialize_inferred_rotations},
-        scale::{charge_page_contents, transform_page_annotations},
+        scale::transform_page_annotations,
     },
     xobject::{self, FormXObject, PdfRect},
 };
@@ -49,8 +49,7 @@ pub fn run(
 
     for &page_id in &page_ids {
         ctx.check()?;
-        charge_page_contents(inner, page_id, &mut budget, ctx)?;
-        let form = xobject::page_to_form_xobject_in_place(inner, page_id, ctx)?;
+        let form = xobject::page_to_form_xobject_in_place(inner, page_id, &mut budget, ctx)?;
         let (visual_w, visual_h) = if matches!(form.rotation.rem_euclid(360), 90 | 270) {
             (form.bbox.height(), form.bbox.width())
         } else {

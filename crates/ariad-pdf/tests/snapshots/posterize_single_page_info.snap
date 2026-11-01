@@ -11,15 +11,15 @@ expression: info_json
   "linearized": false,
   "metadata": {
     "author": "AriadShift contributors",
-    "creation_date": "D:19700706193936Z",
+    "creation_date": "D:20050123165052Z",
     "creator": "AriadShift fixture generator",
     "language": "en",
-    "mod_date": "D:19700706193936Z",
+    "mod_date": "D:20050123165052Z",
     "producer": "AriadShift fixture generator",
     "title": "Annotated Archive Review Sheet"
   },
   "outline_count": 0,
-  "page_count": 4,
+  "page_count": 9,
   "pages": [
     {
       "blank": false,
@@ -53,6 +53,51 @@ expression: info_json
       "height_pt": 841.89,
       "orientation": "portrait",
       "page": 4,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 5,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 6,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 7,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 8,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 9,
       "paper": "A4",
       "rotation": 0,
       "width_pt": 595.28

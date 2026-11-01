@@ -4,15 +4,25 @@
 //! Used by `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.overlay`, `pdf.divide_pages`,
 //! `pdf.posterize`, `pdf.rotate_content`, and `pdf.single_page`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use ariad_core::tools::params::scale::ScaleFit;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 
-use crate::{document::ToolCtx, error::PdfError};
+use crate::{
+    document::{DecodeBudget, ToolCtx},
+    error::PdfError,
+};
 
 /// Maximum `/Parent` chain depth traversed when resolving inherited `/Page` attributes.
 const MAX_PAGE_TREE_DEPTH: usize = 64;
+
+/// Maximum number of indirect `Object::Reference` hops followed when resolving scalar,
+/// array, or dictionary values.
+const MAX_REF_HOPS: usize = 8;
+
+/// Maximum inline container nesting depth inside a single PDF object during deep copying.
+const MAX_INLINE_COPY_DEPTH: usize = 64;
 
 /// Default page box in PDF points (`US Letter`, `612 × 792 pt`).
 pub const DEFAULT_MEDIA_BOX: PdfRect = PdfRect {
@@ -374,7 +384,7 @@ pub fn resolve_page_box(doc: &Document, page_id: ObjectId, key: &[u8]) -> Option
         if !visited.insert(id) {
             break;
         }
-        let dict = doc.get_object(id).ok()?.as_dict().ok()?;
+        let dict = doc.objects.get(&id)?.as_dict().ok()?;
         if let Ok(obj) = dict.get(key)
             && let Some(rect) = parse_rect_object(doc, obj)
         {
@@ -415,7 +425,7 @@ pub fn resolve_page_rotation(doc: &Document, page_id: ObjectId) -> i32 {
         if !visited.insert(id) {
             break;
         }
-        let Ok(obj) = doc.get_object(id) else {
+        let Some(obj) = doc.objects.get(&id) else {
             break;
         };
         let Ok(dict) = obj.as_dict() else {
@@ -449,7 +459,7 @@ pub fn resolve_page_resources(doc: &Document, page_id: ObjectId) -> Dictionary {
         if !visited.insert(id) {
             break;
         }
-        let Ok(dict) = doc.get_object(id).and_then(Object::as_dict) else {
+        let Some(Ok(dict)) = doc.objects.get(&id).map(Object::as_dict) else {
             break;
         };
         if let Ok(res_obj) = dict.get(b"Resources")
@@ -485,6 +495,7 @@ pub fn resolve_page_resources(doc: &Document, page_id: ObjectId) -> Dictionary {
 #[derive(Clone, Debug, Default)]
 pub struct ObjectCopier {
     mapped: HashMap<ObjectId, ObjectId>,
+    pending: VecDeque<(ObjectId, ObjectId)>,
 }
 
 impl ObjectCopier {
@@ -503,29 +514,7 @@ impl ObjectCopier {
         object: &Object,
         ctx: &ToolCtx,
     ) -> Result<Object, PdfError> {
-        ctx.check()?;
-        match object {
-            Object::Reference(src_id) => {
-                let dst_id = self.copy_id(source_doc, target_doc, *src_id, ctx)?;
-                Ok(Object::Reference(dst_id))
-            }
-            Object::Array(items) => {
-                let mut out = Vec::with_capacity(items.len());
-                for item in items {
-                    out.push(self.copy_object(source_doc, target_doc, item, ctx)?);
-                }
-                Ok(Object::Array(out))
-            }
-            Object::Dictionary(dict) => {
-                let copied = self.copy_dictionary(source_doc, target_doc, dict, ctx)?;
-                Ok(Object::Dictionary(copied))
-            }
-            Object::Stream(stream) => {
-                let dict = self.copy_dictionary(source_doc, target_doc, &stream.dict, ctx)?;
-                Ok(Object::Stream(Stream::new(dict, stream.content.clone())))
-            }
-            other => Ok(other.clone()),
-        }
+        self.copy_object_with_budget(source_doc, target_doc, object, None, ctx)
     }
 
     /// Deep-copies a [`Dictionary`] from `source_doc` into `target_doc`.
@@ -536,14 +525,23 @@ impl ObjectCopier {
         dict: &Dictionary,
         ctx: &ToolCtx,
     ) -> Result<Dictionary, PdfError> {
-        let mut out = Dictionary::new();
-        for (k, v) in dict.iter() {
-            if k == b"Parent" {
-                continue;
-            }
-            out.set(k.clone(), self.copy_object(source_doc, target_doc, v, ctx)?);
-        }
-        Ok(out)
+        self.copy_dictionary_with_budget(source_doc, target_doc, dict, None, ctx)
+    }
+
+    /// Deep-copies a [`Dictionary`] from `source_doc` into `target_doc`, charging any copied
+    /// [`Stream`] objects against `budget` when provided.
+    pub(crate) fn copy_dictionary_with_budget(
+        &mut self,
+        source_doc: &Document,
+        target_doc: &mut Document,
+        dict: &Dictionary,
+        mut budget: Option<&mut DecodeBudget>,
+        ctx: &ToolCtx,
+    ) -> Result<Dictionary, PdfError> {
+        let copied =
+            self.copy_dictionary_inline(target_doc, dict, budget.as_deref_mut(), 0, ctx)?;
+        self.flush_pending(source_doc, target_doc, budget, ctx)?;
+        Ok(copied)
     }
 
     /// Copies the indirect object `src_id` from `source_doc` into `target_doc`, returning its new
@@ -555,20 +553,137 @@ impl ObjectCopier {
         src_id: ObjectId,
         ctx: &ToolCtx,
     ) -> Result<ObjectId, PdfError> {
+        let dst_id = self.enqueue_id(target_doc, src_id, ctx)?;
+        self.flush_pending(source_doc, target_doc, None, ctx)?;
+        Ok(dst_id)
+    }
+
+    fn copy_object_with_budget(
+        &mut self,
+        source_doc: &Document,
+        target_doc: &mut Document,
+        object: &Object,
+        mut budget: Option<&mut DecodeBudget>,
+        ctx: &ToolCtx,
+    ) -> Result<Object, PdfError> {
+        let copied = self.copy_object_inline(target_doc, object, budget.as_deref_mut(), 0, ctx)?;
+        self.flush_pending(source_doc, target_doc, budget, ctx)?;
+        Ok(copied)
+    }
+
+    fn enqueue_id(
+        &mut self,
+        target_doc: &mut Document,
+        src_id: ObjectId,
+        ctx: &ToolCtx,
+    ) -> Result<ObjectId, PdfError> {
         if let Some(&existing) = self.mapped.get(&src_id) {
             return Ok(existing);
         }
         ctx.check()?;
         let dst_id = target_doc.new_object_id();
         self.mapped.insert(src_id, dst_id);
-
-        if let Ok(src_obj) = source_doc.get_object(src_id) {
-            let copied = self.copy_object(source_doc, target_doc, src_obj, ctx)?;
-            target_doc.objects.insert(dst_id, copied);
-        } else {
-            target_doc.objects.insert(dst_id, Object::Null);
-        }
+        target_doc.objects.insert(dst_id, Object::Null);
+        self.pending.push_back((src_id, dst_id));
         Ok(dst_id)
+    }
+
+    fn flush_pending(
+        &mut self,
+        source_doc: &Document,
+        target_doc: &mut Document,
+        mut budget: Option<&mut DecodeBudget>,
+        ctx: &ToolCtx,
+    ) -> Result<(), PdfError> {
+        while let Some((src_id, dst_id)) = self.pending.pop_front() {
+            ctx.check()?;
+            if let Some(src_obj) = source_doc.objects.get(&src_id) {
+                let copied =
+                    self.copy_object_inline(target_doc, src_obj, budget.as_deref_mut(), 0, ctx)?;
+                target_doc.objects.insert(dst_id, copied);
+            } else {
+                target_doc.objects.insert(dst_id, Object::Null);
+            }
+        }
+        Ok(())
+    }
+
+    fn copy_object_inline(
+        &mut self,
+        target_doc: &mut Document,
+        object: &Object,
+        mut budget: Option<&mut DecodeBudget>,
+        depth: usize,
+        ctx: &ToolCtx,
+    ) -> Result<Object, PdfError> {
+        ctx.check()?;
+        if depth > MAX_INLINE_COPY_DEPTH {
+            return Err(PdfError::Malformed);
+        }
+        match object {
+            Object::Reference(src_id) => {
+                let dst_id = self.enqueue_id(target_doc, *src_id, ctx)?;
+                Ok(Object::Reference(dst_id))
+            }
+            Object::Array(items) => {
+                let mut out = Vec::with_capacity(items.len());
+                for item in items {
+                    out.push(self.copy_object_inline(
+                        target_doc,
+                        item,
+                        budget.as_deref_mut(),
+                        depth + 1,
+                        ctx,
+                    )?);
+                }
+                Ok(Object::Array(out))
+            }
+            Object::Dictionary(dict) => {
+                let copied = self.copy_dictionary_inline(
+                    target_doc,
+                    dict,
+                    budget.as_deref_mut(),
+                    depth + 1,
+                    ctx,
+                )?;
+                Ok(Object::Dictionary(copied))
+            }
+            Object::Stream(stream) => {
+                if let Some(b) = budget.as_deref_mut()
+                    && b.decode(stream)?.is_none()
+                {
+                    b.charge(stream.content.len())?;
+                }
+                let dict =
+                    self.copy_dictionary_inline(target_doc, &stream.dict, budget, depth + 1, ctx)?;
+                Ok(Object::Stream(Stream::new(dict, stream.content.clone())))
+            }
+            other => Ok(other.clone()),
+        }
+    }
+
+    fn copy_dictionary_inline(
+        &mut self,
+        target_doc: &mut Document,
+        dict: &Dictionary,
+        mut budget: Option<&mut DecodeBudget>,
+        depth: usize,
+        ctx: &ToolCtx,
+    ) -> Result<Dictionary, PdfError> {
+        if depth > MAX_INLINE_COPY_DEPTH {
+            return Err(PdfError::Malformed);
+        }
+        let mut out = Dictionary::new();
+        for (k, v) in dict.iter() {
+            if k == b"Parent" {
+                continue;
+            }
+            out.set(
+                k.clone(),
+                self.copy_object_inline(target_doc, v, budget.as_deref_mut(), depth + 1, ctx)?,
+            );
+        }
+        Ok(out)
     }
 }
 
@@ -588,12 +703,15 @@ pub struct FormXObject {
 }
 
 /// Converts `page_id` from `source_doc` (resolving inherited `/Resources`, `/Rotate`, `/MediaBox`,
-/// and `/CropBox`) into a `/Subtype /Form` XObject inside `target_doc`.
+/// and `/CropBox`) into a `/Subtype /Form` XObject inside `target_doc`, charging decoded content
+/// and copied resource streams against `budget`.
+#[allow(private_interfaces)]
 pub fn page_to_form_xobject(
     source_doc: &Document,
     page_id: ObjectId,
     target_doc: &mut Document,
     copier: &mut ObjectCopier,
+    budget: &mut DecodeBudget,
     ctx: &ToolCtx,
 ) -> Result<FormXObject, PdfError> {
     ctx.check()?;
@@ -601,10 +719,15 @@ pub fn page_to_form_xobject(
     let crop_box = resolve_page_crop_box(source_doc, page_id);
     let rotation = resolve_page_rotation(source_doc, page_id);
     let resolved_resources = resolve_page_resources(source_doc, page_id);
-    let copied_resources =
-        copier.copy_dictionary(source_doc, target_doc, &resolved_resources, ctx)?;
+    let copied_resources = copier.copy_dictionary_with_budget(
+        source_doc,
+        target_doc,
+        &resolved_resources,
+        Some(budget),
+        ctx,
+    )?;
 
-    let content_bytes = collect_page_content_bytes(source_doc, page_id, ctx)?;
+    let content_bytes = collect_page_content_bytes(source_doc, page_id, budget, ctx)?;
     let form_dict = dictionary! {
         "Type" => "XObject",
         "Subtype" => "Form",
@@ -625,10 +748,13 @@ pub fn page_to_form_xobject(
     })
 }
 
-/// Converts `page_id` into a `/Subtype /Form` XObject within the same [`Document`].
+/// Converts `page_id` into a `/Subtype /Form` XObject within the same [`Document`], decoding each
+/// content stream once through `budget`.
+#[allow(private_interfaces)]
 pub fn page_to_form_xobject_in_place(
     doc: &mut Document,
     page_id: ObjectId,
+    budget: &mut DecodeBudget,
     ctx: &ToolCtx,
 ) -> Result<FormXObject, PdfError> {
     ctx.check()?;
@@ -636,7 +762,7 @@ pub fn page_to_form_xobject_in_place(
     let crop_box = resolve_page_crop_box(doc, page_id);
     let rotation = resolve_page_rotation(doc, page_id);
     let resolved_resources = resolve_page_resources(doc, page_id);
-    let content_bytes = collect_page_content_bytes(doc, page_id, ctx)?;
+    let content_bytes = collect_page_content_bytes(doc, page_id, budget, ctx)?;
 
     let form_dict = dictionary! {
         "Type" => "XObject",
@@ -661,61 +787,67 @@ pub fn page_to_form_xobject_in_place(
 fn collect_page_content_bytes(
     doc: &Document,
     page_id: ObjectId,
+    budget: &mut DecodeBudget,
     ctx: &ToolCtx,
 ) -> Result<Vec<u8>, PdfError> {
     ctx.check()?;
-    let Ok(page_dict) = doc.get_object(page_id).and_then(Object::as_dict) else {
+    let Some(Ok(page_dict)) = doc.objects.get(&page_id).map(Object::as_dict) else {
         return Err(PdfError::Malformed);
     };
     let Ok(contents_obj) = page_dict.get(b"Contents") else {
         return Ok(Vec::new());
     };
 
-    let mut stream_ids = Vec::new();
-    match contents_obj {
-        Object::Reference(id) => match doc.get_object(*id) {
-            Ok(Object::Array(arr)) => {
-                for item in arr {
-                    if let Ok(sid) = item.as_reference() {
-                        stream_ids.push(sid);
-                    }
-                }
-            }
-            _ => stream_ids.push(*id),
-        },
-        Object::Array(arr) => {
+    let mut combined = Vec::new();
+    match resolve_object_bounded(doc, contents_obj) {
+        Some(Object::Stream(stream)) => {
+            append_decoded_stream(&mut combined, stream, budget)?;
+        }
+        Some(Object::Array(arr)) => {
             for item in arr {
-                if let Ok(sid) = item.as_reference() {
-                    stream_ids.push(sid);
+                ctx.check()?;
+                if let Some(Object::Stream(stream)) = resolve_object_bounded(doc, item) {
+                    append_decoded_stream(&mut combined, stream, budget)?;
                 }
             }
         }
         _ => {}
     }
-
-    let mut combined = Vec::new();
-    for sid in stream_ids {
-        ctx.check()?;
-        let Ok(Object::Stream(stream)) = doc.get_object(sid) else {
-            continue;
-        };
-        let decoded = stream
-            .decompressed_content()
-            .unwrap_or_else(|_| stream.content.clone());
-        if !combined.is_empty() && !combined.ends_with(b"\n") {
-            combined.push(b'\n');
-        }
-        combined.extend_from_slice(&decoded);
-    }
     Ok(combined)
 }
 
-fn parse_rect_object(doc: &Document, obj: &Object) -> Option<PdfRect> {
-    let arr = match obj {
-        Object::Reference(id) => doc.get_object(*id).ok()?.as_array().ok()?,
-        Object::Array(arr) => arr,
-        _ => return None,
+fn append_decoded_stream(
+    combined: &mut Vec<u8>,
+    stream: &Stream,
+    budget: &mut DecodeBudget,
+) -> Result<(), PdfError> {
+    let Some(decoded) = budget.decode(stream)? else {
+        return Err(PdfError::Malformed);
     };
+    if !combined.is_empty() && !combined.ends_with(b"\n") {
+        combined.push(b'\n');
+    }
+    combined.extend_from_slice(&decoded);
+    Ok(())
+}
+
+fn resolve_object_bounded<'a>(doc: &'a Document, mut obj: &'a Object) -> Option<&'a Object> {
+    for _ in 0..MAX_REF_HOPS {
+        match obj {
+            Object::Reference(id) => {
+                obj = doc.objects.get(id)?;
+            }
+            other => return Some(other),
+        }
+    }
+    match obj {
+        Object::Reference(_) => None,
+        other => Some(other),
+    }
+}
+
+fn parse_rect_object(doc: &Document, obj: &Object) -> Option<PdfRect> {
+    let arr = resolve_object_bounded(doc, obj)?.as_array().ok()?;
     if arr.len() < 4 {
         return None;
     }
@@ -731,34 +863,40 @@ fn parse_rect_object(doc: &Document, obj: &Object) -> Option<PdfRect> {
 }
 
 fn resolve_number(doc: &Document, obj: &Object) -> Option<f64> {
-    match obj {
+    match resolve_object_bounded(doc, obj)? {
         Object::Integer(i) => Some(*i as f64),
         Object::Real(r) => Some(f64::from(*r)),
-        Object::Reference(id) => resolve_number(doc, doc.get_object(*id).ok()?),
         _ => None,
     }
 }
 
 fn resolve_integer(doc: &Document, obj: &Object) -> Option<i64> {
-    match obj {
+    match resolve_object_bounded(doc, obj)? {
         Object::Integer(i) => Some(*i),
         Object::Real(r) => Some(*r as i64),
-        Object::Reference(id) => resolve_integer(doc, doc.get_object(*id).ok()?),
         _ => None,
     }
 }
 
 fn deref_dict<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Dictionary> {
-    match obj {
-        Object::Dictionary(d) => Some(d),
-        Object::Reference(id) => doc.get_object(*id).ok()?.as_dict().ok(),
-        _ => None,
-    }
+    resolve_object_bounded(doc, obj)?.as_dict().ok()
 }
 
 #[cfg(test)]
 mod tests {
+    use ariad_core::limits::Limits;
+
     use super::*;
+
+    fn test_budget(limit: u64) -> DecodeBudget {
+        DecodeBudget::from_limits(
+            1024,
+            &Limits {
+                max_decompressed_bytes: limit,
+                ..Limits::local()
+            },
+        )
+    }
 
     fn assert_rect_approx_eq(actual: PdfRect, expected: PdfRect) {
         assert!(
@@ -857,11 +995,13 @@ mod tests {
 
         let mut dst_doc = Document::with_version("1.5");
         let mut copier = ObjectCopier::new();
+        let mut budget = test_budget(1024 * 1024);
         let form = page_to_form_xobject(
             &src_doc,
             page_id,
             &mut dst_doc,
             &mut copier,
+            &mut budget,
             &ToolCtx::default(),
         )
         .expect("convert page to form xobject");
@@ -890,6 +1030,239 @@ mod tests {
         assert!(
             res.get(b"Font").is_ok(),
             "inherited Font resource must be copied"
+        );
+    }
+
+    #[test]
+    fn cyclic_and_deep_indirect_references_in_boxes_and_rotation_terminate_safely() {
+        let mut doc = Document::with_version("1.5");
+
+        // Self-referential cycle `10 0 obj 10 0 R` inside MediaBox, CropBox, and Rotate.
+        let cycle_id = doc.new_object_id();
+        doc.objects.insert(cycle_id, Object::Reference(cycle_id));
+
+        let cyclic_page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "MediaBox" => vec![
+                0.into(),
+                0.into(),
+                Object::Reference(cycle_id),
+                792.into(),
+            ],
+            "CropBox" => Object::Reference(cycle_id),
+            "Rotate" => Object::Reference(cycle_id),
+        });
+
+        assert_rect_approx_eq(
+            resolve_page_media_box(&doc, cyclic_page_id),
+            DEFAULT_MEDIA_BOX,
+        );
+        assert_rect_approx_eq(
+            resolve_page_crop_box(&doc, cyclic_page_id),
+            DEFAULT_MEDIA_BOX,
+        );
+        assert_eq!(resolve_page_rotation(&doc, cyclic_page_id), 0);
+
+        // 8-hop chain succeeds (`MAX_REF_HOPS == 8`), while a 9-hop chain falls back safely.
+        let mut hop8_id = doc.add_object(Object::Integer(500));
+        for _ in 0..7 {
+            hop8_id = doc.add_object(Object::Reference(hop8_id));
+        }
+        let hop9_id = doc.add_object(Object::Reference(hop8_id));
+
+        let mut rot8_id = doc.add_object(Object::Integer(180));
+        for _ in 0..7 {
+            rot8_id = doc.add_object(Object::Reference(rot8_id));
+        }
+        let rot9_id = doc.add_object(Object::Reference(rot8_id));
+
+        let page_8_hops = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "MediaBox" => vec![0.into(), 0.into(), Object::Reference(hop8_id), 700.into()],
+            "Rotate" => Object::Reference(rot8_id),
+        });
+        assert_rect_approx_eq(
+            resolve_page_media_box(&doc, page_8_hops),
+            PdfRect::new(0.0, 0.0, 500.0, 700.0),
+        );
+        assert_eq!(resolve_page_rotation(&doc, page_8_hops), 180);
+
+        let page_9_hops = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "MediaBox" => vec![0.into(), 0.into(), Object::Reference(hop9_id), 700.into()],
+            "Rotate" => Object::Reference(rot9_id),
+        });
+        assert_rect_approx_eq(resolve_page_media_box(&doc, page_9_hops), DEFAULT_MEDIA_BOX);
+        assert_eq!(resolve_page_rotation(&doc, page_9_hops), 0);
+    }
+
+    #[test]
+    fn object_copier_handles_deep_chains_cycles_and_charges_resource_stream_budget() {
+        let mut src_doc = Document::with_version("1.5");
+        let chain_len = 5_000_usize;
+        let first_id = src_doc.new_object_id();
+        let mut prev_id = first_id;
+        for idx in 1..chain_len {
+            let next_id = src_doc.new_object_id();
+            src_doc.objects.insert(
+                prev_id,
+                Object::Dictionary(dictionary! {
+                    "Step" => idx as i64,
+                    "Next" => Object::Reference(next_id),
+                }),
+            );
+            prev_id = next_id;
+        }
+        // Close the 5,000-node chain into a cycle back to `first_id`.
+        src_doc.objects.insert(
+            prev_id,
+            Object::Dictionary(dictionary! {
+                "Step" => chain_len as i64,
+                "Next" => Object::Reference(first_id),
+            }),
+        );
+
+        let mut dst_doc = Document::with_version("1.5");
+        let mut copier = ObjectCopier::new();
+        let copied_first = copier
+            .copy_id(&src_doc, &mut dst_doc, first_id, &ToolCtx::default())
+            .expect("copy 5000-node cyclic indirect chain iteratively without stack overflow");
+        assert_eq!(dst_doc.objects.len(), chain_len);
+
+        // Verify the back-edge points back to `copied_first`.
+        let copied_last = *copier.mapped.get(&prev_id).expect("last node mapped");
+        let last_dict = dst_doc.get_dictionary(copied_last).expect("last dict");
+        assert_eq!(
+            last_dict.get(b"Next").unwrap().as_reference().unwrap(),
+            copied_first
+        );
+
+        // Verify resource streams copied via `page_to_form_xobject` charge `DecodeBudget`.
+        let mut res_doc = Document::with_version("1.5");
+        let mut big_font_stream = Stream::new(dictionary! {}, vec![b'A'; 512]);
+        let _ = big_font_stream.compress();
+        let font_stream_id = res_doc.add_object(Object::Stream(big_font_stream));
+        let page_id = res_doc.add_object(dictionary! {
+            "Type" => "Page",
+            "MediaBox" => vec![0.into(), 0.into(), 200.into(), 200.into()],
+            "Resources" => dictionary! {
+                "Font" => dictionary! {
+                    "F1" => Object::Reference(font_stream_id),
+                },
+            },
+        });
+
+        let mut target_doc = Document::with_version("1.5");
+        let mut tiny_budget = test_budget(100);
+        let err = page_to_form_xobject(
+            &res_doc,
+            page_id,
+            &mut target_doc,
+            &mut ObjectCopier::new(),
+            &mut tiny_budget,
+            &ToolCtx::default(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, PdfError::LimitExceeded(_)),
+            "expected LimitExceeded when copied resource stream exceeds DecodeBudget, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn page_to_form_xobject_decodes_each_stream_once_handles_inline_streams_and_rejects_corrupt_filters()
+     {
+        let payload = b"BT /F1 12 Tf 72 720 Td (Single decode budget check!) Tj ET\n".to_vec();
+        assert_eq!(payload.len(), 59);
+
+        let mut doc = Document::with_version("1.5");
+        let mut compressed = Stream::new(dictionary! {}, payload.clone());
+        let _ = compressed.compress();
+        let content_id = doc.add_object(Object::Stream(compressed));
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => Object::Reference(content_id),
+        });
+
+        // A 100-byte budget accommodates a single 59-byte decode (59 <= 100) but would fail
+        // if decoded twice (118 > 100).
+        let mut budget = test_budget(100);
+        let mut dst_doc = Document::with_version("1.5");
+        let form = page_to_form_xobject(
+            &doc,
+            page_id,
+            &mut dst_doc,
+            &mut ObjectCopier::new(),
+            &mut budget,
+            &ToolCtx::default(),
+        )
+        .expect("single decode within 100-byte budget must succeed");
+        // Exactly 41 bytes of budget remain (`100 - 59 == 41`).
+        budget
+            .charge(41)
+            .expect("charging remaining 41 bytes must succeed");
+        assert!(matches!(budget.charge(1), Err(PdfError::LimitExceeded(_))));
+        let form_bytes = dst_doc
+            .get_object(form.id)
+            .unwrap()
+            .as_stream()
+            .unwrap()
+            .decompressed_content()
+            .unwrap();
+        assert_eq!(form_bytes, payload);
+
+        // Inline Object::Stream inside `/Contents` array is included alongside indirect streams.
+        let inline_part = Stream::new(dictionary! {}, b"q 1 0 0 1 0 0 cm".to_vec());
+        let indirect_id =
+            doc.add_object(Object::Stream(Stream::new(dictionary! {}, b"Q".to_vec())));
+        let inline_page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => Object::Array(vec![
+                Object::Stream(inline_part),
+                Object::Reference(indirect_id),
+            ]),
+        });
+        let mut inline_budget = test_budget(1024);
+        let inline_form = page_to_form_xobject_in_place(
+            &mut doc,
+            inline_page_id,
+            &mut inline_budget,
+            &ToolCtx::default(),
+        )
+        .expect("convert page with inline stream in Contents array");
+        let combined = doc
+            .get_object(inline_form.id)
+            .unwrap()
+            .as_stream()
+            .unwrap()
+            .decompressed_content()
+            .unwrap();
+        assert_eq!(combined, b"q 1 0 0 1 0 0 cm\nQ");
+
+        // Corrupt filtered stream (`budget.decode` -> `Ok(None)`) returns `PdfError::Malformed`
+        // instead of splicing raw compressed bytes.
+        let corrupt_stream = Stream::new(
+            dictionary! { "Filter" => "BrotliDecode" },
+            b"not-valid-brotli-stream".to_vec(),
+        );
+        let corrupt_id = doc.add_object(Object::Stream(corrupt_stream));
+        let corrupt_page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => Object::Reference(corrupt_id),
+        });
+        let err = page_to_form_xobject_in_place(
+            &mut doc,
+            corrupt_page_id,
+            &mut test_budget(1024),
+            &ToolCtx::default(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, PdfError::Malformed),
+            "expected Malformed for corrupt FlateDecode stream, got {err:?}"
         );
     }
 }
