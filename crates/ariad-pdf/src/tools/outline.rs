@@ -15,14 +15,15 @@ use crate::{
     document::{DecodeBudget, PdfDoc, ToolCtx},
     error::PdfError,
     naming,
-    tools::{OutputDoc, metadata::catalog_object_id},
+    tools::{
+        InputDoc, OutputDoc, metadata::catalog_object_id, page_set::collect_named_destinations,
+    },
     writer,
 };
 
 const MAX_TREE_DEPTH: usize = 64;
 const MAX_REF_HOPS: usize = 16;
 const MAX_OUTLINE_NODES: usize = 100_000;
-const MAX_NAME_TREE_NODES: usize = 10_000;
 
 const PDFDOC_LOW: [char; 32] = [
     '\u{2022}', '\u{2020}', '\u{2021}', '\u{2026}', '\u{2014}', '\u{2013}', '\u{0192}', '\u{2044}',
@@ -31,11 +32,45 @@ const PDFDOC_LOW: [char; 32] = [
     '\u{0178}', '\u{017D}', '\u{0131}', '\u{0142}', '\u{0153}', '\u{0161}', '\u{017E}', '\u{FFFD}',
 ];
 
-/// Exports, imports, clears, or generates bookmarks (`/Outlines`) in a PDF document.
+/// Exports, imports, clears, or generates bookmarks (`/Outlines`) in a PDF document under
+/// [`Limits::local()`] reader limits.
 pub fn run(
     inputs: &[PdfDoc],
     params: &OutlineParams,
     ctx: &ToolCtx,
+) -> Result<Vec<OutputDoc>, PdfError> {
+    run_with_limits(inputs, params, ctx, &Limits::local())
+}
+
+/// Runs `pdf.outline` on a raw [`InputDoc`], applying the input's [`Limits`] to the heading
+/// reader used by `from_headings` in addition to the limits enforced when the document is opened.
+pub fn run_inputs(
+    inputs: &[InputDoc],
+    params: &OutlineParams,
+    ctx: &ToolCtx,
+) -> Result<(Vec<PdfDoc>, Vec<OutputDoc>), PdfError> {
+    ctx.check()?;
+    if inputs.len() != 1 {
+        return Err(PdfError::InvalidParams(format!(
+            "pdf.outline requires exactly 1 input PDF, got {}",
+            inputs.len()
+        )));
+    }
+    let opened = inputs[0].open_for_mutation(ctx)?;
+    let outputs = run_with_limits(
+        std::slice::from_ref(&opened),
+        params,
+        ctx,
+        &inputs[0].limits,
+    )?;
+    Ok((vec![opened], outputs))
+}
+
+fn run_with_limits(
+    inputs: &[PdfDoc],
+    params: &OutlineParams,
+    ctx: &ToolCtx,
+    limits: &Limits,
 ) -> Result<Vec<OutputDoc>, PdfError> {
     ctx.check()?;
     if inputs.len() != 1 {
@@ -55,10 +90,14 @@ pub fn run(
                     "pdf.outline `json` must not be provided when `action` is `export`".to_owned(),
                 ));
             }
-            let nodes = export_outlines(pdf.inner(), ctx)?;
-            let json_val = nodes_to_json(&nodes, 0);
+            let exported = export_outlines(pdf.inner(), ctx)?;
+            let json_val = nodes_to_json(&exported.nodes, 0);
             let out_name = naming::single_output_name(&stem, "outline", "json");
-            Ok(vec![OutputDoc::from_json(out_name, json_val)?])
+            let output = exported.warnings.into_iter().fold(
+                OutputDoc::from_json(out_name, json_val)?,
+                |output, warning| output.with_warning(warning),
+            );
+            Ok(vec![output])
         }
         OutlineAction::Import => {
             let Some(nodes) = &params.json else {
@@ -98,7 +137,7 @@ pub fn run(
                 ));
             }
             let mut out_pdf = pdf.clone();
-            let nodes = detect_heading_outlines(&out_pdf, ctx)?;
+            let nodes = detect_heading_outlines(&out_pdf, limits, ctx)?;
             write_outlines(out_pdf.inner_mut()?, &nodes, ctx)?;
             Ok(vec![OutputDoc::from_pdf(
                 naming::default_pdf_output_name(&stem, "pdf.outline"),
@@ -163,20 +202,39 @@ fn validate_outline_nodes(
     Ok(())
 }
 
+/// Bookmarks read from a document plus warnings about anything the walk had to leave out.
+pub(crate) struct ExportedOutlines {
+    pub(crate) nodes: Vec<OutlineNode>,
+    pub(crate) warnings: Vec<String>,
+}
+
+#[derive(Default)]
+struct ExportState {
+    visited: BTreeSet<ObjectId>,
+    node_count: usize,
+    last_exported: Option<(String, u32)>,
+    depth_cut: Option<(String, u32)>,
+    count_cut: Option<(String, u32)>,
+}
+
 pub(crate) fn export_outlines(
     doc: &lopdf::Document,
     ctx: &ToolCtx,
-) -> Result<Vec<OutlineNode>, PdfError> {
+) -> Result<ExportedOutlines, PdfError> {
     ctx.check()?;
+    let empty = || ExportedOutlines {
+        nodes: Vec::new(),
+        warnings: Vec::new(),
+    };
     let catalog_id = catalog_object_id(doc)?;
     let Ok(Object::Dictionary(catalog)) = doc.get_object(catalog_id) else {
-        return Ok(Vec::new());
+        return Ok(empty());
     };
     let Ok(outlines_obj) = catalog.get(b"Outlines") else {
-        return Ok(Vec::new());
+        return Ok(empty());
     };
     let Some(outlines_dict) = resolve_dict(doc, outlines_obj) else {
-        return Ok(Vec::new());
+        return Ok(empty());
     };
 
     let page_id_to_num: BTreeMap<ObjectId, u32> = doc
@@ -184,30 +242,60 @@ pub(crate) fn export_outlines(
         .into_iter()
         .map(|(num, id)| (id, num))
         .collect();
+    let named_dests = collect_named_destinations(doc, ctx)?;
 
-    let mut visited = BTreeSet::new();
-    let mut node_count = 0usize;
-    read_outline_siblings(
+    let mut state = ExportState::default();
+    let nodes = read_outline_siblings(
         doc,
         outlines_dict.get(b"First").ok(),
-        &page_id_to_num,
-        &mut visited,
+        &DestLookup {
+            page_id_to_num: &page_id_to_num,
+            named_dests: &named_dests,
+        },
+        &mut state,
         0,
-        &mut node_count,
+        None,
         ctx,
-    )
+    )?;
+
+    let mut warnings = Vec::new();
+    if let Some((title, page)) = &state.depth_cut {
+        warnings.push(format!(
+            "outline export truncated: bookmarks nested deeper than {MAX_TREE_DEPTH} levels \
+             were not exported (the children of {title:?} on page {page} were dropped)"
+        ));
+    }
+    if let Some((title, page)) = &state.count_cut {
+        warnings.push(format!(
+            "outline export truncated: stopped after {MAX_OUTLINE_NODES} bookmarks; \
+             the bookmarks that follow {title:?} (page {page}) were not exported"
+        ));
+    }
+    Ok(ExportedOutlines { nodes, warnings })
+}
+
+/// Page numbers and named destinations used to resolve outline targets.
+struct DestLookup<'a> {
+    page_id_to_num: &'a BTreeMap<ObjectId, u32>,
+    named_dests: &'a BTreeMap<Vec<u8>, Vec<Object>>,
 }
 
 fn read_outline_siblings(
     doc: &lopdf::Document,
     first_obj: Option<&Object>,
-    page_id_to_num: &BTreeMap<ObjectId, u32>,
-    visited: &mut BTreeSet<ObjectId>,
+    lookup: &DestLookup<'_>,
+    state: &mut ExportState,
     depth: usize,
-    node_count: &mut usize,
+    parent: Option<(&str, u32)>,
     ctx: &ToolCtx,
 ) -> Result<Vec<OutlineNode>, PdfError> {
     if depth >= MAX_TREE_DEPTH {
+        if first_obj.and_then(|o| resolve_dict(doc, o)).is_some()
+            && state.depth_cut.is_none()
+            && let Some((title, page)) = parent
+        {
+            state.depth_cut = Some((title.to_owned(), page));
+        }
         return Ok(Vec::new());
     }
     let mut nodes = Vec::new();
@@ -215,32 +303,36 @@ fn read_outline_siblings(
 
     while let Some(obj) = current {
         ctx.check()?;
-        if *node_count >= MAX_OUTLINE_NODES {
-            break;
-        }
         if let Object::Reference(id) = obj
-            && !visited.insert(*id)
+            && !state.visited.insert(*id)
         {
             break;
         }
         let Some(dict) = resolve_dict(doc, obj) else {
             break;
         };
-        *node_count = node_count.saturating_add(1);
+        if state.node_count >= MAX_OUTLINE_NODES {
+            if state.count_cut.is_none() {
+                state.count_cut = Some(state.last_exported.clone().unwrap_or_default());
+            }
+            break;
+        }
+        state.node_count = state.node_count.saturating_add(1);
         let title = dict
             .get(b"Title")
             .ok()
             .and_then(|o| resolve_object(doc, o))
             .and_then(decode_pdf_object_string)
             .unwrap_or_default();
-        let page = resolve_outline_item_page(doc, dict, page_id_to_num, ctx)?.unwrap_or(1);
+        let page = resolve_outline_item_page(doc, dict, lookup, ctx)?.unwrap_or(1);
+        state.last_exported = Some((title.clone(), page));
         let children = read_outline_siblings(
             doc,
             dict.get(b"First").ok(),
-            page_id_to_num,
-            visited,
+            lookup,
+            state,
             depth + 1,
-            node_count,
+            Some((&title, page)),
             ctx,
         )?;
         nodes.push(OutlineNode {
@@ -257,42 +349,24 @@ fn read_outline_siblings(
 fn resolve_outline_item_page(
     doc: &lopdf::Document,
     item_dict: &Dictionary,
-    page_id_to_num: &BTreeMap<ObjectId, u32>,
+    lookup: &DestLookup<'_>,
     ctx: &ToolCtx,
 ) -> Result<Option<u32>, PdfError> {
     if let Ok(dest) = item_dict.get(b"Dest") {
         let mut visited_objs = BTreeSet::new();
-        let mut visited_names = BTreeSet::new();
-        if let Some(page) = resolve_dest_page(
-            doc,
-            dest,
-            page_id_to_num,
-            &mut visited_objs,
-            &mut visited_names,
-            0,
-            ctx,
-        )? {
+        if let Some(page) = resolve_dest_page(doc, dest, lookup, &mut visited_objs, 0, ctx)? {
             return Ok(Some(page));
         }
     }
     if let Ok(action_obj) = item_dict.get(b"A") {
         let mut visited_objs = BTreeSet::new();
-        let mut visited_names = BTreeSet::new();
         if let Object::Reference(id) = action_obj {
             visited_objs.insert(*id);
         }
         if let Some(action_dict) = resolve_dict(doc, action_obj)
             && let Ok(dest) = action_dict.get(b"D")
         {
-            return resolve_dest_page(
-                doc,
-                dest,
-                page_id_to_num,
-                &mut visited_objs,
-                &mut visited_names,
-                0,
-                ctx,
-            );
+            return resolve_dest_page(doc, dest, lookup, &mut visited_objs, 0, ctx);
         }
     }
     Ok(None)
@@ -301,9 +375,8 @@ fn resolve_outline_item_page(
 fn resolve_dest_page(
     doc: &lopdf::Document,
     dest_obj: &Object,
-    page_id_to_num: &BTreeMap<ObjectId, u32>,
+    lookup: &DestLookup<'_>,
     visited_objs: &mut BTreeSet<ObjectId>,
-    visited_names: &mut BTreeSet<Vec<u8>>,
     depth: usize,
     ctx: &ToolCtx,
 ) -> Result<Option<u32>, PdfError> {
@@ -329,167 +402,29 @@ fn resolve_dest_page(
     }
 
     match resolved {
-        Object::Array(items) => {
-            let Some(first) = items.first() else {
-                return Ok(None);
-            };
-            match first {
-                Object::Reference(page_id) => Ok(page_id_to_num.get(page_id).copied()),
-                Object::Integer(zero_based) if *zero_based >= 0 => Ok(u32::try_from(*zero_based)
-                    .ok()
-                    .and_then(|n| n.checked_add(1))),
-                _ => Ok(None),
-            }
-        }
+        Object::Array(items) => Ok(dest_array_page(items, lookup.page_id_to_num)),
         Object::Dictionary(dict) => {
             let Ok(d) = dict.get(b"D") else {
                 return Ok(None);
             };
-            resolve_dest_page(
-                doc,
-                d,
-                page_id_to_num,
-                visited_objs,
-                visited_names,
-                depth + 1,
-                ctx,
-            )
+            resolve_dest_page(doc, d, lookup, visited_objs, depth + 1, ctx)
         }
-        Object::String(name, _) | Object::Name(name) => resolve_named_dest_page(
-            doc,
-            name,
-            page_id_to_num,
-            visited_objs,
-            visited_names,
-            depth + 1,
-            ctx,
-        ),
+        Object::String(name, _) | Object::Name(name) => Ok(lookup
+            .named_dests
+            .get(name.as_slice())
+            .and_then(|items| dest_array_page(items, lookup.page_id_to_num))),
         _ => Ok(None),
     }
 }
 
-fn resolve_named_dest_page(
-    doc: &lopdf::Document,
-    name: &[u8],
-    page_id_to_num: &BTreeMap<ObjectId, u32>,
-    visited_objs: &mut BTreeSet<ObjectId>,
-    visited_names: &mut BTreeSet<Vec<u8>>,
-    depth: usize,
-    ctx: &ToolCtx,
-) -> Result<Option<u32>, PdfError> {
-    ctx.check()?;
-    if depth >= MAX_TREE_DEPTH || !visited_names.insert(name.to_vec()) {
-        return Ok(None);
+fn dest_array_page(items: &[Object], page_id_to_num: &BTreeMap<ObjectId, u32>) -> Option<u32> {
+    match items.first()? {
+        Object::Reference(page_id) => page_id_to_num.get(page_id).copied(),
+        Object::Integer(zero_based) if *zero_based >= 0 => u32::try_from(*zero_based)
+            .ok()
+            .and_then(|n| n.checked_add(1)),
+        _ => None,
     }
-
-    let Ok(catalog_id) = catalog_object_id(doc) else {
-        return Ok(None);
-    };
-    let Some(catalog) = doc
-        .get_object(catalog_id)
-        .ok()
-        .and_then(|o| o.as_dict().ok())
-    else {
-        return Ok(None);
-    };
-    if let Ok(dests_obj) = catalog.get(b"Dests")
-        && let Some(dests_dict) = resolve_dict(doc, dests_obj)
-        && let Ok(target) = dests_dict.get(name)
-    {
-        return resolve_dest_page(
-            doc,
-            target,
-            page_id_to_num,
-            visited_objs,
-            visited_names,
-            depth + 1,
-            ctx,
-        );
-    }
-    if let Ok(names_obj) = catalog.get(b"Names")
-        && let Some(names_dict) = resolve_dict(doc, names_obj)
-        && let Ok(dests_tree_obj) = names_dict.get(b"Dests")
-        && let Some(dests_tree) = resolve_dict(doc, dests_tree_obj)
-    {
-        let mut visited_tree_nodes = BTreeSet::new();
-        if let Object::Reference(root_id) = dests_tree_obj {
-            visited_tree_nodes.insert(*root_id);
-        }
-        let mut visited_count = 0usize;
-        if let Some(target) = lookup_name_tree(
-            doc,
-            dests_tree,
-            name,
-            &mut visited_tree_nodes,
-            &mut visited_count,
-            0,
-            ctx,
-        )? {
-            return resolve_dest_page(
-                doc,
-                target,
-                page_id_to_num,
-                visited_objs,
-                visited_names,
-                depth + 1,
-                ctx,
-            );
-        }
-    }
-    Ok(None)
-}
-
-fn lookup_name_tree<'a>(
-    doc: &'a lopdf::Document,
-    node: &'a Dictionary,
-    target_name: &[u8],
-    visited_nodes: &mut BTreeSet<ObjectId>,
-    visited_count: &mut usize,
-    depth: usize,
-    ctx: &ToolCtx,
-) -> Result<Option<&'a Object>, PdfError> {
-    ctx.check()?;
-    if depth >= MAX_TREE_DEPTH || *visited_count >= MAX_NAME_TREE_NODES {
-        return Ok(None);
-    }
-    *visited_count = visited_count.saturating_add(1);
-
-    if let Ok(names_obj) = node.get(b"Names")
-        && let Some(Object::Array(arr)) = resolve_object(doc, names_obj)
-    {
-        for [k_obj, v_obj] in arr.as_chunks::<2>().0 {
-            if let Some(Object::String(k, _) | Object::Name(k)) = resolve_object(doc, k_obj)
-                && k.as_slice() == target_name
-            {
-                return Ok(Some(v_obj));
-            }
-        }
-    }
-    if let Ok(kids_obj) = node.get(b"Kids")
-        && let Some(Object::Array(kids)) = resolve_object(doc, kids_obj)
-    {
-        for kid in kids {
-            if let Object::Reference(kid_id) = kid
-                && !visited_nodes.insert(*kid_id)
-            {
-                continue;
-            }
-            if let Some(kid_dict) = resolve_dict(doc, kid)
-                && let Some(found) = lookup_name_tree(
-                    doc,
-                    kid_dict,
-                    target_name,
-                    visited_nodes,
-                    visited_count,
-                    depth + 1,
-                    ctx,
-                )?
-            {
-                return Ok(Some(found));
-            }
-        }
-    }
-    Ok(None)
 }
 
 fn clear_outlines(doc: &mut lopdf::Document) -> Result<(), PdfError> {
@@ -604,11 +539,11 @@ fn build_outline_siblings(
     Ok((ids.first().copied(), ids.last().copied(), total_count))
 }
 
-fn budget_decompressed_limit(budget: DecodeBudget) -> u64 {
+fn budget_decompressed_limit(budget: DecodeBudget, fallback: u64) -> u64 {
     let mut probe = budget;
     match probe.charge(usize::MAX) {
         Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge { limit })) => limit,
-        _ => Limits::local().max_decompressed_bytes,
+        _ => fallback,
     }
 }
 
@@ -668,7 +603,11 @@ fn charge_page_contents(
     Ok(())
 }
 
-fn detect_heading_outlines(pdf: &PdfDoc, ctx: &ToolCtx) -> Result<Vec<OutlineNode>, PdfError> {
+fn detect_heading_outlines(
+    pdf: &PdfDoc,
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<Vec<OutlineNode>, PdfError> {
     ctx.check()?;
     let mut budget = pdf.decode_budget();
     for page_id in pdf.inner().page_iter() {
@@ -676,8 +615,13 @@ fn detect_heading_outlines(pdf: &PdfDoc, ctx: &ToolCtx) -> Result<Vec<OutlineNod
         charge_page_contents(pdf.inner(), page_id, &mut budget, ctx)?;
     }
 
-    let mut reader_limits = Limits::local();
-    reader_limits.max_decompressed_bytes = budget_decompressed_limit(pdf.decode_budget());
+    // Every reader limit comes from the caller. The decoded-bytes cap is the tighter per-document
+    // budget, and the input-size cap was already enforced when the document was opened (the
+    // re-serialised copy below may be slightly larger than the original bytes).
+    let mut reader_limits = limits.clone();
+    reader_limits.max_decompressed_bytes =
+        budget_decompressed_limit(pdf.decode_budget(), limits.max_decompressed_bytes);
+    reader_limits.max_input_bytes = None;
 
     let mut temp_pdf = pdf.clone();
     let bytes = writer::save(&mut temp_pdf, ctx)?;

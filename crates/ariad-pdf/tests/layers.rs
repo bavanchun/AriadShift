@@ -605,3 +605,254 @@ fn layers_remove_preserves_nested_order_cleans_rbgroups_locked_configs_and_inher
         );
     }
 }
+
+/// Builds a document with two layers (`KeepLayer`, `RemoveLayer`) whose `/D /Order` is
+/// `[20 0 R 20 0 R]` over a chain of `levels` shared arrays that each reference the next one twice
+/// and end in `[KeepLayer RemoveLayer]`. Returns the bytes plus the ids of the two layers.
+fn dag_order_pdf(levels: usize) -> (Vec<u8>, lopdf::ObjectId, lopdf::ObjectId) {
+    use lopdf::{Object, dictionary};
+
+    let mut doc = Document::load_mem(&fixture_bytes("rotated-pages.pdf")).expect("load base pdf");
+    let keep_id = doc.add_object(dictionary! {
+        "Type" => "OCG",
+        "Name" => Object::string_literal("KeepLayer"),
+    });
+    let remove_id = doc.add_object(dictionary! {
+        "Type" => "OCG",
+        "Name" => Object::string_literal("RemoveLayer"),
+    });
+
+    let mut current = doc.add_object(Object::Array(vec![
+        Object::Reference(keep_id),
+        Object::Reference(remove_id),
+    ]));
+    for _ in 1..levels {
+        current = doc.add_object(Object::Array(vec![
+            Object::Reference(current),
+            Object::Reference(current),
+        ]));
+    }
+
+    let catalog_id = doc
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .expect("catalog id");
+    if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(catalog_id) {
+        cat.set(
+            "OCProperties",
+            dictionary! {
+                "OCGs" => vec![Object::Reference(keep_id), Object::Reference(remove_id)],
+                "D" => dictionary! {
+                    "BaseState" => "ON",
+                    "Order" => vec![Object::Reference(current), Object::Reference(current)],
+                },
+            },
+        );
+    }
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save dag order pdf");
+    (bytes, keep_id, remove_id)
+}
+
+/// Walks `/Order` the way a viewer would, following array references once per distinct object,
+/// and returns every layer reference that is reachable together with the number of array objects.
+fn reachable_order_layers(doc: &Document) -> (std::collections::BTreeSet<lopdf::ObjectId>, usize) {
+    use lopdf::Object;
+
+    let oc_props = doc
+        .catalog()
+        .expect("catalog")
+        .get(b"OCProperties")
+        .and_then(Object::as_dict)
+        .expect("OCProperties");
+    let order = oc_props
+        .get(b"D")
+        .and_then(Object::as_dict)
+        .expect("/D")
+        .get(b"Order")
+        .and_then(Object::as_array)
+        .expect("/D /Order");
+
+    let mut layers = std::collections::BTreeSet::new();
+    let mut seen_arrays = std::collections::BTreeSet::new();
+    let mut stack: Vec<&Object> = order.iter().collect();
+    while let Some(item) = stack.pop() {
+        match item {
+            Object::Array(items) => stack.extend(items.iter()),
+            Object::Reference(id) => match doc.get_object(*id) {
+                Ok(Object::Array(items)) => {
+                    if seen_arrays.insert(*id) {
+                        stack.extend(items.iter());
+                    }
+                }
+                _ => {
+                    layers.insert(*id);
+                }
+            },
+            _ => {}
+        }
+    }
+    (layers, seen_arrays.len())
+}
+
+fn run_on_small_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(f)
+        .expect("spawn small-stack thread")
+        .join()
+        .expect("worker thread must not panic or overflow its stack")
+}
+
+#[test]
+fn layers_remove_keeps_shared_order_arrays_linear_and_drops_the_removed_layer() {
+    let (bytes, _keep_id, _remove_id) = dag_order_pdf(40);
+    let out = run_on_small_stack(move || {
+        run_tool(
+            "pdf.layers",
+            &[InputDoc::new("dag-order.pdf", bytes)],
+            &json!({ "action": "remove", "names": ["RemoveLayer"] }),
+            &ToolCtx::default(),
+        )
+        .expect("remove layer from a shared /Order DAG")
+    });
+
+    let out_doc = Document::load_mem(&out.artifacts[0].bytes).expect("load output pdf");
+    let ocgs = out_doc
+        .catalog()
+        .expect("catalog")
+        .get(b"OCProperties")
+        .and_then(lopdf::Object::as_dict)
+        .expect("OCProperties")
+        .get(b"OCGs")
+        .and_then(lopdf::Object::as_array)
+        .expect("OCGs");
+    assert_eq!(ocgs.len(), 1);
+    let surviving_ocg_id = ocgs[0].as_reference().expect("surviving OCG ref");
+    let (layers, shared_arrays) = reachable_order_layers(&out_doc);
+    assert_eq!(layers, std::collections::BTreeSet::from([surviving_ocg_id]));
+    assert_eq!(
+        shared_arrays, 40,
+        "the shared arrays must stay shared instead of being expanded, got {shared_arrays}"
+    );
+}
+
+#[test]
+fn layers_remove_terminates_on_a_64_level_order_dag() {
+    let (bytes, _keep_id, _remove_id) = dag_order_pdf(64);
+    let bytes_for_cancel = bytes.clone();
+    let out = run_on_small_stack(move || {
+        run_tool(
+            "pdf.layers",
+            &[InputDoc::new("dag-order-64.pdf", bytes)],
+            &json!({ "action": "remove", "names": ["RemoveLayer"] }),
+            &ToolCtx::default(),
+        )
+        .expect("remove layer from a 64-level /Order DAG")
+    });
+
+    let out_doc = Document::load_mem(&out.artifacts[0].bytes).expect("load output pdf");
+    let ocgs = out_doc
+        .catalog()
+        .expect("catalog")
+        .get(b"OCProperties")
+        .and_then(lopdf::Object::as_dict)
+        .expect("OCProperties")
+        .get(b"OCGs")
+        .and_then(lopdf::Object::as_array)
+        .expect("OCGs");
+    assert_eq!(ocgs.len(), 1);
+    let surviving_ocg_id = ocgs[0].as_reference().expect("surviving OCG ref");
+    let (layers, shared_arrays) = reachable_order_layers(&out_doc);
+    assert_eq!(layers, std::collections::BTreeSet::from([surviving_ocg_id]));
+    assert_eq!(shared_arrays, 64, "got {shared_arrays} shared arrays");
+
+    let cancelled = ToolCtx::default();
+    cancelled
+        .cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    let err = run_tool(
+        "pdf.layers",
+        &[InputDoc::new("dag-order-64.pdf", bytes_for_cancel)],
+        &json!({ "action": "remove", "names": ["RemoveLayer"] }),
+        &cancelled,
+    )
+    .expect_err("cancelled context must abort layers remove");
+    assert_eq!(err, PdfError::CANCELLED);
+}
+
+fn page_with_undecodable_layer_content(content: &[u8], filter: Option<&str>) -> Vec<u8> {
+    use lopdf::{Object, Stream, dictionary};
+
+    let mut doc = Document::load_mem(&fixture_bytes("watermark-layer.pdf")).expect("load base");
+    let page1_id = *doc.get_pages().get(&1).expect("page 1 id");
+    let mut stream_dict = dictionary! {};
+    if let Some(filter) = filter {
+        stream_dict.set("Filter", Object::Name(filter.as_bytes().to_vec()));
+    }
+    let content_id = doc.add_object(Stream::new(stream_dict, content.to_vec()));
+    if let Ok(Object::Dictionary(page)) = doc.get_object_mut(page1_id) {
+        page.set("Contents", Object::Reference(content_id));
+    }
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save pdf");
+    bytes
+}
+
+const WATERMARK_LAYER: &str = "AriadShift Watermark";
+
+#[test]
+fn layers_remove_skips_pages_whose_content_cannot_be_decoded_and_warns() {
+    let unparseable_inline_image =
+        b"BT (before) Tj ET\nBI /W 1 /H 1 /BPC 8 /CS /G ID X\nBT (after) Tj ET";
+    assert!(
+        lopdf::content::Content::decode(unparseable_inline_image).is_err(),
+        "test payload must be rejected by lopdf Content::decode"
+    );
+    let cases: [(&str, Vec<u8>); 2] = [
+        (
+            "unparseable inline image",
+            page_with_undecodable_layer_content(unparseable_inline_image, None),
+        ),
+        (
+            "unsupported stream filter",
+            page_with_undecodable_layer_content(b"q Q", Some("FooDecode")),
+        ),
+    ];
+
+    for (label, bytes) in cases {
+        let out = run_tool(
+            "pdf.layers",
+            &[InputDoc::new("hard-content.pdf", bytes)],
+            &json!({ "action": "remove", "names": [WATERMARK_LAYER] }),
+            &ToolCtx::default(),
+        )
+        .unwrap_or_else(|e| panic!("{label}: remove must skip the page, got {e:?}"));
+
+        assert_eq!(out.artifacts.len(), 1, "{label}");
+        assert!(
+            out.warnings
+                .iter()
+                .any(|w| w.contains("page 1") && w.contains("left unchanged")),
+            "{label}: expected a per-page warning, got {:?}",
+            out.warnings
+        );
+        assert!(
+            !out.warnings.iter().any(|w| w.contains("page 2")),
+            "{label}: only page 1 is undecodable, got {:?}",
+            out.warnings
+        );
+
+        // The layer itself is gone from the catalog even though page 1's content was skipped.
+        let list = run_tool(
+            "pdf.layers",
+            &[InputDoc::new("out.pdf", out.artifacts[0].bytes.clone())],
+            &json!({ "action": "list" }),
+            &ToolCtx::default(),
+        )
+        .expect("list");
+        let listed: Value = serde_json::from_slice(&list.artifacts[0].bytes).expect("json");
+        assert_eq!(listed, json!([]), "{label}");
+    }
+}

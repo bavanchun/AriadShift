@@ -521,3 +521,328 @@ fn outline_from_headings_enforces_decode_budget_and_tool_ctx_deadline() {
     .expect_err("from_headings must honour expired ToolCtx deadline");
     assert_eq!(timeout_err, PdfError::TIMED_OUT);
 }
+
+/// Links `items` (already inserted objects) into a flat sibling list under a new `/Outlines` root
+/// and registers the root in the catalog.
+fn attach_flat_outline(doc: &mut Document, items: &[lopdf::ObjectId]) {
+    use lopdf::{Object, dictionary};
+
+    let root_id = doc.add_object(dictionary! { "Type" => "Outlines" });
+    for (idx, id) in items.iter().enumerate() {
+        if let Ok(Object::Dictionary(d)) = doc.get_object_mut(*id) {
+            d.set("Parent", Object::Reference(root_id));
+            if idx > 0 {
+                d.set("Prev", Object::Reference(items[idx - 1]));
+            }
+            if idx + 1 < items.len() {
+                d.set("Next", Object::Reference(items[idx + 1]));
+            }
+        }
+    }
+    let catalog_id = doc
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .expect("catalog id");
+    if let Ok(Object::Dictionary(root)) = doc.get_object_mut(root_id) {
+        root.set("First", Object::Reference(items[0]));
+        root.set("Last", Object::Reference(items[items.len() - 1]));
+        root.set("Count", i64::try_from(items.len()).unwrap_or(i64::MAX));
+    }
+    if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(catalog_id) {
+        cat.set("Outlines", Object::Reference(root_id));
+    }
+}
+
+fn export_outline_value(bytes: Vec<u8>) -> (Value, Vec<String>) {
+    let out = run_tool(
+        "pdf.outline",
+        &[InputDoc::new("outline-source.pdf", bytes)],
+        &json!({ "action": "export" }),
+        &ToolCtx::default(),
+    )
+    .expect("export outline");
+    // `ToolOutput::json` is the already-structured value; a 64-level export is deeper than
+    // `serde_json` accepts when parsing the serialized bytes back.
+    (out.json.expect("outline export json"), out.warnings)
+}
+
+#[test]
+fn outline_export_resolves_many_named_destinations_from_a_large_name_tree() {
+    use lopdf::{Object, dictionary};
+
+    const ITEMS: usize = 20_000;
+    const LEAVES: usize = 40;
+    const NAMES_PER_LEAF: usize = 1_000;
+    const NAMES: usize = LEAVES * NAMES_PER_LEAF;
+
+    let mut doc = Document::load_mem(&fixture_bytes("multipage-20.pdf")).expect("load base pdf");
+    let page_ids: Vec<lopdf::ObjectId> = doc.get_pages().into_values().collect();
+    assert_eq!(page_ids.len(), 20);
+
+    let mut leaves = Vec::with_capacity(LEAVES);
+    for leaf in 0..LEAVES {
+        let mut pairs = Vec::with_capacity(NAMES_PER_LEAF * 2);
+        for name in leaf * NAMES_PER_LEAF..(leaf + 1) * NAMES_PER_LEAF {
+            pairs.push(Object::string_literal(format!("dest-{name:05}")));
+            pairs.push(Object::Array(vec![
+                Object::Reference(page_ids[name % page_ids.len()]),
+                Object::Name(b"Fit".to_vec()),
+            ]));
+        }
+        leaves.push(Object::Reference(
+            doc.add_object(dictionary! { "Names" => pairs }),
+        ));
+    }
+    let tree_root = doc.add_object(dictionary! { "Kids" => leaves });
+
+    let target_of = |item: usize| (item * 7_919) % NAMES;
+    let mut items = Vec::with_capacity(ITEMS);
+    for item in 0..ITEMS {
+        items.push(doc.add_object(dictionary! {
+            "Title" => Object::string_literal(format!("Item {item}")),
+            "Dest" => Object::string_literal(format!("dest-{:05}", target_of(item))),
+        }));
+    }
+    attach_flat_outline(&mut doc, &items);
+    let catalog_id = doc
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .expect("catalog id");
+    if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(catalog_id) {
+        cat.set(
+            "Names",
+            dictionary! { "Dests" => Object::Reference(tree_root) },
+        );
+    }
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save named destination pdf");
+
+    let (exported, warnings) = export_outline_value(bytes);
+    assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
+    let nodes = exported.as_array().expect("outline array");
+    assert_eq!(nodes.len(), ITEMS);
+    for (item, node) in nodes.iter().enumerate() {
+        assert_eq!(node["title"], format!("Item {item}"));
+        let expected_page = target_of(item) % 20 + 1;
+        assert_eq!(
+            node["page"], expected_page,
+            "item {item} should resolve through the name tree"
+        );
+    }
+}
+
+#[test]
+fn outline_from_headings_takes_reader_limits_from_the_input_limits() {
+    use ariad_core::{reader::pdf::ReadError, tools::params::outline::OutlineParams};
+    use ariad_pdf::tools::outline;
+
+    let params: OutlineParams =
+        serde_json::from_value(json!({ "action": "from_headings" })).expect("params");
+    let bytes = fixture_bytes("multipage-20.pdf");
+
+    // The default limits read the fixture fine, so the failure below comes from the small cap.
+    let (_, outputs) = outline::run_inputs(
+        &[InputDoc::new("multipage-20.pdf", bytes.clone())],
+        &params,
+        &ToolCtx::default(),
+    )
+    .expect("from_headings under default limits");
+    assert_eq!(outputs.len(), 1);
+
+    let mut small_blocks = Limits::local();
+    small_blocks.max_blocks = 2;
+    let err = outline::run_inputs(
+        &[InputDoc::with_limits(
+            "multipage-20.pdf",
+            bytes.clone(),
+            small_blocks,
+        )],
+        &params,
+        &ToolCtx::default(),
+    )
+    .expect_err("max_blocks from the caller must reach the PDF reader");
+    assert_eq!(
+        err,
+        PdfError::LimitExceeded(ReadError::TooManyBlocks { limit: 2 })
+    );
+
+    // A limit the reader validates must also come from the caller, not from `Limits::local()`.
+    let mut zero_ir = Limits::local();
+    zero_ir.max_ir_json_bytes = 0;
+    assert!(
+        outline::run_inputs(
+            &[InputDoc::with_limits(
+                "multipage-20.pdf",
+                bytes.clone(),
+                zero_ir
+            )],
+            &params,
+            &ToolCtx::default(),
+        )
+        .is_err(),
+        "an invalid caller max_ir_json_bytes must not be replaced by the local default"
+    );
+
+    let mut list_doc = Document::load_mem(&bytes).expect("load pdf for list item");
+    let page1_id = *list_doc.get_pages().get(&1).expect("page 1");
+    let list_stream = list_doc.add_object(lopdf::Stream::new(
+        lopdf::dictionary! {},
+        b"BT /F1 12 Tf 72 720 Td (1. Nested item) Tj ET\n".to_vec(),
+    ));
+    if let Ok(lopdf::Object::Dictionary(page1)) = list_doc.get_object_mut(page1_id) {
+        page1.set("Contents", lopdf::Object::Reference(list_stream));
+    }
+    let mut list_bytes = Vec::new();
+    list_doc.save_to(&mut list_bytes).expect("save list pdf");
+
+    let mut zero_nesting = Limits::local();
+    zero_nesting.max_nesting_depth = 0;
+    let nesting_err = outline::run_inputs(
+        &[InputDoc::with_limits(
+            "multipage-20.pdf",
+            list_bytes,
+            zero_nesting,
+        )],
+        &params,
+        &ToolCtx::default(),
+    )
+    .expect_err("max_nesting_depth from the caller must reach the PDF reader");
+    assert_eq!(
+        nesting_err,
+        PdfError::LimitExceeded(ReadError::NestingTooDeep { limit: 0 })
+    );
+
+    // Pre-opened PdfDoc with a small caller `max_pages` reaches `detect_heading_outlines`
+    // and is rejected by `reader::pdf::read`.
+    let opened =
+        ariad_pdf::document::open(&bytes, &Limits::local()).expect("open under default limits");
+    let mut doc_input = InputDoc::from_doc("multipage-20.pdf", opened);
+    doc_input.limits.max_pages = Some(2);
+    let page_err = outline::run_inputs(&[doc_input], &params, &ToolCtx::default())
+        .expect_err("max_pages from the caller must reach the PDF reader");
+    assert_eq!(
+        page_err,
+        PdfError::LimitExceeded(ReadError::TooManyPages {
+            actual: 20,
+            limit: 2,
+        })
+    );
+}
+
+#[test]
+fn outline_export_warns_when_nesting_deeper_than_64_levels_is_dropped() {
+    use lopdf::{Object, dictionary};
+
+    let mut doc = Document::load_mem(&fixture_bytes("rotated-pages.pdf")).expect("load base pdf");
+    let page1 = *doc.get_pages().get(&1).expect("page 1");
+    let levels = 70usize;
+    let ids: Vec<lopdf::ObjectId> = (0..levels)
+        .map(|level| {
+            doc.add_object(dictionary! {
+                "Title" => Object::string_literal(format!("Level {level}")),
+                "Dest" => vec![Object::Reference(page1), Object::Name(b"Fit".to_vec())],
+            })
+        })
+        .collect();
+    for level in 0..levels {
+        let parent = if level == 0 {
+            None
+        } else {
+            Some(ids[level - 1])
+        };
+        if let Ok(Object::Dictionary(d)) = doc.get_object_mut(ids[level]) {
+            if let Some(parent) = parent {
+                d.set("Parent", Object::Reference(parent));
+            }
+            if level + 1 < levels {
+                d.set("First", Object::Reference(ids[level + 1]));
+                d.set("Last", Object::Reference(ids[level + 1]));
+            }
+        }
+    }
+    attach_flat_outline(&mut doc, &ids[..1]);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save deep outline pdf");
+
+    let (exported, warnings) = export_outline_value(bytes);
+
+    let mut depth = 0usize;
+    let mut cursor = &exported;
+    while let Some(first) = cursor.as_array().and_then(|a| a.first()) {
+        depth += 1;
+        cursor = &first["children"];
+    }
+    assert_eq!(depth, 64, "export keeps exactly 64 nesting levels");
+
+    let truncation: Vec<&String> = warnings
+        .iter()
+        .filter(|w| w.contains("truncated"))
+        .collect();
+    assert_eq!(truncation.len(), 1, "warnings: {warnings:?}");
+    assert!(truncation[0].contains("64 levels"), "{}", truncation[0]);
+    assert!(truncation[0].contains("Level 63"), "{}", truncation[0]);
+    assert!(truncation[0].contains("page 1"), "{}", truncation[0]);
+}
+
+#[test]
+fn outline_export_warns_when_the_bookmark_count_cap_stops_the_walk() {
+    use lopdf::{Object, dictionary};
+
+    const CAP: usize = 100_000;
+
+    let mut doc = Document::load_mem(&fixture_bytes("rotated-pages.pdf")).expect("load base pdf");
+    let page1 = *doc.get_pages().get(&1).expect("page 1");
+    let items: Vec<lopdf::ObjectId> = (0..=CAP)
+        .map(|item| {
+            doc.add_object(dictionary! {
+                "Title" => Object::string_literal(format!("Item {item}")),
+                "Dest" => vec![Object::Reference(page1), Object::Name(b"Fit".to_vec())],
+            })
+        })
+        .collect();
+    attach_flat_outline(&mut doc, &items);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("save wide outline pdf");
+
+    let (exported, warnings) = export_outline_value(bytes);
+    assert_eq!(exported.as_array().expect("array").len(), CAP);
+
+    let truncation: Vec<&String> = warnings
+        .iter()
+        .filter(|w| w.contains("truncated"))
+        .collect();
+    assert_eq!(truncation.len(), 1, "warnings: {warnings:?}");
+    assert!(truncation[0].contains("100000"), "{}", truncation[0]);
+    assert!(truncation[0].contains("Item 99999"), "{}", truncation[0]);
+    assert!(!truncation[0].contains("Item 100000"), "{}", truncation[0]);
+}
+
+#[test]
+fn outline_export_of_a_complete_outline_has_no_truncation_warning() {
+    let imported = run_tool(
+        "pdf.outline",
+        &[InputDoc::new(
+            "multipage-20.pdf",
+            fixture_bytes("multipage-20.pdf"),
+        )],
+        &json!({
+            "action": "import",
+            "json": [{ "title": "Part", "page": 2, "children": [
+                { "title": "Chapter", "page": 3, "children": [] }
+            ] }]
+        }),
+        &ToolCtx::default(),
+    )
+    .expect("import small outline");
+
+    let (exported, warnings) = export_outline_value(imported.artifacts[0].bytes.clone());
+    assert_eq!(
+        exported,
+        json!([{ "title": "Part", "page": 2, "children": [
+            { "title": "Chapter", "page": 3, "children": [] }
+        ] }])
+    );
+    assert!(warnings.is_empty(), "warnings: {warnings:?}");
+}
