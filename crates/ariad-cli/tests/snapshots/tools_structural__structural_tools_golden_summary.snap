@@ -1,12 +1,13 @@
 ---
 source: crates/ariad-cli/tests/tools_structural.rs
+assertion_line: 563
 expression: snapshot_summaries
 ---
 [
   {
     "artifacts": [
       {
-        "bytes": 3517,
+        "bytes": 3527,
         "file_name": "rotated-pages.merged.pdf",
         "first_page": {
           "blank": false,
@@ -30,7 +31,7 @@ expression: snapshot_summaries
         "outline_count": 2,
         "page_count": 5,
         "repaired_xref": false,
-        "sha256": "7e06f9413ce81a4fd7b92ee3131eec2ec0113ffe11077fa75061b8da4f9bd987"
+        "sha256": "5145a2601024994d12f5a620ef2b28044a560905d4032f9fb6ec3c12f3b7cb19"
       }
     ],
     "tool": "pdf.merge"
@@ -513,7 +514,7 @@ expression: snapshot_summaries
   {
     "artifacts": [
       {
-        "bytes": 3791,
+        "bytes": 4065,
         "file_name": "rotated-pages.overlay.pdf",
         "first_page": {
           "blank": false,
@@ -537,7 +538,7 @@ expression: snapshot_summaries
         "outline_count": 0,
         "page_count": 4,
         "repaired_xref": false,
-        "sha256": "59b4b46636c28e9ff9755632f201c8faa28afbb952e2ebad171ebb2c59b1890e"
+        "sha256": "869d1c77f7b20930c3966849f55690372cbce9e19b486c3c38552555a938520a"
       }
     ],
     "tool": "pdf.overlay"
@@ -673,7 +674,7 @@ expression: snapshot_summaries
   {
     "artifacts": [
       {
-        "bytes": 4399,
+        "bytes": 4565,
         "file_name": "rotated-pages.attachments.pdf",
         "first_page": {
           "blank": false,
@@ -697,7 +698,7 @@ expression: snapshot_summaries
         "outline_count": 0,
         "page_count": 4,
         "repaired_xref": false,
-        "sha256": "0572cac261ed0d57f714eb8b376d163281cd48e827e3970d9fcb84cde454716b"
+        "sha256": "a22c880f0f244f4e9e986355fdbffc86a5c65c270e6e6d3f8efaa0802d2c4682"
       }
     ],
     "tool": "pdf.attachments"
@@ -769,7 +770,7 @@ expression: snapshot_summaries
   {
     "artifacts": [
       {
-        "bytes": 5554,
+        "bytes": 5859,
         "file_name": "rotated-pages.portfolio.pdf",
         "first_page": {
           "blank": false,
@@ -793,7 +794,7 @@ expression: snapshot_summaries
         "outline_count": 0,
         "page_count": 1,
         "repaired_xref": false,
-        "sha256": "14dfd83f6edbe27791f4b688d5cb7181c624c5831b2d18012a80f3dd3722c009"
+        "sha256": "11aeb02e32d7d48a88f3fc84bd648bb282b678622ee251d7a8be66b9311a93d6"
       }
     ],
     "tool": "pdf.portfolio"

@@ -466,11 +466,11 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
     // 2. Divergence 2 & 4: Synthetic 3-page PDF with:
     //    - `/PageLabels` using `/Kids` number tree
     //    - `/Catalog /Dests` with `/D1` (page 1) and `/D3` (dropped page 3)
-    //    - `/Catalog /Names /Dests` with `(ND2)` (page 2) and `(ND3)` (dropped page 3)
+    //    - `/Catalog /Names /Dests` with `(NameDest2)` (page 2) and `(NameDest3)` (dropped page 3)
     //    - `/Catalog /OpenAction` targeting dropped page 3 (`[page3_ref /Fit]`)
     //    - `/Outlines` with 4 bookmarks:
     //      1) named dest `/D1` (via `/Catalog /Dests`)
-    //      2) named dest `(ND2)` (via `/Catalog /Names /Dests`)
+    //      2) named dest `(NameDest2)` (via `/Catalog /Names /Dests`)
     //      3) integer 0-based page index `[0 /Fit]` (page 1)
     //      4) direct page ref with indirect zoom in tail `[page2_ref /XYZ 0 792 zoom_ref]`
     let mut syn = Document::with_version("1.5");
@@ -523,9 +523,9 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
     });
     let names_dests_kid = syn.add_object(dictionary! {
         "Names" => vec![
-            Object::String(b"ND2".to_vec(), StringFormat::Literal),
+            Object::String(b"NameDest2".to_vec(), StringFormat::Literal),
             Object::Array(vec![Object::Reference(p2), Object::Name(b"Fit".to_vec())]),
-            Object::String(b"ND3".to_vec(), StringFormat::Literal),
+            Object::String(b"NameDest3".to_vec(), StringFormat::Literal),
             Object::Array(vec![Object::Reference(p3), Object::Name(b"Fit".to_vec())]),
         ],
     });
@@ -555,7 +555,7 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
             "Parent" => outlines_id,
             "Prev" => bm1,
             "Next" => bm3,
-            "Dest" => Object::String(b"ND2".to_vec(), StringFormat::Literal),
+            "Dest" => Object::String(b"NameDest2".to_vec(), StringFormat::Literal),
         }),
     );
     syn.objects.insert(
@@ -698,9 +698,9 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
     assert_eq!(
         leaf_names.len(),
         2,
-        "only the (ND2) pair may survive in the /Names /Dests tree"
+        "only the (NameDest2) pair may survive in the /Names /Dests tree"
     );
-    assert_eq!(leaf_names[0].as_str().unwrap(), b"ND2");
+    assert_eq!(leaf_names[0].as_str().unwrap(), b"NameDest2");
 
     // 3. Divergence 3: Duplicating a form page (`"1,1"`) on `form-acroform.pdf` must create
     //    independent widget annotations on each page copy with `/P` pointing to that page copy,

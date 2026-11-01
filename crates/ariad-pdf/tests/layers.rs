@@ -804,16 +804,16 @@ const WATERMARK_LAYER: &str = "AriadShift Watermark";
 
 #[test]
 fn layers_remove_skips_pages_whose_content_cannot_be_decoded_and_warns() {
-    let unparseable_inline_image =
+    let unparsable_inline_image =
         b"BT (before) Tj ET\nBI /W 1 /H 1 /BPC 8 /CS /G ID X\nBT (after) Tj ET";
     assert!(
-        lopdf::content::Content::decode(unparseable_inline_image).is_err(),
+        lopdf::content::Content::decode(unparsable_inline_image).is_err(),
         "test payload must be rejected by lopdf Content::decode"
     );
     let cases: [(&str, Vec<u8>); 2] = [
         (
-            "unparseable inline image",
-            page_with_undecodable_layer_content(unparseable_inline_image, None),
+            "unparsable inline image",
+            page_with_undecodable_layer_content(unparsable_inline_image, None),
         ),
         (
             "unsupported stream filter",

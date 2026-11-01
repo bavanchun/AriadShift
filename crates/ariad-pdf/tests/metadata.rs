@@ -399,7 +399,10 @@ fn metadata_encodes_non_ascii_as_utf16be_preserves_pdfdocencoding_and_strips_whe
         );
         d.set(
             "Keywords",
-            Object::String(b"caf\xE9, r\xE9sum\xE9".to_vec(), StringFormat::Literal),
+            Object::String(
+                b"\x63\x61\x66\xE9, \x72\xE9\x73\x75\x6D\xE9".to_vec(),
+                StringFormat::Literal,
+            ),
         );
         d.set(
             "ArchiveNote",

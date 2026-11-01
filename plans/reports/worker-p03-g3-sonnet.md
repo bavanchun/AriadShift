@@ -78,4 +78,4 @@ In `crates/ariad-pdf/src/tools/mod.rs` (around lines 376-378), switch `"pdf.outl
 
 - `/ak-debug`: traced root causes in `layers.rs` (`OrderFilter` object renumbering on save, `lopdf` `Content::decode` inline-image failure mode) and `outline.rs` (`assemble.rs` nesting depth checks and `last_exported` ordering).
 - `/ak-fix`: implemented cause-aligned fixes in `crates/ariad-pdf/src/tools/layers.rs` and `crates/ariad-pdf/src/tools/outline.rs`.
-- `/ak-security`: verified hostile-input handling (64-level diamond `/Order` DAGs, self-referential `/Order` cycles, undecodable filters, unparseable inline-image streams, 40,000-entry name trees, 70-level deep outlines, 100,001-node wide outlines, and caller `Limits` enforcement).
+- `/ak-security`: verified hostile-input handling (64-level diamond `/Order` DAGs, self-referential `/Order` cycles, undecodable filters, unparsable inline-image streams, 40,000-entry name trees, 70-level deep outlines, 100,001-node wide outlines, and caller `Limits` enforcement).
