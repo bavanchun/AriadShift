@@ -971,3 +971,21 @@ fn refuses_oversized_inline_image_in_indirect_subtype_form() {
         .expect_err("indirect form subtype must be preflighted");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
 }
+
+#[test]
+fn refuses_inconsistent_page_tree_before_page_load() {
+    let lib_dir = require_pdfium!();
+    let ws = TestWorkspace::from_fixture("fixtures/pdf/ambiguous-page-tree.pdf");
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "page-tree",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("inconsistent page tree must be rejected");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}

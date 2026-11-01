@@ -213,6 +213,8 @@ pub fn extract_document_images(
         .map_err(|e| EngineFailure::owned(ErrorCode::InvalidRequest, e.to_string()))?;
 
     let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
+    let page_ids =
+        preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
     let pdfium = ctx.pdfium()?;
     let pdfium_doc = pdfium
         .load_pdf_from_byte_slice(&bytes, None)
@@ -227,11 +229,17 @@ pub fn extract_document_images(
         ));
     }
     ctx.check_page_count(total_pages)?;
+    if page_ids.len() != total_pages {
+        return Err(EngineFailure::limit_exceeded());
+    }
 
     let selected_pages = expand_pages(&params.pages, total_pages)?;
     ctx.check_page_count(selected_pages.len())?;
 
     let lopdf_pages = pdf_doc.inner().get_pages();
+    if lopdf_pages.values().copied().ne(page_ids.iter().copied()) {
+        return Err(EngineFailure::limit_exceeded());
+    }
     let mask_ids = collect_mask_object_ids(&pdf_doc);
     let max_depth = usize::from(ctx.limits().max_nesting_depth);
     let max_decompressed = usize::try_from(
@@ -356,6 +364,70 @@ pub fn extract_document_images(
     }
 
     Ok(outcome)
+}
+
+// PDFium treats every node containing Kids as intermediate and every other node as a leaf.
+// Reject classification differences so the ordered IDs match lopdf's page lookup.
+fn preflight_page_tree(
+    doc: &lopdf::Document,
+    max_depth: usize,
+) -> Result<Vec<PdfObjectId>, EngineFailure> {
+    let root = doc
+        .trailer
+        .get(b"Root")
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    let catalog = resolve(Some(doc), root)?
+        .1
+        .as_dict()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    let pages = catalog
+        .get(b"Pages")
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    let root_id = resolve(Some(doc), pages)?
+        .0
+        .ok_or_else(EngineFailure::limit_exceeded)?;
+    let mut stack = vec![(root_id, 0usize)];
+    let mut visited = HashSet::new();
+    let mut leaves = Vec::new();
+    while let Some((id, depth)) = stack.pop() {
+        if depth > max_depth || visited.len() >= 100_000 || !visited.insert(id) {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let object = doc
+            .get_object(id)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let dict = object
+            .as_dict()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let kind = dict
+            .get(b"Type")
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let kind = resolve(Some(doc), kind)?
+            .1
+            .as_name()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        if let Ok(kids) = dict.get(b"Kids") {
+            if kind != b"Pages" {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            let kids = resolve(Some(doc), kids)?
+                .1
+                .as_array()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for child in kids.iter().rev() {
+                let id = resolve(Some(doc), child)?
+                    .0
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                stack.push((id, depth + 1));
+            }
+        } else {
+            if kind != b"Page" {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            leaves.push(id);
+        }
+    }
+    Ok(leaves)
 }
 
 struct PreflightBudget<'a> {

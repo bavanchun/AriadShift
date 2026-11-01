@@ -4136,3 +4136,19 @@ attribution = "AriadShift contributors"
 sha256 = "8bc850ef0e22051b1196c7d43f48670fd7a8dc045118bbc9f2f8708d9cd3eb0d"
 pages = 1
 tags = []
+
+[[fixture]]
+id = "ambiguous-page-tree-pdf"
+path = "fixtures/pdf/ambiguous-page-tree.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inconsistent page tree classifications"
+origin = "generated"
+generated_by = "fixtures/gen/ambiguous_page_tree.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "3385cdb8b594bb01f67b3e8c54a6a2c080dd5be261094821cff97e2f9e3a9b7a"
+pages = 1
+tags = []
