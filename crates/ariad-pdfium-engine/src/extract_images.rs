@@ -20,6 +20,7 @@ use image::{
 use lopdf::{Dictionary, Object, content::Content};
 use pdfium_render::prelude::*;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use crate::{
     output::{Metrics, ToolContext, ToolResult},
@@ -2196,7 +2197,7 @@ fn extract_inline_pdfium_images(
         }
 
         let png_bytes = encode_png(&dyn_img)?;
-        let digest = fnv1a_256(&png_bytes);
+        let digest: [u8; 32] = Sha256::digest(&png_bytes).into();
         if !seen_hashes.insert(digest) {
             outcome.images_deduplicated += 1;
             return Ok(false);
@@ -2261,17 +2262,4 @@ fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, EngineFailure> {
         }
     }
     Ok(buf.into_inner())
-}
-
-fn fnv1a_256(bytes: &[u8]) -> [u8; 32] {
-    let mut out = [0u8; 32];
-    for (slot_idx, chunk) in out.as_chunks_mut::<8>().0.iter_mut().enumerate() {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325_u64.wrapping_add(slot_idx as u64 * 0x9e37_79b9);
-        for &b in bytes {
-            h ^= u64::from(b);
-            h = h.wrapping_mul(0x0100_0000_01b3);
-        }
-        *chunk = h.to_le_bytes();
-    }
-    out
 }
