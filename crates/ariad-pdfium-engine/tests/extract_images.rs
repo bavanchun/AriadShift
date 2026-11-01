@@ -930,3 +930,86 @@ fn inherited_form_resources_are_checked_before_page_load() {
     extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect("a form reached by multiple paths is charged once");
 }
+
+#[test]
+fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
+    struct Observe {
+        dir: PathBuf,
+        counts: Vec<usize>,
+        events: Vec<u8>,
+    }
+    impl std::io::Write for Observe {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            self.events.extend_from_slice(data);
+            Ok(data.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            if self
+                .events
+                .split(|&b| b == b'\n')
+                .rev()
+                .nth(1)
+                .is_some_and(|event| {
+                    event
+                        .windows(b"\"stage\":\"extract_images\"".len())
+                        .any(|w| w == b"\"stage\":\"extract_images\"")
+                })
+            {
+                self.counts.push(fs::read_dir(&self.dir)?.count());
+            }
+            Ok(())
+        }
+    }
+    let lib_dir = require_pdfium!();
+    let jpeg = make_test_jpeg(24, 24);
+    let mut objects = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        format!(
+            "<< /Type /Pages /Kids [{}] /Count 8 >>",
+            (0..8)
+                .map(|i| format!("{} 0 R", 3 + i * 3))
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+        .into_bytes(),
+    ];
+    for i in 0..8 {
+        let page = 3 + i * 3;
+        objects.push(format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im {} 0 R >> >> /Contents {} 0 R >>", page + 1, page + 2).into_bytes());
+        objects.push(stream_object("/Type /XObject /Subtype /Image /Width 24 /Height 24 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode", &jpeg));
+        objects.push(stream_object("", b"q 24 0 0 24 0 0 cm /Im Do Q"));
+    }
+    let ws = TestWorkspace::from_bytes("stream.pdf", &assemble_pdf(&objects));
+    let mut sink = Observe {
+        dir: ws.paths.work_dir.clone(),
+        counts: Vec::new(),
+        events: Vec::new(),
+    };
+    let limit = (jpeg.len().max(24 * 24 * 3) * 2) as u64;
+    let limits = Limits {
+        max_decompressed_bytes: limit,
+        ..Limits::local()
+    };
+    let mut ctx = ToolContext::new(
+        "stream",
+        "pdf.extract_images",
+        ws.paths.clone(),
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("cumulative output must be bounded");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert!(
+        !sink.counts.is_empty() && sink.counts[0] == 1,
+        "the first page should be written before the next page"
+    );
+    assert!(
+        !sink
+            .events
+            .windows(b"\"type\":\"artifact\"".len())
+            .any(|w| w == b"\"type\":\"artifact\"")
+    );
+    assert_eq!(fs::read_dir(ws.paths.output_dir).unwrap().count(), 0);
+}

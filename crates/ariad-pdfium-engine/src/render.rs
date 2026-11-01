@@ -187,10 +187,11 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RenderParams) -> ToolResult {
                 let page_u32 = u32::try_from(page_num).map_err(|_| {
                     EngineFailure::new(ErrorCode::InvalidRequest, "Page number overflow.")
                 })?;
-                output_bytes = output_bytes
-                    .checked_add(encoded.len() as u64)
-                    .filter(|&size| size <= ctx.limits().max_decompressed_bytes)
-                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                output_bytes = crate::output::charge_output_bytes(
+                    output_bytes,
+                    encoded.len(),
+                    ctx.limits().max_decompressed_bytes,
+                )?;
                 let name = page_artifact_name(&stem, page_u32, ext);
                 if let Some(writer) = &mut zip {
                     writer.start_file(&name, options).map_err(|err| {
@@ -225,14 +226,7 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RenderParams) -> ToolResult {
             let format = if zipped { "zip" } else { ext };
             for (scratch, name) in files {
                 let path = ctx.artifact_path(&name)?;
-                match fs::rename(&scratch, &path) {
-                    Ok(()) => {}
-                    Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
-                        fs::copy(&scratch, &path).map_err(|_| EngineFailure::io())?;
-                        fs::remove_file(&scratch).map_err(|_| EngineFailure::io())?;
-                    }
-                    Err(_) => return Err(EngineFailure::io()),
-                }
+                crate::output::move_scratch_file(&scratch, &path)?;
                 ctx.artifact(&path, format)?;
             }
         }

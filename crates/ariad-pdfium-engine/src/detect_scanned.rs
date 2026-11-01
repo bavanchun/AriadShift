@@ -94,6 +94,8 @@ pub struct PageScanReport {
     /// Ratio of the union of image bounding boxes (clipped to the page box) to total page area,
     /// clamped to `[0.0, 1.0]`.
     pub image_coverage_ratio: f64,
+    /// Whether image coverage uses only the first 2,000 image rectangles.
+    pub saturated: bool,
     /// Classification verdict for this page.
     pub verdict: ScanVerdict,
 }
@@ -160,6 +162,7 @@ pub fn run(ctx: &mut ToolContext<'_>, _params: DetectScannedParams) -> ToolResul
         let page_rect = page_bounds(&page);
         let mut image_rects = Vec::new();
         let mut page_visits = 0usize;
+        let mut saturated = false;
         collect_image_rects_from_iter(
             ctx,
             page.objects().iter(),
@@ -168,6 +171,7 @@ pub fn run(ctx: &mut ToolContext<'_>, _params: DetectScannedParams) -> ToolResul
             &mut page_visits,
             &mut document_visits,
             &mut image_rects,
+            &mut saturated,
         )?;
 
         let mut page_sweep_work = 0usize;
@@ -195,6 +199,7 @@ pub fn run(ctx: &mut ToolContext<'_>, _params: DetectScannedParams) -> ToolResul
             has_text_layer,
             text_char_count,
             image_coverage_ratio,
+            saturated,
             verdict,
         });
 
@@ -414,6 +419,7 @@ fn count_page_text_chars(
     Ok(count)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_image_rects_from_iter<'a>(
     ctx: &ToolContext<'_>,
     iter: PdfPageObjectsIterator<'a>,
@@ -422,6 +428,7 @@ fn collect_image_rects_from_iter<'a>(
     page_visits: &mut usize,
     document_visits: &mut usize,
     out: &mut Vec<[f64; 4]>,
+    saturated: &mut bool,
 ) -> Result<(), EngineFailure> {
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
@@ -447,7 +454,8 @@ fn collect_image_rects_from_iter<'a>(
                     let b = f64::from(rect.bottom().value);
                     let t = f64::from(rect.top().value);
                     if out.len() >= 2_000 {
-                        return Err(EngineFailure::limit_exceeded());
+                        *saturated = true;
+                        continue;
                     }
                     out.push([l.min(r), b.min(t), l.max(r), b.max(t)]);
                 }
@@ -461,6 +469,7 @@ fn collect_image_rects_from_iter<'a>(
                     page_visits,
                     document_visits,
                     out,
+                    saturated,
                 )?;
             }
             _ => {}

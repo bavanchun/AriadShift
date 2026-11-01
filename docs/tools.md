@@ -356,6 +356,9 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.remove_blank` → `report.remove-blank.pdf`
   - `pdf.crop_whitespace` → `report.cropped.pdf`
   - `pdf.detect_scanned` → `report.detect-scanned.json`
+    Each page has a `saturated` flag: when true, coverage and classification are
+    best-effort results based on the first 2,000 image rectangles. The separate
+    work budget still applies and can return `limit_exceeded`.
   - `pdf.text_layout` → `report.text-layout.json`
   - `image.to_pdf` → `first.pdf`
   - `pdf.decompress` → `report.decompressed.pdf`
