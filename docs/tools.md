@@ -81,12 +81,12 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 
 | Group | Purpose | Example Tools |
 |---|---|---|
-| `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers` |
-| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.to_images`, `pdf.from_images`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
+| `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.crop_whitespace`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers`, `pdf.remove_blank`, `pdf.detect_scanned`, `pdf.text_layout` |
+| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
 | `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.linearize`, `pdf.repair` |
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize` |
 | `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark_add`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
-| `ocr` | Optical character recognition, deskewing, blank page removal | `pdf.ocr`, `pdf.deskew`, `pdf.remove_blank` |
+| `ocr` | Optical character recognition and deskewing | `pdf.ocr`, `pdf.deskew` |
 | `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotate`, `pdf.annotations_flatten`, `pdf.annotations_remove` |
 | `forms` | AcroForm field inspection, filling, creation, and flattening | `pdf.forms_inspect`, `pdf.forms_fill`, `pdf.forms_flatten` |
 | `sign` | PAdES digital signing, timestamping, and signature verification | `pdf.sign`, `pdf.sign_verify` |
@@ -135,7 +135,29 @@ All parameter structs live in `ariad-core::tools::params::*` (pure `serde` + `sc
 }
 ```
 
-> **Note on `runtimes`**: Tools register `["wasm", "local"]` (or `["local"]` for out-of-process engines) until the Phase 13 server tool-job infrastructure (`job_inputs`, worker queues, and plan-to-tool-access mapping) lands, at which point cloud-supported tools add `"cloud"`.
+> **Note on `runtimes`**: Tools register `["wasm", "local"]` (or `["local"]` for out-of-process engines such as `pdfium`) until the Phase 13 server tool-job infrastructure (`job_inputs`, worker queues, and plan-to-tool-access mapping) and Phase 14 browser WASM PDFium integration land.
+
+### Multi-Format Tools (`output_format` and `output_formats`)
+
+Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"png"`, or `"json"`). Tools that can emit artifacts in more than one format additionally declare a non-empty `output_formats` allowlist (serialized in `schemas/tools.v1.json` only when non-empty so single-format descriptors remain unchanged):
+
+- `pdf.render` and `pdf.to_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "webp", "bmp", "tiff"]`
+- `pdf.thumbnails`: `output_format: "png"`, `output_formats: ["png", "json"]`
+- `pdf.extract_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "zip"]`
+
+Both `ariad-host` and `ariad-wasm` enforce `ToolSpec::allowed_output_formats()` (`output_formats` when non-empty, otherwise `[output_format]`):
+1. When the caller selects a target format via `params.format` or an explicit `-o <FILE>` extension, the requested format must be in `allowed_output_formats()`.
+2. Before publishing or returning any produced artifact, every emitted artifact's format (and file extension) is checked against `allowed_output_formats()` and, when `params.format` was specified on a single-format-per-run tool (`pdf.render` / `pdf.to_images`), against that requested format.
+
+### Mode-Dependent Engine Availability (`pdf.split` `detect = "pixel"`)
+
+`pdf.split` supports `mode: "blank-separator"` with two detection modes (`detect`):
+- `"content"` (default): Inspects PDF page content streams and resources in-process via `ariad-pdf`. Available on both `wasm` and `local` runtimes without any external pack.
+- `"pixel"`: Rasterizes each page at `dpi` (default `72`, range `36..=600`) and measures the fraction of near-white pixels against `threshold` (default `0.995`, range `0.90..=1.0`) using the out-of-process `pdfium` engine (`local` runtime).
+
+Engine availability for `pdf.split` is decided **before execution** via `ToolSpec::engine_for_params(params)`:
+- When `mode = "blank-separator"` and `detect = "pixel"`, the effective engine is `"pdfium"`.
+- On `ariad-wasm` (where out-of-process engines do not exist) or on `ariad-host` when the `pdfium` engine pack is not installed, the call fails upfront at validation/plan time (before staging inputs or running any structural fallback) with exit code `5` (`tool_missing` / `engine_unavailable`) naming the missing `"pdfium"` engine and its install hint (`ashift engines install pdfium`). It **never** falls back silently to `"content"` detection.
 
 ---
 
@@ -329,6 +351,11 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.page_labels` → `report.labeled.pdf`
   - `pdf.viewer_prefs` → `report.prefs.pdf`
   - `pdf.layers` (`set_default_visibility` / `remove`) → `report.layers.pdf`; (`list`) → `report.layers.json`
+  - `pdf.remove_blank` → `report.remove-blank.pdf`
+  - `pdf.crop_whitespace` → `report.cropped.pdf`
+  - `pdf.detect_scanned` → `report.detect-scanned.json`
+  - `pdf.text_layout` → `report.text-layout.json`
+  - `image.to_pdf` → `first.pdf`
   - `pdf.decompress` → `report.decompressed.pdf`
   - `pdf.compress` → `report.compressed.pdf`
   - `pdf.linearize` → `report.linearized.pdf`
@@ -343,7 +370,9 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio` and `pdf.layers`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
 - **Multi-artifact tools**:
   - `pdf.split` → `<stem>.part-001.pdf`, `<stem>.part-002.pdf`, ... (1-based index, zero-padded to at least 3 digits: `001`..`999`, widening to 4+ digits when parts >= 1,000).
-  - `pdf.to_images` / `pdf.render` → `<stem>.page-001.png`, `<stem>.page-002.png`, ...
+  - `pdf.to_images` / `pdf.render` → `<stem>.page-001.<ext>`, `<stem>.page-002.<ext>`, ... (`combine = "none"`), or `<stem>.pages.<ext>` (`combine = "vertical" | "horizontal"`).
+  - `pdf.thumbnails` → `<stem>.page-001.png`, `<stem>.page-002.png`, ... plus `<stem>.thumbnails.json`.
+  - `pdf.extract_images` → `<stem>.page-001.image-001.<ext>`, ... (`archive = false`), or `<stem>.images.zip` (`archive = true`).
   - `pdf.attachments` and `pdf.portfolio` (`action = "extract"`) → `<stem>.attachment-001.<sanitized-name>` confined inside `<output_dir>`. The attachment's own name and extension are kept and its bytes are written unchanged, except that executable, script, shortcut and installer types (for example `.exe`, `.py`, `.lnk`, `.sh`, `.pkg`) get `.bin` appended to the file name, with one warning per renamed file. Files never get an executable bit. Entries are numbered in name order.
 
 When `-o <FILE>` is passed to a single-artifact tool, that exact file path is used. Passing a non-directory `-o <FILE>` to a multi-artifact tool (such as `pdf.split`) is rejected upfront with exit code `2` (`usage`).

@@ -340,3 +340,94 @@ fn v1_builtin_engine_describe_stays_valid_under_v1_and_v2_schemas() {
     assert_eq!(v1_events, v2_events);
     assert_eq!(v1_events.last().unwrap()["ok"], true);
 }
+
+#[test]
+fn v2_real_pdfium_pack_binary_conforms_to_schema_when_configured() {
+    let pack_dir = std::env::var_os("ASHIFT_PACK_PDFIUM")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            let candidate = support::fixtures::repository_root().join("target/packs/pdfium");
+            candidate.is_dir().then_some(candidate)
+        });
+    let Some(pack_dir) = pack_dir else {
+        return;
+    };
+    let exe_name = if cfg!(windows) {
+        "ariad-pdfium-engine.exe"
+    } else {
+        "ariad-pdfium-engine"
+    };
+    let engine_bin = pack_dir.join(exe_name);
+    if !engine_bin.is_file() {
+        return;
+    }
+
+    let run_real_pdfium = |request: &RequestV2| -> Output {
+        let validator = v2_validator();
+        let value = serde_json::to_value(request).expect("request to JSON value");
+        assert_schema_valid(&validator, &value);
+        let mut bytes = serde_json::to_vec(request).expect("serialize v2 request");
+        bytes.push(b'\n');
+        let mut child = Command::new(&engine_bin)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn real ariad-pdfium-engine");
+        child
+            .stdin
+            .take()
+            .expect("stdin")
+            .write_all(&bytes)
+            .expect("write request");
+        child
+            .wait_with_output()
+            .expect("wait for real pdfium engine")
+    };
+
+    let describe = RequestV2::Describe {
+        protocol: PROTOCOL_V2.to_owned(),
+        job: "real-pdfium-describe".to_owned(),
+    };
+    let events = validate_v2_stdout(&run_real_pdfium(&describe));
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["type"], "capabilities");
+    assert_eq!(events[0]["engine"], "pdfium");
+    assert_eq!(events[0]["tool"]["status"], "found");
+    assert_eq!(events[1]["ok"], true);
+
+    let workspace = ariad_host::workspace::Workspace::new().expect("create workspace");
+    let fixture =
+        support::fixtures::repository_root().join("fixtures/pdf-tools/blank-separators.pdf");
+    let staged_input = workspace.input_dir().join("blank-separators.pdf");
+    fs::copy(&fixture, &staged_input).expect("stage fixture");
+
+    for (tool, params) in [
+        (
+            "pdf.render",
+            json!({"pages": "1-2", "format": "png", "dpi": 72}),
+        ),
+        ("pdf.thumbnails", json!({"pages": "1-2", "max_px": 128})),
+        ("pdf.text_layout", json!({"pages": "1"})),
+        ("pdf.detect_scanned", json!({})),
+    ] {
+        let req = RequestV2::RunTool {
+            protocol: PROTOCOL_V2.to_owned(),
+            job: format!("real-pdfium-{tool}"),
+            tool: tool.to_owned(),
+            inputs: vec![Input {
+                path: staged_input.display().to_string(),
+                format: "pdf".to_owned(),
+            }],
+            output: OutputDir {
+                dir: workspace.output_dir().display().to_string(),
+            },
+            params,
+            params_file: None,
+            work_dir: workspace.work_dir().display().to_string(),
+            limits: Limits::local(),
+        };
+        let events = validate_v2_stdout(&run_real_pdfium(&req));
+        assert_eq!(events.last().unwrap()["ok"], true, "tool {tool}");
+    }
+}

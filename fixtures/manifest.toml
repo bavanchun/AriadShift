@@ -4016,3 +4016,24 @@ source = "Hand-authored minimal PDF seed with repeated trailer keywords before s
 license = "Apache-2.0"
 license_basis = "Project-authored synthetic PDF operators and sample text; no external document or font program is embedded."
 attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdfium-engine-request-describe-jsonl"
+target = "pdfium_engine_request"
+path = "fuzz/seeds/pdfium_engine_request/describe.jsonl"
+sha256 = "0bbb8e8180f5571ee61f1648e818a8b78de8aa8103016d8b060135efb6e4a4ed"
+source = "Hand-authored ariad-engine/2 describe request JSONL seed."
+license = "Apache-2.0"
+license_basis = "Original JSONL test vector authored for AriadShift."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdfium-engine-request-run-tool-render-jsonl"
+target = "pdfium_engine_request"
+path = "fuzz/seeds/pdfium_engine_request/run-tool-render.jsonl"
+sha256 = "9085341f9d6fd99898a7ccaa2e4f32dccc643f7c62328136ed81e458111ecd6b"
+source = "Hand-authored ariad-engine/2 pdf.to_image run_tool request JSONL seed."
+license = "Apache-2.0"
+license_basis = "Original JSONL test vector authored for AriadShift."
+attribution = "AriadShift contributors"
+

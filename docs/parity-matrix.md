@@ -38,14 +38,14 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 |---|---|---|---|---|---|---|---|---|
 | `pdf.info` | organize | S24 info (fonts, sizes, permissions, metadata); S29 show JavaScript † (info reports `has_javascript` only, never the script text) | View Metadata; Page Dimensions | 2 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.merge` | organize | S01 merge | Merge PDFs | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.split` | organize | S01 split (size, chapters, sections, blank pages) | Split PDFs | 3 (pixel blank-separator in 4) | ariad-pdf, pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.split` | organize | S01 split (size, chapters, sections, blank pages) | Split PDFs | 3 (`detect = "pixel"` blank-separator in 4; `detect = "content"` runs in `ariad-pdf` on `wasm, local`; `detect = "pixel"` requires `pdfium` on `local` and fails upfront with a typed missing-engine error when `pdfium` is unavailable) | ariad-pdf, pdfium | wasm, local (`detect = "pixel"`: local only; wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web, mac |
 | `pdf.extract_pages` | organize | S01 extract pages | Extract Pages | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.delete_pages` | organize | S01 remove pages | Delete Pages | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.reorder` | organize | S01 reorder | Organize Pages; Reverse Pages; duplex collate | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.rotate` | organize | S01 rotate | Rotate PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.rotate_content` † (task T3) | organize | — | Rotate by Custom Degrees | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.crop` | organize | S01 crop | Crop PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.crop_whitespace` | organize | — | — | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.crop_whitespace` | organize | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
 | `pdf.scale` | organize | S01 scale | Fix Page Size | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.nup` | organize | S01 multi-page layout | N-Up PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.booklet` | organize | S01 booklet imposition | PDF Booklet | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
@@ -61,19 +61,19 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.portfolio` † (task T5) | organize | S01 portfolio; S40 create portfolio | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.page_labels` | organize | — | Add Page Labels | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.viewer_prefs` | organize | — | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.remove_blank` | organize | S02 remove blank pages | Remove Blank Pages | 4 | pdfium, ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.detect_scanned` | organize | — | — | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.text_layout` | organize | — | — | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.remove_blank` | organize | S02 remove blank pages | Remove Blank Pages | 4 | pdfium, ariad-pdf | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.detect_scanned` | organize | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.text_layout` | organize | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
 | `pdf.layers` † (list, toggle, remove optional content groups; task T5) | organize | — | PDF Layers | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 
 ### convert (tools and routes)
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.render` (aliases `pdf.to_images`; BMP and TIFF output † added to the phase 4 format list; "Rasterize PDF" = recipe `pdf.render` then `image.to_pdf`) | convert | S03 PDF to image | PDF to JPG; PDF to PNG; PDF to WebP; PDF to BMP; PDF to TIFF; Rasterize PDF | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.thumbnails` | convert | — | — | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.extract_images` | convert | S03 extract images; extract images from scans | Extract Images | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `image.to_pdf` (HEIC only if a permissive decoder is verified in phase 4) | convert | S12 image to PDF | Image to PDF; JPG to PDF; PNG to PDF; WebP to PDF; BMP to PDF; TIFF to PDF; HEIC to PDF | 4 | ariad-pdf, pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.render` (aliases `pdf.to_images`; BMP and TIFF output † added to the phase 4 format list; "Rasterize PDF" = recipe `pdf.render` then `image.to_pdf`) | convert | S03 PDF to image | PDF to JPG; PDF to PNG; PDF to WebP; PDF to BMP; PDF to TIFF; Rasterize PDF | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.thumbnails` | convert | — | — | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `pdf.extract_images` | convert | S03 extract images; extract images from scans | Extract Images | 4 | pdfium | local (wasm in phase 14, cloud in phase 13) | Free | CLI, MCP, web(h), mac |
+| `image.to_pdf` (JPEG, PNG, WebP, TIFF, BMP in-process via `ariad-pdf`; HEIC deferred — no permissive pure-Rust decoder) | convert | S12 image to PDF | Image to PDF; JPG to PDF; PNG to PDF; WebP to PDF; BMP to PDF; TIFF to PDF; HEIC to PDF | 4 | ariad-pdf | wasm, local (cloud in phase 13) | Free | CLI, MCP, web, mac |
 | `pdf.tables_to_csv` | convert | S07 PDF to CSV | PDF to CSV; Extract Tables | 10 | docling, ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `web.to_pdf` (host fetch, offline render, AD-15) | convert | S12 web URL to PDF | — | 10 | ariad-core, typst | local | Free | CLI, MCP, web(h), mac |
 | `convert:pdf→docx` (also `pdf→odt`) | convert | S06 PDF to DOCX, ODT | PDF to Word | 10 (styles in 11) | docling, ariad-core, pandoc | wasm, local, cloud | Free | CLI, MCP, web, mac |

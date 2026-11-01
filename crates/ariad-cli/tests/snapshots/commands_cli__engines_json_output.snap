@@ -1,5 +1,6 @@
 ---
 source: crates/ariad-cli/tests/commands_cli.rs
+assertion_line: 694
 expression: normalize_engines_json_stdout(&output)
 ---
 [
@@ -58,5 +59,13 @@ expression: normalize_engines_json_stdout(&output)
     "routes": [
       "docx -> ariad-ir+json"
     ]
+  },
+  {
+    "id": "pdfium",
+    "version": "-",
+    "license": "Apache-2.0",
+    "status": "not installed",
+    "note": "run 'ashift engines install pdfium' to install the pdfium engine pack",
+    "routes": []
   }
 ]
