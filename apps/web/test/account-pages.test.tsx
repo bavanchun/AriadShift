@@ -50,6 +50,7 @@ function fakeAuth(user: AccountUser | null = USER): FakeAuth {
     regenerateBackupCodes: vi
       .fn<AuthApi["regenerateBackupCodes"]>()
       .mockResolvedValue(["cccc-3333"]),
+    hasPassword: vi.fn<AuthApi["hasPassword"]>().mockResolvedValue(true),
     deleteAccount: vi.fn<AuthApi["deleteAccount"]>().mockResolvedValue(),
     listApiKeys: vi.fn<AuthApi["listApiKeys"]>().mockResolvedValue([
       {
@@ -314,6 +315,24 @@ describe("account page", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
     expect(auth.deleteAccount).toHaveBeenCalledWith("secret password");
+  });
+
+  it("deletes a social-only account through fresh-session confirmation without asking for a password", async () => {
+    const auth = fakeAuth();
+    auth.hasPassword.mockResolvedValue(false);
+    const navigate = vi.fn();
+    renderInShell(<AccountPage navigate={navigate} />, auth);
+    const openDelete = await screen.findByRole("button", { name: "Delete account" });
+    await waitFor(() => expect(auth.hasPassword).toHaveBeenCalled());
+
+    fireEvent.click(openDelete);
+    const dialog = screen.getByRole("alertdialog", { name: "Delete your account?" });
+    expect(within(dialog).queryByLabelText("Password")).toBeNull();
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
+    expect(auth.deleteAccount).toHaveBeenCalledWith(undefined);
   });
 
   it("signs out", async () => {

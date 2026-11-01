@@ -118,6 +118,22 @@ describe("Better Auth adapter", () => {
     expect(failure.message).toContain("does not allow deleting accounts");
   });
 
+  it("detects whether an account has a password credential and supports passwordless deletion", async () => {
+    let providerId = "github";
+    const { calls, fetchImpl } = fakeFetch({
+      "GET /api/auth/list-accounts": () => Response.json([{ id: "acc-1", providerId }]),
+      "POST /api/auth/delete-user": () => Response.json({ success: true, message: "User deleted" }),
+    });
+    const auth = createBetterAuthApi(AUTH, fetchImpl);
+    expect(await auth.hasPassword()).toBe(false);
+    providerId = "credential";
+    expect(await auth.hasPassword()).toBe(true);
+
+    await auth.deleteAccount();
+    const deleteCall = calls.find((call) => call.url === `${AUTH}/api/auth/delete-user`);
+    expect(deleteCall?.body).toEqual({});
+  });
+
   it("maps the session's user", async () => {
     const { fetchImpl } = fakeFetch({
       "GET /api/auth/get-session": () =>

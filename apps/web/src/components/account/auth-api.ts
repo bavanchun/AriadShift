@@ -64,7 +64,9 @@ export interface AuthApi {
   enableTwoFactor(password: string): Promise<TwoFactorSetup>;
   disableTwoFactor(password: string): Promise<void>;
   regenerateBackupCodes(password: string): Promise<string[]>;
-  deleteAccount(password: string): Promise<void>;
+  /** Whether the signed-in user has a password credential (`providerId === "credential"`). */
+  hasPassword(): Promise<boolean>;
+  deleteAccount(password?: string): Promise<void>;
   listApiKeys(): Promise<ApiKeyInfo[]>;
   /** `expiresInDays` null creates a key that does not expire. */
   createApiKey(name: string, expiresInDays: number | null): Promise<CreatedApiKey>;
@@ -242,9 +244,19 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
       return Array.isArray(data.backupCodes) ? data.backupCodes.map(String) : [];
     },
 
+    async hasPassword() {
+      const data = await call(client.listAccounts());
+      const accounts = Array.isArray(data) ? data : [];
+      return accounts.some((entry) => record(entry).providerId === "credential");
+    },
+
     async deleteAccount(password) {
       try {
-        await call(client.deleteUser({ password }));
+        await call(
+          password !== undefined && password !== ""
+            ? client.deleteUser({ password })
+            : client.deleteUser({}),
+        );
       } catch (error) {
         // Better Auth serves the endpoint only when the service enables user deletion.
         if (error instanceof AuthError && error.status === 404) {

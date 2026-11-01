@@ -1,11 +1,16 @@
 import { memoryAdapter } from "better-auth/adapters/memory";
+import { hashPassword, makeSignature } from "better-auth/crypto";
+import { getAuthTables } from "better-auth/db";
 import pg from "pg";
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { createApp } from "../src/app.ts";
 import {
   API_KEY_PREFIX,
   BASE_PATH,
   buildAuthOptions,
   CLIENT_IP_HEADER,
+  createAuth,
+  discoveryDocuments,
   JWT_LIFETIME,
   OAUTH_ACCESS_TOKEN_LIFETIME_S,
   OAUTH_CONSENT_PATH,
@@ -13,6 +18,7 @@ import {
   OAUTH_SIGN_IN_PATH,
 } from "../src/auth.ts";
 import { type AuthServiceConfig, parseConfig } from "../src/config.ts";
+import { pageOptions } from "../src/pages.ts";
 
 // A pool connects lazily, so building options never touches a database.
 const pool = new pg.Pool({ connectionString: "postgres://nobody@127.0.0.1:1/none" });
@@ -301,6 +307,193 @@ describe("buildAuthOptions", () => {
           "oauthClientResource",
         ]),
       );
+    });
+  });
+
+  describe("account deletion", () => {
+    async function seededService(freshSession = true) {
+      const serviceConfig = config();
+      const probe = buildAuthOptions(serviceConfig, memoryAdapter({}));
+      const db: Record<string, unknown[]> = Object.fromEntries(
+        Object.values(getAuthTables(probe)).map((table) => [table.modelName, []]),
+      );
+      const now = new Date();
+      const stale = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      const future = new Date(now.getTime() + 60 * 60 * 1000);
+      const passwordHash = await hashPassword("correct horse battery staple");
+
+      db.user = [
+        {
+          id: "user-social",
+          name: "Social User",
+          email: "social@example.com",
+          emailVerified: true,
+          createdAt: stale,
+          updatedAt: now,
+        },
+        {
+          id: "user-other",
+          name: "Other User",
+          email: "other@example.com",
+          emailVerified: true,
+          createdAt: stale,
+          updatedAt: now,
+        },
+        {
+          id: "user-password",
+          name: "Password User",
+          email: "password@example.com",
+          emailVerified: false,
+          createdAt: stale,
+          updatedAt: now,
+        },
+      ];
+      db.account = [
+        {
+          id: "acc-social",
+          userId: "user-social",
+          providerId: "github",
+          accountId: "gh-101",
+          createdAt: stale,
+          updatedAt: now,
+        },
+        {
+          id: "acc-other",
+          userId: "user-other",
+          providerId: "google",
+          accountId: "g-202",
+          createdAt: stale,
+          updatedAt: now,
+        },
+        {
+          id: "acc-password",
+          userId: "user-password",
+          providerId: "credential",
+          accountId: "user-password",
+          password: passwordHash,
+          createdAt: stale,
+          updatedAt: now,
+        },
+      ];
+      db.session = [
+        {
+          id: "sess-social",
+          userId: "user-social",
+          token: "tok-social",
+          createdAt: freshSession ? now : stale,
+          updatedAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "sess-other",
+          userId: "user-other",
+          token: "tok-other",
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "sess-password",
+          userId: "user-password",
+          token: "tok-password",
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: future,
+        },
+      ];
+      db.apikey = [
+        { id: "key-social", referenceId: "user-social", key: "h1", enabled: true },
+        { id: "key-other", referenceId: "user-other", key: "h2", enabled: true },
+      ];
+
+      const database = Object.assign(memoryAdapter(db), {
+        query: vi.fn(async (_sql: string, [userId]: [string]) => {
+          db.apikey = (db.apikey ?? []).filter(
+            (row) => (row as { referenceId?: string }).referenceId !== userId,
+          );
+          return { rowCount: 1 };
+        }),
+      });
+      const options = buildAuthOptions(serviceConfig, database);
+      const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: false } });
+      const app = createApp({
+        config: serviceConfig,
+        handler: (request) => auth.handler(request),
+        metadata: discoveryDocuments(auth),
+        pages: pageOptions(serviceConfig),
+        peerAddress: () => "127.0.0.1",
+      });
+
+      async function sessionCookie(tokenValue: string): Promise<string> {
+        const sig = await makeSignature(tokenValue, serviceConfig.secret);
+        return `ariadshift.session_token=${encodeURIComponent(`${tokenValue}.${sig}`)}`;
+      }
+
+      async function deleteRequest(tokenValue: string, body: Record<string, unknown> = {}) {
+        return app.request("http://localhost:3001/api/auth/delete-user", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            origin: "http://localhost:3001",
+            cookie: await sessionCookie(tokenValue),
+          },
+          body: JSON.stringify(body),
+        });
+      }
+
+      return { db, deleteRequest };
+    }
+
+    it("deletes a social-only user and its sessions with a fresh session while leaving another user untouched", async () => {
+      const { db, deleteRequest } = await seededService(true);
+      const response = await deleteRequest("tok-social");
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true, message: "User deleted" });
+
+      expect((db.user as { id: string }[]).map((u) => u.id)).toEqual([
+        "user-other",
+        "user-password",
+      ]);
+      expect((db.session as { userId: string }[]).map((s) => s.userId)).toEqual([
+        "user-other",
+        "user-password",
+      ]);
+      expect((db.apikey as { referenceId: string }[]).map((k) => k.referenceId)).toEqual([
+        "user-other",
+      ]);
+    });
+
+    it("refuses social-only account deletion when the session is stale", async () => {
+      const { db, deleteRequest } = await seededService(false);
+      const response = await deleteRequest("tok-social");
+      expect(response.status).toBe(400);
+      expect((await response.json()) as { code?: string }).toMatchObject({
+        code: "SESSION_EXPIRED",
+      });
+      expect((db.user as { id: string }[]).map((u) => u.id)).toContain("user-social");
+      expect((db.session as { id: string }[]).map((s) => s.id)).toContain("sess-social");
+    });
+
+    it("requires the password before deleting a password-backed account even with a fresh session", async () => {
+      const { db, deleteRequest } = await seededService(true);
+
+      const withoutPassword = await deleteRequest("tok-password", {});
+      expect(withoutPassword.status).toBe(400);
+      expect((await withoutPassword.json()) as { code?: string }).toMatchObject({
+        code: "PASSWORD_REQUIRED",
+      });
+      expect((db.user as { id: string }[]).map((u) => u.id)).toContain("user-password");
+
+      const wrongPassword = await deleteRequest("tok-password", { password: "wrong password" });
+      expect(wrongPassword.status).toBe(400);
+      expect((db.user as { id: string }[]).map((u) => u.id)).toContain("user-password");
+
+      const withPassword = await deleteRequest("tok-password", {
+        password: "correct horse battery staple",
+      });
+      expect(withPassword.status).toBe(200);
+      expect((db.user as { id: string }[]).map((u) => u.id)).not.toContain("user-password");
     });
   });
 });

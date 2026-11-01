@@ -2,7 +2,7 @@
 
 import { Button } from "@ariadshift/ui/components/button";
 import { LogOutIcon } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useAccount } from "./account-context";
 import { AccountDialog } from "./account-dialog";
 import { errorMessage, OutcomeMessage, Section, TextField } from "./account-ui";
@@ -14,11 +14,27 @@ export interface AccountActionsSectionProps {
 
 export function AccountActionsSection({ navigate }: AccountActionsSectionProps) {
   const { auth, refreshSession, announce } = useAccount();
+  const [hasPassword, setHasPassword] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const go = navigate ?? ((path: string) => window.location.assign(path));
+
+  useEffect(() => {
+    let active = true;
+    void auth
+      .hasPassword()
+      .then((value) => {
+        if (active) setHasPassword(value);
+      })
+      .catch(() => {
+        // Default to requiring a password if account inspection fails.
+      });
+    return () => {
+      active = false;
+    };
+  }, [auth]);
 
   const onSignOut = async () => {
     setBusy(true);
@@ -40,14 +56,21 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
     setBusy(true);
     setError(null);
     try {
-      await auth.deleteAccount(password);
+      await auth.deleteAccount(hasPassword ? password : undefined);
       setPassword("");
       setDeleting(false);
       await refreshSession();
       announce("Your account was deleted.");
       go("/");
     } catch (failure) {
-      setError(errorMessage(failure, "Could not delete the account. Check your password."));
+      setError(
+        errorMessage(
+          failure,
+          hasPassword
+            ? "Could not delete the account. Check your password."
+            : "Could not delete the account. Sign in again and retry.",
+        ),
+      );
     } finally {
       setBusy(false);
     }
@@ -90,22 +113,35 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
         <AccountDialog
           role="alertdialog"
           title="Delete your account?"
-          description="This cannot be undone. Confirm your password to delete the account."
+          description={
+            hasPassword
+              ? "This cannot be undone. Confirm your password to delete the account."
+              : "This cannot be undone. Confirm below to delete the account using your current sign-in session."
+          }
           onClose={() => setDeleting(false)}
         >
           <form onSubmit={onDelete} className="flex flex-col gap-4">
-            <TextField
-              label="Password"
-              type="password"
-              autoComplete="current-password"
-              data-autofocus
-              required
-              value={password}
-              onValueChange={setPassword}
-              error={error}
-            />
+            {hasPassword ? (
+              <TextField
+                label="Password"
+                type="password"
+                autoComplete="current-password"
+                data-autofocus
+                required
+                value={password}
+                onValueChange={setPassword}
+                error={error}
+              />
+            ) : error ? (
+              <OutcomeMessage outcome={{ kind: "error", message: error }} />
+            ) : null}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setDeleting(false)}>
+              <Button
+                type="button"
+                variant="ghost"
+                {...(!hasPassword ? { "data-autofocus": true } : {})}
+                onClick={() => setDeleting(false)}
+              >
                 Cancel
               </Button>
               <Button type="submit" variant="destructive" disabled={busy}>

@@ -9,6 +9,7 @@ import { apiKey } from "@better-auth/api-key";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { passkey } from "@better-auth/passkey";
 import { type BetterAuthOptions, type BetterAuthPlugin, betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { jwt, twoFactor } from "better-auth/plugins";
 import pg from "pg";
 import type { DiscoveryDocument } from "./app.ts";
@@ -227,8 +228,8 @@ export function buildAuthOptions(
       accountLinking: { enabled: false },
     },
     user: {
-      // The account page deletes an account after the user confirms the
-      // password; without a mail transport there is no emailed confirmation.
+      // Password-backed accounts confirm their password; social-only accounts
+      // confirm deletion from a fresh session.
       deleteUser: {
         enabled: true,
         // API keys use a polymorphic referenceId without a user foreign key.
@@ -240,6 +241,23 @@ export function buildAuthOptions(
           await database.query('DELETE FROM "auth"."apikey" WHERE "referenceId" = $1', [user.id]);
         },
       },
+    },
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/delete-user") return;
+        const session = await getSessionFromCtx(ctx);
+        if (!session) return;
+        const credential = await ctx.context.internalAdapter.findCredentialAccount(session.user.id);
+        if (credential?.password) {
+          const password = (ctx.body as { password?: unknown } | undefined)?.password;
+          if (typeof password !== "string" || password === "") {
+            throw new APIError("BAD_REQUEST", {
+              code: "PASSWORD_REQUIRED",
+              message: "Password is required to delete this account.",
+            });
+          }
+        }
+      }),
     },
     rateLimit: {
       enabled: true as boolean,
