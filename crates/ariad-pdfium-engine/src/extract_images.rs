@@ -101,27 +101,53 @@ pub struct ExtractImagesOutcome {
     pub images_skipped_min_px: usize,
 }
 
-macro_rules! deref_dict {
-    ($doc:expr, $obj:expr) => {{
-        let obj_ref = $obj;
-        if let Ok(d) = obj_ref.as_dict() {
-            Some(d)
-        } else if let Ok(id) = obj_ref.as_reference() {
-            $doc.get_object(id).ok().and_then(|o| o.as_dict().ok())
-        } else {
-            None
+fn resolve<'a>(
+    doc: Option<&'a lopdf::Document>,
+    object: &'a Object,
+) -> Result<(Option<PdfObjectId>, &'a Object), EngineFailure> {
+    match doc {
+        Some(doc) => doc
+            .dereference(object)
+            .map_err(|_| EngineFailure::limit_exceeded()),
+        None if matches!(object, Object::Reference(_)) => Err(EngineFailure::limit_exceeded()),
+        None => Ok((None, object)),
+    }
+}
+
+fn validate_nested_references(
+    doc: &lopdf::Document,
+    object: &Object,
+    depth: usize,
+) -> Result<(), EngineFailure> {
+    if depth > 16 {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    match resolve(Some(doc), object)?.1 {
+        Object::Array(items) => {
+            for item in items {
+                validate_nested_references(doc, item, depth + 1)?;
+            }
         }
-    }};
+        Object::Dictionary(dict) => {
+            for (_, item) in dict.iter() {
+                validate_nested_references(doc, item, depth + 1)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 macro_rules! insert_xobjects_from_resources {
     ($doc:expr, $res_obj:expr, $out:expr) => {{
-        if let Some(res_dict) = deref_dict!($doc, $res_obj)
+        if let Ok((_, resources)) = resolve(Some($doc), $res_obj)
+            && let Ok(res_dict) = resources.as_dict()
             && let Ok(xobj_val) = res_dict.get(b"XObject")
-            && let Some(xobj_dict) = deref_dict!($doc, xobj_val)
+            && let Ok((_, xobjects)) = resolve(Some($doc), xobj_val)
+            && let Ok(xobj_dict) = xobjects.as_dict()
         {
             for (k, v) in xobj_dict.iter() {
-                if let Ok(id) = v.as_reference() {
+                if let Ok((Some(id), _)) = resolve(Some($doc), v) {
                     $out.insert(k.clone(), id);
                 }
             }
@@ -360,13 +386,15 @@ impl PreflightBudget<'_> {
         &mut self,
         ctx: &ToolContext<'_>,
         dict: &Dictionary,
+        doc: &lopdf::Document,
         bytes: usize,
     ) -> Result<(), EngineFailure> {
         let dimension = |long: &[u8], short: &[u8]| {
             dict.get(long)
                 .or_else(|_| dict.get(short))
-                .and_then(Object::as_i64)
                 .ok()
+                .and_then(|v| resolve(Some(doc), v).ok())
+                .and_then(|(_, v)| v.as_i64().ok())
                 .and_then(|n| u64::try_from(n).ok())
                 .filter(|n| *n > 0)
                 .ok_or_else(EngineFailure::limit_exceeded)
@@ -522,7 +550,7 @@ fn preflight_content_object(
                 .decompressed_content_with_limit(budget.remaining_content(max_bytes)?)
                 .map_err(|_| EngineFailure::limit_exceeded())?;
             budget.charge_content(bytes.len(), max_bytes)?;
-            preflight_content(ctx, &bytes, max_bytes, budget).map(|_| ())
+            preflight_content(ctx, doc, &bytes, max_bytes, budget).map(|_| ())
         }
         Object::Null => Ok(()),
         _ => Err(EngineFailure::limit_exceeded()),
@@ -533,32 +561,22 @@ fn validate_xobject_resources(
     doc: &lopdf::Document,
     resources: &Object,
 ) -> Result<(), EngineFailure> {
-    let resources = match resources {
-        Object::Reference(id) => doc
-            .get_object(*id)
-            .map_err(|_| EngineFailure::limit_exceeded())?,
-        other => other,
-    }
-    .as_dict()
-    .map_err(|_| EngineFailure::limit_exceeded())?;
+    let resources = resolve(Some(doc), resources)?
+        .1
+        .as_dict()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
     let Ok(xobjects) = resources.get(b"XObject") else {
         return Ok(());
     };
-    let xobjects = match xobjects {
-        Object::Reference(id) => doc
-            .get_object(*id)
-            .map_err(|_| EngineFailure::limit_exceeded())?,
-        other => other,
-    }
-    .as_dict()
-    .map_err(|_| EngineFailure::limit_exceeded())?;
+    let xobjects = resolve(Some(doc), xobjects)?
+        .1
+        .as_dict()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
     for (_, object) in xobjects.iter() {
-        let id = object
-            .as_reference()
-            .map_err(|_| EngineFailure::limit_exceeded())?;
-        doc.get_object(id)
-            .and_then(Object::as_stream)
-            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let (id, value) = resolve(Some(doc), object)?;
+        if id.is_none() || value.as_stream().is_err() {
+            return Err(EngineFailure::limit_exceeded());
+        }
     }
     Ok(())
 }
@@ -592,19 +610,28 @@ fn preflight_xobject(
         .get_object(id)
         .and_then(Object::as_stream)
         .map_err(|_| EngineFailure::limit_exceeded())?;
-    match stream
+    let subtype = stream
         .dict
         .get(b"Subtype")
-        .and_then(Object::as_name)
-        .unwrap_or(b"")
-    {
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    let subtype = resolve(Some(doc), subtype)?
+        .1
+        .as_name()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    for key in [b"Type".as_slice(), b"Filter", b"DecodeParms"] {
+        if let Ok(value) = stream.dict.get(key) {
+            validate_nested_references(doc, value, 0)?;
+        }
+    }
+    match subtype {
         b"Image" => {
-            let jpx = stream
-                .dict
-                .get(b"Filter")
-                .or_else(|_| stream.dict.get(b"F"))
-                .and_then(Object::as_name)
-                .is_ok_and(|name| name == b"JPXDecode");
+            let jpx = match stream.dict.get(b"Filter") {
+                Ok(value) => resolve(Some(doc), value)?
+                    .1
+                    .as_name()
+                    .is_ok_and(|name| name == b"JPXDecode"),
+                Err(_) => false,
+            };
             let jpx_info = if jpx {
                 Some(jpx_dimensions(&stream.content)?)
             } else {
@@ -638,7 +665,7 @@ fn preflight_xobject(
                 .decompressed_content_with_limit(budget.remaining_content(max_bytes)?)
                 .map_err(|_| EngineFailure::limit_exceeded())?;
             budget.charge_content(bytes.len(), max_bytes)?;
-            let names = preflight_content(ctx, &bytes, max_bytes, budget)?;
+            let names = preflight_content(ctx, doc, &bytes, max_bytes, budget)?;
             let mut xobjects = parent_xobjects.clone();
             let mut own_children = BTreeMap::new();
             if let Ok(resources) = stream.dict.get(b"Resources") {
@@ -683,7 +710,7 @@ fn preflight_xobject(
                 }
             }
         }
-        _ => {}
+        _ => return Err(EngineFailure::limit_exceeded()),
     }
     seen.insert(id, expansion_cost);
     Ok(expansion_cost)
@@ -695,11 +722,15 @@ fn preflight_image_dict(
     doc: Option<&lopdf::Document>,
     jpx_info: Option<(u64, u64, u64, u64)>,
 ) -> Result<usize, EngineFailure> {
-    let get = |long: &[u8], short: &[u8]| dict.get(long).or_else(|_| dict.get(short));
+    let get = |long: &[u8], short: &[u8]| -> Result<Option<&Object>, EngineFailure> {
+        match dict.get(long).or_else(|_| dict.get(short)) {
+            Ok(value) => Ok(Some(resolve(doc, value)?.1)),
+            Err(_) => Ok(None),
+        }
+    };
     let number = |long: &[u8], short: &[u8]| -> Result<u64, EngineFailure> {
-        get(long, short)
-            .and_then(Object::as_i64)
-            .ok()
+        get(long, short)?
+            .and_then(|v| v.as_i64().ok())
             .and_then(|v| u64::try_from(v).ok())
             .filter(|v| *v > 0)
             .ok_or_else(EngineFailure::limit_exceeded)
@@ -707,12 +738,13 @@ fn preflight_image_dict(
     let width = number(b"Width", b"W")?;
     let height = number(b"Height", b"H")?;
     ctx.check_pixels(width, height)?;
-    let mask = get(b"ImageMask", b"IM")
-        .and_then(Object::as_bool)
+    let mask = get(b"ImageMask", b"IM")?
+        .map(|v| v.as_bool().map_err(|_| EngineFailure::limit_exceeded()))
+        .transpose()?
         .unwrap_or(false);
     let bpc = if mask {
         1
-    } else if get(b"BitsPerComponent", b"BPC").is_err() {
+    } else if get(b"BitsPerComponent", b"BPC")?.is_none() {
         jpx_info
             .map(|(_, _, bits, _)| bits)
             .ok_or_else(EngineFailure::limit_exceeded)?
@@ -722,9 +754,9 @@ fn preflight_image_dict(
     let colors = if mask {
         1
     } else {
-        match get(b"ColorSpace", b"CS") {
-            Ok(obj) => color_components(obj, doc, 0)?,
-            Err(_) => jpx_info
+        match get(b"ColorSpace", b"CS")? {
+            Some(obj) => color_components(obj, doc, 0)?,
+            None => jpx_info
                 .map(|(_, _, _, components)| components)
                 .ok_or_else(EngineFailure::limit_exceeded)?,
         }
@@ -851,44 +883,38 @@ fn color_components(
     if depth > 16 {
         return Err(EngineFailure::limit_exceeded());
     }
+    let obj = resolve(doc, obj)?.1;
     match obj {
-        Object::Reference(id) => color_components(
-            doc.ok_or_else(EngineFailure::limit_exceeded)?
-                .get_object(*id)
-                .map_err(|_| EngineFailure::limit_exceeded())?,
-            doc,
-            depth + 1,
-        ),
         Object::Name(name) => match name.as_slice() {
             b"DeviceGray" | b"G" => Ok(1),
             b"DeviceRGB" | b"RGB" => Ok(3),
             b"DeviceCMYK" | b"CMYK" => Ok(4),
             _ => Err(EngineFailure::limit_exceeded()),
         },
-        Object::Array(parts) => match parts.first().and_then(|v| v.as_name().ok()) {
+        Object::Array(parts) => match parts
+            .first()
+            .and_then(|v| resolve(doc, v).ok())
+            .and_then(|(_, v)| v.as_name().ok())
+        {
             Some(b"Indexed" | b"I" | b"Separation") => Ok(1),
             Some(b"CalGray") => Ok(1),
             Some(b"CalRGB" | b"Lab") => Ok(3),
             Some(b"DeviceN" | b"NChannel") => parts
                 .get(1)
-                .and_then(|v| v.as_array().ok())
+                .and_then(|v| resolve(doc, v).ok())
+                .and_then(|(_, v)| v.as_array().ok())
                 .and_then(|v| u64::try_from(v.len()).ok())
                 .filter(|v| *v > 0)
                 .ok_or_else(EngineFailure::limit_exceeded),
             Some(b"ICCBased") => {
                 let profile = parts.get(1).ok_or_else(EngineFailure::limit_exceeded)?;
-                let profile = match profile {
-                    Object::Reference(id) => doc
-                        .ok_or_else(EngineFailure::limit_exceeded)?
-                        .get_object(*id)
-                        .map_err(|_| EngineFailure::limit_exceeded())?,
-                    _ => profile,
-                };
+                let profile = resolve(doc, profile)?.1;
                 profile
                     .as_stream()
                     .ok()
                     .and_then(|s| s.dict.get(b"N").ok())
-                    .and_then(|v| v.as_i64().ok())
+                    .and_then(|v| resolve(doc, v).ok())
+                    .and_then(|(_, v)| v.as_i64().ok())
                     .and_then(|v| u64::try_from(v).ok())
                     .filter(|v| *v > 0)
                     .ok_or_else(EngineFailure::limit_exceeded)
@@ -901,6 +927,7 @@ fn color_components(
 
 fn preflight_content(
     ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
     bytes: &[u8],
     max_bytes: usize,
     budget: &mut PreflightBudget<'_>,
@@ -965,7 +992,7 @@ fn preflight_content(
             (b"Interpolate", b"I"),
         ] {
             if let (Ok(full), Ok(abbreviated)) = (dict.get(long), dict.get(short))
-                && full != abbreviated
+                && resolve(Some(doc), full)?.1 != resolve(Some(doc), abbreviated)?.1
             {
                 return Err(EngineFailure::limit_exceeded());
             }
@@ -973,7 +1000,10 @@ fn preflight_content(
         let inline_bpc = dict
             .get(b"BitsPerComponent")
             .or_else(|_| dict.get(b"BPC"))
-            .and_then(Object::as_i64)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let inline_bpc = resolve(Some(doc), inline_bpc)?
+            .1
+            .as_i64()
             .map_err(|_| EngineFailure::limit_exceeded())?;
         if !matches!(inline_bpc, 1 | 2 | 4 | 8 | 16) {
             return Err(EngineFailure::limit_exceeded());
@@ -982,17 +1012,18 @@ fn preflight_content(
             .get(b"ColorSpace")
             .or_else(|_| dict.get(b"CS"))
             .map_err(|_| EngineFailure::limit_exceeded())?;
-        color_components(colorspace, None, 0)?;
+        color_components(colorspace, Some(doc), 0)?;
         if let Ok(mask) = dict.get(b"ImageMask").or_else(|_| dict.get(b"IM"))
-            && mask
+            && resolve(Some(doc), mask)?
+                .1
                 .as_bool()
                 .map_err(|_| EngineFailure::limit_exceeded())?
             && inline_bpc != 1
         {
             return Err(EngineFailure::limit_exceeded());
         }
-        let decoded_len = preflight_image_dict(ctx, dict, None, None)?;
-        budget.charge_image(ctx, dict, decoded_len)?;
+        let decoded_len = preflight_image_dict(ctx, dict, Some(doc), None)?;
+        budget.charge_image(ctx, dict, doc, decoded_len)?;
         if cursor >= bytes.len() || !is_pdf_ws(bytes[cursor]) {
             return Err(EngineFailure::limit_exceeded());
         }
@@ -1012,14 +1043,22 @@ fn preflight_content(
         // Allow a small amount of predictor overhead, but never inflate a tiny
         // declared image up to the global multi-gigabyte content limit.
         let decoded_cap = decoded_len.saturating_add(1024).min(data_cap);
-        match dict.get(b"Filter").or_else(|_| dict.get(b"F")) {
-            Err(_) => {
+        let filter = dict.get(b"F").or_else(|_| dict.get(b"Filter"));
+        let filter = match filter {
+            Ok(value) => Some(resolve(Some(doc), value)?.1),
+            Err(_) => None,
+        };
+        if let Ok(value) = dict.get(b"DP").or_else(|_| dict.get(b"DecodeParms")) {
+            validate_nested_references(doc, value, 0)?;
+        }
+        match filter {
+            None => {
                 cursor = cursor
                     .checked_add(decoded_len)
                     .filter(|end| *end <= bytes.len())
                     .ok_or_else(EngineFailure::limit_exceeded)?
             }
-            Ok(Object::Name(name)) if name == b"ASCIIHexDecode" || name == b"AHx" => {
+            Some(Object::Name(name)) if name == b"ASCIIHexDecode" || name == b"AHx" => {
                 let pos = bytes[cursor..]
                     .iter()
                     .position(|b| *b == b'>')
@@ -1032,7 +1071,7 @@ fn preflight_content(
                 }
                 cursor += pos + 1;
             }
-            Ok(Object::Name(name)) if name == b"ASCII85Decode" || name == b"A85" => {
+            Some(Object::Name(name)) if name == b"ASCII85Decode" || name == b"A85" => {
                 let tail = &bytes[cursor..];
                 let pos = tail
                     .windows(2)
@@ -1074,7 +1113,7 @@ fn preflight_content(
                 }
                 cursor += pos + 2;
             }
-            Ok(Object::Name(name)) if name == b"FlateDecode" || name == b"Fl" => {
+            Some(Object::Name(name)) if name == b"FlateDecode" || name == b"Fl" => {
                 let mut decoder = flate2::read::ZlibDecoder::new(&bytes[cursor..]);
                 let mut buffer = [0u8; 8192];
                 let mut output_len = 0usize;
@@ -1344,8 +1383,11 @@ fn visit_xobject_target(
     let subtype = stream
         .dict
         .get(b"Subtype")
-        .and_then(|o| o.as_name())
-        .unwrap_or(b"");
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    let subtype = resolve(Some(doc), subtype)?
+        .1
+        .as_name()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
 
     if subtype == b"Image" {
         if out.len() >= 100_000 || out.len() >= ctx.limits().max_blocks as usize {
@@ -1600,13 +1642,15 @@ fn xobject_dimensions(pdf_doc: &PdfDoc, obj_id: PdfObjectId) -> Option<(u32, u32
         .get(b"Width")
         .or_else(|_| stream.dict.get(b"W"))
         .ok()
-        .and_then(|o| o.as_i64().ok())?;
+        .and_then(|o| resolve(Some(doc), o).ok())
+        .and_then(|(_, o)| o.as_i64().ok())?;
     let h = stream
         .dict
         .get(b"Height")
         .or_else(|_| stream.dict.get(b"H"))
         .ok()
-        .and_then(|o| o.as_i64().ok())?;
+        .and_then(|o| resolve(Some(doc), o).ok())
+        .and_then(|(_, o)| o.as_i64().ok())?;
     let width = u32::try_from(w).ok()?;
     let height = u32::try_from(h).ok()?;
     Some((width, height))
@@ -2286,6 +2330,40 @@ mod corpus_tests {
                 paths.push(path);
             }
         }
+    }
+
+    #[test]
+    fn preflight_resolves_form_subtype() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let work = dir.path().canonicalize().expect("workspace");
+        for sub in ["in", "out", "tmp"] {
+            fs::create_dir(work.join(sub)).expect("directory");
+        }
+        let input = work.join("in/doc.pdf");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/indirect-image-preflight.pdf"),
+            &input,
+        )
+        .expect("fixture");
+        let paths = RunToolPaths {
+            workspace: work.clone(),
+            inputs: vec![input],
+            output_dir: work.join("out"),
+            work_dir: work.join("tmp"),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "indirect",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
+        let page = *doc.inner().get_pages().values().next().expect("page");
+        let mut work = 0;
+        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
     }
 
     #[test]

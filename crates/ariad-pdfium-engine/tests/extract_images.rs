@@ -953,3 +953,21 @@ fn refuses_ambiguous_inline_keys_and_excess_flate_output() {
         assert_eq!(err.code, ErrorCode::LimitExceeded, "{fixture}");
     }
 }
+
+#[test]
+fn refuses_oversized_inline_image_in_indirect_subtype_form() {
+    let lib_dir = require_pdfium!();
+    let ws = TestWorkspace::from_fixture("fixtures/pdf/indirect-image-preflight.pdf");
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "indirect-form",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("indirect form subtype must be preflighted");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}

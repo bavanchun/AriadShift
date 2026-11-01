@@ -4088,3 +4088,19 @@ attribution = "AriadShift contributors"
 sha256 = "b3ff797ba01c08497ee38823735cf1f08250a1c9e6db03dccff24c3de33d68ba"
 pages = 1
 tags = []
+
+[[fixture]]
+id = "indirect-image-preflight-pdf"
+path = "fixtures/pdf/indirect-image-preflight.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Form with indirect subtype and oversized inline image"
+origin = "generated"
+generated_by = "fixtures/gen/indirect_image_preflight.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7754f715394011b37ec8e664694dc7f421d9d8df248f680cfb7f5d3a185d31c0"
+pages = 1
+tags = []
