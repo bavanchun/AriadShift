@@ -1,7 +1,8 @@
 // `GET /v1/jobs` feature detection: a deployment without the route falls back,
 // a listed page is validated, and real failures surface as API errors.
 import { AriadApiError } from "@ariadshift/sdk";
-import { JOB_PAGE_SIZE, listJobs } from "@/components/account/jobs-api";
+import { type AuthApi, AuthError } from "@/components/account/auth-api";
+import { createJobsApi, JOB_PAGE_SIZE, listJobs } from "@/components/account/jobs-api";
 
 type GetResult = { data?: unknown; error?: unknown; response?: Response };
 
@@ -79,5 +80,92 @@ describe("listJobs", () => {
   it("rethrows a request that got no response", async () => {
     const { client } = fakeClient({ error: new TypeError("Failed to fetch") });
     await expect(listJobs(client)).rejects.toThrow("Failed to fetch");
+  });
+
+  it("refuses signed-in requests without sending an anonymous call and preserves 401, 503, 429 and network errors", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      throw new Error("unexpected anonymous fetch");
+    });
+    try {
+      const unauthorizedAuth = {
+        apiToken: vi.fn(async () => {
+          throw new AuthError("Your session has ended. Sign in again.", 401, "unauthorized");
+        }),
+      } as unknown as AuthApi;
+      const unauthorizedApi = createJobsApi("http://localhost:3902", unauthorizedAuth, true);
+      const unauthorizedFailure = await unauthorizedApi.listJobs().catch((error: unknown) => error);
+      expect(unauthorizedFailure).toBeInstanceOf(AriadApiError);
+      expect(unauthorizedFailure).toMatchObject({
+        status: 401,
+        code: "unauthorized",
+        message: "Your session has ended. Sign in again.",
+      });
+
+      const unavailableAuth = {
+        apiToken: vi.fn(async () => {
+          throw new AuthError(
+            "The server cannot verify your sign-in right now. Try again shortly.",
+            503,
+            "unavailable",
+          );
+        }),
+      } as unknown as AuthApi;
+      const unavailableApi = createJobsApi("http://localhost:3902", unavailableAuth, true);
+      const unavailableFailure = await unavailableApi.listJobs().catch((error: unknown) => error);
+      expect(unavailableFailure).toBeInstanceOf(AriadApiError);
+      expect(unavailableFailure).toMatchObject({
+        status: 503,
+        code: "unavailable",
+        message: "The server cannot verify your sign-in right now. Try again shortly.",
+      });
+
+      const rateLimitedAuth = {
+        apiToken: vi.fn(async () => {
+          throw new AuthError("Too many requests. Try again shortly.", 429, "rate_limited");
+        }),
+      } as unknown as AuthApi;
+      const rateLimitedApi = createJobsApi("http://localhost:3902", rateLimitedAuth, true);
+      const rateLimitedFailure = await rateLimitedApi.listJobs().catch((error: unknown) => error);
+      expect(rateLimitedFailure).toBeInstanceOf(AriadApiError);
+      expect(rateLimitedFailure).toMatchObject({
+        status: 429,
+        code: "rate_limited",
+        message: "Too many requests. Try again shortly.",
+      });
+
+      const networkAuth = {
+        apiToken: vi.fn(async () => {
+          throw new AuthError(
+            "The sign-in service cannot be reached. Check your connection and try again.",
+            undefined,
+            "network_error",
+          );
+        }),
+      } as unknown as AuthApi;
+      const networkApi = createJobsApi("http://localhost:3902", networkAuth, true);
+      const networkFailure = await networkApi.listJobs().catch((error: unknown) => error);
+      expect(networkFailure).toBeInstanceOf(AriadApiError);
+      expect(networkFailure).toMatchObject({
+        status: 503,
+        code: "unavailable",
+        message: "The sign-in service cannot be reached. Check your connection and try again.",
+      });
+
+      const malformedAuth = {
+        apiToken: vi.fn(async () => {
+          throw new AuthError("invalid token", 200, "invalid_token_response");
+        }),
+      } as unknown as AuthApi;
+      const malformedApi = createJobsApi("http://localhost:3902", malformedAuth, true);
+      const malformedFailure = await malformedApi.getJob("job-1").catch((error: unknown) => error);
+      expect(malformedFailure).toBeInstanceOf(AriadApiError);
+      expect(malformedFailure).toMatchObject({
+        code: "unavailable",
+        message: "The server cannot verify your sign-in right now. Try again shortly.",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

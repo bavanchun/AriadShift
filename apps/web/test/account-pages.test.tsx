@@ -50,6 +50,7 @@ function fakeAuth(user: AccountUser | null = USER): FakeAuth {
     regenerateBackupCodes: vi
       .fn<AuthApi["regenerateBackupCodes"]>()
       .mockResolvedValue(["cccc-3333"]),
+    hasPassword: vi.fn<AuthApi["hasPassword"]>().mockResolvedValue(true),
     deleteAccount: vi.fn<AuthApi["deleteAccount"]>().mockResolvedValue(),
     listApiKeys: vi.fn<AuthApi["listApiKeys"]>().mockResolvedValue([
       {
@@ -71,6 +72,27 @@ function fakeAuth(user: AccountUser | null = USER): FakeAuth {
       key: "ashift_cdSECRETVALUE",
     }),
     deleteApiKey: vi.fn<AuthApi["deleteApiKey"]>().mockResolvedValue(),
+    listOAuthConsents: vi.fn<AuthApi["listOAuthConsents"]>().mockResolvedValue([
+      {
+        id: "consent-1",
+        clientId: "client-1",
+        clientName: "Claude Code",
+        scopes: ["openid", "offline_access"],
+        createdAt: "2026-10-30T10:00:00Z",
+        updatedAt: "2026-10-30T11:00:00Z",
+      },
+    ]),
+    deleteOAuthConsent: vi.fn<AuthApi["deleteOAuthConsent"]>().mockResolvedValue(),
+    listOAuthClients: vi.fn<AuthApi["listOAuthClients"]>().mockResolvedValue([
+      {
+        clientId: "client-2",
+        clientName: "Cursor MCP",
+        redirectUris: ["http://127.0.0.1:33418/callback"],
+        scopes: ["openid", "offline_access"],
+        createdAt: "2026-10-30T10:00:00Z",
+      },
+    ]),
+    deleteOAuthClient: vi.fn<AuthApi["deleteOAuthClient"]>().mockResolvedValue(),
     apiToken: vi.fn<AuthApi["apiToken"]>().mockResolvedValue("jwt"),
   };
 }
@@ -314,6 +336,88 @@ describe("account page", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
     expect(auth.deleteAccount).toHaveBeenCalledWith("secret password");
+  });
+
+  it("deletes a social-only account through fresh-session confirmation without asking for a password", async () => {
+    const auth = fakeAuth();
+    auth.hasPassword.mockResolvedValue(false);
+    const navigate = vi.fn();
+    renderInShell(<AccountPage navigate={navigate} />, auth);
+    const openDelete = await screen.findByRole("button", { name: "Delete account" });
+    await waitFor(() => expect(auth.hasPassword).toHaveBeenCalled());
+
+    fireEvent.click(openDelete);
+    const dialog = screen.getByRole("alertdialog", { name: "Delete your account?" });
+    expect(within(dialog).queryByLabelText("Password")).toBeNull();
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
+    expect(auth.deleteAccount).toHaveBeenCalledWith(undefined);
+  });
+
+  it("asks the user to sign in again when account deletion is refused with reauth_required", async () => {
+    const auth = fakeAuth();
+    auth.hasPassword.mockResolvedValue(false);
+    auth.deleteAccount.mockRejectedValue(
+      new AuthError("Sign in again before deleting your account.", 400, "reauth_required"),
+    );
+    renderInShell(<AccountPage />, auth);
+    const openDelete = await screen.findByRole("button", { name: "Delete account" });
+    await waitFor(() => expect(auth.hasPassword).toHaveBeenCalled());
+
+    fireEvent.click(openDelete);
+    const dialog = screen.getByRole("alertdialog", { name: "Delete your account?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
+
+    expect(
+      await within(dialog).findByText("Sign in again before deleting your account."),
+    ).toBeTruthy();
+    const reauthLink = within(dialog).getByRole("link", { name: "Sign in again" });
+    expect(reauthLink.getAttribute("href")).toBe("/sign-in?next=%2Faccount");
+  });
+
+  it("lists connected OAuth apps and registered clients and revokes them after confirmation", async () => {
+    const auth = fakeAuth();
+    renderInShell(<AccountPage />, auth);
+
+    const section = await screen.findByRole("region", { name: "Connected apps" });
+    expect(await within(section).findByText("Claude Code")).toBeTruthy();
+    expect(within(section).getByText(/Scopes: openid, offline_access/)).toBeTruthy();
+    expect(within(section).getByText("Cursor MCP")).toBeTruthy();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Revoke Claude Code" }));
+    const consentDialog = screen.getByRole("alertdialog", { name: "Revoke Claude Code?" });
+    expect(
+      within(consentDialog).getByText(
+        "Revoking stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire.",
+      ),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(
+      within(consentDialog).getByRole("button", { name: "Cancel" }),
+    );
+    auth.listOAuthConsents.mockResolvedValue([]);
+    fireEvent.click(within(consentDialog).getByRole("button", { name: "Revoke" }));
+
+    expect(await within(section).findByText("Claude Code revoked.")).toBeTruthy();
+    expect(auth.deleteOAuthConsent).toHaveBeenCalledWith("consent-1");
+    expect(within(section).queryByText("Claude Code")).toBeNull();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Revoke Cursor MCP" }));
+    const clientDialog = screen.getByRole("alertdialog", { name: "Revoke Cursor MCP?" });
+    expect(
+      within(clientDialog).getByText(
+        "Deleting this registered OAuth client revokes its credentials and consents and stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire.",
+      ),
+    ).toBeTruthy();
+    auth.listOAuthClients.mockResolvedValue([]);
+    fireEvent.click(within(clientDialog).getByRole("button", { name: "Revoke" }));
+
+    expect(await within(section).findByText("Cursor MCP revoked.")).toBeTruthy();
+    expect(auth.deleteOAuthClient).toHaveBeenCalledWith("client-2");
+    expect(
+      await within(section).findByText("No connected apps or registered OAuth clients yet."),
+    ).toBeTruthy();
   });
 
   it("signs out", async () => {
