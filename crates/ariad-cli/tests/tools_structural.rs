@@ -762,3 +762,262 @@ fn multi_output_pdf_split_lists_every_artifact_in_human_and_json_modes() {
         assert_eq!(artifact["bytes"], json!(actual_len));
     }
 }
+
+/// Runs `ashift tool <tool>` and asserts exit code 0. `out` becomes `-o <out>`.
+fn run_tool_ok(
+    tool: &str,
+    inputs: &[&Path],
+    params: &[&str],
+    flags: &[&str],
+    out: Option<&Path>,
+) -> std::process::Output {
+    let mut cmd = ashift_cmd();
+    cmd.args(["tool", tool]);
+    cmd.args(inputs);
+    for param in params {
+        cmd.args(["--param", param]);
+    }
+    cmd.args(flags);
+    if let Some(out) = out {
+        cmd.arg("-o").arg(out);
+    }
+    let output = cmd.output().expect("execute ashift tool");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "tool {tool} failed\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+fn sorted_file_names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .expect("read dir")
+        .map(|entry| {
+            entry
+                .expect("dir entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+fn top_level_bookmark_titles(outline: &Value) -> Vec<String> {
+    outline
+        .as_array()
+        .expect("outline export is a JSON array")
+        .iter()
+        .map(|node| node["title"].as_str().expect("bookmark title").to_owned())
+        .collect()
+}
+
+#[test]
+fn merge_per_file_outline_titles_use_input_stems() {
+    let tmp = TempDir::new().expect("tempdir");
+    let out_dir = tmp.path().join("out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+
+    let rotated = pdf_fixture("rotated-pages.pdf");
+    let annotations = pdf_fixture("annotations.pdf");
+    run_tool_ok(
+        "pdf.merge",
+        &[&rotated, &annotations],
+        &["outline=per-file"],
+        &[],
+        Some(&out_dir),
+    );
+    let merged = out_dir.join("rotated-pages.merged.pdf");
+
+    let export = run_tool_ok(
+        "pdf.outline",
+        &[&merged],
+        &["action=export"],
+        &["--json"],
+        None,
+    );
+    let outline: Value = serde_json::from_slice(&export.stdout).expect("parse outline export");
+    assert_eq!(
+        top_level_bookmark_titles(&outline),
+        ["rotated-pages", "annotations"],
+        "per-file bookmarks must carry the input file stems, not staged names"
+    );
+}
+
+#[test]
+fn json_emitting_actions_print_json_and_never_write_a_pdf() {
+    let tmp = TempDir::new().expect("tempdir");
+    let work = tmp.path().join("work");
+    fs::create_dir_all(&work).expect("create work dir");
+
+    let rotated = pdf_fixture("rotated-pages.pdf");
+    let annotations = pdf_fixture("annotations.pdf");
+    let inventory = tmp.path().join("inventory.csv");
+    fs::write(&inventory, "id,name\n1,Anh\n2,Bình\n").expect("write csv");
+
+    run_tool_ok(
+        "pdf.merge",
+        &[&rotated, &annotations],
+        &["outline=per-file"],
+        &[],
+        Some(&work),
+    );
+    let merged = work.join("rotated-pages.merged.pdf");
+    run_tool_ok(
+        "pdf.attachments",
+        &[&merged, &inventory],
+        &["action=add"],
+        &[],
+        Some(&work),
+    );
+    let attached = work.join("rotated-pages.merged.attachments.pdf");
+    run_tool_ok(
+        "pdf.portfolio",
+        &[&rotated, &annotations],
+        &["action=create"],
+        &[],
+        Some(&work),
+    );
+    let portfolio = work.join("rotated-pages.portfolio.pdf");
+    fs::copy(
+        pdf_fixture("watermark-layer.pdf"),
+        work.join("watermark-layer.pdf"),
+    )
+    .expect("copy watermark fixture");
+    let layered = work.join("watermark-layer.pdf");
+
+    let cases: [(&str, &Path, &str, &str); 4] = [
+        ("pdf.outline", &merged, "action=export", "rotated-pages"),
+        ("pdf.attachments", &attached, "action=list", "inventory.csv"),
+        (
+            "pdf.portfolio",
+            &portfolio,
+            "action=list",
+            "annotations.pdf",
+        ),
+        (
+            "pdf.layers",
+            &layered,
+            "action=list",
+            "AriadShift Watermark",
+        ),
+    ];
+
+    let files_before = sorted_file_names(&work);
+    for (idx, (tool, input, action, expected_fragment)) in cases.iter().enumerate() {
+        // Default target: the JSON is printed and no file appears beside the input.
+        let printed = run_tool_ok(tool, &[input], &[action], &["--json"], None);
+        let json: Value = serde_json::from_slice(&printed.stdout)
+            .unwrap_or_else(|err| panic!("{tool} must print JSON: {err}"));
+        assert!(
+            json.to_string().contains(expected_fragment),
+            "{tool} JSON must mention {expected_fragment}: {json}"
+        );
+        assert_eq!(
+            sorted_file_names(&work),
+            files_before,
+            "{tool} must not publish a default file beside the input"
+        );
+
+        // Human mode prints the same JSON, not the pdf.info summary.
+        let human = run_tool_ok(tool, &[input], &[action], &[], None);
+        let human_json: Value =
+            serde_json::from_slice(&human.stdout).expect("human mode prints JSON");
+        assert_eq!(
+            human_json, json,
+            "{tool} human output must be the JSON payload"
+        );
+
+        // Explicit `-o <file>.json` is accepted and holds the same JSON.
+        let json_dir = tmp.path().join(format!("json-{idx}"));
+        fs::create_dir_all(&json_dir).expect("create json dir");
+        let json_file = json_dir.join("result.json");
+        run_tool_ok(tool, &[input], &[action], &[], Some(&json_file));
+        let written: Value =
+            serde_json::from_slice(&fs::read(&json_file).expect("read json output"))
+                .expect("written file is JSON");
+        assert_eq!(written, json, "{tool} -o file must hold the printed JSON");
+        assert_eq!(sorted_file_names(&json_dir), ["result.json"]);
+    }
+}
+
+#[test]
+fn attachments_add_csv_and_pdf_extract_keeps_original_names_and_bytes() {
+    let tmp = TempDir::new().expect("tempdir");
+    let carrier_dir = tmp.path().join("carrier");
+    let extract_dir = tmp.path().join("extract");
+    fs::create_dir_all(&carrier_dir).expect("create carrier dir");
+    fs::create_dir_all(&extract_dir).expect("create extract dir");
+
+    let inventory = tmp.path().join("inventory.csv");
+    let inventory_bytes = "id,name\r\n1,Nguyễn Văn An\r\n2,Trần Thị Bình\r\n".as_bytes();
+    fs::write(&inventory, inventory_bytes).expect("write csv");
+    let companion = pdf_fixture("annotations.pdf");
+    let companion_bytes = fs::read(&companion).expect("read companion pdf");
+
+    run_tool_ok(
+        "pdf.attachments",
+        &[&pdf_fixture("rotated-pages.pdf"), &inventory, &companion],
+        &["action=add"],
+        &[],
+        Some(&carrier_dir),
+    );
+    let carrier = carrier_dir.join("rotated-pages.attachments.pdf");
+
+    let listed = run_tool_ok(
+        "pdf.attachments",
+        &[&carrier],
+        &["action=list"],
+        &["--json"],
+        None,
+    );
+    let entries: Value = serde_json::from_slice(&listed.stdout).expect("parse attachment list");
+    let entries = entries.as_array().expect("attachment list array");
+    let by_name = |name: &str| {
+        entries
+            .iter()
+            .find(|entry| entry["name"] == json!(name))
+            .unwrap_or_else(|| panic!("attachment {name} missing from {entries:?}"))
+    };
+    assert_eq!(entries.len(), 2);
+    assert_eq!(by_name("inventory.csv")["media_type"], json!("text/csv"));
+    assert_eq!(
+        by_name("inventory.csv")["sha256"],
+        json!(hex::encode(Sha256::digest(inventory_bytes)))
+    );
+    assert_eq!(
+        by_name("annotations.pdf")["sha256"],
+        json!(hex::encode(Sha256::digest(&companion_bytes))),
+        "an attached PDF must keep the digest of its original bytes"
+    );
+
+    run_tool_ok(
+        "pdf.attachments",
+        &[&carrier],
+        &["action=extract"],
+        &[],
+        Some(&extract_dir),
+    );
+    assert_eq!(
+        sorted_file_names(&extract_dir),
+        [
+            "rotated-pages.attachments.attachment-001.annotations.pdf",
+            "rotated-pages.attachments.attachment-002.inventory.csv",
+        ],
+        "extracted files keep their attachment names and extensions"
+    );
+    assert_eq!(
+        fs::read(extract_dir.join("rotated-pages.attachments.attachment-002.inventory.csv"))
+            .expect("read extracted csv"),
+        inventory_bytes
+    );
+    assert_eq!(
+        fs::read(extract_dir.join("rotated-pages.attachments.attachment-001.annotations.pdf"))
+            .expect("read extracted pdf"),
+        companion_bytes
+    );
+}
