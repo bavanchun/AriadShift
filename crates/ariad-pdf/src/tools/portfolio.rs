@@ -2,10 +2,7 @@
 
 use std::collections::HashSet;
 
-use ariad_core::{
-    limits::Limits,
-    tools::params::portfolio::{PortfolioAction, PortfolioParams, PortfolioView},
-};
+use ariad_core::tools::params::portfolio::{PortfolioAction, PortfolioParams, PortfolioView};
 use lopdf::{Document, Object, Stream, StringFormat, dictionary};
 use serde_json::Value;
 
@@ -14,10 +11,11 @@ use crate::{
     error::PdfError,
     naming,
     tools::{
-        OutputDoc,
+        InputDoc, InputSource, OutputDoc,
         attachments::{
-            EmbeddedFileEntry, collect_attachment_payloads, entries_to_summaries,
-            extract_embedded_files_outputs, read_embedded_files, write_embedded_files,
+            EmbeddedFileEntry, collect_attachment_payloads_from_inputs, entries_to_summaries,
+            extract_embedded_files_outputs_with_limits, read_embedded_files_with_limits,
+            write_embedded_files,
         },
         metadata::catalog_object_id,
     },
@@ -30,6 +28,22 @@ pub fn run(
     params: &PortfolioParams,
     ctx: &ToolCtx,
 ) -> Result<Vec<OutputDoc>, PdfError> {
+    let input_docs: Vec<InputDoc> = inputs
+        .iter()
+        .map(|pdf| {
+            let stem = naming::doc_stem(pdf).unwrap_or_else(|| "portfolio".to_owned());
+            InputDoc::from_doc(stem, pdf.clone())
+        })
+        .collect();
+    run_inputs(&input_docs, params, ctx).map(|(_, outs)| outs)
+}
+
+/// Creates, lists, or extracts a PDF collection portfolio (`/Collection`) from raw [`InputDoc`] handles.
+pub fn run_inputs(
+    inputs: &[InputDoc],
+    params: &PortfolioParams,
+    ctx: &ToolCtx,
+) -> Result<(Vec<PdfDoc>, Vec<OutputDoc>), PdfError> {
     ctx.check()?;
     if inputs.is_empty() {
         return Err(PdfError::InvalidParams(
@@ -37,20 +51,43 @@ pub fn run(
         ));
     }
 
-    let first_stem = naming::doc_stem(&inputs[0]).unwrap_or_else(|| "portfolio".to_owned());
+    let first_stem = {
+        let clean = inputs[0].clean_stem();
+        if clean.is_empty() {
+            "portfolio".to_owned()
+        } else {
+            clean
+        }
+    };
 
     match params.action {
         PortfolioAction::Create => {
+            let carrier_limits = &inputs[0].limits;
             let explicit_names = unique_portfolio_filenames(inputs);
-            let entries = collect_attachment_payloads(inputs, Some(&explicit_names), ctx)?;
+            let entries = collect_attachment_payloads_from_inputs(
+                inputs,
+                Some(&explicit_names),
+                carrier_limits,
+                ctx,
+            )?;
             let mut doc = build_portfolio_document(&entries, params.view)?;
             let raw_bytes =
                 writer::save_document_with_options(&mut doc, ctx, &SaveOptions::default())?;
-            let pdf = document::open_with_ctx(&raw_bytes, &Limits::local(), ctx)?;
-            Ok(vec![OutputDoc::from_pdf(
-                naming::default_pdf_output_name(&first_stem, "pdf.portfolio"),
-                pdf,
-            )])
+            let pdf = document::open_with_ctx(&raw_bytes, carrier_limits, ctx)?;
+            let opened_docs: Vec<PdfDoc> = inputs
+                .iter()
+                .filter_map(|input| match &input.source {
+                    InputSource::Doc(existing) => Some((**existing).clone()),
+                    InputSource::Bytes(_) => None,
+                })
+                .collect();
+            Ok((
+                opened_docs,
+                vec![OutputDoc::from_pdf(
+                    naming::default_pdf_output_name(&first_stem, "pdf.portfolio"),
+                    pdf,
+                )],
+            ))
         }
         PortfolioAction::List => {
             if inputs.len() != 1 {
@@ -59,12 +96,17 @@ pub fn run(
                     inputs.len()
                 )));
             }
-            let entries = read_embedded_files(&inputs[0], ctx)?;
+            let portfolio_pdf = inputs[0].open_for_mutation(ctx)?;
+            let stem = naming::doc_stem(&portfolio_pdf).unwrap_or(first_stem);
+            let entries = read_embedded_files_with_limits(&portfolio_pdf, &inputs[0].limits, ctx)?;
             let summaries = entries_to_summaries(&entries);
-            let out_name = naming::single_output_name(&first_stem, "portfolio", "json");
+            let out_name = naming::single_output_name(&stem, "portfolio", "json");
             let json_val: Value =
                 serde_json::to_value(&summaries).map_err(|_| PdfError::Malformed)?;
-            Ok(vec![OutputDoc::from_json(out_name, json_val)?])
+            Ok((
+                vec![portfolio_pdf],
+                vec![OutputDoc::from_json(out_name, json_val)?],
+            ))
         }
         PortfolioAction::Extract => {
             if inputs.len() != 1 {
@@ -73,19 +115,36 @@ pub fn run(
                     inputs.len()
                 )));
             }
-            extract_embedded_files_outputs(&inputs[0], &first_stem, None, ctx)
+            let portfolio_pdf = inputs[0].open_for_mutation(ctx)?;
+            let stem = naming::doc_stem(&portfolio_pdf).unwrap_or(first_stem);
+            let outputs = extract_embedded_files_outputs_with_limits(
+                &portfolio_pdf,
+                &stem,
+                None,
+                &inputs[0].limits,
+                ctx,
+            )?;
+            Ok((vec![portfolio_pdf], outputs))
         }
     }
 }
 
-fn unique_portfolio_filenames(inputs: &[PdfDoc]) -> Vec<String> {
+fn unique_portfolio_filenames(inputs: &[InputDoc]) -> Vec<String> {
     let mut used = HashSet::with_capacity(inputs.len());
     let mut names = Vec::with_capacity(inputs.len());
 
-    for (idx, pdf) in inputs.iter().enumerate() {
-        let base_stem = naming::doc_stem(pdf)
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| format!("document-{}", idx + 1));
+    for (idx, input) in inputs.iter().enumerate() {
+        let raw_base = input
+            .stem
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(&input.stem)
+            .trim();
+        let base_stem = if raw_base.is_empty() {
+            format!("document-{}", idx + 1)
+        } else {
+            raw_base.to_owned()
+        };
         let (stem_part, ext_part) = match base_stem.rsplit_once('.') {
             Some((s, e)) if !s.is_empty() && !e.is_empty() => (s.to_owned(), e.to_owned()),
             _ => (base_stem, "pdf".to_owned()),

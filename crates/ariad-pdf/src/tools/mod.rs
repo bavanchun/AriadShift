@@ -375,12 +375,12 @@ pub fn run_tool(
         "pdf.outline" => {
             dispatch_structural::<OutlineParams, _>(tool_id, inputs, params, ctx, outline::run)
         }
-        "pdf.attachments" => dispatch_structural::<AttachmentsParams, _>(
+        "pdf.attachments" => dispatch_structural_inputs::<AttachmentsParams, _>(
             tool_id,
             inputs,
             params,
             ctx,
-            attachments::run,
+            attachments::run_inputs,
         ),
         "pdf.page_labels" => dispatch_structural::<PageLabelsParams, _>(
             tool_id,
@@ -396,9 +396,13 @@ pub fn run_tool(
             ctx,
             viewer_prefs::run,
         ),
-        "pdf.portfolio" => {
-            dispatch_structural::<PortfolioParams, _>(tool_id, inputs, params, ctx, portfolio::run)
-        }
+        "pdf.portfolio" => dispatch_structural_inputs::<PortfolioParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            portfolio::run_inputs,
+        ),
         "pdf.layers" => {
             dispatch_structural::<LayersParams, _>(tool_id, inputs, params, ctx, layers::run)
         }
@@ -479,6 +483,38 @@ where
         .unwrap_or_else(|| "document".to_owned());
 
     let output_docs = runner(&opened_docs, &typed_params, ctx)?;
+    finalize_tool_output(tool_id, &opened_docs, &first_stem, output_docs, ctx)
+}
+
+/// Deserializes `params` into `P`, passes raw [`InputDoc`] handles to `runner` so tools that accept
+/// arbitrary non-PDF file payloads (`pdf.attachments` `add`, `pdf.portfolio` `create`) do not parse
+/// or re-save attachment inputs as PDFs, and finalizes output artifacts and warnings.
+pub fn dispatch_structural_inputs<P, F>(
+    tool_id: &str,
+    inputs: &[InputDoc],
+    params: &Value,
+    ctx: &ToolCtx,
+    runner: F,
+) -> Result<ToolOutput, PdfError>
+where
+    P: DeserializeOwned,
+    F: FnOnce(&[InputDoc], &P, &ToolCtx) -> Result<(Vec<PdfDoc>, Vec<OutputDoc>), PdfError>,
+{
+    ctx.check()?;
+    let typed_params: P = serde_json::from_value(params.clone())
+        .map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+    if inputs.is_empty() {
+        return Err(PdfError::InvalidParams(format!(
+            "tool `{tool_id}` requires at least 1 input document"
+        )));
+    }
+
+    let first_stem = inputs
+        .first()
+        .map(InputDoc::clean_stem)
+        .unwrap_or_else(|| "document".to_owned());
+
+    let (opened_docs, output_docs) = runner(inputs, &typed_params, ctx)?;
     finalize_tool_output(tool_id, &opened_docs, &first_stem, output_docs, ctx)
 }
 

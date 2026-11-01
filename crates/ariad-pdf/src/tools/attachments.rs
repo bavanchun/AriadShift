@@ -1,6 +1,6 @@
 //! Implementation of the `pdf.attachments` tool and shared embedded-file helpers.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ariad_core::{
     limits::Limits,
@@ -16,12 +16,14 @@ use crate::{
     error::PdfError,
     naming,
     tools::{
-        OutputDoc,
+        InputDoc, InputSource, OutputDoc,
         metadata::catalog_object_id,
         outline::{decode_pdf_object_string, encode_pdf_string},
     },
     writer,
 };
+
+const MAX_NAME_TREE_DEPTH: usize = 64;
 
 /// Metadata and raw payload of an embedded file extracted from a PDF.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -51,14 +53,28 @@ pub fn run(
     params: &AttachmentsParams,
     ctx: &ToolCtx,
 ) -> Result<Vec<OutputDoc>, PdfError> {
+    let input_docs: Vec<InputDoc> = inputs
+        .iter()
+        .map(|pdf| {
+            let stem = naming::doc_stem(pdf).unwrap_or_else(|| "document".to_owned());
+            InputDoc::from_doc(stem, pdf.clone())
+        })
+        .collect();
+    run_inputs(&input_docs, params, ctx).map(|(_, outs)| outs)
+}
+
+/// Lists, embeds, extracts, or removes embedded file attachments from raw [`InputDoc`] handles.
+pub fn run_inputs(
+    inputs: &[InputDoc],
+    params: &AttachmentsParams,
+    ctx: &ToolCtx,
+) -> Result<(Vec<PdfDoc>, Vec<OutputDoc>), PdfError> {
     ctx.check()?;
     if inputs.is_empty() {
         return Err(PdfError::InvalidParams(
             "pdf.attachments requires at least 1 input PDF".to_owned(),
         ));
     }
-
-    let first_stem = naming::doc_stem(&inputs[0]).unwrap_or_else(|| "document".to_owned());
 
     match params.action {
         AttachmentsAction::List => {
@@ -74,12 +90,18 @@ pub fn run(
                         .to_owned(),
                 ));
             }
-            let entries = read_embedded_files(&inputs[0], ctx)?;
+            let carrier_pdf = inputs[0].open_for_mutation(ctx)?;
+            let first_stem =
+                naming::doc_stem(&carrier_pdf).unwrap_or_else(|| "document".to_owned());
+            let entries = read_embedded_files_with_limits(&carrier_pdf, &inputs[0].limits, ctx)?;
             let summaries = entries_to_summaries(&entries);
             let out_name = naming::single_output_name(&first_stem, "attachments", "json");
             let json_val: Value =
                 serde_json::to_value(&summaries).map_err(|_| PdfError::Malformed)?;
-            Ok(vec![OutputDoc::from_json(out_name, json_val)?])
+            Ok((
+                vec![carrier_pdf],
+                vec![OutputDoc::from_json(out_name, json_val)?],
+            ))
         }
         AttachmentsAction::Extract => {
             if inputs.len() != 1 {
@@ -88,7 +110,17 @@ pub fn run(
                     inputs.len()
                 )));
             }
-            extract_embedded_files_outputs(&inputs[0], &first_stem, params.names.as_deref(), ctx)
+            let carrier_pdf = inputs[0].open_for_mutation(ctx)?;
+            let first_stem =
+                naming::doc_stem(&carrier_pdf).unwrap_or_else(|| "document".to_owned());
+            let outputs = extract_embedded_files_outputs_with_limits(
+                &carrier_pdf,
+                &first_stem,
+                params.names.as_deref(),
+                &inputs[0].limits,
+                ctx,
+            )?;
+            Ok((vec![carrier_pdf], outputs))
         }
         AttachmentsAction::Add => {
             if inputs.len() < 2 {
@@ -115,17 +147,27 @@ pub fn run(
                 }
             }
 
-            let mut base_pdf = inputs[0].clone();
-            let mut existing = read_embedded_files(&base_pdf, ctx)?;
-            let new_files =
-                collect_attachment_payloads(attach_inputs, params.names.as_deref(), ctx)?;
+            let carrier_pdf = inputs[0].open_for_mutation(ctx)?;
+            let first_stem =
+                naming::doc_stem(&carrier_pdf).unwrap_or_else(|| "document".to_owned());
+            let mut base_pdf = carrier_pdf.clone();
+            let mut existing = read_embedded_files_with_limits(&base_pdf, &inputs[0].limits, ctx)?;
+            let new_files = collect_attachment_payloads_from_inputs(
+                attach_inputs,
+                params.names.as_deref(),
+                &inputs[0].limits,
+                ctx,
+            )?;
             merge_embedded_entries(&mut existing, new_files);
             write_embedded_files(base_pdf.inner_mut()?, &existing)?;
 
-            Ok(vec![OutputDoc::from_pdf(
-                naming::default_pdf_output_name(&first_stem, "pdf.attachments"),
-                base_pdf,
-            )])
+            Ok((
+                vec![carrier_pdf],
+                vec![OutputDoc::from_pdf(
+                    naming::default_pdf_output_name(&first_stem, "pdf.attachments"),
+                    base_pdf,
+                )],
+            ))
         }
         AttachmentsAction::Remove => {
             if inputs.len() != 1 {
@@ -134,8 +176,11 @@ pub fn run(
                     inputs.len()
                 )));
             }
-            let mut out_pdf = inputs[0].clone();
-            let existing = read_embedded_files(&out_pdf, ctx)?;
+            let carrier_pdf = inputs[0].open_for_mutation(ctx)?;
+            let first_stem =
+                naming::doc_stem(&carrier_pdf).unwrap_or_else(|| "document".to_owned());
+            let mut out_pdf = carrier_pdf.clone();
+            let existing = read_embedded_files_with_limits(&out_pdf, &inputs[0].limits, ctx)?;
 
             if let Some(target_names) = &params.names {
                 if target_names.is_empty() {
@@ -160,19 +205,26 @@ pub fn run(
                 write_embedded_files(out_pdf.inner_mut()?, &[])?;
             }
 
-            Ok(vec![OutputDoc::from_pdf(
-                naming::default_pdf_output_name(&first_stem, "pdf.attachments"),
-                out_pdf,
-            )])
+            Ok((
+                vec![carrier_pdf],
+                vec![OutputDoc::from_pdf(
+                    naming::default_pdf_output_name(&first_stem, "pdf.attachments"),
+                    out_pdf,
+                )],
+            ))
         }
     }
 }
 
-pub(crate) fn max_attachment_bytes() -> u64 {
-    Limits::cloud()
-        .max_asset_bytes
-        .or(Limits::local().max_asset_bytes)
-        .unwrap_or(50 * 1024 * 1024)
+pub(crate) fn max_attachment_bytes_for(limits: &Limits) -> u64 {
+    let mut cap = limits.max_decompressed_bytes;
+    if let Some(asset_cap) = limits.max_asset_bytes {
+        cap = cap.min(asset_cap);
+    }
+    if let Some(input_cap) = limits.max_input_bytes {
+        cap = cap.min(input_cap);
+    }
+    cap
 }
 
 pub(crate) fn entries_to_summaries(entries: &[EmbeddedFileEntry]) -> Vec<AttachmentSummary> {
@@ -187,38 +239,60 @@ pub(crate) fn entries_to_summaries(entries: &[EmbeddedFileEntry]) -> Vec<Attachm
         .collect()
 }
 
-pub(crate) fn collect_attachment_payloads(
-    attach_inputs: &[PdfDoc],
+pub(crate) fn collect_attachment_payloads_from_inputs(
+    attach_inputs: &[InputDoc],
     explicit_names: Option<&[String]>,
+    carrier_limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<Vec<EmbeddedFileEntry>, PdfError> {
-    let limit = max_attachment_bytes();
+    let carrier_cap = max_attachment_bytes_for(carrier_limits);
+    let mut total_bytes = 0_u64;
     let mut out = Vec::with_capacity(attach_inputs.len());
 
-    for (idx, input_pdf) in attach_inputs.iter().enumerate() {
+    for (idx, input) in attach_inputs.iter().enumerate() {
         ctx.check()?;
         let raw_name = if let Some(names) = explicit_names {
             names[idx].trim().to_owned()
         } else {
-            let stem =
-                naming::doc_stem(input_pdf).unwrap_or_else(|| format!("attachment-{}", idx + 1));
-            if stem.contains('.') {
-                stem
+            let base = input
+                .stem
+                .rsplit(['/', '\\'])
+                .next()
+                .unwrap_or(&input.stem)
+                .trim();
+            if base.is_empty() {
+                format!("attachment-{}.pdf", idx + 1)
+            } else if base.contains('.') {
+                base.to_owned()
             } else {
-                format!("{stem}.pdf")
+                format!("{base}.pdf")
             }
         };
 
-        let mut budget = input_pdf.decode_budget();
-        let mut cloned = input_pdf.clone();
-        let bytes = writer::save(&mut cloned, ctx)?;
+        let limit = carrier_cap.min(max_attachment_bytes_for(&input.limits));
+        let bytes = match &input.source {
+            InputSource::Bytes(raw) => raw.clone(),
+            InputSource::Doc(doc) => {
+                let mut budget = doc.decode_budget();
+                let mut cloned = (**doc).clone();
+                let saved = writer::save(&mut cloned, ctx)?;
+                budget.charge(saved.len())?;
+                saved
+            }
+        };
         if (bytes.len() as u64) > limit {
             return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
                 actual: bytes.len() as u64,
                 limit,
             }));
         }
-        budget.charge(bytes.len())?;
+        total_bytes = total_bytes.saturating_add(bytes.len() as u64);
+        if total_bytes > carrier_limits.max_decompressed_bytes {
+            return Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge {
+                limit: carrier_limits.max_decompressed_bytes,
+            }));
+        }
+
         let media_type = infer_media_type(&raw_name);
         let sha256 = sha256_hex(&bytes);
         out.push(EmbeddedFileEntry {
@@ -244,13 +318,14 @@ pub(crate) fn merge_embedded_entries(
     *existing = by_name.into_values().collect();
 }
 
-pub(crate) fn extract_embedded_files_outputs(
+pub(crate) fn extract_embedded_files_outputs_with_limits(
     pdf: &PdfDoc,
     stem: &str,
     filter_names: Option<&[String]>,
+    limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<Vec<OutputDoc>, PdfError> {
-    let entries = read_embedded_files(pdf, ctx)?;
+    let entries = read_embedded_files_with_limits(pdf, limits, ctx)?;
     let selected: Vec<&EmbeddedFileEntry> = if let Some(names) = filter_names {
         if names.is_empty() {
             return Err(PdfError::InvalidParams(
@@ -276,8 +351,12 @@ pub(crate) fn extract_embedded_files_outputs(
     for (idx, entry) in selected.iter().enumerate() {
         let index_1 = idx + 1;
         let clean_name = sanitize_attachment_filename(&entry.name);
-        let out_name = format!("{clean_stem}.attachment-{index_1:0width$}.{clean_name}");
-        let format = extension_from_filename(&entry.name);
+        let format = extension_from_filename(&clean_name);
+        let out_name = if clean_name.contains('.') {
+            format!("{clean_stem}.attachment-{index_1:0width$}.{clean_name}")
+        } else {
+            format!("{clean_stem}.attachment-{index_1:0width$}.{clean_name}.{format}")
+        };
         outputs.push(OutputDoc::from_bytes(out_name, format, entry.bytes.clone()));
     }
     Ok(outputs)
@@ -303,8 +382,9 @@ fn sanitize_attachment_filename(name: &str) -> String {
     }
 }
 
-pub(crate) fn read_embedded_files(
+pub(crate) fn read_embedded_files_with_limits(
     pdf: &PdfDoc,
+    limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<Vec<EmbeddedFileEntry>, PdfError> {
     let doc = pdf.inner();
@@ -320,7 +400,11 @@ pub(crate) fn read_embedded_files(
         && let Ok(ef_obj) = names_dict.get(b"EmbeddedFiles")
         && let Some(ef_dict) = resolve_dict(doc, ef_obj)
     {
-        collect_name_tree_filespecs(doc, ef_dict, &mut raw_specs);
+        let mut visited = BTreeSet::new();
+        if let Object::Reference(ef_id) = ef_obj {
+            visited.insert(*ef_id);
+        }
+        collect_name_tree_filespecs(doc, ef_dict, &mut visited, 0, ctx, &mut raw_specs)?;
     }
 
     if raw_specs.is_empty()
@@ -328,13 +412,14 @@ pub(crate) fn read_embedded_files(
         && let Some(Object::Array(af_arr)) = resolve_object(doc, af_obj)
     {
         for item in af_arr {
+            ctx.check()?;
             if let Object::Reference(spec_id) = item {
                 raw_specs.push((None, *spec_id));
             }
         }
     }
 
-    let limit = max_attachment_bytes();
+    let limit = max_attachment_bytes_for(limits);
     let mut by_name: BTreeMap<String, EmbeddedFileEntry> = BTreeMap::new();
 
     for (tree_name, spec_id) in raw_specs {
@@ -435,12 +520,20 @@ pub(crate) fn read_embedded_files(
 fn collect_name_tree_filespecs(
     doc: &lopdf::Document,
     node: &Dictionary,
+    visited: &mut BTreeSet<ObjectId>,
+    depth: usize,
+    ctx: &ToolCtx,
     out: &mut Vec<(Option<String>, ObjectId)>,
-) {
+) -> Result<(), PdfError> {
+    ctx.check()?;
+    if depth >= MAX_NAME_TREE_DEPTH {
+        return Err(PdfError::Malformed);
+    }
     if let Ok(names_obj) = node.get(b"Names")
         && let Some(Object::Array(arr)) = resolve_object(doc, names_obj)
     {
         for [k_obj, v_obj] in arr.as_chunks::<2>().0 {
+            ctx.check()?;
             let key = resolve_object(doc, k_obj).and_then(decode_pdf_object_string);
             if let Object::Reference(spec_id) = *v_obj {
                 out.push((key, spec_id));
@@ -451,11 +544,19 @@ fn collect_name_tree_filespecs(
         && let Some(Object::Array(kids)) = resolve_object(doc, kids_obj)
     {
         for kid in kids {
-            if let Some(kid_dict) = resolve_dict(doc, kid) {
-                collect_name_tree_filespecs(doc, kid_dict, out);
+            ctx.check()?;
+            if let Object::Reference(kid_id) = kid
+                && !visited.insert(*kid_id)
+            {
+                return Err(PdfError::Malformed);
             }
+            let Some(kid_dict) = resolve_dict(doc, kid) else {
+                return Err(PdfError::Malformed);
+            };
+            collect_name_tree_filespecs(doc, kid_dict, visited, depth + 1, ctx, out)?;
         }
     }
+    Ok(())
 }
 
 pub(crate) fn write_embedded_files(

@@ -20,12 +20,19 @@ use serde_json::{Value, json};
 mod insta {
     use std::path::Path;
 
+    fn should_update_snapshots() -> bool {
+        std::env::var("UPDATE_SNAPSHOTS")
+            .ok()
+            .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+            || std::env::var("INSTA_UPDATE").as_deref() == Ok("always")
+    }
+
     pub fn check_json_snapshot(module: &str, name: &str, value: &serde_json::Value) {
         let snap_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/snapshots")
             .join(format!("{module}__{name}.snap"));
         let pretty = serde_json::to_string_pretty(value).expect("serialize snapshot json");
-        if std::env::var("INSTA_UPDATE").as_deref() == Ok("always") || !snap_path.exists() {
+        if should_update_snapshots() {
             if let Some(parent) = snap_path.parent() {
                 std::fs::create_dir_all(parent).expect("create snapshots dir");
             }
@@ -33,7 +40,13 @@ mod insta {
                 "---\nsource: crates/ariad-pdf/tests/{module}.rs\nexpression: value\n---\n{pretty}\n"
             );
             std::fs::write(&snap_path, content).expect("write snapshot file");
+            return;
         }
+        assert!(
+            snap_path.exists(),
+            "missing snapshot file {}; set UPDATE_SNAPSHOTS=1 to create it",
+            snap_path.display()
+        );
         let raw = std::fs::read_to_string(&snap_path).expect("read snapshot file");
         let body = raw
             .strip_prefix("---\n")
@@ -132,8 +145,11 @@ fn portfolio_create_list_and_extract_round_trip() {
     let rot_bytes = fixture_bytes("rotated-pages.pdf");
     let ann_bytes = fixture_bytes("annotations.pdf");
 
-    let in1 = InputDoc::new("rotated-pages.pdf", rot_bytes);
-    let in2 = InputDoc::new("annotations.pdf", ann_bytes);
+    let rot_doc = ariad_pdf::document::open(&rot_bytes, &Limits::local()).expect("open rotated");
+    let ann_doc =
+        ariad_pdf::document::open(&ann_bytes, &Limits::local()).expect("open annotations");
+    let in1 = InputDoc::from_doc("rotated-pages.pdf", rot_doc);
+    let in2 = InputDoc::from_doc("annotations.pdf", ann_doc);
 
     let created = run_tool(
         "pdf.portfolio",
@@ -270,4 +286,141 @@ fn portfolio_is_deterministic_and_handles_tile_view_broken_xref_and_errors() {
     )
     .expect_err("encrypted");
     assert!(matches!(err, PdfError::Encrypted { .. }));
+}
+
+#[test]
+fn portfolio_create_accepts_non_pdf_payloads_and_preserves_exact_raw_bytes() {
+    let ctx = ToolCtx::default();
+    let pdf_bytes = fixture_bytes("annotations.pdf");
+    let csv_bytes = b"item,count\nwidget,12\n".to_vec();
+    let txt_bytes = b"Portfolio manifest note.\n".to_vec();
+
+    let in_pdf = InputDoc::new("annotations.pdf", pdf_bytes.clone());
+    let in_csv = InputDoc::new("inventory.csv", csv_bytes.clone());
+    let in_txt = InputDoc::new("readme.txt", txt_bytes.clone());
+
+    let created = run_tool(
+        "pdf.portfolio",
+        &[in_pdf, in_csv, in_txt],
+        &json!({
+            "action": "create",
+            "view": "details"
+        }),
+        &ctx,
+    )
+    .expect("create portfolio with mixed payloads");
+    let portfolio_bytes = &created.artifacts[0].bytes;
+
+    let listed = run_tool(
+        "pdf.portfolio",
+        &[InputDoc::new(
+            "mixed.portfolio.pdf",
+            portfolio_bytes.clone(),
+        )],
+        &json!({ "action": "list" }),
+        &ctx,
+    )
+    .expect("list mixed portfolio");
+    let arr = listed
+        .json
+        .as_ref()
+        .and_then(Value::as_array)
+        .expect("inline json array");
+    assert_eq!(arr.len(), 3);
+    assert_eq!(arr[0]["name"], "annotations.pdf");
+    assert_eq!(arr[0]["media_type"], "application/pdf");
+    assert_eq!(arr[0]["size"], pdf_bytes.len());
+    assert_eq!(
+        arr[0]["sha256"],
+        "1f6825bbefa620c27ab5a3852cd60f27d18dbfa0fc4bf0e214a1222230d356a9"
+    );
+    assert_eq!(arr[1]["name"], "inventory.csv");
+    assert_eq!(arr[1]["media_type"], "text/csv");
+    assert_eq!(arr[1]["size"], csv_bytes.len());
+    assert_eq!(arr[2]["name"], "readme.txt");
+    assert_eq!(arr[2]["media_type"], "text/plain");
+    assert_eq!(arr[2]["size"], txt_bytes.len());
+
+    let extracted = run_tool(
+        "pdf.portfolio",
+        &[InputDoc::new(
+            "mixed.portfolio.pdf",
+            portfolio_bytes.clone(),
+        )],
+        &json!({ "action": "extract" }),
+        &ctx,
+    )
+    .expect("extract mixed portfolio");
+    assert_eq!(extracted.artifacts.len(), 3);
+    assert_eq!(
+        extracted.artifacts[0].name,
+        "mixed.portfolio.attachment-001.annotations.pdf"
+    );
+    assert_eq!(extracted.artifacts[0].format, "pdf");
+    assert_eq!(extracted.artifacts[0].bytes, pdf_bytes);
+    assert_eq!(
+        extracted.artifacts[1].name,
+        "mixed.portfolio.attachment-002.inventory.csv"
+    );
+    assert_eq!(extracted.artifacts[1].format, "csv");
+    assert_eq!(extracted.artifacts[1].bytes, csv_bytes);
+    assert_eq!(
+        extracted.artifacts[2].name,
+        "mixed.portfolio.attachment-003.readme.txt"
+    );
+    assert_eq!(extracted.artifacts[2].format, "txt");
+    assert_eq!(extracted.artifacts[2].bytes, txt_bytes);
+}
+
+#[test]
+fn portfolio_respects_caller_asset_and_decompressed_limits() {
+    let ctx = ToolCtx::default();
+    let strict_asset = Limits {
+        max_asset_bytes: Some(16),
+        ..Limits::local()
+    };
+    let in_big = InputDoc::with_limits(
+        "notes.txt",
+        b"0123456789abcdefghijklmnopqrstuvwxyz".to_vec(),
+        strict_asset.clone(),
+    );
+    let err_create = run_tool(
+        "pdf.portfolio",
+        &[in_big],
+        &json!({ "action": "create" }),
+        &ctx,
+    )
+    .expect_err("portfolio create exceeding max_asset_bytes must fail");
+    assert!(matches!(err_create, PdfError::LimitExceeded(_)));
+
+    let strict_cover = Limits {
+        max_input_bytes: Some(64),
+        ..Limits::local()
+    };
+    let in_small = InputDoc::with_limits("a.txt", b"hi".to_vec(), strict_cover);
+    let err_cover = run_tool(
+        "pdf.portfolio",
+        &[in_small],
+        &json!({ "action": "create" }),
+        &ctx,
+    )
+    .expect_err("portfolio cover load must respect caller limits");
+    assert!(matches!(err_cover, PdfError::LimitExceeded(_)));
+}
+
+#[test]
+fn snapshot_helper_fails_when_snap_file_is_missing() {
+    let missing_name = "definitely_missing_snapshot_for_portfolio_test";
+    let snap_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/snapshots")
+        .join(format!("portfolio__{missing_name}.snap"));
+    assert!(!snap_path.exists());
+    let res = std::panic::catch_unwind(|| {
+        insta::check_json_snapshot("portfolio", missing_name, &json!([]));
+    });
+    assert!(res.is_err(), "missing snapshot must panic");
+    assert!(
+        !snap_path.exists(),
+        "missing snapshot must not be silently written"
+    );
 }
