@@ -37,7 +37,7 @@ assert 'bash infra/test/e2e/mcp-oauth.sh' in oauth
 assert 'pack-wait' not in oauth and 'actions/cache' not in oauth
 assert 'needs: [scope, e2e]' in cloud, 'preserve required Compose status contract'
 assert 'cargo fuzz list' in recipes and '-timeout=10 -rss_limit_mb=2048' in recipes
-assert 'pdf_reader) build_options=(--dev --features pdf-reader)' in recipes
+assert 'pdf_reader|pdf_open_bounded) build_options=(--dev --features pdf-reader)' in recipes
 assert 'typst_writer) build_options=(--dev --features typst-writer)' in recipes
 nightly = read('.github/workflows/fuzz-nightly.yml')
 assert 'uses: actions/cache@' not in nightly, 'combined cache action publishes on PR/dispatch'

@@ -360,7 +360,18 @@ fn tools_command_lists_registry_json_and_human() {
         .expect("run ashift tools --group organize --json");
     assert!(group_out.status.success());
     let group_json: Value = serde_json::from_slice(&group_out.stdout).expect("parse group JSON");
-    assert_eq!(group_json, tools_json);
+    assert_eq!(group_json.as_array().unwrap().len(), 25);
+
+    let optimize_out = ashift_cmd()
+        .args(["tools", "--group", "optimize", "--json"])
+        .output()
+        .expect("run ashift tools --group optimize --json");
+    assert!(optimize_out.status.success());
+    let optimize_json: Value =
+        serde_json::from_slice(&optimize_out.stdout).expect("parse optimize JSON");
+    assert_eq!(optimize_json.as_array().unwrap().len(), 1);
+    assert_eq!(optimize_json[0]["id"], "pdf.decompress");
+    assert_eq!(tools_json.as_array().unwrap().len(), 26);
 
     let empty_group = ashift_cmd()
         .args(["tools", "--group", "security", "--json"])

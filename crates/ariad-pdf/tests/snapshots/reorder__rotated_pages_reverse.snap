@@ -1,0 +1,63 @@
+---
+source: crates/ariad-pdf/tests/reorder.rs
+expression: rot_info
+---
+{
+  "version": "1.5",
+  "page_count": 4,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 270,
+      "blank": false
+    },
+    {
+      "page": 2,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 180,
+      "blank": false
+    },
+    {
+      "page": 3,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 90,
+      "blank": false
+    },
+    {
+      "page": 4,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "metadata": {
+    "title": "Rotated Pages Inspection Sheet",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20011130044044Z",
+    "mod_date": "D:20011130044044Z",
+    "language": "en"
+  },
+  "has_forms": false,
+  "has_annotations": false,
+  "has_attachments": false,
+  "has_javascript": false,
+  "outline_count": 0,
+  "repaired_xref": false
+}

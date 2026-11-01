@@ -6,8 +6,16 @@ import subprocess
 import sys
 
 
+GH_TOKEN_TIMEOUT_SECONDS = 5
+MAX_TOKEN_LENGTH = 4096
+
+
 def clean(token):
-    return bool(token) and all(33 <= ord(char) <= 126 for char in token)
+    return (
+        bool(token)
+        and len(token) <= MAX_TOKEN_LENGTH
+        and all(33 <= ord(char) <= 126 for char in token)
+    )
 
 
 def token_environment():
@@ -27,8 +35,17 @@ def token_environment():
     env.pop("GITHUB_TOKEN", None)
     try:
         result = subprocess.run(
-            ["gh", "auth", "token"], env=env.copy(), capture_output=True, check=False
+            ["gh", "auth", "token"],
+            env=env.copy(),
+            capture_output=True,
+            check=False,
+            timeout=GH_TOKEN_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"gh auth token timed out after {GH_TOKEN_TIMEOUT_SECONDS}s; "
+            "set a clean GH_TOKEN or GITHUB_TOKEN."
+        ) from None
     except OSError:
         raise RuntimeError("Cannot run gh; set a clean GH_TOKEN or GITHUB_TOKEN.") from None
     if result.returncode:
@@ -39,6 +56,10 @@ def token_environment():
         output = output[:-2]
     elif output.endswith(b"\n"):
         output = output[:-1]
+    if len(output) > MAX_TOKEN_LENGTH:
+        raise RuntimeError(
+            f"gh auth token returned malformed output exceeding {MAX_TOKEN_LENGTH} bytes."
+        )
     token = output.decode("ascii", errors="replace")
     if not clean(token):
         raise RuntimeError(

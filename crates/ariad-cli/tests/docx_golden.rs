@@ -300,3 +300,128 @@ fn every_phase_zero_markdown_fixture_has_a_reviewable_docx_golden() {
         assert_external_relationships_are_safe(package, fixture_id);
     }
 }
+
+#[test]
+fn tight_lists_stay_tight_after_docx_round_trip() {
+    let pandoc = ariad_host::pandoc_bin::locate().expect("Pandoc is installed with `just pandoc`");
+    assert_eq!(pandoc.version, ariad_host::PANDOC_GOLDEN_VERSION);
+
+    let directory = tempdir().expect("create temp directory for list round-trip");
+    let input_md = directory.path().join("tight-lists.md");
+    let intermediate_docx = directory.path().join("tight-lists.docx");
+    let output_md = directory.path().join("roundtrip.md");
+
+    let source = "- Alpha\n- Beta\n- Gamma\n\n1. First\n2. Second\n";
+    fs::write(&input_md, source).expect("write inline Markdown with tight lists");
+
+    let to_docx = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["convert"])
+        .arg(&input_md)
+        .args(["--to", "docx", "-o"])
+        .arg(&intermediate_docx)
+        .env("ASHIFT_PANDOC", &pandoc.path)
+        .env("SOURCE_DATE_EPOCH", "1700000000")
+        .output()
+        .expect("convert Markdown to DOCX");
+    assert!(
+        to_docx.status.success(),
+        "md->docx failed: {}",
+        String::from_utf8_lossy(&to_docx.stderr)
+    );
+
+    let package = read_package(&intermediate_docx);
+    let document_xml = xml_text(&package, "word/document.xml");
+    assert!(
+        document_xml.contains("w:val=\"Compact\""),
+        "tight list items in DOCX must use the Compact paragraph style"
+    );
+
+    let to_md = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["convert"])
+        .arg(&intermediate_docx)
+        .args(["--to", "md", "-o"])
+        .arg(&output_md)
+        .env("ASHIFT_PANDOC", &pandoc.path)
+        .output()
+        .expect("convert DOCX back to Markdown");
+    assert!(
+        to_md.status.success(),
+        "docx->md failed: {}",
+        String::from_utf8_lossy(&to_md.stderr)
+    );
+
+    let roundtrip = fs::read_to_string(&output_md)
+        .expect("read round-trip Markdown")
+        .replace("\r\n", "\n");
+    assert_eq!(roundtrip.trim_end(), source.trim_end());
+}
+
+#[test]
+fn captioned_html_figure_preserves_image_descr_in_docx() {
+    let pandoc = ariad_host::pandoc_bin::locate().expect("Pandoc is installed with `just pandoc`");
+    assert_eq!(pandoc.version, ariad_host::PANDOC_GOLDEN_VERSION);
+
+    let directory = tempdir().expect("create temp directory for figure DOCX check");
+    let input_html = directory.path().join("figure.html");
+    let output_docx = directory.path().join("figure.docx");
+    let roundtrip_html = directory.path().join("roundtrip.html");
+
+    let png_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    let html = format!(
+        "<!DOCTYPE html><html><body><figure><img src=\"data:image/png;base64,{png_base64}\" alt=\"Sơ đồ tuyến đi bộ\"><figcaption>Sơ đồ tuyến đi bộ</figcaption></figure></body></html>\n"
+    );
+    fs::write(&input_html, html).expect("write inline HTML with captioned figure");
+
+    let to_docx = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["convert"])
+        .arg(&input_html)
+        .args(["--to", "docx", "-o"])
+        .arg(&output_docx)
+        .env("ASHIFT_PANDOC", &pandoc.path)
+        .env("SOURCE_DATE_EPOCH", "1700000000")
+        .output()
+        .expect("convert HTML figure to DOCX");
+    assert!(
+        to_docx.status.success(),
+        "html->docx failed: {}",
+        String::from_utf8_lossy(&to_docx.stderr)
+    );
+
+    let package = read_package(&output_docx);
+    let document_xml = pretty_xml(
+        package
+            .get("word/document.xml")
+            .expect("word/document.xml present"),
+    );
+    assert!(
+        document_xml.contains("w:val=\"CaptionedFigure\""),
+        "expected CaptionedFigure style in document.xml:\n{document_xml}"
+    );
+    assert!(
+        document_xml.contains("w:val=\"ImageCaption\""),
+        "expected ImageCaption style in document.xml:\n{document_xml}"
+    );
+    assert!(
+        document_xml.contains("descr=\"Sơ đồ tuyến đi bộ\""),
+        "expected wp:docPr descr to carry figure caption plain text:\n{document_xml}"
+    );
+
+    let to_html = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["convert"])
+        .arg(&output_docx)
+        .args(["--to", "html", "-o"])
+        .arg(&roundtrip_html)
+        .env("ASHIFT_PANDOC", &pandoc.path)
+        .output()
+        .expect("convert figure DOCX back to HTML");
+    assert!(
+        to_html.status.success(),
+        "docx->html failed: {}",
+        String::from_utf8_lossy(&to_html.stderr)
+    );
+
+    let roundtrip = fs::read_to_string(&roundtrip_html).expect("read round-trip HTML");
+    assert!(roundtrip.contains("<figure>"));
+    assert!(roundtrip.contains("alt=\"Sơ đồ tuyến đi bộ\""));
+    assert!(roundtrip.contains("<figcaption>Sơ đồ tuyến đi bộ</figcaption>"));
+}

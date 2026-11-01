@@ -183,14 +183,11 @@ impl Mapper<'_> {
                     } else {
                         vec![Block::Plain(mapped_caption)]
                     };
+                    let alt = text_inlines(&plain_text(caption));
                     let pandoc_figure: ast::Figure = (
                         empty_attr(),
                         (None, caption_blocks),
-                        vec![Block::Plain(vec![Inline::Image(
-                            empty_attr(),
-                            Vec::new(),
-                            target,
-                        )])],
+                        vec![Block::Plain(vec![Inline::Image(empty_attr(), alt, target)])],
                     );
                     vec![Block::Figure(pandoc_figure)]
                 } else {
@@ -431,6 +428,27 @@ fn map_metadata(metadata: &Metadata) -> BTreeMap<String, MetaValue> {
         );
     }
     meta
+}
+
+fn plain_text(inlines: &[IrInline]) -> String {
+    let mut text = String::new();
+    let mut stack: Vec<&IrInline> = inlines.iter().rev().collect();
+    while let Some(inline) = stack.pop() {
+        match inline {
+            IrInline::Text { text: val } | IrInline::Code { text: val } => text.push_str(val),
+            IrInline::Math { tex, .. } => text.push_str(tex),
+            IrInline::Link { content, .. }
+            | IrInline::Emph { content }
+            | IrInline::Strong { content }
+            | IrInline::Strikeout { content }
+            | IrInline::Superscript { content }
+            | IrInline::Subscript { content } => stack.extend(content.iter().rev()),
+            IrInline::Image { alt, .. } => text.push_str(alt),
+            IrInline::SoftBreak {} | IrInline::LineBreak {} => text.push(' '),
+            IrInline::FootnoteRef { .. } | IrInline::Raw { .. } => {}
+        }
+    }
+    normalize_prose(&text)
 }
 
 fn text_inlines(text: &str) -> Vec<Inline> {
@@ -762,9 +780,64 @@ mod tests {
             matches!(&output.pandoc.blocks[0], Block::Table(table) if table.2 == [(Alignment::AlignCenter, crate::pandoc::ast::ColWidth::ColWidthDefault)] && table.3.1[0].1[0].3 == 2 && table.4[0].3[0].1[0].2 == 2)
         );
         assert!(
-            matches!(&output.pandoc.blocks[1], Block::Figure((_, (_, caption), blocks)) if caption.len() == 1 && matches!(blocks.as_slice(), [Block::Plain(inlines)] if matches!(inlines.as_slice(), [Inline::Image(_, _, (url, _))] if url == "data:image/png;base64,AQID")))
+            matches!(&output.pandoc.blocks[1], Block::Figure((_, (_, caption), blocks)) if caption.len() == 1 && matches!(blocks.as_slice(), [Block::Plain(inlines)] if matches!(inlines.as_slice(), [Inline::Image(_, alt, (url, _))] if alt == &[Inline::Str("Figure".to_owned()), Inline::Space, Inline::Str("caption".to_owned())] && url == "data:image/png;base64,AQID")))
         );
         assert!(output.warnings.is_empty());
+    }
+
+    #[test]
+    fn populates_figure_image_alt_with_caption_plain_text() {
+        let mut document = Document {
+            body: vec![IrBlock::Figure {
+                asset: AssetRef::Asset {
+                    id: "diagram".to_owned(),
+                },
+                caption: vec![
+                    IrInline::Text {
+                        text: "Cafe\u{301} ".to_owned(),
+                    },
+                    IrInline::Emph {
+                        content: vec![IrInline::Text {
+                            text: "route".to_owned(),
+                        }],
+                    },
+                    IrInline::SoftBreak {},
+                    IrInline::Code {
+                        text: "v1".to_owned(),
+                    },
+                ],
+            }],
+            ..Document::default()
+        };
+        document.assets.insert(
+            "diagram".to_owned(),
+            Asset {
+                media_type: "image/png".to_owned(),
+                bytes: vec![1, 2, 3],
+            },
+        );
+
+        let output = from_ir(&document);
+        assert!(matches!(
+            &output.pandoc.blocks[0],
+            Block::Figure((_, (_, caption), blocks))
+                if caption.len() == 1
+                && matches!(
+                    blocks.as_slice(),
+                    [Block::Plain(inlines)]
+                        if matches!(
+                            inlines.as_slice(),
+                            [Inline::Image(_, alt, _)]
+                                if alt == &[
+                                    Inline::Str("Café".to_owned()),
+                                    Inline::Space,
+                                    Inline::Str("route".to_owned()),
+                                    Inline::Space,
+                                    Inline::Str("v1".to_owned()),
+                                ]
+                        )
+                )
+        ));
     }
 
     #[test]

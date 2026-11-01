@@ -1,3 +1,8 @@
+// On macOS, ld emits an informational warning when the unstripped binary's
+// `__eh_frame` section exceeds the 16 MB compact-unwind encoding threshold,
+// which otherwise trips `CARGO_BUILD_WARNINGS=deny` via `#[warn(linker_messages)]`.
+#![cfg_attr(target_os = "macos", allow(linker_messages))]
+
 use std::{
     io::{self, IsTerminal, Write},
     path::PathBuf,
@@ -111,9 +116,9 @@ struct ConvertArgs {
     /// Input document file paths.
     #[arg(value_name = "INPUT", required = true, num_args = 1..)]
     inputs: Vec<PathBuf>,
-    /// Target output format (md, html, docx, epub, pdf, json, xlsx, pptx).
+    /// Target output format (md, html, docx, epub, pdf, json, xlsx, pptx); inferred from -o when omitted.
     #[arg(long = "to", value_name = "FORMAT")]
-    target_format: String,
+    target_format: Option<String>,
     /// Output file path (defaults to input stem with target extension); with several inputs,
     /// an existing directory for the outputs.
     #[arg(short, long, value_name = "OUTPUT")]
@@ -594,9 +599,34 @@ fn run_convert(mut args: ConvertArgs) -> ExitCode {
     }
     let input = args.inputs.remove(0);
     let is_json = args.json;
-    let output = match args.output {
-        Some(path) => path,
-        None => input.with_extension(target_extension(&args.target_format)),
+    let (target_format, output) = match (args.target_format, args.output) {
+        (Some(target_format), Some(output)) => (target_format, output),
+        (Some(target_format), None) => {
+            let output = input.with_extension(target_extension(&target_format));
+            (target_format, output)
+        }
+        (None, Some(output)) => {
+            let Some(format) = output
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(ariad_core::format::Format::from_extension)
+            else {
+                let _ = writeln!(
+                    io::stderr(),
+                    "ashift: cannot infer target format from output path '{}'; pass --to <FORMAT>",
+                    render::escape_control_chars(&output.display().to_string())
+                );
+                return ExitCode::from(2);
+            };
+            (format.user_name().to_owned(), output)
+        }
+        (None, None) => {
+            let _ = writeln!(
+                io::stderr(),
+                "ashift: missing target format; pass --to <FORMAT> or -o <OUTPUT> with a known extension"
+            );
+            return ExitCode::from(2);
+        }
     };
     let engine_program = match std::env::current_exe() {
         Ok(path) => path,
@@ -609,7 +639,7 @@ fn run_convert(mut args: ConvertArgs) -> ExitCode {
     let request = ariad_host::convert::ConvertRequest {
         input,
         output,
-        target_format: args.target_format,
+        target_format,
         profile: args.profile.into(),
         overwrite: args.overwrite,
         engine_program,
@@ -968,6 +998,7 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
         Err(err) => return report_error("tool", &ToolError::InputIo(err.to_string())),
     };
     let is_json = args.json;
+    let renders_info_human = args.tool == "pdf.info";
     let stderr_is_terminal = io::stderr().is_terminal();
     let inputs: Vec<InputRef> = args.inputs.into_iter().map(InputRef::new).collect();
     let output = match args.output {
@@ -1013,8 +1044,12 @@ fn run_tool_cmd(args: ToolArgs) -> ExitCode {
             } else if outcome.artifacts.is_empty()
                 && let Some(ref inline_json) = outcome.inline_json
             {
-                render::render_pdf_info_human(inline_json)
-                    .map_err(|err| ToolError::OutputIo(err.to_string()))
+                if renders_info_human {
+                    render::render_pdf_info_human(inline_json)
+                } else {
+                    render::render_json(inline_json)
+                }
+                .map_err(|err| ToolError::OutputIo(err.to_string()))
             } else {
                 let mut stdout = io::stdout().lock();
                 for artifact in &outcome.artifacts {

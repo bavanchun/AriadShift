@@ -6,7 +6,11 @@ import importlib.util
 import io
 import os
 from pathlib import Path
+import stat
 import subprocess
+import sys
+import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -108,6 +112,94 @@ class TokenTests(unittest.TestCase):
         execute.assert_called_once_with(
             "uvx", ["uvx", "zizmor@1.30.1", ".github"], {"GH_TOKEN": "fixture_token"}
         )
+
+    @contextlib.contextmanager
+    def stub_gh(self, script_body, extra_env=None):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            gh_path = Path(temp_dir) / "gh"
+            gh_path.write_text(
+                f"#!{sys.executable}\n" + textwrap.dedent(script_body),
+                encoding="utf-8",
+            )
+            gh_path.chmod(gh_path.stat().st_mode | stat.S_IXUSR)
+            env = {"PATH": f"{temp_dir}{os.pathsep}{os.environ.get('PATH', '')}"}
+            if extra_env:
+                env.update(extra_env)
+            with patch.dict(os.environ, env, clear=True):
+                yield gh_path
+
+    def test_stub_gh_valid_fake_token_on_path(self):
+        with self.stub_gh(
+            """
+            import sys
+            assert sys.argv[1:] == ["auth", "token"]
+            sys.stdout.write("stub_fake_token_ok\\n")
+            """
+        ):
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                env = helper.token_environment()
+            self.assertEqual(env["GH_TOKEN"], "stub_fake_token_ok")
+            self.assertNotIn("stub_fake_token_ok", captured.getvalue())
+
+    def test_stub_gh_oversized_and_unexpected_output_rejected(self):
+        max_len = getattr(helper, "MAX_TOKEN_LENGTH", 4096)
+        oversized_env = "env_secret_" + ("x" * max_len)
+        oversized_cli = "cli_secret_" + ("y" * max_len)
+        with self.stub_gh(
+            f"""
+            import sys
+            sys.stdout.write({oversized_cli!r} + "\\n")
+            """,
+            extra_env={"GH_TOKEN": oversized_env},
+        ):
+            captured = io.StringIO()
+            with (
+                contextlib.redirect_stdout(captured),
+                contextlib.redirect_stderr(captured),
+                self.assertRaises(RuntimeError) as error,
+            ):
+                helper.token_environment()
+            self.assertNotIn("env_secret_", captured.getvalue())
+            self.assertNotIn("cli_secret_", captured.getvalue())
+            self.assertNotIn("cli_secret_", str(error.exception))
+
+        with self.stub_gh(
+            """
+            import sys
+            sys.stdout.write("bad token with spaces\\n")
+            """
+        ):
+            with self.assertRaises(RuntimeError) as error:
+                helper.token_environment()
+            self.assertNotIn("bad token", str(error.exception))
+
+    def test_stub_gh_timeout_rejected_without_echoing_partial_token(self):
+        self.assertGreater(helper.GH_TOKEN_TIMEOUT_SECONDS, 0)
+        with (
+            self.stub_gh(
+                """
+                import sys, time
+                sys.stdout.write("partial_stdout_secret")
+                sys.stdout.flush()
+                sys.stderr.write("partial_stderr_secret")
+                sys.stderr.flush()
+                time.sleep(5)
+                """
+            ),
+            patch.object(helper, "GH_TOKEN_TIMEOUT_SECONDS", 0.2),
+            patch.object(helper.os, "execvpe") as execute,
+            patch.object(helper.sys, "argv", ["helper", "uvx"]),
+        ):
+            captured = io.StringIO()
+            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                rc = helper.main()
+            self.assertEqual(rc, 1)
+            execute.assert_not_called()
+            output = captured.getvalue()
+            self.assertIn("timed out", output)
+            self.assertNotIn("partial_stdout_secret", output)
+            self.assertNotIn("partial_stderr_secret", output)
 
 
 if __name__ == "__main__":

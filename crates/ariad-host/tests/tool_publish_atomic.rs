@@ -14,7 +14,7 @@ use ariad_host::{
     confine::AllowedDirs,
     tools::{
         InputRef, OutputTarget, PublishError, StagedArtifact, ToolError, ToolRequest,
-        publish_atomic, run_tool,
+        publish::extracted_quarantine_warnings, publish_atomic, run_tool,
     },
     workspace::Workspace,
 };
@@ -764,4 +764,435 @@ fn run_tool_inprocess_timeout_zero_and_precancelled_token_publish_nothing() {
     assert_eq!(err_cancel.code(), "interrupted");
     assert!(!cancel_out.exists());
     assert_eq!(fs::read_dir(&out_dir).expect("read out_dir").count(), 0);
+}
+
+#[test]
+fn run_tool_json_emitting_actions_suppress_default_file_and_publish_json_when_requested() {
+    let tmp = TempDir::new().expect("create tempdir");
+    let input_dir = tmp.path().join("in");
+    let out_dir = tmp.path().join("out");
+    fs::create_dir_all(&input_dir).expect("create input_dir");
+    fs::create_dir_all(&out_dir).expect("create out_dir");
+
+    let input_pdf = input_dir.join("sample.pdf");
+    fs::copy(sample_pdf(), &input_pdf).expect("copy sample pdf");
+
+    let cases = [
+        (
+            "pdf.outline",
+            json!({ "action": "export" }),
+            "sample.outline.json",
+        ),
+        (
+            "pdf.attachments",
+            json!({ "action": "list" }),
+            "sample.attachments.json",
+        ),
+        (
+            "pdf.portfolio",
+            json!({ "action": "list" }),
+            "sample.portfolio.json",
+        ),
+        (
+            "pdf.layers",
+            json!({ "action": "list" }),
+            "sample.layers.json",
+        ),
+    ];
+
+    for (tool_id, params, expected_dir_filename) in cases {
+        // 1. DefaultBesideInput suppresses default file creation and returns inline_json.
+        let req_default = ToolRequest::new(
+            tool_id,
+            vec![InputRef::new(&input_pdf)],
+            OutputTarget::DefaultBesideInput,
+        )
+        .with_params(params.clone());
+        let res_default = run_tool(&req_default)
+            .unwrap_or_else(|e| panic!("{tool_id} DefaultBesideInput failed: {e:?}"));
+        assert!(
+            res_default.artifacts.is_empty(),
+            "{tool_id} DefaultBesideInput must not write files"
+        );
+        assert!(
+            res_default.inline_json.is_some(),
+            "{tool_id} must populate inline_json"
+        );
+        let dir_entries: Vec<_> = fs::read_dir(&input_dir)
+            .expect("read input_dir")
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            dir_entries,
+            vec!["sample.pdf".to_owned()],
+            "{tool_id} must leave only sample.pdf in input_dir"
+        );
+
+        // 2. Explicit -o <path>.json succeeds and writes valid JSON.
+        let explicit_json = out_dir.join(format!("{tool_id}.explicit.json"));
+        let req_path = ToolRequest::new(
+            tool_id,
+            vec![InputRef::new(&input_pdf)],
+            OutputTarget::Path(explicit_json.clone()),
+        )
+        .with_params(params.clone());
+        let res_path =
+            run_tool(&req_path).unwrap_or_else(|e| panic!("{tool_id} -o .json failed: {e:?}"));
+        assert_eq!(res_path.artifacts.len(), 1);
+        assert_eq!(res_path.artifacts[0].format, "json");
+        assert_eq!(res_path.artifacts[0].path, explicit_json);
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&fs::read(&explicit_json).expect("read explicit json"))
+                .expect("valid json file");
+        assert_eq!(Some(&parsed), res_path.inline_json.as_ref());
+        fs::remove_file(&explicit_json).expect("cleanup explicit json");
+
+        // 3. Directory output writes <stem>.<tool_suffix>.json with format "json".
+        let req_dir = ToolRequest::new(
+            tool_id,
+            vec![InputRef::new(&input_pdf)],
+            OutputTarget::Directory(out_dir.clone()),
+        )
+        .with_params(params);
+        let res_dir =
+            run_tool(&req_dir).unwrap_or_else(|e| panic!("{tool_id} -o dir failed: {e:?}"));
+        assert_eq!(res_dir.artifacts.len(), 1);
+        assert_eq!(res_dir.artifacts[0].format, "json");
+        assert_eq!(
+            res_dir.artifacts[0]
+                .path
+                .file_name()
+                .and_then(|s| s.to_str()),
+            Some(expected_dir_filename)
+        );
+        fs::remove_file(&res_dir.artifacts[0].path).expect("cleanup dir json");
+    }
+}
+
+#[test]
+fn run_tool_attachments_and_portfolio_handle_non_pdf_payloads_and_preserve_names() {
+    let tmp = TempDir::new().expect("create tempdir");
+    let carrier_pdf = tmp.path().join("carrier.pdf");
+    let original_pdf_bytes = fs::read(sample_pdf()).expect("read sample pdf");
+    fs::write(&carrier_pdf, &original_pdf_bytes).expect("write carrier pdf");
+
+    let csv_path = tmp.path().join("inventory.csv");
+    let csv_bytes = b"sku,qty\nA-1,4\n".to_vec();
+    fs::write(&csv_path, &csv_bytes).expect("write csv");
+
+    let txt_path = tmp.path().join("notes.txt");
+    let txt_bytes = b"attachment text payload\n".to_vec();
+    fs::write(&txt_path, &txt_bytes).expect("write txt");
+
+    // 1. pdf.attachments add with non-PDF files preserves their original filenames & bytes.
+    let attached_pdf = tmp.path().join("attached.pdf");
+    let req_add = ToolRequest::new(
+        "pdf.attachments",
+        vec![
+            InputRef::new(&carrier_pdf),
+            InputRef::new(&csv_path),
+            InputRef::new(&txt_path),
+        ],
+        OutputTarget::Path(attached_pdf.clone()),
+    )
+    .with_params(json!({ "action": "add" }));
+    let res_add = run_tool(&req_add).expect("pdf.attachments add with csv and txt");
+    assert_eq!(res_add.artifacts.len(), 1);
+    assert_eq!(res_add.artifacts[0].format, "pdf");
+
+    // 2. pdf.attachments list reports inventory.csv and notes.txt (not input-1.pdf / input-2.pdf).
+    let req_list = ToolRequest::new(
+        "pdf.attachments",
+        vec![InputRef::new(&attached_pdf)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_params(json!({ "action": "list" }));
+    let res_list = run_tool(&req_list).expect("pdf.attachments list");
+    let listed = res_list
+        .inline_json
+        .as_ref()
+        .and_then(|v| v.as_array())
+        .expect("inline json array");
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0]["name"], "inventory.csv");
+    assert_eq!(listed[0]["media_type"], "text/csv");
+    assert_eq!(listed[1]["name"], "notes.txt");
+    assert_eq!(listed[1]["media_type"], "text/plain");
+
+    // 3. pdf.attachments extract writes files keeping their sanitized names and real extensions.
+    let extract_dir = tmp.path().join("extracted_attachments");
+    fs::create_dir_all(&extract_dir).expect("create extract_dir");
+    let req_extract = ToolRequest::new(
+        "pdf.attachments",
+        vec![InputRef::new(&attached_pdf)],
+        OutputTarget::Directory(extract_dir.clone()),
+    )
+    .with_params(json!({ "action": "extract" }));
+    let res_extract = run_tool(&req_extract).expect("pdf.attachments extract");
+    assert_eq!(res_extract.artifacts.len(), 2);
+    assert_eq!(res_extract.artifacts[0].format, "csv");
+    assert_eq!(
+        res_extract.artifacts[0]
+            .path
+            .file_name()
+            .and_then(|s| s.to_str()),
+        Some("attached.attachment-001.inventory.csv")
+    );
+    assert_eq!(
+        fs::read(&res_extract.artifacts[0].path).expect("read extracted csv"),
+        csv_bytes
+    );
+    assert_eq!(res_extract.artifacts[1].format, "txt");
+    assert_eq!(
+        res_extract.artifacts[1]
+            .path
+            .file_name()
+            .and_then(|s| s.to_str()),
+        Some("attached.attachment-002.notes.txt")
+    );
+    assert_eq!(
+        fs::read(&res_extract.artifacts[1].path).expect("read extracted txt"),
+        txt_bytes
+    );
+
+    // 4. pdf.portfolio create with PDF + CSV preserves original names and exact raw PDF bytes.
+    let portfolio_pdf = tmp.path().join("bundle.pdf");
+    let req_portfolio_create = ToolRequest::new(
+        "pdf.portfolio",
+        vec![InputRef::new(&carrier_pdf), InputRef::new(&csv_path)],
+        OutputTarget::Path(portfolio_pdf.clone()),
+    )
+    .with_params(json!({ "action": "create", "view": "details" }));
+    let res_portfolio_create =
+        run_tool(&req_portfolio_create).expect("pdf.portfolio create with pdf and csv");
+    assert_eq!(res_portfolio_create.artifacts.len(), 1);
+
+    let portfolio_extract_dir = tmp.path().join("extracted_portfolio");
+    fs::create_dir_all(&portfolio_extract_dir).expect("create portfolio_extract_dir");
+    let req_portfolio_extract = ToolRequest::new(
+        "pdf.portfolio",
+        vec![InputRef::new(&portfolio_pdf)],
+        OutputTarget::Directory(portfolio_extract_dir),
+    )
+    .with_params(json!({ "action": "extract" }));
+    let res_portfolio_extract = run_tool(&req_portfolio_extract).expect("pdf.portfolio extract");
+    assert_eq!(res_portfolio_extract.artifacts.len(), 2);
+    assert_eq!(res_portfolio_extract.artifacts[0].format, "pdf");
+    assert_eq!(
+        res_portfolio_extract.artifacts[0]
+            .path
+            .file_name()
+            .and_then(|s| s.to_str()),
+        Some("bundle.attachment-001.carrier.pdf")
+    );
+    assert_eq!(
+        fs::read(&res_portfolio_extract.artifacts[0].path).expect("read extracted carrier pdf"),
+        original_pdf_bytes
+    );
+    assert_eq!(res_portfolio_extract.artifacts[1].format, "csv");
+    assert_eq!(
+        res_portfolio_extract.artifacts[1]
+            .path
+            .file_name()
+            .and_then(|s| s.to_str()),
+        Some("bundle.attachment-002.inventory.csv")
+    );
+    assert_eq!(
+        fs::read(&res_portfolio_extract.artifacts[1].path).expect("read extracted portfolio csv"),
+        csv_bytes
+    );
+}
+
+#[test]
+fn run_tool_merge_per_file_outline_uses_original_input_filenames() {
+    let tmp = TempDir::new().expect("create tempdir");
+    let first_pdf = tmp.path().join("chapter-alpha.pdf");
+    let second_pdf = tmp.path().join("chapter-beta.pdf");
+    fs::copy(sample_pdf(), &first_pdf).expect("copy first pdf");
+    fs::copy(sample_pdf(), &second_pdf).expect("copy second pdf");
+
+    let merged_pdf = tmp.path().join("merged.pdf");
+    let req_merge = ToolRequest::new(
+        "pdf.merge",
+        vec![InputRef::new(&first_pdf), InputRef::new(&second_pdf)],
+        OutputTarget::Path(merged_pdf.clone()),
+    )
+    .with_params(json!({ "outline": "per-file" }));
+    run_tool(&req_merge).expect("pdf.merge with per-file outline");
+
+    let req_outline = ToolRequest::new(
+        "pdf.outline",
+        vec![InputRef::new(&merged_pdf)],
+        OutputTarget::DefaultBesideInput,
+    )
+    .with_params(json!({ "action": "export" }));
+    let res_outline = run_tool(&req_outline).expect("pdf.outline export");
+    let bookmarks = res_outline
+        .inline_json
+        .as_ref()
+        .and_then(|v| v.as_array())
+        .expect("bookmarks array");
+    assert_eq!(bookmarks.len(), 2);
+    assert_eq!(bookmarks[0]["title"], "chapter-alpha");
+    assert_eq!(bookmarks[1]["title"], "chapter-beta");
+}
+
+#[test]
+fn run_tool_attachments_extract_quarantines_risky_types_without_failing() {
+    let tmp = TempDir::new().expect("create tempdir");
+    let carrier_pdf = tmp.path().join("carrier.pdf");
+    fs::write(
+        &carrier_pdf,
+        fs::read(sample_pdf()).expect("read sample pdf"),
+    )
+    .expect("write carrier");
+
+    // Listed in the attachment name order that extraction numbers them in.
+    let payloads: [(&str, &[u8]); 6] = [
+        ("a.svg", b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n"),
+        ("normal.pdf", b"%PDF-1.7\n% payload\n"),
+        ("run.exe", b"MZ fake executable\n"),
+        ("script.py", b"print('hi')\n"),
+        ("shortcut.LNK", b"fake shortcut\n"),
+        ("x.pdf.exe", b"MZ disguised\n"),
+    ];
+    let payload_dir = tmp.path().join("payloads");
+    fs::create_dir_all(&payload_dir).expect("create payload dir");
+    let mut inputs = vec![InputRef::new(&carrier_pdf)];
+    for (name, bytes) in payloads {
+        let path = payload_dir.join(name);
+        fs::write(&path, bytes).expect("write payload");
+        inputs.push(InputRef::new(&path));
+    }
+
+    let attached_pdf = tmp.path().join("attached.pdf");
+    let req_add = ToolRequest::new(
+        "pdf.attachments",
+        inputs,
+        OutputTarget::Path(attached_pdf.clone()),
+    )
+    .with_params(json!({ "action": "add" }));
+    run_tool(&req_add).expect("pdf.attachments add with risky and normal payloads");
+
+    let extract_dir = tmp.path().join("extracted");
+    fs::create_dir_all(&extract_dir).expect("create extract dir");
+    let req_extract = ToolRequest::new(
+        "pdf.attachments",
+        vec![InputRef::new(&attached_pdf)],
+        OutputTarget::Directory(extract_dir.clone()),
+    )
+    .with_params(json!({ "action": "extract" }));
+    let res = run_tool(&req_extract).expect("extract must succeed despite risky attachments");
+
+    let names: Vec<String> = res
+        .artifacts
+        .iter()
+        .map(|a| {
+            a.path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .expect("utf-8 file name")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "attached.attachment-001.a.svg",
+            "attached.attachment-002.normal.pdf",
+            "attached.attachment-003.run.exe.bin",
+            "attached.attachment-004.script.py.bin",
+            "attached.attachment-005.shortcut.lnk.bin",
+            "attached.attachment-006.x.pdf.exe.bin",
+        ]
+    );
+    let formats: Vec<&str> = res.artifacts.iter().map(|a| a.format.as_str()).collect();
+    assert_eq!(formats, vec!["svg", "pdf", "bin", "bin", "bin", "bin"]);
+
+    for ((_, bytes), artifact) in payloads.iter().zip(&res.artifacts) {
+        assert_eq!(
+            &fs::read(&artifact.path).expect("read extracted file"),
+            bytes
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&artifact.path)
+                .expect("stat")
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o111,
+                0,
+                "{} must have no executable bit",
+                artifact.path.display()
+            );
+        }
+    }
+    let on_disk = fs::read_dir(&extract_dir)
+        .expect("list extract dir")
+        .count();
+    assert_eq!(on_disk, 6, "no stray or unrenamed risky file may remain");
+    assert_eq!(
+        res.warnings.len(),
+        4,
+        "expected one attachment_quarantined warning per renamed risky file"
+    );
+    assert!(
+        res.warnings
+            .iter()
+            .all(|w| w.code == "attachment_quarantined")
+    );
+}
+
+#[test]
+fn publish_atomic_quarantines_risky_extracted_files_and_reports_one_warning_each() {
+    let workspace = Workspace::new().expect("create workspace");
+    let cases = [
+        ("doc.run.exe", "exe", "doc.run.exe", true),
+        ("doc.script.PY", "py", "doc.script.PY", true),
+        ("doc.x.pdf.exe", "exe", "doc.x.pdf.exe", true),
+        ("doc.image.ISO", "iso", "doc.image.ISO", true),
+        (
+            "doc.pkg.msixbundle",
+            "msixbundle",
+            "doc.pkg.msixbundle",
+            true,
+        ),
+        ("doc.help.CHM", "chm", "doc.help.CHM", true),
+        ("doc.a.svg", "svg", "doc.a.svg", false),
+        ("doc.n.pdf", "pdf", "doc.n.pdf", false),
+    ];
+    let mut staged = Vec::new();
+    for (file, format, target, _) in cases {
+        let path = workspace.output_dir().join(file);
+        fs::write(&path, file.as_bytes()).expect("write staged");
+        staged.push(StagedArtifact::new(path, format, target));
+    }
+    let out_tmp = TempDir::new().expect("create output tempdir");
+
+    let warnings = extracted_quarantine_warnings(&staged);
+    let published = publish_atomic(&workspace, &staged, out_tmp.path(), &[], None, false, None)
+        .expect("risky extracted files must not fail the batch");
+
+    let renamed_expected: Vec<&str> = cases.iter().filter(|c| c.3).map(|c| c.2).collect();
+    assert_eq!(warnings.len(), renamed_expected.len());
+    for (warning, original) in warnings.iter().zip(&renamed_expected) {
+        assert!(warning.contains(&format!("'{original}'")), "{warning}");
+        assert!(warning.contains(&format!("'{original}.bin'")), "{warning}");
+    }
+    for (artifact, (_, _, target, risky)) in published.iter().zip(cases) {
+        let name = artifact
+            .path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("name");
+        if risky {
+            assert_eq!(name, format!("{target}.bin"));
+            assert_eq!(artifact.format, "bin");
+        } else {
+            assert_eq!(name, target);
+        }
+        assert!(artifact.path.is_file());
+    }
 }

@@ -695,8 +695,7 @@ pub fn validate_specs(specs: &[ToolSpec]) -> Result<(), RegistryError> {
 }
 
 static REGISTRY: LazyLock<Vec<ToolSpec>> = LazyLock::new(|| {
-    let mut list = Vec::new();
-    list.extend(specs::organize_info::specs());
+    let list = specs::all_specs();
     validate_specs(&list).expect("built-in tool registry must be valid");
     list
 });
