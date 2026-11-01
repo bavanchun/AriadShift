@@ -27,6 +27,9 @@ fo = "fo"
 PNGs = "PNGs"
 # Linux procfs names this field for inheritable process capabilities.
 CapInh = "CapInh"
+# PDF 1.7 / ISO 32000-1 stream dictionary keys for filter decode parameters.
+DecodeParms = "DecodeParms"
+FDecodeParms = "FDecodeParms"
 
 [files]
 extend-exclude = [

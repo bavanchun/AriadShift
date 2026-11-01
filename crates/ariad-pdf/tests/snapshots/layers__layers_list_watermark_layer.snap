@@ -1,0 +1,10 @@
+---
+source: crates/ariad-pdf/tests/layers.rs
+expression: value
+---
+[
+  {
+    "name": "AriadShift Watermark",
+    "visible": true
+  }
+]

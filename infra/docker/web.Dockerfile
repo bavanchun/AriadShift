@@ -13,7 +13,7 @@
 # runs as UID 101, needs no capabilities, and writes only to /tmp, so the
 # container can run with a read-only root filesystem and a /tmp tmpfs.
 
-ARG NODE=node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+ARG NODE=node:26.13.0-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39
 ARG NGINX=nginxinc/nginx-unprivileged:1.30.6-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6
 
 FROM --platform=$BUILDPLATFORM ${NODE} AS build

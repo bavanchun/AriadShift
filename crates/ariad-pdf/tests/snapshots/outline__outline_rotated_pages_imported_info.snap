@@ -1,0 +1,64 @@
+---
+source: crates/ariad-pdf/tests/outline.rs
+expression: value
+---
+{
+  "encrypted": false,
+  "has_annotations": false,
+  "has_attachments": false,
+  "has_forms": false,
+  "has_javascript": false,
+  "linearized": false,
+  "metadata": {
+    "author": "AriadShift contributors",
+    "creation_date": "D:19971129212744Z",
+    "creator": "AriadShift fixture generator",
+    "language": "en",
+    "mod_date": "D:19971129212744Z",
+    "producer": "AriadShift fixture generator",
+    "title": "Rotated Pages Inspection Sheet"
+  },
+  "outline_count": 3,
+  "page_count": 4,
+  "pages": [
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 1,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "inherited_rotation": true,
+      "orientation": "portrait",
+      "page": 2,
+      "paper": "A4",
+      "rotation": 90,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 3,
+      "paper": "A4",
+      "rotation": 180,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 4,
+      "paper": "A4",
+      "rotation": 270,
+      "width_pt": 595.28
+    }
+  ],
+  "repaired_xref": false,
+  "version": "1.5"
+}

@@ -181,3 +181,12 @@ path = "fuzz_targets/pdf_open_bounded.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "pdf_tools_structural"
+required-features = ["pdf-reader"]
+path = "fuzz_targets/pdf_tools_structural.rs"
+test = false
+doc = false
+bench = false
+
