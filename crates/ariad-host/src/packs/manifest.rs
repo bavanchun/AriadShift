@@ -92,6 +92,11 @@ pub struct Target {
     /// Engine argv. The first element is a path relative to the install root; later elements
     /// may contain `{root}`.
     pub entrypoint: Vec<String>,
+    /// Executable paths inside archive components, relative to the install root.
+    /// When absent or empty, resolve allows only `entrypoint[0]` and `unpack = "file"`
+    /// components with `executable = true`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub executables: Vec<String>,
     /// Allow-listed engine environment variables; values may contain `{root}`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
@@ -360,6 +365,9 @@ impl Target {
             return Err("entrypoint must name a program".to_owned());
         };
         relative_path(program).map_err(|reason| format!("entrypoint '{program}': {reason}"))?;
+        for exec in &self.executables {
+            relative_path(exec).map_err(|reason| format!("executable '{exec}': {reason}"))?;
+        }
         for name in self.env.keys() {
             if !ALLOWED_ENV.contains(&name.as_str()) {
                 return Err(format!(

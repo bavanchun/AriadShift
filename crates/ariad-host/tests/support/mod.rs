@@ -389,6 +389,7 @@ impl PackBuilder {
             base,
             engine_protocol: self.engine_protocol.clone(),
             entrypoint: self.entrypoint.clone(),
+            executables: Vec::new(),
             url_prefix: None,
             dests,
             components: files,
@@ -399,6 +400,9 @@ impl PackBuilder {
         manifest.engine_protocol.clone_from(&self.engine_protocol);
         manifest.notices.clone_from(&self.notices);
         let target = &mut manifest.targets[0];
+        target
+            .executables
+            .retain(|exec| !self.notices.contains(exec) || self.entrypoint.first() == Some(exec));
         for (key, value) in &self.env {
             target.env.insert(key.clone(), value.clone());
         }
@@ -449,6 +453,7 @@ impl PackBuilder {
             targets: vec![packs::Target {
                 triple: self.triple.clone(),
                 entrypoint: self.entrypoint.clone(),
+                executables: Vec::new(),
                 env: Default::default(),
                 options: Default::default(),
                 components,

@@ -646,3 +646,35 @@ def test_wheel_imports_use_system_runtime_names_without_relocating_image_data(tm
     path.write_bytes(b"MZ")
     with pytest.raises(SystemExit, match="cannot retarget Microsoft runtime imports"):
         windows_imports.retarget(path, {alias: b"msvcp140.dll"})
+
+
+def test_archive_executables_and_target_block_emit_declared_executables(tmp_path):
+    root = tmp_path / "root"
+    bin_dir = root / "runtime/bin"
+    lib_dir = root / "runtime/lib"
+    notices_dir = root / "notices"
+    bin_dir.mkdir(parents=True)
+    lib_dir.mkdir(parents=True)
+    notices_dir.mkdir(parents=True)
+    py_bin = bin_dir / "python3.14"
+    py_bin.write_bytes(b"#!/bin/sh\nexit 0\n")
+    py_bin.chmod(0o755)
+    mod_py = lib_dir / "module.py"
+    mod_py.write_bytes(b"print('ok')\n")
+    mod_py.chmod(0o644)
+    notice = notices_dir / "AriadShift-LICENSE"
+    notice.write_bytes(b"Apache-2.0\n")
+    notice.chmod(0o755)
+
+    archive_path = tmp_path / "runtime.tar.zst"
+    with build.tarfile.open(archive_path, "w:zst") as tar:
+        for item in (py_bin, mod_py, notice):
+            tar.add(item, arcname=item.relative_to(root).as_posix(), recursive=False)
+
+    execs = build.archive_executables(archive_path)
+    assert execs == ["runtime/bin/python3.14"]
+
+    block = build.target_block("x86_64-unknown-linux-gnu", execs)
+    parsed = tomllib.loads(build.pack_fields("0.2.0", "Apache-2.0") + block)
+    assert parsed["targets"][0]["executables"] == ["runtime/bin/python3.14"]
+

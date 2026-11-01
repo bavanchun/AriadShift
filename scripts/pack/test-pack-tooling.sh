@@ -71,7 +71,7 @@ printf '%s\n' "$*" >>"$log"
 base=''; out=''; triple=''; proto=''; component=''; entry=''
 while [ "$#" -gt 0 ]; do
     case $1 in
-    --name|--version|--url-prefix) shift 2 ;;
+    --name|--version|--url-prefix|--executable) shift 2 ;;
     --target) triple=$2; shift 2 ;;
     --base) base=$2; shift 2 ;;
     -o) out=$2; shift 2 ;;
@@ -84,6 +84,8 @@ file=${component#*=}
 cname=${component%%=*}
 sum=$(sha256sum "$file" 2>/dev/null | cut -d ' ' -f 1 || true)
 [ -n "$sum" ] || sum=$(shasum -a 256 "$file" | cut -d ' ' -f 1)
+execs=$(zstd -q -d -c "$file" 2>/dev/null | tar -tvf - 2>/dev/null |
+    awk '$1 ~ /^-.{2}x/ { p = $NF; sub(/^\.\//, "", p); if (p !~ /^notices\//) printf " \"%s\",", p }')
 {
     sed -n '/^\[\[targets\]\]/q;/^targets = \[\]/d;/^engine_protocol/d;p' "$base"
     [ -z "$proto" ] || echo "engine_protocol = \"$proto\""
@@ -91,6 +93,7 @@ sum=$(sha256sum "$file" 2>/dev/null | cut -d ' ' -f 1 || true)
     echo '[[targets]]'
     echo "triple = \"$triple\""
     echo "entrypoint = [$entry ]"
+    echo "executables = [$execs ]"
     echo '[[targets.components]]'
     echo "name = \"$cname\""
     echo "url = \"$(basename "$file")\""
@@ -136,6 +139,7 @@ packed_count=$(grep -c '^notices/third-party/.' <<<"$members" || true)
 check "every upstream licence file is packed ($upstream_count)" test "$packed_count" -eq "$upstream_count"
 check "pack.toml lists every notice file" test "$(grep -c '^    "notices/' "$tmp/out1/pack.toml")" -eq "$(grep -c '^notices/.*[^/]$' <<<"$members")"
 check "pack.toml carries engine_protocol" grep -qx 'engine_protocol = "ariad-engine/2"' "$tmp/out1/pack.toml"
+check "pack.toml lists target executables" grep -q '^executables = \[.*"bin/ariad-pdfium-engine"' "$tmp/out1/pack.toml"
 check "ashift got --engine-protocol ariad-engine/2" grep -q -- '--engine-protocol ariad-engine/2' "$tmp/ashift.log"
 check "ashift got the entrypoint" grep -q -- '--entrypoint bin/ariad-pdfium-engine' "$tmp/ashift.log"
 check "ashift got the engine component" grep -q -- ' engine=.*-engine.tar.zst$' "$tmp/ashift.log"
@@ -331,6 +335,7 @@ if [ -n "${ASHIFT_BIN:-}" ]; then
             "${layout[@]}" --archive-sha256 "$good_sha" >"$tmp/oreal" 2>&1; then
             pass "real ashift writes the manifest"
             check "real manifest has engine_protocol" grep -qx 'engine_protocol = "ariad-engine/2"' "$tmp/real/pack.toml"
+            check "real manifest lists target executables" grep -q '^executables = \[.*"bin/ariad-pdfium-engine"' "$tmp/real/pack.toml"
         else
             fail "real ashift writes the manifest"
             cat "$tmp/oreal" >&2

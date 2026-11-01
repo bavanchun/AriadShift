@@ -308,6 +308,8 @@ check_manifest_output() {
         grep -q "^engine_protocol = \"$engine_protocol\"\$" "$manifest" ||
             die "$manifest has no top-level engine_protocol = \"$engine_protocol\""
     fi
+    grep -q '^executables = \[' "$manifest" ||
+        die "$manifest has no target executables list"
 }
 
 # --- upstream archive -------------------------------------------------------------------------

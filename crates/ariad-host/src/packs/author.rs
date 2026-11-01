@@ -1,6 +1,7 @@
 //! Generates pack manifests from built component files (`ashift __pack manifest`).
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -9,11 +10,11 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     PackError,
-    extract::scan,
+    extract::scan_with_executables,
     fetch::sha256_file,
     manifest::{
-        Component, MANIFEST_SCHEMA, Manifest, Target, Unpack, validate_component_name,
-        validate_pack_name,
+        Component, MANIFEST_SCHEMA, Manifest, Target, Unpack, relative_path,
+        validate_component_name, validate_pack_name,
     },
 };
 
@@ -30,6 +31,9 @@ pub struct ManifestRequest {
     pub engine_protocol: Option<String>,
     /// Entrypoint argv for the target; keeps the base's entrypoint when empty.
     pub entrypoint: Vec<String>,
+    /// Explicit executable paths inside archive components, relative to the install root;
+    /// merged with executables scanned from archive components.
+    pub executables: Vec<String>,
     /// Prefix for component URLs; the bare file name (relative to the manifest) otherwise.
     pub url_prefix: Option<String>,
     /// `(component, dest)` pairs; components default to the install root.
@@ -97,6 +101,7 @@ pub fn generate_manifest(request: &ManifestRequest) -> Result<Manifest, PackErro
             manifest.targets.push(Target {
                 triple: request.target.clone(),
                 entrypoint: Vec::new(),
+                executables: Vec::new(),
                 env: Default::default(),
                 options: Default::default(),
                 components: Vec::new(),
@@ -104,6 +109,11 @@ pub fn generate_manifest(request: &ManifestRequest) -> Result<Manifest, PackErro
             manifest.targets.len() - 1
         }
     };
+    let notice_paths: BTreeSet<String> = manifest
+        .notices
+        .iter()
+        .filter_map(|notice| relative_path(notice).ok().map(|parts| parts.join("/")))
+        .collect();
     let target = &mut manifest.targets[index];
     if !request.entrypoint.is_empty() {
         target.entrypoint.clone_from(&request.entrypoint);
@@ -114,12 +124,36 @@ pub fn generate_manifest(request: &ManifestRequest) -> Result<Manifest, PackErro
             request.target
         )));
     }
+    let entrypoint_path = target
+        .entrypoint
+        .first()
+        .and_then(|entrypoint| relative_path(entrypoint).ok().map(|parts| parts.join("/")));
     let cancel = CancellationToken::new();
-    target.components = request
-        .components
+    let mut executables: BTreeSet<String> = target
+        .executables
         .iter()
-        .map(|(name, path)| describe_component(request, name.as_deref(), path, &cancel))
-        .collect::<Result<_, _>>()?;
+        .filter_map(|exec| relative_path(exec).ok().map(|parts| parts.join("/")))
+        .collect();
+    for exec in &request.executables {
+        let normalized = relative_path(exec)
+            .map(|parts| parts.join("/"))
+            .map_err(|reason| {
+                PackError::Usage(format!("invalid --executable '{exec}': {reason}"))
+            })?;
+        executables.insert(normalized);
+    }
+    let mut components = Vec::with_capacity(request.components.len());
+    for (name, path) in &request.components {
+        let (component, component_executables) =
+            describe_component(request, name.as_deref(), path, &cancel)?;
+        executables.extend(component_executables);
+        components.push(component);
+    }
+    executables.retain(|exec| {
+        !notice_paths.contains(exec) || entrypoint_path.as_deref() == Some(exec.as_str())
+    });
+    target.executables = executables.into_iter().collect();
+    target.components = components;
     manifest.validate()?;
     Ok(manifest)
 }
@@ -129,7 +163,7 @@ fn describe_component(
     name: Option<&str>,
     path: &Path,
     cancel: &CancellationToken,
-) -> Result<Component, PackError> {
+) -> Result<(Component, Vec<String>), PackError> {
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -138,33 +172,36 @@ fn describe_component(
     let name = name.map_or_else(|| component_name(file_name, unpack), str::to_owned);
     validate_component_name(&name).map_err(PackError::Usage)?;
     let (sha256, size) = sha256_file(path, cancel)?;
-    let (unpacked_size, entries) = if unpack.is_archive() {
-        let stats = scan(path, unpack, &name)?;
-        (Some(stats.bytes), Some(stats.entries))
+    let dest = request
+        .dests
+        .iter()
+        .find(|(component, _)| component == &name)
+        .map_or_else(|| ".".to_owned(), |(_, dest)| dest.clone());
+    let (unpacked_size, entries, archive_executables) = if unpack.is_archive() {
+        let (stats, executables) = scan_with_executables(path, unpack, &name, &dest)?;
+        (Some(stats.bytes), Some(stats.entries), executables)
     } else {
-        (None, None)
+        (None, None, Vec::new())
     };
     let url = match &request.url_prefix {
         Some(prefix) if prefix.ends_with('/') => format!("{prefix}{file_name}"),
         Some(prefix) => format!("{prefix}/{file_name}"),
         None => file_name.to_owned(),
     };
-    let dest = request
-        .dests
-        .iter()
-        .find(|(component, _)| component == &name)
-        .map_or_else(|| ".".to_owned(), |(_, dest)| dest.clone());
-    Ok(Component {
-        executable: !unpack.is_archive() && is_executable(path),
-        name,
-        url,
-        sha256,
-        size,
-        unpack,
-        dest,
-        unpacked_size,
-        entries,
-    })
+    Ok((
+        Component {
+            executable: !unpack.is_archive() && is_executable(path),
+            name,
+            url,
+            sha256,
+            size,
+            unpack,
+            dest,
+            unpacked_size,
+            entries,
+        },
+        archive_executables,
+    ))
 }
 
 fn component_name(file_name: &str, unpack: Unpack) -> String {

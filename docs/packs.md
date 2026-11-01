@@ -59,6 +59,7 @@ entries = 23456
 | `notices` | Licence and notice files inside the install root. Each must exist after extraction. |
 | `targets[].triple` | Rust target triple of the pack's own binaries. |
 | `targets[].entrypoint` | Engine argv. The first element is a path relative to the install root; later elements may use `{root}`. |
+| `targets[].executables` | Optional list of executable paths inside archive components, relative to the install root. Resolve allows only `entrypoint[0]`, `targets[].executables` and `unpack = "file"` components with `executable = true`; a pack without `executables` resolves only `entrypoint[0]` and `unpack = "file"` components with `executable = true`. |
 | `targets[].env` | Engine settings added to the cleared engine environment. Names are allow-listed (`ALLOWED_ENV` in `crates/ariad-host/src/packs/manifest.rs`: Hugging Face offline switches, `TESSDATA_PREFIX`, thread counts, Python runtime switches). Values may use `{root}`. |
 | `targets[].options` | Default request `options` for the engine; strings may use `{root}`. |
 | `components[].url` | `https://` URL, or a path relative to the manifest's location (the usual case: the manifest and its components are assets of the same release). |
@@ -153,11 +154,11 @@ An install extracts into `.staging`, checks links, notices and the entrypoint, w
 
 `ASHIFT_PACK_<NAME>=<dir>` (name upper-cased, `-` written as `_`) overrides resolution with an unpacked development pack: `<dir>/pack.toml` is read without a signature check and `<dir>` is the root.
 
-Resolution of a sandboxed pack engine (`pdfium` and the other `ariad-engine/2` packs) goes through `ariad_host::engines::resolve_pack(id)`. Besides the checks above, it refuses an entrypoint that leaves the pack root once links are followed (`tool_missing`, exit 5, reinstall hint). A missing, unverifiable or mismatched pack never falls back to another engine: every tool that needs it fails with exit 5 and the pack's install hint.
+Resolution of a sandboxed pack engine (`pdfium` and the other `ariad-engine/2` packs) goes through `ariad_host::engines::resolve_pack(id)`. Besides the checks above, it refuses an entrypoint that leaves the pack root once links are followed (`tool_missing`, exit 5, reinstall hint) and refuses any executable file on disk that is not declared in the signed manifest (`entrypoint[0]`, `targets[].executables` or `unpack = "file"` with `executable = true`); the unsigned receipt and local `.locks/<name>-<version>.manifest` `executable`/`executables` fields stay for diagnostics only and never grant execution. A missing, unverifiable or mismatched pack never falls back to another engine: every tool that needs it fails with exit 5 and the pack's install hint.
 
 ## Building a pack
 
-`ashift __pack manifest` (hidden) writes an unsigned manifest for built component files. It hashes each file, picks the unpack mode from the extension, and dry-runs the extractor over archives to declare `unpacked_size` and `entries`, so an archive that breaks the extraction rules fails at build time.
+`ashift __pack manifest` (hidden) writes an unsigned manifest for built component files. It hashes each file, picks the unpack mode from the extension, and dry-runs the extractor over archives to declare `unpacked_size`, `entries` and `targets[].executables`, so an archive that breaks the extraction rules fails at build time.
 
 ```bash
 ashift __pack manifest --name docling --version 0.2.0 \
@@ -224,7 +225,7 @@ The `pdfium` pack provides the PDFium engine (`ariad-engine/2`, stateless per re
 | Item | Value |
 |---|---|
 | Contents | `ariad-pdfium-engine` binary, pinned `libpdfium` (PDFium `chromium/8125`, from `bblanchon/pdfium-binaries`, SHA-256 pinned per target), and the bundled third-party notices (FreeType, ICU, libjpeg-turbo, OpenJPEG, LCMS, libpng, zlib, HarfBuzz, Abseil, AGG) |
-| Targets | `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`. Windows packs are deferred because Windows engines have no filesystem or network sandbox |
+| Targets | `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl` (`"unverified"`, [#132](https://github.com/bavanchun/AriadShift/issues/132)), `aarch64-unknown-linux-musl` (`"unverified"`, [#132](https://github.com/bavanchun/AriadShift/issues/132)). Windows packs are deferred because Windows engines have no filesystem or network sandbox |
 | Manifest | `engine_protocol = "ariad-engine/2"`; `requires_ashift` names the release that adds the field |
 | Library lookup | The engine loads `libpdfium` from the directory of its own binary. The manifest sets no library-path variable, and `ALLOWED_ENV` has none |
 | Sandbox | `sandbox_required`: the pack root is readable and executable but not writable, `/tmp` is private to the job, the job directory is the only writable location and the network is closed. `best-effort` mode refuses to start the engine when isolation is unavailable; only `ASHIFT_SANDBOX=off` runs it unsandboxed |

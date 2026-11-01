@@ -190,7 +190,7 @@ verify_pack() {
     while IFS= read -r notice; do
         [ -s "$pack/$notice" ] || die "notice $notice is missing or empty"
         listed=$((listed + 1))
-    done < <(sed -n 's/^ *"\(notices\/[^"]*\)",\{0,1\}$/\1/p' "$manifest")
+    done < <(grep -o '"notices/[^"]*"' "$manifest" | tr -d '"')
     [ "$listed" -gt 0 ] || die "the manifest lists no notices"
     local library
     for library in abseil agg freetype harfbuzz icu lcms libjpeg libopenjpeg libpng pdfium zlib; do

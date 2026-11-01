@@ -426,7 +426,7 @@ pub fn install(
     fs::create_dir(&staging).map_err(|error| PackError::io("could not create", &staging, error))?;
     let mut staging_cleanup = Cleanup::new(staging.clone());
 
-    let declared_executables = manifest_allowed_executables(&target);
+    let declared_executables = manifest_allowed_executables(&manifest, &target);
     let notice_paths: BTreeSet<String> = manifest
         .notices
         .iter()
@@ -449,8 +449,8 @@ pub fn install(
                 (file.executable
                     || fs::symlink_metadata(&extracted_path)
                         .is_ok_and(|metadata| is_executable_file(&extracted_path, &metadata)))
-                    && (!notice_paths.contains(&file.path)
-                        || declared_executables.contains(&file.path))
+                    && !notice_paths.contains(&file.path)
+                    && declared_executables.contains(&file.path)
             } else {
                 component.executable || declared_executables.contains(&file.path)
             };
@@ -461,13 +461,7 @@ pub fn install(
     extract::check_links(&staging, &links)?;
     check_installed_paths(&staging, &manifest, &target)?;
 
-    let mut manifest_executables = declared_executables;
-    for file in &files {
-        if file.executable {
-            manifest_executables.insert(file.path.clone());
-        }
-    }
-    let manifest_executables: Vec<String> = manifest_executables.into_iter().collect();
+    let manifest_executables: Vec<String> = declared_executables.into_iter().collect();
 
     let receipt_files: Vec<ReceiptFile> = files
         .iter()
@@ -974,19 +968,38 @@ fn scan_pack_dir(root: &Path, name: &str, version: &str) -> Result<PackDirScan, 
     Ok(scan)
 }
 
-fn manifest_allowed_executables(target: &super::Target) -> BTreeSet<String> {
+fn manifest_allowed_executables(manifest: &Manifest, target: &super::Target) -> BTreeSet<String> {
+    let notice_paths: BTreeSet<String> = manifest
+        .notices
+        .iter()
+        .filter_map(|notice| relative_path(notice).ok().map(|parts| parts.join("/")))
+        .collect();
+    let entrypoint_path = target
+        .entrypoint
+        .first()
+        .and_then(|entrypoint| relative_path(entrypoint).ok().map(|parts| parts.join("/")));
     let mut allowed = BTreeSet::new();
-    if let Some(entrypoint) = target.entrypoint.first()
-        && let Ok(parts) = relative_path(entrypoint)
-    {
-        allowed.insert(parts.join("/"));
+    if let Some(ref entrypoint) = entrypoint_path {
+        allowed.insert(entrypoint.clone());
+    }
+    for exec in &target.executables {
+        if let Ok(parts) = relative_path(exec) {
+            let rel = parts.join("/");
+            if !notice_paths.contains(&rel) || entrypoint_path.as_deref() == Some(rel.as_str()) {
+                allowed.insert(rel);
+            }
+        }
     }
     for component in &target.components {
         if component.unpack == super::Unpack::File
-            && component.executable
             && let Ok(parts) = relative_path(&component.file_path())
         {
-            allowed.insert(parts.join("/"));
+            let rel = parts.join("/");
+            if component.executable {
+                allowed.insert(rel);
+            } else if entrypoint_path.as_deref() != Some(rel.as_str()) {
+                allowed.remove(&rel);
+            }
         }
     }
     allowed
@@ -1026,36 +1039,12 @@ fn manifest_verified_entries(
         ));
     }
 
-    let declared_executables = manifest_allowed_executables(target);
-    let notice_paths: BTreeSet<String> = manifest
-        .notices
-        .iter()
-        .filter_map(|notice| relative_path(notice).ok().map(|parts| parts.join("/")))
-        .collect();
-    let receipt_executable_files: BTreeSet<&str> = receipt
-        .files
-        .iter()
-        .filter(|file| file.executable)
-        .map(|file| file.path.as_str())
-        .collect();
-    let recorded_executable_files: BTreeSet<&str> = record
-        .files
-        .iter()
-        .filter(|file| file.executable && receipt_executable_files.contains(file.path.as_str()))
-        .map(|file| file.path.as_str())
-        .collect();
+    // Resolve grants execution only to paths declared in the signed manifest (`entrypoint[0]`,
+    // `target.executables`) plus `unpack = "file"` components with `executable = true`.
+    // The receipt and local manifest record `executable`/`executables` fields stay for
+    // diagnostics only and never widen the allowed executable set.
+    let declared_executables = manifest_allowed_executables(manifest, target);
     let mut allowed_executables = declared_executables.clone();
-    if target
-        .components
-        .iter()
-        .any(|component| component.unpack.is_archive())
-    {
-        for exec in &record.executables {
-            if recorded_executable_files.contains(exec.as_str()) && !notice_paths.contains(exec) {
-                allowed_executables.insert(exec.clone());
-            }
-        }
-    }
 
     let mut by_path: HashMap<&str, (&str, u64, bool)> = record
         .files

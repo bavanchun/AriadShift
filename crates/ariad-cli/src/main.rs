@@ -302,6 +302,9 @@ struct PackManifestArgs {
     /// Entrypoint argument; repeat once per argv element, the program first.
     #[arg(long = "entrypoint", value_name = "ARG", allow_hyphen_values = true)]
     entrypoint: Vec<String>,
+    /// Executable path inside an archive component, relative to the pack root (repeat).
+    #[arg(long = "executable", value_name = "PATH")]
+    executables: Vec<String>,
     /// Prefix for component URLs (default: the file name, relative to the manifest).
     #[arg(long, value_name = "URL")]
     url_prefix: Option<String>,
@@ -1442,6 +1445,7 @@ fn run_pack_manifest(args: PackManifestArgs) -> ExitCode {
         base: args.base,
         engine_protocol: args.engine_protocol,
         entrypoint: args.entrypoint,
+        executables: args.executables,
         url_prefix: args.url_prefix,
         dests,
         components,
