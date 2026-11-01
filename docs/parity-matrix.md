@@ -14,7 +14,7 @@ Sources (all under `plans/reports/`): `researcher-261031-2046-stirling-pdf.md` (
 - **Runtimes**: `wasm` runs in the browser, `local` runs on the user's machine (CLI, local MCP, macOS app), `cloud` is eligible only after the phase 13 server tool-jobs task. Cloud and any AI hosted by AriadShift are Pro as a runtime (rule a below), not per row.
 - **Surfaces**: `CLI`, `MCP`, `web`, `mac`. `web(h)` means the web app shows the "Run on your computer" hand-off because the tool has no browser runtime.
 - `convert:a→b` is a conversion route (AD-1: routes stay in the planner; tools never enter it). Other ids are tools.
-- `†` marks a task added by the PM at the phase scout: the capability had no task in its phase file, and the Phase column names the phase that now owns it. The phase file must carry the task. Every `†` row is assigned (see "Gap assignments").
+- `†` marks a task added by the PM at the phase scout: the capability had no task in its initial phase file, and the Phase column names the phase that now owns it. Every `†` row is assigned (see "Gap assignments"); the phase 3 `†` tasks are now assigned to tasks T3–T5 in `phase-03-structural-pdf-tools.md`.
 - Plan-only tools with no competitor counterpart carry `—` in both competitor columns, so the matrix also covers every tool the plan registers.
 
 ## Tier rule (owner decision D2: some tools are Pro)
@@ -43,7 +43,7 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.delete_pages` | organize | S01 remove pages | Delete Pages | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.reorder` | organize | S01 reorder | Organize Pages; Reverse Pages; duplex collate | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.rotate` | organize | S01 rotate | Rotate PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.rotate_content` † | organize | — | Rotate by Custom Degrees | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.rotate_content` † (task T3) | organize | — | Rotate by Custom Degrees | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.crop` | organize | S01 crop | Crop PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.crop_whitespace` | organize | — | — | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.scale` | organize | S01 scale | Fix Page Size | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
@@ -52,19 +52,19 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.single_page` | organize | S01 PDF to single large page | Combine to Single Page | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.insert_blank` | organize | — | Add Blank Page | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.alternate_mix` | organize | — | Alternate & Mix Pages | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.divide_pages` † | organize | — | Divide Pages | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.posterize` † | organize | — | Posterize PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.divide_pages` † (task T4) | organize | — | Divide Pages | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.posterize` † (task T4) | organize | — | Posterize PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.overlay` | organize | S31 overlay PDFs | Overlay PDF | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.metadata` | organize | S38 metadata edit | Edit Metadata; Remove Metadata | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.outline` | organize | S01 edit TOC | Edit Bookmarks | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.attachments` | organize | S01 attachments; S40 manage attachments | Add Attachments; Extract Attachments; Edit Attachments | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.portfolio` † | organize | S01 portfolio; S40 create portfolio | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.portfolio` † (task T5) | organize | S01 portfolio; S40 create portfolio | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.page_labels` | organize | — | Add Page Labels | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.viewer_prefs` | organize | — | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.remove_blank` | organize | S02 remove blank pages | Remove Blank Pages | 4 | pdfium, ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.detect_scanned` | organize | — | — | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.text_layout` | organize | — | — | 4 | pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.layers` † (list, toggle, remove optional content groups) | organize | — | PDF Layers | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.layers` † (list, toggle, remove optional content groups; task T5) | organize | — | PDF Layers | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 
 ### convert (tools and routes)
 
@@ -101,7 +101,7 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.compress` (`target_bytes` covers the fixed-size presets and "for email") | optimize | S15 compress levels 1-9 | Compress PDF; Compress presets (100 KB, 200 KB, 500 KB, 1 MB, 2 MB); Compress for email | 5 | ariad-pdf, qpdf, pdfium | local, cloud | Free | CLI, MCP, web(h), mac |
 | `pdf.grayscale` | optimize | S32 colour operations | PDF to Greyscale | 5 | ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
 | `pdf.repair` | optimize | S16 repair | Repair PDF | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.decompress` † | optimize | S16 decompress | — | 3 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.decompress` † (task T3) | optimize | S16 decompress | — | 3 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
 | `pdf.linearize` | optimize | — | Linearize PDF | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
 
 ### security
@@ -240,7 +240,7 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 
 ## Gap assignments (`†` rows)
 
-Every `†` task was added by the PM at the phase scout and is assigned to the phase in the Phase column: phase 3 (`pdf.rotate_content`, `pdf.divide_pages`, `pdf.posterize`, `pdf.portfolio`, `pdf.layers`, `pdf.decompress`), phase 4 (BMP and TIFF output of `pdf.render`), phase 6 (`pdf.background`, `pdf.adjust_colors`, `pdf.toc_page`), phase 7 (`pdf.scanner_effect`), phase 9 (`pdf.sign_token`, `pdf.timestamp`), phase 10 (`convert:pdf→cbz`) and phase 13 (document-title auto-rename through the `{title}` naming token, noted on the `recipe run` row). Two notes stay in cells, not as tasks: `pdf.info` reports `has_javascript` and never the script text (S29), and IR-block semantic compare stays outside phase 10, which compares text and pixels only.
+Every `†` task was added by the PM at the phase scout and is assigned to the phase in the Phase column: phase 3 (`pdf.rotate_content` and `pdf.decompress` in task T3, `pdf.divide_pages` and `pdf.posterize` in task T4, `pdf.portfolio` and `pdf.layers` in task T5), phase 4 (BMP and TIFF output of `pdf.render`), phase 6 (`pdf.background`, `pdf.adjust_colors`, `pdf.toc_page`), phase 7 (`pdf.scanner_effect`), phase 9 (`pdf.sign_token`, `pdf.timestamp`), phase 10 (`convert:pdf→cbz`) and phase 13 (document-title auto-rename through the `{title}` naming token, noted on the `recipe run` row). Two notes stay in cells, not as tasks: `pdf.info` reports `has_javascript` and never the script text (S29), and IR-block semantic compare stays outside phase 10, which compares text and pixels only.
 
 ## Counts checked against the sources
 
