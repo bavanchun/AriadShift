@@ -107,6 +107,2548 @@
       "summary": "Inspect PDF version, page count, encryption status, geometry, metadata, and structural features.",
       "tier": "free",
       "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.merge",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 500,
+        "min": 2
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MergeParams",
+        "description": "Parameters for `pdf.merge`.",
+        "type": "object",
+        "properties": {
+          "outline": {
+            "description": "How bookmarks (`/Outlines`) from the input files are combined (`\"per-file\"` by default).",
+            "$ref": "#/$defs/MergeOutlineMode",
+            "default": "per-file"
+          },
+          "page_labels": {
+            "description": "How `/PageLabels` are combined across inputs (`\"renumber\"` by default).",
+            "$ref": "#/$defs/MergePageLabelsMode",
+            "default": "renumber"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "MergeOutlineMode": {
+            "description": "Outline (bookmark) handling strategy when merging multiple PDFs (`pdf.merge`).",
+            "oneOf": [
+              {
+                "description": "Preserve existing bookmark trees from each input file with updated destination offsets.",
+                "type": "string",
+                "const": "keep"
+              },
+              {
+                "description": "Create one top-level bookmark entry per input file titled with the input file stem.",
+                "type": "string",
+                "const": "per-file"
+              },
+              {
+                "description": "Omit outlines from the merged document.",
+                "type": "string",
+                "const": "none"
+              }
+            ]
+          },
+          "MergePageLabelsMode": {
+            "description": "Page label handling strategy when merging multiple PDFs (`pdf.merge`).",
+            "oneOf": [
+              {
+                "description": "Preserve per-document `/PageLabels` number trees at each input file's starting page offset.",
+                "type": "string",
+                "const": "keep"
+              },
+              {
+                "description": "Renumber pages sequentially from `1` across the merged document.",
+                "type": "string",
+                "const": "renumber"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Merge two or more PDF documents into a single PDF.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.split",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SplitParams",
+        "description": "Parameters for `pdf.split`.",
+        "type": "object",
+        "properties": {
+          "blank_threshold": {
+            "description": "Optional content-emptiness threshold (`0.0..=1.0`) when `mode == \"blank-separator\"`.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "maximum": 1.0,
+            "minimum": 0.0
+          },
+          "every": {
+            "description": "Number of pages per output chunk when `mode == \"every\"` (`>= 1`).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 1
+          },
+          "level": {
+            "description": "Outline hierarchy depth (`>= 1`) when `mode == \"bookmarks\"`.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 1
+          },
+          "max_bytes": {
+            "description": "Target maximum byte size per output part when `mode == \"size\"` (`>= 1`).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint64",
+            "minimum": 1
+          },
+          "mode": {
+            "description": "Splitting mode (`\"ranges\"`, `\"every\"`, `\"bookmarks\"`, `\"size\"`, or `\"blank-separator\"`).",
+            "$ref": "#/$defs/SplitMode",
+            "default": "ranges"
+          },
+          "ranges": {
+            "description": "Explicit 1-based page ranges when `mode == \"ranges\"`.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/$defs/PageRange"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "SplitMode": {
+            "description": "Splitting strategy for `pdf.split`.",
+            "oneOf": [
+              {
+                "description": "Split into one output PDF per page range in `ranges`.",
+                "type": "string",
+                "const": "ranges"
+              },
+              {
+                "description": "Split into chunks of `every` consecutive pages.",
+                "type": "string",
+                "const": "every"
+              },
+              {
+                "description": "Split at top-level or `level`-depth bookmark (`/Outlines`) boundaries.",
+                "type": "string",
+                "const": "bookmarks"
+              },
+              {
+                "description": "Split so each output chunk stays at or below `max_bytes`.",
+                "type": "string",
+                "const": "size"
+              },
+              {
+                "description": "Split on content-empty separator pages (pages with no drawing operators or only whitespace).",
+                "type": "string",
+                "const": "blank-separator"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Split a PDF document into multiple part PDFs by page ranges, interval, bookmarks, size, or blank separators.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.extract_pages",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ExtractPagesParams",
+        "description": "Parameters for `pdf.extract_pages`.",
+        "type": "object",
+        "properties": {
+          "pages": {
+            "description": "1-based page range selection to extract (duplicates allowed and kept in order).",
+            "$ref": "#/$defs/PageRange"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "pages"
+        ],
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Extract selected pages from a PDF document into a new PDF.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.delete_pages",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "DeletePagesParams",
+        "description": "Parameters for `pdf.delete_pages`.",
+        "type": "object",
+        "properties": {
+          "pages": {
+            "description": "1-based page range selection to delete (must leave at least 1 page in the document).",
+            "$ref": "#/$defs/PageRange"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "pages"
+        ],
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Delete selected pages from a PDF document while keeping at least one remaining page.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.reorder",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ReorderParams",
+        "description": "Parameters for `pdf.reorder`.",
+        "type": "object",
+        "properties": {
+          "order": {
+            "description": "Target page order specification.",
+            "$ref": "#/$defs/ReorderSpec"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "order"
+        ],
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "ReorderPreset": {
+            "description": "Named page-reordering preset for `pdf.reorder`.",
+            "oneOf": [
+              {
+                "description": "Reverse the document page order (`last..=1`).",
+                "type": "string",
+                "const": "reverse"
+              },
+              {
+                "description": "Interleave front and back duplex scan stacks (`1, N, 2, N-1, ...`).",
+                "type": "string",
+                "const": "duplex-interleave"
+              },
+              {
+                "description": "Place all odd-numbered pages first followed by all even-numbered pages.",
+                "type": "string",
+                "const": "odd-then-even"
+              }
+            ]
+          },
+          "ReorderSpec": {
+            "description": "Reorder specification: either a named preset (`\"reverse\"`, `\"duplex-interleave\"`,\n`\"odd-then-even\"`) or an explicit 1-based [`PageRange`] sequence.",
+            "anyOf": [
+              {
+                "description": "Named reordering preset.",
+                "$ref": "#/$defs/ReorderPreset"
+              },
+              {
+                "description": "Explicit 1-based page range or sequence (duplicates allowed and kept in order).",
+                "$ref": "#/$defs/PageRange"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Reorder PDF pages using an explicit page range sequence or a named preset (reverse, duplex-interleave, odd-then-even).",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.alternate_mix",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 2,
+        "min": 2
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AlternateMixParams",
+        "description": "Parameters for `pdf.alternate_mix`.",
+        "type": "object",
+        "properties": {
+          "reverse_second": {
+            "description": "Whether pages from the second input PDF should be taken in reverse order (`false` by default).",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Interleave pages alternately from two PDF documents, optionally reversing the second document.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.insert_blank",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "InsertBlankParams",
+        "description": "Parameters for `pdf.insert_blank`.",
+        "type": "object",
+        "properties": {
+          "after": {
+            "description": "1-based pages after which to insert blank pages (`\"all\"` by default).",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "count": {
+            "description": "Number of blank pages to insert at each selected position (`1` by default, `>= 1`).",
+            "type": "integer",
+            "format": "uint32",
+            "default": 1,
+            "minimum": 1
+          },
+          "size": {
+            "description": "Blank page dimensions (`\"same\"` by default, or a named/custom paper size).",
+            "$ref": "#/$defs/BlankPageSize",
+            "default": "same"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "BlankPageSize": {
+            "description": "Blank page size specification for `pdf.insert_blank`: `\"same\"` or a [`PaperSize`].",
+            "anyOf": [
+              {
+                "description": "Match the dimensions of the page after which the blank page is inserted.",
+                "$ref": "#/$defs/SamePageSize"
+              },
+              {
+                "description": "Explicit standard or custom paper dimensions.",
+                "$ref": "#/$defs/PaperSize"
+              }
+            ]
+          },
+          "CustomPaperSize": {
+            "description": "Custom paper size specified as `{ w, h }` in PDF points (`1 pt = 1/72 inch`).",
+            "type": "object",
+            "properties": {
+              "h": {
+                "description": "Page height in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              },
+              "w": {
+                "description": "Page width in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "w",
+              "h"
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "PaperSize": {
+            "description": "Paper size specification: either a named standard paper (`\"A4\"`, `\"Letter\"`, etc.) or custom\n`{ w, h }` dimensions in PDF points.",
+            "anyOf": [
+              {
+                "description": "Named standard paper size (`\"A0\"`..`\"A6\"`, `\"Letter\"`, `\"Legal\"`, `\"Tabloid\"`, `\"Ledger\"`).",
+                "$ref": "#/$defs/StandardPaper"
+              },
+              {
+                "description": "Custom paper dimensions `{ w, h }` in PDF points.",
+                "$ref": "#/$defs/CustomPaperSize"
+              }
+            ]
+          },
+          "SamePageSize": {
+            "description": "Marker variant for matching the adjacent page's size (`\"same\"`).",
+            "oneOf": [
+              {
+                "description": "Match the width and height of the reference page.",
+                "type": "string",
+                "const": "same"
+              }
+            ]
+          },
+          "StandardPaper": {
+            "description": "Named ISO and North American standard paper sizes (`docs/tools.md`).",
+            "oneOf": [
+              {
+                "description": "ISO A0 (`2383.94 × 3370.39 pt`, `841 × 1189 mm`).",
+                "type": "string",
+                "const": "A0"
+              },
+              {
+                "description": "ISO A1 (`1683.78 × 2383.94 pt`, `594 × 841 mm`).",
+                "type": "string",
+                "const": "A1"
+              },
+              {
+                "description": "ISO A2 (`1190.55 × 1683.78 pt`, `420 × 594 mm`).",
+                "type": "string",
+                "const": "A2"
+              },
+              {
+                "description": "ISO A3 (`841.89 × 1190.55 pt`, `297 × 420 mm`).",
+                "type": "string",
+                "const": "A3"
+              },
+              {
+                "description": "ISO A4 (`595.28 × 841.89 pt`, `210 × 297 mm`).",
+                "type": "string",
+                "const": "A4"
+              },
+              {
+                "description": "ISO A5 (`419.53 × 595.28 pt`, `148 × 210 mm`).",
+                "type": "string",
+                "const": "A5"
+              },
+              {
+                "description": "ISO A6 (`297.64 × 419.53 pt`, `105 × 148 mm`).",
+                "type": "string",
+                "const": "A6"
+              },
+              {
+                "description": "US Letter (`612.0 × 792.0 pt`, `8.5 × 11 in`).",
+                "type": "string",
+                "const": "Letter"
+              },
+              {
+                "description": "US Legal (`612.0 × 1008.0 pt`, `8.5 × 14 in`).",
+                "type": "string",
+                "const": "Legal"
+              },
+              {
+                "description": "US Tabloid (`792.0 × 1224.0 pt`, `11 × 17 in` portrait).",
+                "type": "string",
+                "const": "Tabloid"
+              },
+              {
+                "description": "US Ledger (`1224.0 × 792.0 pt`, `17 × 11 in` landscape).",
+                "type": "string",
+                "const": "Ledger"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Insert blank pages of matching or specified paper size after selected PDF pages.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.rotate",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "RotateParams",
+        "description": "Parameters for `pdf.rotate`.",
+        "type": "object",
+        "properties": {
+          "angle": {
+            "description": "Clockwise rotation delta in degrees (`90`, `180`, `270`, or `-90`).",
+            "type": "integer",
+            "enum": [
+              90,
+              180,
+              270,
+              -90
+            ]
+          },
+          "pages": {
+            "description": "1-based pages to rotate (`\"all\"` by default; duplicate pages are rejected).",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "angle"
+        ],
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Rotate selected PDF pages by a multiple of 90 degrees without re-rendering.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.crop",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "CropParams",
+        "description": "Parameters for `pdf.crop`.",
+        "type": "object",
+        "properties": {
+          "box": {
+            "description": "Crop box coordinates in PDF points or `\"trim-whitespace-later\"`.",
+            "$ref": "#/$defs/CropBoxSpec"
+          },
+          "pages": {
+            "description": "1-based pages to crop (`\"all\"` by default).",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "target": {
+            "description": "Target page box to set (`\"crop\"` by default, or `\"media\"`).",
+            "$ref": "#/$defs/CropTarget",
+            "default": "crop"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "box"
+        ],
+        "$defs": {
+          "CropAutoMode": {
+            "description": "Deferred whitespace auto-crop preset (`\"trim-whitespace-later\"`).",
+            "oneOf": [
+              {
+                "description": "Placeholder marker for rendering-based whitespace auto-crop.",
+                "type": "string",
+                "const": "trim-whitespace-later"
+              }
+            ]
+          },
+          "CropBoxSpec": {
+            "description": "Crop box specification for `pdf.crop`: explicit `{ left, bottom, right, top }` or\n`\"trim-whitespace-later\"`.",
+            "anyOf": [
+              {
+                "description": "Explicit rectangle `{ left, bottom, right, top }` in PDF points.",
+                "$ref": "#/$defs/CropRect"
+              },
+              {
+                "description": "Rendering-dependent auto-crop preset (`\"trim-whitespace-later\"`).",
+                "$ref": "#/$defs/CropAutoMode"
+              }
+            ]
+          },
+          "CropRect": {
+            "description": "Explicit crop rectangle coordinates `{ left, bottom, right, top }` in PDF points.",
+            "type": "object",
+            "properties": {
+              "bottom": {
+                "description": "Bottom coordinate (`lly`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "left": {
+                "description": "Left coordinate (`llx`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "right": {
+                "description": "Right coordinate (`urx`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              },
+              "top": {
+                "description": "Top coordinate (`ury`) in PDF points.",
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "left",
+              "bottom",
+              "right",
+              "top"
+            ]
+          },
+          "CropTarget": {
+            "description": "Target PDF page box updated by `pdf.crop`.",
+            "oneOf": [
+              {
+                "description": "Update `/CropBox` (`\"crop\"`, default).",
+                "type": "string",
+                "const": "crop"
+              },
+              {
+                "description": "Update `/MediaBox` (and clamp `/CropBox` to match).",
+                "type": "string",
+                "const": "media"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Set the CropBox or MediaBox of selected PDF pages in points.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.scale",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ScaleParams",
+        "description": "Parameters for `pdf.scale`.",
+        "type": "object",
+        "properties": {
+          "fit": {
+            "description": "Fitting mode (`\"contain\"` by default, `\"cover\"`, or `\"stretch\"`).",
+            "$ref": "#/$defs/ScaleFit",
+            "default": "contain"
+          },
+          "pages": {
+            "description": "1-based pages to scale (`\"all\"` by default).",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "to": {
+            "description": "Target paper size (`\"A4\"` by default, or `\"Letter\"`, `\"Legal\"`, `\"A3\"`, `\"A5\"`, `{w, h}`).",
+            "$ref": "#/$defs/PaperSize",
+            "default": "A4"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "CustomPaperSize": {
+            "description": "Custom paper size specified as `{ w, h }` in PDF points (`1 pt = 1/72 inch`).",
+            "type": "object",
+            "properties": {
+              "h": {
+                "description": "Page height in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              },
+              "w": {
+                "description": "Page width in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "w",
+              "h"
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "PaperSize": {
+            "description": "Paper size specification: either a named standard paper (`\"A4\"`, `\"Letter\"`, etc.) or custom\n`{ w, h }` dimensions in PDF points.",
+            "anyOf": [
+              {
+                "description": "Named standard paper size (`\"A0\"`..`\"A6\"`, `\"Letter\"`, `\"Legal\"`, `\"Tabloid\"`, `\"Ledger\"`).",
+                "$ref": "#/$defs/StandardPaper"
+              },
+              {
+                "description": "Custom paper dimensions `{ w, h }` in PDF points.",
+                "$ref": "#/$defs/CustomPaperSize"
+              }
+            ]
+          },
+          "ScaleFit": {
+            "description": "Aspect-ratio fitting mode for `pdf.scale`.",
+            "oneOf": [
+              {
+                "description": "Uniformly scale content to fit inside the target sheet while preserving aspect ratio.",
+                "type": "string",
+                "const": "contain"
+              },
+              {
+                "description": "Uniformly scale content to cover the entire target sheet while preserving aspect ratio.",
+                "type": "string",
+                "const": "cover"
+              },
+              {
+                "description": "Non-uniformly stretch content horizontally and vertically to fill the target sheet.",
+                "type": "string",
+                "const": "stretch"
+              }
+            ]
+          },
+          "StandardPaper": {
+            "description": "Named ISO and North American standard paper sizes (`docs/tools.md`).",
+            "oneOf": [
+              {
+                "description": "ISO A0 (`2383.94 × 3370.39 pt`, `841 × 1189 mm`).",
+                "type": "string",
+                "const": "A0"
+              },
+              {
+                "description": "ISO A1 (`1683.78 × 2383.94 pt`, `594 × 841 mm`).",
+                "type": "string",
+                "const": "A1"
+              },
+              {
+                "description": "ISO A2 (`1190.55 × 1683.78 pt`, `420 × 594 mm`).",
+                "type": "string",
+                "const": "A2"
+              },
+              {
+                "description": "ISO A3 (`841.89 × 1190.55 pt`, `297 × 420 mm`).",
+                "type": "string",
+                "const": "A3"
+              },
+              {
+                "description": "ISO A4 (`595.28 × 841.89 pt`, `210 × 297 mm`).",
+                "type": "string",
+                "const": "A4"
+              },
+              {
+                "description": "ISO A5 (`419.53 × 595.28 pt`, `148 × 210 mm`).",
+                "type": "string",
+                "const": "A5"
+              },
+              {
+                "description": "ISO A6 (`297.64 × 419.53 pt`, `105 × 148 mm`).",
+                "type": "string",
+                "const": "A6"
+              },
+              {
+                "description": "US Letter (`612.0 × 792.0 pt`, `8.5 × 11 in`).",
+                "type": "string",
+                "const": "Letter"
+              },
+              {
+                "description": "US Legal (`612.0 × 1008.0 pt`, `8.5 × 14 in`).",
+                "type": "string",
+                "const": "Legal"
+              },
+              {
+                "description": "US Tabloid (`792.0 × 1224.0 pt`, `11 × 17 in` portrait).",
+                "type": "string",
+                "const": "Tabloid"
+              },
+              {
+                "description": "US Ledger (`1224.0 × 792.0 pt`, `17 × 11 in` landscape).",
+                "type": "string",
+                "const": "Ledger"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Scale selected PDF pages to a target paper size using Form XObjects.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.single_page",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SinglePageParams",
+        "description": "Parameters for `pdf.single_page`.\n\n`pdf.single_page` takes no parameters (`{}`) and rejects any unknown fields.",
+        "type": "object",
+        "additionalProperties": false
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Concatenate all pages of a PDF document vertically into a single continuous page.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.rotate_content",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "RotateContentParams",
+        "description": "Parameters for `pdf.rotate_content`.",
+        "type": "object",
+        "properties": {
+          "angle_deg": {
+            "description": "Arbitrary rotation angle in degrees (`-360.0..=360.0`).",
+            "type": "number",
+            "format": "float",
+            "maximum": 360.0,
+            "minimum": -360.0
+          },
+          "expand": {
+            "description": "Whether to expand the page `/MediaBox` so rotated corners are not clipped (`true` by default).",
+            "type": "boolean",
+            "default": true
+          },
+          "pages": {
+            "description": "1-based pages whose content streams should be rotated (`\"all\"` by default).",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "angle_deg"
+        ],
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Rotate PDF page content by an arbitrary angle using a Form XObject and transform matrix.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "optimize",
+      "id": "pdf.decompress",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "DecompressParams",
+        "description": "Parameters for `pdf.decompress`.",
+        "type": "object",
+        "properties": {
+          "object_streams": {
+            "description": "Whether to expand `/ObjStm` object streams (`\"expand\"` by default).",
+            "$ref": "#/$defs/ObjectStreamsMode",
+            "default": "expand"
+          },
+          "pages": {
+            "description": "Optional 1-based page selection whose streams should be decompressed (all streams when omitted).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PageRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "ObjectStreamsMode": {
+            "description": "How compressed object streams (`/Type /ObjStm`) are handled by `pdf.decompress`.",
+            "oneOf": [
+              {
+                "description": "Keep object stream grouping if present.",
+                "type": "string",
+                "const": "keep"
+              },
+              {
+                "description": "Expand all compressed object streams into top-level indirect objects (`\"expand\"`, default).",
+                "type": "string",
+                "const": "expand"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Decompress PDF streams and expand object streams within decoded-size limits.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.nup",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "NupParams",
+        "description": "Parameters for `pdf.nup`.",
+        "type": "object",
+        "properties": {
+          "borders": {
+            "description": "Whether to draw thin border hairlines around each placed page cell (`false` by default).",
+            "type": "boolean",
+            "default": false
+          },
+          "margins_pt": {
+            "description": "Outer and cell margins in PDF points (`0.0` by default).",
+            "$ref": "#/$defs/Margins",
+            "default": 0.0
+          },
+          "order": {
+            "description": "Grid cell filling order (`\"row\"` by default, or `\"column\"`).",
+            "$ref": "#/$defs/GridOrder",
+            "default": "row"
+          },
+          "per_sheet": {
+            "description": "Number of input pages placed on each output sheet (`2` by default; `2 | 4 | 6 | 8 | 9 | 16`).",
+            "type": "integer",
+            "default": 2,
+            "enum": [
+              2,
+              4,
+              6,
+              8,
+              9,
+              16
+            ]
+          },
+          "sheet": {
+            "description": "Target output sheet size (`\"A4\"` by default).",
+            "$ref": "#/$defs/PaperSize",
+            "default": "A4"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "CustomPaperSize": {
+            "description": "Custom paper size specified as `{ w, h }` in PDF points (`1 pt = 1/72 inch`).",
+            "type": "object",
+            "properties": {
+              "h": {
+                "description": "Page height in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              },
+              "w": {
+                "description": "Page width in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "w",
+              "h"
+            ]
+          },
+          "GridOrder": {
+            "description": "Grid cell ordering for multi-cell layout tools (`pdf.nup`, `pdf.divide_pages`).",
+            "oneOf": [
+              {
+                "description": "Left-to-right, top-to-bottom row-major order.",
+                "type": "string",
+                "const": "row"
+              },
+              {
+                "description": "Top-to-bottom, left-to-right column-major order.",
+                "type": "string",
+                "const": "column"
+              }
+            ]
+          },
+          "MarginSides": {
+            "description": "Explicit per-side margins in PDF points (`top`, `right`, `bottom`, `left`).",
+            "type": "object",
+            "properties": {
+              "bottom": {
+                "description": "Bottom margin in PDF points (`>= 0`).",
+                "type": "number",
+                "format": "double",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              "left": {
+                "description": "Left margin in PDF points (`>= 0`).",
+                "type": "number",
+                "format": "double",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              "right": {
+                "description": "Right margin in PDF points (`>= 0`).",
+                "type": "number",
+                "format": "double",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              "top": {
+                "description": "Top margin in PDF points (`>= 0`).",
+                "type": "number",
+                "format": "double",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "top",
+              "right",
+              "bottom",
+              "left"
+            ]
+          },
+          "Margins": {
+            "description": "Page margin specification in PDF points: either a uniform non-negative number or per-side\n`{ top, right, bottom, left }`.",
+            "anyOf": [
+              {
+                "description": "Uniform margin on all four sides in PDF points (`>= 0`).",
+                "type": "number",
+                "format": "double",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              {
+                "description": "Per-side margins in PDF points.",
+                "$ref": "#/$defs/MarginSides"
+              }
+            ]
+          },
+          "PaperSize": {
+            "description": "Paper size specification: either a named standard paper (`\"A4\"`, `\"Letter\"`, etc.) or custom\n`{ w, h }` dimensions in PDF points.",
+            "anyOf": [
+              {
+                "description": "Named standard paper size (`\"A0\"`..`\"A6\"`, `\"Letter\"`, `\"Legal\"`, `\"Tabloid\"`, `\"Ledger\"`).",
+                "$ref": "#/$defs/StandardPaper"
+              },
+              {
+                "description": "Custom paper dimensions `{ w, h }` in PDF points.",
+                "$ref": "#/$defs/CustomPaperSize"
+              }
+            ]
+          },
+          "StandardPaper": {
+            "description": "Named ISO and North American standard paper sizes (`docs/tools.md`).",
+            "oneOf": [
+              {
+                "description": "ISO A0 (`2383.94 × 3370.39 pt`, `841 × 1189 mm`).",
+                "type": "string",
+                "const": "A0"
+              },
+              {
+                "description": "ISO A1 (`1683.78 × 2383.94 pt`, `594 × 841 mm`).",
+                "type": "string",
+                "const": "A1"
+              },
+              {
+                "description": "ISO A2 (`1190.55 × 1683.78 pt`, `420 × 594 mm`).",
+                "type": "string",
+                "const": "A2"
+              },
+              {
+                "description": "ISO A3 (`841.89 × 1190.55 pt`, `297 × 420 mm`).",
+                "type": "string",
+                "const": "A3"
+              },
+              {
+                "description": "ISO A4 (`595.28 × 841.89 pt`, `210 × 297 mm`).",
+                "type": "string",
+                "const": "A4"
+              },
+              {
+                "description": "ISO A5 (`419.53 × 595.28 pt`, `148 × 210 mm`).",
+                "type": "string",
+                "const": "A5"
+              },
+              {
+                "description": "ISO A6 (`297.64 × 419.53 pt`, `105 × 148 mm`).",
+                "type": "string",
+                "const": "A6"
+              },
+              {
+                "description": "US Letter (`612.0 × 792.0 pt`, `8.5 × 11 in`).",
+                "type": "string",
+                "const": "Letter"
+              },
+              {
+                "description": "US Legal (`612.0 × 1008.0 pt`, `8.5 × 14 in`).",
+                "type": "string",
+                "const": "Legal"
+              },
+              {
+                "description": "US Tabloid (`792.0 × 1224.0 pt`, `11 × 17 in` portrait).",
+                "type": "string",
+                "const": "Tabloid"
+              },
+              {
+                "description": "US Ledger (`1224.0 × 792.0 pt`, `17 × 11 in` landscape).",
+                "type": "string",
+                "const": "Ledger"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Place multiple PDF pages onto each output sheet in an N-up grid layout.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.booklet",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "BookletParams",
+        "description": "Parameters for `pdf.booklet`.",
+        "type": "object",
+        "properties": {
+          "binding": {
+            "description": "Spine binding direction (`\"left\"` by default, or `\"right\"`).",
+            "$ref": "#/$defs/BookletBinding",
+            "default": "left"
+          },
+          "creep_pt": {
+            "description": "Per-signature inner margin creep compensation in PDF points (`0.0` by default, `>= 0`).",
+            "type": "number",
+            "format": "float",
+            "default": 0.0,
+            "maximum": 1000.0,
+            "minimum": 0.0
+          },
+          "sheet": {
+            "description": "Output sheet paper size (`\"A4\"` by default).",
+            "$ref": "#/$defs/PaperSize",
+            "default": "A4"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "BookletBinding": {
+            "description": "Binding edge for saddle-stitch booklet imposition (`pdf.booklet`).",
+            "oneOf": [
+              {
+                "description": "Left-to-right binding (`\"left\"`, default).",
+                "type": "string",
+                "const": "left"
+              },
+              {
+                "description": "Right-to-left binding (`\"right\"`).",
+                "type": "string",
+                "const": "right"
+              }
+            ]
+          },
+          "CustomPaperSize": {
+            "description": "Custom paper size specified as `{ w, h }` in PDF points (`1 pt = 1/72 inch`).",
+            "type": "object",
+            "properties": {
+              "h": {
+                "description": "Page height in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              },
+              "w": {
+                "description": "Page width in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "w",
+              "h"
+            ]
+          },
+          "PaperSize": {
+            "description": "Paper size specification: either a named standard paper (`\"A4\"`, `\"Letter\"`, etc.) or custom\n`{ w, h }` dimensions in PDF points.",
+            "anyOf": [
+              {
+                "description": "Named standard paper size (`\"A0\"`..`\"A6\"`, `\"Letter\"`, `\"Legal\"`, `\"Tabloid\"`, `\"Ledger\"`).",
+                "$ref": "#/$defs/StandardPaper"
+              },
+              {
+                "description": "Custom paper dimensions `{ w, h }` in PDF points.",
+                "$ref": "#/$defs/CustomPaperSize"
+              }
+            ]
+          },
+          "StandardPaper": {
+            "description": "Named ISO and North American standard paper sizes (`docs/tools.md`).",
+            "oneOf": [
+              {
+                "description": "ISO A0 (`2383.94 × 3370.39 pt`, `841 × 1189 mm`).",
+                "type": "string",
+                "const": "A0"
+              },
+              {
+                "description": "ISO A1 (`1683.78 × 2383.94 pt`, `594 × 841 mm`).",
+                "type": "string",
+                "const": "A1"
+              },
+              {
+                "description": "ISO A2 (`1190.55 × 1683.78 pt`, `420 × 594 mm`).",
+                "type": "string",
+                "const": "A2"
+              },
+              {
+                "description": "ISO A3 (`841.89 × 1190.55 pt`, `297 × 420 mm`).",
+                "type": "string",
+                "const": "A3"
+              },
+              {
+                "description": "ISO A4 (`595.28 × 841.89 pt`, `210 × 297 mm`).",
+                "type": "string",
+                "const": "A4"
+              },
+              {
+                "description": "ISO A5 (`419.53 × 595.28 pt`, `148 × 210 mm`).",
+                "type": "string",
+                "const": "A5"
+              },
+              {
+                "description": "ISO A6 (`297.64 × 419.53 pt`, `105 × 148 mm`).",
+                "type": "string",
+                "const": "A6"
+              },
+              {
+                "description": "US Letter (`612.0 × 792.0 pt`, `8.5 × 11 in`).",
+                "type": "string",
+                "const": "Letter"
+              },
+              {
+                "description": "US Legal (`612.0 × 1008.0 pt`, `8.5 × 14 in`).",
+                "type": "string",
+                "const": "Legal"
+              },
+              {
+                "description": "US Tabloid (`792.0 × 1224.0 pt`, `11 × 17 in` portrait).",
+                "type": "string",
+                "const": "Tabloid"
+              },
+              {
+                "description": "US Ledger (`1224.0 × 792.0 pt`, `17 × 11 in` landscape).",
+                "type": "string",
+                "const": "Ledger"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Impose PDF pages into saddle-stitch booklet spreads padded to a multiple of 4.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.overlay",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 2,
+        "min": 2
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "OverlayParams",
+        "description": "Parameters for `pdf.overlay`.",
+        "type": "object",
+        "properties": {
+          "overlay_pages": {
+            "description": "Overlay page pairing mode (`\"first\"` by default, `\"cycle\"`, or `\"matching\"`).",
+            "$ref": "#/$defs/OverlayPagesMode",
+            "default": "first"
+          },
+          "pages": {
+            "description": "1-based base pages to apply the overlay onto (`\"all\"` by default).",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "position": {
+            "description": "Layer ordering relative to the base page (`\"over\"` by default, or `\"under\"`).",
+            "$ref": "#/$defs/OverlayPosition",
+            "default": "over"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "OverlayPagesMode": {
+            "description": "How pages from the second (overlay) PDF are paired with target pages in the base PDF.",
+            "oneOf": [
+              {
+                "description": "Apply page 1 of the overlay PDF to every selected base page (`\"first\"`, default).",
+                "type": "string",
+                "const": "first"
+              },
+              {
+                "description": "Cycle through the overlay PDF's pages repeatedly across the selected base pages.",
+                "type": "string",
+                "const": "cycle"
+              },
+              {
+                "description": "Pair page `k` of the overlay PDF with page `k` of the base PDF (when present).",
+                "type": "string",
+                "const": "matching"
+              }
+            ]
+          },
+          "OverlayPosition": {
+            "description": "Z-order placement of the overlay relative to the base page content.",
+            "oneOf": [
+              {
+                "description": "Paint the overlay above the base page content (`\"over\"`, default).",
+                "type": "string",
+                "const": "over"
+              },
+              {
+                "description": "Paint the overlay beneath the base page content (`\"under\"`).",
+                "type": "string",
+                "const": "under"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Overlay or underlay pages from a second PDF onto selected pages of a base PDF.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.divide_pages",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "DividePagesParams",
+        "description": "Parameters for `pdf.divide_pages`.",
+        "type": "object",
+        "properties": {
+          "cols": {
+            "description": "Number of horizontal columns to divide each page into (`1..=8`, `2` by default).",
+            "type": "integer",
+            "format": "uint8",
+            "default": 2,
+            "maximum": 8,
+            "minimum": 1
+          },
+          "order": {
+            "description": "Emission order of subdivided page tiles (`\"row\"` by default, or `\"column\"`).",
+            "$ref": "#/$defs/GridOrder",
+            "default": "row"
+          },
+          "pages": {
+            "description": "1-based pages to subdivide (`\"all\"` by default).",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "rows": {
+            "description": "Number of vertical rows to divide each page into (`1..=8`, `2` by default).",
+            "type": "integer",
+            "format": "uint8",
+            "default": 2,
+            "maximum": 8,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "GridOrder": {
+            "description": "Grid cell ordering for multi-cell layout tools (`pdf.nup`, `pdf.divide_pages`).",
+            "oneOf": [
+              {
+                "description": "Left-to-right, top-to-bottom row-major order.",
+                "type": "string",
+                "const": "row"
+              },
+              {
+                "description": "Top-to-bottom, left-to-right column-major order.",
+                "type": "string",
+                "const": "column"
+              }
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Subdivide each selected PDF page into a cols by rows grid of cropped cell pages.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.posterize",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "PosterizeParams",
+        "description": "Parameters for `pdf.posterize`.",
+        "type": "object",
+        "properties": {
+          "crop_marks": {
+            "description": "Whether to draw corner crop marks on each tile sheet (`true` by default).",
+            "type": "boolean",
+            "default": true
+          },
+          "overlap_mm": {
+            "description": "Tile overlap margin in millimetres (`10.0` by default, `>= 0.0`).",
+            "type": "number",
+            "format": "float",
+            "default": 10.0,
+            "maximum": 200.0,
+            "minimum": 0.0
+          },
+          "pages": {
+            "description": "1-based pages to posterize (`\"all\"` by default).",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "scale": {
+            "description": "Enlargement scale factor (`> 1.0`, mutually optional with `tiles`).",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float",
+            "exclusiveMinimum": 1.0,
+            "maximum": 64.0
+          },
+          "sheet": {
+            "description": "Output tile sheet paper size (`\"A4\"` by default).",
+            "$ref": "#/$defs/PaperSize",
+            "default": "A4"
+          },
+          "tiles": {
+            "description": "Explicit tile grid `{ cols, rows }` across which each page is enlarged.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PosterizeTiles"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "CustomPaperSize": {
+            "description": "Custom paper size specified as `{ w, h }` in PDF points (`1 pt = 1/72 inch`).",
+            "type": "object",
+            "properties": {
+              "h": {
+                "description": "Page height in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              },
+              "w": {
+                "description": "Page width in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "w",
+              "h"
+            ]
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "PaperSize": {
+            "description": "Paper size specification: either a named standard paper (`\"A4\"`, `\"Letter\"`, etc.) or custom\n`{ w, h }` dimensions in PDF points.",
+            "anyOf": [
+              {
+                "description": "Named standard paper size (`\"A0\"`..`\"A6\"`, `\"Letter\"`, `\"Legal\"`, `\"Tabloid\"`, `\"Ledger\"`).",
+                "$ref": "#/$defs/StandardPaper"
+              },
+              {
+                "description": "Custom paper dimensions `{ w, h }` in PDF points.",
+                "$ref": "#/$defs/CustomPaperSize"
+              }
+            ]
+          },
+          "PosterizeTiles": {
+            "description": "Explicit tile grid dimensions `{ cols, rows }` for `pdf.posterize`.",
+            "type": "object",
+            "properties": {
+              "cols": {
+                "description": "Number of horizontal tile columns (`>= 1`).",
+                "type": "integer",
+                "format": "uint8",
+                "maximum": 32,
+                "minimum": 1
+              },
+              "rows": {
+                "description": "Number of vertical tile rows (`>= 1`).",
+                "type": "integer",
+                "format": "uint8",
+                "maximum": 32,
+                "minimum": 1
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "cols",
+              "rows"
+            ]
+          },
+          "StandardPaper": {
+            "description": "Named ISO and North American standard paper sizes (`docs/tools.md`).",
+            "oneOf": [
+              {
+                "description": "ISO A0 (`2383.94 × 3370.39 pt`, `841 × 1189 mm`).",
+                "type": "string",
+                "const": "A0"
+              },
+              {
+                "description": "ISO A1 (`1683.78 × 2383.94 pt`, `594 × 841 mm`).",
+                "type": "string",
+                "const": "A1"
+              },
+              {
+                "description": "ISO A2 (`1190.55 × 1683.78 pt`, `420 × 594 mm`).",
+                "type": "string",
+                "const": "A2"
+              },
+              {
+                "description": "ISO A3 (`841.89 × 1190.55 pt`, `297 × 420 mm`).",
+                "type": "string",
+                "const": "A3"
+              },
+              {
+                "description": "ISO A4 (`595.28 × 841.89 pt`, `210 × 297 mm`).",
+                "type": "string",
+                "const": "A4"
+              },
+              {
+                "description": "ISO A5 (`419.53 × 595.28 pt`, `148 × 210 mm`).",
+                "type": "string",
+                "const": "A5"
+              },
+              {
+                "description": "ISO A6 (`297.64 × 419.53 pt`, `105 × 148 mm`).",
+                "type": "string",
+                "const": "A6"
+              },
+              {
+                "description": "US Letter (`612.0 × 792.0 pt`, `8.5 × 11 in`).",
+                "type": "string",
+                "const": "Letter"
+              },
+              {
+                "description": "US Legal (`612.0 × 1008.0 pt`, `8.5 × 14 in`).",
+                "type": "string",
+                "const": "Legal"
+              },
+              {
+                "description": "US Tabloid (`792.0 × 1224.0 pt`, `11 × 17 in` portrait).",
+                "type": "string",
+                "const": "Tabloid"
+              },
+              {
+                "description": "US Ledger (`1224.0 × 792.0 pt`, `17 × 11 in` landscape).",
+                "type": "string",
+                "const": "Ledger"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Enlarge selected PDF pages across multiple tiled output sheets with overlap and crop marks.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.metadata",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "MetadataParams",
+        "description": "Parameters for `pdf.metadata`.",
+        "type": "object",
+        "properties": {
+          "remove": {
+            "description": "Metadata field keys to remove from `/Info` and XMP `/Metadata`.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "set": {
+            "description": "Metadata fields to set or overwrite in `/Info` and XMP `/Metadata`.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MetadataFields"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "strip_all": {
+            "description": "When `true`, strip all `/Info` and XMP `/Metadata` entries before applying `set` (`false` by default).",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "MetadataFields": {
+            "description": "Document metadata fields to set or update (`pdf.metadata`).",
+            "type": "object",
+            "properties": {
+              "author": {
+                "description": "Document author (`/Author` and `dc:creator`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "created": {
+                "description": "Creation timestamp (`/CreationDate` and `xmp:CreateDate`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "creator": {
+                "description": "Creator application (`/Creator` and `xmp:CreatorTool`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "custom": {
+                "description": "Additional custom `/Info` dictionary entries (`key -> value`).",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "keywords": {
+                "description": "Document keywords (`/Keywords` and `pdf:Keywords`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "modified": {
+                "description": "Modification timestamp (`/ModDate` and `xmp:ModifyDate`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "producer": {
+                "description": "Producer application (`/Producer` and `pdf:Producer`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "subject": {
+                "description": "Document subject (`/Subject` and `dc:description`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "title": {
+                "description": "Document title (`/Title` and `dc:title`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Set, remove, or strip PDF /Info dictionary and XMP metadata fields.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.outline",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "OutlineParams",
+        "description": "Parameters for `pdf.outline`.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "Outline operation (`\"export\"`, `\"import\"`, `\"clear\"`, or `\"from_headings\"`).",
+            "$ref": "#/$defs/OutlineAction"
+          },
+          "json": {
+            "description": "Bookmark tree to import when `action == \"import\"`.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/$defs/OutlineNode"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "$defs": {
+          "OutlineAction": {
+            "description": "Action performed by `pdf.outline`.",
+            "oneOf": [
+              {
+                "description": "Export the document's bookmark tree (`/Outlines`) as a JSON artifact.",
+                "type": "string",
+                "const": "export"
+              },
+              {
+                "description": "Replace the document's `/Outlines` hierarchy with the tree in `json`.",
+                "type": "string",
+                "const": "import"
+              },
+              {
+                "description": "Remove `/Outlines` from the document catalog.",
+                "type": "string",
+                "const": "clear"
+              },
+              {
+                "description": "Generate a bookmark hierarchy automatically from detected document headings.",
+                "type": "string",
+                "const": "from_headings"
+              }
+            ]
+          },
+          "OutlineNode": {
+            "description": "A single bookmark node in a `pdf.outline` hierarchy.",
+            "type": "object",
+            "properties": {
+              "children": {
+                "description": "Nested child bookmarks under this node.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/OutlineNode"
+                }
+              },
+              "page": {
+                "description": "1-based destination page number (`>= 1`).",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 1
+              },
+              "title": {
+                "description": "Visible bookmark title string.",
+                "type": "string"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "page"
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Export, import, clear, or generate PDF outline bookmarks from headings.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.attachments",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 100,
+        "min": 1
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AttachmentsParams",
+        "description": "Parameters for `pdf.attachments`.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "Attachment operation (`\"list\"`, `\"add\"`, `\"extract\"`, or `\"remove\"`).",
+            "$ref": "#/$defs/AttachmentsAction"
+          },
+          "names": {
+            "description": "Optional attachment filenames to filter on for `\"extract\"` or `\"remove\"`.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "$defs": {
+          "AttachmentsAction": {
+            "description": "Action performed by `pdf.attachments`.",
+            "oneOf": [
+              {
+                "description": "List embedded file attachments as JSON.",
+                "type": "string",
+                "const": "list"
+              },
+              {
+                "description": "Embed additional input files into the PDF `/EmbeddedFiles` name tree.",
+                "type": "string",
+                "const": "add"
+              },
+              {
+                "description": "Extract embedded attachments as output artifacts.",
+                "type": "string",
+                "const": "extract"
+              },
+              {
+                "description": "Remove embedded attachments matching `names` (or all attachments when `names` is omitted).",
+                "type": "string",
+                "const": "remove"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "List, add, extract, or remove embedded file attachments in a PDF.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.page_labels",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "PageLabelsParams",
+        "description": "Parameters for `pdf.page_labels`.",
+        "type": "object",
+        "properties": {
+          "ranges": {
+            "description": "Ordered list of page-label ranges (`>= 1` entry).",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/PageLabelRange"
+            },
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "ranges"
+        ],
+        "$defs": {
+          "PageLabelRange": {
+            "description": "A single page-label numbering range starting at 1-based page `from`.",
+            "type": "object",
+            "properties": {
+              "from": {
+                "description": "1-based first page index where this numbering range begins (`>= 1`).",
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 1
+              },
+              "prefix": {
+                "description": "Optional label prefix prepended before the numeric portion (PDF `/P`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "start": {
+                "description": "Starting numeric value for this range (`1` by default, `>= 1`; PDF `/St`).",
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "uint32",
+                "minimum": 1
+              },
+              "style": {
+                "description": "Numbering style (`\"decimal\"`, `\"roman-upper\"`, `\"roman-lower\"`, `\"alpha-upper\"`, `\"alpha-lower\"`, `\"none\"`).",
+                "$ref": "#/$defs/PageLabelStyle",
+                "default": "decimal"
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "from"
+            ]
+          },
+          "PageLabelStyle": {
+            "description": "Numbering style for a `/PageLabels` range (`pdf.page_labels`).",
+            "oneOf": [
+              {
+                "description": "Decimal Arabic numerals (`1, 2, 3, ...`; PDF `/S /D`).",
+                "type": "string",
+                "const": "decimal"
+              },
+              {
+                "description": "Uppercase Roman numerals (`I, II, III, ...`; PDF `/S /R`).",
+                "type": "string",
+                "const": "roman-upper"
+              },
+              {
+                "description": "Lowercase Roman numerals (`i, ii, iii, ...`; PDF `/S /r`).",
+                "type": "string",
+                "const": "roman-lower"
+              },
+              {
+                "description": "Uppercase letters (`A, B, C, ...`; PDF `/S /A`).",
+                "type": "string",
+                "const": "alpha-upper"
+              },
+              {
+                "description": "Lowercase letters (`a, b, c, ...`; PDF `/S /a`).",
+                "type": "string",
+                "const": "alpha-lower"
+              },
+              {
+                "description": "Prefix only with no numeric portion (PDF `/S` omitted).",
+                "type": "string",
+                "const": "none"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Rewrite the PDF /PageLabels number tree across 1-based page ranges.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.viewer_prefs",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ViewerPrefsParams",
+        "description": "Parameters for `pdf.viewer_prefs`.",
+        "type": "object",
+        "properties": {
+          "display_doc_title": {
+            "description": "Whether the window title bar should display the document `/Title` (`/ViewerPreferences /DisplayDocTitle`).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "fit_window": {
+            "description": "Whether to resize the document window to fit the first page (`/ViewerPreferences /FitWindow`).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "hide_toolbar": {
+            "description": "Whether to hide the viewer application's toolbars (`/ViewerPreferences /HideToolbar`).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "open_page": {
+            "description": "1-based page number to open initially (`/OpenAction` destination, `>= 1`).",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint32",
+            "minimum": 1
+          },
+          "page_layout": {
+            "description": "Initial page layout (`/PageLayout` on the Catalog).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ViewerPageLayout"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page_mode": {
+            "description": "Initial navigation panel mode (`/PageMode` on the Catalog).",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ViewerPageMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "ViewerPageLayout": {
+            "description": "Catalog `/PageLayout` setting for `pdf.viewer_prefs`.",
+            "oneOf": [
+              {
+                "description": "Display one page at a time (`/SinglePage`).",
+                "type": "string",
+                "const": "single-page"
+              },
+              {
+                "description": "Display the pages in one continuous column (`/OneColumn`).",
+                "type": "string",
+                "const": "one-column"
+              },
+              {
+                "description": "Display the pages in two columns, with odd-numbered pages on the left (`/TwoColumnLeft`).",
+                "type": "string",
+                "const": "two-column-left"
+              },
+              {
+                "description": "Display the pages in two columns, with odd-numbered pages on the right (`/TwoColumnRight`).",
+                "type": "string",
+                "const": "two-column-right"
+              },
+              {
+                "description": "Display two pages at a time, with odd-numbered pages on the left (`/TwoPageLeft`).",
+                "type": "string",
+                "const": "two-page-left"
+              },
+              {
+                "description": "Display two pages at a time, with odd-numbered pages on the right (`/TwoPageRight`).",
+                "type": "string",
+                "const": "two-page-right"
+              }
+            ]
+          },
+          "ViewerPageMode": {
+            "description": "Catalog `/PageMode` setting for `pdf.viewer_prefs`.",
+            "oneOf": [
+              {
+                "description": "Neither document outline nor thumbnail images visible (`/UseNone`).",
+                "type": "string",
+                "const": "use-none"
+              },
+              {
+                "description": "Document outline (bookmarks) visible (`/UseOutlines`).",
+                "type": "string",
+                "const": "use-outlines"
+              },
+              {
+                "description": "Thumbnail images visible (`/UseThumbs`).",
+                "type": "string",
+                "const": "use-thumbs"
+              },
+              {
+                "description": "Full-screen mode (`/FullScreen`).",
+                "type": "string",
+                "const": "full-screen"
+              },
+              {
+                "description": "Optional content group (layers) panel visible (`/UseOC`).",
+                "type": "string",
+                "const": "use-oc"
+              },
+              {
+                "description": "Attachments panel visible (`/UseAttachments`).",
+                "type": "string",
+                "const": "use-attachments"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Configure PDF catalog /ViewerPreferences, /PageLayout, /PageMode, and /OpenAction.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.portfolio",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 100,
+        "min": 1
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "PortfolioParams",
+        "description": "Parameters for `pdf.portfolio`.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "Portfolio operation (`\"create\"`, `\"list\"`, or `\"extract\"`).",
+            "$ref": "#/$defs/PortfolioAction"
+          },
+          "view": {
+            "description": "Initial collection view when `action == \"create\"` (`\"details\"` by default, or `\"tile\"`).",
+            "$ref": "#/$defs/PortfolioView",
+            "default": "details"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "$defs": {
+          "PortfolioAction": {
+            "description": "Action performed by `pdf.portfolio`.",
+            "oneOf": [
+              {
+                "description": "Package multiple input files into a PDF collection (`/Collection`) with a cover page.",
+                "type": "string",
+                "const": "create"
+              },
+              {
+                "description": "List embedded files in a PDF portfolio as JSON.",
+                "type": "string",
+                "const": "list"
+              },
+              {
+                "description": "Extract all files from a PDF portfolio.",
+                "type": "string",
+                "const": "extract"
+              }
+            ]
+          },
+          "PortfolioView": {
+            "description": "Initial collection view mode (`/Collection /View`) for `pdf.portfolio`.",
+            "oneOf": [
+              {
+                "description": "Multi-column details table view (`\"details\"`, default; PDF `/D`).",
+                "type": "string",
+                "const": "details"
+              },
+              {
+                "description": "Tile icon view (`\"tile\"`; PDF `/T`).",
+                "type": "string",
+                "const": "tile"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Create, list, or extract a PDF portfolio (/Collection) with embedded files.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "organize",
+      "id": "pdf.layers",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "LayersParams",
+        "description": "Parameters for `pdf.layers`.",
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "Layer operation (`\"list\"`, `\"set_default_visibility\"`, or `\"remove\"`).",
+            "$ref": "#/$defs/LayersAction"
+          },
+          "names": {
+            "description": "Target layer names for `\"set_default_visibility\"` or `\"remove\"`.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "visible": {
+            "description": "Target default visibility state when `action == \"set_default_visibility\"`.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "$defs": {
+          "LayersAction": {
+            "description": "Action performed on PDF optional content groups (`/OCProperties`) by `pdf.layers`.",
+            "oneOf": [
+              {
+                "description": "List optional content groups (layers) and their default visibility as JSON.",
+                "type": "string",
+                "const": "list"
+              },
+              {
+                "description": "Set the default visibility (`ON` or `OFF`) of the layers named in `names`.",
+                "type": "string",
+                "const": "set_default_visibility"
+              },
+              {
+                "description": "Remove the layers named in `names` and their marked content from the PDF.",
+                "type": "string",
+                "const": "remove"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "List, toggle default visibility, or remove Optional Content Group (OCG) layers.",
+      "tier": "free",
+      "version": "1"
     }
   ],
   "x-status": "draft",

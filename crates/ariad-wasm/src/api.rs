@@ -12,11 +12,10 @@ use ariad_core::{
         self, Plan as AccessPlan, RunSize, SecretSource, Tier, ToolAccess, ToolDescriptor,
         ToolRuntime, ToolSpec,
         access::{allowed as tier_allowed, within_run_quota},
-        params::InfoParams,
         secret::validate_secret_params,
     },
 };
-use ariad_pdf::PdfError;
+use ariad_pdf::{InputDoc, PdfError, ToolCtx};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -459,6 +458,15 @@ pub fn check_browser_access(
 /// access via [`ariad_core::tools::access`] (`Plan::Free` when `entitled == false`, `Plan::Pro`
 /// when `entitled == true`), returning `not_allowed` for `Tier::Pro` tools unless the caller
 /// passes the advisory entitlement flag.
+///
+/// Returns a [`ToolRun`] containing:
+/// - `tool`, `format`, `media_type`, and `extension` for the tool's declared output format,
+/// - `artifacts`: every [`ToolArtifact`] (`{ name, format, media_type, extension, bytes }`)
+///   produced by the tool in deterministic order,
+/// - `bytes`: the primary artifact's bytes (or empty when no artifact was emitted),
+/// - `data`: `Some(Value)` for JSON-emitting tools such as `pdf.info`, or `None` for binary
+///   artifact tools (`pdf.*` structural tools), and
+/// - `warnings`: non-fatal [`Notice`] findings emitted during execution.
 pub fn run_tool<I, B, N, S>(
     inputs: I,
     names: N,
@@ -591,6 +599,9 @@ where
     })?;
 
     for (idx, (input_bytes, input_name)) in inputs.iter().zip(names.iter()).enumerate() {
+        if tool_input_is_attachment_payload(spec.id, &params_value, idx) {
+            continue;
+        }
         let bytes = input_bytes.as_ref();
         let name = input_name.as_ref();
         let detected = sniff_tool_input_format(bytes, name);
@@ -617,60 +628,144 @@ where
         ..Limits::local()
     };
 
-    match spec.id {
-        "pdf.info" => execute_pdf_info(
-            spec,
-            inputs[0].as_ref(),
-            names[0].as_ref(),
-            &params_value,
-            &limits,
-        ),
-        other => Err(ApiError::new(
+    if spec.engine != "ariad-pdf" {
+        return Err(ApiError::new(
             "engine_unavailable",
-            format!("tool '{other}' is not implemented in ariad-wasm"),
+            format!("tool '{}' is not implemented in ariad-wasm", spec.id),
         )
         .with("tool", spec.id)
         .with("engine", spec.engine)
-        .with("exit_code", 5u8)),
+        .with("exit_code", 5u8));
     }
-}
 
-fn execute_pdf_info(
-    spec: &ToolSpec,
-    bytes: &[u8],
-    name: &str,
-    params_value: &Value,
-    limits: &Limits,
-) -> Result<ToolRun, ApiError> {
-    let _: InfoParams = serde_json::from_value(params_value.clone()).map_err(|err| {
-        ApiError::new("invalid_params", format!("invalid tool parameters: {err}"))
-            .with("tool", spec.id)
-            .with("exit_code", 9u8)
-    })?;
+    let input_docs: Vec<InputDoc> = inputs
+        .iter()
+        .zip(names.iter())
+        .map(|(b, n)| {
+            InputDoc::with_limits(n.as_ref().to_owned(), b.as_ref().to_vec(), limits.clone())
+        })
+        .collect();
 
-    let info = ariad_pdf::info::run(bytes, limits).map_err(|err| map_pdf_error(spec.id, err))?;
-    let data = serde_json::to_value(&info)
-        .map_err(|err| ApiError::new("engine_failure", err.to_string()).with("exit_code", 1u8))?;
-    let json_bytes = serde_json::to_vec(&data)
-        .map_err(|err| ApiError::new("engine_failure", err.to_string()).with("exit_code", 1u8))?;
-    let artifact_name = default_artifact_name(name, "info", "json");
+    let tool_output =
+        ariad_pdf::tools::run_tool(spec.id, &input_docs, &params_value, &ToolCtx::default())
+            .map_err(|err| map_pdf_error(spec.id, err))?;
+
+    let primary_format = tool_output
+        .artifacts
+        .first()
+        .map(|a| a.format.as_str())
+        .filter(|f| !f.is_empty())
+        .unwrap_or(spec.output_format);
+    let (format, media_type, extension) = tool_output_format_meta(primary_format);
+    let artifacts: Vec<ToolArtifact> = tool_output
+        .artifacts
+        .into_iter()
+        .map(|out| {
+            let (fmt, mt, ext) = if out.format.is_empty() {
+                (format, media_type, extension)
+            } else {
+                tool_output_format_meta(&out.format)
+            };
+            ToolArtifact {
+                name: out.name,
+                format: fmt,
+                media_type: mt,
+                extension: ext,
+                bytes: out.bytes,
+            }
+        })
+        .collect();
+    let primary_bytes = artifacts
+        .first()
+        .map(|a| a.bytes.clone())
+        .unwrap_or_default();
+    let warnings: Vec<Notice> = tool_output
+        .warnings
+        .into_iter()
+        .map(|message| Notice {
+            code: warning_code(&message).to_owned(),
+            message,
+            source_pos: None,
+        })
+        .collect();
 
     Ok(ToolRun {
         tool: spec.id,
-        format: "json",
-        media_type: "application/json",
-        extension: "json",
-        bytes: json_bytes.clone(),
-        artifacts: vec![ToolArtifact {
-            name: artifact_name,
-            format: "json",
-            media_type: "application/json",
-            extension: "json",
-            bytes: json_bytes,
-        }],
-        data: Some(data),
-        warnings: Vec::new(),
+        format,
+        media_type,
+        extension,
+        bytes: primary_bytes,
+        artifacts,
+        data: tool_output.json,
+        warnings,
     })
+}
+
+fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: usize) -> bool {
+    let action = params.get("action").and_then(Value::as_str);
+    match spec_id {
+        "pdf.attachments" => action == Some("add") && input_index >= 1,
+        "pdf.portfolio" => action == Some("create"),
+        _ => false,
+    }
+}
+
+fn tool_output_format_meta(output_format: &str) -> (&'static str, &'static str, &'static str) {
+    match output_format.to_ascii_lowercase().as_str() {
+        "json" => ("json", "application/json", "json"),
+        "pdf" => ("pdf", "application/pdf", "pdf"),
+        "zip" => ("zip", "application/zip", "zip"),
+        "md" | "markdown" => ("markdown", "text/markdown", "md"),
+        "html" | "htm" => ("html", "text/html", "html"),
+        "csv" => ("csv", "text/csv", "csv"),
+        "txt" => ("txt", "text/plain", "txt"),
+        "xml" => ("xml", "application/xml", "xml"),
+        "png" => ("png", "image/png", "png"),
+        "jpg" | "jpeg" => ("jpeg", "image/jpeg", "jpg"),
+        "webp" => ("webp", "image/webp", "webp"),
+        "tif" | "tiff" => ("tiff", "image/tiff", "tiff"),
+        "docx" => (
+            "docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "docx",
+        ),
+        "epub" => ("epub", "application/epub+zip", "epub"),
+        "pptx" => (
+            "pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "pptx",
+        ),
+        "xlsx" => (
+            "xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xlsx",
+        ),
+        "odt" => ("odt", "application/vnd.oasis.opendocument.text", "odt"),
+        "ods" => (
+            "ods",
+            "application/vnd.oasis.opendocument.spreadsheet",
+            "ods",
+        ),
+        "odp" => (
+            "odp",
+            "application/vnd.oasis.opendocument.presentation",
+            "odp",
+        ),
+        "doc" => ("doc", "application/msword", "doc"),
+        "xls" => ("xls", "application/vnd.ms-excel", "xls"),
+        "ppt" => ("ppt", "application/vnd.ms-powerpoint", "ppt"),
+        "rtf" => ("rtf", "application/rtf", "rtf"),
+        "bin" => ("bin", "application/octet-stream", "bin"),
+        _ => ("bin", "application/octet-stream", "bin"),
+    }
+}
+
+fn warning_code(message: &str) -> &'static str {
+    if message == ariad_pdf::tools::REPAIRED_XREF_WARNING {
+        "repaired_xref"
+    } else {
+        "pdf_warning"
+    }
 }
 
 fn sniff_tool_input_format(bytes: &[u8], name: &str) -> Option<Format> {
@@ -685,15 +780,6 @@ fn sniff_tool_input_format(bytes: &[u8], name: &str) -> Option<Format> {
     }
 }
 
-fn default_artifact_name(input_name: &str, suffix: &str, ext: &str) -> String {
-    let file_name = input_name.rsplit(['/', '\\']).next().unwrap_or(input_name);
-    let stem = file_name
-        .rsplit_once('.')
-        .map_or(file_name, |(stem, _)| stem);
-    let clean_stem = if stem.is_empty() { "document" } else { stem };
-    format!("{clean_stem}.{suffix}.{ext}")
-}
-
 fn map_pdf_error(tool_id: &str, error: PdfError) -> ApiError {
     match error {
         PdfError::Malformed => ApiError::new("invalid_input", error.to_string())
@@ -701,12 +787,13 @@ fn map_pdf_error(tool_id: &str, error: PdfError) -> ApiError {
             .with("reason", error.to_string())
             .with("pdf_error", error.code())
             .with("exit_code", 1u8),
-        PdfError::Encrypted { needs_password } => {
-            ApiError::new("encrypted_input", error.to_string())
-                .with("tool", tool_id)
-                .with("needs_password", needs_password)
-                .with("exit_code", 12u8)
-        }
+        PdfError::Encrypted { needs_password } => ApiError::new(
+            "encrypted_input",
+            ariad_pdf::tools::encrypted_error_message(needs_password),
+        )
+        .with("tool", tool_id)
+        .with("needs_password", needs_password)
+        .with("exit_code", 12u8),
         PdfError::LimitExceeded(read_error) => map_read_limit_error(tool_id, read_error),
         PdfError::InvalidParams(reason) => ApiError::new(
             "invalid_params",
@@ -762,6 +849,8 @@ fn map_read_limit_error(tool_id: &str, error: ariad_core::reader::pdf::ReadError
 
 #[cfg(test)]
 mod tests {
+    use ariad_core::tools::params::InfoParams;
+
     use super::*;
 
     fn convert_text(text: &str, from: &str, to: &str) -> String {
@@ -1349,5 +1438,168 @@ mod tests {
             unavailable.detail("engine"),
             Some(&serde_json::json!("qpdf"))
         );
+
+        let rotate_spec = ToolSpec {
+            id: "pdf.rotate",
+            version: "1",
+            group: ToolGroup::Organize,
+            summary: "Rotate PDF pages.",
+            inputs: InputArity::One,
+            input_formats: &["pdf"],
+            output_format: "pdf",
+            params_schema: ariad_core::tools::params::schema_for_params::<
+                ariad_core::tools::params::RotateParams,
+            >,
+            tier: Tier::Free,
+            runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
+            engine: "ariad-pdf",
+            secret_params: &[],
+        };
+        let bad_angle = run_tool_with_spec(
+            &rotate_spec,
+            &[&multipage],
+            &["multipage-20.pdf"],
+            r#"{"angle": 45}"#,
+            budget,
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(bad_angle.code(), "invalid_params");
+        assert_eq!(bad_angle.detail("exit_code"), Some(&serde_json::json!(9)));
+
+        let rotated_ok = run_tool_with_spec(
+            &rotate_spec,
+            &[&multipage],
+            &["multipage-20.pdf"],
+            r#"{"angle": 90}"#,
+            budget,
+            false,
+        )
+        .expect("implemented pdf.rotate must succeed in ariad-wasm");
+        assert_eq!(rotated_ok.tool, "pdf.rotate");
+        assert_eq!(rotated_ok.format, "pdf");
+        assert_eq!(rotated_ok.artifacts.len(), 1);
+        assert_eq!(rotated_ok.artifacts[0].name, "multipage-20.rotated.pdf");
+
+        let unimpl_err = map_pdf_error(
+            "pdf.future",
+            PdfError::NotImplemented("pdf.future".to_owned()),
+        );
+        assert_eq!(unimpl_err.code(), "engine_unavailable");
+        assert_eq!(unimpl_err.detail("exit_code"), Some(&serde_json::json!(5)));
+
+        // Owner-password-only PDF is rejected on structural mutating tools with `pdf.decrypt` hint.
+        let plaintext = read_pdf_fixture("encrypted-owner-only.plaintext.pdf");
+        let owner_encrypted =
+            encrypt_aes256_for_test(&plaintext, "", "ariad-test-owner-only", false);
+        let enc_err = run_tool_with_spec(
+            &rotate_spec,
+            &[&owner_encrypted],
+            &["encrypted-owner-only.pdf"],
+            r#"{"angle": 90}"#,
+            budget,
+            false,
+        )
+        .unwrap_err();
+        assert_eq!(enc_err.code(), "encrypted_input");
+        assert_eq!(enc_err.detail("needs_password"), Some(&Value::Bool(false)));
+        assert!(
+            enc_err
+                .detail("message")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .contains("pdf.decrypt")
+        );
+    }
+
+    #[test]
+    fn run_tool_attachments_and_portfolio_support_non_pdf_payloads_and_extracted_metadata() {
+        let carrier = read_pdf_fixture("rotated-pages.pdf");
+        let csv_bytes = b"sku,qty\nA-1,4\n";
+        let txt_bytes = b"plain text note\n";
+        let budget = 64 * 1024 * 1024;
+
+        let added = run_tool(
+            [
+                carrier.as_slice(),
+                csv_bytes.as_slice(),
+                txt_bytes.as_slice(),
+            ],
+            ["carrier.pdf", "inventory.csv", "notes.txt"],
+            "pdf.attachments",
+            r#"{"action":"add"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.attachments add with non-pdf payloads in wasm");
+        assert_eq!(added.format, "pdf");
+        assert_eq!(added.media_type, "application/pdf");
+        assert_eq!(added.extension, "pdf");
+
+        let listed = run_tool(
+            [added.bytes.as_slice()],
+            ["attached.pdf"],
+            "pdf.attachments",
+            r#"{"action":"list"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.attachments list in wasm");
+        assert_eq!(listed.format, "json");
+        assert_eq!(listed.media_type, "application/json");
+        assert_eq!(listed.extension, "json");
+
+        let extracted = run_tool(
+            [added.bytes.as_slice()],
+            ["attached.pdf"],
+            "pdf.attachments",
+            r#"{"action":"extract"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.attachments extract in wasm");
+        assert_eq!(extracted.format, "csv");
+        assert_eq!(extracted.media_type, "text/csv");
+        assert_eq!(extracted.extension, "csv");
+        assert_eq!(extracted.artifacts.len(), 2);
+        assert_eq!(extracted.artifacts[0].format, "csv");
+        assert_eq!(extracted.artifacts[0].media_type, "text/csv");
+        assert_eq!(extracted.artifacts[0].extension, "csv");
+        assert_eq!(extracted.artifacts[0].bytes, csv_bytes);
+        assert_eq!(extracted.artifacts[1].format, "txt");
+        assert_eq!(extracted.artifacts[1].media_type, "text/plain");
+        assert_eq!(extracted.artifacts[1].extension, "txt");
+        assert_eq!(extracted.artifacts[1].bytes, txt_bytes);
+
+        let portfolio_created = run_tool(
+            [carrier.as_slice(), csv_bytes.as_slice()],
+            ["carrier.pdf", "inventory.csv"],
+            "pdf.portfolio",
+            r#"{"action":"create","view":"details"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.portfolio create with non-pdf payload in wasm");
+        assert_eq!(portfolio_created.format, "pdf");
+
+        let portfolio_extracted = run_tool(
+            [portfolio_created.bytes.as_slice()],
+            ["bundle.pdf"],
+            "pdf.portfolio",
+            r#"{"action":"extract"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.portfolio extract in wasm");
+        assert_eq!(portfolio_extracted.artifacts.len(), 2);
+        assert_eq!(portfolio_extracted.artifacts[0].format, "pdf");
+        assert_eq!(
+            portfolio_extracted.artifacts[0].media_type,
+            "application/pdf"
+        );
+        assert_eq!(portfolio_extracted.artifacts[0].bytes, carrier);
+        assert_eq!(portfolio_extracted.artifacts[1].format, "csv");
+        assert_eq!(portfolio_extracted.artifacts[1].media_type, "text/csv");
+        assert_eq!(portfolio_extracted.artifacts[1].bytes, csv_bytes);
     }
 }

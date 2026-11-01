@@ -1,0 +1,108 @@
+---
+source: crates/ariad-pdf/tests/posterize.rs
+expression: info_json
+---
+{
+  "encrypted": false,
+  "has_annotations": false,
+  "has_attachments": false,
+  "has_forms": false,
+  "has_javascript": false,
+  "linearized": false,
+  "metadata": {
+    "author": "AriadShift contributors",
+    "creation_date": "D:20050123165052Z",
+    "creator": "AriadShift fixture generator",
+    "language": "en",
+    "mod_date": "D:20050123165052Z",
+    "producer": "AriadShift fixture generator",
+    "title": "Annotated Archive Review Sheet"
+  },
+  "outline_count": 0,
+  "page_count": 9,
+  "pages": [
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 1,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 2,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 3,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 4,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 5,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 6,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 7,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 8,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    },
+    {
+      "blank": false,
+      "height_pt": 841.89,
+      "orientation": "portrait",
+      "page": 9,
+      "paper": "A4",
+      "rotation": 0,
+      "width_pt": 595.28
+    }
+  ],
+  "repaired_xref": false,
+  "version": "1.5"
+}

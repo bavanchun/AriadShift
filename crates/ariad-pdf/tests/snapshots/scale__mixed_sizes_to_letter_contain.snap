@@ -1,0 +1,54 @@
+---
+source: crates/ariad-pdf/tests/scale.rs
+expression: info_json
+---
+{
+  "encrypted": false,
+  "has_annotations": false,
+  "has_attachments": false,
+  "has_forms": false,
+  "has_javascript": false,
+  "linearized": false,
+  "metadata": {
+    "author": "AriadShift contributors",
+    "creation_date": "D:20231114221320Z",
+    "creator": "AriadShift fixture generator",
+    "language": "en",
+    "mod_date": "D:20231114221320Z",
+    "producer": "AriadShift fixture generator",
+    "title": "Mixed Paper Sizes Portfolio"
+  },
+  "outline_count": 0,
+  "page_count": 3,
+  "pages": [
+    {
+      "blank": false,
+      "height_pt": 792.0,
+      "orientation": "portrait",
+      "page": 1,
+      "paper": "Letter",
+      "rotation": 0,
+      "width_pt": 612.0
+    },
+    {
+      "blank": false,
+      "height_pt": 792.0,
+      "orientation": "portrait",
+      "page": 2,
+      "paper": "Letter",
+      "rotation": 0,
+      "width_pt": 612.0
+    },
+    {
+      "blank": false,
+      "height_pt": 792.0,
+      "orientation": "portrait",
+      "page": 3,
+      "paper": "Letter",
+      "rotation": 0,
+      "width_pt": 612.0
+    }
+  ],
+  "repaired_xref": false,
+  "version": "1.5"
+}

@@ -1,6 +1,6 @@
 # Releasing AriadShift
 
-How a new version of AriadShift (`ashift` and the workspace crates `ariad-core`, `ariad-typst`, `ariad-host`, and `ariad-cli`) is prepared, promoted, tagged, verified, and submitted to package channels. The branch model is defined in [git-workflow.md](git-workflow.md), the CI gate is described in [ci.md](ci.md), and published releases are listed on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases).
+How a new version of AriadShift (`ashift` and the published workspace crates `ariad-core`, `ariad-pdf`, `ariad-engine-io`, `ariad-typst`, `ariad-host`, and `ariad-cli`) is prepared, promoted, tagged, verified, and submitted to package channels. The branch model is defined in [git-workflow.md](git-workflow.md), the CI gate is described in [ci.md](ci.md), and published releases are listed on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases).
 
 Every step that touches `main`, GitHub environments, tags, or external package registries requires the maintainer's explicit go-ahead ([AGENTS.md](../AGENTS.md)).
 
@@ -58,10 +58,14 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
 2. Update the workspace version entries in the root [`Cargo.toml`](../Cargo.toml):
    - `[workspace.package]` -> `version = "X.Y.Z"`
    - `[workspace.dependencies]` -> `ariad-core = { path = "crates/ariad-core", version = "X.Y.Z" }`
+   - `[workspace.dependencies]` -> `ariad-engine-io = { path = "crates/ariad-engine-io", version = "X.Y.Z" }`
+   - `[workspace.dependencies]` -> `ariad-pdf = { path = "crates/ariad-pdf", version = "X.Y.Z" }`
    - `[workspace.dependencies]` -> `ariad-host = { path = "crates/ariad-host", version = "X.Y.Z" }`
    - `[workspace.dependencies]` -> `ariad-typst = { path = "crates/ariad-typst", version = "X.Y.Z" }`
 
-   The workspace crates (`crates/ariad-core/Cargo.toml`, `crates/ariad-typst/Cargo.toml`, `crates/ariad-host/Cargo.toml`, and `crates/ariad-cli/Cargo.toml`) inherit `version.workspace = true` and workspace dependency versions automatically.
+   The workspace crates (`crates/ariad-core/Cargo.toml`, `crates/ariad-pdf/Cargo.toml`, `crates/ariad-engine-io/Cargo.toml`, `crates/ariad-typst/Cargo.toml`, `crates/ariad-host/Cargo.toml`, and `crates/ariad-cli/Cargo.toml`) inherit `version.workspace = true` and workspace dependency versions automatically. The unpublished crates `ariad-server`, `ariad-wasm` and `ariad-desktop` inherit the same workspace version.
+
+   Also set `"version": "X.Y.Z"` in [`apps/desktop/src-tauri/tauri.conf.json`](../apps/desktop/src-tauri/tauri.conf.json). Tauri reads it instead of the Cargo version, so it does not follow the workspace version automatically.
 3. Refresh [`Cargo.lock`](../Cargo.lock) and regenerate [`THIRD_PARTY_LICENSES`](../THIRD_PARTY_LICENSES) (which embeds the workspace crate versions checked by `just licenses-check`). Also refresh the version-bound files in the same bump: [`fuzz/Cargo.lock`](../fuzz/Cargo.lock), the server snapshot [`crates/ariad-server/tests/snapshots/openapi_v1.json`](../crates/ariad-server/tests/snapshots/openapi_v1.json), [`schemas/openapi.v1.json`](../schemas/openapi.v1.json) `info.version`, and the SDK lock [`packages/sdk/generator.lock.json`](../packages/sdk/generator.lock.json) (`pnpm --filter @ariadshift/sdk generate` then `lock`); the release pull request must pass `just sdk-check` and `cargo check --locked --manifest-path fuzz/Cargo.toml`. `cargo-about` must be exact version `0.9.2` as pinned in [`justfile`](../justfile) (`cargo_about_version := "0.9.2"`; install with `cargo install --locked cargo-about --version 0.9.2` if needed):
    ```bash
    cargo check --workspace
@@ -85,7 +89,7 @@ MB is decimal; MiB is binary. These release builds differ from the GNU binary me
    [browser engine distribution](web.md#build-and-deploy).
 5. Stage the explicit paths and commit as `chore(release): prepare X.Y.Z`:
    ```bash
-   git add Cargo.toml Cargo.lock THIRD_PARTY_LICENSES fuzz/Cargo.lock crates/ariad-server/tests/snapshots/openapi_v1.json schemas/openapi.v1.json packages/sdk/generator.lock.json
+   git add Cargo.toml Cargo.lock THIRD_PARTY_LICENSES apps/desktop/src-tauri/tauri.conf.json fuzz/Cargo.lock crates/ariad-server/tests/snapshots/openapi_v1.json schemas/openapi.v1.json packages/sdk/generator.lock.json
    git diff --staged
    git commit -m "chore(release): prepare X.Y.Z"
    ```
@@ -187,7 +191,7 @@ excluded from musl targets. Desktop installers and updater metadata are built by
 
 - Runs inside `environment: release` (`v*` tags only).
 - **`Validate registry token`** fails closed before any `cargo publish` if `CARGO_REGISTRY_TOKEN` is unset or empty.
-- **`Publish crates in dependency order`** publishes `ariad-core`, `ariad-typst`, `ariad-host`, and `ariad-cli` sequentially. Before each crate, it queries the crates.io API (`User-Agent: AriadShift-Release-CI`); if HTTP `200` is returned, that crate version is already published and is skipped. After publishing a crate, it polls the crates.io API until HTTP `200` before moving to the next dependent crate. Because already-published crates are skipped, re-running a failed `publish` job after a transient registry timeout or token fix is idempotent.
+- **`Publish crates in dependency order`** publishes `ariad-core`, `ariad-pdf`, `ariad-engine-io`, `ariad-typst`, `ariad-host`, and `ariad-cli` sequentially, and `just check-release-workflow` fails if that list or its order drifts. Before each crate, it queries the crates.io API (`User-Agent: AriadShift-Release-CI`); if HTTP `200` is returned, that crate version is already published and is skipped. After publishing a crate, it polls the crates.io API until HTTP `200` before moving to the next dependent crate. Because already-published crates are skipped, re-running a failed `publish` job after a transient registry timeout or token fix is idempotent.
 
 ### `release-smoke.yml` — what runs and what to do on failure
 
@@ -208,7 +212,7 @@ Repository `bavanchun/AriadShift` defines a GitHub Actions environment named **`
 - **Deployment protection rule**: Restricted to tags matching `v*` only. Branch pushes and pull requests cannot enter the `release` environment or read its secrets.
 - **Required environment secret names** (created and set directly by the maintainer, e.g. `gh secret set <NAME> --env release`; never committed or echoed):
   - **`HOMEBREW_TAP_TOKEN`**: Fine-grained personal access token scoped exclusively to repository `bavanchun/homebrew-tap` with `contents: write` permission only. Passed via step-level `env` only to the `Push formula` step in `publish-homebrew-formula` (`release.yml`).
-  - **`CARGO_REGISTRY_TOKEN`**: Scoped crates.io API token (`publish-new` for initial crate registration; `publish-update` restricted to `ariad-core`, `ariad-typst`, `ariad-host`, and `ariad-cli` for subsequent releases). Passed only to the `Validate registry token` and `Publish crates in dependency order` steps in `publish-crates.yml`.
+  - **`CARGO_REGISTRY_TOKEN`**: Scoped crates.io API token (`publish-new` for initial crate registration; `publish-update` restricted to `ariad-core`, `ariad-pdf`, `ariad-engine-io`, `ariad-typst`, `ariad-host`, and `ariad-cli` for subsequent releases; the first release that contains `ariad-pdf` and `ariad-engine-io` registers those two crate names and therefore needs `publish-new` as well). Passed only to the `Validate registry token` and `Publish crates in dependency order` steps in `publish-crates.yml`.
 
 [`scripts/check-release-workflow.sh`](../scripts/check-release-workflow.sh) enforces in CI that `HOMEBREW_TAP_TOKEN` and `CARGO_REGISTRY_TOKEN` appear nowhere else in `.github/workflows/release.yml` or `.github/workflows/publish-crates.yml`, and that both publishing jobs declare `environment: release`.
 

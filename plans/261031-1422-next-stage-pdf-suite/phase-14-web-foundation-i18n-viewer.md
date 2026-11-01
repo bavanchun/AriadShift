@@ -83,3 +83,18 @@ just js-licenses && just web-licenses-check
 | Route move to `[locale]` breaks SEO pair pages | Redirect map from old paths; e2e checks old URLs 308 → new. |
 | EmbedPDF API churn | Wrap in `apps/web/src/viewer/` adapter; pdf.js fallback behind the same interface. |
 | 40+ catalogues slow the build | next-intl per-locale message splitting; measure export time. |
+
+Locale priority (owner decision 2026-11-01): `vi` and `en` ship first and complete, with full review and their own Figma screens (Vietnamese number format: decimal comma, `Th 2` weekday abbreviations). The 40+ catalogue pipeline still lands in this phase, but other locales may ship machine-seeded and fill in through Weblate later; they never block the 0.4.0 gate. RTL work follows the same rule.
+
+## Design reference (owner-approved direction, 2026-11-01)
+
+Approved design: Figma file "AriadShift Web — UI/UX v2" (https://www.figma.com/design/IZG7gPWIECWf6dQmcrn82W): page *Design system* holds the tokens (Color and Color Dark collections, Spacing, Radius), 17 text styles, Lucide 1.61 icons and the shadcn/ui-aligned components; page *Screens* holds one section per screen (01 Home, 02 File insights, 03 Organise pages, 04 Tool result, 05 Command palette, 06 Run on your computer, 07 Compress studio, 08 Recipes & batch, 09 Editor Document + AI, 10 Editor Page mode, 11 Home dark, 12 Drag and drop, 13 Processing, 14 Locked PDF, 15 Recipes empty, 16 Settings; phase-15 tool panels 17 Imposition booklet, 18 Crop, 19 Security, 20 Watermark add, 21 Watermark remove, 22 OCR studio, 23 Annotate, 24 Fill form, 25 Redact mark, 26 Redaction verified, 27 Sign, 28 Signature validation, 29 Compare, 30 Convert), each in English and in Vietnamese (`· VI` sections); the Design system page also documents Foundations, interaction states (hover, pressed, focus, disabled, loading, error), toast, tooltip and the `DocPage` thumbnails. Implement them faithfully with `packages/ui` tokens and `lucide-react`; map the Figma variable names to CSS custom properties as their code syntax says (`var(--color-bg-canvas)` and so on). The earlier claude.ai canvas is superseded. Binding UX principles:
+
+- Intent first: after a drop, read the file locally and offer the next steps (file insights screen), never an empty form.
+- Honest runtime: every tool shows Browser, Desktop or Cloud, and a persistent "on this device · 0 bytes uploaded" indicator.
+- No dead ends: every result card offers download, open in editor, continue with another tool, save as recipe, and undo.
+- Live before/after previews with the outcome stated in numbers (size, pages, fidelity).
+- The golden thread (brand motif) marks multi-step progress: recipes, batches, pipelines.
+- Keyboard-first: ⌘K palette that understands plain sentences and turns them into a recipe.
+
+File insights (canvas "Signature UX" board) need a local analysis call: `pdf.info` extended with scanned-page count, image DPI, empty required form fields, signature fields, blank pages and metadata/edit-history flags. Add it to the T5 runner scope; analysis runs in the browser worker and never uploads.

@@ -81,11 +81,11 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 
 | Group | Purpose | Example Tools |
 |---|---|---|
-| `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.crop`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.page_labels`, `pdf.viewer_prefs` |
+| `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers` |
 | `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.to_images`, `pdf.from_images`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
-| `optimize` | File size reduction, stream recompression, linearization, repair | `pdf.compress`, `pdf.linearize`, `pdf.repair` |
+| `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.linearize`, `pdf.repair` |
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize` |
-| `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.overlay`, `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark_add`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
+| `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark_add`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
 | `ocr` | Optical character recognition, deskewing, blank page removal | `pdf.ocr`, `pdf.deskew`, `pdf.remove_blank` |
 | `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotate`, `pdf.annotations_flatten`, `pdf.annotations_remove` |
 | `forms` | AcroForm field inspection, filling, creation, and flattening | `pdf.forms_inspect`, `pdf.forms_fill`, `pdf.forms_flatten` |
@@ -151,7 +151,8 @@ Each `ToolSpec` declares its input arity:
   - `pdf.alternate_mix`: `many(2, 2)`
   - `pdf.overlay`: `many(2, 2)`
   - `pdf.compare_visual` / `pdf.compare_semantic`: `many(2, 2)`
-  - `pdf.attachments` (`action = "add"`): `many(2, 100)` (base PDF followed by attachment files)
+  - `pdf.attachments`: `many(1, 100)` (`list` / `extract` / `remove` take 1 PDF; `add` takes the base PDF followed by attachment files)
+  - `pdf.portfolio`: `many(1, 100)` (`create` takes 1..=100 input files; `list` / `extract` take 1 portfolio PDF)
 
 Supplying fewer or more inputs than `inputs` allows fails before engine dispatch with exit code `10` (`wrong_input`).
 
@@ -306,6 +307,7 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
 
 - **Single-artifact tools**: Default filename is `<stem>.<tool-suffix>.<ext>`:
   - `pdf.rotate` → `report.rotated.pdf`
+  - `pdf.rotate_content` → `report.rotated-content.pdf`
   - `pdf.merge` → `first.merged.pdf`
   - `pdf.extract_pages` → `report.extracted.pdf`
   - `pdf.delete_pages` → `report.trimmed.pdf`
@@ -317,11 +319,17 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.single_page` → `report.single-page.pdf`
   - `pdf.insert_blank` → `report.inserted.pdf`
   - `pdf.alternate_mix` → `first.mixed.pdf`
+  - `pdf.divide_pages` → `report.divided.pdf`
+  - `pdf.posterize` → `report.posterized.pdf`
   - `pdf.overlay` → `base.overlay.pdf`
   - `pdf.metadata` → `report.metadata.pdf`
   - `pdf.outline` (`import` / `clear` / `from_headings`) → `report.outline.pdf`; (`export`) → `report.outline.json`
+  - `pdf.attachments` (`add` / `remove`) → `report.attachments.pdf`; (`list`) → `report.attachments.json`
+  - `pdf.portfolio` (`create`) → `first.portfolio.pdf`; (`list`) → `report.portfolio.json`
   - `pdf.page_labels` → `report.labeled.pdf`
   - `pdf.viewer_prefs` → `report.prefs.pdf`
+  - `pdf.layers` (`set_default_visibility` / `remove`) → `report.layers.pdf`; (`list`) → `report.layers.json`
+  - `pdf.decompress` → `report.decompressed.pdf`
   - `pdf.compress` → `report.compressed.pdf`
   - `pdf.linearize` → `report.linearized.pdf`
   - `pdf.repair` → `report.repaired.pdf`
@@ -332,10 +340,11 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.sign` → `contract.signed.pdf`
   - `pdf.redact` → `contract.redacted.pdf` (plus `contract.redaction-report.json` when verification report is requested)
   - `pdf.info` → prints structured JSON to stdout on CLI when `--json` is passed (or human summary without `-o`), and writes `report.info.json` when `-o` specifies a directory or file.
+  - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio` and `pdf.layers`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
 - **Multi-artifact tools**:
   - `pdf.split` → `<stem>.part-001.pdf`, `<stem>.part-002.pdf`, ... (1-based index, zero-padded to at least 3 digits: `001`..`999`, widening to 4+ digits when parts >= 1,000).
   - `pdf.to_images` / `pdf.render` → `<stem>.page-001.png`, `<stem>.page-002.png`, ...
-  - `pdf.attachments` (`action = "extract"`) → `<stem>.attachment-001.<sanitized-name>` confined inside `<output_dir>`.
+  - `pdf.attachments` and `pdf.portfolio` (`action = "extract"`) → `<stem>.attachment-001.<sanitized-name>` confined inside `<output_dir>`. The attachment's own name and extension are kept and its bytes are written unchanged, except that executable, script, shortcut and installer types (for example `.exe`, `.py`, `.lnk`, `.sh`, `.pkg`) get `.bin` appended to the file name, with one warning per renamed file. Files never get an executable bit. Entries are numbered in name order.
 
 When `-o <FILE>` is passed to a single-artifact tool, that exact file path is used. Passing a non-directory `-o <FILE>` to a multi-artifact tool (such as `pdf.split`) is rejected upfront with exit code `2` (`usage`).
 
@@ -365,7 +374,7 @@ Every tool invocation receives an `ariad_core::limits::Limits` struct (`Limits::
 | Limit | Enforcement |
 |---|---|
 | `max_input_bytes` | Checked per input file before staging; in `ariad-wasm`, the sum of all input `Uint8Array` byte lengths is checked against `budgetBytes` before opening any document. |
-| `max_pages` | Checked against input page counts at load and against cumulative output pages during operations such as `pdf.merge`, `pdf.insert_blank`, and `pdf.split`. |
+| `max_pages` | Checked against input page counts at load (when set in `Limits`), and combined with the fixed 10,000-page structural output ceiling as `min(10_000, max_pages)` for output-producing tools (`pdf.merge`, `pdf.insert_blank`, `pdf.extract_pages`, `pdf.reorder`, `pdf.nup`, `pdf.booklet`, `pdf.divide_pages`, `pdf.posterize`, and `pdf.split`). In `pdf.split`, both the output pages of each part and the cumulative output pages across all parts are capped at `min(10_000, max_pages)` (never the input page count), and serialized part bytes are charged against the per-document decode budget (`max_decompressed_bytes`). |
 | `timeout_s` | Wall-clock timer enforced by the host runner (`JobSpec::for_request`) and cancellation token; kills the engine process tree on expiry. |
 | `max_memory_mb` | Host watchdog samples aggregate resident set size (RSS) of the engine process tree before dispatch and every 250 ms during execution, killing the tree on violation. |
 | Decoded stream & object caps | `ariad-pdf` opens every PDF exclusively through `ariad_core::reader::pdf::load_bounded(bytes, &limits)`, enforcing `max_decompressed_bytes` across Flate/LZW/filter streams, `max_nesting_depth` (< 100), and `MAX_OBJECTS` (object count ceiling). |
