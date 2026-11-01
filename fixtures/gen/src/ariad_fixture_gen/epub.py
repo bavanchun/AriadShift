@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
+from ariad_fixture_gen.markdown import _route_image
 from ariad_fixture_gen.truth import (
     Cell,
     ChapterBreakBlock,
@@ -274,12 +275,7 @@ def _get_specs(root: Path) -> list[EpubSpec]:
     garden = _source(root, "vietnamese-garden.md")
     river = _source(root, "vietnamese-river.md")
     map_room = _source(root, "english-map-room.md")
-    route_png_path = root / "fixtures" / "md" / "assets" / "vietnamese-route.png"
-    if route_png_path.is_file():
-        route_png = route_png_path.read_bytes()
-    else:
-        from ariad_fixture_gen.markdown import _route_image
-        route_png = _route_image()
+    route_png = _route_image()
 
     return [
         EpubSpec(
