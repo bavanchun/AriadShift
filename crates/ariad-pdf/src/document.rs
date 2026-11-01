@@ -25,7 +25,25 @@ use crate::error::PdfError;
 const MAX_TRAILER_WINDOW: usize = 4096;
 
 /// Cooperative cancellation and deadline context for in-process PDF tool execution.
+///
+/// Construct a context with the public methods and read its fields as needed:
+///
+/// ```
+/// use ariad_pdf::ToolCtx;
+///
+/// let ctx = ToolCtx::new().with_max_pages(Some(100));
+/// assert_eq!(ctx.max_pages, Some(100));
+/// ```
+///
+/// External callers cannot construct a context with a struct literal:
+///
+/// ```compile_fail
+/// use ariad_pdf::ToolCtx;
+/// use std::sync::{Arc, atomic::AtomicBool};
+/// let _ = ToolCtx { deadline: None, cancel: Arc::new(AtomicBool::new(false)), max_pages: None };
+/// ```
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct ToolCtx {
     /// Optional wall-clock deadline after which page and object loops abort with
     /// [`PdfError::TIMED_OUT`].
