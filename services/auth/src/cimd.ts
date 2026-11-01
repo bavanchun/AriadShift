@@ -410,6 +410,9 @@ export function parseCimdClientIdUrl(clientId: string): URL {
     throw new CimdError("invalid_client_id_url", "CIMD client_id must include a hostname");
   }
   const rawMatch = /^https:\/\/[^/?#]+(\/[^?#]*)?(?:\?[^#]*)?$/i.exec(clientId);
+  if (net.isIP(stripIpv6Brackets(url.hostname.replace(/\.$/, "")))) {
+    throw new CimdError("invalid_client_id_url", "CIMD client_id must not use an IP literal");
+  }
   const rawPath = rawMatch?.[1] ?? "";
   if (!rawPath || rawPath === "/" || url.pathname === "/") {
     throw new CimdError("invalid_client_id_url", "CIMD client_id must include a non-root path");
@@ -653,15 +656,16 @@ const defaultDnsLookup: CimdDnsLookup = async (hostname, signal) => {
       resolver.resolve4(hostname),
       resolver.resolve6(hostname),
     ]);
-    return results.flatMap((result, index) => {
-      if (result.status === "fulfilled") {
-        return result.value.map((address) => ({ address, family: (index === 0 ? 4 : 6) as 4 | 6 }));
-      }
-      if (!["ENODATA", "ENOTFOUND"].includes((result.reason as NodeJS.ErrnoException).code ?? "")) {
-        throw result.reason;
-      }
-      return [];
-    });
+    const addresses = results.flatMap((result, index) =>
+      result.status === "fulfilled"
+        ? result.value.map((address) => ({ address, family: (index === 0 ? 4 : 6) as 4 | 6 }))
+        : [],
+    );
+    if (addresses.length === 0) {
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    }
+    return addresses;
   } finally {
     signal.removeEventListener("abort", cancel);
   }
@@ -1156,10 +1160,11 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
     },
     matches: (clientId: string) => isCimdClientId(clientId),
     resolve: async (ctx, clientId, existing) => {
-      const host = new URL(clientId).hostname;
+      const host = new URL(clientId).hostname.toLowerCase().replace(/\.$/, "");
       if (
-        options.deniedHosts?.includes(host) ||
-        (options.allowedHosts?.length && !options.allowedHosts.includes(host))
+        options.deniedHosts?.some((entry) => entry.toLowerCase().replace(/\.$/, "") === host) ||
+        (options.allowedHosts?.length &&
+          !options.allowedHosts.some((entry) => entry.toLowerCase().replace(/\.$/, "") === host))
       )
         return null;
       if (

@@ -1,11 +1,14 @@
 import { execFileSync } from "node:child_process";
+import dns from "node:dns";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import https from "node:https";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { memoryAdapter } from "better-auth/adapters/memory";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { buildAuthOptions, createAuth } from "../src/auth.ts";
 import {
   CIMD_DEFAULT_CACHE_TTL_MS,
   CIMD_MAX_BODY_BYTES,
@@ -302,6 +305,43 @@ describe("CIMD URL validation and fetch policy", () => {
         id,
       ),
     ).toThrow(/jwks_uri is not supported/);
+  });
+  it("uses successful DNS answers when the other address family fails", async () => {
+    const resolve4 = vi.spyOn(dns.promises.Resolver.prototype, "resolve4");
+    const resolve6 = vi.spyOn(dns.promises.Resolver.prototype, "resolve6");
+    try {
+      for (const family of [4, 6]) {
+        resolve4.mockImplementation(async () => {
+          if (family === 4) return ["93.184.216.34"];
+          throw new Error("DNS failure");
+        });
+        resolve6.mockImplementation(async () => {
+          if (family === 6) return ["2606:2800:220:1::1"];
+          throw new Error("DNS failure");
+        });
+        const fetcher = createCimdFetcher({
+          transport: async ({ url }) => ({
+            status: 200,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ client_id: url.href, redirect_uris: [REDIRECT_URI] }),
+          }),
+        });
+        await expect(
+          fetcher.fetchDocument(`https://dns${family}.example/client.json`),
+        ).resolves.toBeDefined();
+      }
+    } finally {
+      resolve4.mockRestore();
+      resolve6.mockRestore();
+    }
+  });
+  it("rejects public IPv4 and IPv6 literal client identifiers", () => {
+    for (const id of [
+      "https://93.184.216.34/client.json",
+      "https://[2606:2800:220:1::1]/client.json",
+    ]) {
+      expect(isCimdClientId(id), id).toBe(false);
+    }
   });
   it("rejects noncanonical identifiers and nonstandard ports", () => {
     for (const id of [
@@ -888,12 +928,12 @@ describe("CIMD registration budget", () => {
       },
       {
         ...config,
-        cimdAllowedHosts: ["allowed.example", "denied.example"],
-        cimdDeniedHosts: ["denied.example"],
+        cimdAllowedHosts: ["allowed.example", "denied.example", "denied.example."],
+        cimdDeniedHosts: ["denied.example."],
       },
     );
     const { challenge } = pkce();
-    for (const host of ["denied.example", "other.example"]) {
+    for (const host of ["denied.example", "denied.example.", "other.example"]) {
       const response = await app.request(
         authorizeUrl(`https://${host}/client.json`, {
           code_challenge: challenge,
