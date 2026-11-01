@@ -8,7 +8,8 @@
 use std::{
     collections::BTreeMap,
     fs,
-    path::{Path, PathBuf},
+    io::Read,
+    path::{Component, Path, PathBuf},
 };
 
 use ariad_core::{
@@ -106,16 +107,21 @@ pub fn execute(
 
     let outcome = run_result.map_err(|err| map_run_error(err, spec, scrubber))?;
 
+    let canonical_out_dir = fs::canonicalize(workspace.output_dir()).map_err(|_| {
+        ToolError::EngineFailure("could not resolve workspace output directory".to_owned())
+    })?;
+
     let mut total_output_bytes = 0_u64;
     let mut artifacts = Vec::with_capacity(outcome.artifacts.len());
     for artifact in outcome.artifacts {
-        if let Ok(meta) = fs::symlink_metadata(&artifact.path) {
-            total_output_bytes = total_output_bytes.saturating_add(meta.len());
-            if total_output_bytes > limits.max_decompressed_bytes {
-                return Err(ToolError::LimitExceeded);
-            }
-        }
-        artifacts.push((artifact.path, artifact.format));
+        let verified_path = validate_engine_artifact(
+            &artifact.path,
+            &canonical_out_dir,
+            workspace,
+            limits,
+            &mut total_output_bytes,
+        )?;
+        artifacts.push((verified_path, artifact.format));
     }
 
     let mut metrics = BTreeMap::new();
@@ -125,15 +131,23 @@ pub fn execute(
         }
     }
 
-    // For JSON-emitting tools (`<= 256 KiB`), capture the structured JSON payload inline.
+    // For JSON-emitting tools (`<= 256 KiB`), capture the structured JSON payload inline
+    // using the workspace's O_NOFOLLOW handle rather than re-opening by raw path.
     let mut inline_json = None;
     if spec.output_format.eq_ignore_ascii_case("json")
         && artifacts.len() == 1
-        && let Ok(bytes) = fs::read(&artifacts[0].0)
-        && bytes.len() <= MAX_INLINE_PARAMS_BYTES
-        && let Ok(parsed) = serde_json::from_slice::<Value>(&bytes)
+        && let Ok(file) = workspace.open_artifact(&artifacts[0].0)
     {
-        inline_json = Some(scrubber.scrub_value(&parsed));
+        let mut bytes = Vec::new();
+        if file
+            .take((MAX_INLINE_PARAMS_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .is_ok()
+            && bytes.len() <= MAX_INLINE_PARAMS_BYTES
+            && let Ok(parsed) = serde_json::from_slice::<Value>(&bytes)
+        {
+            inline_json = Some(scrubber.scrub_value(&parsed));
+        }
     }
 
     Ok(RawToolExecution {
@@ -142,6 +156,79 @@ pub fn execute(
         metrics,
         inline_json,
     })
+}
+
+fn validate_engine_artifact(
+    artifact_path: &Path,
+    canonical_out_dir: &Path,
+    workspace: &Workspace,
+    limits: &Limits,
+    total_output_bytes: &mut u64,
+) -> Result<PathBuf, ToolError> {
+    if artifact_path.as_os_str().is_empty()
+        || artifact_path
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+    {
+        return Err(ToolError::EngineFailure(
+            "engine reported invalid artifact path".to_owned(),
+        ));
+    }
+    let Some(file_name) = artifact_path.file_name() else {
+        return Err(ToolError::EngineFailure(
+            "engine reported artifact path without file name".to_owned(),
+        ));
+    };
+    let Some(parent) = artifact_path.parent() else {
+        return Err(ToolError::EngineFailure(
+            "engine reported artifact path without parent directory".to_owned(),
+        ));
+    };
+
+    let meta = fs::symlink_metadata(artifact_path).map_err(|_| {
+        ToolError::EngineFailure("engine reported missing or inaccessible artifact".to_owned())
+    })?;
+    if meta.file_type().is_symlink() || !meta.file_type().is_file() {
+        return Err(ToolError::EngineFailure(
+            "engine reported non-regular or symlink artifact".to_owned(),
+        ));
+    }
+
+    let canonical_parent = fs::canonicalize(parent).map_err(|_| {
+        ToolError::EngineFailure("engine artifact parent directory is invalid".to_owned())
+    })?;
+    if !canonical_parent.starts_with(canonical_out_dir) {
+        return Err(ToolError::EngineFailure(
+            "engine artifact path is outside workspace output directory".to_owned(),
+        ));
+    }
+
+    if meta.len() > limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+
+    let handle = workspace.open_artifact(artifact_path).map_err(|_| {
+        ToolError::EngineFailure(
+            "engine artifact is outside workspace output directory or not a regular file"
+                .to_owned(),
+        )
+    })?;
+    let handle_meta = handle.metadata().map_err(|_| {
+        ToolError::EngineFailure("could not stat engine artifact handle".to_owned())
+    })?;
+    if !handle_meta.file_type().is_file() {
+        return Err(ToolError::EngineFailure(
+            "engine reported non-regular artifact".to_owned(),
+        ));
+    }
+
+    let artifact_len = meta.len().max(handle_meta.len());
+    *total_output_bytes = total_output_bytes.saturating_add(artifact_len);
+    if *total_output_bytes > limits.max_decompressed_bytes {
+        return Err(ToolError::LimitExceeded);
+    }
+
+    Ok(canonical_parent.join(file_name))
 }
 
 fn resolve_engine_command(

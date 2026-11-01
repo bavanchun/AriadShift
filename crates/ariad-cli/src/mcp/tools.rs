@@ -711,10 +711,16 @@ impl McpServer {
             )));
         }
 
-        let mut input_refs = Vec::with_capacity(args.inputs.len());
+        if !ariad_core::tools::ToolId::is_valid(&args.tool)
+            || ariad_core::tools::find(&args.tool).is_none()
+        {
+            return Ok(tool_run_error(&ToolError::UnknownTool(args.tool)));
+        }
+
+        let mut raw_inputs = Vec::with_capacity(args.inputs.len());
         for raw_in in &args.inputs {
             match parse_path_or_uri(raw_in) {
-                Ok(path) => input_refs.push(InputRef::new(path)),
+                Ok(path) => raw_inputs.push(path),
                 Err(err) => return Ok(tool_confine_error(&err)),
             }
         }
@@ -733,11 +739,20 @@ impl McpServer {
             OutputTarget::DefaultBesideInput
         };
 
-        let allowed = self
-            .allowed_dirs
-            .read()
-            .map_err(|_| ErrorData::internal_error("internal lock error", None))?
-            .clone();
+        let (input_refs, allowed) = {
+            let allowed = self
+                .allowed_dirs
+                .read()
+                .map_err(|_| ErrorData::internal_error("internal lock error", None))?;
+            let mut confined_refs = Vec::with_capacity(raw_inputs.len());
+            for path in &raw_inputs {
+                match confine_input(path, &allowed) {
+                    Ok(valid_in) => confined_refs.push(InputRef::from_confined(valid_in)),
+                    Err(err) => return Ok(tool_confine_error(&err)),
+                }
+            }
+            (confined_refs, allowed.clone())
+        };
 
         let request = ToolRequest::new(args.tool, input_refs, output_target)
             .with_params(params)

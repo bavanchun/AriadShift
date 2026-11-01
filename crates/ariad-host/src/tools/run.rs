@@ -10,9 +10,11 @@
 //! 7. Atomic multi-artifact publication via [`super::publish::publish_atomic`] (`destination_exists`, exit code `6`).
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
+    sync::{Arc, LazyLock, Mutex, RwLock},
     time::Instant,
 };
 
@@ -29,7 +31,7 @@ use serde_json::{Map, Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    confine::{AllowedDirs, ConfineError, confine_input},
+    confine::{AllowedDirs, ConfineError, ConfinedInput, confine_input},
     convert::{ConvertWarning, classify_file, paths_refer_to_same_file},
     engines,
     runner::EngineCommand,
@@ -47,47 +49,68 @@ use crate::{
 };
 
 /// Input file reference for a [`ToolRequest`].
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct InputRef {
     /// Filesystem path to the input document.
     pub path: PathBuf,
+    /// Optional pre-opened confined file handle bound under an `allowed_dirs` lock.
+    #[serde(skip)]
+    #[schemars(skip)]
+    confined: Option<Arc<Mutex<ConfinedInput>>>,
 }
+
+impl PartialEq for InputRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
+    }
+}
+
+impl Eq for InputRef {}
 
 impl InputRef {
     /// Creates a new [`InputRef`] from a path.
     #[must_use]
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+        Self {
+            path: path.into(),
+            confined: None,
+        }
+    }
+
+    /// Creates an [`InputRef`] bound to a pre-validated [`ConfinedInput`] file handle.
+    ///
+    /// Staging copies directly from the confined handle rather than re-opening `path` on disk.
+    #[must_use]
+    pub fn from_confined(confined: ConfinedInput) -> Self {
+        let path = confined.path.clone();
+        Self {
+            path,
+            confined: Some(Arc::new(Mutex::new(confined))),
+        }
     }
 }
 
 impl From<PathBuf> for InputRef {
     fn from(path: PathBuf) -> Self {
-        Self { path }
+        Self::new(path)
     }
 }
 
 impl From<&Path> for InputRef {
     fn from(path: &Path) -> Self {
-        Self {
-            path: path.to_path_buf(),
-        }
+        Self::new(path.to_path_buf())
     }
 }
 
 impl From<&str> for InputRef {
     fn from(path: &str) -> Self {
-        Self {
-            path: PathBuf::from(path),
-        }
+        Self::new(PathBuf::from(path))
     }
 }
 
 impl From<String> for InputRef {
     fn from(path: String) -> Self {
-        Self {
-            path: PathBuf::from(path),
-        }
+        Self::new(PathBuf::from(path))
     }
 }
 
@@ -547,9 +570,12 @@ fn run_tool_inner(
     let scrubber = &resolved_secrets.scrubber;
 
     // 5. Validate resolved parameters against the tool's JSON Schema (exit code 9).
-    let param_schema = spec.resolved_params_schema();
-    validate_params_against_schema(&param_schema, &resolved_secrets.schema_params)
-        .map_err(|msg| ToolError::InvalidParams(scrubber.scrub(&msg)))?;
+    validate_spec_params(
+        &spec,
+        &resolved_secrets.schema_params,
+        request.spec_override.is_none(),
+    )
+    .map_err(|msg| ToolError::InvalidParams(scrubber.scrub(&msg)))?;
 
     // Validate optional naming template early if provided (exit code 9).
     if let Some(ref template) = request.naming_template {
@@ -575,7 +601,7 @@ fn run_tool_inner(
     }
 
     // 8. Pre-validate output target confinement before staging or running the tool (exit code 2 / 6).
-    let input_paths: Vec<PathBuf> = request.inputs.iter().map(|i| i.path.clone()).collect();
+    let mut input_paths: Vec<PathBuf> = request.inputs.iter().map(|i| i.path.clone()).collect();
     preflight_output_target(
         &request.output,
         &input_paths,
@@ -583,7 +609,7 @@ fn run_tool_inner(
         request.overwrite,
     )?;
 
-    // 9. Confine, size-check, sniff format, and stage inputs into an isolated workspace.
+    // 9. Confine, copy from the confined handle into `<ws>/in/`, size-check, and sniff format on the workspace copy.
     let workspace =
         Workspace::new().map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
 
@@ -593,61 +619,17 @@ fn run_tool_inner(
     let mut staged_input_paths: Vec<PathBuf> = Vec::with_capacity(request.inputs.len());
 
     for (idx, input_ref) in request.inputs.iter().enumerate() {
-        let resolved_input = resolve_and_confine_input(
-            &input_ref.path,
+        let (canonical_source, staged_path, format_id, bytes) = stage_and_classify_input(
+            idx,
+            input_ref,
+            &spec,
+            &workspace,
             request.allowed_dirs.as_ref(),
             &request.limits,
+            &request.cancel,
         )?;
-
-        let classification = classify_file(&resolved_input).map_err(|_| {
-            ToolError::InputIo(format!(
-                "the input file '{}' could not be read",
-                input_ref.path.display()
-            ))
-        })?;
-
-        if let Some(max_in) = request.limits.max_input_bytes
-            && classification.bytes > max_in
-        {
-            return Err(ToolError::LimitExceeded);
-        }
-        total_input_bytes = total_input_bytes.saturating_add(classification.bytes);
-
-        let format_id = match classification.format {
-            Some(fmt) if spec.accepts_core_format(fmt) => fmt.id().to_owned(),
-            Some(fmt) => {
-                return Err(ToolError::WrongInput(format!(
-                    "input '{}' has format '{}', which is not accepted by tool '{}' (accepted: {})",
-                    input_ref.path.display(),
-                    fmt.user_name(),
-                    spec.id,
-                    spec.input_formats.join(", ")
-                )));
-            }
-            None => {
-                let ext = input_ref
-                    .path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("unknown");
-                return Err(ToolError::WrongInput(format!(
-                    "input '{}' format ({ext}) is not accepted by tool '{}' (accepted: {})",
-                    input_ref.path.display(),
-                    spec.id,
-                    spec.input_formats.join(", ")
-                )));
-            }
-        };
-
-        let staged_name = format!("input-{idx}.{format_id}");
-        let staged_path = workspace.input_dir().join(staged_name);
-        fs::copy(&resolved_input, &staged_path).map_err(|_| {
-            ToolError::InputIo(format!(
-                "could not stage input file '{}'",
-                input_ref.path.display()
-            ))
-        })?;
-
+        input_paths[idx] = canonical_source;
+        total_input_bytes = total_input_bytes.saturating_add(bytes);
         staged_input_paths.push(staged_path.clone());
         staged_inputs_with_format.push((staged_path, format_id));
     }
@@ -726,47 +708,246 @@ fn run_tool_inner(
     })
 }
 
-fn resolve_and_confine_input(
-    path: &Path,
+fn stage_and_classify_input(
+    idx: usize,
+    input_ref: &InputRef,
+    spec: &ToolSpec,
+    workspace: &Workspace,
     allowed_dirs: Option<&AllowedDirs>,
     limits: &Limits,
-) -> Result<PathBuf, ToolError> {
-    if let Some(allowed) = allowed_dirs {
-        let confined = confine_input(path, allowed).map_err(|err| match err {
-            ConfineError::InputNotFound { .. } => {
-                ToolError::InputIo(format!("input file '{}' was not found", path.display()))
+    cancel: &CancellationToken,
+) -> Result<(PathBuf, PathBuf, String, u64), ToolError> {
+    if cancel.is_cancelled() {
+        return Err(ToolError::Interrupted);
+    }
+
+    let raw_ext = input_ref
+        .path
+        .extension()
+        .and_then(|e| e.to_str())
+        .filter(|e| !e.is_empty() && e.bytes().all(|b| b.is_ascii_alphanumeric()))
+        .unwrap_or("bin");
+    let raw_staged_path = workspace
+        .input_dir()
+        .join(format!("raw-input-{idx}.{raw_ext}"));
+
+    let mut dest_file = open_staged_destination(&raw_staged_path).map_err(|_| {
+        ToolError::InputIo(format!(
+            "could not stage input file '{}'",
+            input_ref.path.display()
+        ))
+    })?;
+
+    let canonical_source = if let Some(ref pre_confined) = input_ref.confined {
+        let mut guard = pre_confined.lock().map_err(|_| {
+            ToolError::InputIo(format!(
+                "input file '{}' could not be read",
+                input_ref.path.display()
+            ))
+        })?;
+        let meta = guard.file.metadata().map_err(|_| {
+            ToolError::InputIo(format!(
+                "input file '{}' could not be read",
+                input_ref.path.display()
+            ))
+        })?;
+        if let Some(max_in) = limits.max_input_bytes
+            && meta.len() > max_in
+        {
+            let _ = fs::remove_file(&raw_staged_path);
+            return Err(ToolError::LimitExceeded);
+        }
+        guard
+            .copy_to_file_cancellable(&mut dest_file, limits.max_input_bytes, cancel)
+            .map_err(|e| {
+                let _ = fs::remove_file(&raw_staged_path);
+                map_copy_error(&e, &input_ref.path)
+            })?;
+        guard.path.clone()
+    } else if let Some(allowed) = allowed_dirs {
+        let mut confined = confine_input(&input_ref.path, allowed).map_err(|err| {
+            let _ = fs::remove_file(&raw_staged_path);
+            match err {
+                ConfineError::InputNotFound { .. } => ToolError::InputIo(format!(
+                    "input file '{}' was not found",
+                    input_ref.path.display()
+                )),
+                _ => ToolError::Confinement(format!(
+                    "input path '{}' is not permitted: {err}",
+                    input_ref.path.display()
+                )),
             }
-            _ => ToolError::Confinement(format!(
-                "input path '{}' is not permitted: {err}",
-                path.display()
-            )),
         })?;
         let meta = confined.file.metadata().map_err(|_| {
-            ToolError::InputIo(format!("input file '{}' could not be read", path.display()))
+            let _ = fs::remove_file(&raw_staged_path);
+            ToolError::InputIo(format!(
+                "input file '{}' could not be read",
+                input_ref.path.display()
+            ))
         })?;
         if let Some(max_in) = limits.max_input_bytes
             && meta.len() > max_in
         {
+            let _ = fs::remove_file(&raw_staged_path);
             return Err(ToolError::LimitExceeded);
         }
-        Ok(confined.path)
+        confined
+            .copy_to_file_cancellable(&mut dest_file, limits.max_input_bytes, cancel)
+            .map_err(|e| {
+                let _ = fs::remove_file(&raw_staged_path);
+                map_copy_error(&e, &input_ref.path)
+            })?;
+        confined.path
     } else {
-        let meta = fs::metadata(path).map_err(|_| {
-            ToolError::InputIo(format!("input file '{}' could not be read", path.display()))
-        })?;
-        if !meta.file_type().is_file() {
-            return Err(ToolError::InputIo(format!(
-                "input '{}' is not a regular file",
-                path.display()
+        copy_unconfined_input_to_file(&input_ref.path, &mut dest_file, limits, cancel)
+            .inspect_err(|_| {
+                let _ = fs::remove_file(&raw_staged_path);
+            })?;
+        input_ref.path.clone()
+    };
+
+    dest_file.flush().map_err(|_| {
+        let _ = fs::remove_file(&raw_staged_path);
+        ToolError::InputIo(format!(
+            "could not stage input file '{}'",
+            input_ref.path.display()
+        ))
+    })?;
+    drop(dest_file);
+
+    // Classify the staged workspace copy rather than re-opening the user's path.
+    let classification = classify_file(&raw_staged_path).map_err(|_| {
+        let _ = fs::remove_file(&raw_staged_path);
+        ToolError::InputIo(format!(
+            "the input file '{}' could not be read",
+            input_ref.path.display()
+        ))
+    })?;
+
+    if let Some(max_in) = limits.max_input_bytes
+        && classification.bytes > max_in
+    {
+        let _ = fs::remove_file(&raw_staged_path);
+        return Err(ToolError::LimitExceeded);
+    }
+
+    let format_id = match classification.format {
+        Some(fmt) if spec.accepts_core_format(fmt) => fmt.id().to_owned(),
+        Some(fmt) => {
+            let _ = fs::remove_file(&raw_staged_path);
+            return Err(ToolError::WrongInput(format!(
+                "input '{}' has format '{}', which is not accepted by tool '{}' (accepted: {})",
+                input_ref.path.display(),
+                fmt.user_name(),
+                spec.id,
+                spec.input_formats.join(", ")
             )));
         }
+        None => {
+            let _ = fs::remove_file(&raw_staged_path);
+            let ext = input_ref
+                .path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("unknown");
+            return Err(ToolError::WrongInput(format!(
+                "input '{}' format ({ext}) is not accepted by tool '{}' (accepted: {})",
+                input_ref.path.display(),
+                spec.id,
+                spec.input_formats.join(", ")
+            )));
+        }
+    };
+
+    let staged_path = workspace
+        .input_dir()
+        .join(format!("input-{idx}.{format_id}"));
+    fs::rename(&raw_staged_path, &staged_path).map_err(|_| {
+        let _ = fs::remove_file(&raw_staged_path);
+        ToolError::InputIo(format!(
+            "could not stage input file '{}'",
+            input_ref.path.display()
+        ))
+    })?;
+
+    Ok((
+        canonical_source,
+        staged_path,
+        format_id,
+        classification.bytes,
+    ))
+}
+
+fn open_staged_destination(path: &Path) -> io::Result<fs::File> {
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+        opts.custom_flags(libc::O_NOFOLLOW);
+    }
+    opts.open(path)
+}
+
+fn map_copy_error(err: &io::Error, input_path: &Path) -> ToolError {
+    match err.kind() {
+        io::ErrorKind::Interrupted => ToolError::Interrupted,
+        io::ErrorKind::FileTooLarge | io::ErrorKind::InvalidData => ToolError::LimitExceeded,
+        _ => ToolError::InputIo(format!(
+            "could not stage input file '{}'",
+            input_path.display()
+        )),
+    }
+}
+
+fn copy_unconfined_input_to_file(
+    path: &Path,
+    dest: &mut fs::File,
+    limits: &Limits,
+    cancel: &CancellationToken,
+) -> Result<(), ToolError> {
+    let mut src = crate::convert::open_regular_input(path).map_err(|_| {
+        ToolError::InputIo(format!("input file '{}' could not be read", path.display()))
+    })?;
+    let meta = src.metadata().map_err(|_| {
+        ToolError::InputIo(format!("input file '{}' could not be read", path.display()))
+    })?;
+    if !meta.file_type().is_file() {
+        return Err(ToolError::InputIo(format!(
+            "input '{}' is not a regular file",
+            path.display()
+        )));
+    }
+    if let Some(max_in) = limits.max_input_bytes
+        && meta.len() > max_in
+    {
+        return Err(ToolError::LimitExceeded);
+    }
+
+    let mut buf = [0_u8; 64 * 1024];
+    let mut copied = 0_u64;
+    loop {
+        if cancel.is_cancelled() {
+            return Err(ToolError::Interrupted);
+        }
+        let n = src.read(&mut buf).map_err(|_| {
+            ToolError::InputIo(format!("input file '{}' could not be read", path.display()))
+        })?;
+        if n == 0 {
+            break;
+        }
+        copied = copied.saturating_add(n as u64);
         if let Some(max_in) = limits.max_input_bytes
-            && meta.len() > max_in
+            && copied > max_in
         {
             return Err(ToolError::LimitExceeded);
         }
-        Ok(path.to_path_buf())
+        dest.write_all(&buf[..n]).map_err(|_| {
+            ToolError::InputIo(format!("could not stage input file '{}'", path.display()))
+        })?;
     }
+    Ok(())
 }
 
 fn preflight_output_target(
@@ -937,177 +1118,51 @@ fn publish_tool_outputs(
     )
 }
 
-/// Validates a JSON [`Value`] against a Draft 2020-12 [`Schema`] generated by `schemars`.
+static COMPILED_PARAM_SCHEMAS: LazyLock<RwLock<HashMap<String, Arc<jsonschema::Validator>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
+fn validate_spec_params(spec: &ToolSpec, params: &Value, use_cache: bool) -> Result<(), String> {
+    if !params.is_object() {
+        return Err("tool parameters must be a JSON object".to_owned());
+    }
+    if use_cache {
+        if let Ok(cache) = COMPILED_PARAM_SCHEMAS.read()
+            && let Some(validator) = cache.get(spec.id)
+        {
+            return validate_with_compiled(validator, params);
+        }
+        let schema = spec.resolved_params_schema();
+        let validator = Arc::new(compile_json_schema(&schema)?);
+        if let Ok(mut cache) = COMPILED_PARAM_SCHEMAS.write() {
+            cache.insert(spec.id.to_owned(), Arc::clone(&validator));
+        }
+        return validate_with_compiled(&validator, params);
+    }
+    let schema = spec.resolved_params_schema();
+    validate_params_against_schema(&schema, params)
+}
+
+/// Validates a JSON [`Value`] against a Draft 2020-12 [`Schema`] using `jsonschema`.
 pub fn validate_params_against_schema(schema: &Schema, params: &Value) -> Result<(), String> {
-    let Some(root_obj) = schema.as_object() else {
-        return Ok(());
-    };
-    let defs = root_obj
-        .get("$defs")
-        .or_else(|| root_obj.get("definitions"))
-        .and_then(Value::as_object);
-    validate_schema_node(root_obj, defs, params, "params")
+    if !params.is_object() {
+        return Err("tool parameters must be a JSON object".to_owned());
+    }
+    let validator = compile_json_schema(schema)?;
+    validate_with_compiled(&validator, params)
 }
 
-fn validate_schema_node(
-    node: &Map<String, Value>,
-    defs: Option<&Map<String, Value>>,
-    value: &Value,
-    path: &str,
-) -> Result<(), String> {
-    if let Some(ref_str) = node.get("$ref").and_then(Value::as_str)
-        && let Some(def_name) = ref_str
-            .strip_prefix("#/$defs/")
-            .or_else(|| ref_str.strip_prefix("#/definitions/"))
-        && let Some(def_node) = defs
-            .and_then(|d| d.get(def_name))
-            .and_then(Value::as_object)
-    {
-        return validate_schema_node(def_node, defs, value, path);
+fn compile_json_schema(schema: &Schema) -> Result<jsonschema::Validator, String> {
+    jsonschema::draft202012::new(schema.as_value())
+        .map_err(|e| format!("invalid tool parameter schema: {e}"))
+}
+
+fn validate_with_compiled(validator: &jsonschema::Validator, params: &Value) -> Result<(), String> {
+    if let Some(error) = validator.iter_errors(params).next() {
+        let path = error.instance_path().to_string();
+        if path.is_empty() {
+            return Err(error.to_string());
+        }
+        return Err(format!("{path}: {error}"));
     }
-
-    if let Some(any_of) = node.get("anyOf").and_then(Value::as_array) {
-        let matched = any_of.iter().any(|sub| {
-            sub.as_object()
-                .is_none_or(|sub_obj| validate_schema_node(sub_obj, defs, value, path).is_ok())
-        });
-        if !matched {
-            return Err(format!("'{path}' did not match any allowed schema variant"));
-        }
-    }
-
-    if let Some(one_of) = node.get("oneOf").and_then(Value::as_array) {
-        let matched = one_of.iter().any(|sub| {
-            sub.as_object()
-                .is_none_or(|sub_obj| validate_schema_node(sub_obj, defs, value, path).is_ok())
-        });
-        if !matched {
-            return Err(format!("'{path}' did not match any allowed schema variant"));
-        }
-    }
-
-    if let Some(enum_vals) = node.get("enum").and_then(Value::as_array)
-        && !enum_vals.contains(value)
-    {
-        return Err(format!(
-            "'{path}' value {value} is not one of the allowed enum values"
-        ));
-    }
-
-    if let Some(const_val) = node.get("const")
-        && value != const_val
-    {
-        return Err(format!("'{path}' must equal {const_val}"));
-    }
-
-    if let Some(type_val) = node.get("type") {
-        let matches = match type_val {
-            Value::String(t) => value_matches_type(value, t),
-            Value::Array(types) => types
-                .iter()
-                .filter_map(Value::as_str)
-                .any(|t| value_matches_type(value, t)),
-            _ => true,
-        };
-        if !matches {
-            return Err(format!(
-                "'{path}' has invalid type (expected {type_val}, got {value})"
-            ));
-        }
-    }
-
-    if let Some(obj) = value.as_object() {
-        let props = node.get("properties").and_then(Value::as_object);
-        let additional = node.get("additionalProperties");
-
-        if let Some(req_list) = node.get("required").and_then(Value::as_array) {
-            for req in req_list.iter().filter_map(Value::as_str) {
-                if !obj.contains_key(req) {
-                    return Err(format!("missing required parameter '{req}'"));
-                }
-            }
-        }
-
-        for (key, val) in obj {
-            let child_path = format!("{path}.{key}");
-            if let Some(prop_schema) = props.and_then(|p| p.get(key)) {
-                if let Some(prop_obj) = prop_schema.as_object() {
-                    validate_schema_node(prop_obj, defs, val, &child_path)?;
-                } else if prop_schema == &Value::Bool(false) {
-                    return Err(format!("parameter '{key}' is not allowed"));
-                }
-            } else if additional == Some(&Value::Bool(false)) {
-                return Err(format!("unknown parameter '{key}'"));
-            }
-        }
-    }
-
-    if let Some(arr) = value.as_array() {
-        if let Some(min_items) = node.get("minItems").and_then(Value::as_u64)
-            && (arr.len() as u64) < min_items
-        {
-            return Err(format!(
-                "'{path}' must have at least {min_items} item(s), got {}",
-                arr.len()
-            ));
-        }
-        if let Some(max_items) = node.get("maxItems").and_then(Value::as_u64)
-            && (arr.len() as u64) > max_items
-        {
-            return Err(format!(
-                "'{path}' must have at most {max_items} item(s), got {}",
-                arr.len()
-            ));
-        }
-        if let Some(item_schema) = node.get("items").and_then(Value::as_object) {
-            for (idx, item) in arr.iter().enumerate() {
-                validate_schema_node(item_schema, defs, item, &format!("{path}[{idx}]"))?;
-            }
-        }
-    }
-
-    if let Some(s) = value.as_str() {
-        if let Some(min_len) = node.get("minLength").and_then(Value::as_u64)
-            && (s.chars().count() as u64) < min_len
-        {
-            return Err(format!(
-                "'{path}' length must be at least {min_len} character(s)"
-            ));
-        }
-        if let Some(max_len) = node.get("maxLength").and_then(Value::as_u64)
-            && (s.chars().count() as u64) > max_len
-        {
-            return Err(format!(
-                "'{path}' length must be at most {max_len} character(s)"
-            ));
-        }
-    }
-
-    if let Some(num) = value.as_f64() {
-        if let Some(min) = node.get("minimum").and_then(Value::as_f64)
-            && num < min
-        {
-            return Err(format!("'{path}' ({num}) must be >= {min}"));
-        }
-        if let Some(max) = node.get("maximum").and_then(Value::as_f64)
-            && num > max
-        {
-            return Err(format!("'{path}' ({num}) must be <= {max}"));
-        }
-    }
-
     Ok(())
-}
-
-fn value_matches_type(value: &Value, expected: &str) -> bool {
-    match expected {
-        "object" => value.is_object(),
-        "array" => value.is_array(),
-        "string" => value.is_string(),
-        "boolean" => value.is_boolean(),
-        "integer" => value.is_i64() || value.is_u64(),
-        "number" => value.is_number(),
-        "null" => value.is_null(),
-        _ => true,
-    }
 }

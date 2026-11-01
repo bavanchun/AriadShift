@@ -498,12 +498,27 @@ pub fn describe_command_v2(
 
 /// Writes `params` to `<work_dir>/params.json` with mode `0600` (owner read/write only).
 pub fn write_params_file(work_dir: &Path, params: &Value) -> Result<PathBuf, RunError> {
+    let work_dir_meta = std::fs::symlink_metadata(work_dir).map_err(|_| {
+        RunError::ProtocolViolation("work_dir does not exist or is not a directory")
+    })?;
+    if work_dir_meta.file_type().is_symlink() || !work_dir_meta.file_type().is_dir() {
+        return Err(RunError::ProtocolViolation(
+            "work_dir must be a real directory",
+        ));
+    }
     let path = work_dir.join("params.json");
     write_private_params_file(&path, params)?;
     Ok(path)
 }
 
 fn write_private_params_file(path: &Path, params: &Value) -> Result<(), RunError> {
+    if let Ok(meta) = std::fs::symlink_metadata(path)
+        && (meta.file_type().is_symlink() || !meta.file_type().is_file())
+    {
+        return Err(RunError::ProtocolViolation(
+            "params_file must be a regular file inside work_dir",
+        ));
+    }
     let bytes = serde_json::to_vec(params)
         .map_err(|_| RunError::ProtocolViolation("could not encode tool params"))?;
     #[cfg(unix)]
@@ -515,8 +530,15 @@ fn write_private_params_file(path: &Path, params: &Value) -> Result<(), RunError
             .create(true)
             .truncate(true)
             .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
             .open(path)
             .map_err(RunError::Io)?;
+        let meta = file.metadata().map_err(RunError::Io)?;
+        if !meta.file_type().is_file() {
+            return Err(RunError::ProtocolViolation(
+                "params_file must be a regular file inside work_dir",
+            ));
+        }
         file.set_permissions(std::fs::Permissions::from_mode(0o600))
             .map_err(RunError::Io)?;
         file.write_all(&bytes).map_err(RunError::Io)?;
@@ -541,29 +563,107 @@ impl Drop for ParamsFileGuard {
 
 fn has_secret_params(tool: &str, params: &Value) -> bool {
     if let Some(spec) = ariad_core::tools::find(tool)
-        && let Some(obj) = params.as_object()
-        && spec
-            .secret_params
-            .iter()
-            .any(|field| obj.get(*field).is_some_and(|v| !v.is_null()))
+        && value_contains_secret_keys(params, spec.secret_params)
     {
         return true;
     }
     value_contains_known_secret_key(params)
 }
 
+fn value_contains_secret_keys(value: &Value, secret_keys: &[&str]) -> bool {
+    match value {
+        Value::Object(map) => map.iter().any(|(k, v)| {
+            (!v.is_null()
+                && secret_keys
+                    .iter()
+                    .any(|secret| secret.eq_ignore_ascii_case(k)))
+                || value_contains_secret_keys(v, secret_keys)
+        }),
+        Value::Array(items) => items
+            .iter()
+            .any(|item| value_contains_secret_keys(item, secret_keys)),
+        _ => false,
+    }
+}
+
 fn value_contains_known_secret_key(value: &Value) -> bool {
     match value {
         Value::Object(map) => map.iter().any(|(k, v)| {
             (!v.is_null()
-                && ariad_core::tools::KNOWN_SECRET_FIELD_NAMES
-                    .iter()
-                    .any(|secret| secret.eq_ignore_ascii_case(k)))
+                && (k.eq_ignore_ascii_case("$secret")
+                    || ariad_core::tools::KNOWN_SECRET_FIELD_NAMES
+                        .iter()
+                        .any(|secret| secret.eq_ignore_ascii_case(k))))
                 || value_contains_known_secret_key(v)
         }),
         Value::Array(items) => items.iter().any(value_contains_known_secret_key),
         _ => false,
     }
+}
+
+fn resolve_confined_params_file(
+    params_file: Option<&Path>,
+    work_dir_path: &Path,
+    canonical_work_dir: &Path,
+) -> Result<PathBuf, RunError> {
+    let candidate = match params_file {
+        Some(explicit) => {
+            if explicit.as_os_str().is_empty()
+                || explicit.as_os_str().to_string_lossy().contains('\0')
+                || explicit
+                    .components()
+                    .any(|c| matches!(c, Component::ParentDir | Component::CurDir))
+            {
+                return Err(RunError::ProtocolViolation(
+                    "params_file must be inside work_dir",
+                ));
+            }
+            let Some(file_name) = explicit.file_name() else {
+                return Err(RunError::ProtocolViolation(
+                    "params_file must be inside work_dir",
+                ));
+            };
+            let Some(parent) = explicit.parent() else {
+                return Err(RunError::ProtocolViolation(
+                    "params_file must be inside work_dir",
+                ));
+            };
+            let canonical_parent = std::fs::canonicalize(parent)
+                .map_err(|_| RunError::ProtocolViolation("params_file must be inside work_dir"))?;
+            if canonical_parent != canonical_work_dir {
+                return Err(RunError::ProtocolViolation(
+                    "params_file must be inside work_dir",
+                ));
+            }
+            if let Ok(meta) = std::fs::symlink_metadata(explicit)
+                && (meta.file_type().is_symlink() || !meta.file_type().is_file())
+            {
+                return Err(RunError::ProtocolViolation(
+                    "params_file must be a regular file inside work_dir",
+                ));
+            }
+            canonical_work_dir.join(file_name)
+        }
+        None => {
+            let default_candidate = work_dir_path.join("params.json");
+            if let Ok(meta) = std::fs::symlink_metadata(&default_candidate)
+                && (meta.file_type().is_symlink() || !meta.file_type().is_file())
+            {
+                return Err(RunError::ProtocolViolation(
+                    "params_file must be a regular file inside work_dir",
+                ));
+            }
+            canonical_work_dir.join("params.json")
+        }
+    };
+    if let Ok(meta) = std::fs::symlink_metadata(&candidate)
+        && (meta.file_type().is_symlink() || !meta.file_type().is_file())
+    {
+        return Err(RunError::ProtocolViolation(
+            "params_file must be a regular file inside work_dir",
+        ));
+    }
+    Ok(candidate)
 }
 
 /// Spills oversized (`> 256 KiB`) or secret-bearing `run_tool` parameters to `<work_dir>/params.json`
@@ -585,10 +685,6 @@ fn prepare_job_request(
     else {
         return Ok((Cow::Borrowed(request), ParamsFileGuard(None)));
     };
-    let work_dir_path = Path::new(work_dir);
-    if work_dir.trim().is_empty() || !work_dir_path.is_dir() {
-        return Ok((Cow::Borrowed(request), ParamsFileGuard(None)));
-    }
     let encoded_len = serde_json::to_vec(params)
         .map_err(|_| RunError::ProtocolViolation("could not encode tool params"))?
         .len();
@@ -598,13 +694,37 @@ fn prepare_job_request(
     if !should_spill {
         return Ok((Cow::Borrowed(request), ParamsFileGuard(None)));
     }
-    let target_path = params_file
-        .clone()
-        .unwrap_or_else(|| work_dir_path.join("params.json"));
+
+    if work_dir.trim().is_empty() || work_dir.contains('\0') {
+        return Err(RunError::ProtocolViolation(
+            "work_dir is required when spilling tool params",
+        ));
+    }
+    let work_dir_path = Path::new(work_dir);
+    let work_dir_meta = std::fs::symlink_metadata(work_dir_path).map_err(|_| {
+        RunError::ProtocolViolation("work_dir does not exist or is not a directory")
+    })?;
+    if work_dir_meta.file_type().is_symlink() || !work_dir_meta.file_type().is_dir() {
+        return Err(RunError::ProtocolViolation(
+            "work_dir must be a real directory",
+        ));
+    }
+    let canonical_work_dir = std::fs::canonicalize(work_dir_path).map_err(RunError::Io)?;
+
+    let target_path =
+        resolve_confined_params_file(params_file.as_deref(), work_dir_path, &canonical_work_dir)?;
     let inline_is_empty = params.as_object().is_some_and(serde_json::Map::is_empty);
     if !inline_is_empty || !target_path.exists() {
         write_private_params_file(&target_path, params)?;
     } else {
+        let meta = std::fs::symlink_metadata(&target_path).map_err(|_| {
+            RunError::ProtocolViolation("params_file must be a regular file inside work_dir")
+        })?;
+        if meta.file_type().is_symlink() || !meta.file_type().is_file() {
+            return Err(RunError::ProtocolViolation(
+                "params_file must be a regular file inside work_dir",
+            ));
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

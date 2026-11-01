@@ -342,3 +342,214 @@ fn v2_describe_and_warm_session_rejection_work() {
     assert!(matches!(err, RunError::ProtocolViolation(_)), "{err:?}");
     pool.shutdown();
 }
+
+#[test]
+fn params_file_outside_work_dir_or_symlink_is_refused_and_missing_work_dir_fails_closed() {
+    let workspace = Workspace::new().expect("create workspace");
+    let command = v2_engine_command("qpdf");
+    let outside_dir = tempfile::tempdir().expect("create outside tempdir");
+    let victim_file = outside_dir.path().join("victim.json");
+    fs::write(&victim_file, b"keep-me-intact").expect("write victim file");
+
+    // 1. Caller-supplied params_file outside work_dir is refused without touching or deleting the file.
+    let mut outside_req = make_run_tool_request(&workspace, json!({}), Limits::local());
+    if let RequestV2::RunTool {
+        ref mut params_file,
+        ..
+    } = outside_req
+    {
+        *params_file = Some(victim_file.clone());
+    }
+    let err = runner::run_command_v2(&command, &outside_req, CancellationToken::new(), |_| {})
+        .expect_err("params_file outside work_dir must be refused");
+    assert!(
+        matches!(err, RunError::ProtocolViolation(_)),
+        "expected ProtocolViolation, got {err:?}"
+    );
+    assert_eq!(
+        fs::read_to_string(&victim_file).expect("victim file must still exist"),
+        "keep-me-intact"
+    );
+
+    // 2. Caller-supplied params_file with parent-directory traversal is refused.
+    let mut traversal_req = make_run_tool_request(&workspace, json!({}), Limits::local());
+    if let RequestV2::RunTool {
+        ref mut params_file,
+        ..
+    } = traversal_req
+    {
+        *params_file = Some(workspace.work_dir().join("../victim.json"));
+    }
+    let err_traversal =
+        runner::run_command_v2(&command, &traversal_req, CancellationToken::new(), |_| {})
+            .expect_err("params_file traversal must be refused");
+    assert!(matches!(err_traversal, RunError::ProtocolViolation(_)));
+
+    // 3. Pre-existing symlink at <work_dir>/params.json is refused without overwriting or deleting target.
+    #[cfg(unix)]
+    {
+        let symlink_path = workspace.work_dir().join("params.json");
+        std::os::unix::fs::symlink(&victim_file, &symlink_path)
+            .expect("create params.json symlink");
+        let secret_req = make_run_tool_request(
+            &workspace,
+            json!({ "user_password": "secret-password" }),
+            Limits::local(),
+        );
+        let err_symlink =
+            runner::run_command_v2(&command, &secret_req, CancellationToken::new(), |_| {})
+                .expect_err("symlink at params.json must be refused");
+        assert!(
+            matches!(err_symlink, RunError::ProtocolViolation(_)),
+            "expected ProtocolViolation, got {err_symlink:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(&victim_file).expect("victim target must remain intact"),
+            "keep-me-intact"
+        );
+        let _ = fs::remove_file(&symlink_path);
+    }
+
+    // 4. Secret-bearing params with empty or missing work_dir fail closed instead of falling back to inline.
+    let mut empty_work_dir_req = make_run_tool_request(
+        &workspace,
+        json!({ "user_password": "secret-password" }),
+        Limits::local(),
+    );
+    if let RequestV2::RunTool {
+        ref mut work_dir, ..
+    } = empty_work_dir_req
+    {
+        *work_dir = String::new();
+    }
+    let err_empty_wd = runner::run_command_v2(
+        &command,
+        &empty_work_dir_req,
+        CancellationToken::new(),
+        |_| {},
+    )
+    .expect_err("secret params without work_dir must fail closed");
+    assert!(
+        matches!(err_empty_wd, RunError::ProtocolViolation(_)),
+        "expected ProtocolViolation, got {err_empty_wd:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn engine_artifact_symlink_escape_and_size_overflow_are_rejected() {
+    use ariad_core::tools::{InputArity, Tier, ToolGroup, ToolRuntime, ToolSpec};
+    use ariad_host::tools::{InputRef, OutputTarget, ToolError, ToolRequest, run_tool};
+
+    fn empty_test_schema() -> schemars::Schema {
+        serde_json::from_value(json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "additionalProperties": false
+        }))
+        .expect("empty test schema")
+    }
+
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let input_pdf = tmp.path().join("in.pdf");
+    fs::write(&input_pdf, b"%PDF-1.7\n1 0 obj <<>> endobj\n").expect("write input pdf");
+
+    let outside_secret = tmp.path().join("outside_secret.json");
+    fs::write(
+        &outside_secret,
+        b"{\"secret\":\"DO_NOT_READ_OUTSIDE_ARTIFACT\"}",
+    )
+    .expect("write outside secret");
+
+    let json_tool_spec = ToolSpec {
+        id: "pdf.validate_pdfa",
+        version: "1",
+        group: ToolGroup::Security,
+        summary: "Validate PDF/A compliance.",
+        inputs: InputArity::One,
+        input_formats: &["pdf"],
+        output_format: "json",
+        tier: Tier::Free,
+        runtimes: &[ToolRuntime::Local],
+        engine: "qpdf",
+        params_schema: empty_test_schema,
+        secret_params: &[],
+    };
+
+    // 1. Symlink artifact inside <ws>/out pointing to an outside file is refused and never read.
+    let symlink_script = format!(
+        r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+ln -s "{outside}" "$ws_out/report.json"
+printf '{{"type":"artifact","path":"%s/report.json","format":"json"}}\n' "$ws_out"
+printf '%s\n' '{{"type":"result","ok":true}}'
+"#,
+        outside = outside_secret.display()
+    );
+    let symlink_cmd = EngineCommand {
+        engine: "qpdf".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(symlink_script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+    let symlink_req = ToolRequest::new(
+        "pdf.validate_pdfa",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::None,
+    )
+    .with_spec(json_tool_spec)
+    .with_engine_command(symlink_cmd);
+
+    let err_symlink =
+        run_tool(&symlink_req).expect_err("symlink artifact in <ws>/out must be rejected");
+    assert!(
+        matches!(err_symlink, ToolError::EngineFailure(_)),
+        "expected EngineFailure, got {err_symlink:?}"
+    );
+    assert!(
+        !err_symlink
+            .to_string()
+            .contains("DO_NOT_READ_OUTSIDE_ARTIFACT"),
+        "outside file contents must never be read or echoed"
+    );
+
+    // 2. Regular artifact exceeding limits.max_decompressed_bytes is rejected with LimitExceeded before hashing.
+    let oversize_script = r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+dd if=/dev/zero of="$ws_out/big.json" bs=1024 count=4 2>/dev/null
+printf '{"type":"artifact","path":"%s/big.json","format":"json"}\n' "$ws_out"
+printf '%s\n' '{"type":"result","ok":true}'
+"#;
+    let oversize_cmd = EngineCommand {
+        engine: "qpdf".to_owned(),
+        program: PathBuf::from("/bin/sh"),
+        args: vec![OsString::from("-c"), OsString::from(oversize_script)],
+        env: Vec::new(),
+        install_root: None,
+        launcher: None,
+        sandbox: Some(SandboxMode::Off),
+    };
+    let mut small_limits = Limits::local();
+    small_limits.max_decompressed_bytes = 1024;
+    let oversize_req = ToolRequest::new(
+        "pdf.validate_pdfa",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::None,
+    )
+    .with_spec(json_tool_spec)
+    .with_limits(small_limits)
+    .with_engine_command(oversize_cmd);
+
+    let err_oversize =
+        run_tool(&oversize_req).expect_err("oversized artifact must fail with LimitExceeded");
+    assert!(
+        matches!(err_oversize, ToolError::LimitExceeded),
+        "expected LimitExceeded, got {err_oversize:?}"
+    );
+    assert_eq!(err_oversize.exit_code(), 4);
+}

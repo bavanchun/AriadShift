@@ -66,7 +66,7 @@ impl SecretRef {
             return Err(SecretValidationError::InvalidSecretRef {
                 field: "$secret".to_owned(),
                 reason: format!(
-                    "secret handle '{id}' must start with '{SECRET_HANDLE_PREFIX}' and contain only ASCII alphanumeric, '_', or '-' characters"
+                    "secret handle must start with '{SECRET_HANDLE_PREFIX}' and contain only ASCII alphanumeric, '_', or '-' characters"
                 ),
             });
         }
@@ -90,13 +90,20 @@ impl SecretRef {
                 channel: SecretSource::Recipe,
             });
         };
-        if obj.len() != 1 || !obj.contains_key("$secret") {
+        let Some((_, secret_val)) = obj.iter().find(|(k, _)| k.eq_ignore_ascii_case("$secret"))
+        else {
             return Err(SecretValidationError::InvalidSecretRef {
                 field: field.to_owned(),
                 reason: "expected an object of the form {\"$secret\": \"prompt\"} or {\"$secret\": \"sec_<id>\"}".to_owned(),
             });
-        }
-        let Some(secret_str) = obj.get("$secret").and_then(Value::as_str) else {
+        };
+        if obj.len() != 1 {
+            return Err(SecretValidationError::InvalidSecretRef {
+                field: field.to_owned(),
+                reason: "expected an object of the form {\"$secret\": \"prompt\"} or {\"$secret\": \"sec_<id>\"}".to_owned(),
+            });
+        };
+        let Some(secret_str) = secret_val.as_str() else {
             return Err(SecretValidationError::InvalidSecretRef {
                 field: field.to_owned(),
                 reason: "\"$secret\" value must be a string".to_owned(),
@@ -115,7 +122,7 @@ impl SecretRef {
         Err(SecretValidationError::InvalidSecretRef {
             field: field.to_owned(),
             reason: format!(
-                "unsupported \"$secret\" target {secret:?}; expected \"prompt\" or a \"{SECRET_HANDLE_PREFIX}<id>\" handle"
+                "unsupported \"$secret\" target; expected \"prompt\" or a \"{SECRET_HANDLE_PREFIX}<id>\" handle"
             ),
         })
     }
@@ -198,7 +205,8 @@ pub enum SecretValidationError {
     },
     /// A [`SecretRef`] variant is not permitted on the given [`SecretSource`].
     #[error(
-        "parameter '{field}' is marked x-ariad-secret and cannot use {reference:?} in {channel} input"
+        "parameter '{field}' is marked x-ariad-secret and cannot use {} in {channel} input",
+        format_secret_ref_kind(.reference)
     )]
     UnsupportedChannel {
         /// Secret parameter name.
@@ -216,6 +224,13 @@ pub enum SecretValidationError {
         /// Validation failure explanation.
         reason: String,
     },
+}
+
+const fn format_secret_ref_kind(reference: &SecretRef) -> &'static str {
+    match reference {
+        SecretRef::Prompt => "{\"$secret\": \"prompt\"}",
+        SecretRef::Handle(_) => "a secret handle",
+    }
 }
 
 fn format_literal_error(field: &str, source: SecretSource) -> String {
@@ -274,8 +289,9 @@ pub fn validate_secret_params(
     validate_secret_fields(spec.secret_params, params, source)
 }
 
-/// Validates that every field listed in `secret_params` (if present and non-null in `params`)
-/// obeys the channel rules for `source`.
+/// Validates that every field listed in `secret_params` (if present and non-null in `params`,
+/// including inside nested objects and arrays, matched case-insensitively) obeys the channel
+/// rules for `source`.
 pub fn validate_secret_fields(
     secret_params: &[&str],
     params: &Value,
@@ -284,32 +300,121 @@ pub fn validate_secret_fields(
     if source == SecretSource::Resolved {
         return Ok(());
     }
-    let Some(obj) = params.as_object() else {
-        return Ok(());
-    };
+    validate_secret_value_recursive(secret_params, None, params, source)
+}
 
-    for &field in secret_params {
-        if let Some(val) = obj.get(field) {
-            if val.is_null() {
-                continue;
+fn is_secret_tag_object(obj: &serde_json::Map<String, Value>) -> bool {
+    obj.keys().any(|k| k.eq_ignore_ascii_case("$secret"))
+}
+
+fn validate_secret_value_recursive(
+    secret_params: &[&str],
+    current_field: Option<&str>,
+    value: &Value,
+    source: SecretSource,
+) -> Result<(), SecretValidationError> {
+    match value {
+        Value::Null => Ok(()),
+        Value::Object(obj) => {
+            if is_secret_tag_object(obj) {
+                let field_name = current_field.unwrap_or("$secret");
+                validate_single_secret_value(field_name, value, source)?;
+                return Ok(());
             }
-            validate_single_secret_value(field, val, source)?;
+            if let Some(secret_field) = current_field
+                && let Some(&canonical) = secret_params
+                    .iter()
+                    .find(|sp| sp.eq_ignore_ascii_case(secret_field))
+            {
+                for (k, v) in obj {
+                    validate_secret_value_recursive(secret_params, Some(k.as_str()), v, source)?;
+                }
+                return Err(SecretValidationError::LiteralSecretNotAllowed {
+                    field: canonical.to_owned(),
+                    channel: source,
+                });
+            }
+            for (field, val) in obj {
+                if val.is_null() {
+                    continue;
+                }
+                if let Some(&canonical) = secret_params
+                    .iter()
+                    .find(|sp| sp.eq_ignore_ascii_case(field))
+                {
+                    if val.as_object().is_some_and(is_secret_tag_object) {
+                        validate_single_secret_value(canonical, val, source)?;
+                    } else {
+                        if val.is_object() || val.is_array() {
+                            validate_secret_value_recursive(
+                                secret_params,
+                                Some(canonical),
+                                val,
+                                source,
+                            )?;
+                        }
+                        return Err(SecretValidationError::LiteralSecretNotAllowed {
+                            field: canonical.to_owned(),
+                            channel: source,
+                        });
+                    }
+                } else if val.as_object().is_some_and(is_secret_tag_object) {
+                    validate_single_secret_value(field, val, source)?;
+                } else {
+                    validate_secret_value_recursive(
+                        secret_params,
+                        Some(field.as_str()),
+                        val,
+                        source,
+                    )?;
+                }
+            }
+            Ok(())
+        }
+        Value::Array(items) => {
+            for item in items {
+                if item.is_null() {
+                    continue;
+                }
+                if let Some(secret_field) = current_field
+                    && let Some(&canonical) = secret_params
+                        .iter()
+                        .find(|sp| sp.eq_ignore_ascii_case(secret_field))
+                {
+                    if item.as_object().is_some_and(is_secret_tag_object) {
+                        validate_single_secret_value(canonical, item, source)?;
+                    } else {
+                        validate_secret_value_recursive(
+                            secret_params,
+                            Some(canonical),
+                            item,
+                            source,
+                        )?;
+                        return Err(SecretValidationError::LiteralSecretNotAllowed {
+                            field: canonical.to_owned(),
+                            channel: source,
+                        });
+                    }
+                } else {
+                    validate_secret_value_recursive(secret_params, current_field, item, source)?;
+                }
+            }
+            Ok(())
+        }
+        _ => {
+            if let Some(secret_field) = current_field
+                && let Some(&canonical) = secret_params
+                    .iter()
+                    .find(|sp| sp.eq_ignore_ascii_case(secret_field))
+            {
+                return Err(SecretValidationError::LiteralSecretNotAllowed {
+                    field: canonical.to_owned(),
+                    channel: source,
+                });
+            }
+            Ok(())
         }
     }
-
-    // Also validate any explicit `{"$secret": ...}` object placed on any other field.
-    for (field, val) in obj {
-        if secret_params.contains(&field.as_str()) {
-            continue;
-        }
-        if let Some(inner) = val.as_object()
-            && inner.contains_key("$secret")
-        {
-            validate_single_secret_value(field, val, source)?;
-        }
-    }
-
-    Ok(())
 }
 
 /// Validates a single secret parameter value against `source`.
@@ -324,12 +429,12 @@ pub fn validate_single_secret_value(
             channel: source,
         });
     };
-    if obj.len() != 1 || !obj.contains_key("$secret") {
+    if !is_secret_tag_object(obj) {
         return Err(SecretValidationError::LiteralSecretNotAllowed {
             field: field.to_owned(),
             channel: source,
         });
-    }
+    };
     let secret_ref = SecretRef::from_json_value(field, value)?;
     match (source, &secret_ref) {
         (SecretSource::Recipe, SecretRef::Prompt) => Ok(secret_ref),
@@ -398,5 +503,36 @@ mod tests {
         assert!(validate_secret_fields(&["password"], &handle, SecretSource::Mcp).is_ok());
         assert!(validate_secret_fields(&["password"], &handle, SecretSource::Recipe).is_err());
         assert!(validate_secret_fields(&["password"], &handle, SecretSource::Argv).is_err());
+    }
+
+    #[test]
+    fn nested_and_case_insensitive_secrets_and_bad_secret_tags_never_echo_value() {
+        let secret_val = "s3cr3t-never-echo-987654";
+        let nested_cases = [
+            json!({ "nested": { "password": secret_val } }),
+            json!({ "nested": { "PASSWORD": secret_val } }),
+            json!({ "items": [{ "password": secret_val }] }),
+            json!({ "password": [secret_val] }),
+            json!({ "password": { "$secret": secret_val } }),
+            json!({ "nested": { "password": { "$secret": secret_val } } }),
+            json!({ "items": [{ "$secret": secret_val }] }),
+        ];
+
+        for source in [SecretSource::Recipe, SecretSource::Argv, SecretSource::Mcp] {
+            for payload in &nested_cases {
+                let err = validate_secret_fields(&["password"], payload, source).unwrap_err();
+                let msg = err.to_string();
+                assert!(
+                    !msg.contains(secret_val),
+                    "secret value leaked in error message for {payload} on {source}: {msg}"
+                );
+            }
+        }
+
+        let handle_err = SecretRef::handle(secret_val).unwrap_err().to_string();
+        assert!(
+            !handle_err.contains(secret_val),
+            "handle validation error must not echo caller input: {handle_err}"
+        );
     }
 }
