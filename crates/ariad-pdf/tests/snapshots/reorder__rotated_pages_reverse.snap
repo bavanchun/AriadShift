@@ -33,8 +33,7 @@ expression: rot_info
       "paper": "A4",
       "orientation": "portrait",
       "rotation": 90,
-      "blank": false,
-      "inherited_rotation": true
+      "blank": false
     },
     {
       "page": 4,
@@ -51,8 +50,8 @@ expression: rot_info
     "author": "AriadShift contributors",
     "creator": "AriadShift fixture generator",
     "producer": "AriadShift fixture generator",
-    "creation_date": "D:19821118233710Z",
-    "mod_date": "D:19821118233710Z",
+    "creation_date": "D:20011130044044Z",
+    "mod_date": "D:20011130044044Z",
     "language": "en"
   },
   "has_forms": false,

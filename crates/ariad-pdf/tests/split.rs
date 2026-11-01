@@ -258,3 +258,118 @@ fn split_strips_catalog_embedded_files_and_af_from_parts() {
         );
     }
 }
+
+mod output_caps {
+    use ariad_core::reader::pdf::ReadError;
+    use lopdf::{Document, Object, Stream, dictionary};
+
+    use super::*;
+
+    /// Builds `page_count` pages that all reference one shared, incompressible stream of
+    /// `shared_bytes` bytes through their `/Resources`.
+    fn doc_with_shared_resource(page_count: usize, shared_bytes: usize) -> Vec<u8> {
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let mut state = 0x2545_f491_u32;
+        let payload: Vec<u8> = (0..shared_bytes)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state >> 24) as u8
+            })
+            .collect();
+        let shared = doc.add_object(Stream::new(dictionary! { "Subtype" => "Image" }, payload));
+        let mut kids = Vec::new();
+        for n in 1..=page_count {
+            let content = doc.add_object(Stream::new(
+                dictionary! {},
+                format!("BT (Page {n}) Tj ET").into_bytes(),
+            ));
+            kids.push(Object::Reference(doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Contents" => content,
+                "Resources" => dictionary! {
+                    "XObject" => dictionary! { "Shared" => shared },
+                },
+            })));
+        }
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => kids,
+                "Count" => i64::try_from(page_count).unwrap(),
+            }),
+        );
+        let cat_id = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", cat_id);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).expect("save synthetic pdf");
+        bytes
+    }
+
+    #[test]
+    fn ranges_over_the_cumulative_page_cap_fail_before_building_parts() {
+        let input = InputDoc::new("big", doc_with_shared_resource(1_000, 16));
+        // 11 ranges of 1,000 pages each: every range is below the per-range cap, the total is not.
+        let ranges: Vec<&str> = vec!["1-1000"; 11];
+        let Err(err) = run_split(&[input], &json!({ "mode": "ranges", "ranges": ranges })) else {
+            panic!("11,000 cumulative output pages must be refused");
+        };
+        match err {
+            PdfError::LimitExceeded(ReadError::TooManyPages { actual, limit }) => {
+                assert_eq!(limit, 10_000);
+                assert_eq!(actual, 11_000);
+            }
+            other => panic!("expected TooManyPages, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn every_one_with_large_shared_resource_exhausts_the_decode_budget() {
+        let bytes = doc_with_shared_resource(24, 256 * 1024);
+        let mut limits = Limits::local();
+        limits.max_decompressed_bytes = 1024 * 1024;
+        let constrained = InputDoc::with_limits("shared", bytes.clone(), limits);
+        let Err(err) = run_split(&[constrained], &json!({ "mode": "every", "every": 1 })) else {
+            panic!("24 parts of ~256 KiB must exceed a 1 MiB budget");
+        };
+        assert!(
+            matches!(
+                err,
+                PdfError::LimitExceeded(ReadError::DecompressedTooLarge { .. })
+            ),
+            "expected the decode budget error, got {err:?}"
+        );
+
+        // The same document splits normally under the default limits.
+        let ok = run_split(
+            &[InputDoc::new("shared", bytes)],
+            &json!({ "mode": "every", "every": 1 }),
+        )
+        .expect("split under default limits");
+        assert_eq!(ok.artifacts.len(), 24);
+    }
+
+    #[test]
+    fn size_mode_charges_serialized_parts_against_the_decode_budget() {
+        let bytes = doc_with_shared_resource(24, 256 * 1024);
+        let mut limits = Limits::local();
+        limits.max_decompressed_bytes = 1024 * 1024;
+        let constrained = InputDoc::with_limits("shared", bytes, limits);
+        let Err(err) = run_split(
+            &[constrained],
+            &json!({ "mode": "size", "max_bytes": 100_000 }),
+        ) else {
+            panic!("one part per page exceeds a 1 MiB budget");
+        };
+        assert!(
+            matches!(
+                err,
+                PdfError::LimitExceeded(ReadError::DecompressedTooLarge { .. })
+            ),
+            "expected the decode budget error, got {err:?}"
+        );
+    }
+}
