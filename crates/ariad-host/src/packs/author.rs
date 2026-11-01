@@ -70,6 +70,7 @@ pub fn generate_manifest(request: &ManifestRequest) -> Result<Manifest, PackErro
             description: String::new(),
             license: "NOASSERTION".to_owned(),
             requires_ashift: format!(">={}", env!("CARGO_PKG_VERSION")),
+            engine_protocol: None,
             notices: Vec::new(),
             targets: Vec::new(),
         },
@@ -189,6 +190,60 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn request_with_base(
+        directory: &Path,
+        name: &str,
+        engine_protocol: Option<&str>,
+    ) -> ManifestRequest {
+        let engine = directory.join("engine");
+        fs::write(&engine, b"binary").unwrap();
+        let protocol = engine_protocol
+            .map(|value| format!("engine_protocol = \"{value}\"\n"))
+            .unwrap_or_default();
+        let base = directory.join("base.toml");
+        fs::write(
+            &base,
+            format!(
+                "schema = \"ariad-pack/1\"\nname = \"{name}\"\nversion = \"0.1.0\"\n\
+                 license = \"MIT\"\nrequires_ashift = \">=0.1.0\"\n{protocol}targets = []\n"
+            ),
+        )
+        .unwrap();
+        ManifestRequest {
+            name: name.to_owned(),
+            version: "0.1.0".to_owned(),
+            target: "x86_64-unknown-linux-gnu".to_owned(),
+            base: Some(base),
+            entrypoint: vec!["engine".to_owned()],
+            components: vec![(None, engine)],
+            ..ManifestRequest::default()
+        }
+    }
+
+    #[test]
+    fn engine_protocol_in_the_base_manifest_is_emitted() {
+        let directory = tempfile::tempdir().unwrap();
+        let request = request_with_base(directory.path(), "pdfium", Some("ariad-engine/2"));
+        let manifest = generate_manifest(&request).expect("matching protocol");
+        assert_eq!(manifest.engine_protocol.as_deref(), Some("ariad-engine/2"));
+        let text = manifest.to_toml().unwrap();
+        assert!(
+            text.contains("engine_protocol = \"ariad-engine/2\""),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn engine_protocol_mismatch_is_refused_when_generating() {
+        let directory = tempfile::tempdir().unwrap();
+        let request = request_with_base(directory.path(), "pdfium", None);
+        let error = generate_manifest(&request).expect_err("v2 engine without the field");
+        assert!(error.to_string().contains("engine_protocol"), "{error}");
+        let docling = request_with_base(directory.path(), "docling", None);
+        let manifest = generate_manifest(&docling).expect("docling stays on ariad-engine/1");
+        assert_eq!(manifest.engine_protocol, None);
+    }
 
     #[test]
     fn component_names_drop_archive_extensions() {
