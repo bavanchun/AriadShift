@@ -15,6 +15,7 @@ import {
   consentPage,
   PAGE_HEADERS,
   type PageOptions,
+  pageHeaders,
   signInPage,
 } from "./pages.ts";
 
@@ -55,6 +56,53 @@ export const PUBLIC_OAUTH_PATHS: ReadonlySet<string> = new Set([
   `${BASE_PATH}/oauth2/userinfo`,
   `${BASE_PATH}/jwks`,
 ]);
+
+/** The email and password sign-up endpoint. */
+export const SIGN_UP_EMAIL_PATH = `${BASE_PATH}/sign-up/email`;
+
+const FORBIDDEN_SIGN_UP_RETURN_FIELDS: ReadonlySet<string> = new Set([
+  "return_to",
+  "returnTo",
+  "return_url",
+  "returnUrl",
+  "redirect_to",
+  "redirectTo",
+  "redirect_uri",
+  "redirectUri",
+  "callbackURL",
+  "callbackUrl",
+  "callback_url",
+  "next",
+  "continue",
+  "goto",
+  "url",
+  "target",
+  "destination",
+]);
+
+function isValidSignedOAuthQuery(raw: unknown): boolean {
+  if (typeof raw !== "string" || raw.trim() === "") return false;
+  const params = new URLSearchParams(raw);
+  if (!params.get("sig")) return false;
+  const signed = new Set(params.getAll("ba_param"));
+  if (signed.size === 0) return false;
+  if (!signed.has("client_id") || !signed.has("redirect_uri")) return false;
+  if (!params.get("client_id") || !params.get("redirect_uri")) return false;
+  for (const key of params.keys()) {
+    if (FORBIDDEN_SIGN_UP_RETURN_FIELDS.has(key) && key !== "redirect_uri") {
+      return false;
+    }
+    if (key !== "sig" && key !== "ba_param" && !signed.has(key)) {
+      return false;
+    }
+  }
+  for (const name of new Set(params.keys())) {
+    if (name !== "resource" && name !== "ba_param" && params.getAll(name).length > 1) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export interface AppDeps {
   config: Pick<AuthServiceConfig, "trustedOrigins" | "trustedClientIpHeader"> &
@@ -201,9 +249,88 @@ export function createApp({ config, handler, metadata, pages, peerAddress }: App
       onError: (c) => c.json({ message: "request body too large" }, 413),
     }),
   );
-  app.on(["GET", "POST"], routes, (c) => {
-    const address = clientAddress(c.req.raw.headers, peerAddress(c), config.trustedClientIpHeader);
-    return handler(forwarded(c.req.raw, normalizeOAuthPath(c.req.path), address));
+  app.on(["GET", "POST"], routes, async (c) => {
+    const normalizedPath = normalizeOAuthPath(c.req.path);
+    let rawRequest = c.req.raw;
+    if (c.req.method === "POST" && normalizedPath === SIGN_UP_EMAIL_PATH) {
+      if (new URL(rawRequest.url).search !== "") {
+        return c.json(
+          { error: "invalid_request", message: "query parameters are not allowed on sign-up" },
+          400,
+        );
+      }
+      const mediaType = rawRequest.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+      const text = await rawRequest.text();
+      if (mediaType === "application/x-www-form-urlencoded") {
+        const params = new URLSearchParams(text);
+        for (const key of params.keys()) {
+          if (FORBIDDEN_SIGN_UP_RETURN_FIELDS.has(key)) {
+            return c.json(
+              {
+                error: "invalid_request",
+                message: "return URL parameters are not allowed on sign-up",
+              },
+              400,
+            );
+          }
+        }
+        if (params.has("oauth_query")) {
+          const oauthQueries = params.getAll("oauth_query");
+          if (oauthQueries.length !== 1 || !isValidSignedOAuthQuery(oauthQueries[0])) {
+            return c.json(
+              {
+                error: "invalid_request",
+                message: "invalid oauth_query",
+              },
+              400,
+            );
+          }
+        }
+      } else if (mediaType === "application/json") {
+        if (text.trim() !== "") {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            return c.json({ error: "invalid_request", message: "invalid JSON body" }, 400);
+          }
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return c.json({ error: "invalid_request", message: "invalid JSON body" }, 400);
+          }
+          const record = parsed as Record<string, unknown>;
+          for (const key of Object.keys(record)) {
+            if (FORBIDDEN_SIGN_UP_RETURN_FIELDS.has(key)) {
+              return c.json(
+                {
+                  error: "invalid_request",
+                  message: "return URL parameters are not allowed on sign-up",
+                },
+                400,
+              );
+            }
+          }
+          if ("oauth_query" in record && record.oauth_query !== undefined) {
+            if (!isValidSignedOAuthQuery(record.oauth_query)) {
+              return c.json(
+                {
+                  error: "invalid_request",
+                  message: "invalid oauth_query",
+                },
+                400,
+              );
+            }
+          }
+        }
+      } else {
+        return c.json(
+          { error: "invalid_request", message: "unsupported content-type on sign-up" },
+          415,
+        );
+      }
+      rawRequest = new Request(rawRequest, { body: text });
+    }
+    const address = clientAddress(rawRequest.headers, peerAddress(c), config.trustedClientIpHeader);
+    return handler(forwarded(rawRequest, normalizedPath, address));
   });
 
   if (metadata && !config.oauthDisabledReason) {
@@ -217,7 +344,7 @@ export function createApp({ config, handler, metadata, pages, peerAddress }: App
       });
     }
 
-    app.get(OAUTH_SIGN_IN_PATH, (c) => c.html(signInPage(pages), 200, PAGE_HEADERS));
+    app.get(OAUTH_SIGN_IN_PATH, (c) => c.html(signInPage(pages), 200, pageHeaders(pages)));
     app.get(OAUTH_CONSENT_PATH, (c) => c.html(consentPage(), 200, PAGE_HEADERS));
     app.get(`${ASSET_PATH}/:name`, (c) => {
       const name = c.req.param("name");

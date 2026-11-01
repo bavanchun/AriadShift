@@ -45,7 +45,9 @@ const SITEVERIFY_TIMEOUT_MS = 5_000;
 function signupChallenge(config: AuthServiceConfig): BetterAuthPlugin["onRequest"] {
   if (!config.turnstileSecret) return undefined;
   const secret = config.turnstileSecret;
-  const hostnames = new Set(config.trustedOrigins.map((origin) => new URL(origin).hostname));
+  const hostnames = new Set(
+    [config.baseUrl, ...config.trustedOrigins].map((origin) => new URL(origin).hostname),
+  );
   return async (request) => {
     const path = new URL(request.url).pathname.replace(/\/{2,}/g, "/").replace(/\/+$/, "");
     if (request.method !== "POST" || path !== `${BASE_PATH}/sign-up/email`) return;
@@ -417,6 +419,7 @@ export function buildAuthOptions(
               // even when a client resolves them against another base.
               loginPage: `${config.baseUrl}${OAUTH_SIGN_IN_PATH}`,
               consentPage: `${config.baseUrl}${OAUTH_CONSENT_PATH}`,
+              signup: { page: `${config.baseUrl}${OAUTH_SIGN_IN_PATH}` },
               scopes: OAUTH_SCOPES,
               grantTypes: [...OAUTH_GRANT_TYPES],
               // RFC 8707: the only resource tokens can be issued for. A request

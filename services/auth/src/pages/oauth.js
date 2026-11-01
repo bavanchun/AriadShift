@@ -7,33 +7,84 @@
 // is the consent page or the client's redirect URI with the code.
 
 const API = "/api/auth";
+const TURNSTILE_SCRIPT_URL =
+  "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 const query = new URLSearchParams(window.location.search);
 const status = document.getElementById("status");
 
-/** The signed parameters only, as Better Auth's own client sends them. */
-function signedQuery() {
-  if (!query.has("sig")) return undefined;
-  const signed = new Set(query.getAll("ba_param"));
+/**
+ * Free-form return or redirect parameters that must never be accepted on the
+ * OAuth sign-in/sign-up page. Continuation uses only the provider-signed
+ * authorization parameters.
+ */
+const FORBIDDEN_RETURN_PARAMS = new Set([
+  "return_to",
+  "returnTo",
+  "return_url",
+  "returnUrl",
+  "redirect_to",
+  "redirectTo",
+  "callbackURL",
+  "callbackUrl",
+  "callback_url",
+  "next",
+  "continue",
+  "goto",
+  "url",
+  "target",
+  "destination",
+]);
+
+/**
+ * Core OAuth 2.1 authorization parameters that must be covered by `ba_param`
+ * whenever they appear in the query string.
+ */
+const CORE_OAUTH_PARAMS = new Set([
+  "response_type",
+  "client_id",
+  "redirect_uri",
+  "scope",
+  "state",
+  "code_challenge",
+  "code_challenge_method",
+]);
+
+/**
+ * Validated, provider-signed authorization parameters from `params`, or
+ * `undefined` when the signature metadata is missing or tampered with.
+ */
+function signedDetailsFor(params) {
+  if (!params.has("sig")) return undefined;
+  const signed = new Set(params.getAll("ba_param"));
   if (signed.size === 0) return undefined;
+  for (const key of params.keys()) {
+    if (FORBIDDEN_RETURN_PARAMS.has(key)) return undefined;
+    if (CORE_OAUTH_PARAMS.has(key) && !signed.has(key)) return undefined;
+  }
   const out = new URLSearchParams();
-  for (const [key, value] of query) {
+  for (const [key, value] of params) {
     if (key === "sig" || key === "ba_param" || signed.has(key)) out.append(key, value);
   }
-  return out.toString();
+  // Resource indicators and the list of covered parameter names may repeat.
+  for (const name of new Set(out.keys())) {
+    if (name !== "resource" && name !== "ba_param" && out.getAll(name).length > 1) {
+      return undefined;
+    }
+  }
+  if (!out.get("sig") || !out.get("client_id") || !out.get("redirect_uri")) {
+    return undefined;
+  }
+  return out;
+}
+
+/** The signed parameters only, as Better Auth's own client sends them. */
+function signedQuery() {
+  return signedDetailsFor(query)?.toString();
 }
 
 /** Display only the covered fields; the provider verifies their signature. */
 function signedDetails() {
-  const raw = signedQuery();
-  if (!raw) return undefined;
-  const details = new URLSearchParams(raw);
-  // Resource indicators and the list of covered parameter names may repeat.
-  for (const name of new Set(details.keys())) {
-    if (name !== "resource" && name !== "ba_param" && details.getAll(name).length > 1) {
-      return undefined;
-    }
-  }
-  return details.get("sig") ? details : undefined;
+  return signedDetailsFor(query);
 }
 
 /** Native callbacks need their full URI; HTTP callbacks show the origin. */
@@ -55,11 +106,11 @@ function busy(on) {
   for (const button of document.querySelectorAll("button")) button.disabled = on;
 }
 
-async function call(method, path, body) {
+async function call(method, path, body, extraHeaders = {}) {
   const init = {
     method,
     credentials: "same-origin",
-    headers: { accept: "application/json" },
+    headers: { accept: "application/json", ...extraHeaders },
   };
   if (method === "POST") {
     init.headers["content-type"] = "application/json";
@@ -77,7 +128,7 @@ async function call(method, path, body) {
 
 /** Follows a `{ redirect, url }` answer; returns false when there is none. */
 function follow(data) {
-  if (!data || data.redirect !== true || typeof data.url !== "string") return false;
+  if (data?.redirect !== true || typeof data.url !== "string") return false;
   const target = new URL(data.url, window.location.href);
   if (target.protocol === "javascript:" || target.protocol === "data:") return false;
   window.location.assign(target.href);
@@ -156,7 +207,158 @@ async function passkeySignIn() {
 
 function setUpSignIn() {
   const passwordForm = document.getElementById("password-form");
+  const signUpForm = document.getElementById("sign-up-form");
   const twoFactorForm = document.getElementById("two-factor-form");
+  const createAccountButton = document.getElementById("create-account");
+  const signUpSubmit = document.getElementById("sign-up-submit");
+  const turnstileContainer = document.getElementById("turnstile");
+  const heading = document.getElementById("heading");
+  const lead = document.getElementById("lead");
+  const turnstileSiteKey = document.body?.dataset?.turnstileSiteKey?.trim() || "";
+
+  let signingUp = false;
+  let widgetId = null;
+  let captchaToken = "";
+  let captchaFailed = false;
+  let turnstileLoading = null;
+
+  function turnstileActive() {
+    return Boolean(turnstileSiteKey);
+  }
+
+  function syncSignUpSubmit() {
+    if (!signUpSubmit) return;
+    if (!signingUp) return;
+    if (!signedDetails()) {
+      signUpSubmit.disabled = true;
+      return;
+    }
+    if (turnstileActive() && !captchaToken) {
+      signUpSubmit.disabled = true;
+      return;
+    }
+    signUpSubmit.disabled = false;
+  }
+
+  function removeTurnstileWidget() {
+    captchaToken = "";
+    if (widgetId !== null && window.turnstile) {
+      try {
+        window.turnstile.remove(widgetId);
+      } catch {
+        // Ignore removal errors from already-detached widgets.
+      }
+    }
+    widgetId = null;
+  }
+
+  function loadTurnstileScript() {
+    if (window.turnstile) return Promise.resolve(window.turnstile);
+    if (!turnstileSiteKey) return Promise.resolve(null);
+    if (turnstileLoading) return turnstileLoading;
+    turnstileLoading = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = TURNSTILE_SCRIPT_URL;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve(window.turnstile ?? null);
+      script.onerror = () => {
+        turnstileLoading = null;
+        reject(new Error("Bot check could not load. Reload and try again."));
+      };
+      (document.head ?? document.body).append(script);
+    });
+    return turnstileLoading;
+  }
+
+  async function mountTurnstile() {
+    removeTurnstileWidget();
+    captchaFailed = false;
+    if (!turnstileActive()) {
+      if (turnstileContainer) turnstileContainer.hidden = true;
+      syncSignUpSubmit();
+      return;
+    }
+    if (turnstileContainer) turnstileContainer.hidden = false;
+    syncSignUpSubmit();
+    try {
+      const api = await loadTurnstileScript();
+      if (!signingUp) return;
+      if (!api || typeof api.render !== "function") {
+        captchaFailed = true;
+        show("Bot check could not load. Reload and try again.", true);
+        syncSignUpSubmit();
+        return;
+      }
+      widgetId = api.render(turnstileContainer ?? "#turnstile", {
+        sitekey: turnstileSiteKey,
+        action: "signup",
+        callback: (token) => {
+          captchaToken = typeof token === "string" ? token.trim() : "";
+          captchaFailed = !captchaToken;
+          syncSignUpSubmit();
+        },
+        "expired-callback": () => {
+          captchaToken = "";
+          syncSignUpSubmit();
+          show("Bot check expired. Complete the check again.", true);
+        },
+        "error-callback": () => {
+          captchaToken = "";
+          captchaFailed = true;
+          syncSignUpSubmit();
+          show("Bot check failed. Reload and try again.", true);
+        },
+      });
+      syncSignUpSubmit();
+    } catch (error) {
+      captchaToken = "";
+      captchaFailed = true;
+      syncSignUpSubmit();
+      show(error instanceof Error ? error.message : String(error), true);
+    }
+  }
+
+  function setMode(nextSignUp) {
+    signingUp = nextSignUp;
+    show("");
+    twoFactorForm.hidden = true;
+    passwordForm.hidden = signingUp;
+    if (signUpForm) signUpForm.hidden = !signingUp;
+    if (heading) {
+      heading.textContent = signingUp ? "Create your AriadShift account" : "Sign in to AriadShift";
+    }
+    if (lead) {
+      lead.textContent = signingUp
+        ? "An application is asking to use your AriadShift account. Create an account to continue."
+        : "An application is asking to use your AriadShift account. Sign in to continue.";
+    }
+    if (createAccountButton) {
+      createAccountButton.textContent = signingUp
+        ? "Already have an account? Sign in"
+        : "Create an account";
+    }
+    if (signingUp) {
+      if (!signedDetails()) {
+        show("This authorization link is not valid. Start again from your application.", true);
+        if (signUpSubmit) signUpSubmit.disabled = true;
+        return;
+      }
+      void mountTurnstile();
+    } else {
+      removeTurnstileWidget();
+      if (turnstileContainer) turnstileContainer.hidden = true;
+    }
+  }
+
+  createAccountButton?.addEventListener("click", () => {
+    setMode(!signingUp);
+  });
+
+  const prompts = (signedDetails()?.get("prompt") ?? "").split(/\s+/).filter(Boolean);
+  if (createAccountButton && prompts.includes("create")) {
+    setMode(true);
+  }
 
   passwordForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -168,11 +370,58 @@ function setUpSignIn() {
       });
       if (data.twoFactorRedirect) {
         passwordForm.hidden = true;
+        if (signUpForm) signUpForm.hidden = true;
         twoFactorForm.hidden = false;
         twoFactorForm.querySelector("input[name=code]").focus();
         return;
       }
       signedIn(data);
+    });
+  });
+
+  signUpForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const form = new FormData(signUpForm);
+    run(async () => {
+      const requestDetails = signedDetails();
+      const oauthQuery = signedQuery();
+      if (!requestDetails || !oauthQuery) {
+        throw new Error("This authorization link is not valid. Start again from your application.");
+      }
+      if (turnstileActive() && !captchaToken) {
+        throw new Error(
+          captchaFailed
+            ? "Bot check failed. Reload and try again."
+            : "Complete the bot check to create an account.",
+        );
+      }
+      const token = captchaToken;
+      try {
+        const headers = token ? { "x-captcha-response": token } : {};
+        await call(
+          "POST",
+          "/sign-up/email",
+          {
+            name: String(form.get("name") ?? "").trim(),
+            email: String(form.get("email") ?? "").trim(),
+            password: String(form.get("password") ?? ""),
+          },
+          headers,
+        );
+        const continued = await call("POST", "/oauth2/continue", { created: true });
+        if (!follow(continued)) {
+          throw new Error(
+            "Account created, but the authorization could not continue. Start again from your application.",
+          );
+        }
+        show("Account created. Continuing…");
+      } finally {
+        if (signingUp && turnstileActive()) {
+          await mountTurnstile();
+        }
+      }
+    }).finally(() => {
+      syncSignUpSubmit();
     });
   });
 

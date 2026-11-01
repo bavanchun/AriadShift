@@ -47,6 +47,8 @@ export interface AuthServiceConfig {
   oauthDisabledReason: string | undefined;
   /** Optional signup challenge; absent for self-contained local deployments. */
   turnstileSecret?: string;
+  /** Public Turnstile site key paired with turnstileSecret. */
+  turnstileSiteKey?: string;
 }
 
 export class ConfigError extends Error {
@@ -231,6 +233,10 @@ export function parseConfig(env: Env): AuthServiceConfig {
   const firstOrigin = trustedOrigins[0] as string;
   const passkeyRpId = read(env, "AUTH_PASSKEY_RP_ID") ?? new URL(firstOrigin).hostname;
   const turnstileSecret = secretOption(env, "AUTH_TURNSTILE_SECRET");
+  const turnstileSiteKey = read(env, "AUTH_TURNSTILE_SITE_KEY");
+  if (turnstileSecret && !turnstileSiteKey) {
+    throw new ConfigError("AUTH_TURNSTILE_SITE_KEY is required when AUTH_TURNSTILE_SECRET is set");
+  }
 
   return {
     databaseUrl: parseDatabaseUrl(required(env, "DATABASE_URL")),
@@ -254,5 +260,6 @@ export function parseConfig(env: Env): AuthServiceConfig {
     cimdDeniedHosts: parseCimdHosts(env, "AUTH_CIMD_DENIED_HOSTS"),
     oauthDisabledReason,
     ...(turnstileSecret ? { turnstileSecret } : {}),
+    ...(turnstileSiteKey ? { turnstileSiteKey } : {}),
   };
 }

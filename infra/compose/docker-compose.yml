@@ -191,6 +191,7 @@ services:
       # Account creation is an explicit opt-in; password email is unverified.
       AUTH_ALLOW_SIGN_UP: ${AUTH_ALLOW_SIGN_UP:-false}
       AUTH_TURNSTILE_SECRET: ${ARIAD_TURNSTILE_SECRET:-}
+      AUTH_TURNSTILE_SITE_KEY: ${ARIAD_TURNSTILE_SITE_KEY:-}
       # LAN HTTP is an explicit opt-in and always disables remote MCP OAuth.
       AUTH_ALLOW_INSECURE_HTTP: ${AUTH_ALLOW_INSECURE_HTTP:-false}
       AUTH_CIMD_ENABLED: ${AUTH_CIMD_ENABLED:-false}
