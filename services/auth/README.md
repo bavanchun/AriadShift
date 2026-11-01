@@ -96,7 +96,7 @@ Discovery, registration, token, revocation, UserInfo and JWKS answer CORS reques
 
 Registration has no separate upload deadline in its middleware. Slow uploads
 through the Node HTTP/1 entry point rely on
-[`server.requestTimeout`](https://nodejs.org/download/release/v24.21.0/docs/api/http.html#serverrequesttimeout),
+[`server.requestTimeout`](https://nodejs.org/download/release/v26.13.0/docs/api/http.html#serverrequesttimeout),
 which is 300,000 ms (five minutes) in the pinned runtime; `src/main.ts` does
 not override it. A reverse proxy may impose a shorter timeout. The token
 provider deadline below starts only after its bounded body has been read.

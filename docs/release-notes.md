@@ -29,6 +29,9 @@ Preview of the PDF suite. `ashift` gains typed document tools: 25 structural PDF
 
 ### Changed
 
+- **`ariad_pdf::ToolCtx` construction.** Create contexts with `ToolCtx::new`,
+  `with_cancel` or `with_deadline`, and use `with_max_pages` to set a page limit.
+  The struct is non-exhaustive so future fields can be added without breaking callers.
 - **Updated Rust dependencies.** `jsonschema` moves to 0.59.0, `libc` to 0.2.191 and `unicode-normalization` to 0.1.26. `ariad-host` now uses `jsonschema` at run time to validate tool parameters. The licence policy additionally allows `MIT-0` ([deny.toml](../deny.toml)).
 
 ### Security

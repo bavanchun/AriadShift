@@ -44,7 +44,7 @@ Native Markdown and HTML parsing in `ariad-core` run in-process as explicit exce
 
 | Component | Pinned Version | Channel | Notes |
 |---|---|---|---|
-| Node.js | **24.x "Krypton"** (24.21) | LTS | Node 26 enters LTS on **2026-10-28** → upgrade immediately after that date. Node 24 is maintained until 2028-04-30 |
+| Node.js | **26.x "Lithium"** (26.13.0) | LTS | Entered Active LTS on **2026-10-28**; maintained until 2029-04-30 |
 | Rust | **1.99** stable, edition 2024 | Stable (Rust has no LTS) | Pinned via `rust-toolchain.toml` |
 | Python | **3.14.x** | Stable, supported until 2030-10 | Python has no LTS; 3.15 is unreleased |
 | PostgreSQL | **18.x** (18.6) | Major supported until 2030-11 | 19 is in beta |
@@ -269,7 +269,7 @@ ariadshift/
 ├── pnpm-workspace.yaml        # pnpm workspace + shared version catalog
 ├── pyproject.toml             # uv workspace
 ├── justfile                   # root entry point: fmt, lint, test, wasm, deny, js, py, pandoc, ci, web-*
-├── .node-version              # 24
+├── .node-version              # 26
 ├── scripts/                   # pinned tool installers
 ├── .tools/                    # gitignored local tools
 ├── crates/

@@ -642,7 +642,7 @@ fn resolve_confined_params_file(
                     "params_file must be a regular file inside work_dir",
                 ));
             }
-            canonical_work_dir.join(file_name)
+            work_dir_path.join(file_name)
         }
         None => {
             let default_candidate = work_dir_path.join("params.json");
@@ -653,7 +653,7 @@ fn resolve_confined_params_file(
                     "params_file must be a regular file inside work_dir",
                 ));
             }
-            canonical_work_dir.join("params.json")
+            default_candidate
         }
     };
     if let Ok(meta) = std::fs::symlink_metadata(&candidate)
@@ -818,7 +818,7 @@ where
         },
         |work_dir| Some(work_dir.as_os_str().to_owned()),
     );
-    let job = JobSpec::for_job_request(request, describe_timeout, cancel);
+    let job = JobSpec::for_job_request(request, describe_timeout, cancel)?;
 
     let runtime = Builder::new_current_thread()
         .enable_all()
@@ -1091,11 +1091,13 @@ impl JobSpec {
         request: &JobRequest,
         describe_timeout: Option<Duration>,
         cancel: CancellationToken,
-    ) -> Self {
+    ) -> Result<Self, RunError> {
         let output_dir = request
             .output_dirs()
             .first()
-            .map(|dir| dir.display().to_string());
+            .map(|dir| std::fs::canonicalize(dir).map(|path| path.display().to_string()))
+            .transpose()
+            .map_err(RunError::Io)?;
         let (timeout, memory_limit_mb) = match request.limits() {
             Some(limits) => (
                 limits.timeout_s.map(Duration::from_secs),
@@ -1103,13 +1105,13 @@ impl JobSpec {
             ),
             None => (Some(describe_timeout.unwrap_or(DESCRIBE_TIMEOUT)), None),
         };
-        Self {
+        Ok(Self {
             protocol: request.protocol(),
             output_dir,
             deadline: timeout.and_then(|duration| Instant::now().checked_add(duration)),
             memory_limit_mb,
             cancel,
-        }
+        })
     }
 }
 
@@ -1312,14 +1314,14 @@ impl EngineProcess {
                                 return Err(RunError::ProtocolViolation("line follows the result event"));
                             }
                             let event = match job.protocol {
-                                Protocol::V1 => EventV2::from(parse_event(
+                                Protocol::V1 => EventV2::from(parse_event_canonical(
                                     &line,
-                                    job.output_dir.as_deref(),
+                                    job.output_dir.as_deref().map(Path::new),
                                     &mut artifacts,
                                 )?),
-                                Protocol::V2 => parse_event_v2(
+                                Protocol::V2 => parse_event_v2_canonical(
                                     &line,
-                                    job.output_dir.as_deref(),
+                                    job.output_dir.as_deref().map(Path::new),
                                     &mut artifacts,
                                 )?,
                             };
@@ -1465,6 +1467,24 @@ pub fn parse_event(
     output_dir: Option<&str>,
     artifacts: &mut Vec<Artifact>,
 ) -> Result<Event, RunError> {
+    if !matches!(
+        serde_json::from_slice::<Event>(line),
+        Ok(Event::Artifact { .. })
+    ) {
+        return parse_event_canonical(line, output_dir.map(Path::new), artifacts);
+    }
+    let canonical_dir = output_dir
+        .map(std::fs::canonicalize)
+        .transpose()
+        .map_err(RunError::Io)?;
+    parse_event_canonical(line, canonical_dir.as_deref(), artifacts)
+}
+
+fn parse_event_canonical(
+    line: &[u8],
+    output_dir: Option<&Path>,
+    artifacts: &mut Vec<Artifact>,
+) -> Result<Event, RunError> {
     let event: Event = serde_json::from_slice(line)
         .map_err(|_| RunError::ProtocolViolation("event line is not valid protocol JSON"))?;
     if matches!(&event, Event::Capabilities { .. }) && output_dir.is_some() {
@@ -1493,6 +1513,24 @@ pub fn parse_event_v2(
     output_dir: Option<&str>,
     artifacts: &mut Vec<Artifact>,
 ) -> Result<EventV2, RunError> {
+    if !matches!(
+        serde_json::from_slice::<EventV2>(line),
+        Ok(EventV2::Artifact { .. })
+    ) {
+        return parse_event_v2_canonical(line, output_dir.map(Path::new), artifacts);
+    }
+    let canonical_dir = output_dir
+        .map(std::fs::canonicalize)
+        .transpose()
+        .map_err(RunError::Io)?;
+    parse_event_v2_canonical(line, canonical_dir.as_deref(), artifacts)
+}
+
+fn parse_event_v2_canonical(
+    line: &[u8],
+    output_dir: Option<&Path>,
+    artifacts: &mut Vec<Artifact>,
+) -> Result<EventV2, RunError> {
     let event: EventV2 = serde_json::from_slice(line)
         .map_err(|_| RunError::ProtocolViolation("event line is not valid protocol JSON"))?;
     if matches!(&event, EventV2::Capabilities { .. }) && output_dir.is_some() {
@@ -1516,7 +1554,7 @@ pub fn parse_event_v2(
 fn validate_and_record_artifact(
     path: &str,
     format: &str,
-    output_dir: Option<&str>,
+    output_dir: Option<&Path>,
     artifacts: &mut Vec<Artifact>,
 ) -> Result<(), RunError> {
     let artifact_path = Path::new(path);
@@ -1525,7 +1563,7 @@ fn validate_and_record_artifact(
             "artifact emitted for request without output directory",
         ));
     };
-    if !artifact_is_confined(artifact_path, Path::new(dir)) {
+    if !artifact_is_confined(artifact_path, dir) {
         return Err(RunError::ProtocolViolation(
             "artifact path is outside output.dir",
         ));
@@ -1538,16 +1576,18 @@ fn validate_and_record_artifact(
 }
 
 fn artifact_is_confined(artifact: &Path, output_dir: &Path) -> bool {
-    if !artifact.is_absolute() || !output_dir.is_absolute() || !artifact.starts_with(output_dir) {
+    if !artifact.is_absolute()
+        || !output_dir.is_absolute()
+        || artifact
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+    {
         return false;
     }
-    let Ok(relative) = artifact.strip_prefix(output_dir) else {
+    let Ok(canonical_artifact) = std::fs::canonicalize(artifact) else {
         return false;
     };
-    !relative.as_os_str().is_empty()
-        && relative
-            .components()
-            .all(|component| matches!(component, Component::Normal(_)))
+    canonical_artifact != output_dir && canonical_artifact.starts_with(output_dir)
 }
 
 async fn wait_deadline(deadline: Option<Instant>) {
@@ -1724,6 +1764,40 @@ mod tests {
             reaped,
             "reaping an exit already observed by try_wait blocked"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn artifact_accepts_output_directory_reached_through_symlink() {
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("output");
+        std::fs::create_dir(&output).unwrap();
+        let link = temp.path().join("link");
+        std::os::unix::fs::symlink(&output, &link).unwrap();
+        let artifact = output.join("file.pdf");
+        std::fs::write(&artifact, b"data").unwrap();
+        let line =
+            serde_json::json!({"type": "artifact", "path": artifact, "format": "pdf"}).to_string();
+        let mut artifacts = Vec::new();
+        assert!(super::parse_event(line.as_bytes(), link.to_str(), &mut artifacts).is_ok());
+        assert_eq!(artifacts.len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn artifact_symlink_outside_output_directory_is_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("output");
+        std::fs::create_dir(&output).unwrap();
+        let outside = temp.path().join("outside.pdf");
+        std::fs::write(&outside, b"data").unwrap();
+        let link = output.join("escape.pdf");
+        std::os::unix::fs::symlink(&outside, &link).unwrap();
+        let line =
+            serde_json::json!({"type": "artifact", "path": link, "format": "pdf"}).to_string();
+        let mut artifacts = Vec::new();
+        assert!(super::parse_event(line.as_bytes(), output.to_str(), &mut artifacts).is_err());
+        assert!(artifacts.is_empty());
     }
 
     fn convert_request(work_dir: &str, output_dir: &str) -> Request {

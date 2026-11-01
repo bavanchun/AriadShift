@@ -35,7 +35,7 @@ fn install_pack(name: &str, version: &str, key: &Key, data: &Path) -> std::path:
 }
 
 #[test]
-fn resolve_pack_verifies_signature_and_caches_sha256_by_inode_mtime_size() {
+fn resolve_pack_verifies_signature_and_reuses_only_safe_cached_digests() {
     let key = Key::generate();
     let data = support::temp();
     let root = install_pack("qpdf", "1.0.0", &key, data.path());
@@ -56,14 +56,12 @@ fn resolve_pack_verifies_signature_and_caches_sha256_by_inode_mtime_size() {
         "first resolve must hash all 3 installed files in the receipt"
     );
 
-    // Resolving again without modifying any file must hit the (inode, mtime, size) cache.
     let second = resolve_pack_in(&ctx, "qpdf").expect("second resolve succeeds");
     assert_eq!(second.program, command.program);
-    assert_eq!(
-        resolve_hash_computations_for(&root),
-        first_hashes,
-        "second resolve of unchanged pack must not recompute SHA-256 digests"
-    );
+    #[cfg(unix)]
+    assert_eq!(resolve_hash_computations_for(&root), first_hashes);
+    #[cfg(not(unix))]
+    assert_eq!(resolve_hash_computations_for(&root), first_hashes * 2);
 }
 
 #[test]
@@ -81,12 +79,19 @@ fn tampered_executable_or_payload_is_rejected_on_resolve_with_tool_missing_and_r
     // if mtime/inode or content weren't checked.
     let binary = root.join("bin/engine");
     let original = fs::read(&binary).expect("read binary");
+    let original_mtime = fs::metadata(&binary).unwrap().modified().unwrap();
     let mut same_len_tampered = original.clone();
     let last = same_len_tampered.len() - 1;
     same_len_tampered[last] ^= 0x01;
-    // Write via a temporary replacement so inode / mtime updates deterministically.
+    // Replace the file with the same size and mtime as the original.
     let replacement = root.join("bin/engine.tampered");
     fs::write(&replacement, &same_len_tampered).expect("write tampered binary");
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&replacement)
+        .unwrap()
+        .set_modified(original_mtime)
+        .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -111,7 +116,7 @@ fn tampered_executable_or_payload_is_rejected_on_resolve_with_tool_missing_and_r
     );
     assert!(
         resolve_hash_computations_for(&root) > hashes_before,
-        "changed inode/mtime must invalidate the SHA-256 cache and re-hash the file"
+        "the replacement must be re-hashed even when size and mtime match"
     );
 
     // Direct `packs::resolve_in` must also fail with `PackError::VerificationFailed`.
@@ -442,7 +447,7 @@ fn replacing_file_and_restoring_mtime_invalidates_verification_cache() {
     assert_eq!(err.exit_code(), 5);
     assert!(
         resolve_hash_computations_for(&root) > hashes_before,
-        "changed ctime must invalidate the verification cache even when inode, mtime and size match"
+        "in-place changes must be re-hashed even when mtime and size match"
     );
 }
 
@@ -707,6 +712,8 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
         &mut |_| {},
     )
     .expect("install sign pack");
+    let helper_exe = sign_report.root.join("bin/helper.exe");
+    assert!(helper_exe.is_file());
 
     let sign_record_path = data.path().join("packs/.locks/sign-1.0.0.manifest");
     let sign_record = fs::read_to_string(&sign_record_path).expect("read sign manifest record");
@@ -722,11 +729,7 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            sign_report.root.join("bin/helper.exe"),
-            fs::Permissions::from_mode(0o755),
-        )
-        .unwrap();
+        fs::set_permissions(&helper_exe, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     let sign_err = resolve_pack_in(&ctx, "sign")

@@ -7,6 +7,8 @@ export const OAUTH_TOKEN_LOCK_KEY = "7270514213820104002";
 export const SERIALIZED_OAUTH_PATHS: ReadonlySet<string> = new Set([
   "/api/auth/oauth2/token",
   "/api/auth/oauth2/revoke",
+  "/api/auth/oauth2/delete-consent",
+  "/api/auth/oauth2/delete-client",
 ]);
 
 /** One trailing-slash rule for HTTP safeguards and token serialization. */

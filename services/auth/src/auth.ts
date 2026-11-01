@@ -9,6 +9,7 @@ import { apiKey } from "@better-auth/api-key";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { passkey } from "@better-auth/passkey";
 import { type BetterAuthOptions, type BetterAuthPlugin, betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { jwt, twoFactor } from "better-auth/plugins";
 import pg from "pg";
 import type { DiscoveryDocument } from "./app.ts";
@@ -22,6 +23,9 @@ export const BASE_PATH = "/api/auth";
 
 /** Lifetime of the JWTs the API accepts. */
 export const JWT_LIFETIME = "15m";
+
+/** Maximum session age (seconds) accepted by `/delete-user` before re-authentication is required. */
+export const DELETE_USER_FRESH_AGE_S = 15 * 60;
 
 /** JWT plugin options are seconds, including the post-rotation publication grace. */
 export const JWKS_ROTATION_INTERVAL_S = 30 * 24 * 60 * 60;
@@ -227,8 +231,8 @@ export function buildAuthOptions(
       accountLinking: { enabled: false },
     },
     user: {
-      // The account page deletes an account after the user confirms the
-      // password; without a mail transport there is no emailed confirmation.
+      // Password-backed accounts confirm their password; social-only accounts
+      // confirm deletion from a fresh session.
       deleteUser: {
         enabled: true,
         // API keys use a polymorphic referenceId without a user foreign key.
@@ -240,6 +244,114 @@ export function buildAuthOptions(
           await database.query('DELETE FROM "auth"."apikey" WHERE "referenceId" = $1', [user.id]);
         },
       },
+    },
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === "/delete-user") {
+          const session = await getSessionFromCtx(ctx);
+          if (!session) return;
+          const credential = await ctx.context.internalAdapter.findCredentialAccount(
+            session.user.id,
+          );
+          if (credential?.password) {
+            const password = (ctx.body as { password?: unknown } | undefined)?.password;
+            if (typeof password !== "string" || password === "") {
+              throw new APIError("BAD_REQUEST", {
+                code: "PASSWORD_REQUIRED",
+                message: "Password is required to delete this account.",
+              });
+            }
+          }
+          const createdAt =
+            session.session.createdAt instanceof Date
+              ? session.session.createdAt.getTime()
+              : Date.parse(String(session.session.createdAt));
+          if (
+            !Number.isFinite(createdAt) ||
+            Date.now() - createdAt > DELETE_USER_FRESH_AGE_S * 1_000
+          ) {
+            throw new APIError("BAD_REQUEST", {
+              code: "reauth_required",
+              message: "Sign in again before deleting your account.",
+            });
+          }
+          return;
+        }
+        if (ctx.path === "/oauth2/delete-consent") {
+          const session = await getSessionFromCtx(ctx);
+          const id = (ctx.body as { id?: unknown } | undefined)?.id;
+          if (!session || typeof id !== "string" || id === "") return;
+          const consent = await ctx.context.adapter.findOne<{
+            id: string;
+            clientId: string;
+            userId?: string;
+          }>({
+            model: "oauthConsent",
+            where: [{ field: "id", value: id }],
+          });
+          if (!consent || consent.userId !== session.user.id) return;
+          const where = [
+            { field: "clientId", value: consent.clientId },
+            { field: "userId", value: session.user.id },
+          ];
+          await ctx.context.adapter.deleteMany({ model: "oauthAccessToken", where });
+          await ctx.context.adapter.deleteMany({ model: "oauthRefreshToken", where });
+          return;
+        }
+        if (ctx.path === "/oauth2/delete-client") {
+          // Ownership matches deleteClientEndpoint when neither clientPrivileges nor
+          // trusted clients are configured. Update this check if either is enabled.
+          const session = await getSessionFromCtx(ctx);
+          const clientId = (ctx.body as { client_id?: unknown } | undefined)?.client_id;
+          if (!session || typeof clientId !== "string" || clientId === "") return;
+          const client = await ctx.context.adapter.findOne<{
+            clientId: string;
+            userId?: string;
+          }>({
+            model: "oauthClient",
+            where: [{ field: "clientId", value: clientId }],
+          });
+          if (!client || client.userId !== session.user.id) return;
+          const where = [{ field: "clientId", value: client.clientId }];
+          await ctx.context.adapter.deleteMany({ model: "oauthAccessToken", where });
+          await ctx.context.adapter.deleteMany({ model: "oauthRefreshToken", where });
+          await ctx.context.adapter.deleteMany({ model: "oauthConsent", where });
+          await ctx.context.adapter.deleteMany({ model: "oauthClientResource", where });
+        }
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/oauth2/get-consents") return;
+        const returned = ctx.context.returned;
+        if (!Array.isArray(returned) || returned.length === 0) return;
+        const clientIds = [
+          ...new Set(
+            returned
+              .map((row) => (row as { clientId?: unknown })?.clientId)
+              .filter((id): id is string => typeof id === "string" && id !== ""),
+          ),
+        ];
+        if (clientIds.length === 0) return;
+        const clients = await ctx.context.adapter.findMany<{
+          clientId: string;
+          name?: string | null;
+          uri?: string | null;
+        }>({
+          model: "oauthClient",
+          where: [{ field: "clientId", operator: "in", value: clientIds }],
+        });
+        const byId = new Map(clients.map((client) => [client.clientId, client]));
+        return ctx.json(
+          returned.map((row) => {
+            const consent = row as Record<string, unknown> & { clientId?: string };
+            const client = consent.clientId ? byId.get(consent.clientId) : undefined;
+            return {
+              ...consent,
+              clientName: client?.name ?? null,
+              clientUri: client?.uri ?? null,
+            };
+          }),
+        );
+      }),
     },
     rateLimit: {
       enabled: true as boolean,

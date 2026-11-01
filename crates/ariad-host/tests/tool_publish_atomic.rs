@@ -843,7 +843,10 @@ fn run_tool_json_emitting_actions_suppress_default_file_and_publish_json_when_re
             run_tool(&req_path).unwrap_or_else(|e| panic!("{tool_id} -o .json failed: {e:?}"));
         assert_eq!(res_path.artifacts.len(), 1);
         assert_eq!(res_path.artifacts[0].format, "json");
-        assert_eq!(res_path.artifacts[0].path, explicit_json);
+        assert_eq!(
+            fs::canonicalize(&res_path.artifacts[0].path).unwrap(),
+            fs::canonicalize(&explicit_json).unwrap()
+        );
         let parsed: serde_json::Value =
             serde_json::from_slice(&fs::read(&explicit_json).expect("read explicit json"))
                 .expect("valid json file");

@@ -1,6 +1,7 @@
 "use client";
 
 import { AccountActionsSection } from "./account-actions-section";
+import { ConnectedAppsSection } from "./connected-apps-section";
 import { PasskeysSection } from "./passkeys-section";
 import { PasswordSection } from "./password-section";
 import { ProfileSection } from "./profile-section";
@@ -18,6 +19,7 @@ export function AccountPage({ navigate }: { navigate?: (path: string) => void })
             <PasswordSection />
             <PasskeysSection />
             <TwoFactorSection user={user} />
+            <ConnectedAppsSection />
             <AccountActionsSection navigate={navigate} />
           </div>
         )}

@@ -16,8 +16,11 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::{LazyLock, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime},
 };
+
+#[cfg(unix)]
+use std::time::UNIX_EPOCH;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -813,10 +816,10 @@ struct FileStamp {
 }
 
 impl FileStamp {
+    #[cfg(unix)]
     fn from_metadata(metadata: &fs::Metadata, file_count: u64) -> Option<Self> {
         let modified = metadata.modified().ok()?;
         let since_epoch = modified.duration_since(UNIX_EPOCH).ok()?;
-        #[cfg(unix)]
         use std::os::unix::fs::MetadataExt;
         Some(Self {
             #[cfg(unix)]
@@ -832,6 +835,12 @@ impl FileStamp {
             size: metadata.len(),
             file_count,
         })
+    }
+
+    #[cfg(not(unix))]
+    fn from_metadata(_metadata: &fs::Metadata, _file_count: u64) -> Option<Self> {
+        // mtime and size cannot detect an in-place edit with restored timestamps.
+        None
     }
 }
 

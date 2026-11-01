@@ -215,11 +215,13 @@ fn every_phase_zero_markdown_fixture_has_a_reviewable_docx_golden() {
             fixture.id,
             String::from_utf8_lossy(&result.stderr)
         );
+        let stdout = std::str::from_utf8(&result.stdout).expect("stdout is UTF-8");
+        let mut lines = stdout.lines();
+        let printed = lines.next().expect("output path");
+        assert!(lines.next().is_none() && stdout.ends_with('\n'));
         assert_eq!(
-            result.stdout,
-            format!("{}\n", output.display()).as_bytes(),
-            "stdout for fixture {} must contain only its output path",
-            fixture.id
+            fs::canonicalize(printed).unwrap(),
+            fs::canonicalize(&output).unwrap()
         );
         let package = read_package(&output);
         let snapshot = package_snapshot(&package);
