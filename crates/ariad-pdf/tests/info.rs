@@ -4,7 +4,11 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use ariad_core::{
@@ -12,8 +16,8 @@ use ariad_core::{
     reader::pdf::{self, ReadError, load_bounded},
 };
 use ariad_pdf::{
-    PdfError, PdfInfo,
-    document::{self, open, open_for_info},
+    PdfError, PdfInfo, ToolCtx,
+    document::{self, open, open_for_info, open_with_ctx},
     info,
 };
 use lopdf::{
@@ -410,4 +414,167 @@ fn pages_node_rotate_attribute_is_inherited_by_child_pages() {
     assert_eq!(report.pages[0].inherited_rotation, Some(true));
     assert_eq!(report.pages[1].rotation, 180);
     assert_eq!(report.pages[1].inherited_rotation, None);
+}
+
+#[test]
+fn repeated_content_stream_references_exceed_decompression_budget() {
+    use lopdf::{Object, Stream, dictionary};
+
+    let mut payload = b"BT /F1 12 Tf 72 720 Td (Hello) Tj ET\n".to_vec();
+    payload.resize(4096, b' ');
+
+    let mut stream = Stream::new(dictionary! {}, payload);
+    stream.compress().expect("compress content stream");
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let font_id = doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Helvetica",
+    });
+    let resources_id = doc.add_object(dictionary! {
+        "Font" => dictionary! { "F1" => font_id },
+    });
+    let stream_id = doc.add_object(stream);
+    let repeated_contents: Vec<Object> = (0..32).map(|_| Object::Reference(stream_id)).collect();
+    let page_id = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Resources" => resources_id,
+        "Contents" => repeated_contents,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page_id)],
+            "Count" => 1,
+        }),
+    );
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).expect("serialize synthetic PDF");
+
+    // 32 references * 4,096 decoded bytes = 131,072 decoded bytes total.
+    // A 65,536-byte decompression budget accepts a single 4,096-byte stream on load,
+    // but rejects the 32 repeated references during `pdf.info`.
+    let mut limits = Limits::local();
+    limits.max_decompressed_bytes = 65_536;
+
+    let err = info::run(&bytes, &limits).unwrap_err();
+    assert_eq!(
+        err,
+        PdfError::LimitExceeded(ReadError::DecompressedTooLarge { limit: 65_536 })
+    );
+    assert_eq!(err.cli_error_code(), "limit_exceeded");
+    assert_eq!(err.exit_code(), 7);
+
+    // Also verify that an XMP `/Metadata` stream shares the same per-document budget.
+    let mut xmp_payload =
+        b"<?xpacket begin='' id='W5M0MpCehiHzreSzNTczkc9d'?><x:xmpmeta><rdf:RDF><rdf:Description><dc:title>Budget</dc:title>".to_vec();
+    xmp_payload.resize(40_000, b' ');
+    xmp_payload.extend_from_slice(b"</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end='w'?>");
+    let mut xmp_stream = Stream::new(
+        dictionary! {
+            "Type" => "Metadata",
+            "Subtype" => "XML",
+        },
+        xmp_payload,
+    );
+    xmp_stream.compress().expect("compress XMP stream");
+
+    let mut xmp_doc = Document::with_version("1.5");
+    let xmp_pages_id = xmp_doc.new_object_id();
+    let xmp_content_id = xmp_doc.add_object(Stream::new(dictionary! {}, vec![b' '; 32_768]));
+    let xmp_page_id = xmp_doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => xmp_pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => xmp_content_id,
+    });
+    xmp_doc.objects.insert(
+        xmp_pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(xmp_page_id)],
+            "Count" => 1,
+        }),
+    );
+    let xmp_meta_id = xmp_doc.add_object(xmp_stream);
+    let xmp_catalog_id = xmp_doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => xmp_pages_id,
+        "Metadata" => xmp_meta_id,
+    });
+    xmp_doc.trailer.set("Root", xmp_catalog_id);
+
+    let mut xmp_bytes = Vec::new();
+    xmp_doc
+        .save_to(&mut xmp_bytes)
+        .expect("serialize synthetic XMP PDF");
+
+    let xmp_err = info::run(&xmp_bytes, &limits).unwrap_err();
+    assert_eq!(
+        xmp_err,
+        PdfError::LimitExceeded(ReadError::DecompressedTooLarge { limit: 65_536 })
+    );
+    assert_eq!(xmp_err.cli_error_code(), "limit_exceeded");
+}
+
+#[test]
+fn trailer_prescan_with_hundred_thousand_trailer_tokens_is_linear() {
+    let mut bytes = Vec::with_capacity(100_000 * 8 + 64);
+    bytes.extend_from_slice(b"%PDF-1.5\n");
+    for _ in 0..100_000 {
+        bytes.extend_from_slice(b"trailer\n");
+    }
+    bytes.extend_from_slice(b"startxref\n0\n%%EOF\n");
+
+    let start = Instant::now();
+    let _ = info::run(&bytes, &Limits::local());
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "100,000 trailer tokens took {elapsed:?}, expected < 1s"
+    );
+}
+
+#[test]
+fn cooperative_tool_ctx_cancels_and_times_out_page_loops() {
+    let multipage = read_fixture("multipage-20.pdf");
+    let doc = open(&multipage, &Limits::local()).expect("open multipage-20.pdf");
+
+    let cancel = Arc::new(AtomicBool::new(true));
+    let cancelled_ctx = ToolCtx::with_cancel(Arc::clone(&cancel));
+
+    let open_err = open_with_ctx(&multipage, &Limits::local(), &cancelled_ctx).unwrap_err();
+    assert_eq!(open_err, PdfError::CANCELLED);
+    assert!(open_err.is_cancelled());
+    assert_eq!(open_err.code(), "cancelled");
+
+    let run_err = info::run_with_ctx(&multipage, &Limits::local(), &cancelled_ctx).unwrap_err();
+    assert_eq!(run_err, PdfError::CANCELLED);
+    assert!(run_err.is_cancelled());
+
+    let from_doc_err = info::from_doc_with_ctx(&doc, &cancelled_ctx).unwrap_err();
+    assert_eq!(from_doc_err, PdfError::CANCELLED);
+    assert!(from_doc_err.is_cancelled());
+
+    cancel.store(false, Ordering::Relaxed);
+    let ok_info = info::from_doc_with_ctx(&doc, &cancelled_ctx).expect("uncancelled ctx succeeds");
+    assert_eq!(ok_info.page_count, 20);
+
+    let expired_ctx = ToolCtx::with_deadline(Instant::now() - Duration::from_millis(1));
+    let timeout_err = info::from_doc_with_ctx(&doc, &expired_ctx).unwrap_err();
+    assert_eq!(timeout_err, PdfError::TIMED_OUT);
+    assert!(timeout_err.is_timed_out());
+    assert_eq!(timeout_err.cli_error_code(), "limit_exceeded");
+    assert_eq!(timeout_err.exit_code(), 7);
 }

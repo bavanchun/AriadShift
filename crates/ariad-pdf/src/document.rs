@@ -4,13 +4,131 @@
 //! provenance so structural tools never silently strip owner-password encryption by saving a
 //! decrypted [`lopdf::Document`].
 
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Instant,
+};
+
 use ariad_core::{
     limits::Limits,
-    reader::pdf::{ReadError, load_bounded},
+    reader::pdf::{CONTENT_BUDGET_BASE, CONTENT_BUDGET_PER_INPUT_BYTE, ReadError, load_bounded},
 };
-use lopdf::{Document, ObjectId};
+use lopdf::{DecompressError, Document, Object, ObjectId, Stream};
 
 use crate::error::PdfError;
+
+/// Maximum byte window scanned after each `trailer` keyword when pre-scanning raw PDF bytes for
+/// `/Encrypt` and `/Prev` before `lopdf` parses the document.
+const MAX_TRAILER_WINDOW: usize = 4096;
+
+/// Cooperative cancellation and deadline context for in-process PDF tool execution.
+#[derive(Clone, Debug, Default)]
+pub struct ToolCtx {
+    /// Optional wall-clock deadline after which page and object loops abort with
+    /// [`PdfError::TIMED_OUT`].
+    pub deadline: Option<Instant>,
+    /// Shared cancellation flag checked cooperatively by page and object loops.
+    pub cancel: Arc<AtomicBool>,
+}
+
+impl ToolCtx {
+    /// Creates a default context with no deadline and an uncancelled flag.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a context with the given wall-clock `deadline`.
+    #[must_use]
+    pub fn with_deadline(deadline: Instant) -> Self {
+        Self {
+            deadline: Some(deadline),
+            cancel: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Creates a context sharing the given `cancel` flag.
+    #[must_use]
+    pub const fn with_cancel(cancel: Arc<AtomicBool>) -> Self {
+        Self {
+            deadline: None,
+            cancel,
+        }
+    }
+
+    /// Checks whether the cancellation flag has been set or the deadline has elapsed.
+    pub fn check(&self) -> Result<(), PdfError> {
+        if self.cancel.load(Ordering::Relaxed) {
+            return Err(PdfError::CANCELLED);
+        }
+        if let Some(deadline) = self.deadline
+            && Instant::now() >= deadline
+        {
+            return Err(PdfError::TIMED_OUT);
+        }
+        Ok(())
+    }
+}
+
+/// Per-document decoded-bytes budget derived from [`Limits`].
+///
+/// Shared across `ObjStm` / `XRef` streams on load, page `/Contents` streams, `/Form` XObject
+/// streams, and XMP `/Metadata` streams. Every stream reference charges its decoded byte count
+/// against the budget.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DecodeBudget {
+    decoded: u64,
+    limit: u64,
+}
+
+impl DecodeBudget {
+    pub(crate) fn from_limits(input_len: usize, limits: &Limits) -> Self {
+        let amplification = CONTENT_BUDGET_BASE
+            .saturating_add(CONTENT_BUDGET_PER_INPUT_BYTE.saturating_mul(input_len as u64))
+            .min((usize::MAX / 4) as u64);
+        let limit = limits.max_decompressed_bytes.min(amplification);
+        Self { decoded: 0, limit }
+    }
+
+    const fn remaining(&self) -> u64 {
+        self.limit.saturating_sub(self.decoded)
+    }
+
+    pub(crate) fn charge(&mut self, bytes: usize) -> Result<(), PdfError> {
+        self.decoded = self.decoded.saturating_add(bytes as u64);
+        if self.decoded > self.limit {
+            return Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge {
+                limit: self.limit,
+            }));
+        }
+        Ok(())
+    }
+
+    /// Decodes `stream` within the remaining per-document budget using
+    /// [`Stream::decompressed_content_with_limit`].
+    ///
+    /// Returns `Ok(None)` when the stream uses an unsupported or corrupt filter, or
+    /// `Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge { .. }))` when decoding
+    /// exceeds the per-document budget.
+    pub(crate) fn decode(&mut self, stream: &Stream) -> Result<Option<Vec<u8>>, PdfError> {
+        let remaining = self.remaining().min((usize::MAX / 4) as u64) as usize;
+        match stream.decompressed_content_with_limit(remaining) {
+            Ok(data) => {
+                self.charge(data.len())?;
+                Ok(Some(data))
+            }
+            Err(lopdf::Error::Decompress(DecompressError::MemoryLimitExceeded { .. })) => {
+                Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge {
+                    limit: self.limit,
+                }))
+            }
+            Err(_) => Ok(None),
+        }
+    }
+}
 
 /// Provenance recorded from the PDF trailer and encryption state at load time.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -32,6 +150,7 @@ pub struct TrailerProvenance {
 pub struct PdfDoc {
     inner: Document,
     provenance: TrailerProvenance,
+    decode_budget: DecodeBudget,
 }
 
 impl PdfDoc {
@@ -85,6 +204,12 @@ impl PdfDoc {
         self.provenance.repaired_xref
     }
 
+    /// Returns the per-document stream decompression budget seeded when the document was opened.
+    #[must_use]
+    pub(crate) const fn decode_budget(&self) -> DecodeBudget {
+        self.decode_budget
+    }
+
     /// Serializes the document to PDF bytes.
     ///
     /// Refuses to serialize any document that was opened from an encrypted source without an
@@ -114,7 +239,12 @@ impl PdfDoc {
 ///   returns `Err(PdfError::Encrypted { needs_password: false })` so structural tools never save
 ///   an unencrypted copy without explicit unlock.
 pub fn open(bytes: &[u8], limits: &Limits) -> Result<PdfDoc, PdfError> {
-    let doc = open_for_info(bytes, limits)?;
+    open_with_ctx(bytes, limits, &ToolCtx::default())
+}
+
+/// Opens a PDF document for structural manipulation under `limits` and cooperative `ctx`.
+pub fn open_with_ctx(bytes: &[u8], limits: &Limits, ctx: &ToolCtx) -> Result<PdfDoc, PdfError> {
+    let doc = open_for_info_with_ctx(bytes, limits, ctx)?;
     if doc.is_encrypted() {
         return Err(PdfError::Encrypted {
             needs_password: false,
@@ -130,8 +260,28 @@ pub fn open(bytes: &[u8], limits: &Limits) -> Result<PdfDoc, PdfError> {
 /// methods remain locked against mutation or decrypted saving. Documents requiring a non-empty
 /// user password still fail with `Err(PdfError::Encrypted { needs_password: true })`.
 pub fn open_for_info(bytes: &[u8], limits: &Limits) -> Result<PdfDoc, PdfError> {
-    let raw_encrypted = raw_trailer_has_encrypt(bytes);
-    let has_prev_xref = raw_trailer_has_prev(bytes);
+    open_for_info_with_ctx(bytes, limits, &ToolCtx::default())
+}
+
+/// Opens a PDF document in read-only inspection mode under `limits` and cooperative `ctx`.
+pub fn open_for_info_with_ctx(
+    bytes: &[u8],
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<PdfDoc, PdfError> {
+    ctx.check()?;
+    limits.validate().map_err(ReadError::from)?;
+    if let Some(limit) = limits.max_input_bytes
+        && bytes.len() as u64 > limit
+    {
+        return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
+            actual: bytes.len() as u64,
+            limit,
+        }));
+    }
+
+    let raw_scan = scan_raw_trailers(bytes, ctx)?;
+    ctx.check()?;
 
     let loaded = match load_bounded(bytes, limits) {
         Ok(loaded) => loaded,
@@ -145,6 +295,16 @@ pub fn open_for_info(bytes: &[u8], limits: &Limits) -> Result<PdfDoc, PdfError> 
     let repaired_xref = loaded.repaired_xref;
     let inner = loaded.document;
 
+    let mut decode_budget = DecodeBudget::from_limits(bytes.len(), limits);
+    for object in inner.objects.values() {
+        ctx.check()?;
+        if let Object::Stream(stream) = object
+            && (stream.dict.has_type(b"ObjStm") || stream.dict.has_type(b"XRef"))
+        {
+            decode_budget.decode(stream)?;
+        }
+    }
+
     let encrypt_object_id = inner
         .encryption_state
         .as_ref()
@@ -157,79 +317,102 @@ pub fn open_for_info(bytes: &[u8], limits: &Limits) -> Result<PdfDoc, PdfError> 
                 .and_then(|obj| obj.as_reference().ok())
         });
 
-    let encrypted =
-        raw_encrypted || inner.encryption_state.is_some() || inner.trailer.get(b"Encrypt").is_ok();
+    let encrypted = raw_scan.has_encrypt
+        || inner.encryption_state.is_some()
+        || inner.trailer.get(b"Encrypt").is_ok();
 
     Ok(PdfDoc {
         inner,
         provenance: TrailerProvenance {
             encrypted,
             encrypt_object_id,
-            has_prev_xref,
+            has_prev_xref: raw_scan.has_prev,
             repaired_xref,
         },
+        decode_budget,
     })
 }
 
-/// Scans raw trailer sections in `bytes` for a `/Encrypt` key before `lopdf`'s empty-password
-/// decryption removes `/Encrypt` from `doc.trailer`.
-fn raw_trailer_has_encrypt(bytes: &[u8]) -> bool {
-    for section in trailer_slices(bytes) {
-        if contains_pdf_key(section, b"/Encrypt") {
-            return true;
-        }
-    }
-    false
+#[derive(Clone, Copy, Debug, Default)]
+struct RawTrailerScan {
+    has_encrypt: bool,
+    has_prev: bool,
 }
 
-/// Scans raw trailer sections in `bytes` for a `/Prev` cross-reference pointer.
-fn raw_trailer_has_prev(bytes: &[u8]) -> bool {
-    for section in trailer_slices(bytes) {
-        if contains_pdf_key(section, b"/Prev") {
-            return true;
-        }
-    }
-    false
-}
-
-/// Yields byte slices between `trailer` and `startxref` in `bytes`.
-fn trailer_slices(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+/// Scans `bytes` in a single linear pass for `/Encrypt` and `/Prev` keys inside `trailer`
+/// sections before `lopdf`'s empty-password decryption removes `/Encrypt` from `doc.trailer`.
+///
+/// Each `trailer` keyword opens or extends a scan window capped at [`MAX_TRAILER_WINDOW`] bytes
+/// (or until `startxref`, whichever comes first). The cursor `i` advances monotonically, so every
+/// input byte is visited at most once regardless of how many `trailer` tokens appear in the file.
+fn scan_raw_trailers(bytes: &[u8], ctx: &ToolCtx) -> Result<RawTrailerScan, PdfError> {
     const TRAILER: &[u8] = b"trailer";
     const STARTXREF: &[u8] = b"startxref";
 
-    let mut pos = 0;
-    std::iter::from_fn(move || {
-        if pos + TRAILER.len() > bytes.len() {
-            return None;
-        }
-        let rel = bytes[pos..]
-            .windows(TRAILER.len())
-            .position(|w| w == TRAILER)?;
-        let start = pos + rel + TRAILER.len();
-        pos = start;
-        let len = bytes[start..]
-            .windows(STARTXREF.len())
-            .position(|w| w == STARTXREF)
-            .unwrap_or_else(|| (bytes.len() - start).min(4096));
-        Some(&bytes[start..start + len])
-    })
-}
+    let mut result = RawTrailerScan::default();
+    let mut i = 0_usize;
+    let mut window_end = 0_usize;
+    let mut next_check = 65_536_usize;
 
-/// Checks whether `haystack` contains the exact PDF name token `key` (followed by a PDF
-/// delimiter or whitespace byte, so `/Encrypt` does not match `/EncryptMetadata`).
-fn contains_pdf_key(haystack: &[u8], key: &[u8]) -> bool {
-    if haystack.len() < key.len() {
-        return false;
-    }
-    for (idx, window) in haystack.windows(key.len()).enumerate() {
-        if window == key {
-            let next = haystack.get(idx + key.len()).copied();
-            if next.is_none_or(is_pdf_delimiter_or_ws) {
-                return true;
+    while i < bytes.len() {
+        if i >= next_check {
+            ctx.check()?;
+            next_check = i.saturating_add(65_536);
+        }
+
+        if i >= window_end {
+            if bytes.len() - i < TRAILER.len() {
+                break;
+            }
+            let Some(rel) = bytes[i..].windows(TRAILER.len()).position(|w| w == TRAILER) else {
+                break;
+            };
+            i = i + rel + TRAILER.len();
+            window_end = i.saturating_add(MAX_TRAILER_WINDOW).min(bytes.len());
+            ctx.check()?;
+            next_check = i.saturating_add(65_536);
+            continue;
+        }
+
+        let rest = &bytes[i..];
+        if rest.starts_with(STARTXREF) {
+            i += STARTXREF.len();
+            window_end = 0;
+            continue;
+        }
+        if rest.starts_with(TRAILER) {
+            i += TRAILER.len();
+            window_end = i.saturating_add(MAX_TRAILER_WINDOW).min(bytes.len());
+            continue;
+        }
+        if bytes[i] == b'/' {
+            if !result.has_encrypt && matches_pdf_key_at(bytes, i, b"/Encrypt") {
+                result.has_encrypt = true;
+            } else if !result.has_prev && matches_pdf_key_at(bytes, i, b"/Prev") {
+                result.has_prev = true;
+            }
+            if result.has_encrypt && result.has_prev {
+                break;
             }
         }
+        i += 1;
     }
-    false
+
+    Ok(result)
+}
+
+/// Checks whether `bytes[idx..]` starts with the exact PDF name token `key` followed by a PDF
+/// delimiter or whitespace byte (so `/Encrypt` does not match `/EncryptMetadata`).
+fn matches_pdf_key_at(bytes: &[u8], idx: usize, key: &[u8]) -> bool {
+    let Some(rest) = bytes.get(idx..) else {
+        return false;
+    };
+    if !rest.starts_with(key) {
+        return false;
+    }
+    rest.get(key.len())
+        .copied()
+        .is_none_or(is_pdf_delimiter_or_ws)
 }
 
 const fn is_pdf_delimiter_or_ws(byte: u8) -> bool {

@@ -11,6 +11,6 @@ pub mod document;
 pub mod error;
 pub mod info;
 
-pub use document::{PdfDoc, TrailerProvenance};
+pub use document::{PdfDoc, ToolCtx, TrailerProvenance};
 pub use error::PdfError;
 pub use info::{PageInfo, PdfInfo, PdfMetadata};

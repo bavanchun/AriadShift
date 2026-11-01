@@ -27,8 +27,9 @@ pub enum PdfError {
         needs_password: bool,
     },
 
-    /// A resource limit from [`ariad_core::limits::Limits`] was exceeded.
-    #[error("{0}")]
+    /// A resource limit from [`ariad_core::limits::Limits`] was exceeded, or execution was
+    /// stopped by a [`crate::ToolCtx`] deadline or cancellation flag.
+    #[error("{}", format_limit_or_ctx_error(.0))]
     LimitExceeded(ReadError),
 
     /// Tool parameters failed validation.
@@ -40,10 +41,78 @@ pub enum PdfError {
     NotImplemented(String),
 }
 
+fn format_limit_or_ctx_error(error: &ReadError) -> String {
+    match error {
+        ReadError::InputTooLarge {
+            actual: 0,
+            limit: 0,
+        } => "tool execution was cancelled".to_owned(),
+        ReadError::TooManyPages {
+            actual: 0,
+            limit: 0,
+        } => "tool execution exceeded the configured timeout".to_owned(),
+        other => other.to_string(),
+    }
+}
+
 impl PdfError {
+    /// Sentinel value returned when a [`crate::ToolCtx`] cancellation flag is set.
+    pub const CANCELLED: Self = Self::LimitExceeded(ReadError::InputTooLarge {
+        actual: 0,
+        limit: 0,
+    });
+
+    /// Sentinel value returned when a [`crate::ToolCtx`] deadline has expired.
+    pub const TIMED_OUT: Self = Self::LimitExceeded(ReadError::TooManyPages {
+        actual: 0,
+        limit: 0,
+    });
+
+    /// Constructs the error returned when cooperative cancellation is triggered.
+    #[must_use]
+    pub const fn cancelled() -> Self {
+        Self::CANCELLED
+    }
+
+    /// Constructs the error returned when a cooperative deadline is exceeded.
+    #[must_use]
+    pub const fn timed_out() -> Self {
+        Self::TIMED_OUT
+    }
+
+    /// Returns `true` when this error was caused by cooperative cancellation.
+    #[must_use]
+    pub const fn is_cancelled(&self) -> bool {
+        matches!(
+            self,
+            Self::LimitExceeded(ReadError::InputTooLarge {
+                actual: 0,
+                limit: 0,
+            })
+        )
+    }
+
+    /// Returns `true` when this error was caused by a [`crate::ToolCtx`] deadline expiring.
+    #[must_use]
+    pub const fn is_timed_out(&self) -> bool {
+        matches!(
+            self,
+            Self::LimitExceeded(ReadError::TooManyPages {
+                actual: 0,
+                limit: 0,
+            })
+        )
+    }
+
     /// Stable fine-grained error code for programmatic diagnostics.
     #[must_use]
     pub const fn code(&self) -> &'static str {
+        if self.is_cancelled() {
+            return "cancelled";
+        }
+        if self.is_timed_out() {
+            return "limit_exceeded";
+        }
         match self {
             Self::Malformed => "malformed_pdf",
             Self::Encrypted { .. } => "encrypted",
@@ -56,6 +125,9 @@ impl PdfError {
     /// Stable CLI/MCP surface error code matching `docs/tools.md`.
     #[must_use]
     pub const fn cli_error_code(&self) -> &'static str {
+        if self.is_cancelled() {
+            return "interrupted";
+        }
         match self {
             Self::Malformed | Self::Encrypted { .. } | Self::InvalidParams(_) => "invalid_input",
             Self::LimitExceeded(_) => "limit_exceeded",
@@ -66,6 +138,9 @@ impl PdfError {
     /// Process exit code matching `docs/tools.md`.
     #[must_use]
     pub const fn exit_code(&self) -> u8 {
+        if self.is_cancelled() {
+            return 130;
+        }
         match self {
             Self::Malformed | Self::Encrypted { .. } | Self::InvalidParams(_) => 2,
             Self::LimitExceeded(_) => 7,
