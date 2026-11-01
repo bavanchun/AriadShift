@@ -449,11 +449,16 @@ pub fn install(
         for file in &mut extracted.files {
             file.executable = if component.unpack.is_archive() {
                 let extracted_path = extract::join_parts(&staging, &file.path);
-                (file.executable
+                let executable = file.executable
                     || fs::symlink_metadata(&extracted_path)
-                        .is_ok_and(|metadata| is_executable_file(&extracted_path, &metadata)))
-                    && !notice_paths.contains(&file.path)
-                    && declared_executables.contains(&file.path)
+                        .is_ok_and(|metadata| is_executable_file(&extracted_path, &metadata));
+                if executable && !declared_executables.contains(&file.path) {
+                    return Err(PackError::InvalidManifest(format!(
+                        "archive member '{}' is executable but not declared in targets[].executables",
+                        file.path
+                    )));
+                }
+                executable && !notice_paths.contains(&file.path)
             } else {
                 component.executable || declared_executables.contains(&file.path)
             };

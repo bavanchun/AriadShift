@@ -640,7 +640,7 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
         fs::write(legacy_src.path().join(packs::MANIFEST_FILE), stripped_toml).unwrap();
         support::sign_into(legacy_src.path(), &key, "pack:verapdf version:1.0.0");
 
-        let legacy_report = packs::install(
+        let legacy_err = packs::install(
             &ctx,
             &InstallRequest {
                 name: "verapdf".to_owned(),
@@ -650,25 +650,10 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
             &CancellationToken::new(),
             &mut |_| {},
         )
-        .expect("install legacy pack without executables list");
-        // Even if both receipt.toml and .locks/verapdf-1.0.0.manifest are tampered to mark
-        // `bin/extra-helper` executable, resolve refuses it because the signed manifest has no
-        // `executables` list and `bin/extra-helper` is not `entrypoint[0]`.
-        let legacy_err = resolve_pack_in(&ctx, "verapdf").expect_err(
-            "archive executable not in entrypoint[0] must fail when executables is absent",
-        );
-        assert_eq!(legacy_err.code(), "tool_missing");
-        assert!(legacy_err.to_string().contains("unlisted executable"));
-
-        // Removing +x from `bin/extra-helper` allows the legacy pack to resolve `entrypoint[0]`.
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            legacy_report.root.join("bin/extra-helper"),
-            fs::Permissions::from_mode(0o644),
-        )
-        .unwrap();
-        resolve_pack_in(&ctx, "verapdf")
-            .expect("legacy pack without executables resolves entrypoint[0]");
+        .expect_err("undeclared archive executable must fail during install");
+        assert!(legacy_err.to_string().contains(
+            "archive member 'bin/extra-helper' is executable but not declared"
+        ));
     }
 
     // Also test a pack with a non-executable Unpack::File component whose filename has an
