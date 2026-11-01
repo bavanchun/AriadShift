@@ -225,7 +225,14 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RenderParams) -> ToolResult {
             let format = if zipped { "zip" } else { ext };
             for (scratch, name) in files {
                 let path = ctx.artifact_path(&name)?;
-                fs::rename(scratch, &path).map_err(|_| EngineFailure::io())?;
+                match fs::rename(&scratch, &path) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
+                        fs::copy(&scratch, &path).map_err(|_| EngineFailure::io())?;
+                        fs::remove_file(&scratch).map_err(|_| EngineFailure::io())?;
+                    }
+                    Err(_) => return Err(EngineFailure::io()),
+                }
                 ctx.artifact(&path, format)?;
             }
         }

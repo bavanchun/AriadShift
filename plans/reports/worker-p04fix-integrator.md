@@ -37,6 +37,11 @@ nested-fan-out regressions passed, as did the 40-image bomb test under a 2 GiB
 systemd scope. Preflight scanned all 39 PDF fixtures: the single intentional
 inline-image bomb was refused, and all 38 legitimate fixtures passed.
 
+The full CLI gate exposed an `EXDEV` error when moving rendered scratch files
+between the sandbox's separate temporary and output mounts. Render now copies
+and removes the scratch file when a cross-device rename fails. The existing
+end-to-end PDFium CLI regression failed before this fix and passed afterward.
+
 Musl targets remain a follow-up: removing targets changes release coverage and is
 not a one-line exclusion. `cargo fmt --all --check` passed after formatting. The final gate handoff records
 the post-merge results.
