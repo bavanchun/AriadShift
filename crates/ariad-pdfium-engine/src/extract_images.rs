@@ -1239,6 +1239,10 @@ fn preflight_content(
             last_name = Some(decode_pdf_name(&token[1..]));
             continue;
         }
+        if token.first() == Some(&b'(') || (token.first() == Some(&b'<') && token != b"<<") {
+            last_name = content_string_operand(token)?;
+            continue;
+        }
         if token == b"Do" {
             if let Some(name) = last_name.take() {
                 charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
@@ -1570,6 +1574,16 @@ fn inline_lzw_len(
             }
         }
         previous = Some(len);
+    }
+}
+
+fn content_string_operand(token: &[u8]) -> Result<Option<Vec<u8>>, EngineFailure> {
+    let mut content = token.to_vec();
+    content.extend_from_slice(b" q");
+    let parsed = Content::decode(&content).map_err(|_| EngineFailure::limit_exceeded())?;
+    match parsed.operations.first().and_then(|op| op.operands.first()) {
+        Some(Object::String(value, _)) => Ok(Some(value.clone())),
+        _ => Err(EngineFailure::limit_exceeded()),
     }
 }
 
@@ -1935,28 +1949,15 @@ fn scan_do_operators(
             }
             continue;
         }
-        // Skip literal strings `(...)` with balanced parentheses and escapes.
-        if b == b'(' {
-            last_name = None;
-            i += 1;
-            let mut depth = 1usize;
-            while i < n && depth > 0 {
-                match content[i] {
-                    b'\\' => i = (i + 2).min(n),
-                    b'(' => {
-                        depth += 1;
-                        i += 1;
-                    }
-                    b')' => {
-                        depth -= 1;
-                        i += 1;
-                    }
-                    _ => i += 1,
-                }
-            }
+        // PDFium accepts string operands as XObject names as well as names.
+        if b == b'(' || (b == b'<' && content.get(i + 1) != Some(&b'<')) {
+            let mut cursor = i;
+            let (start, end) = next_content_token(content, &mut cursor)?
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            last_name = content_string_operand(&content[start..end])?;
+            i = cursor;
             continue;
         }
-        // Skip hex strings `<...>` or dictionary delimiters `<<` / `>>`.
         if b == b'<' || b == b'>' || b == b'[' || b == b']' || b == b'{' || b == b'}' {
             last_name = None;
             i += 1;
@@ -2749,6 +2750,44 @@ mod corpus_tests {
                 paths.push(path);
             }
         }
+    }
+
+    #[test]
+    fn string_operands_resolve_xobject_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "strings",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut page = 0;
+        let mut document = 0;
+        let content = b"(F\\155) Do <466d> Do /Fm Do";
+        assert_eq!(
+            scan_do_operators(&ctx, content, &mut page, &mut document).unwrap(),
+            vec![b"Fm".to_vec(); 3]
+        );
+        let mut budget = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut document,
+        };
+        assert_eq!(
+            preflight_content(&ctx, &lopdf::Document::new(), content, 1024, &mut budget).unwrap(),
+            vec![b"Fm".to_vec(); 3]
+        );
     }
 
     #[test]
