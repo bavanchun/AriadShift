@@ -242,6 +242,12 @@ test-server:
             | grep -q 'created bucket' && break
         sleep 1
     done
+    if ! docker exec "$s3" sh -c 'echo "s3.bucket.list" | weed shell' 2>/dev/null \
+        | grep -Eq '(^|[[:space:]>])ariad-test([[:space:]]|$)'; then
+        docker logs "$s3" >&2
+        echo "test SeaweedFS did not become ready within 60 seconds" >&2
+        exit 1
+    fi
     cargo build -p ariad-cli --bin ashift
     ARIAD_TEST_DATABASE_URL=postgres://postgres:ariad@127.0.0.1:55442/postgres \
     ARIAD_TEST_REQUIRE_DATABASE=1 \

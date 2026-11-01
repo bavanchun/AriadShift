@@ -285,6 +285,7 @@ jobs:
         image: ghcr.io/pgmq/pg18-pgmq:v1.13.1@sha256:aa3030fdacf5c199338bfe5c893fb8101e8233687026c4803e1fde61f520dac7
         env:
           POSTGRES_PASSWORD: ariad
+          PGCTLTIMEOUT: "180"
         ports:
           - 55442:5432
         # TCP opens only after the image's init scripts finish.

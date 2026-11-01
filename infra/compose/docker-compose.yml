@@ -75,6 +75,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/compose/.env}
       # Network logins authenticate with SCRAM; the socket stays in-container.
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      PGCTLTIMEOUT: "180"
     volumes:
       # PostgreSQL 18 images keep PGDATA in a versioned directory below this.
       - postgres-data:/var/lib/postgresql
