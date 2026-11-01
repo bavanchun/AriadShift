@@ -430,9 +430,28 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
         &ctx,
     )
     .expect("extract 2,1");
+    // `pdf.reorder` rewrites the source document in place while `pdf.extract_pages` builds a new
+    // one, so the bytes differ by design; the page content and remapped labels must still agree.
     assert_eq!(
-        reordered_mp.artifacts[0].bytes, extracted_mp.artifacts[0].bytes,
-        "reorder(2,1) and extract_pages(2,1) must produce identical bytes"
+        extract_markdown(&reordered_mp.artifacts[0].bytes),
+        extract_markdown(&extracted_mp.artifacts[0].bytes),
+        "reorder(2,1) and extract_pages(2,1) must select the same page content"
+    );
+    let page_labels_of = |bytes: &[u8]| {
+        let doc = open(bytes, &limits).expect("open output");
+        let labels = doc
+            .inner()
+            .catalog()
+            .expect("catalog")
+            .get(b"PageLabels")
+            .expect("/PageLabels")
+            .clone();
+        format!("{labels:?}")
+    };
+    assert_eq!(
+        page_labels_of(&reordered_mp.artifacts[0].bytes),
+        page_labels_of(&extracted_mp.artifacts[0].bytes),
+        "reorder and extract_pages must remap /PageLabels identically"
     );
     let reordered_doc = open(&reordered_mp.artifacts[0].bytes, &limits).expect("open reordered");
     assert!(
@@ -602,8 +621,14 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
     )
     .expect("extract syn 2,1");
     assert_eq!(
-        syn_reorder.artifacts[0].bytes, syn_extract.artifacts[0].bytes,
-        "reorder and extract_pages must emit identical bytes on complex PDF"
+        extract_markdown(&syn_reorder.artifacts[0].bytes),
+        extract_markdown(&syn_extract.artifacts[0].bytes),
+        "reorder and extract_pages must select the same page content on a complex PDF"
+    );
+    assert_eq!(
+        inspect_bytes(&syn_reorder.artifacts[0].bytes).outline_count,
+        inspect_bytes(&syn_extract.artifacts[0].bytes).outline_count,
+        "reorder and extract_pages must keep the same bookmarks"
     );
 
     let out_info = inspect_bytes(&syn_reorder.artifacts[0].bytes);
@@ -653,6 +678,29 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
         !out_dests.has(b"D3"),
         "dangling destination /D3 must be dropped instead of [null /Fit]"
     );
+    let out_names = out_cat
+        .get(b"Names")
+        .ok()
+        .and_then(|o| match o {
+            Object::Reference(id) => raw_out.get_dictionary(*id).ok(),
+            Object::Dictionary(d) => Some(d),
+            _ => None,
+        })
+        .expect("Names dict present");
+    let name_tree_leaf = |node: &Object| match node {
+        Object::Reference(id) => raw_out.get_dictionary(*id).ok().cloned(),
+        Object::Dictionary(d) => Some(d.clone()),
+        _ => None,
+    };
+    let dests_root = name_tree_leaf(out_names.get(b"Dests").expect("Names /Dests")).unwrap();
+    let leaf = name_tree_leaf(&dests_root.get(b"Kids").unwrap().as_array().unwrap()[0]).unwrap();
+    let leaf_names = leaf.get(b"Names").unwrap().as_array().unwrap();
+    assert_eq!(
+        leaf_names.len(),
+        2,
+        "only the (ND2) pair may survive in the /Names /Dests tree"
+    );
+    assert_eq!(leaf_names[0].as_str().unwrap(), b"ND2");
 
     // 3. Divergence 3: Duplicating a form page (`"1,1"`) on `form-acroform.pdf` must create
     //    independent widget annotations on each page copy with `/P` pointing to that page copy,
@@ -673,8 +721,9 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
     )
     .expect("extract form 1,1");
     assert_eq!(
-        dup_reorder.artifacts[0].bytes,
-        dup_extract.artifacts[0].bytes
+        extract_markdown(&dup_reorder.artifacts[0].bytes),
+        extract_markdown(&dup_extract.artifacts[0].bytes),
+        "reorder and extract_pages must duplicate the same page content"
     );
 
     let dup_doc = open(&dup_reorder.artifacts[0].bytes, &limits).expect("open dup form");
@@ -709,20 +758,13 @@ fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_w
         assert_eq!(d2.get(b"P").unwrap().as_reference().unwrap(), p2_id);
     }
 
-    let acro_ref = dup_inner
-        .catalog()
-        .unwrap()
-        .get(b"AcroForm")
-        .unwrap()
-        .as_reference()
-        .unwrap();
-    let fields = dup_inner
-        .get_dictionary(acro_ref)
-        .unwrap()
-        .get(b"Fields")
-        .unwrap()
-        .as_array()
-        .unwrap();
+    // The in-place rewrite keeps `/AcroForm` exactly where the source stored it, direct or indirect.
+    let acro_dict = match dup_inner.catalog().unwrap().get(b"AcroForm").unwrap() {
+        Object::Reference(id) => dup_inner.get_dictionary(*id).unwrap(),
+        Object::Dictionary(dict) => dict,
+        other => panic!("unexpected /AcroForm object: {other:?}"),
+    };
+    let fields = acro_dict.get(b"Fields").unwrap().as_array().unwrap();
     let mut registered_widget_ids = Vec::new();
     for field_entry in fields {
         let fid = field_entry.as_reference().unwrap();
@@ -766,12 +808,18 @@ fn reorder_handles_diamond_acroform_field_dag_without_hang() {
             "Annots" => vec![Object::Reference(widget_id)],
         }),
     );
+    let page2_id = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => content_id,
+    });
     doc.objects.insert(
         pages_id,
         Object::Dictionary(dictionary! {
             "Type" => "Pages",
-            "Kids" => vec![Object::Reference(page_id)],
-            "Count" => 1,
+            "Kids" => vec![Object::Reference(page_id), Object::Reference(page2_id)],
+            "Count" => 2,
         }),
     );
 
@@ -799,18 +847,504 @@ fn reorder_handles_diamond_acroform_field_dag_without_hang() {
     let mut raw = Vec::new();
     doc.save_to(&mut raw).expect("save diamond acroform");
 
-    let start = Instant::now();
-    let out = ariad_pdf::run_tool(
+    let reversed = ariad_pdf::run_tool(
         "pdf.reorder",
-        &[InputDoc::new("diamond-acro.pdf", raw)],
+        &[InputDoc::new("diamond-acro.pdf", raw.clone())],
         &json!({ "order": "reverse" }),
         &ToolCtx::default(),
     )
-    .expect("reorder diamond acroform");
-    assert_eq!(out.artifacts.len(), 1);
-    assert!(
-        start.elapsed() < Duration::from_millis(200),
-        "diamond AcroForm traversal took too long: {:?}",
-        start.elapsed()
-    );
+    .expect("reorder reverse diamond acroform");
+    assert_eq!(reversed.artifacts.len(), 1);
+    let rev_info = inspect_bytes(&reversed.artifacts[0].bytes);
+    assert_eq!(rev_info.page_count, 2);
+    assert!(rev_info.has_forms);
+
+    // Subset reorder exercises `prune_acroform_for_kept_pages` across the diamond DAG.
+    let subset = ariad_pdf::run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("diamond-acro.pdf", raw)],
+        &json!({ "order": "1" }),
+        &ToolCtx::default(),
+    )
+    .expect("reorder subset diamond acroform");
+    assert_eq!(subset.artifacts.len(), 1);
+    let sub_info = inspect_bytes(&subset.artifacts[0].bytes);
+    assert_eq!(sub_info.page_count, 1);
+    assert!(sub_info.has_forms);
+}
+
+mod catalog_preservation {
+    use lopdf::{Document, Object, ObjectId, Stream, StringFormat, dictionary};
+
+    use super::*;
+
+    /// Builds a `page_count`-page document whose page `n` paints the text `(P<n>)`.
+    fn synthetic_doc(page_count: usize) -> (Document, ObjectId, Vec<ObjectId>) {
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let mut pages = Vec::new();
+        for n in 1..=page_count {
+            let content = doc.add_object(Stream::new(
+                dictionary! {},
+                format!("BT (P{n}) Tj ET").into_bytes(),
+            ));
+            pages.push(doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Contents" => content,
+            }));
+        }
+        (doc, pages_id, pages)
+    }
+
+    /// Installs the `/Pages` root and a `/Catalog` carrying `extra`, then serializes `doc`.
+    fn finish_doc(
+        mut doc: Document,
+        pages_id: ObjectId,
+        pages: &[ObjectId],
+        extra: Vec<(&str, Object)>,
+    ) -> Vec<u8> {
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => pages.iter().copied().map(Object::Reference).collect::<Vec<_>>(),
+                "Count" => i64::try_from(pages.len()).unwrap(),
+            }),
+        );
+        let mut catalog = dictionary! { "Type" => "Catalog", "Pages" => pages_id };
+        for (key, value) in extra {
+            catalog.set(key, value);
+        }
+        let cat_id = doc.add_object(catalog);
+        doc.trailer.set("Root", cat_id);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).expect("save synthetic pdf");
+        bytes
+    }
+
+    fn reorder(bytes: &[u8], order: &str) -> ariad_pdf::ToolOutput {
+        ariad_pdf::run_tool(
+            "pdf.reorder",
+            &[InputDoc::new("syn.pdf", bytes.to_vec())],
+            &json!({ "order": order }),
+            &ToolCtx::default(),
+        )
+        .expect("reorder synthetic pdf")
+    }
+
+    fn page_markers(bytes: &[u8]) -> Vec<String> {
+        let doc = open(bytes, &Limits::local()).expect("open output");
+        let inner = doc.inner();
+        inner
+            .get_pages()
+            .values()
+            .map(|&id| {
+                let content = inner.get_page_content(id);
+                let text = String::from_utf8_lossy(&content).into_owned();
+                text.split(['(', ')']).nth(1).unwrap_or("").to_owned()
+            })
+            .collect()
+    }
+
+    fn catalog_keys(bytes: &[u8]) -> Vec<String> {
+        let doc = open(bytes, &Limits::local()).expect("open output");
+        doc.inner()
+            .catalog()
+            .expect("catalog")
+            .iter()
+            .map(|(k, _)| String::from_utf8_lossy(k).into_owned())
+            .collect()
+    }
+
+    fn resolve<'a>(doc: &'a Document, obj: &'a Object) -> &'a Object {
+        match obj {
+            Object::Reference(id) => doc.get_object(*id).expect("resolve reference"),
+            other => other,
+        }
+    }
+
+    #[test]
+    fn reorder_keeps_default_hidden_layer_hidden() {
+        let (mut doc, pages_id, pages) = synthetic_doc(3);
+        let ocg = doc.add_object(dictionary! {
+            "Type" => "OCG",
+            "Name" => Object::string_literal("Draft watermark"),
+        });
+        let oc_properties = dictionary! {
+            "OCGs" => vec![Object::Reference(ocg)],
+            "D" => dictionary! {
+                "BaseState" => "ON",
+                "OFF" => vec![Object::Reference(ocg)],
+                "Order" => vec![Object::Reference(ocg)],
+            },
+        };
+        let bytes = finish_doc(
+            doc,
+            pages_id,
+            &pages,
+            vec![("OCProperties", Object::Dictionary(oc_properties))],
+        );
+
+        let out = reorder(&bytes, "reverse");
+        let reopened = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+        let inner = reopened.inner();
+        let catalog = inner.catalog().expect("catalog");
+        let oc = resolve(
+            inner,
+            catalog.get(b"OCProperties").expect("OCProperties kept"),
+        )
+        .as_dict()
+        .expect("OCProperties dictionary");
+        let default_config = resolve(inner, oc.get(b"D").expect("/D kept"))
+            .as_dict()
+            .expect("/D dictionary");
+        let off = default_config
+            .get(b"OFF")
+            .expect("default-hidden layer list kept")
+            .as_array()
+            .expect("/OFF array");
+        assert_eq!(off.len(), 1, "the hidden layer must stay in /OFF");
+        let hidden = resolve(inner, &off[0]).as_dict().expect("OCG dictionary");
+        assert_eq!(
+            hidden.get(b"Name").unwrap().as_str().unwrap(),
+            b"Draft watermark"
+        );
+        assert_eq!(page_markers(&out.artifacts[0].bytes), ["P3", "P2", "P1"]);
+    }
+
+    #[test]
+    fn reorder_keeps_tagged_structure_mark_info_and_page_mode() {
+        let (mut doc, pages_id, pages) = synthetic_doc(3);
+        let root_id = doc.new_object_id();
+        let elem = doc.add_object(dictionary! {
+            "Type" => "StructElem",
+            "S" => "P",
+            "P" => root_id,
+            "Pg" => pages[0],
+        });
+        doc.objects.insert(
+            root_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "StructTreeRoot",
+                "K" => vec![Object::Reference(elem)],
+            }),
+        );
+        let bytes = finish_doc(
+            doc,
+            pages_id,
+            &pages,
+            vec![
+                ("StructTreeRoot", Object::Reference(root_id)),
+                (
+                    "MarkInfo",
+                    Object::Dictionary(dictionary! { "Marked" => true }),
+                ),
+                ("PageMode", Object::Name(b"UseOutlines".to_vec())),
+                (
+                    "ViewerPreferences",
+                    Object::Dictionary(dictionary! { "HideToolbar" => true }),
+                ),
+                (
+                    "Lang",
+                    Object::String(b"en-US".to_vec(), StringFormat::Literal),
+                ),
+            ],
+        );
+
+        let out = reorder(&bytes, "reverse");
+        let reopened = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+        let inner = reopened.inner();
+        let catalog = inner.catalog().expect("catalog");
+        assert_eq!(
+            catalog.get(b"PageMode").unwrap().as_name().unwrap(),
+            b"UseOutlines"
+        );
+        assert_eq!(catalog.get(b"Lang").unwrap().as_str().unwrap(), b"en-US");
+        assert!(catalog.has(b"ViewerPreferences"));
+        let mark_info = resolve(inner, catalog.get(b"MarkInfo").expect("MarkInfo kept"))
+            .as_dict()
+            .unwrap();
+        assert!(mark_info.get(b"Marked").unwrap().as_bool().unwrap());
+
+        let struct_root = resolve(
+            inner,
+            catalog.get(b"StructTreeRoot").expect("StructTreeRoot kept"),
+        )
+        .as_dict()
+        .unwrap();
+        let kids = struct_root.get(b"K").unwrap().as_array().unwrap();
+        let elem = resolve(inner, &kids[0]).as_dict().unwrap();
+        let tagged_page = elem.get(b"Pg").unwrap().as_reference().unwrap();
+        assert!(
+            inner.get_pages().values().any(|&id| id == tagged_page),
+            "/Pg of the structure element must still name a page of the output"
+        );
+        assert!(out.warnings.is_empty(), "a pure reorder is lossless");
+    }
+
+    #[test]
+    fn reorder_succeeds_when_annots_reference_a_missing_object() {
+        let (mut doc, pages_id, pages) = synthetic_doc(3);
+        let dangling: ObjectId = (9_999, 0);
+        let link = doc.add_object(dictionary! {
+            "Type" => "Annot",
+            "Subtype" => "Link",
+            "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+            "Popup" => dangling,
+        });
+        let page = doc.get_dictionary_mut(pages[0]).unwrap();
+        page.set(
+            "Annots",
+            vec![Object::Reference(dangling), Object::Reference(link)],
+        );
+        page.set(
+            "Resources",
+            dictionary! { "Font" => dictionary! { "F1" => dangling } },
+        );
+        let bytes = finish_doc(doc, pages_id, &pages, Vec::new());
+
+        let reversed = reorder(&bytes, "reverse");
+        assert_eq!(
+            page_markers(&reversed.artifacts[0].bytes),
+            ["P3", "P2", "P1"]
+        );
+        let duplicated = reorder(&bytes, "1,1,2,3");
+        assert_eq!(
+            page_markers(&duplicated.artifacts[0].bytes),
+            ["P1", "P1", "P2", "P3"]
+        );
+        let subset = reorder(&bytes, "2,1");
+        assert_eq!(page_markers(&subset.artifacts[0].bytes), ["P2", "P1"]);
+    }
+
+    #[test]
+    fn reorder_survives_self_referential_destinations_on_a_small_stack() {
+        let handle = std::thread::Builder::new()
+            .name("reorder-small-stack".to_owned())
+            .stack_size(512 * 1024)
+            .spawn(|| {
+                let (mut doc, pages_id, pages) = synthetic_doc(3);
+                let self_dest = doc.new_object_id();
+                doc.objects.insert(
+                    self_dest,
+                    Object::Dictionary(dictionary! { "D" => Object::Reference(self_dest) }),
+                );
+                let names_dests = doc.add_object(dictionary! {
+                    "Names" => vec![
+                        Object::String(b"Loop".to_vec(), StringFormat::Literal),
+                        Object::Reference(self_dest),
+                    ],
+                });
+                let bytes = finish_doc(
+                    doc,
+                    pages_id,
+                    &pages,
+                    vec![
+                        (
+                            "Dests",
+                            Object::Dictionary(dictionary! { "A" => Object::Reference(self_dest) }),
+                        ),
+                        (
+                            "Names",
+                            Object::Dictionary(dictionary! { "Dests" => names_dests }),
+                        ),
+                        ("OpenAction", Object::Reference(self_dest)),
+                    ],
+                );
+
+                let reversed = reorder(&bytes, "reverse");
+                assert_eq!(
+                    page_markers(&reversed.artifacts[0].bytes),
+                    ["P3", "P2", "P1"]
+                );
+                let subset = reorder(&bytes, "2,1");
+                assert_eq!(page_markers(&subset.artifacts[0].bytes), ["P2", "P1"]);
+            })
+            .expect("spawn small-stack thread");
+        handle.join().expect("small-stack thread must not overflow");
+    }
+
+    #[test]
+    fn reorder_reverse_round_trip_keeps_every_catalog_key() {
+        let (mut doc, pages_id, pages) = synthetic_doc(3);
+        let outlines_id = doc.new_object_id();
+        let bookmark = doc.add_object(dictionary! {
+            "Title" => Object::string_literal("Start"),
+            "Parent" => outlines_id,
+            "Dest" => vec![Object::Reference(pages[1]), Object::Name(b"Fit".to_vec())],
+        });
+        doc.objects.insert(
+            outlines_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Outlines",
+                "First" => bookmark,
+                "Last" => bookmark,
+                "Count" => 1,
+            }),
+        );
+        let extra: Vec<(&str, Object)> = vec![
+            (
+                "Lang",
+                Object::String(b"fr".to_vec(), StringFormat::Literal),
+            ),
+            ("PageMode", Object::Name(b"UseThumbs".to_vec())),
+            ("PageLayout", Object::Name(b"TwoColumnLeft".to_vec())),
+            ("Version", Object::Name(b"1.7".to_vec())),
+            (
+                "MarkInfo",
+                Object::Dictionary(dictionary! { "Marked" => true }),
+            ),
+            (
+                "ViewerPreferences",
+                Object::Dictionary(dictionary! { "DisplayDocTitle" => true }),
+            ),
+            (
+                "OCProperties",
+                Object::Dictionary(dictionary! { "OCGs" => Vec::<Object>::new() }),
+            ),
+            (
+                "StructTreeRoot",
+                Object::Dictionary(dictionary! { "Type" => "StructTreeRoot" }),
+            ),
+            (
+                "Names",
+                Object::Dictionary(dictionary! {
+                    "JavaScript" => dictionary! { "Names" => Vec::<Object>::new() },
+                }),
+            ),
+            (
+                "Extensions",
+                Object::Dictionary(
+                    dictionary! { "ADBE" => dictionary! { "BaseVersion" => "1.7" } },
+                ),
+            ),
+            ("AA", Object::Dictionary(dictionary! {})),
+            ("Perms", Object::Dictionary(dictionary! {})),
+            ("Threads", Object::Array(Vec::new())),
+            (
+                "Collection",
+                Object::Dictionary(dictionary! { "View" => "D" }),
+            ),
+            ("DSS", Object::Dictionary(dictionary! {})),
+            ("Legal", Object::Dictionary(dictionary! {})),
+            ("Outlines", Object::Reference(outlines_id)),
+        ];
+        let input_keys: Vec<String> = extra.iter().map(|(k, _)| (*k).to_owned()).collect();
+        let bytes = finish_doc(doc, pages_id, &pages, extra);
+
+        let once = reorder(&bytes, "reverse");
+        let once_keys = catalog_keys(&once.artifacts[0].bytes);
+        for key in &input_keys {
+            assert!(
+                once_keys.contains(key),
+                "reverse dropped catalog key /{key}; kept {once_keys:?}"
+            );
+        }
+        assert_eq!(page_markers(&once.artifacts[0].bytes), ["P3", "P2", "P1"]);
+
+        let twice = reorder(&once.artifacts[0].bytes, "reverse");
+        let twice_keys = catalog_keys(&twice.artifacts[0].bytes);
+        for key in &input_keys {
+            assert!(
+                twice_keys.contains(key),
+                "second reverse dropped catalog key /{key}"
+            );
+        }
+        assert_eq!(page_markers(&twice.artifacts[0].bytes), ["P1", "P2", "P3"]);
+        let reopened = open(&twice.artifacts[0].bytes, &Limits::local()).unwrap();
+        let catalog = reopened.inner().catalog().unwrap();
+        assert_eq!(catalog.get(b"Lang").unwrap().as_str().unwrap(), b"fr");
+        assert_eq!(
+            catalog.get(b"PageLayout").unwrap().as_name().unwrap(),
+            b"TwoColumnLeft"
+        );
+    }
+
+    #[test]
+    fn reorder_page_subset_drops_tagged_structure_and_removed_page_references() {
+        let (mut doc, pages_id, pages) = synthetic_doc(3);
+        let root_id = doc.new_object_id();
+        let elem = doc.add_object(dictionary! {
+            "Type" => "StructElem",
+            "S" => "P",
+            "P" => root_id,
+            "Pg" => pages[2],
+        });
+        doc.objects.insert(
+            root_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "StructTreeRoot",
+                "K" => vec![Object::Reference(elem)],
+            }),
+        );
+        let bead = doc.add_object(dictionary! {
+            "Type" => "Bead",
+            "P" => pages[2],
+            "R" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+        });
+        let ocg =
+            doc.add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("L") });
+        let bytes = finish_doc(
+            doc,
+            pages_id,
+            &pages,
+            vec![
+                ("StructTreeRoot", Object::Reference(root_id)),
+                (
+                    "MarkInfo",
+                    Object::Dictionary(dictionary! { "Marked" => true }),
+                ),
+                ("Threads", Object::Array(vec![Object::Reference(bead)])),
+                (
+                    "OCProperties",
+                    Object::Dictionary(dictionary! {
+                        "OCGs" => vec![Object::Reference(ocg)],
+                        "D" => dictionary! { "OFF" => vec![Object::Reference(ocg)] },
+                    }),
+                ),
+                ("PageMode", Object::Name(b"UseOutlines".to_vec())),
+            ],
+        );
+
+        let out = reorder(&bytes, "2,1");
+        assert_eq!(page_markers(&out.artifacts[0].bytes), ["P2", "P1"]);
+        let reopened = open(&out.artifacts[0].bytes, &Limits::local()).unwrap();
+        let inner = reopened.inner();
+        let catalog = inner.catalog().unwrap();
+        assert!(
+            !catalog.has(b"StructTreeRoot"),
+            "tagged structure is not kept for a page subset"
+        );
+        let mark_info = resolve(inner, catalog.get(b"MarkInfo").unwrap())
+            .as_dict()
+            .unwrap();
+        assert!(
+            !mark_info.has(b"Marked"),
+            "/MarkInfo /Marked must be removed"
+        );
+        assert!(catalog.has(b"OCProperties"));
+        assert!(catalog.has(b"PageMode"));
+        assert!(
+            out.warnings.iter().any(|w| w.contains("StructTreeRoot")),
+            "expected a tagged-structure warning, got {:?}",
+            out.warnings
+        );
+        let page_objects = inner
+            .objects
+            .values()
+            .filter(|o| {
+                o.as_dict()
+                    .ok()
+                    .and_then(|d| d.get(b"Type").ok())
+                    .and_then(|t| t.as_name().ok())
+                    == Some(b"Page")
+            })
+            .count();
+        assert_eq!(
+            page_objects, 2,
+            "the removed page must not stay reachable through catalog entries"
+        );
+    }
 }

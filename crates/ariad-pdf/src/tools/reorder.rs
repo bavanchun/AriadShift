@@ -1,6 +1,6 @@
 //! Implementation of the `pdf.reorder` tool and shared page-sequence manipulation helpers.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use ariad_core::{
     reader::pdf::ReadError,
@@ -15,11 +15,12 @@ pub(crate) use super::page_set::MAX_OUTPUT_PAGES;
 use crate::{
     document::{PdfDoc, ToolCtx},
     error::PdfError,
+    gc,
     tools::{
         OutputDoc,
         page_set::{
-            self, build_extracted_doc, collect_named_destinations, default_xyz_tail,
-            doc_page_count, expand_page_range_bounded,
+            self, build_page_labels_object, collect_named_destinations, default_xyz_tail,
+            expand_page_range_bounded, parse_page_labels, remap_page_labels_for_selection,
         },
     },
     xobject,
@@ -28,7 +29,27 @@ use crate::{
 /// Maximum recursion depth when walking `/Outlines` or `/AcroForm` hierarchies.
 const MAX_TREE_DEPTH: usize = 64;
 
+/// Maximum number of name-tree nodes visited while pruning `/Names /Dests`.
+const MAX_NAME_TREE_NODES: usize = 100_000;
+
+/// Warning emitted when a page subset cannot keep the document's tagged structure.
+const TAGGED_STRUCTURE_WARNING: &str = "tagged structure (StructTreeRoot) is not kept for a page subset; the output is not a tagged PDF";
+
+/// Effective output-page cap: the fixed [`MAX_OUTPUT_PAGES`] ceiling, lowered to the run's
+/// `limits.max_pages` when that is smaller.
+#[must_use]
+fn output_page_cap(max_pages: Option<u32>) -> u64 {
+    max_pages.map_or(MAX_OUTPUT_PAGES, |limit| {
+        MAX_OUTPUT_PAGES.min(u64::from(limit))
+    })
+}
+
 /// Reorders pages in a PDF document using a preset or explicit page range sequence.
+///
+/// The document is rewritten in place: the page tree is replaced by a flat `/Pages` root and every
+/// other catalog entry is left untouched. Only a sequence that omits source pages additionally
+/// prunes outlines, named destinations, form fields and the tagged structure so that nothing keeps
+/// pointing at (or retaining) a removed page.
 pub fn run(
     inputs: &[PdfDoc],
     params: &ReorderParams,
@@ -42,16 +63,10 @@ pub fn run(
         )));
     }
 
-    let source = &inputs[0];
-    if source.is_encrypted() {
-        return Err(PdfError::Encrypted {
-            needs_password: false,
-        });
-    }
-    let page_count = doc_page_count(source);
-    if page_count == 0 {
-        return Err(PdfError::Malformed);
-    }
+    let mut out_doc = inputs[0].clone();
+    let inner = out_doc.inner_mut()?;
+    let orig_pages = collect_page_ids(inner, ctx)?;
+    let page_count = u32::try_from(orig_pages.len()).map_err(|_| PdfError::Malformed)?;
 
     let target_seq = expand_reorder_sequence(&params.order, page_count)?;
     if target_seq.is_empty() {
@@ -59,15 +74,89 @@ pub fn run(
             "reorder target page sequence must not be empty".to_owned(),
         ));
     }
-    if target_seq.len() as u64 > MAX_OUTPUT_PAGES {
+    let cap = output_page_cap(None);
+    if target_seq.len() as u64 > cap {
         return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
             actual: target_seq.len() as u64,
-            limit: MAX_OUTPUT_PAGES as u32,
+            limit: u32::try_from(cap).unwrap_or(u32::MAX),
         }));
     }
+    let target_ids: Vec<ObjectId> = target_seq
+        .iter()
+        .map(|&num| {
+            num.checked_sub(1)
+                .and_then(|idx| orig_pages.get(idx as usize))
+                .copied()
+                .ok_or(PdfError::Malformed)
+        })
+        .collect::<Result<_, _>>()?;
 
-    let out_doc = build_extracted_doc(source, &target_seq, ctx)?;
-    Ok(vec![OutputDoc::unnamed_pdf(out_doc)])
+    let kept: HashSet<ObjectId> = target_ids.iter().copied().collect();
+    let removed: HashSet<ObjectId> = orig_pages
+        .iter()
+        .copied()
+        .filter(|id| !kept.contains(id))
+        .collect();
+    let outline_tree = if removed.is_empty() {
+        Vec::new()
+    } else {
+        extract_outline_tree(inner, &orig_pages, ctx)?
+    };
+
+    let pages_root = pages_root_id(inner)?;
+    let mut materialized = HashSet::new();
+    for &src_id in &target_ids {
+        ctx.check()?;
+        if materialized.insert(src_id) {
+            materialize_page_attributes(inner, src_id, ctx)?;
+        }
+    }
+
+    let mut placed = HashSet::new();
+    let mut new_kids: Vec<ObjectId> = Vec::with_capacity(target_ids.len());
+    let mut cloned_widgets = Vec::new();
+    for &src_id in &target_ids {
+        ctx.check()?;
+        if placed.insert(src_id) {
+            set_page_parent(inner, src_id, pages_root);
+            new_kids.push(src_id);
+        } else {
+            let (dup_id, widgets) = clone_page_for_duplicate(inner, src_id, pages_root, ctx)?;
+            cloned_widgets.extend(widgets);
+            new_kids.push(dup_id);
+        }
+    }
+    rebuild_pages_root(inner, pages_root, &new_kids);
+    register_cloned_widgets(inner, &cloned_widgets, ctx)?;
+
+    let mut warnings = Vec::new();
+    if !removed.is_empty() {
+        let orig_page_set: HashSet<ObjectId> = orig_pages.iter().copied().collect();
+        let kept_map: HashMap<ObjectId, ObjectId> = kept.iter().map(|&id| (id, id)).collect();
+        for &kid_id in &new_kids {
+            ctx.check()?;
+            update_page_annotations(inner, kid_id, &orig_page_set, &kept_map, ctx)?;
+        }
+        prune_acroform_for_kept_pages(inner, &new_kids, ctx)?;
+        drop_catalog_destinations_to(inner, &removed, ctx)?;
+        let filtered_outlines = filter_and_remap_outlines(outline_tree, &kept_map, ctx)?;
+        write_outline_tree(inner, &filtered_outlines, ctx)?;
+        if drop_tagged_structure(inner)? {
+            warnings.push(TAGGED_STRUCTURE_WARNING.to_owned());
+        }
+        null_references_to(inner, &removed, ctx)?;
+    }
+
+    let keeps_source_order = target_seq.iter().copied().eq(1..=page_count);
+    if !keeps_source_order {
+        remap_page_labels(inner, &target_seq, ctx)?;
+    }
+
+    gc::collect_document(inner, ctx)?;
+
+    let mut output = OutputDoc::unnamed_pdf(out_doc);
+    output.warnings = warnings;
+    Ok(vec![output])
 }
 
 /// Expands a [`ReorderSpec`] against `page_count` into a 1-based page number sequence.
@@ -286,6 +375,388 @@ pub(crate) fn materialize_page_attributes(
         page_dict.set("Rotate", Object::Integer(i64::from(rotation)));
     }
     page_dict.set("Resources", Object::Dictionary(merged_resources));
+    Ok(())
+}
+
+/// Clones `src_page_id` into a distinct `/Page` object for a duplicate page selection.
+///
+/// Every annotation that is a dictionary is cloned so its `/P` back-pointer targets the new page.
+/// Returns the new page id together with `(source widget, cloned widget)` pairs that the caller
+/// registers with the form hierarchy. References to missing objects are copied as they are.
+fn clone_page_for_duplicate(
+    doc: &mut Document,
+    src_page_id: ObjectId,
+    pages_root_id: ObjectId,
+    ctx: &ToolCtx,
+) -> Result<(ObjectId, Vec<(ObjectId, ObjectId)>), PdfError> {
+    ctx.check()?;
+    let mut page_dict = doc
+        .get_dictionary(src_page_id)
+        .map_err(|_| PdfError::Malformed)?
+        .clone();
+    let dup_page_id = doc.new_object_id();
+    page_dict.set("Parent", Object::Reference(pages_root_id));
+
+    let mut widgets = Vec::new();
+    if let Ok(annots_obj) = page_dict.get(b"Annots").cloned() {
+        let annot_items = match annots_obj {
+            Object::Reference(id) => doc.get_object(id).and_then(Object::as_array).cloned().ok(),
+            Object::Array(arr) => Some(arr),
+            _ => None,
+        };
+        if let Some(items) = annot_items {
+            let mut new_annots = Vec::with_capacity(items.len());
+            for item in items {
+                ctx.check()?;
+                match item {
+                    Object::Reference(annot_id) => match doc.get_dictionary(annot_id).cloned() {
+                        Ok(mut annot_dict) => {
+                            let is_widget = annot_dict
+                                .get(b"Subtype")
+                                .and_then(Object::as_name)
+                                .is_ok_and(|name| name == b"Widget");
+                            if is_widget || annot_dict.has(b"P") {
+                                annot_dict.set("P", Object::Reference(dup_page_id));
+                            }
+                            let new_annot_id = doc.add_object(Object::Dictionary(annot_dict));
+                            if is_widget {
+                                widgets.push((annot_id, new_annot_id));
+                            }
+                            new_annots.push(Object::Reference(new_annot_id));
+                        }
+                        Err(_) => new_annots.push(Object::Reference(annot_id)),
+                    },
+                    Object::Dictionary(mut annot_dict) => {
+                        if annot_dict.has(b"P") {
+                            annot_dict.set("P", Object::Reference(dup_page_id));
+                        }
+                        let new_annot_id = doc.add_object(Object::Dictionary(annot_dict));
+                        new_annots.push(Object::Reference(new_annot_id));
+                    }
+                    other => new_annots.push(other),
+                }
+            }
+            page_dict.set("Annots", Object::Array(new_annots));
+        }
+    }
+
+    doc.objects
+        .insert(dup_page_id, Object::Dictionary(page_dict));
+    Ok((dup_page_id, widgets))
+}
+
+/// Registers widgets cloned for duplicated pages with the form hierarchy: a widget that is a kid of
+/// a field joins the same field, a widget that is itself a top-level field becomes another entry of
+/// `/AcroForm /Fields`.
+fn register_cloned_widgets(
+    doc: &mut Document,
+    widgets: &[(ObjectId, ObjectId)],
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    if widgets.is_empty() {
+        return Ok(());
+    }
+    let acroform = entry_loc(doc, &DictLoc::Id(catalog_id(doc)?), b"AcroForm");
+    for &(source, clone) in widgets {
+        ctx.check()?;
+        let parent = doc
+            .get_dictionary(source)
+            .ok()
+            .and_then(|widget| widget.get(b"Parent").ok())
+            .and_then(|parent| parent.as_reference().ok())
+            .filter(|&parent_id| doc.get_dictionary(parent_id).is_ok());
+        if let Some(parent_id) = parent {
+            if let Some(kids) = array_entry_mut(doc, &DictLoc::Id(parent_id), b"Kids") {
+                kids.push(Object::Reference(clone));
+            }
+        } else if let Some(form) = &acroform
+            && array_entry(doc, form, b"Fields")
+                .is_some_and(|fields| fields.contains(&Object::Reference(source)))
+            && let Some(fields) = array_entry_mut(doc, form, b"Fields")
+        {
+            fields.push(Object::Reference(clone));
+        }
+    }
+    Ok(())
+}
+
+/// Location of a dictionary that may be stored inline inside another dictionary.
+#[derive(Clone, Debug)]
+enum DictLoc {
+    /// An indirect object.
+    Id(ObjectId),
+    /// A direct dictionary stored under `key` in the dictionary at the boxed location.
+    Nested(Box<DictLoc>, &'static [u8]),
+}
+
+fn dict_at<'a>(doc: &'a Document, loc: &DictLoc) -> Option<&'a Dictionary> {
+    match loc {
+        DictLoc::Id(id) => doc.get_dictionary(*id).ok(),
+        DictLoc::Nested(holder, key) => match dict_at(doc, holder)?.get(key).ok()? {
+            Object::Dictionary(dict) => Some(dict),
+            _ => None,
+        },
+    }
+}
+
+fn dict_at_mut<'a>(doc: &'a mut Document, loc: &DictLoc) -> Option<&'a mut Dictionary> {
+    match loc {
+        DictLoc::Id(id) => doc.get_dictionary_mut(*id).ok(),
+        DictLoc::Nested(holder, key) => match dict_at_mut(doc, holder)?.get_mut(key).ok()? {
+            Object::Dictionary(dict) => Some(dict),
+            _ => None,
+        },
+    }
+}
+
+/// Locates the dictionary stored under `key` in the dictionary at `holder`, following one
+/// indirect reference.
+fn entry_loc(doc: &Document, holder: &DictLoc, key: &'static [u8]) -> Option<DictLoc> {
+    match dict_at(doc, holder)?.get(key).ok()? {
+        Object::Reference(id) => doc.get_dictionary(*id).ok().map(|_| DictLoc::Id(*id)),
+        Object::Dictionary(_) => Some(DictLoc::Nested(Box::new(holder.clone()), key)),
+        _ => None,
+    }
+}
+
+/// Borrows the array stored under `key` in the dictionary at `loc` (inline or indirect).
+fn array_entry<'a>(doc: &'a Document, loc: &DictLoc, key: &[u8]) -> Option<&'a Vec<Object>> {
+    match dict_at(doc, loc)?.get(key).ok()? {
+        Object::Array(items) => Some(items),
+        Object::Reference(id) => doc.objects.get(id)?.as_array().ok(),
+        _ => None,
+    }
+}
+
+fn array_entry_mut<'a>(
+    doc: &'a mut Document,
+    loc: &DictLoc,
+    key: &[u8],
+) -> Option<&'a mut Vec<Object>> {
+    let indirect = match dict_at(doc, loc)?.get(key).ok()? {
+        Object::Array(_) => None,
+        Object::Reference(id) => Some(*id),
+        _ => return None,
+    };
+    match indirect {
+        Some(id) => match doc.objects.get_mut(&id)? {
+            Object::Array(items) => Some(items),
+            _ => None,
+        },
+        None => match dict_at_mut(doc, loc)?.get_mut(key).ok()? {
+            Object::Array(items) => Some(items),
+            _ => None,
+        },
+    }
+}
+
+fn first_reference_is_in(items: &[Object], pages: &HashSet<ObjectId>) -> bool {
+    items
+        .first()
+        .and_then(|first| first.as_reference().ok())
+        .is_some_and(|id| pages.contains(&id))
+}
+
+/// Whether the explicit destination `obj` (an array, or a dictionary with `/D`) targets a page in
+/// `pages`.
+fn dest_targets_any(doc: &Document, obj: &Object, pages: &HashSet<ObjectId>) -> bool {
+    match resolve_obj(doc, obj) {
+        Some(Object::Array(items)) => first_reference_is_in(items, pages),
+        Some(Object::Dictionary(dict)) => dict
+            .get(b"D")
+            .ok()
+            .and_then(|dest| resolve_obj(doc, dest))
+            .and_then(|dest| dest.as_array().ok())
+            .is_some_and(|items| first_reference_is_in(items, pages)),
+        _ => false,
+    }
+}
+
+fn open_action_targets_any(doc: &Document, obj: &Object, pages: &HashSet<ObjectId>) -> bool {
+    match resolve_obj(doc, obj) {
+        Some(Object::Array(items)) => first_reference_is_in(items, pages),
+        Some(Object::Dictionary(action)) => {
+            action
+                .get(b"S")
+                .ok()
+                .and_then(|s| resolve_obj(doc, s))
+                .and_then(|s| s.as_name().ok())
+                .is_some_and(|name| name == b"GoTo")
+                && action
+                    .get(b"D")
+                    .ok()
+                    .is_some_and(|dest| dest_targets_any(doc, dest, pages))
+        }
+        _ => false,
+    }
+}
+
+/// Removes `/OpenAction`, `/Dests` entries and `/Names /Dests` entries that target a page in
+/// `removed`, so no catalog destination turns into `[null ...]`.
+fn drop_catalog_destinations_to(
+    doc: &mut Document,
+    removed: &HashSet<ObjectId>,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    ctx.check()?;
+    let catalog = DictLoc::Id(catalog_id(doc)?);
+
+    let drop_open_action = dict_at(doc, &catalog)
+        .and_then(|cat| cat.get(b"OpenAction").ok())
+        .is_some_and(|action| open_action_targets_any(doc, action, removed));
+    if drop_open_action && let Some(cat) = dict_at_mut(doc, &catalog) {
+        cat.remove(b"OpenAction");
+    }
+
+    if let Some(dests) = entry_loc(doc, &catalog, b"Dests") {
+        let stale: Vec<Vec<u8>> = dict_at(doc, &dests)
+            .map(|dict| {
+                dict.iter()
+                    .filter(|(_, dest)| dest_targets_any(doc, dest, removed))
+                    .map(|(name, _)| name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(dict) = dict_at_mut(doc, &dests) {
+            for name in stale {
+                dict.remove(&name);
+            }
+        }
+    }
+
+    if let Some(names) = entry_loc(doc, &catalog, b"Names")
+        && let Some(root) = entry_loc(doc, &names, b"Dests")
+    {
+        prune_dest_name_tree(doc, root, removed, ctx)?;
+    }
+    Ok(())
+}
+
+/// Removes name-tree entries whose destination targets a page in `removed`. The walk is
+/// breadth-first with a visited set and a node cap, so cyclic or oversized trees stay bounded.
+fn prune_dest_name_tree(
+    doc: &mut Document,
+    root: DictLoc,
+    removed: &HashSet<ObjectId>,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    let mut queue = VecDeque::from([root]);
+    let mut visited = HashSet::new();
+    let mut nodes = 0_usize;
+    while let Some(node) = queue.pop_front() {
+        ctx.check()?;
+        nodes += 1;
+        if nodes > MAX_NAME_TREE_NODES {
+            break;
+        }
+        if let DictLoc::Id(id) = &node
+            && !visited.insert(*id)
+        {
+            continue;
+        }
+        if let Some(names) = array_entry(doc, &node, b"Names") {
+            let mut kept = Vec::with_capacity(names.len());
+            let mut changed = false;
+            for pair in names.chunks(2) {
+                if pair.len() == 2 && dest_targets_any(doc, &pair[1], removed) {
+                    changed = true;
+                } else {
+                    kept.extend(pair.iter().cloned());
+                }
+            }
+            if changed && let Some(array) = array_entry_mut(doc, &node, b"Names") {
+                *array = kept;
+            }
+        }
+        if let Some(kids) = array_entry(doc, &node, b"Kids") {
+            for kid in kids {
+                if let Ok(kid_id) = kid.as_reference()
+                    && doc.get_dictionary(kid_id).is_ok()
+                {
+                    queue.push_back(DictLoc::Id(kid_id));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Removes the tagged structure (`/StructTreeRoot` and `/MarkInfo /Marked`), which cannot be kept
+/// for a page subset. Returns whether the source document was marked as tagged.
+fn drop_tagged_structure(doc: &mut Document) -> Result<bool, PdfError> {
+    let catalog = DictLoc::Id(catalog_id(doc)?);
+    let mut had_tagged_structure = false;
+    if let Some(cat) = dict_at_mut(doc, &catalog) {
+        had_tagged_structure |= cat.remove(b"StructTreeRoot").is_some();
+    }
+    if let Some(mark_info) = entry_loc(doc, &catalog, b"MarkInfo") {
+        let marked_true = dict_at(doc, &mark_info)
+            .and_then(|d| d.get(b"Marked").ok())
+            .and_then(|o| resolve_obj(doc, o))
+            .and_then(|o| o.as_bool().ok())
+            == Some(true);
+        if let Some(dict) = dict_at_mut(doc, &mark_info) {
+            dict.remove(b"Marked");
+        }
+        had_tagged_structure |= marked_true;
+    }
+    Ok(had_tagged_structure)
+}
+
+/// Replaces every remaining reference to a page in `removed` (for example `/Pg` entries of other
+/// structures or thread beads) with `null`, so the removed pages become unreachable and are
+/// collected. Traversal is iterative, so deeply nested direct objects cannot overflow the stack.
+fn null_references_to(
+    doc: &mut Document,
+    removed: &HashSet<ObjectId>,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    for (index, object) in doc.objects.values_mut().enumerate() {
+        if index.is_multiple_of(256) {
+            ctx.check()?;
+        }
+        let mut stack: Vec<&mut Object> = vec![object];
+        while let Some(current) = stack.pop() {
+            if let Object::Reference(id) = &*current {
+                if removed.contains(id) {
+                    *current = Object::Null;
+                }
+                continue;
+            }
+            match current {
+                Object::Array(items) => stack.extend(items.iter_mut()),
+                Object::Dictionary(dict) => stack.extend(dict.iter_mut().map(|(_, value)| value)),
+                Object::Stream(stream) => {
+                    stack.extend(stream.dict.iter_mut().map(|(_, value)| value));
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Rewrites `/PageLabels` for the 1-based `target_seq` page sequence, or removes it when no label
+/// range applies.
+fn remap_page_labels(
+    doc: &mut Document,
+    target_seq: &[u32],
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    let labels = parse_page_labels(doc, ctx)?;
+    if labels.is_empty() {
+        return Ok(());
+    }
+    let remapped = remap_page_labels_for_selection(&labels, target_seq);
+    let cat_id = catalog_id(doc)?;
+    let Ok(cat_dict) = doc.get_dictionary_mut(cat_id) else {
+        return Ok(());
+    };
+    if remapped.is_empty() {
+        cat_dict.remove(b"PageLabels");
+    } else {
+        cat_dict.set("PageLabels", build_page_labels_object(&remapped));
+    }
     Ok(())
 }
 

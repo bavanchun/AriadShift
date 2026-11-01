@@ -2,19 +2,22 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ariad_core::tools::{
-    page_range::DuplicatePolicy,
-    params::split::{SplitMode, SplitParams},
+use ariad_core::{
+    reader::pdf::ReadError,
+    tools::{
+        page_range::DuplicatePolicy,
+        params::split::{SplitMode, SplitParams},
+    },
 };
 
 use crate::{
-    document::{PdfDoc, ToolCtx},
+    document::{DecodeBudget, PdfDoc, ToolCtx},
     error::PdfError,
     info, naming,
     tools::{
         OutputDoc,
         page_set::{
-            OutlineNode, PageSetOptions, build_page_set_doc, doc_page_count,
+            MAX_OUTPUT_PAGES, OutlineNode, PageSetOptions, build_page_set_doc, doc_page_count,
             expand_page_range_bounded, parse_outline_tree,
         },
     },
@@ -24,6 +27,67 @@ use crate::{
 const SPLIT_PART_OPTIONS: PageSetOptions = PageSetOptions {
     include_attachments: false,
 };
+
+/// Serialises finished parts as they are produced and charges each part's byte size against the
+/// document's decode budget, so parts that each deep-copy shared fonts or images fail cleanly
+/// instead of accumulating in memory.
+struct PartSink {
+    budget: DecodeBudget,
+    parts: Vec<Vec<u8>>,
+}
+
+impl PartSink {
+    fn new(source: &PdfDoc) -> Self {
+        Self {
+            budget: source.decode_budget(),
+            parts: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, mut part: PdfDoc, ctx: &ToolCtx) -> Result<(), PdfError> {
+        let bytes = writer::save(&mut part, ctx)?;
+        self.push_bytes(bytes)
+    }
+
+    fn push_bytes(&mut self, bytes: Vec<u8>) -> Result<(), PdfError> {
+        self.budget.charge(bytes.len())?;
+        self.parts.push(bytes);
+        Ok(())
+    }
+
+    fn into_outputs(self, stem: &str) -> Vec<OutputDoc> {
+        let total_parts = self.parts.len();
+        self.parts
+            .into_iter()
+            .enumerate()
+            .map(|(idx, bytes)| {
+                let name = naming::part_output_name(stem, idx + 1, total_parts);
+                OutputDoc::from_bytes(name, "pdf", bytes)
+            })
+            .collect()
+    }
+}
+
+/// Effective output-page cap: the fixed [`MAX_OUTPUT_PAGES`] ceiling, lowered to the run's
+/// `limits.max_pages` when that is smaller.
+#[must_use]
+fn output_page_cap(max_pages: Option<u32>) -> u64 {
+    max_pages.map_or(MAX_OUTPUT_PAGES, |limit| {
+        MAX_OUTPUT_PAGES.min(u64::from(limit))
+    })
+}
+
+/// Fails when `total` pages across all parts exceed `min(MAX_OUTPUT_PAGES, max_pages)`.
+fn ensure_total_pages_within_cap(total: u64, max_pages: Option<u32>) -> Result<(), PdfError> {
+    let cap = output_page_cap(max_pages);
+    if total > cap {
+        return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+            actual: total,
+            limit: u32::try_from(cap).unwrap_or(u32::MAX),
+        }));
+    }
+    Ok(())
+}
 
 /// Splits a PDF document into multiple part PDFs.
 pub fn run(
@@ -74,7 +138,9 @@ pub fn run(
                 ));
             }
             let mut out = Vec::with_capacity(ranges.len());
+            let mut total_pages = 0_u64;
             for range in ranges {
+                ctx.check()?;
                 let expanded =
                     expand_page_range_bounded(range, page_count, DuplicatePolicy::KeepInOrder)?;
                 if expanded.is_empty() {
@@ -82,6 +148,8 @@ pub fn run(
                         "a split range expanded to 0 pages".to_owned(),
                     ));
                 }
+                total_pages = total_pages.saturating_add(expanded.len() as u64);
+                ensure_total_pages_within_cap(total_pages, None)?;
                 out.push(expanded);
             }
             out
@@ -95,6 +163,7 @@ pub fn run(
                     "every split mode requires 'every' >= 1".to_owned(),
                 ));
             }
+            ensure_total_pages_within_cap(u64::from(page_count), None)?;
             let all_pages: Vec<u32> = (1..=page_count).collect();
             all_pages
                 .chunks(every as usize)
@@ -122,16 +191,16 @@ pub fn run(
         SplitMode::Size => unreachable!("handled above"),
     };
 
-    let total_parts = groups.len();
-    let mut outputs = Vec::with_capacity(total_parts);
-    for (idx, group) in groups.into_iter().enumerate() {
+    ensure_total_pages_within_cap(groups.iter().map(|group| group.len() as u64).sum(), None)?;
+
+    let mut sink = PartSink::new(source);
+    for group in groups {
         ctx.check()?;
         let part_doc = build_page_set_doc(source, &group, SPLIT_PART_OPTIONS, ctx)?;
-        let part_name = naming::part_output_name(&stem, idx + 1, total_parts);
-        outputs.push(OutputDoc::from_pdf(part_name, part_doc));
+        sink.push(part_doc, ctx)?;
     }
 
-    Ok(outputs)
+    Ok(sink.into_outputs(&stem))
 }
 
 fn compute_bookmark_groups(
@@ -249,23 +318,24 @@ fn split_by_size(
     max_bytes: u64,
     ctx: &ToolCtx,
 ) -> Result<Vec<OutputDoc>, PdfError> {
-    let mut part_docs: Vec<PdfDoc> = Vec::new();
+    ensure_total_pages_within_cap(u64::from(page_count), None)?;
+    let mut sink = PartSink::new(source);
     let mut start_page = 1_u32;
 
     while start_page <= page_count {
         ctx.check()?;
         let single_range = [start_page];
-        let best_doc = build_page_set_doc(source, &single_range, SPLIT_PART_OPTIONS, ctx)?;
-        let mut measure_clone = best_doc.clone();
-        let single_bytes = writer::save(&mut measure_clone, ctx)?.len() as u64;
+        let mut best_doc = build_page_set_doc(source, &single_range, SPLIT_PART_OPTIONS, ctx)?;
+        let single_serialized = writer::save(&mut best_doc, ctx)?;
+        let single_bytes = single_serialized.len() as u64;
 
         if single_bytes >= max_bytes || start_page == page_count {
-            part_docs.push(best_doc);
+            sink.push_bytes(single_serialized)?;
             start_page += 1;
             continue;
         }
 
-        let mut accepted_doc = best_doc;
+        let mut accepted_bytes = single_serialized;
         let mut last_ok_end = start_page;
         let mut step = 1_u32;
         let mut first_over_end: Option<u32> = None;
@@ -274,14 +344,14 @@ fn split_by_size(
             ctx.check()?;
             let candidate_end = last_ok_end.saturating_add(step).min(page_count);
             let candidate_pages: Vec<u32> = (start_page..=candidate_end).collect();
-            let candidate_doc =
+            let mut candidate_doc =
                 build_page_set_doc(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
-            let mut candidate_clone = candidate_doc.clone();
-            let candidate_size = writer::save(&mut candidate_clone, ctx)?.len() as u64;
+            let candidate_serialized = writer::save(&mut candidate_doc, ctx)?;
+            let candidate_size = candidate_serialized.len() as u64;
 
             if candidate_size <= max_bytes {
                 last_ok_end = candidate_end;
-                accepted_doc = candidate_doc;
+                accepted_bytes = candidate_serialized;
                 if candidate_end == page_count {
                     break;
                 }
@@ -298,13 +368,13 @@ fn split_by_size(
                 ctx.check()?;
                 let mid = lo + (hi - lo) / 2;
                 let candidate_pages: Vec<u32> = (start_page..=mid).collect();
-                let candidate_doc =
+                let mut candidate_doc =
                     build_page_set_doc(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
-                let mut candidate_clone = candidate_doc.clone();
-                let candidate_size = writer::save(&mut candidate_clone, ctx)?.len() as u64;
+                let candidate_serialized = writer::save(&mut candidate_doc, ctx)?;
+                let candidate_size = candidate_serialized.len() as u64;
                 if candidate_size <= max_bytes {
                     lo = mid;
-                    accepted_doc = candidate_doc;
+                    accepted_bytes = candidate_serialized;
                 } else {
                     hi = mid;
                 }
@@ -312,15 +382,30 @@ fn split_by_size(
             last_ok_end = lo;
         }
 
-        part_docs.push(accepted_doc);
+        sink.push_bytes(accepted_bytes)?;
         start_page = last_ok_end + 1;
     }
 
-    let total_parts = part_docs.len();
-    let mut outputs = Vec::with_capacity(total_parts);
-    for (idx, doc) in part_docs.into_iter().enumerate() {
-        let part_name = naming::part_output_name(stem, idx + 1, total_parts);
-        outputs.push(OutputDoc::from_pdf(part_name, doc));
+    Ok(sink.into_outputs(stem))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cap_honours_smaller_max_pages_and_clamps_larger_ones() {
+        assert_eq!(output_page_cap(None), 10_000);
+        assert_eq!(output_page_cap(Some(5_000)), 5_000);
+        assert_eq!(output_page_cap(Some(50_000)), 10_000);
+
+        assert!(ensure_total_pages_within_cap(5_000, Some(5_000)).is_ok());
+        assert_eq!(
+            ensure_total_pages_within_cap(5_001, Some(5_000)).unwrap_err(),
+            PdfError::LimitExceeded(ReadError::TooManyPages {
+                actual: 5_001,
+                limit: 5_000,
+            })
+        );
     }
-    Ok(outputs)
 }
