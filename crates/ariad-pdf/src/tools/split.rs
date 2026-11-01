@@ -13,9 +13,16 @@ use crate::{
     info, naming,
     tools::{
         OutputDoc,
-        extract_pages::{OutlineNode, build_extracted_doc, doc_page_count, parse_outline_tree},
+        page_set::{
+            OutlineNode, PageSetOptions, build_page_set_doc, doc_page_count,
+            expand_page_range_bounded, parse_outline_tree,
+        },
     },
     writer,
+};
+
+const SPLIT_PART_OPTIONS: PageSetOptions = PageSetOptions {
+    include_attachments: false,
 };
 
 /// Splits a PDF document into multiple part PDFs.
@@ -68,9 +75,8 @@ pub fn run(
             }
             let mut out = Vec::with_capacity(ranges.len());
             for range in ranges {
-                let expanded = range
-                    .expand(page_count, DuplicatePolicy::KeepInOrder)
-                    .map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+                let expanded =
+                    expand_page_range_bounded(range, page_count, DuplicatePolicy::KeepInOrder)?;
                 if expanded.is_empty() {
                     return Err(PdfError::InvalidParams(
                         "a split range expanded to 0 pages".to_owned(),
@@ -102,7 +108,7 @@ pub fn run(
                     "bookmarks split mode requires 'level' >= 1".to_owned(),
                 ));
             }
-            compute_bookmark_groups(source, page_count, level)?
+            compute_bookmark_groups(source, page_count, level, ctx)?
         }
         SplitMode::BlankSeparator => {
             let threshold = params.blank_threshold.unwrap_or(0.995);
@@ -120,7 +126,7 @@ pub fn run(
     let mut outputs = Vec::with_capacity(total_parts);
     for (idx, group) in groups.into_iter().enumerate() {
         ctx.check()?;
-        let part_doc = build_extracted_doc(source, &group, ctx)?;
+        let part_doc = build_page_set_doc(source, &group, SPLIT_PART_OPTIONS, ctx)?;
         let part_name = naming::part_output_name(&stem, idx + 1, total_parts);
         outputs.push(OutputDoc::from_pdf(part_name, part_doc));
     }
@@ -132,6 +138,7 @@ fn compute_bookmark_groups(
     source: &PdfDoc,
     page_count: u32,
     max_level: u8,
+    ctx: &ToolCtx,
 ) -> Result<Vec<Vec<u32>>, PdfError> {
     let src_doc = source.inner();
     let page_map = src_doc.get_pages();
@@ -140,7 +147,7 @@ fn compute_bookmark_groups(
         id_to_page_num.insert(id, num);
     }
 
-    let outlines = parse_outline_tree(src_doc, &id_to_page_num);
+    let outlines = parse_outline_tree(src_doc, &id_to_page_num, ctx)?;
     if outlines.is_empty() {
         return Err(PdfError::InvalidParams(
             "cannot split by bookmarks: document has no outlines".to_owned(),
@@ -248,7 +255,7 @@ fn split_by_size(
     while start_page <= page_count {
         ctx.check()?;
         let single_range = [start_page];
-        let best_doc = build_extracted_doc(source, &single_range, ctx)?;
+        let best_doc = build_page_set_doc(source, &single_range, SPLIT_PART_OPTIONS, ctx)?;
         let mut measure_clone = best_doc.clone();
         let single_bytes = writer::save(&mut measure_clone, ctx)?.len() as u64;
 
@@ -267,7 +274,8 @@ fn split_by_size(
             ctx.check()?;
             let candidate_end = last_ok_end.saturating_add(step).min(page_count);
             let candidate_pages: Vec<u32> = (start_page..=candidate_end).collect();
-            let candidate_doc = build_extracted_doc(source, &candidate_pages, ctx)?;
+            let candidate_doc =
+                build_page_set_doc(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
             let mut candidate_clone = candidate_doc.clone();
             let candidate_size = writer::save(&mut candidate_clone, ctx)?.len() as u64;
 
@@ -290,7 +298,8 @@ fn split_by_size(
                 ctx.check()?;
                 let mid = lo + (hi - lo) / 2;
                 let candidate_pages: Vec<u32> = (start_page..=mid).collect();
-                let candidate_doc = build_extracted_doc(source, &candidate_pages, ctx)?;
+                let candidate_doc =
+                    build_page_set_doc(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
                 let mut candidate_clone = candidate_doc.clone();
                 let candidate_size = writer::save(&mut candidate_clone, ctx)?.len() as u64;
                 if candidate_size <= max_bytes {

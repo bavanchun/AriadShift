@@ -9,7 +9,7 @@ use crate::{
     error::PdfError,
     tools::{
         OutputDoc,
-        extract_pages::{build_extracted_doc, doc_page_count},
+        page_set::{build_extracted_doc, doc_page_count},
     },
 };
 
