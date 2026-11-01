@@ -104,6 +104,7 @@ export type CimdErrorCode =
   | "timeout"
   | "redirect_not_allowed"
   | "unexpected_status"
+  | "temporary_status"
   | "invalid_content_type"
   | "response_too_large"
   | "invalid_json"
@@ -409,6 +410,9 @@ export function parseCimdClientIdUrl(clientId: string): URL {
   if (!url.hostname) {
     throw new CimdError("invalid_client_id_url", "CIMD client_id must include a hostname");
   }
+  if (net.isIP(stripIpv6Brackets(url.hostname.replace(/\.$/, "")))) {
+    throw new CimdError("invalid_client_id_url", "CIMD client_id must not use an IP literal");
+  }
   const rawMatch = /^https:\/\/[^/?#]+(\/[^?#]*)?(?:\?[^#]*)?$/i.exec(clientId);
   const rawPath = rawMatch?.[1] ?? "";
   if (!rawPath || rawPath === "/" || url.pathname === "/") {
@@ -653,15 +657,16 @@ const defaultDnsLookup: CimdDnsLookup = async (hostname, signal) => {
       resolver.resolve4(hostname),
       resolver.resolve6(hostname),
     ]);
-    return results.flatMap((result, index) => {
-      if (result.status === "fulfilled") {
-        return result.value.map((address) => ({ address, family: (index === 0 ? 4 : 6) as 4 | 6 }));
-      }
-      if (!["ENODATA", "ENOTFOUND"].includes((result.reason as NodeJS.ErrnoException).code ?? "")) {
-        throw result.reason;
-      }
-      return [];
-    });
+    const addresses = results.flatMap((result, index) =>
+      result.status === "fulfilled"
+        ? result.value.map((address) => ({ address, family: (index === 0 ? 4 : 6) as 4 | 6 }))
+        : [],
+    );
+    if (addresses.length === 0) {
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure?.status === "rejected") throw failure.reason;
+    }
+    return addresses;
   } finally {
     signal.removeEventListener("abort", cancel);
   }
@@ -1019,7 +1024,12 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
         );
       }
       if (response.status !== 200) {
-        throw new CimdError("unexpected_status", `CIMD fetch failed with HTTP ${response.status}`);
+        throw new CimdError(
+          response.status === 429 || response.status >= 500
+            ? "temporary_status"
+            : "unexpected_status",
+          `CIMD fetch failed with HTTP ${response.status}`,
+        );
       }
 
       const contentType = getHeaderValue(response.headers, "content-type");
@@ -1156,10 +1166,11 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
     },
     matches: (clientId: string) => isCimdClientId(clientId),
     resolve: async (ctx, clientId, existing) => {
-      const host = new URL(clientId).hostname;
+      const host = new URL(clientId).hostname.toLowerCase().replace(/\.$/, "");
       if (
-        options.deniedHosts?.includes(host) ||
-        (options.allowedHosts?.length && !options.allowedHosts.includes(host))
+        options.deniedHosts?.some((entry) => entry.toLowerCase().replace(/\.$/, "") === host) ||
+        (options.allowedHosts?.length &&
+          !options.allowedHosts.some((entry) => entry.toLowerCase().replace(/\.$/, "") === host))
       )
         return null;
       if (
@@ -1174,6 +1185,7 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
         return existing ?? null;
       }
       try {
+        let chargeHost = async () => true;
         if (!existing && ctx.context.options.rateLimit?.enabled !== false) {
           const ip = getIP(ctx.headers ?? new Headers(), ctx.context.options) ?? "no-trusted-ip";
           const adapter = ctx.context.adapter;
@@ -1228,10 +1240,11 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
             });
             return updated ? true : consume(key);
           };
-          if (!(await consume(`${ip}|/oauth2/register`)) || !(await consume(`cimd-host|${host}`)))
-            return null;
+          if (!(await consume(`${ip}|/oauth2/register`))) return null;
+          chargeHost = () => consume(`cimd-host|${host}`);
         }
         const result = await fetcher.fetchDocument(clientId);
+        if (!(await chargeHost())) return null;
         if (
           existing &&
           existing.clientDiscoveryId === CIMD_DISCOVERY_ID &&
@@ -1266,6 +1279,20 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           ctx.context.logger.warn(
             `CIMD resolution failed: ${error.code} (${new URL(clientId).hostname})`,
           );
+          const updated = existing?.updatedAt ?? existing?.createdAt;
+          const updatedAt = updated ? new Date(updated).getTime() : NaN;
+          const hardExpiry = updatedAt + CIMD_MAX_CACHE_TTL_MS;
+          const explicitExpiry = existing?.expiresAt
+            ? new Date(existing.expiresAt).getTime()
+            : Infinity;
+          if (
+            existing?.clientDiscoveryId === CIMD_DISCOVERY_ID &&
+            ["timeout", "network_error", "dns_lookup_failed", "temporary_status"].includes(
+              error.code,
+            ) &&
+            (options.now ?? Date.now)() < Math.min(hardExpiry, explicitExpiry)
+          )
+            return existing;
           return null;
         }
         ctx.context.logger.error("CIMD client registration failed", error);
