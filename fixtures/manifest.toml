@@ -4056,3 +4056,35 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "inline-conflicting-keys-pdf"
+path = "fixtures/pdf/inline-conflicting-keys.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline image with conflicting abbreviated keys"
+origin = "generated"
+generated_by = "fixtures/gen/inline_preflight_cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e2cd1fb90ccddf022c91e1cfe3a59a21eeb73b6f4f19a503c33d55df305c42d5"
+pages = 1
+tags = []
+
+[[fixture]]
+id = "inline-flate-oversized-pdf"
+path = "fixtures/pdf/inline-flate-oversized.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline image with oversized Flate output"
+origin = "generated"
+generated_by = "fixtures/gen/inline_preflight_cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "b3ff797ba01c08497ee38823735cf1f08250a1c9e6db03dccff24c3de33d68ba"
+pages = 1
+tags = []

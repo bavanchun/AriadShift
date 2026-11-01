@@ -951,6 +951,25 @@ fn preflight_content(
             .and_then(|op| op.operands.first())
             .and_then(|o| o.as_dict().ok())
             .ok_or_else(EngineFailure::limit_exceeded)?;
+        // PDFium expands abbreviated keys over their long forms. Reject conflicting
+        // values so every subsequent check sees the same dictionary it will parse.
+        for (long, short) in [
+            (b"Width".as_slice(), b"W".as_slice()),
+            (b"Height", b"H"),
+            (b"BitsPerComponent", b"BPC"),
+            (b"ColorSpace", b"CS"),
+            (b"Filter", b"F"),
+            (b"DecodeParms", b"DP"),
+            (b"Decode", b"D"),
+            (b"ImageMask", b"IM"),
+            (b"Interpolate", b"I"),
+        ] {
+            if let (Ok(full), Ok(abbreviated)) = (dict.get(long), dict.get(short))
+                && full != abbreviated
+            {
+                return Err(EngineFailure::limit_exceeded());
+            }
+        }
         let inline_bpc = dict
             .get(b"BitsPerComponent")
             .or_else(|_| dict.get(b"BPC"))
@@ -990,6 +1009,9 @@ fn preflight_content(
             data_cap =
                 data_cap.min(usize::try_from(u64::from(mb) * 1024 * 1024).unwrap_or(usize::MAX));
         }
+        // Allow a small amount of predictor overhead, but never inflate a tiny
+        // declared image up to the global multi-gigabyte content limit.
+        let decoded_cap = decoded_len.saturating_add(1024).min(data_cap);
         match dict.get(b"Filter").or_else(|_| dict.get(b"F")) {
             Err(_) => {
                 cursor = cursor
@@ -1039,14 +1061,14 @@ fn preflight_content(
                         }
                         _ => return Err(EngineFailure::limit_exceeded()),
                     }
-                    if output_len > data_cap {
+                    if output_len > decoded_cap {
                         return Err(EngineFailure::limit_exceeded());
                     }
                 }
                 if group == 1
                     || output_len
                         .checked_add(group.saturating_sub(1))
-                        .is_none_or(|n| n > data_cap)
+                        .is_none_or(|n| n > decoded_cap)
                 {
                     return Err(EngineFailure::limit_exceeded());
                 }
@@ -1066,7 +1088,7 @@ fn preflight_content(
                     }
                     output_len = output_len
                         .checked_add(count)
-                        .filter(|n| *n <= data_cap)
+                        .filter(|n| *n <= decoded_cap)
                         .ok_or_else(EngineFailure::limit_exceeded)?;
                     if decoder.total_in() > u64::try_from(data_cap).unwrap_or(u64::MAX) {
                         return Err(EngineFailure::limit_exceeded());

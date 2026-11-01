@@ -930,3 +930,26 @@ fn inherited_form_resources_are_checked_before_page_load() {
     extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect("a form reached by multiple paths is charged once");
 }
+
+#[test]
+fn refuses_ambiguous_inline_keys_and_excess_flate_output() {
+    let lib_dir = require_pdfium!();
+    for fixture in [
+        "fixtures/pdf/inline-conflicting-keys.pdf",
+        "fixtures/pdf/inline-flate-oversized.pdf",
+    ] {
+        let ws = TestWorkspace::from_fixture(fixture);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "inline-preflight",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+            .expect_err("unsafe inline image must be refused");
+        assert_eq!(err.code, ErrorCode::LimitExceeded, "{fixture}");
+    }
+}
