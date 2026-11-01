@@ -279,7 +279,7 @@ pub fn run(
     // Apply rotations to `/Pages` and `/Page` dictionaries.
     let inherited_angles: BTreeSet<i64> = all_page_rotations
         .iter()
-        .filter(|(_, deg, is_inh, _)| *is_inh && *deg != 0)
+        .filter(|(_, deg, is_inherited, _)| *is_inherited && *deg != 0)
         .map(|(_, deg, _, _)| *deg)
         .collect();
     let parent_rotate = if inherited_angles.len() == 1 {

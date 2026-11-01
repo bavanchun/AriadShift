@@ -101,7 +101,7 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 | `pdf.compress` (`target_bytes` covers the fixed-size presets and "for email") | optimize | S15 compress levels 1-9 | Compress PDF; Compress presets (100 KB, 200 KB, 500 KB, 1 MB, 2 MB); Compress for email | 5 | ariad-pdf, qpdf, pdfium | local, cloud | Free | CLI, MCP, web(h), mac |
 | `pdf.grayscale` | optimize | S32 colour operations | PDF to Greyscale | 5 | ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
 | `pdf.repair` | optimize | S16 repair | Repair PDF | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.decompress` † (task T3) | optimize | S16 decompress | — | 3 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.decompress` † (task T3) | optimize | S16 decompress | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.linearize` | optimize | — | Linearize PDF | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
 
 ### security

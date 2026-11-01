@@ -209,7 +209,7 @@ pub(crate) fn build_extracted_doc(
     // `inherited_rotation` semantics for pages that inherited rotation from `/Pages`.
     let inherited_angles: BTreeSet<i64> = page_rotations
         .iter()
-        .filter(|(_, deg, is_inh, _)| *is_inh && *deg != 0)
+        .filter(|(_, deg, is_inherited, _)| *is_inherited && *deg != 0)
         .map(|(_, deg, _, _)| *deg)
         .collect();
     let parent_rotate = if inherited_angles.len() == 1 {

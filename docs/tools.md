@@ -81,11 +81,11 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 
 | Group | Purpose | Example Tools |
 |---|---|---|
-| `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.crop`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.page_labels`, `pdf.viewer_prefs` |
+| `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers` |
 | `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.to_images`, `pdf.from_images`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
-| `optimize` | File size reduction, stream recompression, linearization, repair | `pdf.compress`, `pdf.linearize`, `pdf.repair` |
+| `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.linearize`, `pdf.repair` |
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize` |
-| `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.overlay`, `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark_add`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
+| `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark_add`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
 | `ocr` | Optical character recognition, deskewing, blank page removal | `pdf.ocr`, `pdf.deskew`, `pdf.remove_blank` |
 | `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotate`, `pdf.annotations_flatten`, `pdf.annotations_remove` |
 | `forms` | AcroForm field inspection, filling, creation, and flattening | `pdf.forms_inspect`, `pdf.forms_fill`, `pdf.forms_flatten` |
@@ -151,7 +151,8 @@ Each `ToolSpec` declares its input arity:
   - `pdf.alternate_mix`: `many(2, 2)`
   - `pdf.overlay`: `many(2, 2)`
   - `pdf.compare_visual` / `pdf.compare_semantic`: `many(2, 2)`
-  - `pdf.attachments` (`action = "add"`): `many(2, 100)` (base PDF followed by attachment files)
+  - `pdf.attachments`: `many(1, 100)` (`list` / `extract` / `remove` take 1 PDF; `add` takes the base PDF followed by attachment files)
+  - `pdf.portfolio`: `many(1, 100)` (`create` takes 1..=100 input files; `list` / `extract` take 1 portfolio PDF)
 
 Supplying fewer or more inputs than `inputs` allows fails before engine dispatch with exit code `10` (`wrong_input`).
 
@@ -306,6 +307,7 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
 
 - **Single-artifact tools**: Default filename is `<stem>.<tool-suffix>.<ext>`:
   - `pdf.rotate` → `report.rotated.pdf`
+  - `pdf.rotate_content` → `report.rotated-content.pdf`
   - `pdf.merge` → `first.merged.pdf`
   - `pdf.extract_pages` → `report.extracted.pdf`
   - `pdf.delete_pages` → `report.trimmed.pdf`
@@ -317,11 +319,17 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.single_page` → `report.single-page.pdf`
   - `pdf.insert_blank` → `report.inserted.pdf`
   - `pdf.alternate_mix` → `first.mixed.pdf`
+  - `pdf.divide_pages` → `report.divided.pdf`
+  - `pdf.posterize` → `report.posterized.pdf`
   - `pdf.overlay` → `base.overlay.pdf`
   - `pdf.metadata` → `report.metadata.pdf`
   - `pdf.outline` (`import` / `clear` / `from_headings`) → `report.outline.pdf`; (`export`) → `report.outline.json`
+  - `pdf.attachments` (`add` / `remove`) → `report.attachments.pdf`; (`list`) → `report.attachments.json`
+  - `pdf.portfolio` (`create`) → `first.portfolio.pdf`; (`list`) → `report.portfolio.json`
   - `pdf.page_labels` → `report.labeled.pdf`
   - `pdf.viewer_prefs` → `report.prefs.pdf`
+  - `pdf.layers` (`set_default_visibility` / `remove`) → `report.layers.pdf`; (`list`) → `report.layers.json`
+  - `pdf.decompress` → `report.decompressed.pdf`
   - `pdf.compress` → `report.compressed.pdf`
   - `pdf.linearize` → `report.linearized.pdf`
   - `pdf.repair` → `report.repaired.pdf`

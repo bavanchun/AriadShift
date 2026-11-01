@@ -563,9 +563,13 @@ mod tests {
     }
 
     #[test]
-    fn run_tool_rejects_unknown_tool_id_and_returns_not_implemented_for_all_25_stubs() {
+    fn run_tool_rejects_unknown_tool_id_and_dispatches_all_25_structural_tools() {
         let sample = fixture_bytes("multipage-20.pdf");
+        let rotated = fixture_bytes("rotated-pages.pdf");
+        let watermark = fixture_bytes("watermark-layer.pdf");
         let input = InputDoc::new("multipage-20.pdf", sample);
+        let input2 = InputDoc::new("rotated-pages.pdf", rotated);
+        let watermark_input = InputDoc::new("watermark-layer.pdf", watermark);
         let ctx = ToolCtx::default();
 
         let unknown_err = run_tool(
@@ -580,18 +584,16 @@ mod tests {
             "expected unknown tool error, got {unknown_err:?}"
         );
 
-        let stub_cases = [
-            ("pdf.merge", json!({})),
-            ("pdf.split", json!({})),
-            ("pdf.extract_pages", json!({"pages": "1"})),
-            ("pdf.delete_pages", json!({"pages": "1"})),
+        let single_input_cases = [
+            ("pdf.split", json!({"mode": "every", "every": 10})),
+            ("pdf.extract_pages", json!({"pages": "1-3"})),
+            ("pdf.delete_pages", json!({"pages": "2"})),
             ("pdf.reorder", json!({"order": "reverse"})),
-            ("pdf.alternate_mix", json!({})),
-            ("pdf.insert_blank", json!({})),
+            ("pdf.insert_blank", json!({"after": "1"})),
             ("pdf.rotate", json!({"angle": 90})),
             (
                 "pdf.crop",
-                json!({"box": {"left": 0.0, "bottom": 0.0, "right": 100.0, "top": 100.0}}),
+                json!({"box": {"left": 0.0, "bottom": 0.0, "right": 200.0, "top": 200.0}}),
             ),
             ("pdf.scale", json!({})),
             ("pdf.single_page", json!({})),
@@ -599,30 +601,54 @@ mod tests {
             ("pdf.decompress", json!({})),
             ("pdf.nup", json!({})),
             ("pdf.booklet", json!({})),
-            ("pdf.overlay", json!({})),
             ("pdf.divide_pages", json!({})),
             ("pdf.posterize", json!({})),
-            ("pdf.metadata", json!({})),
+            ("pdf.metadata", json!({"set": {"title": "Updated"}})),
             ("pdf.outline", json!({"action": "clear"})),
             ("pdf.attachments", json!({"action": "list"})),
             (
                 "pdf.page_labels",
                 json!({"ranges": [{"from": 1, "style": "decimal"}]}),
             ),
-            ("pdf.viewer_prefs", json!({})),
+            ("pdf.viewer_prefs", json!({"fit_window": true})),
             ("pdf.portfolio", json!({"action": "list"})),
-            ("pdf.layers", json!({"action": "list"})),
         ];
 
-        assert_eq!(stub_cases.len(), 25);
-        for (tool_id, params) in stub_cases {
-            let err = run_tool(tool_id, std::slice::from_ref(&input), &params, &ctx).unwrap_err();
-            assert_eq!(
-                err,
-                PdfError::NotImplemented(tool_id.to_owned()),
-                "stub {tool_id} must return PdfError::NotImplemented({tool_id:?})"
+        let two_input_cases = [
+            ("pdf.merge", json!({})),
+            ("pdf.alternate_mix", json!({})),
+            ("pdf.overlay", json!({})),
+        ];
+
+        assert_eq!(single_input_cases.len() + two_input_cases.len() + 1, 25);
+
+        for (tool_id, params) in single_input_cases {
+            let out = run_tool(tool_id, std::slice::from_ref(&input2), &params, &ctx)
+                .unwrap_or_else(|e| panic!("expected {tool_id} to succeed, got {e:?}"));
+            assert!(
+                !out.artifacts.is_empty(),
+                "tool {tool_id} must produce at least 1 artifact"
             );
         }
+
+        let two_inputs = [input.clone(), input2.clone()];
+        for (tool_id, params) in two_input_cases {
+            let out = run_tool(tool_id, &two_inputs, &params, &ctx)
+                .unwrap_or_else(|e| panic!("expected {tool_id} to succeed, got {e:?}"));
+            assert!(
+                !out.artifacts.is_empty(),
+                "tool {tool_id} must produce at least 1 artifact"
+            );
+        }
+
+        let layers_out = run_tool(
+            "pdf.layers",
+            std::slice::from_ref(&watermark_input),
+            &json!({"action": "list"}),
+            &ctx,
+        )
+        .expect("pdf.layers list must succeed");
+        assert_eq!(layers_out.artifacts.len(), 1);
     }
 
     #[test]
@@ -631,15 +657,20 @@ mod tests {
         let input = InputDoc::new("broken-xref.pdf", broken);
         let ctx = ToolCtx::default();
 
-        // 1. Stub tool on broken-xref.pdf returns NotImplemented after opening input.
-        let stub_err = run_tool(
+        // 1. Running `pdf.rotate` on broken-xref.pdf records `REPAIRED_XREF_WARNING` and rewrites a valid PDF.
+        let rotate_out = run_tool(
             "pdf.rotate",
             std::slice::from_ref(&input),
             &json!({"angle": 90}),
             &ctx,
         )
-        .unwrap_err();
-        assert_eq!(stub_err, PdfError::NotImplemented("pdf.rotate".to_owned()));
+        .expect("pdf.rotate succeeds on broken-xref.pdf");
+        assert_eq!(rotate_out.warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
+        assert_eq!(rotate_out.artifacts.len(), 1);
+        assert!(
+            core_pdf::read(&rotate_out.artifacts[0].bytes, &Limits::local()).is_ok(),
+            "saved artifact from broken-xref.pdf must be a strictly valid PDF"
+        );
 
         // 2. Central `dispatch_structural` with a passthrough runner proves `REPAIRED_XREF_WARNING`
         //    is populated automatically and the saved output is a strictly valid rewritten PDF.

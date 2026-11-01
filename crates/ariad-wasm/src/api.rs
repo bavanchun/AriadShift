@@ -647,16 +647,29 @@ where
         ariad_pdf::tools::run_tool(spec.id, &input_docs, &params_value, &ToolCtx::default())
             .map_err(|err| map_pdf_error(spec.id, err))?;
 
-    let (format, media_type, extension) = tool_output_format_meta(spec.output_format);
+    let primary_format = tool_output
+        .artifacts
+        .first()
+        .map(|a| a.format.as_str())
+        .filter(|f| !f.is_empty())
+        .unwrap_or(spec.output_format);
+    let (format, media_type, extension) = tool_output_format_meta(primary_format);
     let artifacts: Vec<ToolArtifact> = tool_output
         .artifacts
         .into_iter()
-        .map(|out| ToolArtifact {
-            name: out.name,
-            format,
-            media_type,
-            extension,
-            bytes: out.bytes,
+        .map(|out| {
+            let (fmt, mt, ext) = if out.format.is_empty() {
+                (format, media_type, extension)
+            } else {
+                tool_output_format_meta(&out.format)
+            };
+            ToolArtifact {
+                name: out.name,
+                format: fmt,
+                media_type: mt,
+                extension: ext,
+                bytes: out.bytes,
+            }
         })
         .collect();
     let primary_bytes = artifacts
@@ -1403,7 +1416,7 @@ mod tests {
         assert_eq!(bad_angle.code(), "invalid_params");
         assert_eq!(bad_angle.detail("exit_code"), Some(&serde_json::json!(9)));
 
-        let stub_err = run_tool_with_spec(
+        let rotated_ok = run_tool_with_spec(
             &rotate_spec,
             &[&multipage],
             &["multipage-20.pdf"],
@@ -1411,9 +1424,18 @@ mod tests {
             budget,
             false,
         )
-        .unwrap_err();
-        assert_eq!(stub_err.code(), "engine_unavailable");
-        assert_eq!(stub_err.detail("exit_code"), Some(&serde_json::json!(5)));
+        .expect("implemented pdf.rotate must succeed in ariad-wasm");
+        assert_eq!(rotated_ok.tool, "pdf.rotate");
+        assert_eq!(rotated_ok.format, "pdf");
+        assert_eq!(rotated_ok.artifacts.len(), 1);
+        assert_eq!(rotated_ok.artifacts[0].name, "multipage-20.rotated.pdf");
+
+        let unimpl_err = map_pdf_error(
+            "pdf.future",
+            PdfError::NotImplemented("pdf.future".to_owned()),
+        );
+        assert_eq!(unimpl_err.code(), "engine_unavailable");
+        assert_eq!(unimpl_err.detail("exit_code"), Some(&serde_json::json!(5)));
 
         // Owner-password-only PDF is rejected on structural mutating tools with `pdf.decrypt` hint.
         let plaintext = read_pdf_fixture("encrypted-owner-only.plaintext.pdf");

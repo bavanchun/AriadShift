@@ -444,8 +444,8 @@ mod tests {
         assert_eq!(bad_err.code(), "invalid_params");
         assert_eq!(bad_err.exit_code(), 9);
 
-        // Valid params route to `ariad_pdf::tools::rotate::run` stub -> `ToolError::ToolMissing`.
-        let stub_err = execute(
+        // Valid params route to `ariad_pdf::tools::rotate::run` and stage a rotated PDF.
+        let exec = execute(
             &rotate_spec,
             &staged_inputs,
             &json!({"angle": 90}),
@@ -455,8 +455,15 @@ mod tests {
             &CancellationToken::new(),
             &mut |_| {},
         )
-        .expect_err("stubbed tool must map NotImplemented to ToolMissing");
-        assert_eq!(stub_err.code(), "tool_missing");
-        assert_eq!(stub_err.exit_code(), 5);
+        .expect("implemented pdf.rotate must succeed in-process");
+        assert_eq!(exec.artifacts.len(), 1);
+        assert_eq!(exec.artifacts[0].1, "pdf");
+        assert!(exec.artifacts[0].0.is_file());
+
+        // `PdfError::NotImplemented` maps to `ToolError::ToolMissing` (exit 5).
+        let missing_err =
+            map_pdf_error(PdfError::NotImplemented("pdf.future".to_owned()), &scrubber);
+        assert_eq!(missing_err.code(), "tool_missing");
+        assert_eq!(missing_err.exit_code(), 5);
     }
 }
