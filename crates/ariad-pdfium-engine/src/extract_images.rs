@@ -138,6 +138,72 @@ fn validate_nested_references(
     Ok(())
 }
 
+fn resolve_tree(
+    doc: &lopdf::Document,
+    value: &Object,
+    depth: usize,
+) -> Result<Object, EngineFailure> {
+    if depth > 16 {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    let value = resolve(Some(doc), value)?.1;
+    match value {
+        Object::Array(items) => Ok(Object::Array(
+            items
+                .iter()
+                .map(|item| resolve_tree(doc, item, depth + 1))
+                .collect::<Result<_, _>>()?,
+        )),
+        Object::Dictionary(dict) => {
+            let mut result = Dictionary::new();
+            for (key, item) in dict.iter() {
+                result.set(key.clone(), resolve_tree(doc, item, depth + 1)?);
+            }
+            Ok(Object::Dictionary(result))
+        }
+        _ => Ok(value.clone()),
+    }
+}
+
+fn preflight_stream_bytes(
+    doc: &lopdf::Document,
+    stream: &lopdf::Stream,
+    limit: usize,
+) -> Result<Vec<u8>, EngineFailure> {
+    let mut dict = stream.dict.clone();
+    let mut changed = false;
+    for key in [b"Filter".as_slice(), b"DecodeParms"] {
+        if let Ok(original) = stream.dict.get(key) {
+            let value = resolve_tree(doc, original, 0)?;
+            if key == b"Filter" {
+                match &value {
+                    Object::Name(_) => (),
+                    Object::Array(items)
+                        if !items.is_empty()
+                            && items.iter().all(|item| matches!(item, Object::Name(_))) => {}
+                    _ => return Err(EngineFailure::limit_exceeded()),
+                }
+            }
+            changed |= &value != original;
+            dict.set(key.to_vec(), value);
+        }
+    }
+    if changed {
+        if stream.content.len() > limit {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let mut normalized = stream.clone();
+        normalized.dict = dict;
+        normalized
+            .decompressed_content_with_limit(limit)
+            .map_err(|_| EngineFailure::limit_exceeded())
+    } else {
+        stream
+            .decompressed_content_with_limit(limit)
+            .map_err(|_| EngineFailure::limit_exceeded())
+    }
+}
+
 macro_rules! insert_xobjects_from_resources {
     ($doc:expr, $res_obj:expr, $out:expr) => {{
         if let Ok((_, resources)) = resolve(Some($doc), $res_obj)
@@ -629,9 +695,7 @@ fn preflight_content_object(
             Ok(())
         }
         Object::Stream(stream) => {
-            let bytes = stream
-                .decompressed_content_with_limit(budget.remaining_content(max_bytes)?)
-                .map_err(|_| EngineFailure::limit_exceeded())?;
+            let bytes = preflight_stream_bytes(doc, stream, budget.remaining_content(max_bytes)?)?;
             budget.charge_content(bytes.len(), max_bytes)?;
             preflight_content(ctx, doc, &bytes, max_bytes, budget).map(|_| ())
         }
@@ -827,12 +891,10 @@ fn preflight_xobject(
                     ),
                 }
             }
-            if filters.iter().any(|name| *name == b"JBIG2Decode") {
-                return Err(EngineFailure::limit_exceeded());
-            }
             let jpx_pos = filters.iter().position(|name| *name == b"JPXDecode");
-            // The codestream header is only directly inspectable before other filters.
-            if jpx_pos.is_some_and(|pos| pos != 0) {
+            let jbig2_pos = filters.iter().position(|name| *name == b"JBIG2Decode");
+            // Special image codecs behind another filter cannot be inspected directly.
+            if jpx_pos.is_some_and(|pos| pos != 0) || jbig2_pos.is_some_and(|pos| pos != 0) {
                 return Err(EngineFailure::limit_exceeded());
             }
             let jpx = jpx_pos.is_some();
@@ -865,9 +927,7 @@ fn preflight_xobject(
             }
         }
         b"Form" => {
-            let bytes = stream
-                .decompressed_content_with_limit(budget.remaining_content(max_bytes)?)
-                .map_err(|_| EngineFailure::limit_exceeded())?;
+            let bytes = preflight_stream_bytes(doc, stream, budget.remaining_content(max_bytes)?)?;
             budget.charge_content(bytes.len(), max_bytes)?;
             let names = preflight_content(ctx, doc, &bytes, max_bytes, budget)?;
             let mut xobjects = parent_xobjects.clone();
@@ -1596,7 +1656,7 @@ fn collect_page_image_xobjects(
     ctx.check()?;
 
     let xobject_map = resolve_page_xobject_map(pdf_doc, page_id, max_depth);
-    let content_bytes = read_page_content_bytes(pdf_doc, page_id, max_decompressed);
+    let content_bytes = read_page_content_bytes(pdf_doc, page_id, max_decompressed)?;
 
     collect_from_content_and_xobject_map(
         ctx,
@@ -1736,9 +1796,7 @@ fn visit_xobject_target(
         if let Ok(res_obj) = stream.dict.get(b"Resources") {
             insert_xobjects_from_resources!(doc, res_obj, form_xobjects);
         }
-        let form_content = stream
-            .decompressed_content_with_limit(max_decompressed)
-            .unwrap_or_else(|_| stream.content.clone());
+        let form_content = preflight_stream_bytes(doc, stream, max_decompressed)?;
         collect_from_content_and_xobject_map(
             ctx,
             pdf_doc,
@@ -1795,14 +1853,12 @@ fn read_page_content_bytes(
     pdf_doc: &PdfDoc,
     page_id: PdfObjectId,
     max_decompressed: usize,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, EngineFailure> {
     let doc = pdf_doc.inner();
     let mut combined = Vec::new();
     for stream_id in doc.get_page_contents(page_id) {
         if let Ok(stream) = doc.get_object(stream_id).and_then(|o| o.as_stream()) {
-            let chunk = stream
-                .decompressed_content_with_limit(max_decompressed)
-                .unwrap_or_else(|_| stream.content.clone());
+            let chunk = preflight_stream_bytes(doc, stream, max_decompressed)?;
             if combined.len().saturating_add(chunk.len()) <= max_decompressed {
                 if !combined.is_empty() && !combined.ends_with(b"\n") {
                     combined.push(b'\n');
@@ -1811,7 +1867,7 @@ fn read_page_content_bytes(
             }
         }
     }
-    combined
+    Ok(combined)
 }
 
 fn charge_traversal(
@@ -2701,6 +2757,40 @@ mod corpus_tests {
     }
 
     #[test]
+    fn preflight_resolves_content_filter() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let work = dir.path().canonicalize().expect("workspace");
+        for sub in ["in", "out", "tmp"] {
+            fs::create_dir(work.join(sub)).expect("directory");
+        }
+        let input = work.join("in/doc.pdf");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/indirect-content-filter.pdf"),
+            &input,
+        )
+        .expect("fixture");
+        let paths = RunToolPaths {
+            workspace: work.clone(),
+            inputs: vec![input],
+            output_dir: work.join("out"),
+            work_dir: work.join("tmp"),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "indirect",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
+        let page = *doc.inner().get_pages().values().next().expect("page");
+        let mut work = 0;
+        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+    }
+
+    #[test]
     fn shared_form_expands_each_inherited_resource_scope() {
         let dir = tempfile::tempdir().expect("tempdir");
         let work = dir.path().canonicalize().expect("workspace");
@@ -2920,17 +3010,33 @@ mod corpus_tests {
             }
         }
         eprintln!("CORPUS {} PDFs, {} refused", paths.len(), refusals.len());
-        let unexpected: Vec<_> = refusals
+        let actual: HashSet<_> = refusals
             .iter()
-            .filter(|path| {
+            .map(|path| {
                 path.file_name()
-                    .is_none_or(|name| name != "inline-image-bomb.pdf")
+                    .expect("fixture name")
+                    .to_string_lossy()
+                    .into_owned()
             })
             .collect();
-        assert!(
-            unexpected.is_empty(),
-            "legitimate fixtures refused: {unexpected:?}"
+        let expected: HashSet<_> = [
+            "indirect-image-preflight.pdf",
+            "indirect-content-filter.pdf",
+            "indirect-jbig2-filter.pdf",
+            "indirect-jpx-filter.pdf",
+            "inline-conflicting-keys.pdf",
+            "inline-flate-oversized.pdf",
+            "inline-image-bomb.pdf",
+            "inline-lzw-large.pdf",
+            "inline-rl-large.pdf",
+            "type3-inline-image.pdf",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        assert_eq!(
+            actual, expected,
+            "only adversarial fixtures should be refused"
         );
-        assert_eq!(refusals.len(), 1, "the adversarial fixture must be refused");
     }
 }

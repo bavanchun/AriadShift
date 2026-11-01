@@ -4248,3 +4248,19 @@ attribution = "AriadShift contributors"
 sha256 = "924285c4e27ff379f7f2f50a3fae122684dcc155b004a4dc973927a9f8e2dab9"
 pages = 1
 tags = []
+
+[[fixture]]
+id = "indirect-content-filter-pdf"
+path = "fixtures/pdf/indirect-content-filter.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Compressed page with indirect content filter"
+origin = "generated"
+generated_by = "fixtures/gen/indirect_content_filter.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e03b408215cab8906366f946f653d9d5553ff8b4f0efcc8541dc9d3ce5377808"
+pages = 1
+tags = []
