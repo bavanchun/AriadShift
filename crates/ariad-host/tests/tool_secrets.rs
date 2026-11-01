@@ -14,9 +14,9 @@ use ariad_core::{
         ToolRuntime, ToolSpec, schema_with_secrets,
     },
 };
-use ariad_host::tools::{
-    InputRef, OutputTarget, REDACTED, RecipeRequest, SecretBag, ToolRequest, run_recipe, run_tool,
-};
+use ariad_host::tools::{InputRef, OutputTarget, RecipeRequest, ToolRequest, run_recipe, run_tool};
+#[cfg(unix)]
+use ariad_host::tools::{REDACTED, SecretBag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
