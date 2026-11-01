@@ -12,9 +12,12 @@ use ariad_core::{
     },
 };
 use ariad_engine_io::EngineFailure;
-use ariad_pdf::{PdfDoc, PdfError, ToolCtx as PdfToolCtx, document};
+use ariad_pdf::{
+    PdfDoc, PdfError, ToolCtx as PdfToolCtx, document,
+    tools::{delete_pages as pdf_delete_pages, split as pdf_split},
+};
 use image::GrayImage;
-use pdfium_render::prelude::{PdfBitmap, PdfDocument, PdfPageIndex, PdfRenderConfig};
+use pdfium_render::prelude::{PdfBitmap, PdfDocument, PdfRenderConfig};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -33,7 +36,7 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RemoveBlankParams) -> ToolResult {
         .map_err(|err| EngineFailure::owned(ErrorCode::InvalidRequest, err.to_string()))?;
 
     let bytes = read_bounded_input(ctx)?;
-    let _ = open_structural_pdf(ctx, &bytes)?;
+    let structural_doc = open_structural_pdf(ctx, &bytes)?;
     let (blank_pages, white_ratios) =
         detect_blank_pages_in_bytes(ctx, &bytes, params.dpi, params.threshold)?;
 
@@ -47,15 +50,13 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RemoveBlankParams) -> ToolResult {
 
     let pages_after = pages_before.saturating_sub(u32::try_from(blank_pages.len()).unwrap_or(0));
 
-    let pdfium = ctx.pdfium()?;
-    let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).map_err(|_| {
-        EngineFailure::new(
-            ErrorCode::InvalidRequest,
-            "The input PDF could not be opened.",
-        )
-    })?;
-    delete_pages_in_reverse(&doc, &blank_pages)?;
-    let out_bytes = save_pdf_deterministic(&doc)?;
+    let pdf_ctx = PdfToolCtx::default().with_max_pages(ctx.limits().max_pages);
+    let (out_bytes, warnings) =
+        pdf_delete_pages::delete_page_numbers(&structural_doc, &blank_pages, &pdf_ctx)
+            .map_err(map_pdf_error)?;
+    for warning in warnings {
+        ctx.warn("pdf_warning", &warning)?;
+    }
 
     let stem = ctx.input_stem();
     let out_path = ctx.artifact_path(&format!("{stem}.remove-blank.pdf"))?;
@@ -130,55 +131,32 @@ pub fn split_pixel(ctx: &mut ToolContext<'_>, params: &Value) -> ToolResult {
     split_params.validate()?;
 
     let bytes = read_bounded_input(ctx)?;
-    let _ = open_structural_pdf(ctx, &bytes)?;
+    let structural_doc = open_structural_pdf(ctx, &bytes)?;
     let (blank_pages, white_ratios) =
         detect_blank_pages_in_bytes(ctx, &bytes, split_params.dpi, split_params.threshold)?;
 
-    let total_pages = u32::try_from(white_ratios.len()).unwrap_or(u32::MAX);
-    let mut parts: Vec<Vec<u32>> = Vec::new();
-    let mut current_run: Vec<u32> = Vec::new();
-
-    for page_no in 1..=total_pages {
-        if blank_pages.binary_search(&page_no).is_ok() {
-            if !current_run.is_empty() {
-                parts.push(std::mem::take(&mut current_run));
-            }
-        } else {
-            current_run.push(page_no);
-        }
-    }
-    if !current_run.is_empty() {
-        parts.push(current_run);
-    }
-
-    if parts.is_empty() {
+    if blank_pages.len() == white_ratios.len() {
         return Err(EngineFailure::new(
             ErrorCode::InvalidRequest,
             "Cannot split document: every page was detected as a blank separator.",
         ));
     }
 
-    let pdfium = ctx.pdfium()?;
     let stem = ctx.input_stem();
-    let total_parts = parts.len();
-    for (idx, part_pages) in parts.iter().enumerate() {
+    let pdf_ctx = PdfToolCtx::default().with_max_pages(ctx.limits().max_pages);
+    let (artifacts, warnings) =
+        pdf_split::split_at_separator_pages(&structural_doc, &stem, &blank_pages, &pdf_ctx)
+            .map_err(map_pdf_error)?;
+    for warning in warnings {
+        ctx.warn("pdf_warning", &warning)?;
+    }
+
+    let total_parts = artifacts.len();
+    for (idx, artifact) in artifacts.iter().enumerate() {
         ctx.check()?;
         let part_no = u32::try_from(idx + 1).unwrap_or(u32::MAX);
-        let part_doc = pdfium.load_pdf_from_byte_slice(&bytes, None).map_err(|_| {
-            EngineFailure::new(
-                ErrorCode::InvalidRequest,
-                "The input PDF could not be opened.",
-            )
-        })?;
-        let to_delete: Vec<u32> = (1..=total_pages)
-            .filter(|p| !part_pages.binary_search(p).is_ok())
-            .collect();
-        delete_pages_in_reverse(&part_doc, &to_delete)?;
-        let out_bytes = save_pdf_deterministic(&part_doc)?;
-
-        let file_name = part_artifact_name(&stem, part_no, total_parts);
-        let out_path = ctx.artifact_path(&file_name)?;
-        fs::write(&out_path, &out_bytes).map_err(|_| EngineFailure::io())?;
+        let out_path = ctx.artifact_path(&artifact.name)?;
+        fs::write(&out_path, &artifact.bytes).map_err(|_| EngineFailure::io())?;
         ctx.artifact(&out_path, "pdf")?;
         ctx.progress("pdf.split", u64::from(part_no), total_parts as u64)?;
     }
@@ -371,27 +349,6 @@ pub fn compute_white_ratio(gray: &GrayImage, dpi: u32) -> f64 {
     (ratio * 1_000_000.0).round() / 1_000_000.0
 }
 
-fn delete_pages_in_reverse(
-    doc: &PdfDocument<'_>,
-    pages_1_based: &[u32],
-) -> Result<(), EngineFailure> {
-    for &page_no in pages_1_based.iter().rev() {
-        let idx = PdfPageIndex::try_from(page_no.saturating_sub(1))
-            .map_err(|_| EngineFailure::invalid_request())?;
-        let page = doc
-            .pages()
-            .get(idx)
-            .map_err(|_| EngineFailure::invalid_request())?;
-        page.delete().map_err(|_| {
-            EngineFailure::new(
-                ErrorCode::EngineFailure,
-                "Failed to delete blank page from PDF.",
-            )
-        })?;
-    }
-    Ok(())
-}
-
 pub(crate) fn save_pdf_deterministic(doc: &PdfDocument<'_>) -> Result<Vec<u8>, EngineFailure> {
     let mut bytes = doc.save_to_bytes().map_err(|_| {
         EngineFailure::new(
@@ -411,15 +368,6 @@ pub(crate) fn save_pdf_deterministic(doc: &PdfDocument<'_>) -> Result<Vec<u8>, E
         }
     }
     Ok(bytes)
-}
-
-fn part_artifact_name(stem: &str, part_no: u32, total_parts: usize) -> String {
-    let width = if total_parts >= 1_000 {
-        total_parts.to_string().len()
-    } else {
-        3
-    };
-    format!("{stem}.part-{part_no:0width$}.pdf")
 }
 
 pub(crate) fn read_bounded_input(ctx: &ToolContext<'_>) -> Result<Vec<u8>, EngineFailure> {

@@ -244,23 +244,116 @@ fn prepare_image(
         ));
     }
     if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        return Err(PdfError::InvalidParams(
-            "unsupported image format `webp`: requires the `image` crate".to_owned(),
-        ));
+        return prepare_raster_with_image_crate(
+            bytes,
+            image::ImageFormat::WebP,
+            max_decoded_bytes,
+            decoded_so_far,
+            ctx,
+        );
     }
     if bytes.starts_with(b"II*\x00") || bytes.starts_with(b"MM\x00*") {
-        return Err(PdfError::InvalidParams(
-            "unsupported image format `tiff`: requires the `image` crate".to_owned(),
-        ));
+        return prepare_raster_with_image_crate(
+            bytes,
+            image::ImageFormat::Tiff,
+            max_decoded_bytes,
+            decoded_so_far,
+            ctx,
+        );
     }
     if bytes.starts_with(b"BM") {
-        return Err(PdfError::InvalidParams(
-            "unsupported image format `bmp`: requires the `image` crate".to_owned(),
-        ));
+        return prepare_raster_with_image_crate(
+            bytes,
+            image::ImageFormat::Bmp,
+            max_decoded_bytes,
+            decoded_so_far,
+            ctx,
+        );
     }
     Err(PdfError::InvalidParams(
         "unsupported or unrecognized image format".to_owned(),
     ))
+}
+
+fn prepare_raster_with_image_crate(
+    bytes: &[u8],
+    format: image::ImageFormat,
+    max_decoded_bytes: u64,
+    decoded_so_far: &mut u64,
+    ctx: &ToolCtx,
+) -> Result<PreparedImage, PdfError> {
+    ctx.check()?;
+    let mut dim_reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
+    let mut img_limits = image::Limits::default();
+    img_limits.max_image_width = Some(16_384);
+    img_limits.max_image_height = Some(16_384);
+    img_limits.max_alloc = Some(max_decoded_bytes);
+    dim_reader.limits(img_limits.clone());
+
+    let (width, height) = dim_reader
+        .into_dimensions()
+        .map_err(|err| map_image_decode_error(err, max_decoded_bytes))?;
+    check_dimensions_and_budget(width, height, 4, max_decoded_bytes, decoded_so_far)?;
+
+    ctx.check()?;
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
+    reader.limits(img_limits);
+    let dyn_img = reader
+        .decode()
+        .map_err(|err| map_image_decode_error(err, max_decoded_bytes))?;
+    ctx.check()?;
+
+    let color = dyn_img.color();
+    if color.has_alpha() {
+        let rgba = dyn_img.into_rgba8();
+        let pixel_count = (width as usize) * (height as usize);
+        let mut rgb = Vec::with_capacity(pixel_count * 3);
+        let mut alpha = Vec::with_capacity(pixel_count);
+        for &[r, g, b, a] in rgba.as_raw().as_chunks::<4>().0 {
+            rgb.extend_from_slice(&[r, g, b]);
+            alpha.push(a);
+        }
+        Ok(PreparedImage {
+            width,
+            height,
+            color_space: ColorSpace::DeviceRgb,
+            bits_per_component: 8,
+            encoding: ImageEncoding::FlateRaw,
+            data: rgb,
+            smask: Some(alpha),
+        })
+    } else if !color.has_color() {
+        let gray = dyn_img.into_luma8();
+        Ok(PreparedImage {
+            width,
+            height,
+            color_space: ColorSpace::DeviceGray,
+            bits_per_component: 8,
+            encoding: ImageEncoding::FlateRaw,
+            data: gray.into_raw(),
+            smask: None,
+        })
+    } else {
+        let rgb = dyn_img.into_rgb8();
+        Ok(PreparedImage {
+            width,
+            height,
+            color_space: ColorSpace::DeviceRgb,
+            bits_per_component: 8,
+            encoding: ImageEncoding::FlateRaw,
+            data: rgb.into_raw(),
+            smask: None,
+        })
+    }
+}
+
+fn map_image_decode_error(err: image::ImageError, max_decoded_bytes: u64) -> PdfError {
+    match err {
+        image::ImageError::Limits(_) => PdfError::LimitExceeded(ReadError::DecompressedTooLarge {
+            limit: max_decoded_bytes,
+        }),
+        other => PdfError::InvalidParams(format!("corrupt or unsupported image: {other}")),
+    }
 }
 
 fn is_heic_or_avif(bytes: &[u8]) -> bool {
@@ -674,7 +767,7 @@ fn unfilter_scanlines(
                 1 => x.wrapping_add(a),
                 2 => x.wrapping_add(b),
                 3 => x.wrapping_add(((u16::from(a) + u16::from(b)) / 2) as u8),
-                4 => x.wrapping_add(paeth_predictor(a, b, c)),
+                4 => x.wrapping_add(png_filter4_predictor(a, b, c)),
                 _ => {
                     return Err(PdfError::InvalidParams(
                         "invalid PNG scanline filter type".to_owned(),
@@ -687,7 +780,7 @@ fn unfilter_scanlines(
     Ok(out)
 }
 
-fn paeth_predictor(a: u8, b: u8, c: u8) -> u8 {
+fn png_filter4_predictor(a: u8, b: u8, c: u8) -> u8 {
     let a_i = i32::from(a);
     let b_i = i32::from(b);
     let c_i = i32::from(c);

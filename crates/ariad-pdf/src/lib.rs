@@ -10,6 +10,7 @@
 pub mod document;
 pub mod error;
 pub mod gc;
+pub mod image_to_pdf;
 pub mod info;
 pub mod naming;
 pub mod paper;

@@ -347,6 +347,55 @@ fn enforces_pixel_cap_and_input_size_limits() {
 }
 
 #[test]
+fn decodes_valid_webp_tiff_and_bmp_inputs_into_pdf_pages() {
+    use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
+    use std::io::Cursor;
+
+    let mut rgba = RgbaImage::new(24, 16);
+    for (x, y, pixel) in rgba.enumerate_pixels_mut() {
+        *pixel = Rgba([
+            ((x * 9) & 0xFF) as u8,
+            ((y * 15) & 0xFF) as u8,
+            180,
+            if (x + y) % 3 == 0 { 160 } else { 255 },
+        ]);
+    }
+    let dyn_img = DynamicImage::ImageRgba8(rgba);
+
+    let mut webp = Vec::new();
+    dyn_img
+        .write_to(&mut Cursor::new(&mut webp), ImageFormat::WebP)
+        .expect("encode WebP");
+
+    let mut tiff = Vec::new();
+    dyn_img
+        .write_to(&mut Cursor::new(&mut tiff), ImageFormat::Tiff)
+        .expect("encode TIFF");
+
+    let mut bmp = Vec::new();
+    dyn_img
+        .to_rgb8()
+        .write_to(&mut Cursor::new(&mut bmp), ImageFormat::Bmp)
+        .expect("encode BMP");
+
+    let pdf_bytes = image_to_pdf::run(
+        [webp.as_slice(), tiff.as_slice(), bmp.as_slice()],
+        &ImageToPdfParams::default(),
+        &Limits::local(),
+    )
+    .expect("WebP, TIFF and BMP to PDF succeeds");
+
+    let report = info::run(&pdf_bytes, &Limits::local()).expect("inspect generated PDF");
+    assert_eq!(report.page_count, 3);
+    for page in &report.pages {
+        assert_eq!(page.width_pt, 24.0);
+        assert_eq!(page.height_pt, 16.0);
+        assert!(!page.blank);
+        assert_eq!(page.image_only, Some(true));
+    }
+}
+
+#[test]
 fn rejects_unsupported_and_corrupt_formats_with_invalid_input() {
     let heic = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00heicmif1";
     let webp = b"RIFF\x20\x00\x00\x00WEBPVP8 ";

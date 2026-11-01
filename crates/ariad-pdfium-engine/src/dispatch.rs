@@ -284,8 +284,9 @@ mod tests {
     }
 
     #[test]
-    fn a_stub_tool_returns_the_typed_not_implemented_failure() {
+    fn missing_library_or_truncated_pdf_returns_typed_failure_for_every_tool() {
         let ws = workspace();
+        let empty_lib = tempfile::tempdir().expect("empty lib dir");
         for (tool, params) in [
             ("pdf.render", json!({})),
             ("pdf.to_images", json!({"combine": "vertical"})),
@@ -300,17 +301,28 @@ mod tests {
                 json!({"mode": "blank-separator", "detect": "pixel"}),
             ),
         ] {
-            let (events, code) = run_request(&run_tool_request(ws.path(), tool, params));
+            let mut line =
+                serde_json::to_vec(&run_tool_request(ws.path(), tool, params)).expect("json");
+            line.push(b'\n');
+            let mut out = Vec::new();
+            let code = serve_v2(Cursor::new(line), &mut out, |request, out| {
+                handle_with(request, out, Some(empty_lib.path()))
+            });
             assert_eq!(code, std::process::ExitCode::from(1), "{tool}");
+            let events: Vec<Value> = out
+                .split(|b| *b == b'\n')
+                .filter(|l| !l.is_empty())
+                .map(|l| serde_json::from_slice(l).expect("event json"))
+                .collect();
             let last = events.last().expect("a result event");
             assert_eq!(last["ok"], false, "{tool}");
-            assert_eq!(last["error"]["code"], "engine_failure", "{tool}");
+            let err_code = last["error"]["code"].as_str().expect("error code");
             assert!(
-                last["error"]["message"]
-                    .as_str()
-                    .expect("message")
-                    .contains("not implemented yet"),
-                "{tool}"
+                matches!(
+                    err_code,
+                    "tool_missing" | "invalid_request" | "engine_failure"
+                ),
+                "{tool}: unexpected error code {err_code}"
             );
         }
     }

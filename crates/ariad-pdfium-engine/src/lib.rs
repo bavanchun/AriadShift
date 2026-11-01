@@ -20,15 +20,5 @@ pub mod render;
 pub mod text_layout;
 pub mod thumbnails;
 
-use ariad_engine_io::EngineFailure;
-
 /// Engine identifier, equal to the pack name and to `ToolSpec::engine` of the tools it runs.
 pub const ENGINE_ID: &str = "pdfium";
-
-/// The typed failure every tool stub returns until its body lands.
-pub(crate) fn not_implemented(tool: &str) -> EngineFailure {
-    EngineFailure::owned(
-        ariad_core::protocol::ErrorCode::EngineFailure,
-        format!("The {tool} tool is not implemented yet."),
-    )
-}

@@ -287,6 +287,7 @@ impl<'a> ToolContext<'a> {
         let pdf_ctx = PdfToolCtx {
             deadline: self.deadline,
             cancel: Arc::clone(&self.cancel.0),
+            max_pages: self.limits.max_pages,
         };
 
         // Allow opening the document up to the global local page ceiling so `PageRange` can
