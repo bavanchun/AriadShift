@@ -600,3 +600,46 @@ fn pdfium_address_limit_blocks_excess_allocation() {
         "expected allocation failure, got {result:?}"
     );
 }
+
+#[test]
+fn engine_crashes_and_generic_failures_include_only_applied_memory_ceilings() {
+    for action in ["crash", "fail"] {
+        for limit in [Some(256), None] {
+            let workspace = Workspace::new().expect("workspace");
+            let command = v2_engine_command("qpdf");
+            let limits = Limits {
+                max_memory_mb: limit,
+                timeout_s: Some(15),
+                ..Limits::local()
+            };
+            let request =
+                make_run_tool_request(&workspace, json!({ "probe_action": action }), limits);
+            let error =
+                runner::run_command_v2(&command, &request, CancellationToken::new(), |_| {})
+                    .unwrap_err();
+            match (&error, action) {
+                (
+                    RunError::Crash {
+                        memory_limit_mb, ..
+                    },
+                    "crash",
+                ) => assert_eq!(*memory_limit_mb, limit),
+                (
+                    RunError::EngineFailed {
+                        code: ariad_core::protocol::ErrorCode::EngineFailure,
+                        memory_limit_mb,
+                        ..
+                    },
+                    "fail",
+                ) => assert_eq!(*memory_limit_mb, limit),
+                _ => panic!("unexpected error: {error:?}"),
+            }
+            assert_eq!(
+                error
+                    .to_string()
+                    .contains("may have hit its memory limit (256 MiB)"),
+                limit.is_some()
+            );
+        }
+    }
+}

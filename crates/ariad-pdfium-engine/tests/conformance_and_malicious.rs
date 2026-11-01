@@ -385,3 +385,84 @@ fn real_binary_handles_malicious_pdf_corpus_and_emits_schema_valid_events() {
     assert_eq!(events.last().unwrap()["ok"], false);
     assert_eq!(events.last().unwrap()["error"]["code"], "limit_exceeded");
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn render_bitmap_allocation_failure_reports_memory_limit() {
+    let Some(lib_dir) = pdfium_lib_dir() else {
+        eprintln!("skipping: PDFium pack is unavailable");
+        return;
+    };
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    for name in ["in", "out", "tmp", "bin"] {
+        fs::create_dir(root.join(name)).unwrap();
+    }
+    let mut doc = Document::with_version("1.7");
+    let pages = doc.new_object_id();
+    let content = doc.add_object(Stream::new(dictionary! {}, b"q Q".to_vec()));
+    let page = doc.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages,
+        "MediaBox" => vec![0.into(), 0.into(), 940.into(), 940.into()],
+        "Contents" => content,
+    });
+    doc.objects.insert(
+        pages,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1,
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+    doc.trailer.set("Root", catalog);
+    let input = root.join("in/page.pdf");
+    doc.save(&input).unwrap();
+    let binary = root.join("bin/ariad-pdfium-engine");
+    fs::copy(env!("CARGO_BIN_EXE_ariad-pdfium-engine"), &binary).unwrap();
+    fs::copy(
+        ariad_pdfium_engine::library::find_in(&lib_dir).unwrap(),
+        root.join("bin")
+            .join(ariad_pdfium_engine::library::library_file_name()),
+    )
+    .unwrap();
+    let req = RequestV2::RunTool {
+        protocol: PROTOCOL_V2.to_owned(),
+        job: "bitmap-limit".to_owned(),
+        tool: "pdf.render".to_owned(),
+        inputs: vec![Input {
+            path: input.display().to_string(),
+            format: "pdf".to_owned(),
+        }],
+        output: OutputDir {
+            dir: root.join("out").display().to_string(),
+        },
+        params: json!({ "format": "png", "dpi": 600 }),
+        params_file: None,
+        work_dir: root.join("tmp").display().to_string(),
+        limits: Limits {
+            max_memory_mb: Some(256),
+            ..Limits::local()
+        },
+    };
+    let mut child = Command::new("prlimit")
+        .args(["--as=268435456", "--core=0", "--"])
+        .arg(binary)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start limited engine");
+    writeln!(
+        child.stdin.take().unwrap(),
+        "{}",
+        serde_json::to_string(&req).unwrap()
+    )
+    .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let events = validate_stdout_events(&output);
+    let result = events.last().unwrap();
+    assert_eq!(result["error"]["code"], "limit_exceeded");
+    let message = result["error"]["message"].as_str().unwrap();
+    assert!(message.contains("7833 x 7833"), "{message}");
+    assert!(message.contains("256 MiB"), "{message}");
+    assert_eq!(fs::read_dir(root.join("out")).unwrap().count(), 0);
+}

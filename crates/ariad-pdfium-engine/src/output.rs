@@ -13,7 +13,6 @@
 
 use std::{
     collections::BTreeMap,
-    fs::File,
     io::{Cursor, Write},
     path::{Path, PathBuf},
     sync::{
@@ -42,7 +41,6 @@ use image::{
 };
 use pdfium_render::prelude::{PdfBitmap, Pdfium, PdfiumError, PdfiumInternalError};
 use serde_json::Value;
-use zip::{CompressionMethod, DateTime, ZipWriter, write::SimpleFileOptions};
 
 use crate::library;
 
@@ -586,26 +584,26 @@ pub fn encode_raster_image(
     Ok(buf)
 }
 
-/// Writes `entries` (`(file_name, bytes)`) into a deterministic Deflate-compressed `.zip` file.
-pub fn write_zip_archive(
-    zip_path: &Path,
-    entries: &[(String, Vec<u8>)],
-) -> Result<(), EngineFailure> {
-    let file = File::create(zip_path).map_err(|_| EngineFailure::io())?;
-    let mut writer = ZipWriter::new(file);
-    let options = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Deflated)
-        .last_modified_time(DateTime::default());
-    for (name, bytes) in entries {
-        writer
-            .start_file(name, options)
-            .map_err(|err| EngineFailure::owned(ErrorCode::EngineFailure, err.to_string()))?;
-        writer.write_all(bytes).map_err(|_| EngineFailure::io())?;
+pub(crate) fn charge_output_bytes(
+    total: u64,
+    bytes: usize,
+    limit: u64,
+) -> Result<u64, EngineFailure> {
+    total
+        .checked_add(bytes as u64)
+        .filter(|&size| size <= limit)
+        .ok_or_else(EngineFailure::limit_exceeded)
+}
+
+pub(crate) fn move_scratch_file(scratch: &Path, path: &Path) -> Result<(), EngineFailure> {
+    match std::fs::rename(scratch, path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
+            std::fs::copy(scratch, path).map_err(|_| EngineFailure::io())?;
+            std::fs::remove_file(scratch).map_err(|_| EngineFailure::io())
+        }
+        Err(_) => Err(EngineFailure::io()),
     }
-    writer
-        .finish()
-        .map_err(|err| EngineFailure::owned(ErrorCode::EngineFailure, err.to_string()))?;
-    Ok(())
 }
 
 #[cfg(test)]

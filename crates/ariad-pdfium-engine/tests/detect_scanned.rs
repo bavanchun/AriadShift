@@ -332,7 +332,7 @@ fn rejects_encrypted_and_corrupt_pdfs() {
 }
 
 #[test]
-fn many_overlapping_images_exceed_the_coverage_limit() {
+fn many_overlapping_images_report_saturated_coverage() {
     let lib_dir = require_pdfium!();
     let content = b"q 10 0 0 10 0 0 cm /Im Do Q\n".repeat(2001);
     let objects = vec![
@@ -347,12 +347,41 @@ fn many_overlapping_images_exceed_the_coverage_limit() {
     let mut ctx = ToolContext::new(
         "overlap",
         "pdf.detect_scanned",
-        ws.paths,
+        ws.paths.clone(),
         Limits::local(),
         &mut sink,
     )
     .with_library_dir(lib_dir);
+    detect_scanned::run(&mut ctx, DetectScannedParams::default())
+        .expect("rectangle saturation is a best-effort result");
+    let report: DetectScannedDocument = serde_json::from_slice(
+        &fs::read(ws.paths.output_dir.join("overlap.detect-scanned.json")).expect("report"),
+    )
+    .expect("valid report");
+    assert!(report.pages[0].saturated);
+    assert_eq!(report.pages[0].verdict, ScanVerdict::Scanned);
+}
+
+#[test]
+fn image_object_work_budget_still_fails() {
+    let lib_dir = require_pdfium!();
+    let content = b"q 10 0 0 10 0 0 cm /Im Do Q\n".repeat(100);
+    let objects = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", &content),
+        stream_object("/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8", &[128, 128, 128]),
+    ];
+    let ws = TestWorkspace::from_bytes("budget.pdf", &assemble_pdf(&objects));
+    let mut sink = Vec::new();
+    let limits = Limits {
+        max_blocks: 50,
+        ..Limits::local()
+    };
+    let mut ctx = ToolContext::new("budget", "pdf.detect_scanned", ws.paths, limits, &mut sink)
+        .with_library_dir(lib_dir);
     let err = detect_scanned::run(&mut ctx, DetectScannedParams::default())
-        .expect_err("rectangle count must be bounded");
+        .expect_err("work budget must be enforced");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
 }

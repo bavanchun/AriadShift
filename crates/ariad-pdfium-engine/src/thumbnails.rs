@@ -67,7 +67,15 @@ pub fn run(ctx: &mut ToolContext<'_>, params: ThumbnailsParams) -> ToolResult {
         let (width_px, height_px) = compute_thumbnail_pixels(&page, params.max_px)?;
         ctx.check_pixels(width_px, height_px)?;
 
-        let rgba = render_page_rgba(&page, page_num, width_px, height_px, PdfColor::WHITE, true)?;
+        let rgba = render_page_rgba(
+            &page,
+            page_num,
+            width_px,
+            height_px,
+            PdfColor::WHITE,
+            true,
+            ctx.limits().max_memory_mb,
+        )?;
         ctx.check_pixels(u64::from(rgba.width()), u64::from(rgba.height()))?;
 
         let png_bytes = encode_raster_image(&rgba, RasterFormat::Png, None)?;

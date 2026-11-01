@@ -140,6 +140,15 @@ mod test_pack_engine {
                         std::thread::sleep(std::time::Duration::from_secs(60));
                     }
                 }
+                if resolved_params.get("probe_action") == Some(&json!("crash")) {
+                    std::process::exit(9);
+                }
+                if resolved_params.get("probe_action") == Some(&json!("fail")) {
+                    return Err(common::EngineFailure::new(
+                        ariad_core::protocol::ErrorCode::EngineFailure,
+                        "probe engine failure",
+                    ));
+                }
                 if let Some(megabytes) = resolved_params
                     .get("probe_memory_mb")
                     .and_then(Value::as_u64)

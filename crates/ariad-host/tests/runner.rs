@@ -149,8 +149,9 @@ fn ok_result_with_nonzero_exit_is_a_crash() {
 #[test]
 fn crash_captures_the_bounded_stderr_tail() {
     let workspace = Workspace::new().expect("create workspace");
-    let Err(RunError::Crash { exit, stderr_tail }) =
-        run_probe(&workspace, "crash", None, CancellationToken::new())
+    let Err(RunError::Crash {
+        exit, stderr_tail, ..
+    }) = run_probe(&workspace, "crash", None, CancellationToken::new())
     else {
         panic!("probe should crash");
     };

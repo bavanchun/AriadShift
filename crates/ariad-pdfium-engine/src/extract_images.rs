@@ -74,14 +74,12 @@ pub struct ExtractedImage {
     pub artifact_extension: &'static str,
     /// Payload written to the emitted artifact file.
     pub bytes: Vec<u8>,
-    /// Unmodified raw stream bytes when the stream uses `DCTDecode` or `JPXDecode` and
-    /// `format = original`.
+    /// Unmodified raw stream bytes when distinct from the emitted payload.
     pub raw_stream_bytes: Option<Vec<u8>>,
 }
 
 impl ExtractedImage {
-    /// Returns the original stream bytes when preserved (`DCTDecode` JPEG or `JPXDecode` JP2), or
-    /// the encoded PNG bytes otherwise.
+    /// Returns the original stream bytes when preserved, or the emitted payload otherwise.
     #[must_use]
     pub fn original_bytes(&self) -> &[u8] {
         self.raw_stream_bytes.as_deref().unwrap_or(&self.bytes)
@@ -223,10 +221,10 @@ macro_rules! insert_xobjects_from_resources {
 
 /// Executes `pdf.extract_images`.
 pub fn run(ctx: &mut ToolContext<'_>, params: ExtractImagesParams) -> ToolResult {
-    let outcome = extract_document_images(ctx, &params)?;
     let stem = ctx.input_stem();
-
-    for img in &outcome.images {
+    let mut files = Vec::new();
+    let mut output_bytes = 0_u64;
+    let outcome = extract_document_images_with(ctx, &params, &mut |ctx, img| {
         ctx.check()?;
         if img.encoding == ImageEncoding::Jpx && params.format == ExtractFormat::Original {
             ctx.warn(
@@ -234,10 +232,22 @@ pub fn run(ctx: &mut ToolContext<'_>, params: ExtractImagesParams) -> ToolResult
                 "A JPEG 2000 (JPXDecode) image was transcoded to PNG because jp2 is not a standalone tool output format.",
             )?;
         }
+        output_bytes = crate::output::charge_output_bytes(
+            output_bytes,
+            img.bytes.len(),
+            ctx.limits().max_decompressed_bytes,
+        )?;
         let name = image_artifact_name(&stem, img.page, img.index_on_page, img.artifact_extension);
+        let scratch = ctx.work_dir().join(&name);
+        fs::write(&scratch, &img.bytes).map_err(|_| EngineFailure::io())?;
+        files.push((scratch, name, img.artifact_format));
+        Ok(())
+    })?;
+    let image_count = files.len();
+    for (scratch, name, format) in files {
         let path = ctx.artifact_path(&name)?;
-        fs::write(&path, &img.bytes).map_err(|_| EngineFailure::io())?;
-        ctx.artifact(&path, img.artifact_format)?;
+        crate::output::move_scratch_file(&scratch, &path)?;
+        ctx.artifact(&path, format)?;
     }
 
     let mut metrics = Metrics::new();
@@ -247,7 +257,7 @@ pub fn run(ctx: &mut ToolContext<'_>, params: ExtractImagesParams) -> ToolResult
     );
     metrics.insert(
         "images_extracted".to_owned(),
-        json!(u64::try_from(outcome.images.len()).unwrap_or(u64::MAX)),
+        json!(u64::try_from(image_count).unwrap_or(u64::MAX)),
     );
     metrics.insert(
         "images_deduplicated".to_owned(),
@@ -273,6 +283,20 @@ pub fn image_artifact_name(stem: &str, page: u32, image_index: u32, ext: &str) -
 pub fn extract_document_images(
     ctx: &mut ToolContext<'_>,
     params: &ExtractImagesParams,
+) -> Result<ExtractImagesOutcome, EngineFailure> {
+    let mut images = Vec::new();
+    let mut outcome = extract_document_images_with(ctx, params, &mut |_, img| {
+        images.push(img);
+        Ok(())
+    })?;
+    outcome.images = images;
+    Ok(outcome)
+}
+
+fn extract_document_images_with(
+    ctx: &mut ToolContext<'_>,
+    params: &ExtractImagesParams,
+    emit: &mut impl FnMut(&mut ToolContext<'_>, ExtractedImage) -> Result<(), EngineFailure>,
 ) -> Result<ExtractImagesOutcome, EngineFailure> {
     params
         .validate()
@@ -410,7 +434,7 @@ pub fn extract_document_images(
                 )?;
 
                 page_extracted_count += 1;
-                outcome.images.push(extracted);
+                emit(ctx, extracted)?;
             }
         } else {
             extract_inline_pdfium_images(
@@ -422,6 +446,7 @@ pub fn extract_document_images(
                 max_depth,
                 &mut seen_inline_hashes,
                 &mut outcome,
+                emit,
             )?;
         }
 
@@ -2152,7 +2177,7 @@ fn decode_xobject_image(
                 encoding: ImageEncoding::Jpeg,
                 artifact_format: "jpeg",
                 artifact_extension: "jpg",
-                raw_stream_bytes: Some(raw_jpeg.clone()),
+                raw_stream_bytes: None,
                 bytes: raw_jpeg,
             });
         }
@@ -2607,7 +2632,7 @@ fn pdf_bitmap_to_dynamic_image(bitmap: &PdfBitmap<'_>) -> Option<DynamicImage> {
 
 #[allow(clippy::too_many_arguments)]
 fn extract_inline_pdfium_images(
-    ctx: &ToolContext<'_>,
+    ctx: &mut ToolContext<'_>,
     pdfium_doc: &PdfDocument<'_>,
     pdfium_page: &PdfPage<'_>,
     page_num: u32,
@@ -2615,6 +2640,7 @@ fn extract_inline_pdfium_images(
     max_depth: usize,
     seen_hashes: &mut HashSet<[u8; 32]>,
     outcome: &mut ExtractImagesOutcome,
+    emit: &mut impl FnMut(&mut ToolContext<'_>, ExtractedImage) -> Result<(), EngineFailure>,
 ) -> Result<(), EngineFailure> {
     let mut page_index: u32 = 0;
     visit_pdfium_images(pdfium_page.objects().iter(), 0, max_depth, &mut |img| {
@@ -2641,18 +2667,21 @@ fn extract_inline_pdfium_images(
         }
 
         page_index += 1;
-        outcome.images.push(ExtractedImage {
-            page: page_num,
-            index_on_page: page_index,
-            object_id: None,
-            width,
-            height,
-            encoding: ImageEncoding::Png,
-            artifact_format: "png",
-            artifact_extension: "png",
-            raw_stream_bytes: None,
-            bytes: png_bytes,
-        });
+        emit(
+            ctx,
+            ExtractedImage {
+                page: page_num,
+                index_on_page: page_index,
+                object_id: None,
+                width,
+                height,
+                encoding: ImageEncoding::Png,
+                artifact_format: "png",
+                artifact_extension: "png",
+                raw_stream_bytes: None,
+                bytes: png_bytes,
+            },
+        )?;
         Ok(false)
     })?;
     Ok(())

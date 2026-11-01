@@ -107,7 +107,9 @@ impl Failure {
             ConvertError::SandboxUnavailable(_) => {
                 Self::transient("sandbox_unavailable", "the conversion could not finish")
             }
-            ConvertError::Failed => Self::transient("failed", "the conversion engine failed"),
+            ConvertError::Failed | ConvertError::FailedWithMemoryHint { .. } => {
+                Self::transient("failed", "the conversion engine failed")
+            }
             ConvertError::OutputIo => {
                 Self::transient("output_io", "the output could not be written")
             }

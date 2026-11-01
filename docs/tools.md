@@ -356,6 +356,9 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.remove_blank` → `report.remove-blank.pdf`
   - `pdf.crop_whitespace` → `report.cropped.pdf`
   - `pdf.detect_scanned` → `report.detect-scanned.json`
+    Each page has a `saturated` flag: when true, coverage and classification are
+    best-effort results based on the first 2,000 image rectangles. The separate
+    work budget still applies and can return `limit_exceeded`.
   - `pdf.text_layout` → `report.text-layout.json`
   - `image.to_pdf` → `first.pdf`
   - `pdf.decompress` → `report.decompressed.pdf`
@@ -411,9 +414,15 @@ Every tool invocation receives an `ariad_core::limits::Limits` struct (`Limits::
 | Decoded stream & object caps | `ariad-pdf` opens every PDF exclusively through `ariad_core::reader::pdf::load_bounded(bytes, &limits)`, enforcing `max_decompressed_bytes` across Flate/LZW/filter streams, `max_nesting_depth` (< 100), and `MAX_OBJECTS` (object count ceiling). |
 | `max_asset_bytes` | Bounds individual embedded images, fonts, or file attachments added or extracted by a tool. |
 
-PDFium image extraction bounds the combined declared inline-image pixels, decoded bytes, and scanned content for each page, including forms; image extraction and scan detection also bound object traversal per page and document. Extraction rejects a form whose estimated nested object expansion exceeds 100,000 visits. Scan detection accepts at most 2,000 image rectangles per page and bounds the work used to calculate their exact union. Complex inputs may therefore reach a limit even when their file size is small.
+PDFium image extraction bounds the combined declared inline-image pixels, decoded bytes, and scanned content for each page, including forms; image extraction and scan detection also bound object traversal per page and document. Extraction rejects a form whose estimated nested object expansion exceeds 100,000 visits. Scan detection uses at most 2,000 image rectangles per page, marks pages with omitted rectangles as saturated, and bounds the work used to calculate their union. Complex inputs may therefore reach a limit even when their file size is small.
 
 For PDFium tools, an unspecified `timeout_s` or `max_memory_mb` uses the cloud defaults (600 seconds and 4096 MiB respectively), including local runs. Explicit limits remain unchanged. `pdf.render` and `pdf.to_images` also cap the cumulative encoded page bytes and the final ZIP size at `max_decompressed_bytes`; a limit failure publishes no artifacts.
+
+If PDFium cannot allocate a bitmap after its dimensions have been validated,
+the engine reports `limit_exceeded` with the bitmap size and configured memory
+limit. When an engine crashes or reports a generic failure under a memory
+ceiling, the host instead retains the failure classification and notes that the
+engine may have hit the ceiling, naming it in MiB.
 
 Exceeding any limit terminates the job immediately and returns `limit_exceeded` (exit code `4`).
 
