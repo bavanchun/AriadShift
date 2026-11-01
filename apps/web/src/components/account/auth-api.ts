@@ -290,11 +290,43 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
       });
       if (!response.ok) {
         cachedToken = undefined;
-        return undefined;
+        let body: Record<string, unknown> = {};
+        try {
+          body = record(await response.json());
+        } catch {
+          // Non-JSON error bodies still surface a typed AuthError below.
+        }
+        const message =
+          typeof body.message === "string" && body.message !== ""
+            ? body.message
+            : "Your session has ended. Sign in again.";
+        const code =
+          typeof body.code === "string" && body.code !== ""
+            ? body.code
+            : response.status === 401
+              ? "unauthorized"
+              : "token_refresh_failed";
+        throw new AuthError(message, response.status, code);
       }
-      const { token } = (await response.json()) as { token?: unknown };
+      let data: unknown;
+      try {
+        data = await response.json();
+      } catch {
+        cachedToken = undefined;
+        throw new AuthError(
+          "The sign-in service returned an invalid API token.",
+          response.status,
+          "invalid_token_response",
+        );
+      }
+      const token = record(data).token;
       if (typeof token !== "string" || token === "") {
-        return undefined;
+        cachedToken = undefined;
+        throw new AuthError(
+          "The sign-in service returned an invalid API token.",
+          response.status,
+          "invalid_token_response",
+        );
       }
       cachedToken = { token, until: Date.now() + TOKEN_REUSE_MS };
       return token;

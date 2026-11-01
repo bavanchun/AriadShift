@@ -456,4 +456,33 @@ describe("jobs page with the account's job list", () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it("shows the sign-in-again state and never calls /v1 anonymously when token refresh fails", async () => {
+    const requestedUrls: string[] = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      requestedUrls.push(url);
+      return new Response(JSON.stringify({ jobs: [], next_cursor: null }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    try {
+      const expiredAuth: AuthApi = {
+        getSession: vi.fn(async () => USER),
+        apiToken: vi.fn(async () => {
+          throw Object.assign(new Error("unauthorized"), { status: 401, code: "unauthorized" });
+        }),
+      } as unknown as AuthApi;
+      render(
+        <AccountShell config={CONFIG} auth={expiredAuth}>
+          <JobsPanel />
+        </AccountShell>,
+      );
+      expect(await screen.findByText(/Your session has ended\. Sign in again\./)).toBeTruthy();
+      expect(requestedUrls).toEqual([]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });

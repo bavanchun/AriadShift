@@ -2,7 +2,13 @@
 // requests carry a JWT from the auth service; anonymous jobs are read without
 // credentials, since a bearer token would look for them in the wrong workspace.
 
-import { type AriadClient, createAriadClient, errorFromBody, type Job } from "@ariadshift/sdk";
+import {
+  AriadApiError,
+  type AriadClient,
+  createAriadClient,
+  errorFromBody,
+  type Job,
+} from "@ariadshift/sdk";
 import type { AuthApi } from "./auth-api";
 
 /** Jobs requested per page of the account's job list. */
@@ -83,10 +89,30 @@ export async function listJobs(
   };
 }
 
+async function requireBearerToken(auth: AuthApi): Promise<string> {
+  let token: string | undefined;
+  try {
+    token = await auth.apiToken();
+  } catch (error) {
+    const status =
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error &&
+      typeof (error as { status?: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : 401;
+    throw new AriadApiError(status, "unauthorized", "Your session has ended. Sign in again.");
+  }
+  if (typeof token !== "string" || token === "") {
+    throw new AriadApiError(401, "unauthorized", "Your session has ended. Sign in again.");
+  }
+  return token;
+}
+
 export function createJobsApi(apiUrl: string, auth: AuthApi, signedIn: boolean): JobsApi {
   const client = createAriadClient({
     baseUrl: apiUrl,
-    ...(signedIn ? { credentials: { bearer: () => auth.apiToken() } } : {}),
+    ...(signedIn ? { credentials: { bearer: () => requireBearerToken(auth) } } : {}),
   });
   return { ...client, listJobs: (options) => listJobs(client, options) };
 }

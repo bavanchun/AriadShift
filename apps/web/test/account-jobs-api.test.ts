@@ -1,7 +1,8 @@
 // `GET /v1/jobs` feature detection: a deployment without the route falls back,
 // a listed page is validated, and real failures surface as API errors.
 import { AriadApiError } from "@ariadshift/sdk";
-import { JOB_PAGE_SIZE, listJobs } from "@/components/account/jobs-api";
+import { AuthError, type AuthApi } from "@/components/account/auth-api";
+import { createJobsApi, JOB_PAGE_SIZE, listJobs } from "@/components/account/jobs-api";
 
 type GetResult = { data?: unknown; error?: unknown; response?: Response };
 
@@ -79,5 +80,42 @@ describe("listJobs", () => {
   it("rethrows a request that got no response", async () => {
     const { client } = fakeClient({ error: new TypeError("Failed to fetch") });
     await expect(listJobs(client)).rejects.toThrow("Failed to fetch");
+  });
+
+  it("refuses signed-in requests without sending an anonymous call when token refresh fails", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      throw new Error("unexpected anonymous fetch");
+    });
+    try {
+      const nonOkAuth = {
+        apiToken: vi.fn(async () => {
+          throw new AuthError("session expired", 401, "unauthorized");
+        }),
+      } as unknown as AuthApi;
+      const nonOkApi = createJobsApi("http://localhost:3902", nonOkAuth, true);
+      const nonOkFailure = await nonOkApi.listJobs().catch((error: unknown) => error);
+      expect(nonOkFailure).toBeInstanceOf(AriadApiError);
+      expect(nonOkFailure).toMatchObject({
+        status: 401,
+        code: "unauthorized",
+        message: "Your session has ended. Sign in again.",
+      });
+
+      const malformedAuth = {
+        apiToken: vi.fn(async () => {
+          throw new AuthError("invalid token", 200, "invalid_token_response");
+        }),
+      } as unknown as AuthApi;
+      const malformedApi = createJobsApi("http://localhost:3902", malformedAuth, true);
+      const malformedFailure = await malformedApi.getJob("job-1").catch((error: unknown) => error);
+      expect(malformedFailure).toBeInstanceOf(AriadApiError);
+      expect(malformedFailure).toMatchObject({
+        code: "unauthorized",
+        message: "Your session has ended. Sign in again.",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });

@@ -159,10 +159,43 @@ describe("Better Auth adapter", () => {
     expect(await auth.apiToken()).toBe("jwt-2");
   });
 
-  it("has no API token without a session", async () => {
+  it("throws a typed AuthError when token refresh fails with a non-OK response", async () => {
     const { fetchImpl } = fakeFetch({
-      "GET /api/auth/token": () => Response.json({ message: "unauthorized" }, { status: 401 }),
+      "GET /api/auth/token": () =>
+        Response.json({ code: "UNAUTHORIZED", message: "unauthorized" }, { status: 401 }),
     });
-    await expect(createBetterAuthApi(AUTH, fetchImpl).apiToken()).resolves.toBeUndefined();
+    const failure = await createBetterAuthApi(AUTH, fetchImpl)
+      .apiToken()
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AuthError);
+    expect(failure).toMatchObject({
+      message: "unauthorized",
+      status: 401,
+      code: "UNAUTHORIZED",
+    });
+  });
+
+  it("throws a typed AuthError when the token endpoint returns a malformed body", async () => {
+    let step = 0;
+    const { fetchImpl } = fakeFetch({
+      "GET /api/auth/token": () => {
+        step += 1;
+        if (step === 1) {
+          return new Response("not-json", {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return Response.json({ token: "" });
+      },
+    });
+    const auth = createBetterAuthApi(AUTH, fetchImpl);
+    const nonJson = await auth.apiToken().catch((error: unknown) => error);
+    expect(nonJson).toBeInstanceOf(AuthError);
+    expect(nonJson).toMatchObject({ status: 200, code: "invalid_token_response" });
+
+    const missingToken = await auth.apiToken().catch((error: unknown) => error);
+    expect(missingToken).toBeInstanceOf(AuthError);
+    expect(missingToken).toMatchObject({ status: 200, code: "invalid_token_response" });
   });
 });
