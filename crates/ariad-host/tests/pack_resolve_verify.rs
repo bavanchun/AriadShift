@@ -625,6 +625,8 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
         &mut |_| {},
     )
     .expect("install sign pack");
+    let helper_exe = sign_report.root.join("bin/helper.exe");
+    assert!(helper_exe.is_file());
 
     let sign_record_path = data.path().join("packs/.locks/sign-1.0.0.manifest");
     let sign_record = fs::read_to_string(&sign_record_path).expect("read sign manifest record");
@@ -640,11 +642,7 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(
-            sign_report.root.join("bin/helper.exe"),
-            fs::Permissions::from_mode(0o755),
-        )
-        .unwrap();
+        fs::set_permissions(&helper_exe, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
     let sign_err = resolve_pack_in(&ctx, "sign")
