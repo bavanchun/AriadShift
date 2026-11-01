@@ -364,6 +364,13 @@ pub fn list_tools() -> Result<JsValue, JsValue> {
 /// (supplied by the TypeScript worker layer). Calls `ariad-core::tools::access` with the
 /// browser plan (`free` by default, or `pro` when the optional `entitled` flag is `true`);
 /// browser tier enforcement is advisory because WebAssembly runs on user-controlled hardware.
+///
+/// Returns a `ToolRunResult` object with:
+/// - `tool`, `format`, `media_type`, `extension`,
+/// - `bytes` (`Uint8Array` of the primary artifact),
+/// - `artifacts` (`ToolArtifactResult[]` in deterministic order, each with `{ name, format, media_type, extension, bytes }`),
+/// - `data` (structured JSON object for JSON tools such as `pdf.info`, or `null` for PDF/ZIP/Markdown artifact tools), and
+/// - `warnings` (`Notice[]`).
 #[wasm_bindgen(js_name = runTool, unchecked_return_type = "ToolRunResult")]
 pub fn run_tool(
     #[wasm_bindgen(unchecked_param_type = "Uint8Array[]")] inputs: Vec<js_sys::Uint8Array>,
