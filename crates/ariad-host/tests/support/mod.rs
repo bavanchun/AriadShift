@@ -387,6 +387,7 @@ impl PackBuilder {
             version: self.version.clone(),
             target: self.triple.clone(),
             base,
+            engine_protocol: self.engine_protocol.clone(),
             entrypoint: self.entrypoint.clone(),
             url_prefix: None,
             dests,

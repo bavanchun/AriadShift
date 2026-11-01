@@ -92,7 +92,7 @@ The wire protocol of each pack engine is registered statically in `ashift` (`Eng
 
 A host older than the field rejects a manifest that sets it, because manifests are parsed strictly. A pack that sets `engine_protocol` therefore sets `requires_ashift` to the first release that knows the field.
 
-`ashift __pack manifest` takes the field from the `--base` manifest or template like the other pack fields; it has no flag of its own.
+`ashift __pack manifest` accepts `--engine-protocol <protocol>` or reads the field from the `--base` manifest or template; absent means `ariad-engine/1`.
 
 ### Targets
 
@@ -169,6 +169,7 @@ ashift __pack manifest --name docling --version 0.2.0 \
 
 - `--base <file>` supplies the pack fields (`description`, `license`, `requires_ashift`, `notices`) and per-target `entrypoint`, `env` and `options`. Only the `--target` entry's components are replaced; other targets are kept, so per-platform builds merge by passing the previous output as `--base`. The merged manifest is validated, so every target in it needs components; append a new target's entrypoint and options to the previous output before passing it as `--base`.
 - `--entrypoint <arg>` (repeat per argv element) sets or overrides the target's entrypoint; without a base it is required.
+- `--engine-protocol <protocol>` sets the engine wire protocol (`ariad-engine/1` or `ariad-engine/2`).
 - `--url-prefix <url>` prefixes component URLs; by default a URL is the bare file name, relative to the manifest.
 - `NAME=FILE` names a component; otherwise the name is the file name without its archive extension.
 - Keep each component under 2 GiB (the GitHub release asset limit) and compress zstd archives without `--long` (the decoder's window limit is 128 MiB).
