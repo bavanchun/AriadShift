@@ -31,14 +31,27 @@ jobs:
       matrix:
         target:
           - markdown_reader
+          - front_matter
           - html_reader
           - pandoc_ast_to_ir
           - docling_to_ir
           - ir_json
+          - limits_validate
           - pdf_reader
+          - typst_writer
           - archive_preflight
           - docx_meta
+          - pack_manifest
           - pack_archive
+          - engine_protocol
+          - capabilities_json
+          - asset_resolve
+          - uri_parsers
+          - ir_json_versioned
+          - page_range
+          - recipe_json
+          - pdf_open_bounded
+          - pdf_tools_structural
     permissions:
       contents: read
     defaults:
@@ -90,7 +103,10 @@ jobs:
           echo "=== Running ASan fuzz target: $TARGET (600s) ==="
           mkdir -p "fuzz/corpus/$TARGET"
           build_options=()
-          if [[ "$TARGET" == pdf_reader ]]; then build_options=(--dev --features pdf-reader); fi
+          case "$TARGET" in
+            pdf_reader|pdf_open_bounded|pdf_tools_structural) build_options=(--dev --features pdf-reader) ;;
+            typst_writer) build_options=(--dev --features typst-writer) ;;
+          esac
           cargo +nightly-2026-10-05 fuzz run "${build_options[@]}" "$TARGET" "fuzz/corpus/$TARGET" "fuzz/seeds/$TARGET" -- -max_total_time=600 -timeout=25 -rss_limit_mb=2048
 
       - name: Save fuzz corpus
