@@ -319,6 +319,18 @@ fn supports_standard_paper_sizes_margin_and_auto_orientation() {
 }
 
 #[test]
+fn sixteen_bit_png_charges_two_bytes_per_channel() {
+    let png = make_png(2, 1, 16, 2, &[0; 13], None, None);
+    let limits = Limits {
+        max_decompressed_bytes: 8,
+        ..Limits::local()
+    };
+    let err = image_to_pdf::run([png.as_slice()], &ImageToPdfParams::default(), &limits)
+        .expect_err("16-bit RGB requires twelve decoded bytes");
+    assert_eq!(err.cli_error_code(), "limit_exceeded");
+}
+
+#[test]
 fn enforces_pixel_cap_and_input_size_limits() {
     // 20_000 x 20_000 = 400_000_000 > MAX_IMAGE_PIXELS (268_435_456)
     let huge_jpeg = make_minimal_jpeg(20_000, 20_000, 3);

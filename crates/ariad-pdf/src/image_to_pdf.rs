@@ -635,7 +635,7 @@ fn prepare_png(
                 check_dimensions_and_budget(
                     width,
                     height,
-                    channels,
+                    channels * u64::from(bit_depth).div_ceil(8),
                     max_decoded_bytes,
                     decoded_so_far,
                 )?;
