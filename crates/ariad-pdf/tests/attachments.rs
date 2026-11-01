@@ -20,12 +20,19 @@ use serde_json::{Value, json};
 mod insta {
     use std::path::Path;
 
+    fn should_update_snapshots() -> bool {
+        std::env::var("UPDATE_SNAPSHOTS")
+            .ok()
+            .is_some_and(|v| !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"))
+            || std::env::var("INSTA_UPDATE").as_deref() == Ok("always")
+    }
+
     pub fn check_json_snapshot(module: &str, name: &str, value: &serde_json::Value) {
         let snap_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/snapshots")
             .join(format!("{module}__{name}.snap"));
         let pretty = serde_json::to_string_pretty(value).expect("serialize snapshot json");
-        if std::env::var("INSTA_UPDATE").as_deref() == Ok("always") || !snap_path.exists() {
+        if should_update_snapshots() {
             if let Some(parent) = snap_path.parent() {
                 std::fs::create_dir_all(parent).expect("create snapshots dir");
             }
@@ -33,7 +40,13 @@ mod insta {
                 "---\nsource: crates/ariad-pdf/tests/{module}.rs\nexpression: value\n---\n{pretty}\n"
             );
             std::fs::write(&snap_path, content).expect("write snapshot file");
+            return;
         }
+        assert!(
+            snap_path.exists(),
+            "missing snapshot file {}; set UPDATE_SNAPSHOTS=1 to create it",
+            snap_path.display()
+        );
         let raw = std::fs::read_to_string(&snap_path).expect("read snapshot file");
         let body = raw
             .strip_prefix("---\n")
@@ -398,4 +411,221 @@ fn attachments_is_deterministic_and_handles_broken_xref_and_errors() {
     )
     .expect_err("encrypted");
     assert!(matches!(err, PdfError::Encrypted { .. }));
+}
+
+#[test]
+fn attachments_add_accepts_non_pdf_payloads_and_preserves_exact_raw_bytes() {
+    let ctx = ToolCtx::default();
+    let carrier_bytes = fixture_bytes("rotated-pages.pdf");
+    let raw_pdf_bytes = fixture_bytes("annotations.pdf");
+    let csv_bytes = b"sku,qty\nA-100,4\nB-200,9\n".to_vec();
+    let txt_bytes = b"Operator notes: keep exact bytes.\n".to_vec();
+
+    let carrier = InputDoc::new("rotated-pages.pdf", carrier_bytes);
+    let att_csv = InputDoc::new("inventory.csv", csv_bytes.clone());
+    let att_txt = InputDoc::new("notes.txt", txt_bytes.clone());
+    let att_pdf = InputDoc::new("annotations.pdf", raw_pdf_bytes.clone());
+
+    let added = run_tool(
+        "pdf.attachments",
+        &[carrier, att_csv, att_txt, att_pdf],
+        &json!({ "action": "add" }),
+        &ctx,
+    )
+    .expect("add non-pdf and pdf attachments");
+    let bundle_bytes = &added.artifacts[0].bytes;
+
+    let list_out = run_tool(
+        "pdf.attachments",
+        &[InputDoc::new("bundle.pdf", bundle_bytes.clone())],
+        &json!({ "action": "list" }),
+        &ctx,
+    )
+    .expect("list attachments");
+    let entries = list_out
+        .json
+        .as_ref()
+        .and_then(Value::as_array)
+        .expect("inline json array");
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0]["name"], "annotations.pdf");
+    assert_eq!(entries[0]["media_type"], "application/pdf");
+    assert_eq!(entries[0]["size"], raw_pdf_bytes.len());
+    assert_eq!(entries[1]["name"], "inventory.csv");
+    assert_eq!(entries[1]["media_type"], "text/csv");
+    assert_eq!(entries[1]["size"], csv_bytes.len());
+    assert_eq!(entries[2]["name"], "notes.txt");
+    assert_eq!(entries[2]["media_type"], "text/plain");
+    assert_eq!(entries[2]["size"], txt_bytes.len());
+
+    let extracted = run_tool(
+        "pdf.attachments",
+        &[InputDoc::new("bundle.pdf", bundle_bytes.clone())],
+        &json!({ "action": "extract" }),
+        &ctx,
+    )
+    .expect("extract attachments");
+    assert_eq!(extracted.artifacts.len(), 3);
+    assert_eq!(
+        extracted.artifacts[0].name,
+        "bundle.attachment-001.annotations.pdf"
+    );
+    assert_eq!(extracted.artifacts[0].format, "pdf");
+    assert_eq!(extracted.artifacts[0].bytes, raw_pdf_bytes);
+    assert_eq!(
+        extracted.artifacts[1].name,
+        "bundle.attachment-002.inventory.csv"
+    );
+    assert_eq!(extracted.artifacts[1].format, "csv");
+    assert_eq!(extracted.artifacts[1].bytes, csv_bytes);
+    assert_eq!(
+        extracted.artifacts[2].name,
+        "bundle.attachment-003.notes.txt"
+    );
+    assert_eq!(extracted.artifacts[2].format, "txt");
+    assert_eq!(extracted.artifacts[2].bytes, txt_bytes);
+}
+
+#[test]
+fn attachments_rejects_cyclic_and_deep_embedded_files_name_tree() {
+    use lopdf::{Object, dictionary};
+
+    let ctx = ToolCtx::default();
+    let base_bytes = fixture_bytes("annotations.pdf");
+
+    // 1. Two-node /Kids cycle in /Names /EmbeddedFiles
+    let mut cyclic_doc = Document::load_mem(&base_bytes).expect("load base pdf");
+    let node_a_id = cyclic_doc.new_object_id();
+    let node_b_id = cyclic_doc.new_object_id();
+    cyclic_doc.objects.insert(
+        node_a_id,
+        Object::Dictionary(dictionary! {
+            "Kids" => vec![Object::Reference(node_b_id)],
+        }),
+    );
+    cyclic_doc.objects.insert(
+        node_b_id,
+        Object::Dictionary(dictionary! {
+            "Kids" => vec![Object::Reference(node_a_id)],
+        }),
+    );
+    let names_id = cyclic_doc.add_object(Object::Dictionary(dictionary! {
+        "EmbeddedFiles" => Object::Reference(node_a_id),
+    }));
+    let catalog_id = cyclic_doc
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .expect("catalog ref");
+    cyclic_doc
+        .get_object_mut(catalog_id)
+        .expect("catalog obj")
+        .as_dict_mut()
+        .expect("catalog dict")
+        .set("Names", Object::Reference(names_id));
+    let mut cyclic_bytes = Vec::new();
+    cyclic_doc.save_to(&mut cyclic_bytes).expect("save cyclic");
+
+    let err = run_tool(
+        "pdf.attachments",
+        &[InputDoc::new("cyclic.pdf", cyclic_bytes)],
+        &json!({ "action": "list" }),
+        &ctx,
+    )
+    .expect_err("cyclic /Kids in /EmbeddedFiles must fail cleanly");
+    assert!(matches!(err, PdfError::Malformed));
+
+    // 2. Deep /Kids chain (> 64 levels)
+    let mut deep_doc = Document::load_mem(&base_bytes).expect("load base pdf");
+    let mut current_id = deep_doc.add_object(Object::Dictionary(dictionary! {
+        "Names" => Vec::<Object>::new(),
+    }));
+    for _ in 0..70 {
+        current_id = deep_doc.add_object(Object::Dictionary(dictionary! {
+            "Kids" => vec![Object::Reference(current_id)],
+        }));
+    }
+    let deep_names_id = deep_doc.add_object(Object::Dictionary(dictionary! {
+        "EmbeddedFiles" => Object::Reference(current_id),
+    }));
+    let deep_catalog_id = deep_doc
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .expect("catalog ref");
+    deep_doc
+        .get_object_mut(deep_catalog_id)
+        .expect("catalog obj")
+        .as_dict_mut()
+        .expect("catalog dict")
+        .set("Names", Object::Reference(deep_names_id));
+    let mut deep_bytes = Vec::new();
+    deep_doc.save_to(&mut deep_bytes).expect("save deep");
+
+    let err_deep = run_tool(
+        "pdf.attachments",
+        &[InputDoc::new("deep.pdf", deep_bytes)],
+        &json!({ "action": "list" }),
+        &ctx,
+    )
+    .expect_err("deep /Kids chain must fail cleanly");
+    assert!(matches!(err_deep, PdfError::Malformed));
+}
+
+#[test]
+fn attachments_respects_caller_asset_byte_limits() {
+    let ctx = ToolCtx::default();
+    let carrier_bytes = fixture_bytes("rotated-pages.pdf");
+    let strict_limits = Limits {
+        max_asset_bytes: Some(20),
+        ..Limits::local()
+    };
+
+    // Adding a payload larger than max_asset_bytes fails with LimitExceeded.
+    let carrier = InputDoc::with_limits("rotated-pages.pdf", carrier_bytes, strict_limits.clone());
+    let oversized = InputDoc::with_limits(
+        "big.txt",
+        b"0123456789abcdefghijklmnopqrstuvwxyz".to_vec(),
+        strict_limits.clone(),
+    );
+    let err_add = run_tool(
+        "pdf.attachments",
+        &[carrier, oversized],
+        &json!({ "action": "add" }),
+        &ctx,
+    )
+    .expect_err("attachment exceeding max_asset_bytes must fail");
+    assert!(matches!(err_add, PdfError::LimitExceeded(_)));
+
+    // Listing/extracting an embedded file larger than max_asset_bytes fails with LimitExceeded.
+    let with_att = InputDoc::with_limits(
+        "with-attachments.pdf",
+        fixture_bytes("with-attachments.pdf"),
+        strict_limits,
+    );
+    let err_list = run_tool(
+        "pdf.attachments",
+        &[with_att],
+        &json!({ "action": "list" }),
+        &ctx,
+    )
+    .expect_err("embedded file exceeding max_asset_bytes must fail");
+    assert!(matches!(err_list, PdfError::LimitExceeded(_)));
+}
+
+#[test]
+fn snapshot_helper_fails_when_snap_file_is_missing() {
+    let missing_name = "definitely_missing_snapshot_for_attachments_test";
+    let snap_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/snapshots")
+        .join(format!("attachments__{missing_name}.snap"));
+    assert!(!snap_path.exists());
+    let res = std::panic::catch_unwind(|| {
+        insta::check_json_snapshot("attachments", missing_name, &json!([]));
+    });
+    assert!(res.is_err(), "missing snapshot must panic");
+    assert!(
+        !snap_path.exists(),
+        "missing snapshot must not be silently written"
+    );
 }
