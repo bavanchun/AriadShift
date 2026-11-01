@@ -2,6 +2,50 @@
 
 Changes in each AriadShift release, newest first. Installation commands and download tables for every version are on [GitHub Releases](https://github.com/bavanchun/AriadShift/releases). Each entry cites the pull request that merged it into `dev`.
 
+## 0.3.0 (unreleased)
+
+Preview of the PDF suite. `ashift` gains typed document tools: 25 structural PDF tools that merge, split, reorder, rotate, crop, scale and impose pages and edit document structure and metadata without rendering anything. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. Conversions, `ariad-engine/1` and `ariad-ir/1` are unchanged. Installers, desktop apps and the web app do not offer the tools yet; this release ships the CLI, the MCP server and the crates.
+
+### Upgrade notes
+
+- **Two new crates are published.** `ariad-pdf` (pure-Rust PDF manipulation) and `ariad-engine-io` (shared engine protocol helpers) join `ariad-core`, `ariad-typst`, `ariad-host` and `ariad-cli` on crates.io. `ariad-host` now depends on both, so a source build or `cargo install ariad-cli` pulls them in.
+- **New exit codes `8` to `12`.** Tool commands report an unknown tool (8), invalid parameters (9), wrong input count or format (10), a tool not allowed by the caller's tier (11) and encrypted input (12). Codes `0` to `6` and `130` keep their meaning. See [cli.md](cli.md#exit-codes) and [tools.md](tools.md#tool-error-exit-codes).
+- **Tools never overwrite silently.** A destination that already exists fails with exit 6 unless `--overwrite` is passed. With `--overwrite`, the previous file is moved aside first and restored byte-identical if publication fails, so a multi-file result is published completely or not at all.
+- **Encrypted PDFs are refused, never stripped.** Every structural tool exits with code 12 on an encrypted input and points to `pdf.decrypt`, which a later release adds.
+
+### Added
+
+- **25 structural PDF tools**, plus the `pdf.info` inspection tool, all in the free tier and runnable on the CLI and the local MCP server. They need no rendering and no engine pack. The full contract is in [tools.md](tools.md) and one runnable example per tool is in [cli.md](cli.md#ashift-tool):
+  - Page sets: `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.alternate_mix`, `pdf.insert_blank`.
+  - Page geometry: `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.scale`, `pdf.single_page`, `pdf.decompress`.
+  - Imposition and layout: `pdf.nup`, `pdf.booklet`, `pdf.overlay`, `pdf.divide_pages`, `pdf.posterize`.
+  - Document structure: `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.portfolio`, `pdf.layers`.
+- **`ashift tools`, `ashift tool` and `ashift recipe run`.** List the registry, run one tool on one or more inputs, or run an `ariad-recipe/1` pipeline. Parameters come from `--param KEY=VALUE`, `--params-json` or a recipe, and are validated against the tool's JSON Schema before anything runs. See [cli.md](cli.md#ashift-tools).
+- **Local MCP tools `list_doc_tools` and `run_doc_tool`.** They run the same registry under the server's `--allow-dir` confinement and limits, and publish outputs atomically as resource links. See [mcp.md](mcp.md).
+- **Deterministic output.** The same inputs and parameters give byte-identical PDFs. `SOURCE_DATE_EPOCH` fixes the document dates and `/ID`, and object numbers follow traversal order.
+- **Repaired-input warning.** A PDF with a damaged cross-reference table is inspected and processed after reconstruction, the tool prints `warning[repaired_xref]`, and the saved file is a fully rewritten valid PDF.
+- **`ariad-engine/2` and the tool contracts.** A second engine protocol version carries `op = "run_tool"` for out-of-process tool engines, next to the frozen `ariad-engine/1`. The machine-readable contracts are [`schemas/tools.v1.json`](../schemas/tools.v1.json), [`schemas/recipe.v1.json`](../schemas/recipe.v1.json) and [`schemas/engine-protocol.v2.json`](../schemas/engine-protocol.v2.json).
+- **Browser bindings.** `ariad-wasm` exposes `listTools` and `runTool` for the same in-process tools. No page in the web app uses them yet.
+
+### Changed
+
+- **Updated Rust dependencies.** `jsonschema` moves to 0.59.0, `libc` to 0.2.191 and `unicode-normalization` to 0.1.26. `ariad-host` now uses `jsonschema` at run time to validate tool parameters. The licence policy additionally allows `MIT-0` ([deny.toml](../deny.toml)).
+
+### Security
+
+- **Bounded PDF work.** One per-document budget caps stream decompression across object streams, page content, form XObjects and XMP metadata. The trailer scan is linear, and page loops honour the deadline and cancellation of the running tool.
+- **Confined tool artifacts.** Engine-reported output files are checked with symlink-safe handles, confined to the job's output directory and size-capped before they are read. Inputs staged for MCP tools are never reopened by path after confinement.
+- **Secrets stay out of messages.** Secret parameters are matched case-insensitively and recursively, scrubbed from errors and debug output, and scoped per recipe step. `params_file` must live inside the job directory.
+- **Pack verification at resolve time.** Installed engine packs are re-verified against a digest record bound to the minisign-verified manifest, and unlisted executables or extra files in a pack root are rejected.
+- **Fuzz coverage.** CI adds four fuzz targets for page ranges, recipes, bounded PDF opening and the structural tools, for 22 targets in all.
+
+### Known limitations
+
+- **Structural tools only.** Rendering-dependent operations arrive in later previews: automatic whitespace cropping (`pdf.crop` accepts only explicit boxes), blank-page detection by appearance (`pdf.split --param mode=blank-separator` finds only pages with no text or drawing content), compression, OCR, annotations, forms, redaction and signatures.
+- **No encryption support yet.** `pdf.encrypt` and `pdf.decrypt` are not in this release, so encrypted inputs stop with exit 12.
+- **Secret parameters are not available over MCP.** `run_doc_tool` rejects secret-typed parameters until secret handles exist; use the CLI for those.
+- **No desktop or web screens for the tools.** The desktop app and the web app keep their conversion-only interfaces in this release.
+
 ## 0.2.0 (2026-10-31)
 
 Roadmap 1b. `ashift` adds PDF, Office, OCR and image routes, signed engine packs, and a Linux engine sandbox. This release also adds the desktop app and the in-browser converter. The `ariad-engine/1` engine protocol and the `ariad-ir/1` document schema are now frozen. The self-hosted cloud product, its web mode and the remote MCP endpoint are a **preview**: they are not part of the release archives or the desktop installers, and the [Known limitations](#known-limitations) list what is open.
