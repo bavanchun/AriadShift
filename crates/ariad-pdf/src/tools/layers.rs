@@ -1,6 +1,6 @@
 //! Implementation of the `pdf.layers` tool.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use ariad_core::tools::params::layers::{LayersAction, LayersParams};
 use lopdf::{Dictionary, Object, ObjectId, Stream, content::Content, dictionary};
@@ -110,11 +110,16 @@ pub fn run(
 
             let mut out_pdf = pdf.clone();
             let mut budget = out_pdf.decode_budget();
-            remove_layers(out_pdf.inner_mut()?, names, &mut budget, ctx)?;
-            Ok(vec![OutputDoc::from_pdf(
+            let warnings = remove_layers(out_pdf.inner_mut()?, names, &mut budget, ctx)?;
+            let output = OutputDoc::from_pdf(
                 naming::default_pdf_output_name(&stem, "pdf.layers"),
                 out_pdf,
-            )])
+            );
+            Ok(vec![
+                warnings
+                    .into_iter()
+                    .fold(output, |output, warning| output.with_warning(warning)),
+            ])
         }
     }
 }
@@ -301,7 +306,7 @@ fn remove_layers(
     target_names: &[String],
     budget: &mut DecodeBudget,
     ctx: &ToolCtx,
-) -> Result<(), PdfError> {
+) -> Result<Vec<String>, PdfError> {
     let ocgs = inspect_ocgs(doc)?;
     for requested in target_names {
         if !ocgs.iter().any(|o| &o.name == requested) {
@@ -317,22 +322,30 @@ fn remove_layers(
         .map(|o| o.id)
         .collect();
 
-    let page_ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
-    let mut page_prop_names: Vec<(ObjectId, HashSet<Vec<u8>>)> = Vec::with_capacity(page_ids.len());
-    for &page_id in &page_ids {
+    let pages: Vec<(u32, ObjectId)> = doc.get_pages().into_iter().collect();
+    let mut page_prop_names: Vec<(u32, ObjectId, HashSet<Vec<u8>>)> =
+        Vec::with_capacity(pages.len());
+    for &(page_no, page_id) in &pages {
         ctx.check()?;
         let names = find_matching_resource_properties(doc, page_id, &removed_ids);
-        page_prop_names.push((page_id, names));
+        page_prop_names.push((page_no, page_id, names));
     }
 
-    for (page_id, prop_names) in &page_prop_names {
+    let mut warnings = Vec::new();
+    for (page_no, page_id, prop_names) in &page_prop_names {
         ctx.check()?;
-        if !prop_names.is_empty() {
-            strip_page_layer_content(doc, *page_id, prop_names, budget, ctx)?;
+        if prop_names.is_empty() {
+            continue;
+        }
+        if let Some(reason) = strip_page_layer_content(doc, *page_id, prop_names, budget, ctx)? {
+            warnings.push(format!(
+                "page {page_no}: content stream could not be {reason}; \
+                 layer content on this page was left unchanged"
+            ));
         }
     }
 
-    for &page_id in &page_ids {
+    for &(_, page_id) in &pages {
         ctx.check()?;
         remove_matching_resource_properties(doc, page_id, &removed_ids);
     }
@@ -343,6 +356,7 @@ fn remove_layers(
         .map(|o| o.id)
         .collect();
 
+    let mut order_filter = OrderFilter::default();
     let catalog_id = catalog_object_id(doc)?;
     if remaining_ids.is_empty() {
         let catalog = doc
@@ -378,7 +392,7 @@ fn remove_layers(
             .and_then(|o| resolve_dict(doc, o))
             .cloned()
         {
-            clean_oc_config_dict(doc, &mut d_dict, &removed_ids);
+            clean_oc_config_dict(doc, &mut d_dict, &removed_ids, &mut order_filter, ctx)?;
             oc_props.set("D", Object::Dictionary(d_dict));
         }
 
@@ -391,7 +405,7 @@ fn remove_layers(
             let mut cleaned_configs = Vec::with_capacity(configs_arr.len());
             for cfg_obj in &configs_arr {
                 if let Some(mut cfg_dict) = resolve_dict(doc, cfg_obj).cloned() {
-                    clean_oc_config_dict(doc, &mut cfg_dict, &removed_ids);
+                    clean_oc_config_dict(doc, &mut cfg_dict, &removed_ids, &mut order_filter, ctx)?;
                     cleaned_configs.push(Object::Dictionary(cfg_dict));
                 }
             }
@@ -406,18 +420,22 @@ fn remove_layers(
         catalog.set("OCProperties", Object::Dictionary(oc_props));
     }
 
+    order_filter.apply(doc);
     for removed_id in removed_ids {
         doc.objects.remove(&removed_id);
     }
 
-    Ok(())
+    Ok(warnings)
 }
 
 fn clean_oc_config_dict(
     doc: &lopdf::Document,
     cfg_dict: &mut Dictionary,
     removed_ids: &HashSet<ObjectId>,
-) {
+    order_filter: &mut OrderFilter,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    ctx.check()?;
     for key in [b"ON".as_slice(), b"OFF".as_slice(), b"Locked".as_slice()] {
         if cfg_dict.has(key) {
             let filtered: Vec<Object> = extract_ref_vec(doc, cfg_dict.get(key).ok())
@@ -432,7 +450,7 @@ fn clean_oc_config_dict(
     if let Ok(order_obj) = cfg_dict.get(b"Order")
         && let Some(Object::Array(order_arr)) = resolve_object(doc, order_obj)
     {
-        let filtered_order = filter_order_array(doc, order_arr, removed_ids, 0);
+        let filtered_order = order_filter.filter_array(doc, order_arr, removed_ids, 0, ctx)?;
         cfg_dict.set("Order", Object::Array(filtered_order));
     }
 
@@ -481,54 +499,117 @@ fn clean_oc_config_dict(
         }
         cfg_dict.set("AS", Object::Array(filtered_as));
     }
+    Ok(())
 }
 
-fn filter_order_array(
-    doc: &lopdf::Document,
-    items: &[Object],
-    removed_ids: &HashSet<ObjectId>,
-    depth: usize,
-) -> Vec<Object> {
-    if depth >= 64 {
-        return Vec::new();
-    }
-    let mut out = Vec::new();
-    let mut has_surviving_ocg = false;
+/// Deepest `/Order` nesting that is rewritten; anything below is dropped.
+const MAX_ORDER_DEPTH: usize = 64;
 
-    for item in items {
-        match item {
-            Object::Reference(id) => {
-                if removed_ids.contains(id) {
-                    continue;
+/// Rewrites `/Order` trees without expanding shared sub-arrays.
+///
+/// An indirect array is filtered once, stored back under its own object id when the walk is done,
+/// and referenced from every parent that used it. `/Order` is a directed graph, not a tree, so
+/// expanding each reference would cost time and output proportional to the number of paths.
+#[derive(Default)]
+struct OrderFilter {
+    filtered: BTreeMap<ObjectId, Vec<Object>>,
+    in_progress: HashSet<ObjectId>,
+}
+
+impl OrderFilter {
+    fn filter_array(
+        &mut self,
+        doc: &lopdf::Document,
+        items: &[Object],
+        removed_ids: &HashSet<ObjectId>,
+        depth: usize,
+        ctx: &ToolCtx,
+    ) -> Result<Vec<Object>, PdfError> {
+        ctx.check()?;
+        if depth > MAX_ORDER_DEPTH {
+            return Ok(Vec::new());
+        }
+        let mut out = Vec::new();
+        let mut has_surviving_ocg = false;
+
+        for (idx, item) in items.iter().enumerate() {
+            if idx.is_multiple_of(256) {
+                ctx.check()?;
+            }
+            match item {
+                Object::Reference(id) => {
+                    if removed_ids.contains(id) {
+                        continue;
+                    }
+                    if let Ok(Object::Array(sub_arr)) = doc.get_object(*id) {
+                        if self.keeps_shared_array(
+                            doc,
+                            *id,
+                            sub_arr,
+                            removed_ids,
+                            depth + 1,
+                            ctx,
+                        )? {
+                            has_surviving_ocg = true;
+                            out.push(Object::Reference(*id));
+                        }
+                    } else {
+                        has_surviving_ocg = true;
+                        out.push(Object::Reference(*id));
+                    }
                 }
-                if let Ok(Object::Array(sub_arr)) = doc.get_object(*id) {
-                    let nested = filter_order_array(doc, sub_arr, removed_ids, depth + 1);
+                Object::Array(sub_arr) => {
+                    let nested = self.filter_array(doc, sub_arr, removed_ids, depth + 1, ctx)?;
                     if !nested.is_empty() {
                         has_surviving_ocg = true;
                         out.push(Object::Array(nested));
                     }
-                } else {
-                    has_surviving_ocg = true;
-                    out.push(Object::Reference(*id));
+                }
+                other => {
+                    out.push(other.clone());
                 }
             }
-            Object::Array(sub_arr) => {
-                let nested = filter_order_array(doc, sub_arr, removed_ids, depth + 1);
-                if !nested.is_empty() {
-                    has_surviving_ocg = true;
-                    out.push(Object::Array(nested));
-                }
-            }
-            other => {
-                out.push(other.clone());
-            }
+        }
+
+        if depth > 0 && !has_surviving_ocg {
+            Ok(Vec::new())
+        } else {
+            Ok(out)
         }
     }
 
-    if depth > 0 && !has_surviving_ocg {
-        Vec::new()
-    } else {
-        out
+    /// Filters the indirect array `id` once and reports whether anything survives in it.
+    fn keeps_shared_array(
+        &mut self,
+        doc: &lopdf::Document,
+        id: ObjectId,
+        items: &[Object],
+        removed_ids: &HashSet<ObjectId>,
+        depth: usize,
+        ctx: &ToolCtx,
+    ) -> Result<bool, PdfError> {
+        if depth > MAX_ORDER_DEPTH {
+            return Ok(false);
+        }
+        if let Some(done) = self.filtered.get(&id) {
+            return Ok(!done.is_empty());
+        }
+        if !self.in_progress.insert(id) {
+            return Ok(false);
+        }
+        let result = self.filter_array(doc, items, removed_ids, depth, ctx);
+        self.in_progress.remove(&id);
+        let filtered = result?;
+        let keeps = !filtered.is_empty();
+        self.filtered.insert(id, filtered);
+        Ok(keeps)
+    }
+
+    /// Stores every filtered shared array back into the document.
+    fn apply(self, doc: &mut lopdf::Document) {
+        for (id, items) in self.filtered {
+            doc.objects.insert(id, Object::Array(items));
+        }
     }
 }
 
@@ -537,12 +618,12 @@ fn decode_page_content_bounded(
     page_id: ObjectId,
     budget: &mut DecodeBudget,
     ctx: &ToolCtx,
-) -> Result<Vec<u8>, PdfError> {
+) -> Result<Option<Vec<u8>>, PdfError> {
     let Ok(page_dict) = doc.get_dictionary(page_id) else {
-        return Ok(Vec::new());
+        return Ok(Some(Vec::new()));
     };
     let Ok(contents_obj) = page_dict.get(b"Contents") else {
-        return Ok(Vec::new());
+        return Ok(Some(Vec::new()));
     };
 
     let mut streams: Vec<&Stream> = Vec::new();
@@ -584,13 +665,15 @@ fn decode_page_content_bounded(
     let mut combined = Vec::new();
     for (idx, stream) in streams.into_iter().enumerate() {
         ctx.check()?;
-        let decoded = budget.decode(stream)?.ok_or(PdfError::Malformed)?;
+        let Some(decoded) = budget.decode(stream)? else {
+            return Ok(None);
+        };
         if idx > 0 && !combined.ends_with(b"\n") && !combined.ends_with(b"\r") {
             combined.push(b'\n');
         }
         combined.extend_from_slice(&decoded);
     }
-    Ok(combined)
+    Ok(Some(combined))
 }
 
 fn strip_page_layer_content(
@@ -599,16 +682,20 @@ fn strip_page_layer_content(
     removed_prop_names: &HashSet<Vec<u8>>,
     budget: &mut DecodeBudget,
     ctx: &ToolCtx,
-) -> Result<(), PdfError> {
+) -> Result<Option<&'static str>, PdfError> {
     if removed_prop_names.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
 
-    let content_bytes = decode_page_content_bounded(doc, page_id, budget, ctx)?;
+    let Some(content_bytes) = decode_page_content_bounded(doc, page_id, budget, ctx)? else {
+        return Ok(Some("decoded"));
+    };
     if content_bytes.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
-    let content = Content::decode(&content_bytes).map_err(|_| PdfError::Malformed)?;
+    let Ok(content) = Content::decode(&content_bytes) else {
+        return Ok(Some("parsed"));
+    };
 
     let mut filtered_ops = Vec::with_capacity(content.operations.len());
     let mut skip_depth = 0usize;
@@ -649,7 +736,7 @@ fn strip_page_layer_content(
     if let Ok(Object::Dictionary(page_dict)) = doc.get_object_mut(page_id) {
         page_dict.set("Contents", Object::Reference(new_stream_id));
     }
-    Ok(())
+    Ok(None)
 }
 
 fn find_matching_resource_properties(
@@ -811,4 +898,63 @@ fn resolve_object<'a>(doc: &'a lopdf::Document, obj: &'a Object) -> Option<&'a O
 
 fn resolve_dict<'a>(doc: &'a lopdf::Document, obj: &'a Object) -> Option<&'a Dictionary> {
     resolve_object(doc, obj)?.as_dict().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `levels` shared arrays that each reference the next one twice, ending in `[layer]`.
+    fn shared_chain(doc: &mut lopdf::Document, layer: ObjectId, levels: usize) -> ObjectId {
+        let mut current = doc.add_object(Object::Array(vec![Object::Reference(layer)]));
+        for _ in 1..levels {
+            current = doc.add_object(Object::Array(vec![
+                Object::Reference(current),
+                Object::Reference(current),
+            ]));
+        }
+        current
+    }
+
+    #[test]
+    fn order_filter_stops_on_a_deep_shared_dag_once_cancelled() {
+        let mut doc = lopdf::Document::with_version("1.5");
+        let layer = doc.add_object(dictionary! { "Type" => "OCG" });
+        let top = shared_chain(&mut doc, layer, 60);
+        let items = vec![Object::Reference(top), Object::Reference(top)];
+
+        let ctx = ToolCtx::default();
+        ctx.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        let result = OrderFilter::default().filter_array(&doc, &items, &HashSet::new(), 0, &ctx);
+        assert_eq!(result.unwrap_err(), PdfError::CANCELLED);
+    }
+
+    #[test]
+    fn order_filter_visits_each_shared_array_once_and_survives_cycles() {
+        let mut doc = lopdf::Document::with_version("1.5");
+        let layer = doc.add_object(dictionary! { "Type" => "OCG" });
+        let top = shared_chain(&mut doc, layer, 60);
+        let looped = doc.add_object(Object::Array(Vec::new()));
+        doc.objects.insert(
+            looped,
+            Object::Array(vec![Object::Reference(looped), Object::Reference(layer)]),
+        );
+        let items = vec![
+            Object::Reference(top),
+            Object::Reference(top),
+            Object::Reference(looped),
+        ];
+
+        let mut filter = OrderFilter::default();
+        let out = filter
+            .filter_array(&doc, &items, &HashSet::new(), 0, &ToolCtx::default())
+            .expect("filter");
+        assert_eq!(out.len(), 3);
+        assert_eq!(filter.filtered.len(), 61);
+        assert_eq!(
+            filter.filtered[&looped],
+            vec![Object::Reference(layer)],
+            "a self reference is dropped and the layer is kept"
+        );
+    }
 }
