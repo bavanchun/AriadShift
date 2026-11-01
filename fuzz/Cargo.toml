@@ -13,7 +13,7 @@ ariad-core = { path = "../crates/ariad-core", default-features = false }
 ariad-host = { path = "../crates/ariad-host", default-features = false }
 ariad-pdf = { path = "../crates/ariad-pdf", optional = true }
 libfuzzer-sys = "0.4.13"
-saphyr-parser = "0.2.2"
+saphyr-parser = "0.3.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "float_roundtrip"] }
 unicode-normalization = "0.1.25"
