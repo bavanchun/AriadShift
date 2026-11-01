@@ -33,10 +33,11 @@ issue itself and the current implementation were used as evidence instead.
 ## Verification
 
 - PASS: `pnpm --filter @ariadshift/auth exec vitest run test/cimd.test.ts test/oauth-flow.test.ts` (47 passed after the final policy change).
-- PASS: `pnpm --filter @ariadshift/auth test` (235 passed, 32 skipped; before the final normalization of configured host entries).
+- PASS: `pnpm --filter @ariadshift/auth test` (235 passed, 32 skipped after the final code change).
 - PASS: `pnpm --filter @ariadshift/auth typecheck`.
 - PASS: `pnpm exec biome check services/auth/src/cimd.ts services/auth/test/cimd.test.ts`.
 - PASS: `git diff --check`.
+- PASS: commit lint using the main checkout's `.tools/bin/committed` and the script's message checks. The worktree copy required by `scripts/check-commits.sh` is missing.
 - The initial check could not start because the pnpm shim had no selected version. Subsequent checks used the installed Node 24.22.0 and pnpm 12.9.1 through `mise` and the shared build lock. The pre-fix literal-IP regression failed as expected.
 
 PostgreSQL-backed tests are deliberately skipped locally without
