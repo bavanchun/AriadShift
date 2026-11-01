@@ -592,32 +592,42 @@ struct XobjectScope<'a> {
     digest: [u8; 32],
 }
 
+fn scope_entry_hash(name: &[u8], id: PdfObjectId) -> [u8; 32] {
+    let mut hash = Sha256::new();
+    hash.update((name.len() as u64).to_be_bytes());
+    hash.update(name);
+    hash.update(id.0.to_be_bytes());
+    hash.update(id.1.to_be_bytes());
+    hash.finalize().into()
+}
+
+fn xor_scope_entry(digest: &mut [u8; 32], name: &[u8], id: PdfObjectId) {
+    for (out, byte) in digest.iter_mut().zip(scope_entry_hash(name, id)) {
+        *out ^= byte;
+    }
+}
+
 impl<'a> XobjectScope<'a> {
     fn new(objects: BTreeMap<Vec<u8>, PdfObjectId>) -> Self {
-        let mut hash = Sha256::new();
-        for (name, (number, generation)) in &objects {
-            hash.update((name.len() as u64).to_be_bytes());
-            hash.update(name);
-            hash.update(number.to_be_bytes());
-            hash.update(generation.to_be_bytes());
+        let mut digest = [0; 32];
+        for (name, id) in &objects {
+            xor_scope_entry(&mut digest, name, *id);
         }
         Self {
             objects,
             parent: None,
-            digest: hash.finalize().into(),
+            digest,
         }
     }
 
-    fn child(&'a self, objects: BTreeMap<Vec<u8>, PdfObjectId>, id: PdfObjectId) -> Self {
-        let digest = if objects.is_empty() {
-            self.digest
-        } else {
-            let mut hash = Sha256::new();
-            hash.update(self.digest);
-            hash.update(id.0.to_be_bytes());
-            hash.update(id.1.to_be_bytes());
-            hash.finalize().into()
-        };
+    fn child(&'a self, objects: BTreeMap<Vec<u8>, PdfObjectId>) -> Self {
+        let mut digest = self.digest;
+        for (name, id) in &objects {
+            if let Some(old) = self.get(name) {
+                xor_scope_entry(&mut digest, name, *old);
+            }
+            xor_scope_entry(&mut digest, name, *id);
+        }
         Self {
             objects,
             parent: Some(self),
@@ -1018,7 +1028,7 @@ fn preflight_xobject(
                 )?;
                 insert_xobjects_from_resources!(doc, resources, own_children);
             }
-            let xobjects = parent_xobjects.child(own_children.clone(), id);
+            let xobjects = parent_xobjects.child(own_children.clone());
             let mut invoked = HashSet::new();
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
@@ -1887,7 +1897,7 @@ fn visit_xobject_target(
         if let Ok(res_obj) = stream.dict.get(b"Resources") {
             insert_xobjects_from_resources!(doc, res_obj, form_xobjects);
         }
-        let form_xobjects = parent_xobjects.child(form_xobjects, target_id);
+        let form_xobjects = parent_xobjects.child(form_xobjects);
         let form_content = preflight_stream_bytes(doc, stream, max_decompressed)?;
         collect_from_content_and_xobject_map(
             ctx,
@@ -2811,14 +2821,16 @@ mod corpus_tests {
             .map(|n| (format!("X{n}").into_bytes(), (n, 0)))
             .collect();
         let parent = XobjectScope::new(entries);
-        let first = parent.child(BTreeMap::from([(b"X1".to_vec(), (30_000, 0))]), (40_000, 0));
-        let second = parent.child(BTreeMap::new(), (40_001, 0));
+        let first = parent.child(BTreeMap::from([(b"X1".to_vec(), (30_000, 0))]));
+        let second = parent.child(BTreeMap::new());
         assert_eq!(first.objects.len(), 1);
         assert_eq!(second.objects.len(), 0);
         assert_eq!(first.get(b"X1"), Some(&(30_000, 0)));
         assert_eq!(second.get(b"X1"), Some(&(1, 0)));
         assert_ne!(first.digest, second.digest);
         assert_eq!(parent.digest, second.digest);
+        let restored = first.child(BTreeMap::from([(b"X1".to_vec(), (1, 0))]));
+        assert_eq!(parent.digest, restored.digest);
     }
 
     #[test]
