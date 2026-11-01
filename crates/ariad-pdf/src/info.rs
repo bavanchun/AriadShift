@@ -9,13 +9,13 @@
 use std::collections::HashSet;
 
 use ariad_core::limits::Limits;
-use lopdf::{Dictionary, Document, Object, ObjectId, StringFormat, content::Content};
+use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, content::Content};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
-    document::{self, PdfDoc},
+    document::{self, DecodeBudget, PdfDoc, ToolCtx},
     error::PdfError,
 };
 
@@ -134,16 +134,28 @@ pub struct PdfMetadata {
 /// reported with `encrypted: true`. PDFs requiring a non-empty user password return
 /// `Err(PdfError::Encrypted { needs_password: true })`.
 pub fn run(bytes: &[u8], limits: &Limits) -> Result<PdfInfo, PdfError> {
-    let doc = document::open_for_info(bytes, limits)?;
-    from_doc(&doc)
+    run_with_ctx(bytes, limits, &ToolCtx::default())
+}
+
+/// Runs `pdf.info` on raw PDF bytes under `limits` and cooperative `ctx`.
+pub fn run_with_ctx(bytes: &[u8], limits: &Limits, ctx: &ToolCtx) -> Result<PdfInfo, PdfError> {
+    let doc = document::open_for_info_with_ctx(bytes, limits, ctx)?;
+    from_doc_with_ctx(&doc, ctx)
 }
 
 /// Extracts [`PdfInfo`] from an already-opened [`PdfDoc`].
 pub fn from_doc(doc: &PdfDoc) -> Result<PdfInfo, PdfError> {
+    from_doc_with_ctx(doc, &ToolCtx::default())
+}
+
+/// Extracts [`PdfInfo`] from an already-opened [`PdfDoc`] under cooperative `ctx`.
+pub fn from_doc_with_ctx(doc: &PdfDoc, ctx: &ToolCtx) -> Result<PdfInfo, PdfError> {
+    ctx.check()?;
     let inner = doc.inner();
     let mut seen = HashSet::new();
     let mut page_ids = Vec::new();
     for id in inner.page_iter() {
+        ctx.check()?;
         if seen.insert(id) {
             page_ids.push(id);
         }
@@ -161,18 +173,20 @@ pub fn from_doc(doc: &PdfDoc) -> Result<PdfInfo, PdfError> {
     let encrypted = doc.is_encrypted();
     let linearized = detect_linearized(inner);
 
+    let mut budget = doc.decode_budget();
     let mut pages = Vec::with_capacity(page_ids.len());
     for (idx, &page_id) in page_ids.iter().enumerate() {
+        ctx.check()?;
         let page_no = u32::try_from(idx + 1).unwrap_or(u32::MAX);
-        pages.push(inspect_page(inner, page_id, page_no));
+        pages.push(inspect_page(inner, page_id, page_no, &mut budget, ctx)?);
     }
 
-    let metadata = extract_metadata(inner, doc.provenance().has_prev_xref);
-    let has_forms = detect_forms(inner, &page_ids);
-    let has_annotations = detect_annotations(inner, &page_ids);
-    let has_attachments = detect_attachments(inner, &page_ids);
-    let has_javascript = detect_javascript(inner);
-    let outline_count = count_outlines(inner, page_count, metadata.title.as_deref());
+    let metadata = extract_metadata(inner, doc.provenance().has_prev_xref, &mut budget, ctx)?;
+    let has_forms = detect_forms(inner, &page_ids, ctx)?;
+    let has_annotations = detect_annotations(inner, &page_ids, ctx)?;
+    let has_attachments = detect_attachments(inner, &page_ids, ctx)?;
+    let has_javascript = detect_javascript(inner, ctx)?;
+    let outline_count = count_outlines(inner, page_count, metadata.title.as_deref(), ctx)?;
     let repaired_xref = doc.repaired_xref();
     let mut warnings = Vec::new();
     if repaired_xref {
@@ -198,7 +212,13 @@ pub fn from_doc(doc: &PdfDoc) -> Result<PdfInfo, PdfError> {
     })
 }
 
-fn inspect_page(doc: &Document, page_id: ObjectId, page_no: u32) -> PageInfo {
+fn inspect_page(
+    doc: &Document,
+    page_id: ObjectId,
+    page_no: u32,
+    budget: &mut DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<PageInfo, PdfError> {
     let page_dict = doc.get_dictionary(page_id).ok();
     let (width_pt, height_pt) = page_dimensions(doc, page_dict);
     let paper = classify_paper(width_pt, height_pt).to_owned();
@@ -210,19 +230,11 @@ fn inspect_page(doc: &Document, page_id: ObjectId, page_no: u32) -> PageInfo {
             .and_then(|(obj, _)| resolve(doc, obj))
             .and_then(|obj| obj.as_dict().ok())
     });
-    let content_ids = if page_dict.is_some() {
-        doc.get_page_contents(page_id)
-    } else {
-        Vec::new()
-    };
     let mut contents = Vec::new();
-    for stream_id in content_ids {
-        if let Ok(Object::Stream(stream)) = doc.get_object(stream_id) {
-            if let Ok(decoded) = stream.decompressed_content() {
-                contents.extend_from_slice(&decoded);
-            } else {
-                contents.extend_from_slice(&stream.content);
-            }
+    for stream in page_content_streams(doc, page_dict) {
+        ctx.check()?;
+        if let Some(decoded) = budget.decode(stream)? {
+            contents.extend_from_slice(&decoded);
             contents.push(b'\n');
         }
     }
@@ -236,7 +248,9 @@ fn inspect_page(doc: &Document, page_id: ObjectId, page_no: u32) -> PageInfo {
         0,
         &mut visited_forms,
         &mut layers,
-    );
+        budget,
+        ctx,
+    )?;
 
     let blank = !layers.has_text && !layers.has_images && !layers.has_drawing;
     let (has_text_layer, image_only) = if !layers.has_text && layers.has_images {
@@ -245,7 +259,7 @@ fn inspect_page(doc: &Document, page_id: ObjectId, page_no: u32) -> PageInfo {
         (None, None)
     };
 
-    PageInfo {
+    Ok(PageInfo {
         page: page_no,
         width_pt,
         height_pt,
@@ -256,6 +270,27 @@ fn inspect_page(doc: &Document, page_id: ObjectId, page_no: u32) -> PageInfo {
         inherited_rotation,
         has_text_layer,
         image_only,
+    })
+}
+
+fn page_content_streams<'a>(
+    doc: &'a Document,
+    page_dict: Option<&'a Dictionary>,
+) -> Vec<&'a Stream> {
+    let Some(dict) = page_dict else {
+        return Vec::new();
+    };
+    let Some(contents_obj) = dict_get_resolved(doc, dict, b"Contents") else {
+        return Vec::new();
+    };
+    match contents_obj {
+        Object::Stream(stream) => vec![stream],
+        Object::Array(items) => items
+            .iter()
+            .filter_map(|item| resolve(doc, item))
+            .filter_map(|obj| obj.as_stream().ok())
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
@@ -266,6 +301,7 @@ struct ContentLayerState {
     has_drawing: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn inspect_content_bytes(
     doc: &Document,
     bytes: &[u8],
@@ -273,14 +309,25 @@ fn inspect_content_bytes(
     depth: usize,
     visited_forms: &mut HashSet<ObjectId>,
     state: &mut ContentLayerState,
-) {
+    budget: &mut DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    ctx.check()?;
     if depth > MAX_FORM_DEPTH || bytes.is_empty() {
-        return;
+        return Ok(());
     }
     let Ok(content) = Content::decode(bytes) else {
-        return;
+        return Ok(());
     };
-    for op in content.operations.iter().take(MAX_INSPECT_OPERATORS) {
+    for (op_idx, op) in content
+        .operations
+        .iter()
+        .take(MAX_INSPECT_OPERATORS)
+        .enumerate()
+    {
+        if op_idx & 0x3ff == 0 {
+            ctx.check()?;
+        }
         match op.operator.as_str() {
             "Tj" | "'" => {
                 if op.operands.first().is_some_and(operand_has_visible_text) {
@@ -304,7 +351,16 @@ fn inspect_content_bytes(
             }
             "Do" => {
                 if let Some(Object::Name(name)) = op.operands.first() {
-                    inspect_xobject_do(doc, name, resources, depth, visited_forms, state);
+                    inspect_xobject_do(
+                        doc,
+                        name,
+                        resources,
+                        depth,
+                        visited_forms,
+                        state,
+                        budget,
+                        ctx,
+                    )?;
                 }
             }
             "S" | "s" | "f" | "F" | "f*" | "B" | "B*" | "b" | "b*" | "sh" => {
@@ -312,12 +368,11 @@ fn inspect_content_bytes(
             }
             _ => {}
         }
-        if state.has_text && state.has_images {
-            break;
-        }
     }
+    Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn inspect_xobject_do(
     doc: &Document,
     name: &[u8],
@@ -325,20 +380,23 @@ fn inspect_xobject_do(
     depth: usize,
     visited_forms: &mut HashSet<ObjectId>,
     state: &mut ContentLayerState,
-) {
+    budget: &mut DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    ctx.check()?;
     let Some(res) = resources else {
-        return;
+        return Ok(());
     };
     let Some(xobjects) = dict_get_resolved(doc, res, b"XObject").and_then(|o| o.as_dict().ok())
     else {
-        return;
+        return Ok(());
     };
     let Ok(raw_entry) = xobjects.get(name) else {
-        return;
+        return Ok(());
     };
     let obj_id = raw_entry.as_reference().ok();
     let Some(Object::Stream(stream)) = resolve(doc, raw_entry) else {
-        return;
+        return Ok(());
     };
     let subtype = dict_get_resolved(doc, &stream.dict, b"Subtype").and_then(|o| o.as_name().ok());
     match subtype {
@@ -346,15 +404,18 @@ fn inspect_xobject_do(
             state.has_images = true;
         }
         Some(b"Form") => {
+            if depth >= MAX_FORM_DEPTH {
+                return Ok(());
+            }
             if let Some(id) = obj_id
                 && !visited_forms.insert(id)
             {
-                return;
+                return Ok(());
             }
             let form_resources = dict_get_resolved(doc, &stream.dict, b"Resources")
                 .and_then(|o| o.as_dict().ok())
                 .or(resources);
-            if let Ok(decompressed) = stream.decompressed_content() {
+            let result = if let Some(decompressed) = budget.decode(stream)? {
                 inspect_content_bytes(
                     doc,
                     &decompressed,
@@ -362,20 +423,20 @@ fn inspect_xobject_do(
                     depth + 1,
                     visited_forms,
                     state,
-                );
+                    budget,
+                    ctx,
+                )
             } else {
-                inspect_content_bytes(
-                    doc,
-                    &stream.content,
-                    form_resources,
-                    depth + 1,
-                    visited_forms,
-                    state,
-                );
+                Ok(())
+            };
+            if let Some(id) = obj_id {
+                visited_forms.remove(&id);
             }
+            result?;
         }
         _ => {}
     }
+    Ok(())
 }
 
 fn operand_has_visible_text(obj: &Object) -> bool {
@@ -511,7 +572,13 @@ fn round_2(val: f64) -> f64 {
     (val * 100.0).round() / 100.0
 }
 
-fn extract_metadata(doc: &Document, has_prev_xref: bool) -> PdfMetadata {
+fn extract_metadata(
+    doc: &Document,
+    has_prev_xref: bool,
+    budget: &mut DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<PdfMetadata, PdfError> {
+    ctx.check()?;
     let info_id = doc
         .trailer
         .get(b"Info")
@@ -538,7 +605,7 @@ fn extract_metadata(doc: &Document, has_prev_xref: bool) -> PdfMetadata {
         // initial `/Info` dictionary shares the same creation timestamp and producer.
         if has_prev_xref
             && let Some(current_id) = info_id
-            && let Some(earlier_mod) = earlier_revision_mod_date(doc, current_id, &meta)
+            && let Some(earlier_mod) = earlier_revision_mod_date(doc, current_id, &meta, ctx)?
         {
             meta.mod_date = Some(earlier_mod);
         }
@@ -552,7 +619,7 @@ fn extract_metadata(doc: &Document, has_prev_xref: bool) -> PdfMetadata {
             lang.len() <= 35 && lang.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
         });
 
-    if let Some(xmp_xml) = extract_xmp_xml(doc) {
+    if let Some(xmp_xml) = extract_xmp_xml(doc, budget, ctx)? {
         if meta.title.is_none() {
             meta.title = xmp_tag_value(&xmp_xml, "dc:title");
         }
@@ -585,15 +652,17 @@ fn extract_metadata(doc: &Document, has_prev_xref: bool) -> PdfMetadata {
         meta.language = Some("vi".to_owned());
     }
 
-    meta
+    Ok(meta)
 }
 
 fn earlier_revision_mod_date(
     doc: &Document,
     current_info_id: ObjectId,
     current_meta: &PdfMetadata,
-) -> Option<String> {
+    ctx: &ToolCtx,
+) -> Result<Option<String>, PdfError> {
     for (&obj_id, obj) in &doc.objects {
+        ctx.check()?;
         if obj_id >= current_info_id {
             continue;
         }
@@ -609,10 +678,10 @@ fn earlier_revision_mod_date(
             && producer == current_meta.producer
             && let Some(mod_date) = dict_text(doc, dict, b"ModDate")
         {
-            return Some(mod_date);
+            return Ok(Some(mod_date));
         }
     }
-    None
+    Ok(None)
 }
 
 fn contains_vietnamese_diacritics(text: &str) -> bool {
@@ -625,14 +694,25 @@ fn contains_vietnamese_diacritics(text: &str) -> bool {
     })
 }
 
-fn extract_xmp_xml(doc: &Document) -> Option<String> {
-    let catalog = doc.catalog().ok()?;
-    let meta_obj = dict_get_resolved(doc, catalog, b"Metadata")?;
-    let stream = meta_obj.as_stream().ok()?;
-    let bytes = stream
-        .decompressed_content()
-        .unwrap_or_else(|_| stream.content.clone());
-    String::from_utf8(bytes).ok()
+fn extract_xmp_xml(
+    doc: &Document,
+    budget: &mut DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<Option<String>, PdfError> {
+    ctx.check()?;
+    let Ok(catalog) = doc.catalog() else {
+        return Ok(None);
+    };
+    let Some(meta_obj) = dict_get_resolved(doc, catalog, b"Metadata") else {
+        return Ok(None);
+    };
+    let Ok(stream) = meta_obj.as_stream() else {
+        return Ok(None);
+    };
+    let Some(bytes) = budget.decode(stream)? else {
+        return Ok(None);
+    };
+    Ok(String::from_utf8(bytes).ok())
 }
 
 fn xmp_tag_value(xml: &str, tag: &str) -> Option<String> {
@@ -665,7 +745,7 @@ fn detect_linearized(doc: &Document) -> bool {
     })
 }
 
-fn detect_forms(doc: &Document, page_ids: &[ObjectId]) -> bool {
+fn detect_forms(doc: &Document, page_ids: &[ObjectId], ctx: &ToolCtx) -> Result<bool, PdfError> {
     if let Ok(catalog) = doc.catalog()
         && let Some(acroform) =
             dict_get_resolved(doc, catalog, b"AcroForm").and_then(|o| o.as_dict().ok())
@@ -673,10 +753,11 @@ fn detect_forms(doc: &Document, page_ids: &[ObjectId]) -> bool {
             dict_get_resolved(doc, acroform, b"Fields").and_then(|o| o.as_array().ok())
         && !fields.is_empty()
     {
-        return true;
+        return Ok(true);
     }
 
     for &page_id in page_ids {
+        ctx.check()?;
         let Ok(page_dict) = doc.get_dictionary(page_id) else {
             continue;
         };
@@ -690,15 +771,20 @@ fn detect_forms(doc: &Document, page_ids: &[ObjectId]) -> bool {
                 && dict_get_resolved(doc, dict, b"Subtype").and_then(|o| o.as_name().ok())
                     == Some(b"Widget")
             {
-                return true;
+                return Ok(true);
             }
         }
     }
-    false
+    Ok(false)
 }
 
-fn detect_annotations(doc: &Document, page_ids: &[ObjectId]) -> bool {
+fn detect_annotations(
+    doc: &Document,
+    page_ids: &[ObjectId],
+    ctx: &ToolCtx,
+) -> Result<bool, PdfError> {
     for &page_id in page_ids {
+        ctx.check()?;
         let Ok(page_dict) = doc.get_dictionary(page_id) else {
             continue;
         };
@@ -706,28 +792,33 @@ fn detect_annotations(doc: &Document, page_ids: &[ObjectId]) -> bool {
             dict_get_resolved(doc, page_dict, b"Annots").and_then(|o| o.as_array().ok())
             && !annots.is_empty()
         {
-            return true;
+            return Ok(true);
         }
     }
-    false
+    Ok(false)
 }
 
-fn detect_attachments(doc: &Document, page_ids: &[ObjectId]) -> bool {
+fn detect_attachments(
+    doc: &Document,
+    page_ids: &[ObjectId],
+    ctx: &ToolCtx,
+) -> Result<bool, PdfError> {
     if let Ok(catalog) = doc.catalog() {
         if let Some(names) =
             dict_get_resolved(doc, catalog, b"Names").and_then(|o| o.as_dict().ok())
             && names.has(b"EmbeddedFiles")
         {
-            return true;
+            return Ok(true);
         }
         if let Some(af) = dict_get_resolved(doc, catalog, b"AF").and_then(|o| o.as_array().ok())
             && !af.is_empty()
         {
-            return true;
+            return Ok(true);
         }
     }
 
     for &page_id in page_ids {
+        ctx.check()?;
         let Ok(page_dict) = doc.get_dictionary(page_id) else {
             continue;
         };
@@ -741,37 +832,42 @@ fn detect_attachments(doc: &Document, page_ids: &[ObjectId]) -> bool {
                 && dict_get_resolved(doc, dict, b"Subtype").and_then(|o| o.as_name().ok())
                     == Some(b"FileAttachment")
             {
-                return true;
+                return Ok(true);
             }
         }
     }
 
-    doc.objects.values().any(|obj| {
-        obj.as_dict().ok().is_some_and(|dict| {
+    for obj in doc.objects.values() {
+        ctx.check()?;
+        if obj.as_dict().ok().is_some_and(|dict| {
             dict.has(b"EF")
                 && dict_get_resolved(doc, dict, b"Type").and_then(|o| o.as_name().ok())
                     == Some(b"Filespec")
-        })
-    })
+        }) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Statically scans `/OpenAction`, `/AA`, `/Names -> /JavaScript`, and all objects for
 /// `/S /JavaScript` or `/JS` action entries. Never evaluates or interprets script payloads.
-fn detect_javascript(doc: &Document) -> bool {
+fn detect_javascript(doc: &Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
     if let Ok(catalog) = doc.catalog()
         && let Some(names) =
             dict_get_resolved(doc, catalog, b"Names").and_then(|o| o.as_dict().ok())
         && names.has(b"JavaScript")
     {
-        return true;
+        return Ok(true);
     }
 
     for obj in doc.objects.values() {
+        ctx.check()?;
         if inline_object_contains_javascript(doc, obj, 0) {
-            return true;
+            return Ok(true);
         }
     }
-    false
+    Ok(false)
 }
 
 /// Checks an object and its inline (non-reference) children for JavaScript action markers.
@@ -800,21 +896,26 @@ fn inline_object_contains_javascript(doc: &Document, obj: &Object, depth: usize)
     }
 }
 
-fn count_outlines(doc: &Document, page_count: u32, doc_title: Option<&str>) -> u32 {
+fn count_outlines(
+    doc: &Document,
+    page_count: u32,
+    doc_title: Option<&str>,
+    ctx: &ToolCtx,
+) -> Result<u32, PdfError> {
     let Ok(catalog) = doc.catalog() else {
-        return 0;
+        return Ok(0);
     };
     let Some(outlines) =
         dict_get_resolved(doc, catalog, b"Outlines").and_then(|o| o.as_dict().ok())
     else {
-        return 0;
+        return Ok(0);
     };
     let Some(first_id) = outlines
         .get(b"First")
         .ok()
         .and_then(|o| o.as_reference().ok())
     else {
-        return 0;
+        return Ok(0);
     };
 
     let mut visited = HashSet::new();
@@ -822,6 +923,7 @@ fn count_outlines(doc: &Document, page_count: u32, doc_title: Option<&str>) -> u
     let mut count = 0_u32;
 
     while let Some(item_id) = stack.pop() {
+        ctx.check()?;
         if !visited.insert(item_id) {
             continue;
         }
@@ -843,10 +945,10 @@ fn count_outlines(doc: &Document, page_count: u32, doc_title: Option<&str>) -> u
         && let Ok(first_dict) = doc.get_dictionary(first_id)
         && dict_text(doc, first_dict, b"Title").as_deref() == doc_title
     {
-        return 0;
+        return Ok(0);
     }
 
-    count
+    Ok(count)
 }
 
 fn dict_text(doc: &Document, dict: &Dictionary, key: &[u8]) -> Option<String> {

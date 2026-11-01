@@ -3996,3 +3996,23 @@ tags = ["pdf-tools", "digital-pdf", "multipage", "long", "object-streams"]
 phase = "1"
 routes = []
 companions = [{ path = "fixtures/pdf-tools/large-1000-pages.truth.json", sha256 = "768fa23dbeb58c2c1f77c26f3a9677728c39432600ddfebd6e337bb2e9ab9dbd" }]
+
+[[fuzz_seed]]
+id = "fuzz-pdf-open-bounded-repeated-content-stream-pdf"
+target = "pdf_open_bounded"
+path = "fuzz/seeds/pdf_open_bounded/repeated-content-stream.pdf"
+sha256 = "2025da33f41ed9df37072bab42e807542305c8379dfc11a0e773398db5d56795"
+source = "Hand-authored minimal PDF seed referencing a shared content stream multiple times in /Contents."
+license = "Apache-2.0"
+license_basis = "Project-authored synthetic PDF operators and sample text; no external document or font program is embedded."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdf-open-bounded-repeated-trailers-pdf"
+target = "pdf_open_bounded"
+path = "fuzz/seeds/pdf_open_bounded/repeated-trailers.pdf"
+sha256 = "c7fc5cd64cc2990bfd6f06f8091fef283828f0c911957461092ffefeaadec866"
+source = "Hand-authored minimal PDF seed with repeated trailer keywords before startxref."
+license = "Apache-2.0"
+license_basis = "Project-authored synthetic PDF operators and sample text; no external document or font program is embedded."
+attribution = "AriadShift contributors"
