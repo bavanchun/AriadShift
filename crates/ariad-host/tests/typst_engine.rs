@@ -561,7 +561,7 @@ fn convert_through_engine(document: &Document, options: Value) -> (Vec<Event>, V
     };
     assert_eq!(
         fs::canonicalize(path).unwrap(),
-        fs::canonicalize(artifact).unwrap()
+        fs::canonicalize(&artifact).unwrap()
     );
     assert_eq!(format, "pdf");
     assert!(matches!(
