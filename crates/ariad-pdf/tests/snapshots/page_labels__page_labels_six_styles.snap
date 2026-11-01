@@ -1,0 +1,42 @@
+---
+source: crates/ariad-pdf/tests/page_labels.rs
+expression: value
+---
+[
+  {
+    "P": "Cover",
+    "S": null,
+    "St": 1,
+    "zero_based_page": 0
+  },
+  {
+    "P": null,
+    "S": "r",
+    "St": 1,
+    "zero_based_page": 1
+  },
+  {
+    "P": null,
+    "S": "D",
+    "St": 1,
+    "zero_based_page": 4
+  },
+  {
+    "P": "App-",
+    "S": "A",
+    "St": 1,
+    "zero_based_page": 11
+  },
+  {
+    "P": null,
+    "S": "a",
+    "St": 3,
+    "zero_based_page": 15
+  },
+  {
+    "P": "Idx-",
+    "S": "R",
+    "St": 1,
+    "zero_based_page": 18
+  }
+]
