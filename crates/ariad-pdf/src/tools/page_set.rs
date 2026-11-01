@@ -30,6 +30,14 @@ const MAX_TREE_DEPTH: usize = 64;
 /// Maximum inline nesting depth for direct arrays/dictionaries inside a single indirect object.
 const MAX_INLINE_DEPTH: usize = 128;
 
+/// Maximum number of named-destination entries collected from `/Catalog /Dests` and
+/// `/Catalog /Names /Dests`.
+pub(crate) const MAX_NAMED_DESTINATIONS: usize = 100_000;
+
+/// Maximum number of elements in an explicit PDF destination array
+/// (`[page /FitR left bottom right top]`, ISO 32000-1 Table 151).
+const MAX_DEST_ARRAY_LEN: usize = 6;
+
 /// Options controlling document-level structures when building a page-set output document.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct PageSetOptions {
@@ -91,6 +99,12 @@ fn too_many_pages(actual: u64, cap: u64) -> PdfError {
     PdfError::LimitExceeded(ReadError::TooManyPages {
         actual,
         limit: u32::try_from(cap).unwrap_or(u32::MAX),
+    })
+}
+
+fn too_many_named_destinations() -> PdfError {
+    PdfError::LimitExceeded(ReadError::TooManyObjects {
+        limit: MAX_NAMED_DESTINATIONS,
     })
 }
 
@@ -428,6 +442,8 @@ fn build_page_set_doc_with_warnings(
             }
         }
 
+        let mut total_dest_entries = 0_usize;
+
         if let Some(names_obj) = copy_filtered_catalog_names(
             src_doc,
             src_catalog,
@@ -435,6 +451,7 @@ fn build_page_set_doc_with_warnings(
             &id_to_page_num,
             &kept_page_num_to_id,
             options.include_attachments,
+            &mut total_dest_entries,
             &mut copier,
             ctx,
         )? {
@@ -447,6 +464,7 @@ fn build_page_set_doc_with_warnings(
             page_count,
             &id_to_page_num,
             &kept_page_num_to_id,
+            &mut total_dest_entries,
             &mut copier,
             ctx,
         )? {
@@ -932,12 +950,14 @@ fn extract_dest_page_id(
 
 /// Copies `/Catalog /Dests`, dropping destination entries that target removed pages instead of
 /// emitting `[null ...]` or retaining dropped `/Page` objects.
+#[allow(clippy::too_many_arguments)]
 fn copy_filtered_catalog_dests(
     src_doc: &Document,
     src_catalog: &Dictionary,
     page_count: u32,
     id_to_page_num: &BTreeMap<ObjectId, u32>,
     kept_page_num_to_id: &BTreeMap<u32, ObjectId>,
+    total_dest_entries: &mut usize,
     copier: &mut SelectiveCopier<'_>,
     ctx: &ToolCtx,
 ) -> Result<Option<Object>, PdfError> {
@@ -951,6 +971,10 @@ fn copy_filtered_catalog_dests(
     let mut filtered = Dictionary::new();
     for (k, v) in dests_dict.iter() {
         ctx.check()?;
+        *total_dest_entries = total_dest_entries.saturating_add(1);
+        if *total_dest_entries > MAX_NAMED_DESTINATIONS {
+            return Err(too_many_named_destinations());
+        }
         if let Some(remapped) = remap_catalog_dest_object(
             src_doc,
             v,
@@ -981,6 +1005,7 @@ fn copy_filtered_catalog_names(
     id_to_page_num: &BTreeMap<ObjectId, u32>,
     kept_page_num_to_id: &BTreeMap<u32, ObjectId>,
     include_attachments: bool,
+    total_dest_entries: &mut usize,
     copier: &mut SelectiveCopier<'_>,
     ctx: &ToolCtx,
 ) -> Result<Option<Object>, PdfError> {
@@ -998,27 +1023,31 @@ fn copy_filtered_catalog_names(
             continue;
         }
         if k.as_slice() == b"Dests" {
-            let Some(dests_tree_dict) = resolve_dict(src_doc, v) else {
+            let mut visitor = DestNameTreeVisitor {
+                total_entries: *total_dest_entries,
+                ..DestNameTreeVisitor::default()
+            };
+            let Some(Object::Dictionary(dests_tree_dict)) =
+                mark_visited_object_chain(src_doc, v, &mut visitor.visited_kids)
+            else {
                 continue;
             };
-            let mut visited = BTreeSet::new();
-            if let Ok(root_id) = v.as_reference() {
-                visited.insert(root_id);
-            }
             let mut raw_entries = Vec::new();
             collect_dest_name_tree_entries(
                 src_doc,
                 dests_tree_dict,
-                &mut visited,
+                &mut visitor,
                 &mut raw_entries,
                 0,
                 ctx,
             )?;
+            *total_dest_entries = visitor.total_entries;
             let mut names_arr = Vec::new();
             for (name_bytes, dest_val) in raw_entries {
+                ctx.check()?;
                 if let Some(remapped) = remap_catalog_dest_object(
                     src_doc,
-                    &dest_val,
+                    dest_val,
                     page_count,
                     id_to_page_num,
                     kept_page_num_to_id,
@@ -1205,9 +1234,9 @@ fn remap_dest_array(
         return Ok(None);
     };
 
-    let mut new_arr = Vec::with_capacity(arr.len());
+    let mut new_arr = Vec::with_capacity(arr.len().min(MAX_DEST_ARRAY_LEN));
     new_arr.push(Object::Reference(target_page_id));
-    for item in arr.iter().skip(1) {
+    for item in arr.iter().take(MAX_DEST_ARRAY_LEN).skip(1) {
         new_arr.push(copier.copy_object(item, ctx)?);
     }
     Ok(Some(Object::Array(new_arr)))
@@ -1515,6 +1544,7 @@ fn extract_outline_dest(
         if let Some(page_num) = resolved_page_num {
             let tail: Vec<Object> = arr
                 .iter()
+                .take(MAX_DEST_ARRAY_LEN)
                 .skip(1)
                 .filter_map(|o| {
                     let resolved = resolve_object(doc, o)?;
@@ -1549,8 +1579,36 @@ fn resolve_dest_array<'a>(
     }
 }
 
+#[derive(Default)]
+struct DestNameTreeVisitor {
+    visited_kids: BTreeSet<ObjectId>,
+    visited_names: BTreeSet<ObjectId>,
+    total_entries: usize,
+}
+
+fn mark_visited_object_chain<'a>(
+    doc: &'a Document,
+    obj: &'a Object,
+    visited: &mut BTreeSet<ObjectId>,
+) -> Option<&'a Object> {
+    let mut cur = obj;
+    for _ in 0..16 {
+        match *cur {
+            Object::Reference(id) => {
+                if !visited.insert(id) {
+                    return None;
+                }
+                cur = doc.objects.get(&id)?;
+            }
+            _ => return Some(cur),
+        }
+    }
+    None
+}
+
 /// Collects named destinations from both `/Catalog /Dests` (PDF 1.1 dictionary) and
-/// `/Catalog /Names /Dests` (PDF 1.2+ name tree) with cycle/DAG protection and `ctx.check()?`.
+/// `/Catalog /Names /Dests` (PDF 1.2+ name tree) with cycle/DAG protection, a 100,000-entry cap,
+/// at most 6 elements copied per destination, and `ctx.check()?`.
 pub(crate) fn collect_named_destinations(
     doc: &Document,
     ctx: &ToolCtx,
@@ -1561,11 +1619,17 @@ pub(crate) fn collect_named_destinations(
         return Ok(out);
     };
 
+    let mut total_entries = 0_usize;
+
     if let Ok(dests_obj) = catalog.get(b"Dests")
         && let Some(dests_dict) = resolve_dict(doc, dests_obj)
     {
         for (name, val) in dests_dict.iter() {
             ctx.check()?;
+            total_entries = total_entries.saturating_add(1);
+            if total_entries > MAX_NAMED_DESTINATIONS {
+                return Err(too_many_named_destinations());
+            }
             if let Some(arr) = extract_dest_array_value(doc, val) {
                 out.insert(name.clone(), arr);
             }
@@ -1575,24 +1639,28 @@ pub(crate) fn collect_named_destinations(
     if let Ok(names_obj) = catalog.get(b"Names")
         && let Some(names_dict) = resolve_dict(doc, names_obj)
         && let Ok(dests_tree_obj) = names_dict.get(b"Dests")
-        && let Some(dests_tree_dict) = resolve_dict(doc, dests_tree_obj)
     {
-        let mut visited = BTreeSet::new();
-        if let Ok(root_id) = dests_tree_obj.as_reference() {
-            visited.insert(root_id);
-        }
-        let mut raw_entries = Vec::new();
-        collect_dest_name_tree_entries(
-            doc,
-            dests_tree_dict,
-            &mut visited,
-            &mut raw_entries,
-            0,
-            ctx,
-        )?;
-        for (name_bytes, val) in raw_entries {
-            if let Some(arr) = extract_dest_array_value(doc, &val) {
-                out.insert(name_bytes, arr);
+        let mut visitor = DestNameTreeVisitor {
+            total_entries,
+            ..DestNameTreeVisitor::default()
+        };
+        if let Some(Object::Dictionary(dests_tree_dict)) =
+            mark_visited_object_chain(doc, dests_tree_obj, &mut visitor.visited_kids)
+        {
+            let mut raw_entries = Vec::new();
+            collect_dest_name_tree_entries(
+                doc,
+                dests_tree_dict,
+                &mut visitor,
+                &mut raw_entries,
+                0,
+                ctx,
+            )?;
+            for (name_bytes, val) in raw_entries {
+                ctx.check()?;
+                if let Some(arr) = extract_dest_array_value(doc, val) {
+                    out.insert(name_bytes, arr);
+                }
             }
         }
     }
@@ -1602,21 +1670,27 @@ pub(crate) fn collect_named_destinations(
 
 fn extract_dest_array_value(doc: &Document, val: &Object) -> Option<Vec<Object>> {
     let resolved = resolve_object(doc, val)?;
-    match resolved {
-        Object::Array(arr) => Some(arr.clone()),
-        Object::Dictionary(d) => resolve_object(doc, d.get(b"D").ok()?)?
-            .as_array()
-            .ok()
-            .cloned(),
-        _ => None,
-    }
+    let arr = match resolved {
+        Object::Array(arr) => arr,
+        Object::Dictionary(d) => resolve_object(doc, d.get(b"D").ok()?)?.as_array().ok()?,
+        _ => return None,
+    };
+    Some(
+        arr.iter()
+            .take(MAX_DEST_ARRAY_LEN)
+            .map(|item| match item {
+                Object::Array(_) | Object::Dictionary(_) | Object::Stream(_) => Object::Null,
+                other => other.clone(),
+            })
+            .collect(),
+    )
 }
 
-fn collect_dest_name_tree_entries(
-    doc: &Document,
-    node_dict: &Dictionary,
-    visited: &mut BTreeSet<ObjectId>,
-    out: &mut Vec<(Vec<u8>, Object)>,
+fn collect_dest_name_tree_entries<'a>(
+    doc: &'a Document,
+    node_dict: &'a Dictionary,
+    visitor: &mut DestNameTreeVisitor,
+    out: &mut Vec<(Vec<u8>, &'a Object)>,
     depth: usize,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
@@ -1625,31 +1699,37 @@ fn collect_dest_name_tree_entries(
         return Ok(());
     }
     if let Ok(names_obj) = node_dict.get(b"Names")
-        && let Some(Object::Array(pairs)) = resolve_object(doc, names_obj)
+        && let Some(Object::Array(pairs)) =
+            mark_visited_object_chain(doc, names_obj, &mut visitor.visited_names)
     {
         for pair in pairs.as_chunks::<2>().0 {
             ctx.check()?;
+            visitor.total_entries = visitor.total_entries.saturating_add(1);
+            if visitor.total_entries > MAX_NAMED_DESTINATIONS {
+                return Err(too_many_named_destinations());
+            }
             let Some(name_bytes) = resolve_object(doc, &pair[0]).and_then(|o| match o {
                 Object::String(bytes, _) | Object::Name(bytes) => Some(bytes.clone()),
                 _ => None,
             }) else {
                 continue;
             };
-            out.push((name_bytes, pair[1].clone()));
+            out.push((name_bytes, &pair[1]));
         }
     }
     if let Ok(kids_obj) = node_dict.get(b"Kids")
-        && let Some(Object::Array(kids)) = resolve_object(doc, kids_obj)
+        && let Some(Object::Array(kids)) =
+            mark_visited_object_chain(doc, kids_obj, &mut visitor.visited_kids)
     {
         for kid in kids {
             ctx.check()?;
-            if let Ok(kid_id) = kid.as_reference()
-                && !visited.insert(kid_id)
+            if let Some(Object::Dictionary(kid_dict)) =
+                mark_visited_object_chain(doc, kid, &mut visitor.visited_kids)
             {
-                continue;
-            }
-            if let Some(kid_dict) = resolve_dict(doc, kid) {
-                collect_dest_name_tree_entries(doc, kid_dict, visited, out, depth + 1, ctx)?;
+                if visitor.visited_kids.len() > MAX_NAMED_DESTINATIONS {
+                    return Err(too_many_named_destinations());
+                }
+                collect_dest_name_tree_entries(doc, kid_dict, visitor, out, depth + 1, ctx)?;
             }
         }
     }
@@ -2082,5 +2162,139 @@ mod tests {
         let err = expand_page_range_capped(&parse("1-last"), 15, DuplicatePolicy::Reject, Some(10))
             .unwrap_err();
         assert_too_many(err, 15, 10);
+    }
+
+    #[test]
+    fn collect_named_destinations_dedupes_shared_names_and_kids_and_truncates_dest_arrays() {
+        use lopdf::dictionary;
+
+        let mut doc = Document::with_version("1.7");
+        let page1_id = doc.add_object(dictionary! { "Type" => "Page" });
+
+        let mut oversized_dest = vec![
+            Object::Reference(page1_id),
+            Object::Name(b"FitR".to_vec()),
+            Object::Integer(10),
+            Object::Integer(20),
+            Object::Integer(30),
+            Object::Integer(40),
+        ];
+        oversized_dest.extend((0..994).map(Object::Integer));
+        let dest_arr_id = doc.add_object(Object::Array(oversized_dest));
+
+        let mut shared_pairs = Vec::with_capacity(100);
+        for i in 0..50 {
+            shared_pairs.push(Object::string_literal(format!("shared-{i:03}")));
+            shared_pairs.push(Object::Reference(dest_arr_id));
+        }
+        let shared_names_id = doc.add_object(Object::Array(shared_pairs));
+
+        let mut leaf_kids = Vec::with_capacity(200);
+        for _ in 0..200 {
+            let kid_id = doc.add_object(dictionary! {
+                "Names" => Object::Reference(shared_names_id),
+            });
+            leaf_kids.push(Object::Reference(kid_id));
+        }
+        let shared_kids_arr_id = doc.add_object(Object::Array(leaf_kids));
+        let branch_a = doc.add_object(dictionary! {
+            "Kids" => Object::Reference(shared_kids_arr_id),
+        });
+        let branch_b = doc.add_object(dictionary! {
+            "Kids" => Object::Reference(shared_kids_arr_id),
+        });
+        let root_tree_id = doc.add_object(dictionary! {
+            "Names" => Object::Reference(shared_names_id),
+            "Kids" => vec![
+                Object::Reference(branch_a),
+                Object::Reference(branch_b),
+                Object::Reference(branch_a),
+            ],
+        });
+
+        let legacy_dest_dict_id = doc.add_object(dictionary! {
+            "D" => Object::Reference(dest_arr_id),
+        });
+        let legacy_dests_id = doc.add_object(dictionary! {
+            "legacy" => Object::Reference(legacy_dest_dict_id),
+        });
+
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Dests" => Object::Reference(legacy_dests_id),
+            "Names" => dictionary! {
+                "Dests" => Object::Reference(root_tree_id),
+            },
+        });
+        doc.trailer.set("Root", catalog_id);
+
+        let dests =
+            collect_named_destinations(&doc, &ToolCtx::default()).expect("collect named dests");
+        assert_eq!(dests.len(), 51);
+        for (name, arr) in &dests {
+            assert_eq!(
+                arr.len(),
+                6,
+                "destination {:?} should keep at most 6 elements",
+                String::from_utf8_lossy(name)
+            );
+        }
+        let total_copied_objects: usize = dests.values().map(Vec::len).sum();
+        assert_eq!(total_copied_objects, 51 * 6);
+    }
+
+    #[test]
+    fn collect_named_destinations_enforces_entry_cap_and_cancellation() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
+        use lopdf::dictionary;
+
+        let mut doc = Document::with_version("1.7");
+        let page1_id = doc.add_object(dictionary! { "Type" => "Page" });
+        let dest_id = doc.add_object(Object::Array(vec![
+            Object::Reference(page1_id),
+            Object::Name(b"Fit".to_vec()),
+        ]));
+
+        let mut kids = Vec::with_capacity(101);
+        for leaf in 0..100 {
+            let mut pairs = Vec::with_capacity(2_000);
+            for idx in 0..1_000 {
+                pairs.push(Object::string_literal(format!("d-{leaf:03}-{idx:03}")));
+                pairs.push(Object::Reference(dest_id));
+            }
+            kids.push(Object::Reference(
+                doc.add_object(dictionary! { "Names" => pairs }),
+            ));
+        }
+        kids.push(Object::Reference(doc.add_object(dictionary! {
+            "Names" => vec![
+                Object::string_literal("d-overflow"),
+                Object::Reference(dest_id),
+            ],
+        })));
+        let tree_id = doc.add_object(dictionary! { "Kids" => kids });
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Names" => dictionary! { "Dests" => Object::Reference(tree_id) },
+        });
+        doc.trailer.set("Root", catalog_id);
+
+        let err = collect_named_destinations(&doc, &ToolCtx::default())
+            .expect_err("100,001 named destinations must fail the cap");
+        assert_eq!(
+            err,
+            PdfError::LimitExceeded(ReadError::TooManyObjects { limit: 100_000 })
+        );
+
+        let flag = Arc::new(AtomicBool::new(true));
+        flag.store(true, Ordering::Release);
+        let cancelled_ctx = ToolCtx::with_cancel(flag);
+        let cancel_err = collect_named_destinations(&doc, &cancelled_ctx)
+            .expect_err("cancelled context must stop named-destination collection");
+        assert_eq!(cancel_err, PdfError::CANCELLED);
     }
 }

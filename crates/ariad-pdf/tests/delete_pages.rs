@@ -168,3 +168,208 @@ fn delete_pages_keeps_catalog_entries_drops_tagged_structure_and_nulls_dangling_
     );
     hostile::assert_rich_catalog_subset(&out.artifacts[0].bytes);
 }
+
+#[test]
+fn delete_pages_bounds_shared_names_dag_enforces_dest_cap_and_preserves_normal_named_dests() {
+    use ariad_core::reader::pdf::ReadError;
+    use lopdf::{Object, dictionary};
+
+    // 1. Shared `/Names` and `/Kids` DAG with an oversized destination array (500 elements).
+    let shared_dag_raw = hostile::build_pdf(2, |doc, pages, catalog| {
+        let mut oversized_p1 = vec![
+            Object::Reference(pages[0]),
+            Object::Name(b"FitR".to_vec()),
+            Object::Integer(0),
+            Object::Integer(0),
+            Object::Integer(100),
+            Object::Integer(200),
+        ];
+        oversized_p1.extend((0..494).map(Object::Integer));
+        let dest_p1_id = doc.add_object(Object::Array(oversized_p1));
+        let dest_p2_id = doc.add_object(Object::Array(vec![
+            Object::Reference(pages[1]),
+            Object::Name(b"Fit".to_vec()),
+        ]));
+
+        let shared_names_id = doc.add_object(Object::Array(vec![
+            Object::string_literal("keep-1"),
+            Object::Reference(dest_p1_id),
+            Object::string_literal("drop-2"),
+            Object::Reference(dest_p2_id),
+        ]));
+
+        let mut leaf_refs = Vec::with_capacity(100);
+        for _ in 0..100 {
+            let leaf_id = doc.add_object(dictionary! {
+                "Names" => Object::Reference(shared_names_id),
+            });
+            leaf_refs.push(Object::Reference(leaf_id));
+        }
+        let shared_kids_id = doc.add_object(Object::Array(leaf_refs));
+        let root_tree_id = doc.add_object(dictionary! {
+            "Names" => Object::Reference(shared_names_id),
+            "Kids" => Object::Reference(shared_kids_id),
+        });
+
+        let outlines_id = doc.new_object_id();
+        let bm_id = doc.add_object(dictionary! {
+            "Title" => Object::string_literal("Surviving"),
+            "Parent" => Object::Reference(outlines_id),
+            "Dest" => Object::string_literal("keep-1"),
+        });
+        doc.objects.insert(
+            outlines_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Outlines",
+                "First" => Object::Reference(bm_id),
+                "Last" => Object::Reference(bm_id),
+                "Count" => 1,
+            }),
+        );
+
+        catalog.set(
+            "Names",
+            dictionary! { "Dests" => Object::Reference(root_tree_id) },
+        );
+        catalog.set("Outlines", Object::Reference(outlines_id));
+    });
+
+    let handle = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let out = run_delete(&[InputDoc::new("shared-names-delete", shared_dag_raw)], "2")
+                .expect("delete on shared /Names DAG should succeed with bounded work");
+            Document::load_mem(&out.artifacts[0].bytes).expect("reload output pdf")
+        })
+        .expect("spawn small-stack thread");
+    let out_doc = handle
+        .join()
+        .expect("shared /Names DAG must not overflow stack");
+
+    assert!(
+        out_doc.objects.len() < 30,
+        "output object count should stay small, got {}",
+        out_doc.objects.len()
+    );
+    let out_catalog = out_doc.catalog().expect("output catalog");
+    let names_dict = out_doc
+        .dereference(out_catalog.get(b"Names").expect("Names kept"))
+        .expect("deref Names")
+        .1
+        .as_dict()
+        .expect("Names dict");
+    let dests_tree = out_doc
+        .dereference(names_dict.get(b"Dests").expect("Dests tree kept"))
+        .expect("deref Dests tree")
+        .1
+        .as_dict()
+        .expect("Dests tree dict");
+    let names_arr = dests_tree
+        .get(b"Names")
+        .expect("Names array")
+        .as_array()
+        .expect("Names array slice");
+    assert_eq!(names_arr.len(), 2);
+    assert_eq!(
+        names_arr[1].as_array().expect("remapped dest array").len(),
+        6
+    );
+
+    // 2. Cap error when named destinations exceed 100,000 entries.
+    let over_cap_raw = hostile::build_pdf(2, |doc, pages, catalog| {
+        let dest_id = doc.add_object(Object::Array(vec![
+            Object::Reference(pages[0]),
+            Object::Name(b"Fit".to_vec()),
+        ]));
+        let mut kids = Vec::with_capacity(101);
+        for leaf in 0..100 {
+            let mut pairs = Vec::with_capacity(2_000);
+            for idx in 0..1_000 {
+                pairs.push(Object::string_literal(format!("n-{leaf:03}-{idx:03}")));
+                pairs.push(Object::Reference(dest_id));
+            }
+            kids.push(Object::Reference(
+                doc.add_object(dictionary! { "Names" => pairs }),
+            ));
+        }
+        kids.push(Object::Reference(doc.add_object(dictionary! {
+            "Names" => vec![
+                Object::string_literal("n-overflow"),
+                Object::Reference(dest_id),
+            ],
+        })));
+        let tree_id = doc.add_object(dictionary! { "Kids" => kids });
+        catalog.set(
+            "Names",
+            dictionary! { "Dests" => Object::Reference(tree_id) },
+        );
+    });
+    let cap_err = run_delete(&[InputDoc::new("over-cap", over_cap_raw)], "2")
+        .expect_err("over-cap named destinations must fail");
+    assert_eq!(
+        cap_err,
+        PdfError::LimitExceeded(ReadError::TooManyObjects { limit: 100_000 })
+    );
+
+    // 3. Normal named-destination document works when deleting a middle page.
+    let normal_raw = hostile::build_pdf(3, |doc, pages, catalog| {
+        let outlines_id = doc.new_object_id();
+        let bm1 = doc.add_object(dictionary! {
+            "Title" => Object::string_literal("First"),
+            "Parent" => Object::Reference(outlines_id),
+            "Dest" => Object::Name(b"DestOne".to_vec()),
+        });
+        let bm2 = doc.add_object(dictionary! {
+            "Title" => Object::string_literal("Second"),
+            "Parent" => Object::Reference(outlines_id),
+            "Prev" => Object::Reference(bm1),
+            "Dest" => Object::string_literal("DestTwo"),
+        });
+        let bm3 = doc.add_object(dictionary! {
+            "Title" => Object::string_literal("Third"),
+            "Parent" => Object::Reference(outlines_id),
+            "Prev" => Object::Reference(bm2),
+            "Dest" => Object::string_literal("DestThree"),
+        });
+        if let Ok(Object::Dictionary(d1)) = doc.get_object_mut(bm1) {
+            d1.set("Next", Object::Reference(bm2));
+        }
+        if let Ok(Object::Dictionary(d2)) = doc.get_object_mut(bm2) {
+            d2.set("Next", Object::Reference(bm3));
+        }
+        doc.objects.insert(
+            outlines_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Outlines",
+                "First" => Object::Reference(bm1),
+                "Last" => Object::Reference(bm3),
+                "Count" => 3,
+            }),
+        );
+        catalog.set(
+            "Dests",
+            dictionary! {
+                "DestOne" => vec![Object::Reference(pages[0]), Object::Name(b"Fit".to_vec())],
+            },
+        );
+        catalog.set(
+            "Names",
+            dictionary! {
+                "Dests" => dictionary! {
+                    "Names" => vec![
+                        Object::string_literal("DestTwo"),
+                        Object::Array(vec![Object::Reference(pages[1]), Object::Name(b"Fit".to_vec())]),
+                        Object::string_literal("DestThree"),
+                        Object::Array(vec![Object::Reference(pages[2]), Object::Name(b"Fit".to_vec())]),
+                    ],
+                },
+            },
+        );
+        catalog.set("Outlines", Object::Reference(outlines_id));
+    });
+    let normal_out = run_delete(&[InputDoc::new("normal-dests", normal_raw)], "2")
+        .expect("delete normal named-destination document");
+    let normal_info = inspect_bytes(&normal_out.artifacts[0].bytes);
+    assert_eq!(normal_info.page_count, 2);
+    assert_eq!(normal_info.outline_count, 2);
+}

@@ -846,3 +846,125 @@ fn outline_export_of_a_complete_outline_has_no_truncation_warning() {
     );
     assert!(warnings.is_empty(), "warnings: {warnings:?}");
 }
+
+#[test]
+fn outline_export_bounds_shared_names_dag_and_enforces_named_destination_cap() {
+    use ariad_core::reader::pdf::ReadError;
+    use lopdf::{Object, dictionary};
+
+    // 1. 600 distinct kid dictionaries all sharing one 200-pair `/Names` array (so an unvisited
+    //    `/Names` walk would expand 120,000 entries and trip the 100,000 cap, whereas tracking
+    //    visited `/Names` by ObjectId visits the 200 pairs exactly once), plus a 1,000-element
+    //    destination array.
+    let mut doc = Document::load_mem(&fixture_bytes("rotated-pages.pdf")).expect("load base pdf");
+    let page3_id = *doc.get_pages().get(&3).expect("page 3 id");
+    let mut oversized_dest = vec![
+        Object::Reference(page3_id),
+        Object::Name(b"FitR".to_vec()),
+        Object::Integer(0),
+        Object::Integer(0),
+        Object::Integer(200),
+        Object::Integer(300),
+    ];
+    oversized_dest.extend((0..994).map(Object::Integer));
+    let dest_arr_id = doc.add_object(Object::Array(oversized_dest));
+
+    let mut shared_pairs = Vec::with_capacity(400);
+    for i in 0..200 {
+        shared_pairs.push(Object::string_literal(format!("shared-dest-{i:03}")));
+        shared_pairs.push(Object::Reference(dest_arr_id));
+    }
+    let shared_names_id = doc.add_object(Object::Array(shared_pairs));
+
+    let mut kids = Vec::with_capacity(600);
+    for _ in 0..600 {
+        kids.push(Object::Reference(doc.add_object(dictionary! {
+            "Names" => Object::Reference(shared_names_id),
+        })));
+    }
+    let tree_root = doc.add_object(dictionary! { "Kids" => kids });
+
+    let bm_item = doc.add_object(dictionary! {
+        "Title" => Object::string_literal("Shared Target"),
+        "Dest" => Object::string_literal("shared-dest-199"),
+    });
+    attach_flat_outline(&mut doc, &[bm_item]);
+    let catalog_id = doc
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .expect("catalog id");
+    if let Ok(Object::Dictionary(cat)) = doc.get_object_mut(catalog_id) {
+        cat.set(
+            "Names",
+            dictionary! { "Dests" => Object::Reference(tree_root) },
+        );
+    }
+    let mut shared_bytes = Vec::new();
+    doc.save_to(&mut shared_bytes)
+        .expect("save shared names pdf");
+
+    let (exported, warnings) = export_outline_value(shared_bytes);
+    assert!(warnings.is_empty());
+    assert_eq!(
+        exported,
+        json!([{ "title": "Shared Target", "page": 3, "children": [] }])
+    );
+
+    // 2. Exceeding 100,000 distinct named destinations fails with `TooManyObjects { limit: 100_000 }`.
+    let mut cap_doc =
+        Document::load_mem(&fixture_bytes("rotated-pages.pdf")).expect("load base pdf");
+    let cap_page1 = *cap_doc.get_pages().get(&1).expect("page 1 id");
+    let cap_dest_id = cap_doc.add_object(Object::Array(vec![
+        Object::Reference(cap_page1),
+        Object::Name(b"Fit".to_vec()),
+    ]));
+    let mut cap_kids = Vec::with_capacity(101);
+    for leaf in 0..100 {
+        let mut pairs = Vec::with_capacity(2_000);
+        for idx in 0..1_000 {
+            pairs.push(Object::string_literal(format!("d-{leaf:03}-{idx:03}")));
+            pairs.push(Object::Reference(cap_dest_id));
+        }
+        cap_kids.push(Object::Reference(
+            cap_doc.add_object(dictionary! { "Names" => pairs }),
+        ));
+    }
+    cap_kids.push(Object::Reference(cap_doc.add_object(dictionary! {
+        "Names" => vec![
+            Object::string_literal("d-overflow"),
+            Object::Reference(cap_dest_id),
+        ],
+    })));
+    let cap_tree_root = cap_doc.add_object(dictionary! { "Kids" => cap_kids });
+    let cap_bm = cap_doc.add_object(dictionary! {
+        "Title" => Object::string_literal("Overflow Target"),
+        "Dest" => Object::string_literal("d-000-000"),
+    });
+    attach_flat_outline(&mut cap_doc, &[cap_bm]);
+    let cap_catalog_id = cap_doc
+        .trailer
+        .get(b"Root")
+        .and_then(Object::as_reference)
+        .expect("catalog id");
+    if let Ok(Object::Dictionary(cat)) = cap_doc.get_object_mut(cap_catalog_id) {
+        cat.set(
+            "Names",
+            dictionary! { "Dests" => Object::Reference(cap_tree_root) },
+        );
+    }
+    let mut cap_bytes = Vec::new();
+    cap_doc.save_to(&mut cap_bytes).expect("save over-cap pdf");
+
+    let err = run_tool(
+        "pdf.outline",
+        &[InputDoc::new("over-cap.pdf", cap_bytes)],
+        &json!({ "action": "export" }),
+        &ToolCtx::default(),
+    )
+    .expect_err("outline export must reject named destinations past 100,000 cap");
+    assert_eq!(
+        err,
+        PdfError::LimitExceeded(ReadError::TooManyObjects { limit: 100_000 })
+    );
+}
