@@ -225,3 +225,223 @@ fn unknown_engine_fails_closed_and_uninstalled_engine_reports_not_installed() {
         );
     }
 }
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
+}
+
+#[test]
+fn receipt_edited_to_match_tampered_file_is_refused() {
+    let key = Key::generate();
+    let data = support::temp();
+    let root = install_pack("qpdf", "1.0.0", &key, data.path());
+    let ctx = context(data.path(), key.trusted());
+
+    resolve_pack_in(&ctx, "qpdf").expect("initial resolve succeeds");
+
+    // Tamper with the installed binary AND update receipt.toml so its unsigned [[files]] entry
+    // records the tampered file's SHA-256 and size while keeping the signed manifest intact.
+    let binary = root.join("bin/engine");
+    let original_bytes = fs::read(&binary).expect("read original binary");
+    let original_sha256 = sha256_hex(&original_bytes);
+    let tampered_bytes = b"#!/bin/sh\necho compromised\nexit 1\n";
+    let tampered_sha256 = sha256_hex(tampered_bytes);
+    fs::write(&binary, tampered_bytes).expect("write tampered binary");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let receipt_path = root.join("receipt.toml");
+    let original_receipt = fs::read_to_string(&receipt_path).expect("read receipt.toml");
+    let forged_receipt = original_receipt
+        .replace(&original_sha256, &tampered_sha256)
+        .replace(
+            &format!("size = {}", original_bytes.len()),
+            &format!("size = {}", tampered_bytes.len()),
+        );
+    assert_ne!(original_receipt, forged_receipt);
+    fs::write(&receipt_path, &forged_receipt).expect("write forged receipt.toml");
+
+    let err = resolve_pack_in(&ctx, "qpdf")
+        .expect_err("forged receipt matching tampered file must be refused");
+    assert_eq!(err.code(), "tool_missing");
+    assert_eq!(err.error_code(), ErrorCode::ToolMissing);
+    assert_eq!(err.exit_code(), 5);
+    assert_eq!(
+        err.hint(),
+        Some("run 'ashift engines install qpdf' to reinstall")
+    );
+    let pack_err = packs::resolve_in(&ctx, "qpdf").expect_err("packs::resolve_in must fail");
+    assert!(matches!(pack_err, PackError::VerificationFailed { .. }));
+
+    // Also test a pack with a direct Unpack::File component where the file hash lives directly
+    // in the minisign-signed manifest.
+    let file_pack_src = support::temp();
+    let program = format!("engine{}", std::env::consts::EXE_SUFFIX);
+    let mut builder = PackBuilder::new("sign", "1.0.0")
+        .component(&program, &program, b"#!/bin/sh\nexit 0\n".to_vec(), "bin")
+        .component("LICENSE.txt", "LICENSE.txt", b"MIT\n".to_vec(), ".");
+    builder.entrypoint = vec![format!("bin/{program}")];
+    builder.write(file_pack_src.path(), &key);
+    let sign_report = packs::install(
+        &ctx,
+        &InstallRequest {
+            name: "sign".to_owned(),
+            version: None,
+            source: InstallSource::Directory(file_pack_src.path().to_path_buf()),
+        },
+        &CancellationToken::new(),
+        &mut |_| {},
+    )
+    .expect("install sign pack");
+    resolve_pack_in(&ctx, "sign").expect("initial sign resolve succeeds");
+
+    let sign_bin = sign_report.root.join("bin").join(&program);
+    let sign_orig = fs::read(&sign_bin).unwrap();
+    let sign_tampered = b"#!/bin/sh\nexit 9\n";
+    fs::write(&sign_bin, sign_tampered).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&sign_bin, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let sign_receipt_path = sign_report.root.join("receipt.toml");
+    let sign_receipt = fs::read_to_string(&sign_receipt_path).unwrap();
+    let forged_sign_receipt =
+        sign_receipt.replace(&sha256_hex(&sign_orig), &sha256_hex(sign_tampered));
+    assert_ne!(sign_receipt, forged_sign_receipt);
+    fs::write(&sign_receipt_path, forged_sign_receipt).unwrap();
+
+    let sign_err = resolve_pack_in(&ctx, "sign")
+        .expect_err("forged receipt for Unpack::File component must be refused");
+    assert_eq!(sign_err.code(), "tool_missing");
+    assert_eq!(sign_err.exit_code(), 5);
+}
+
+#[test]
+fn extra_unlisted_executable_in_pack_directory_is_refused() {
+    let key = Key::generate();
+    let data = support::temp();
+    let root = install_pack("qpdf", "1.0.0", &key, data.path());
+    let ctx = context(data.path(), key.trusted());
+
+    resolve_pack_in(&ctx, "qpdf").expect("initial resolve succeeds");
+
+    // 1. Drop an extra executable file into the pack directory that is not listed in the
+    // signed manifest.
+    let rogue_name = format!("helper{}", std::env::consts::EXE_SUFFIX);
+    let rogue = root.join("bin").join(&rogue_name);
+    let rogue_bytes = b"#!/bin/sh\nexit 0\n";
+    fs::write(&rogue, rogue_bytes).expect("write unlisted executable");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&rogue, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let err = resolve_pack_in(&ctx, "qpdf")
+        .expect_err("extra unlisted executable in pack directory must be refused");
+    assert_eq!(err.code(), "tool_missing");
+    assert_eq!(err.error_code(), ErrorCode::ToolMissing);
+    assert_eq!(err.exit_code(), 5);
+    assert!(
+        err.to_string().contains("unlisted executable"),
+        "expected unlisted executable reason, got: {err}"
+    );
+
+    // 2. Even if the extra executable is appended to receipt.toml, it is still not declared as an
+    // executable in the signed manifest and must be refused.
+    let receipt_path = root.join("receipt.toml");
+    let original_receipt = fs::read_to_string(&receipt_path).expect("read receipt");
+    let appended_receipt = format!(
+        "{original_receipt}\n[[files]]\npath = \"bin/{rogue_name}\"\nsha256 = \"{}\"\nsize = {}\n",
+        sha256_hex(rogue_bytes),
+        rogue_bytes.len()
+    );
+    fs::write(&receipt_path, appended_receipt).expect("write receipt with extra executable");
+    let err = resolve_pack_in(&ctx, "qpdf")
+        .expect_err("unlisted executable added to receipt.toml must still be refused");
+    assert_eq!(err.code(), "tool_missing");
+    assert!(
+        err.to_string().contains("unlisted executable"),
+        "expected unlisted executable reason, got: {err}"
+    );
+
+    // Restore receipt.toml and remove the extra binary; resolve succeeds again.
+    fs::write(&receipt_path, &original_receipt).unwrap();
+    fs::remove_file(&rogue).unwrap();
+    resolve_pack_in(&ctx, "qpdf").expect("clean pack resolves again");
+
+    // 3. Marking an existing non-executable file in the pack as executable must also be refused.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let notice = root.join("LICENSE.txt");
+        fs::set_permissions(&notice, fs::Permissions::from_mode(0o755)).unwrap();
+        let err = resolve_pack_in(&ctx, "qpdf")
+            .expect_err("non-executable file marked +x must be refused");
+        assert_eq!(err.code(), "tool_missing");
+        assert!(
+            err.to_string().contains("unlisted executable"),
+            "expected unlisted executable reason, got: {err}"
+        );
+    }
+}
+
+#[test]
+fn replacing_file_and_restoring_mtime_invalidates_verification_cache() {
+    let key = Key::generate();
+    let data = support::temp();
+    let root = install_pack("qpdf", "1.0.0", &key, data.path());
+    let ctx = context(data.path(), key.trusted());
+
+    // Prime the verification cache.
+    resolve_pack_in(&ctx, "qpdf").expect("initial resolve succeeds");
+    let hashes_before = resolve_hash_computations_for(&root);
+    assert_eq!(hashes_before, 3);
+
+    let binary = root.join("bin/engine");
+    let original_metadata = fs::metadata(&binary).expect("stat binary");
+    let original_mtime = original_metadata.modified().expect("read original mtime");
+    let original_bytes = fs::read(&binary).expect("read original binary");
+    let mut tampered = original_bytes.clone();
+    let last = tampered.len() - 1;
+    tampered[last] ^= 0x01;
+
+    // Advance the clock slightly so the kernel updates ctime to a distinct timestamp when the file
+    // is rewritten in-place and its mtime is restored.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+
+    // Rewrite in-place (preserving inode and size) and restore the exact original mtime so only
+    // ctime changes.
+    {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&binary)
+            .expect("open binary in-place");
+        file.write_all(&tampered).expect("write tampered bytes");
+        file.sync_all().expect("sync binary");
+        file.set_modified(original_mtime)
+            .expect("restore original mtime");
+    }
+    assert_eq!(
+        fs::metadata(&binary).unwrap().modified().unwrap(),
+        original_mtime,
+        "mtime must be restored to the pre-tamper value"
+    );
+
+    let err = resolve_pack_in(&ctx, "qpdf")
+        .expect_err("tampered file with restored mtime must fail verification");
+    assert_eq!(err.code(), "tool_missing");
+    assert_eq!(err.error_code(), ErrorCode::ToolMissing);
+    assert_eq!(err.exit_code(), 5);
+    assert!(
+        resolve_hash_computations_for(&root) > hashes_before,
+        "changed ctime must invalidate the verification cache even when inode, mtime and size match"
+    );
+}
