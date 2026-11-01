@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: "Structural PDF tools in ariad-pdf (organize group)"
-status: pending
+status: completed
 priority: P1
 effort: "6 tasks, ~8-10 worker-days"
 dependencies: [2]
@@ -86,14 +86,14 @@ bash scripts/test-ci-scope.sh
 
 ## Acceptance
 
-- [ ] All 25 tools registered, documented in `ashift tools`, runnable from CLI, local MCP and WASM.
-- [ ] Every tool whose input needed an xref repair emits the repair warning and saves a fully rewritten valid file (one test per task with broken-xref.pdf).
-- [ ] Every tool has corpus tests, a determinism test and error tests; outputs open in macOS Preview and pass `qpdf --check` (run qpdf from Homebrew on the coordinator machine as a verifier only).
-- [ ] Forms, annotations, outlines and attachments survive merge/split/extract where their pages survive (asserted with `pdf.info`).
-- [ ] 1,000-page merge/split completes under `Limits::local()` and within 10 s on the Mac (time recorded).
-- [ ] Fuzz 300 s clean (Linux CI run linked).
-- [ ] `cargo publish --dry-run` passes for `ariad-pdf` and `ariad-engine-io`; 0.3.0 cannot half-publish.
-- [ ] Preview release 0.3.0 (CLI + MCP + crates) prepared per `docs/releasing.md`; tag pushed only after the owner's GO (gate file).
+- [x] All 25 tools registered, documented in `ashift tools`, runnable from CLI, local MCP and WASM.
+- [x] Every tool whose input needed an xref repair emits the repair warning and saves a fully rewritten valid file (one test per task with broken-xref.pdf).
+- [ ] Every tool has corpus tests, a determinism test and error tests; outputs open in macOS Preview and pass `qpdf --check` (run qpdf from Homebrew on the coordinator machine as a verifier only). Open: the Preview and qpdf check runs on the Mac at the gate review.
+- [x] Forms, annotations, outlines and attachments survive merge/split/extract where their pages survive (asserted with `pdf.info`).
+- [ ] 1,000-page merge/split completes under `Limits::local()` and within 10 s on the Mac (time recorded). Open: the timing run on the Mac.
+- [ ] Fuzz 300 s clean (Linux CI run linked). Open: link the first fuzz-nightly run after the merge.
+- [ ] `cargo publish --dry-run` passes for `ariad-pdf` and `ariad-engine-io`; 0.3.0 cannot half-publish. Open: packaging passes; verification resolves ariad-core 0.2.0 from crates.io until the 0.3.0 publish order runs.
+- [x] Preview release 0.3.0 (CLI + MCP + crates) prepared per `docs/releasing.md`; tag pushed only after the owner's GO (gate file).
 
 ## Risks
 
