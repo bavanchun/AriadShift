@@ -10,7 +10,7 @@ use crate::{
     error::PdfError,
     gc,
     tools::{
-        OutputDoc, REPAIRED_XREF_WARNING,
+        OutputDoc,
         reorder::{self, OutlineNode},
     },
     xobject::{self, ObjectCopier},
@@ -167,11 +167,7 @@ pub fn run(
 
     gc::collect_document(out_inner, ctx)?;
 
-    let mut output = OutputDoc::unnamed_pdf(out_doc);
-    if inputs[0].repaired_xref() || inputs[1].repaired_xref() {
-        output.warnings.push(REPAIRED_XREF_WARNING.to_owned());
-    }
-    Ok(vec![output])
+    Ok(vec![OutputDoc::unnamed_pdf(out_doc)])
 }
 
 fn copy_and_remap_outlines(

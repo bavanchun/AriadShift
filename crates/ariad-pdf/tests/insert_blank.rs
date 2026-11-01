@@ -78,6 +78,21 @@ fn inspect_bytes(pdf_bytes: &[u8]) -> PdfInfo {
 fn assert_snapshot_json(snapshot_name: &str, expression: &str, value: &impl serde::Serialize) {
     let pretty = serde_json::to_string_pretty(value).expect("serialize snapshot JSON");
     let expected_file = snapshots_dir().join(format!("{snapshot_name}.snap"));
+    let full = format!(
+        "---\nsource: crates/ariad-pdf/tests/insert_blank.rs\nexpression: {expression}\n---\n{pretty}\n"
+    );
+    let update = std::env::var("UPDATE_SNAPSHOTS").ok().is_some_and(|v| {
+        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("always")
+    }) || std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always");
+    if update {
+        std::fs::create_dir_all(snapshots_dir()).expect("create snapshots dir");
+        std::fs::write(&expected_file, &full).expect("write snapshot file");
+    }
+    assert!(
+        expected_file.exists(),
+        "snapshot file {} is missing; set UPDATE_SNAPSHOTS=1 to update snapshots",
+        expected_file.display()
+    );
     let raw = std::fs::read_to_string(&expected_file).unwrap_or_else(|e| {
         panic!(
             "failed to read snapshot {}: {e}\nActual JSON:\n{pretty}",
@@ -224,9 +239,10 @@ fn insert_blank_is_byte_deterministic() {
 fn insert_blank_propagates_repaired_xref_warning_and_writes_clean_pdf() {
     let limits = Limits::local();
     let ctx = ToolCtx::default();
-    let broken = open(&read_fixture("broken-xref.pdf"), &limits).expect("open broken-xref");
+    let broken_bytes = read_fixture("broken-xref.pdf");
+    let broken = open(&broken_bytes, &limits).expect("open broken-xref");
 
-    let mut outputs = insert_blank::run(
+    let direct_outputs = insert_blank::run(
         &[broken],
         &InsertBlankParams {
             after: "1".parse::<PageRange>().expect("parse range"),
@@ -235,13 +251,100 @@ fn insert_blank_propagates_repaired_xref_warning_and_writes_clean_pdf() {
         },
         &ctx,
     )
-    .expect("insert_blank on broken-xref");
-    assert_eq!(outputs[0].warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
-    let rewritten = save_output(outputs.remove(0));
+    .expect("insert_blank on broken-xref directly");
+    assert!(
+        direct_outputs[0].warnings.is_empty(),
+        "direct tool run must leave REPAIRED_XREF_WARNING to finalize_tool_output"
+    );
 
-    let reopened = open(&rewritten, &limits).expect("reopen rewritten PDF");
+    let tool_out = ariad_pdf::run_tool(
+        "pdf.insert_blank",
+        &[InputDoc::new("broken-xref.pdf", broken_bytes)],
+        &json!({ "after": "1", "count": 1, "size": "same" }),
+        &ctx,
+    )
+    .expect("run_tool pdf.insert_blank on broken-xref");
+    assert_eq!(tool_out.warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
+    let rewritten = &tool_out.artifacts[0].bytes;
+
+    let reopened = open(rewritten, &limits).expect("reopen rewritten PDF");
     assert!(!reopened.repaired_xref());
-    let _ = pdf_reader::read(&rewritten, &limits).expect("strict read succeeds");
+    let _ = pdf_reader::read(rewritten, &limits).expect("strict read succeeds");
+}
+
+#[test]
+fn insert_blank_shifts_page_labels_from_kids_number_tree() {
+    use lopdf::{Object, Stream, dictionary};
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let c1 = doc.add_object(Stream::new(dictionary! {}, b"BT (P1) Tj ET".to_vec()));
+    let c2 = doc.add_object(Stream::new(dictionary! {}, b"BT (P2) Tj ET".to_vec()));
+    let p1 = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => c1,
+    });
+    let p2 = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => c2,
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(p1), Object::Reference(p2)],
+            "Count" => 2,
+        }),
+    );
+
+    let pl_kid = doc.add_object(dictionary! {
+        "Nums" => vec![
+            0.into(),
+            Object::Dictionary(dictionary! { "S" => "r", "St" => 1 }),
+            1.into(),
+            Object::Dictionary(dictionary! { "S" => "D", "St" => 1 }),
+        ],
+    });
+    let pl_root = doc.add_object(dictionary! {
+        "Kids" => vec![Object::Reference(pl_kid)],
+    });
+    let cat_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+        "PageLabels" => pl_root,
+    });
+    doc.trailer.set("Root", cat_id);
+
+    let mut raw = Vec::new();
+    doc.save_to(&mut raw).expect("save kids page_labels pdf");
+
+    // Insert 2 blank pages after page 1 -> original page 2 (0-based index 1) shifts to 0-based index 3.
+    let out = ariad_pdf::run_tool(
+        "pdf.insert_blank",
+        &[InputDoc::new("kids-pl.pdf", raw)],
+        &json!({ "after": "1", "count": 2, "size": "same" }),
+        &ToolCtx::default(),
+    )
+    .expect("insert_blank with Kids PageLabels");
+    let reopened = open(&out.artifacts[0].bytes, &Limits::local()).expect("reopen");
+    let cat = reopened.inner().catalog().expect("catalog");
+    let pl_dict = match cat.get(b"PageLabels").expect("PageLabels present") {
+        Object::Reference(id) => reopened.inner().get_dictionary(*id).expect("pl dict"),
+        Object::Dictionary(d) => d,
+        other => panic!("unexpected PageLabels: {other:?}"),
+    };
+    let nums = pl_dict
+        .get(b"Nums")
+        .expect("Nums present")
+        .as_array()
+        .expect("Nums array");
+    assert_eq!(nums.len(), 4);
+    assert_eq!(nums[0].as_i64().unwrap(), 0);
+    assert_eq!(nums[2].as_i64().unwrap(), 3);
 }
 
 #[test]

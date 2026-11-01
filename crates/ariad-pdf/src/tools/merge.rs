@@ -2,7 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use ariad_core::tools::params::merge::{MergeOutlineMode, MergePageLabelsMode, MergeParams};
+use ariad_core::{
+    reader::pdf::ReadError,
+    tools::params::merge::{MergeOutlineMode, MergePageLabelsMode, MergeParams},
+};
 use lopdf::{Dictionary, Document, Object, ObjectId, StringFormat};
 
 use crate::{
@@ -11,12 +14,12 @@ use crate::{
     naming,
     tools::{
         OutputDoc,
-        extract_pages::{
-            PageLabelRule, RenderedOutlineNode, SelectiveCopier, build_page_labels_object,
-            collect_pages_tree_ids, default_xyz_tail, doc_page_count, filter_outlines_for_pages,
-            inherited_page_attr, parse_outline_tree, parse_page_labels, resolve_dict,
-            resolve_inherited_page_rotation, resolve_merged_resources, resolve_object,
-            resolve_source_info_dict, write_outline_tree,
+        page_set::{
+            MAX_OUTPUT_PAGES, PageLabelRule, RenderedOutlineNode, SelectiveCopier,
+            build_page_labels_object, collect_pages_tree_ids, default_xyz_tail, doc_page_count,
+            filter_outlines_for_pages, inherited_page_attr, parse_outline_tree, parse_page_labels,
+            resolve_dict, resolve_inherited_page_rotation, resolve_merged_resources,
+            resolve_object, resolve_source_info_dict, write_outline_tree,
         },
     },
 };
@@ -35,8 +38,14 @@ pub fn run(
         )));
     }
 
-    let mut total_pages = 0_u32;
+    let mut total_pages_u64 = 0_u64;
     for (idx, doc) in inputs.iter().enumerate() {
+        ctx.check()?;
+        if doc.is_encrypted() {
+            return Err(PdfError::Encrypted {
+                needs_password: false,
+            });
+        }
         let count = doc_page_count(doc);
         if count == 0 {
             return Err(PdfError::InvalidParams(format!(
@@ -44,8 +53,15 @@ pub fn run(
                 idx + 1
             )));
         }
-        total_pages = total_pages.saturating_add(count);
+        total_pages_u64 = total_pages_u64.saturating_add(u64::from(count));
     }
+    if total_pages_u64 > MAX_OUTPUT_PAGES {
+        return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+            actual: total_pages_u64,
+            limit: MAX_OUTPUT_PAGES as u32,
+        }));
+    }
+    let total_pages = total_pages_u64 as u32;
 
     let version = inputs
         .iter()
@@ -63,9 +79,12 @@ pub fn run(
 
     let mut merged_outlines: Vec<RenderedOutlineNode> = Vec::new();
     let mut merged_label_rules: BTreeMap<u32, PageLabelRule> = BTreeMap::new();
-    let any_input_has_labels = inputs
-        .iter()
-        .any(|d| !parse_page_labels(d.inner()).is_empty());
+    let mut parsed_input_labels: Vec<BTreeMap<u32, PageLabelRule>> =
+        Vec::with_capacity(inputs.len());
+    for doc in inputs {
+        parsed_input_labels.push(parse_page_labels(doc.inner(), ctx)?);
+    }
+    let any_input_has_labels = parsed_input_labels.iter().any(|m| !m.is_empty());
 
     let mut merged_acro_fields: Vec<Object> = Vec::new();
     let mut merged_acro_dr = Dictionary::new();
@@ -134,7 +153,7 @@ pub fn run(
                 ) {
                     continue;
                 }
-                let copied_val = copier.copy_object(value)?;
+                let copied_val = copier.copy_object(value, ctx)?;
                 new_page_dict.set(key.clone(), copied_val);
             }
 
@@ -149,12 +168,13 @@ pub fn run(
                 &b"ArtBox"[..],
             ] {
                 if let Some(box_obj) = inherited_page_attr(src_doc, src_page_dict, box_key) {
-                    let copied_box = copier.copy_object(box_obj)?;
+                    let copied_box = copier.copy_object(box_obj, ctx)?;
                     new_page_dict.set(box_key.to_vec(), copied_box);
                 }
             }
 
-            let merged_resources = resolve_merged_resources(src_doc, src_page_dict, &mut copier)?;
+            let merged_resources =
+                resolve_merged_resources(src_doc, src_page_dict, &mut copier, ctx)?;
             new_page_dict.set(b"Resources".to_vec(), Object::Dictionary(merged_resources));
 
             let (rot_deg, is_inherited) = resolve_inherited_page_rotation(src_doc, src_page_dict);
@@ -166,8 +186,9 @@ pub fn run(
             {
                 let mut page_annots = Vec::new();
                 for annot_entry in annots {
+                    ctx.check()?;
                     if let Ok(src_annot_id) = annot_entry.as_reference() {
-                        let new_annot_id = copier.copy_id(src_annot_id)?;
+                        let new_annot_id = copier.copy_id(src_annot_id, ctx)?;
                         if let Some(Object::Dictionary(target_annot_dict)) =
                             copier.target.objects.get_mut(&new_annot_id)
                             && (target_annot_dict.has(b"P")
@@ -185,7 +206,7 @@ pub fn run(
                             .push(new_annot_id);
                         page_annots.push(Object::Reference(new_annot_id));
                     } else if let Some(annot_dict) = resolve_dict(src_doc, annot_entry) {
-                        let mut copied_dict = copier.copy_dictionary(annot_dict)?;
+                        let mut copied_dict = copier.copy_dictionary(annot_dict, ctx)?;
                         if copied_dict.has(b"P") {
                             copied_dict.set(b"P".to_vec(), Object::Reference(new_page_id));
                         }
@@ -218,6 +239,7 @@ pub fn run(
                 &mut merged_acro_da,
                 &mut merged_acro_q,
                 &mut copier,
+                ctx,
             )?;
 
             collect_input_attachments(
@@ -227,6 +249,7 @@ pub fn run(
                 &mut merged_embedded_files,
                 &mut merged_af,
                 &mut copier,
+                ctx,
             )?;
         }
 
@@ -234,13 +257,13 @@ pub fn run(
         match params.outline {
             MergeOutlineMode::None => {}
             MergeOutlineMode::Keep => {
-                let src_outlines = parse_outline_tree(src_doc, &id_to_page_num);
+                let src_outlines = parse_outline_tree(src_doc, &id_to_page_num, ctx)?;
                 let rendered = filter_outlines_for_pages(&src_outlines, &kept_page_num_to_id);
                 merged_outlines.extend(rendered);
             }
             MergeOutlineMode::PerFile => {
                 let first_page_id = doc_new_page_ids[0];
-                let src_outlines = parse_outline_tree(src_doc, &id_to_page_num);
+                let src_outlines = parse_outline_tree(src_doc, &id_to_page_num, ctx)?;
                 let children = filter_outlines_for_pages(&src_outlines, &kept_page_num_to_id);
                 let title_str = match naming::doc_stem(source) {
                     Some(s) if !s.is_empty() && s != "document" => s,
@@ -257,7 +280,7 @@ pub fn run(
 
         // Collect page labels according to `params.page_labels`.
         if params.page_labels == MergePageLabelsMode::Keep && any_input_has_labels {
-            let src_labels = parse_page_labels(src_doc);
+            let src_labels = &parsed_input_labels[doc_idx];
             if !src_labels.contains_key(&0) {
                 merged_label_rules.insert(
                     page_offset_0_based,
@@ -268,8 +291,9 @@ pub fn run(
                     },
                 );
             }
-            for (rel_idx, rule) in src_labels {
-                merged_label_rules.insert(page_offset_0_based.saturating_add(rel_idx), rule);
+            for (&rel_idx, rule) in src_labels {
+                merged_label_rules
+                    .insert(page_offset_0_based.saturating_add(rel_idx), rule.clone());
             }
         }
 
@@ -344,7 +368,7 @@ pub fn run(
             &b"OutputIntents"[..],
         ] {
             if let Ok(val) = first_cat.get(key) {
-                let copied = first_copier.copy_object(val)?;
+                let copied = first_copier.copy_object(val, ctx)?;
                 if !matches!(copied, Object::Null) {
                     catalog_dict.set(key.to_vec(), copied);
                 }
@@ -451,7 +475,9 @@ fn collect_input_acroform(
     merged_da: &mut Option<Object>,
     merged_q: &mut Option<Object>,
     copier: &mut SelectiveCopier<'_>,
+    ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
+    ctx.check()?;
     let Ok(acro_obj) = src_catalog.get(b"AcroForm") else {
         return Ok(());
     };
@@ -470,18 +496,18 @@ fn collect_input_acroform(
     if merged_da.is_none()
         && let Ok(da) = acro_dict.get(b"DA")
     {
-        *merged_da = Some(copier.copy_object(da)?);
+        *merged_da = Some(copier.copy_object(da, ctx)?);
     }
     if merged_q.is_none()
         && let Ok(q) = acro_dict.get(b"Q")
     {
-        *merged_q = Some(copier.copy_object(q)?);
+        *merged_q = Some(copier.copy_object(q, ctx)?);
     }
 
     if let Ok(dr_obj) = acro_dict.get(b"DR")
         && let Some(dr_dict) = resolve_dict(src_doc, dr_obj)
     {
-        let copied_dr = copier.copy_dictionary(dr_dict)?;
+        let copied_dr = copier.copy_dictionary(dr_dict, ctx)?;
         for (k, v) in copied_dr.iter() {
             if let (Ok(Object::Dictionary(existing_sub)), Object::Dictionary(new_sub)) =
                 (merged_dr.get_mut(k.as_slice()), v)
@@ -504,10 +530,15 @@ fn collect_input_acroform(
         return Ok(());
     };
 
+    let mut visited_fields = BTreeSet::new();
     for field_entry in fields {
+        ctx.check()?;
         let Ok(src_field_id) = field_entry.as_reference() else {
             continue;
         };
+        if !visited_fields.insert(src_field_id) {
+            continue;
+        }
         let target_field_id = if let Some(mapped_ids) = kept_annot_ids.get(&src_field_id) {
             mapped_ids.first().copied()
         } else if let Some(field_dict) = resolve_dict(src_doc, field_entry)
@@ -515,8 +546,11 @@ fn collect_input_acroform(
             && let Some(Object::Array(kids)) = resolve_object(src_doc, kids_obj)
         {
             let mut surviving_kids = Vec::new();
+            let mut seen_kids = BTreeSet::new();
             for kid in kids {
+                ctx.check()?;
                 if let Ok(src_kid_id) = kid.as_reference()
+                    && seen_kids.insert(src_kid_id)
                     && let Some(mapped_kid_ids) = kept_annot_ids.get(&src_kid_id)
                     && let Some(&first_kid_id) = mapped_kid_ids.first()
                 {
@@ -524,7 +558,7 @@ fn collect_input_acroform(
                 }
             }
             if !surviving_kids.is_empty() {
-                let new_parent_id = copier.copy_id(src_field_id)?;
+                let new_parent_id = copier.copy_id(src_field_id, ctx)?;
                 if let Some(Object::Dictionary(parent_dict)) =
                     copier.target.objects.get_mut(&new_parent_id)
                 {
@@ -580,19 +614,26 @@ fn collect_input_attachments(
     merged_embedded_files: &mut Vec<(Vec<u8>, Object)>,
     merged_af: &mut Vec<Object>,
     copier: &mut SelectiveCopier<'_>,
+    ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     if let Ok(names_obj) = src_catalog.get(b"Names")
         && let Some(names_dict) = resolve_dict(src_doc, names_obj)
         && let Ok(ef_obj) = names_dict.get(b"EmbeddedFiles")
         && let Some(ef_dict) = resolve_dict(src_doc, ef_obj)
     {
+        let mut visited = BTreeSet::new();
+        if let Ok(root_id) = ef_obj.as_reference() {
+            visited.insert(root_id);
+        }
         collect_name_tree_entries(
             src_doc,
             ef_dict,
+            &mut visited,
             seen_attachment_names,
             merged_embedded_files,
             copier,
             0,
+            ctx,
         )?;
     }
 
@@ -600,7 +641,8 @@ fn collect_input_attachments(
         && let Some(Object::Array(af_items)) = resolve_object(src_doc, af_obj)
     {
         for item in af_items {
-            let copied = copier.copy_object(item)?;
+            ctx.check()?;
+            let copied = copier.copy_object(item, ctx)?;
             if !matches!(copied, Object::Null) && !merged_af.contains(&copied) {
                 merged_af.push(copied);
             }
@@ -609,14 +651,18 @@ fn collect_input_attachments(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_name_tree_entries(
     src_doc: &Document,
     node_dict: &Dictionary,
+    visited: &mut BTreeSet<ObjectId>,
     seen_names: &mut BTreeSet<Vec<u8>>,
     out: &mut Vec<(Vec<u8>, Object)>,
     copier: &mut SelectiveCopier<'_>,
     depth: usize,
+    ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
+    ctx.check()?;
     if depth >= 32 {
         return Ok(());
     }
@@ -624,6 +670,7 @@ fn collect_name_tree_entries(
         && let Some(Object::Array(pairs)) = resolve_object(src_doc, names_obj)
     {
         for pair in pairs.as_chunks::<2>().0 {
+            ctx.check()?;
             let Some(name_bytes) = resolve_object(src_doc, &pair[0])
                 .and_then(|o| o.as_str().ok())
                 .map(<[u8]>::to_vec)
@@ -631,7 +678,7 @@ fn collect_name_tree_entries(
                 continue;
             };
             let unique_name = disambiguate_attachment_name(&name_bytes, seen_names);
-            let copied_filespec = copier.copy_object(&pair[1])?;
+            let copied_filespec = copier.copy_object(&pair[1], ctx)?;
             out.push((unique_name, copied_filespec));
         }
     }
@@ -639,8 +686,23 @@ fn collect_name_tree_entries(
         && let Some(Object::Array(kids)) = resolve_object(src_doc, kids_obj)
     {
         for kid in kids {
+            ctx.check()?;
+            if let Ok(kid_id) = kid.as_reference()
+                && !visited.insert(kid_id)
+            {
+                continue;
+            }
             if let Some(kid_dict) = resolve_dict(src_doc, kid) {
-                collect_name_tree_entries(src_doc, kid_dict, seen_names, out, copier, depth + 1)?;
+                collect_name_tree_entries(
+                    src_doc,
+                    kid_dict,
+                    visited,
+                    seen_names,
+                    out,
+                    copier,
+                    depth + 1,
+                    ctx,
+                )?;
             }
         }
     }

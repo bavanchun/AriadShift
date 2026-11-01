@@ -24,6 +24,7 @@ pub mod nup;
 pub mod outline;
 pub mod overlay;
 pub mod page_labels;
+pub(crate) mod page_set;
 pub mod portfolio;
 pub mod posterize;
 pub mod reorder;

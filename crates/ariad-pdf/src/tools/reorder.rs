@@ -1,6 +1,6 @@
 //! Implementation of the `pdf.reorder` tool and shared page-sequence manipulation helpers.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use ariad_core::{
     reader::pdf::ReadError,
@@ -11,19 +11,22 @@ use ariad_core::{
 };
 use lopdf::{Dictionary, Document, Object, ObjectId, dictionary};
 
+pub(crate) use super::page_set::MAX_OUTPUT_PAGES;
 use crate::{
     document::{PdfDoc, ToolCtx},
     error::PdfError,
-    gc,
-    tools::{OutputDoc, REPAIRED_XREF_WARNING},
+    tools::{
+        OutputDoc,
+        page_set::{
+            self, build_extracted_doc, collect_named_destinations, default_xyz_tail,
+            doc_page_count, expand_page_range_bounded,
+        },
+    },
     xobject,
 };
 
-/// Upper bound on total output pages produced by a single structural tool invocation.
-pub(crate) const MAX_OUTPUT_PAGES: u64 = 10_000;
-
 /// Maximum recursion depth when walking `/Outlines` or `/AcroForm` hierarchies.
-const MAX_TREE_DEPTH: usize = 32;
+const MAX_TREE_DEPTH: usize = 64;
 
 /// Reorders pages in a PDF document using a preset or explicit page range sequence.
 pub fn run(
@@ -39,10 +42,16 @@ pub fn run(
         )));
     }
 
-    let mut out_doc = inputs[0].clone();
-    let inner = out_doc.inner_mut()?;
-    let orig_pages = collect_page_ids(inner, ctx)?;
-    let page_count = u32::try_from(orig_pages.len()).map_err(|_| PdfError::Malformed)?;
+    let source = &inputs[0];
+    if source.is_encrypted() {
+        return Err(PdfError::Encrypted {
+            needs_password: false,
+        });
+    }
+    let page_count = doc_page_count(source);
+    if page_count == 0 {
+        return Err(PdfError::Malformed);
+    }
 
     let target_seq = expand_reorder_sequence(&params.order, page_count)?;
     if target_seq.is_empty() {
@@ -57,68 +66,29 @@ pub fn run(
         }));
     }
 
-    let outline_tree = extract_outline_tree(inner, &orig_pages, ctx)?;
-    let pages_root = pages_root_id(inner)?;
-
-    // Materialize inherited attributes on every referenced source page before rebuilding `/Pages`.
-    let mut materialized = HashSet::new();
-    for &page_num in &target_seq {
-        ctx.check()?;
-        let src_id = orig_pages[(page_num - 1) as usize];
-        if materialized.insert(src_id) {
-            materialize_page_attributes(inner, src_id, ctx)?;
-        }
-    }
-
-    let mut old_to_new_page: HashMap<ObjectId, ObjectId> = HashMap::new();
-    let mut new_kids: Vec<ObjectId> = Vec::with_capacity(target_seq.len());
-
-    for &page_num in &target_seq {
-        ctx.check()?;
-        let src_id = orig_pages[(page_num - 1) as usize];
-        if let std::collections::hash_map::Entry::Vacant(entry) = old_to_new_page.entry(src_id) {
-            entry.insert(src_id);
-            set_page_parent(inner, src_id, pages_root);
-            new_kids.push(src_id);
-        } else {
-            let dup_id = clone_page_for_duplicate(inner, src_id, pages_root, ctx)?;
-            new_kids.push(dup_id);
-        }
-    }
-
-    rebuild_pages_root(inner, pages_root, &new_kids);
-
-    let orig_page_set: HashSet<ObjectId> = orig_pages.iter().copied().collect();
-    for &kid_id in &new_kids {
-        ctx.check()?;
-        update_page_annotations(inner, kid_id, &orig_page_set, &old_to_new_page, ctx)?;
-    }
-
-    prune_acroform_for_kept_pages(inner, &new_kids, ctx)?;
-
-    let filtered_outlines = filter_and_remap_outlines(outline_tree, &old_to_new_page, ctx)?;
-    write_outline_tree(inner, &filtered_outlines, ctx)?;
-
-    let keeps_prefix_order = target_seq
-        .iter()
-        .copied()
-        .eq(1..=u32::try_from(target_seq.len()).unwrap_or(0));
-    update_page_labels_for_reorder(inner, keeps_prefix_order, target_seq.len());
-
-    gc::collect_document(inner, ctx)?;
-
-    let mut output = OutputDoc::unnamed_pdf(out_doc);
-    if inputs[0].repaired_xref() {
-        output.warnings.push(REPAIRED_XREF_WARNING.to_owned());
-    }
-    Ok(vec![output])
+    let out_doc = build_extracted_doc(source, &target_seq, ctx)?;
+    Ok(vec![OutputDoc::unnamed_pdf(out_doc)])
 }
 
 /// Expands a [`ReorderSpec`] against `page_count` into a 1-based page number sequence.
 fn expand_reorder_sequence(spec: &ReorderSpec, page_count: u32) -> Result<Vec<u32>, PdfError> {
     match spec {
-        ReorderSpec::Preset(ReorderPreset::Reverse) => Ok((1..=page_count).rev().collect()),
+        ReorderSpec::Preset(ReorderPreset::Reverse) => {
+            if u64::from(page_count) > MAX_OUTPUT_PAGES {
+                return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+                    actual: u64::from(page_count),
+                    limit: MAX_OUTPUT_PAGES as u32,
+                }));
+            }
+            Ok((1..=page_count).rev().collect())
+        }
         ReorderSpec::Preset(ReorderPreset::DuplexInterleave) => {
+            if u64::from(page_count) > MAX_OUTPUT_PAGES {
+                return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+                    actual: u64::from(page_count),
+                    limit: MAX_OUTPUT_PAGES as u32,
+                }));
+            }
             let mut seq = Vec::with_capacity(page_count as usize);
             let mut front = 1_u32;
             let mut back = page_count;
@@ -133,6 +103,12 @@ fn expand_reorder_sequence(spec: &ReorderSpec, page_count: u32) -> Result<Vec<u3
             Ok(seq)
         }
         ReorderSpec::Preset(ReorderPreset::OddThenEven) => {
+            if u64::from(page_count) > MAX_OUTPUT_PAGES {
+                return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+                    actual: u64::from(page_count),
+                    limit: MAX_OUTPUT_PAGES as u32,
+                }));
+            }
             let mut seq = Vec::with_capacity(page_count as usize);
             let mut odd = 1_u32;
             while odd <= page_count {
@@ -152,9 +128,9 @@ fn expand_reorder_sequence(spec: &ReorderSpec, page_count: u32) -> Result<Vec<u3
             }
             Ok(seq)
         }
-        ReorderSpec::Pages(range) => range
-            .expand(page_count, DuplicatePolicy::KeepInOrder)
-            .map_err(|e| PdfError::InvalidParams(e.to_string())),
+        ReorderSpec::Pages(range) => {
+            expand_page_range_bounded(range, page_count, DuplicatePolicy::KeepInOrder)
+        }
     }
 }
 
@@ -313,66 +289,6 @@ pub(crate) fn materialize_page_attributes(
     Ok(())
 }
 
-/// Clones `src_page_id` into a distinct `/Page` object for a duplicate page selection.
-fn clone_page_for_duplicate(
-    doc: &mut Document,
-    src_page_id: ObjectId,
-    pages_root_id: ObjectId,
-    ctx: &ToolCtx,
-) -> Result<ObjectId, PdfError> {
-    ctx.check()?;
-    let mut page_dict = doc
-        .get_dictionary(src_page_id)
-        .map_err(|_| PdfError::Malformed)?
-        .clone();
-    let dup_page_id = doc.new_object_id();
-    page_dict.set("Parent", Object::Reference(pages_root_id));
-
-    // Clone non-widget annotations so their `/P` back-pointer targets `dup_page_id`.
-    if let Ok(annots_obj) = page_dict.get(b"Annots").cloned() {
-        let annot_items = match annots_obj {
-            Object::Reference(id) => doc.get_object(id).and_then(Object::as_array).cloned().ok(),
-            Object::Array(arr) => Some(arr),
-            _ => None,
-        };
-        if let Some(items) = annot_items {
-            let mut new_annots = Vec::with_capacity(items.len());
-            for item in items {
-                ctx.check()?;
-                match item {
-                    Object::Reference(annot_id) => {
-                        if let Ok(annot_dict) = doc.get_dictionary(annot_id).cloned() {
-                            let is_widget = annot_dict
-                                .get(b"Subtype")
-                                .and_then(Object::as_name)
-                                .is_ok_and(|name| name == b"Widget");
-                            if is_widget {
-                                new_annots.push(Object::Reference(annot_id));
-                            } else {
-                                let mut cloned_annot = annot_dict;
-                                cloned_annot.set("P", Object::Reference(dup_page_id));
-                                let new_annot_id = doc.add_object(Object::Dictionary(cloned_annot));
-                                new_annots.push(Object::Reference(new_annot_id));
-                            }
-                        }
-                    }
-                    Object::Dictionary(mut annot_dict) => {
-                        annot_dict.set("P", Object::Reference(dup_page_id));
-                        let new_annot_id = doc.add_object(Object::Dictionary(annot_dict));
-                        new_annots.push(Object::Reference(new_annot_id));
-                    }
-                    other => new_annots.push(other),
-                }
-            }
-            page_dict.set("Annots", Object::Array(new_annots));
-        }
-    }
-
-    doc.objects
-        .insert(dup_page_id, Object::Dictionary(page_dict));
-    Ok(dup_page_id)
-}
-
 /// Updates annotations on `page_id` so `/P` references `page_id` and any internal page destinations
 /// referencing dropped pages are cleaned up.
 pub(crate) fn update_page_annotations(
@@ -468,7 +384,7 @@ fn remap_dest_object(
     };
     if !orig_page_set.contains(target_id) {
         return DestRemap::Unchanged;
-    }
+    };
     if let Some(&new_id) = old_to_new_page.get(target_id) {
         if new_id == *target_id {
             DestRemap::Unchanged
@@ -566,14 +482,26 @@ pub(crate) fn prune_acroform_for_kept_pages(
         return Ok(());
     };
 
+    let mut visited = HashMap::new();
     let mut surviving_fields = Vec::new();
+    let mut seen_fields = BTreeSet::new();
     for field_ref in fields {
         ctx.check()?;
         let Ok(field_id) = field_ref.as_reference() else {
             surviving_fields.push(field_ref);
             continue;
         };
-        if retain_acroform_field(doc, field_id, &kept_page_set, &kept_annot_ids, 0, ctx)? {
+        if seen_fields.insert(field_id)
+            && retain_acroform_field(
+                doc,
+                field_id,
+                &kept_page_set,
+                &kept_annot_ids,
+                &mut visited,
+                0,
+                ctx,
+            )?
+        {
             surviving_fields.push(Object::Reference(field_id));
         }
     }
@@ -598,26 +526,35 @@ fn retain_acroform_field(
     field_id: ObjectId,
     kept_page_set: &HashSet<ObjectId>,
     kept_annot_ids: &HashSet<ObjectId>,
+    visited: &mut HashMap<ObjectId, bool>,
     depth: usize,
     ctx: &ToolCtx,
 ) -> Result<bool, PdfError> {
     ctx.check()?;
-    if depth > MAX_TREE_DEPTH {
+    if depth >= MAX_TREE_DEPTH {
         return Ok(false);
     }
+    if let Some(&cached) = visited.get(&field_id) {
+        return Ok(cached);
+    }
+    visited.insert(field_id, false);
+
     let Ok(field_dict) = doc.get_dictionary(field_id).cloned() else {
         return Ok(false);
     };
 
     if let Ok(kids) = field_dict.get(b"Kids").and_then(Object::as_array).cloned() {
         let mut surviving_kids = Vec::new();
+        let mut seen_kids = BTreeSet::new();
         for kid in kids {
             if let Ok(kid_id) = kid.as_reference()
+                && seen_kids.insert(kid_id)
                 && retain_acroform_field(
                     doc,
                     kid_id,
                     kept_page_set,
                     kept_annot_ids,
+                    visited,
                     depth + 1,
                     ctx,
                 )?
@@ -631,20 +568,23 @@ fn retain_acroform_field(
         if let Ok(dict_mut) = doc.get_dictionary_mut(field_id) {
             dict_mut.set("Kids", Object::Array(surviving_kids));
         }
+        visited.insert(field_id, true);
         return Ok(true);
     }
 
-    if kept_annot_ids.contains(&field_id) {
-        return Ok(true);
-    }
-    if let Ok(p_id) = field_dict.get(b"P").and_then(Object::as_reference) {
-        return Ok(kept_page_set.contains(&p_id));
-    }
-    let is_widget = field_dict
-        .get(b"Subtype")
-        .and_then(Object::as_name)
-        .is_ok_and(|name| name == b"Widget");
-    Ok(!is_widget)
+    let kept = if kept_annot_ids.contains(&field_id) {
+        true
+    } else if let Ok(p_id) = field_dict.get(b"P").and_then(Object::as_reference) {
+        kept_page_set.contains(&p_id)
+    } else {
+        let is_widget = field_dict
+            .get(b"Subtype")
+            .and_then(Object::as_name)
+            .is_ok_and(|name| name == b"Widget");
+        !is_widget
+    };
+    visited.insert(field_id, kept);
+    Ok(kept)
 }
 
 /// In-memory representation of a bookmark entry in `/Outlines`.
@@ -677,6 +617,7 @@ pub(crate) fn extract_outline_tree(
         return Ok(Vec::new());
     };
 
+    let named_dests = collect_named_destinations(doc, ctx)?;
     let orig_page_set: HashSet<ObjectId> = orig_pages.iter().copied().collect();
     let mut visited = HashSet::new();
     walk_outline_siblings(
@@ -684,22 +625,25 @@ pub(crate) fn extract_outline_tree(
         first_id,
         orig_pages,
         &orig_page_set,
+        &named_dests,
         &mut visited,
         0,
         ctx,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_outline_siblings(
     doc: &Document,
     first_id: ObjectId,
     orig_pages: &[ObjectId],
     orig_page_set: &HashSet<ObjectId>,
+    named_dests: &BTreeMap<Vec<u8>, Vec<Object>>,
     visited: &mut HashSet<ObjectId>,
     depth: usize,
     ctx: &ToolCtx,
 ) -> Result<Vec<OutlineNode>, PdfError> {
-    if depth > MAX_TREE_DEPTH {
+    if depth >= MAX_TREE_DEPTH {
         return Ok(Vec::new());
     }
     let mut nodes = Vec::new();
@@ -716,10 +660,11 @@ fn walk_outline_siblings(
         let title = dict
             .get(b"Title")
             .ok()
+            .and_then(|o| page_set::resolve_object(doc, o))
             .cloned()
-            .unwrap_or_else(|| Object::string_literal(""));
+            .unwrap_or_else(|| Object::string_literal("Bookmark"));
         let (dest_page, dest_tail) =
-            resolve_outline_item_dest(doc, dict, orig_pages, orig_page_set);
+            resolve_outline_item_dest(doc, dict, orig_pages, orig_page_set, named_dests);
 
         let children = if let Ok(child_first) = dict.get(b"First").and_then(Object::as_reference) {
             walk_outline_siblings(
@@ -727,6 +672,7 @@ fn walk_outline_siblings(
                 child_first,
                 orig_pages,
                 orig_page_set,
+                named_dests,
                 visited,
                 depth + 1,
                 ctx,
@@ -753,6 +699,7 @@ fn resolve_outline_item_dest(
     item_dict: &Dictionary,
     orig_pages: &[ObjectId],
     orig_page_set: &HashSet<ObjectId>,
+    named_dests: &BTreeMap<Vec<u8>, Vec<Object>>,
 ) -> (Option<ObjectId>, Vec<Object>) {
     let raw_dest = item_dict.get(b"Dest").ok().or_else(|| {
         let action_dict = resolve_dict(doc, item_dict.get(b"A").ok())?;
@@ -767,60 +714,61 @@ fn resolve_outline_item_dest(
     });
 
     let Some(dest_obj) = raw_dest.and_then(|o| resolve_obj(doc, o)) else {
-        return (None, Vec::new());
+        return (None, default_xyz_tail());
     };
 
-    if let Some(arr) = resolve_dest_array(doc, dest_obj)
+    if let Some(arr) = resolve_dest_array(doc, dest_obj, named_dests)
         && let Some(first) = arr.first()
     {
-        if let Ok(pid) = first.as_reference()
+        let resolved_pid = if let Ok(pid) = first.as_reference()
             && orig_page_set.contains(&pid)
         {
-            let tail = if arr.len() > 1 {
-                arr[1..].to_vec()
-            } else {
-                vec![Object::Name(b"Fit".to_vec())]
-            };
-            return (Some(pid), tail);
-        }
-        if let Ok(idx) = first.as_i64()
-            && idx >= 0
-            && let Some(&pid) = orig_pages.get(idx as usize)
+            Some(pid)
+        } else if let Some(Object::Integer(idx)) = resolve_obj(doc, first)
+            && *idx >= 0
+            && let Some(&pid) = orig_pages.get(*idx as usize)
         {
-            let tail = if arr.len() > 1 {
-                arr[1..].to_vec()
+            Some(pid)
+        } else {
+            None
+        };
+
+        if let Some(pid) = resolved_pid {
+            let tail: Vec<Object> = arr
+                .iter()
+                .skip(1)
+                .filter_map(|o| {
+                    let resolved = resolve_obj(doc, o)?;
+                    (!matches!(resolved, Object::Reference(_))).then(|| resolved.clone())
+                })
+                .collect();
+            let tail = if tail.is_empty() {
+                default_xyz_tail()
             } else {
-                vec![Object::Name(b"Fit".to_vec())]
+                tail
             };
             return (Some(pid), tail);
         }
     }
 
-    (None, Vec::new())
+    (None, default_xyz_tail())
 }
 
-fn resolve_dest_array<'a>(doc: &'a Document, dest_obj: &'a Object) -> Option<&'a Vec<Object>> {
+fn resolve_dest_array<'a>(
+    doc: &'a Document,
+    dest_obj: &'a Object,
+    named_dests: &'a BTreeMap<Vec<u8>, Vec<Object>>,
+) -> Option<&'a [Object]> {
     match dest_obj {
-        Object::Array(arr) => Some(arr),
-        Object::Dictionary(d) => resolve_obj(doc, d.get(b"D").ok()?)?.as_array().ok(),
-        Object::Name(name) => lookup_named_dest(doc, name),
-        Object::String(name, _) => lookup_named_dest(doc, name),
+        Object::Array(arr) => Some(arr.as_slice()),
+        Object::Dictionary(d) => resolve_obj(doc, d.get(b"D").ok()?)?
+            .as_array()
+            .ok()
+            .map(Vec::as_slice),
+        Object::Name(name) => named_dests.get(name.as_slice()).map(Vec::as_slice),
+        Object::String(name, _) => named_dests.get(name.as_slice()).map(Vec::as_slice),
         _ => None,
     }
-}
-
-fn lookup_named_dest<'a>(doc: &'a Document, name: &[u8]) -> Option<&'a Vec<Object>> {
-    let catalog = doc.catalog().ok()?;
-    if let Some(dests_dict) = resolve_dict(doc, catalog.get(b"Dests").ok())
-        && let Some(entry) = resolve_obj(doc, dests_dict.get(name).ok()?)
-    {
-        return match entry {
-            Object::Array(arr) => Some(arr),
-            Object::Dictionary(d) => resolve_obj(doc, d.get(b"D").ok()?)?.as_array().ok(),
-            _ => None,
-        };
-    }
-    None
 }
 
 /// Filters `nodes` to keep only entries targeting pages in `page_map` (promoting surviving
@@ -907,7 +855,7 @@ fn build_outline_level(
             let mut dest_arr = Vec::with_capacity(1 + node.dest_tail.len());
             dest_arr.push(Object::Reference(pid));
             if node.dest_tail.is_empty() {
-                dest_arr.push(Object::Name(b"Fit".to_vec()));
+                dest_arr.extend(default_xyz_tail());
             } else {
                 dest_arr.extend(node.dest_tail.iter().cloned());
             }
@@ -927,63 +875,6 @@ fn build_outline_level(
     }
 
     Ok((item_ids[0], *item_ids.last().unwrap(), total_count))
-}
-
-fn update_page_labels_for_reorder(
-    doc: &mut Document,
-    keeps_prefix_order: bool,
-    new_page_count: usize,
-) {
-    let Ok(cat_id) = catalog_id(doc) else {
-        return;
-    };
-    if !keeps_prefix_order {
-        if let Ok(cat_dict) = doc.get_dictionary_mut(cat_id) {
-            cat_dict.remove(b"PageLabels");
-        }
-        return;
-    }
-
-    let Ok(cat_dict) = doc.get_dictionary(cat_id) else {
-        return;
-    };
-    let Ok(pl_obj) = cat_dict.get(b"PageLabels").cloned() else {
-        return;
-    };
-    let (pl_id_opt, mut pl_dict) = match pl_obj {
-        Object::Reference(id) => match doc.get_dictionary(id).cloned() {
-            Ok(d) => (Some(id), d),
-            Err(_) => return,
-        },
-        Object::Dictionary(d) => (None, d),
-        _ => return,
-    };
-
-    if let Ok(nums) = pl_dict.get(b"Nums").and_then(Object::as_array).cloned() {
-        let mut pruned = Vec::new();
-        for pair in nums.chunks(2) {
-            if pair.len() == 2
-                && let Ok(start_idx) = pair[0].as_i64()
-                && start_idx >= 0
-                && (start_idx as usize) < new_page_count
-            {
-                pruned.push(pair[0].clone());
-                pruned.push(pair[1].clone());
-            }
-        }
-        if pruned.is_empty() {
-            if let Ok(cat_mut) = doc.get_dictionary_mut(cat_id) {
-                cat_mut.remove(b"PageLabels");
-            }
-            return;
-        }
-        pl_dict.set("Nums", Object::Array(pruned));
-        if let Some(pl_id) = pl_id_opt {
-            doc.objects.insert(pl_id, Object::Dictionary(pl_dict));
-        } else if let Ok(cat_mut) = doc.get_dictionary_mut(cat_id) {
-            cat_mut.set("PageLabels", Object::Dictionary(pl_dict));
-        }
-    }
 }
 
 fn resolve_obj<'a>(doc: &'a Document, mut obj: &'a Object) -> Option<&'a Object> {

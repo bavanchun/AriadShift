@@ -16,7 +16,11 @@ use crate::{
     error::PdfError,
     gc,
     paper::resolve_paper_size,
-    tools::{OutputDoc, REPAIRED_XREF_WARNING, reorder},
+    tools::{
+        OutputDoc,
+        page_set::{PageLabelRule, build_page_labels_object, parse_page_labels},
+        reorder,
+    },
     xobject::{self, PdfRect},
 };
 
@@ -124,56 +128,49 @@ pub fn run(
     let remapped_outlines = reorder::filter_and_remap_outlines(outline_tree, &identity_map, ctx)?;
     reorder::write_outline_tree(inner, &remapped_outlines, ctx)?;
 
-    shift_page_labels(inner, &orig_to_new_idx);
+    shift_page_labels(inner, &orig_to_new_idx, ctx)?;
 
     gc::collect_document(inner, ctx)?;
 
-    let mut output = OutputDoc::unnamed_pdf(out_doc);
-    if inputs[0].repaired_xref() {
-        output.warnings.push(REPAIRED_XREF_WARNING.to_owned());
-    }
-    Ok(vec![output])
+    Ok(vec![OutputDoc::unnamed_pdf(out_doc)])
 }
 
-fn shift_page_labels(doc: &mut Document, orig_to_new_idx: &[usize]) {
-    let Ok(cat_id) = reorder::catalog_id(doc) else {
-        return;
-    };
-    let Ok(cat_dict) = doc.get_dictionary(cat_id) else {
-        return;
-    };
-    let Ok(pl_obj) = cat_dict.get(b"PageLabels").cloned() else {
-        return;
-    };
-    let (pl_id_opt, mut pl_dict) = match pl_obj {
-        Object::Reference(id) => match doc.get_dictionary(id).cloned() {
-            Ok(d) => (Some(id), d),
-            Err(_) => return,
-        },
-        Object::Dictionary(d) => (None, d),
-        _ => return,
-    };
-
-    let Ok(nums) = pl_dict.get(b"Nums").and_then(Object::as_array).cloned() else {
-        return;
-    };
-    let mut updated = Vec::with_capacity(nums.len());
-    for pair in nums.chunks(2) {
-        if pair.len() == 2
-            && let Ok(old_idx) = pair[0].as_i64()
-            && old_idx >= 0
-            && let Some(&new_idx) = orig_to_new_idx.get(old_idx as usize)
+fn shift_page_labels(
+    doc: &mut Document,
+    orig_to_new_idx: &[usize],
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    let src_labels = parse_page_labels(doc, ctx)?;
+    if src_labels.is_empty() {
+        return Ok(());
+    }
+    let mut shifted: Vec<(u32, PageLabelRule)> = Vec::with_capacity(src_labels.len());
+    for (old_idx, rule) in src_labels {
+        if let Some(&new_idx) = orig_to_new_idx.get(old_idx as usize)
+            && let Ok(new_idx_u32) = u32::try_from(new_idx)
         {
-            updated.push(Object::Integer(new_idx as i64));
-            updated.push(pair[1].clone());
+            shifted.push((new_idx_u32, rule));
         }
     }
-    if !updated.is_empty() {
-        pl_dict.set("Nums", Object::Array(updated));
-        if let Some(pl_id) = pl_id_opt {
-            doc.objects.insert(pl_id, Object::Dictionary(pl_dict));
-        } else if let Ok(cat_mut) = doc.get_dictionary_mut(cat_id) {
-            cat_mut.set("PageLabels", Object::Dictionary(pl_dict));
+    let Ok(cat_id) = reorder::catalog_id(doc) else {
+        return Ok(());
+    };
+    if shifted.is_empty() {
+        if let Ok(cat_mut) = doc.get_dictionary_mut(cat_id) {
+            cat_mut.remove(b"PageLabels");
         }
+        return Ok(());
     }
+    let pl_obj = build_page_labels_object(&shifted);
+    let existing_pl_id = doc
+        .get_dictionary(cat_id)
+        .ok()
+        .and_then(|c| c.get(b"PageLabels").ok())
+        .and_then(|o| o.as_reference().ok());
+    if let Some(pl_id) = existing_pl_id {
+        doc.objects.insert(pl_id, pl_obj);
+    } else if let Ok(cat_mut) = doc.get_dictionary_mut(cat_id) {
+        cat_mut.set("PageLabels", pl_obj);
+    }
+    Ok(())
 }
