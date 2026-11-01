@@ -38,7 +38,7 @@ insta = { version = "1.49.0", features = ["json", "glob"] }
 jiff = "0.2"
 js-sys = "0.3.106"
 landlock = "0.4.7"
-jsonschema = { version = "0.59.0", default-features = false, features = ["resolve-file", "idna"] }
+jsonschema = { version = "0.60.1", default-features = false, features = ["resolve-file", "idna"] }
 jsonwebtoken = { version = "11.1.0", default-features = false }
 libc = "0.2"
 lopdf = { version = "0.46.0", default-features = false }
