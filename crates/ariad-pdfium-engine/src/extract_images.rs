@@ -2,7 +2,7 @@
 //! `min_px` filtering, `MAX_IMAGE_PIXELS` bounds, and original JPEG/JPX stream preservation.
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     io::{Cursor, Read},
 };
@@ -337,8 +337,6 @@ struct PreflightBudget<'a> {
     image_bytes: u64,
     image_pixels: u64,
     page_work: usize,
-    page_do_names: HashSet<Vec<u8>>,
-    repeated_forms: bool,
     document_work: &'a mut usize,
 }
 
@@ -408,8 +406,6 @@ fn preflight_page_images(
         image_bytes: 0,
         image_pixels: 0,
         page_work: 0,
-        page_do_names: HashSet::new(),
-        repeated_forms: false,
         document_work,
     };
     let doc = pdf_doc.inner();
@@ -453,7 +449,7 @@ fn preflight_page_images(
         return Err(EngineFailure::limit_exceeded());
     }
     let xobjects = resolve_page_xobject_map(pdf_doc, page_id, max_depth);
-    let mut seen = HashSet::new();
+    let mut seen = HashMap::new();
     for id in xobjects.values() {
         preflight_xobject(
             ctx,
@@ -466,9 +462,6 @@ fn preflight_page_images(
             &xobjects,
             &mut budget,
         )?;
-    }
-    if budget.image_pixels > 0 && budget.repeated_forms {
-        return Err(EngineFailure::limit_exceeded());
     }
     Ok(())
 }
@@ -529,7 +522,7 @@ fn preflight_content_object(
                 .decompressed_content_with_limit(budget.remaining_content(max_bytes)?)
                 .map_err(|_| EngineFailure::limit_exceeded())?;
             budget.charge_content(bytes.len(), max_bytes)?;
-            preflight_content(ctx, &bytes, max_bytes, budget, true).map(|_| ())
+            preflight_content(ctx, &bytes, max_bytes, budget).map(|_| ())
         }
         Object::Null => Ok(()),
         _ => Err(EngineFailure::limit_exceeded()),
@@ -578,28 +571,21 @@ fn preflight_xobject(
     max_bytes: usize,
     max_depth: usize,
     depth: usize,
-    seen: &mut HashSet<PdfObjectId>,
+    seen: &mut HashMap<PdfObjectId, usize>,
     parent_xobjects: &BTreeMap<Vec<u8>, PdfObjectId>,
     budget: &mut PreflightBudget<'_>,
-) -> Result<(), EngineFailure> {
+) -> Result<usize, EngineFailure> {
     charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    if !seen.insert(id) {
-        let doc = pdf_doc.inner();
-        if doc
-            .get_object(id)
-            .and_then(Object::as_stream)
-            .ok()
-            .and_then(|s| s.dict.get(b"Subtype").ok())
-            .and_then(|o| o.as_name().ok())
-            == Some(b"Form")
-        {
-            budget.repeated_forms = true;
-        }
-        return Ok(());
+    if let Some(&cost) = seen.get(&id) {
+        return (cost != 0)
+            .then_some(cost)
+            .ok_or_else(EngineFailure::limit_exceeded);
     }
+    seen.insert(id, 0);
+    let mut expansion_cost = 1usize;
     ctx.check()?;
     let doc = pdf_doc.inner();
     let stream = doc
@@ -652,7 +638,7 @@ fn preflight_xobject(
                 .decompressed_content_with_limit(budget.remaining_content(max_bytes)?)
                 .map_err(|_| EngineFailure::limit_exceeded())?;
             budget.charge_content(bytes.len(), max_bytes)?;
-            let names = preflight_content(ctx, &bytes, max_bytes, budget, false)?;
+            let names = preflight_content(ctx, &bytes, max_bytes, budget)?;
             let mut xobjects = parent_xobjects.clone();
             let mut own_children = BTreeMap::new();
             if let Ok(resources) = stream.dict.get(b"Resources") {
@@ -664,7 +650,7 @@ fn preflight_xobject(
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
                     invoked.insert(name);
-                    preflight_xobject(
+                    let child_cost = preflight_xobject(
                         ctx,
                         pdf_doc,
                         child,
@@ -675,6 +661,10 @@ fn preflight_xobject(
                         &xobjects,
                         budget,
                     )?;
+                    expansion_cost = expansion_cost
+                        .checked_add(child_cost)
+                        .filter(|cost| *cost <= 100_000)
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
                 }
             }
             for (name, child) in &own_children {
@@ -695,7 +685,8 @@ fn preflight_xobject(
         }
         _ => {}
     }
-    Ok(())
+    seen.insert(id, expansion_cost);
+    Ok(expansion_cost)
 }
 
 fn preflight_image_dict(
@@ -913,12 +904,10 @@ fn preflight_content(
     bytes: &[u8],
     max_bytes: usize,
     budget: &mut PreflightBudget<'_>,
-    page_content: bool,
 ) -> Result<Vec<Vec<u8>>, EngineFailure> {
     let mut cursor = 0;
     let mut invoked = Vec::new();
     let mut last_name = None;
-    let mut form_do_names = HashSet::new();
     while let Some((start, end)) = next_content_token(bytes, &mut cursor)? {
         let token = &bytes[start..end];
         if token.first() == Some(&b'/') {
@@ -929,14 +918,6 @@ fn preflight_content(
             if let Some(name) = last_name.take() {
                 charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
                 invoked.push(name.clone());
-                let names = if page_content {
-                    &mut budget.page_do_names
-                } else {
-                    &mut form_do_names
-                };
-                if !names.insert(name) {
-                    budget.repeated_forms = true;
-                }
             }
             continue;
         }
@@ -2262,4 +2243,87 @@ fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, EngineFailure> {
         }
     }
     Ok(buf.into_inner())
+}
+
+#[cfg(test)]
+mod corpus_tests {
+    use super::*;
+    use ariad_core::limits::Limits;
+    use ariad_engine_io::RunToolPaths;
+    use std::path::{Path, PathBuf};
+
+    fn collect_pdfs(dir: &Path, paths: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).expect("read fixture directory") {
+            let path = entry.expect("fixture entry").path();
+            if path.is_dir() {
+                collect_pdfs(&path, paths);
+            } else if path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+            {
+                paths.push(path);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "scans the complete fixture corpus"]
+    fn preflight_fixture_corpus() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures");
+        let mut paths = Vec::new();
+        collect_pdfs(&root, &mut paths);
+        paths.sort();
+        let mut refusals = Vec::new();
+        for path in &paths {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let work = dir.path().canonicalize().expect("canonical workspace");
+            for sub in ["in", "out", "tmp"] {
+                fs::create_dir(work.join(sub)).expect("workspace directory");
+            }
+            let input = work.join("in/doc.pdf");
+            fs::copy(path, &input).expect("copy fixture");
+            let paths = RunToolPaths {
+                workspace: work.clone(),
+                inputs: vec![input],
+                output_dir: work.join("out"),
+                work_dir: work.join("tmp"),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "corpus",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let result = (|| {
+                let (_, doc) = read_and_preflight_pdf(&ctx)?;
+                let mut work = 0;
+                let max_depth = usize::from(ctx.limits().max_nesting_depth);
+                let max_bytes =
+                    usize::try_from(ctx.limits().max_decompressed_bytes).unwrap_or(usize::MAX / 2);
+                for page in doc.inner().get_pages().values() {
+                    preflight_page_images(&ctx, &doc, *page, max_bytes, max_depth, &mut work)?;
+                }
+                Ok::<_, EngineFailure>(())
+            })();
+            if let Err(err) = result {
+                eprintln!("REFUSED {}: {}", path.display(), err.message);
+                refusals.push(path.clone());
+            }
+        }
+        eprintln!("CORPUS {} PDFs, {} refused", paths.len(), refusals.len());
+        let unexpected: Vec<_> = refusals
+            .iter()
+            .filter(|path| {
+                path.file_name()
+                    .is_none_or(|name| name != "inline-image-bomb.pdf")
+            })
+            .collect();
+        assert!(
+            unexpected.is_empty(),
+            "legitimate fixtures refused: {unexpected:?}"
+        );
+        assert_eq!(refusals.len(), 1, "the adversarial fixture must be refused");
+    }
 }

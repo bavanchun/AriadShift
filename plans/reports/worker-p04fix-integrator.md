@@ -28,6 +28,15 @@ Inline-image deduplication uses SHA-256 (`d7cd2da`); the identical and distinct
 image regression passed with the PDFium pack. The extraction preflight and its
 compatibility constraints are documented in [the worker report](worker-p04fix-extract-decode.md).
 
+The manager subsequently accepted unsupported inline filters and filter chains,
+unresolved color aliases, and the existing 4096 MiB / 600 s defaults. Repeated
+form invocations and multiple paths to the same form are now accepted: each form
+is inspected and its inline images charged once per page. A memoized expansion
+estimate rejects nested form fan-out above 100,000 visits. The 50-invocation and
+nested-fan-out regressions passed, as did the 40-image bomb test under a 2 GiB
+systemd scope. Preflight scanned all 39 PDF fixtures: the single intentional
+inline-image bomb was refused, and all 38 legitimate fixtures passed.
+
 Musl targets remain a follow-up: removing targets changes release coverage and is
 not a one-line exclusion. `cargo fmt --all --check` passed after formatting. The final gate handoff records
 the post-merge results.

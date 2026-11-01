@@ -723,6 +723,43 @@ fn repeated_nested_forms_are_expanded_once() {
 }
 
 #[test]
+fn nested_form_fanout_exceeds_expansion_budget_before_page_load() {
+    let lib_dir = require_pdfium!();
+    let mut objects = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /F 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/F Do"),
+    ];
+    for index in 0..20 {
+        let child = index + 6;
+        let resources = format!(
+            "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << /XObject << /F {child} 0 R >> >>"
+        );
+        objects.push(stream_object(&resources, b"/F Do /F Do"));
+    }
+    objects.push(stream_object(
+        "/Type /XObject /Subtype /Form /BBox [0 0 10 10]",
+        b"q Q",
+    ));
+    let ws = TestWorkspace::from_bytes("fanout.pdf", &assemble_pdf(&objects));
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "fanout",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let start = std::time::Instant::now();
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("nested expansion must be bounded");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert!(start.elapsed() < std::time::Duration::from_secs(5));
+}
+
+#[test]
 fn repeated_operators_obey_the_traversal_budget() {
     let lib_dir = require_pdfium!();
     let content = b"/Im Do ".repeat(100);
@@ -807,14 +844,14 @@ fn refuses_cumulative_inline_pixels_in_forms() {
 }
 
 #[test]
-fn refuses_repeated_form_containing_inline_image() {
+fn accepts_repeated_form_containing_inline_image() {
     let lib_dir = require_pdfium!();
     let pdf = assemble_pdf(&[
         b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << /XObject << /F 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
-        stream_object("", b"/F Do /F Do"),
-        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"BI /W 4 /H 4 /BPC 8 /CS /G /F /AHx ID 00> EI"),
+        stream_object("", &b"/F Do ".repeat(50)),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"BI /W 4 /H 4 /BPC 8 /CS /G /F /AHx ID 00000000000000000000000000000000> EI"),
     ]);
     let ws = TestWorkspace::from_bytes("repeated-inline.pdf", &pdf);
     let mut limits = Limits::local();
@@ -828,9 +865,13 @@ fn refuses_repeated_form_containing_inline_image() {
         &mut sink,
     )
     .with_library_dir(lib_dir);
-    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
-        .expect_err("repeated form must not bypass page budget");
-    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    let params = ExtractImagesParams {
+        min_px: 1,
+        ..ExtractImagesParams::default()
+    };
+    let outcome = extract_images::extract_document_images(&mut ctx, &params)
+        .expect("repeated forms are charged once");
+    assert_eq!(outcome.images.len(), 1);
 }
 
 #[test]
@@ -886,7 +927,6 @@ fn inherited_form_resources_are_checked_before_page_load() {
         &mut sink,
     )
     .with_library_dir(lib_dir);
-    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
-        .expect_err("shared form path must not bypass the page budget");
-    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect("a form reached by multiple paths is charged once");
 }
