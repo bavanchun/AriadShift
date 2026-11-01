@@ -1347,4 +1347,129 @@ mod catalog_preservation {
             "the removed page must not stay reachable through catalog entries"
         );
     }
+
+    #[test]
+    fn reorder_duplicates_many_top_level_and_nested_widgets_correctly() {
+        let (mut doc, pages_id, pages) = synthetic_doc(2);
+        let page1 = pages[0];
+        let parent_field = doc.new_object_id();
+
+        let top_level_count = 48_usize;
+        let child_count = 16_usize;
+        let widgets_per_page = top_level_count + child_count;
+        let copies = 80_usize;
+
+        let mut page1_annots = Vec::with_capacity(widgets_per_page);
+        let mut fields = Vec::with_capacity(top_level_count + 1);
+        let mut child_kids = Vec::with_capacity(child_count);
+
+        for idx in 0..top_level_count {
+            let wid = doc.add_object(dictionary! {
+                "Type" => "Annot",
+                "Subtype" => "Widget",
+                "FT" => "Tx",
+                "T" => Object::string_literal(format!("top_{idx}")),
+                "Rect" => vec![0.into(), 0.into(), 80.into(), 18.into()],
+                "P" => Object::Reference(page1),
+            });
+            page1_annots.push(Object::Reference(wid));
+            fields.push(Object::Reference(wid));
+        }
+
+        for idx in 0..child_count {
+            let wid = doc.add_object(dictionary! {
+                "Type" => "Annot",
+                "Subtype" => "Widget",
+                "Parent" => Object::Reference(parent_field),
+                "Rect" => vec![0.into(), (idx as i64 * 20).into(), 80.into(), (idx as i64 * 20 + 18).into()],
+                "P" => Object::Reference(page1),
+            });
+            page1_annots.push(Object::Reference(wid));
+            child_kids.push(Object::Reference(wid));
+        }
+
+        doc.objects.insert(
+            parent_field,
+            Object::Dictionary(dictionary! {
+                "FT" => "Btn",
+                "T" => Object::string_literal("group_field"),
+                "Kids" => child_kids,
+            }),
+        );
+        fields.push(Object::Reference(parent_field));
+
+        doc.get_dictionary_mut(page1)
+            .unwrap()
+            .set("Annots", Object::Array(page1_annots));
+
+        let acro_id = doc.add_object(dictionary! {
+            "Fields" => fields,
+        });
+        let bytes = finish_doc(
+            doc,
+            pages_id,
+            &pages,
+            vec![("AcroForm", Object::Reference(acro_id))],
+        );
+
+        let mut order_tokens: Vec<&str> = vec!["1"; copies];
+        order_tokens.push("2");
+        let order_expr = order_tokens.join(",");
+
+        let out = reorder(&bytes, &order_expr);
+        let reopened = open(&out.artifacts[0].bytes, &Limits::local()).expect("open output");
+        let inner = reopened.inner();
+        let out_pages = inner.get_pages();
+        assert_eq!(out_pages.len(), copies + 1);
+
+        let mut seen_widgets = std::collections::HashSet::new();
+        for page_num in 1..=(copies as u32) {
+            let pid = out_pages[&page_num];
+            let annots = inner
+                .get_dictionary(pid)
+                .unwrap()
+                .get(b"Annots")
+                .unwrap()
+                .as_array()
+                .unwrap();
+            assert_eq!(annots.len(), widgets_per_page);
+            for annot in annots {
+                let wid = annot.as_reference().unwrap();
+                assert!(
+                    seen_widgets.insert(wid),
+                    "each duplicated page must receive distinct widget ObjectIds"
+                );
+                let wdict = inner.get_dictionary(wid).unwrap();
+                assert_eq!(wdict.get(b"P").unwrap().as_reference().unwrap(), pid);
+            }
+        }
+        assert_eq!(seen_widgets.len(), copies * widgets_per_page);
+
+        let catalog = inner.catalog().unwrap();
+        let acro = resolve(inner, catalog.get(b"AcroForm").unwrap())
+            .as_dict()
+            .unwrap();
+        let out_fields = resolve(inner, acro.get(b"Fields").unwrap())
+            .as_array()
+            .unwrap();
+        assert_eq!(out_fields.len(), copies * top_level_count + 1);
+
+        let mut registered_widgets = std::collections::HashSet::new();
+        let mut parent_kids_count = 0_usize;
+        for entry in out_fields {
+            let fid = entry.as_reference().unwrap();
+            let fdict = inner.get_dictionary(fid).unwrap();
+            if let Ok(kids_obj) = fdict.get(b"Kids") {
+                let kids = resolve(inner, kids_obj).as_array().unwrap();
+                parent_kids_count = kids.len();
+                for kid in kids {
+                    registered_widgets.insert(kid.as_reference().unwrap());
+                }
+            } else {
+                registered_widgets.insert(fid);
+            }
+        }
+        assert_eq!(parent_kids_count, copies * child_count);
+        assert_eq!(registered_widgets, seen_widgets);
+    }
 }

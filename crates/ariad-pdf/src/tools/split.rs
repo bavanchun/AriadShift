@@ -149,7 +149,9 @@ pub fn run(
                         "a split range expanded to 0 pages".to_owned(),
                     ));
                 }
-                total_pages = total_pages.saturating_add(expanded.len() as u64);
+                let part_pages = expanded.len() as u64;
+                ensure_total_pages_within_cap(part_pages, ctx.max_pages)?;
+                total_pages = total_pages.saturating_add(part_pages);
                 ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
                 out.push(expanded);
             }
@@ -164,12 +166,23 @@ pub fn run(
                     "every split mode requires 'every' >= 1".to_owned(),
                 ));
             }
-            ensure_total_pages_within_cap(u64::from(page_count), ctx.max_pages)?;
-            let all_pages: Vec<u32> = (1..=page_count).collect();
-            all_pages
-                .chunks(every as usize)
-                .map(<[u32]>::to_vec)
-                .collect()
+            let mut out = Vec::new();
+            let mut total_pages = 0_u64;
+            let mut start = 1_u32;
+            while start <= page_count {
+                ctx.check()?;
+                let end = start.saturating_add(every - 1).min(page_count);
+                let part_pages = u64::from(end - start + 1);
+                ensure_total_pages_within_cap(part_pages, ctx.max_pages)?;
+                total_pages = total_pages.saturating_add(part_pages);
+                ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
+                out.push((start..=end).collect());
+                match end.checked_add(1) {
+                    Some(next) => start = next,
+                    None => break,
+                }
+            }
+            out
         }
         SplitMode::Bookmarks => {
             let level = params.level.unwrap_or(1);
@@ -192,14 +205,14 @@ pub fn run(
         SplitMode::Size => unreachable!("handled above"),
     };
 
-    ensure_total_pages_within_cap(
-        groups.iter().map(|group| group.len() as u64).sum(),
-        ctx.max_pages,
-    )?;
-
+    let mut total_pages = 0_u64;
     let mut sink = PartSink::new(source);
     for group in groups {
         ctx.check()?;
+        let part_pages = group.len() as u64;
+        ensure_total_pages_within_cap(part_pages, ctx.max_pages)?;
+        total_pages = total_pages.saturating_add(part_pages);
+        ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
         let part_doc = build_page_set_output(source, &group, SPLIT_PART_OPTIONS, ctx)?;
         sink.push(part_doc, ctx)?;
     }
@@ -238,12 +251,22 @@ fn compute_bookmark_groups(
 
     let starts: Vec<u32> = start_pages.into_iter().collect();
     let mut groups = Vec::new();
+    let mut total_pages = 0_u64;
     if starts[0] > 1 {
+        let part_pages = u64::from(starts[0] - 1);
+        ensure_total_pages_within_cap(part_pages, ctx.max_pages)?;
+        total_pages = total_pages.saturating_add(part_pages);
+        ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
         groups.push((1..starts[0]).collect());
     }
     for (i, &start) in starts.iter().enumerate() {
+        ctx.check()?;
         let end_exclusive = starts.get(i + 1).copied().unwrap_or(page_count + 1);
         if start < end_exclusive {
+            let part_pages = u64::from(end_exclusive - start);
+            ensure_total_pages_within_cap(part_pages, ctx.max_pages)?;
+            total_pages = total_pages.saturating_add(part_pages);
+            ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
             groups.push((start..end_exclusive).collect());
         }
     }
@@ -289,13 +312,19 @@ fn compute_blank_separator_groups(
     let report = info::from_doc_with_ctx(source, ctx)?;
     let mut groups: Vec<Vec<u32>> = Vec::new();
     let mut current_run: Vec<u32> = Vec::new();
+    let mut total_pages = 0_u64;
 
     for page in &report.pages {
+        ctx.check()?;
         if page.blank {
             if !current_run.is_empty() {
                 groups.push(std::mem::take(&mut current_run));
             }
         } else {
+            let part_pages = (current_run.len() as u64).saturating_add(1);
+            ensure_total_pages_within_cap(part_pages, ctx.max_pages)?;
+            total_pages = total_pages.saturating_add(1);
+            ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
             current_run.push(page.page);
         }
     }
@@ -335,18 +364,28 @@ fn split_by_size(
     max_bytes: u64,
     ctx: &ToolCtx,
 ) -> Result<Vec<OutputDoc>, PdfError> {
-    ensure_total_pages_within_cap(u64::from(page_count), ctx.max_pages)?;
+    let cap = output_page_cap(ctx.max_pages);
+    let mut total_pages = 0_u64;
     let mut sink = PartSink::new(source);
     let mut start_page = 1_u32;
 
     while start_page <= page_count {
         ctx.check()?;
+        ensure_total_pages_within_cap(1, ctx.max_pages)?;
+        ensure_total_pages_within_cap(total_pages.saturating_add(1), ctx.max_pages)?;
+        let remaining_cap = cap - total_pages;
+        let max_part_end = start_page
+            .saturating_add(u32::try_from(remaining_cap - 1).unwrap_or(u32::MAX))
+            .min(page_count);
+
         let single_range = [start_page];
         let best_doc = build_page_set_output(source, &single_range, SPLIT_PART_OPTIONS, ctx)?;
         let (single_serialized, single_warnings) = serialize_part_output(best_doc, ctx)?;
         let single_bytes = single_serialized.len() as u64;
 
         if single_bytes >= max_bytes || start_page == page_count {
+            total_pages = total_pages.saturating_add(1);
+            ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
             sink.push_bytes_with_warnings(single_serialized, single_warnings)?;
             start_page += 1;
             continue;
@@ -358,9 +397,9 @@ fn split_by_size(
         let mut step = 1_u32;
         let mut first_over_end: Option<u32> = None;
 
-        while last_ok_end < page_count {
+        while last_ok_end < max_part_end {
             ctx.check()?;
-            let candidate_end = last_ok_end.saturating_add(step).min(page_count);
+            let candidate_end = last_ok_end.saturating_add(step).min(max_part_end);
             let candidate_pages: Vec<u32> = (start_page..=candidate_end).collect();
             let candidate_doc =
                 build_page_set_output(source, &candidate_pages, SPLIT_PART_OPTIONS, ctx)?;
@@ -372,7 +411,7 @@ fn split_by_size(
                 last_ok_end = candidate_end;
                 accepted_bytes = candidate_serialized;
                 accepted_warnings = candidate_warnings;
-                if candidate_end == page_count {
+                if candidate_end == max_part_end {
                     break;
                 }
                 step = step.saturating_mul(2);
@@ -404,6 +443,10 @@ fn split_by_size(
             last_ok_end = lo;
         }
 
+        let part_pages = u64::from(last_ok_end - start_page + 1);
+        ensure_total_pages_within_cap(part_pages, ctx.max_pages)?;
+        total_pages = total_pages.saturating_add(part_pages);
+        ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
         sink.push_bytes_with_warnings(accepted_bytes, accepted_warnings)?;
         start_page = last_ok_end + 1;
     }

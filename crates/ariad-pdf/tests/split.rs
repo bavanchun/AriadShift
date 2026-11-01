@@ -432,4 +432,176 @@ mod output_caps {
             vec!["tagged structure (StructTreeRoot) is not kept for a page subset; the output is not a tagged PDF".to_owned()]
         );
     }
+
+    /// Builds a `total_pages`-page PDF (with `total_pages >= 4`) where pages 1..=2 paint
+    /// `(Header)`, pages `3..=(total_pages - 2)` reuse a single shared blank `/Page` object, and
+    /// pages `(total_pages - 1)..=total_pages` paint `(Footer)`.
+    fn doc_over_ten_thousand_pages_with_shared_blank_middle(total_pages: usize) -> Vec<u8> {
+        assert!(total_pages >= 4);
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+
+        let header_stream = doc.add_object(Stream::new(
+            dictionary! {},
+            b"BT /F1 12 Tf 72 400 Td (Header) Tj ET".to_vec(),
+        ));
+        let blank_stream = doc.add_object(Stream::new(dictionary! {}, Vec::new()));
+        let footer_stream = doc.add_object(Stream::new(
+            dictionary! {},
+            b"BT /F1 12 Tf 72 400 Td (Footer) Tj ET".to_vec(),
+        ));
+        let font_id = doc.add_object(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica",
+        });
+
+        let mut kids = Vec::with_capacity(total_pages);
+        for page_no in 1..=total_pages {
+            let stream_id = if page_no <= 2 {
+                header_stream
+            } else if page_no > total_pages - 2 {
+                footer_stream
+            } else {
+                blank_stream
+            };
+            let page_id = doc.add_object(dictionary! {
+                "Type" => "Page",
+                "Parent" => pages_id,
+                "Contents" => stream_id,
+            });
+            kids.push(Object::Reference(page_id));
+        }
+
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => kids,
+                "Count" => i64::try_from(total_pages).unwrap(),
+                "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+                "Rotate" => 0,
+                "Resources" => dictionary! {
+                    "Font" => dictionary! { "F1" => font_id },
+                },
+            }),
+        );
+        let cat_id = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        doc.trailer.set("Root", cat_id);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes)
+            .expect("save synthetic >10k-page pdf");
+        bytes
+    }
+
+    #[test]
+    fn document_over_ten_thousand_pages_splits_within_output_caps_and_rejects_excess_parts() {
+        let bytes = doc_over_ten_thousand_pages_with_shared_blank_middle(10_500);
+        let input = InputDoc::new("huge-10500", bytes);
+        let small_ctx = ToolCtx::default().with_max_pages(Some(6));
+
+        // 1. Ranges mode on a 10,500-page input succeeds when per-part and cumulative output pages
+        //    stay within min(10_000, max_pages) = 6.
+        let out_ranges = run_tool(
+            "pdf.split",
+            std::slice::from_ref(&input),
+            &json!({
+                "mode": "ranges",
+                "ranges": ["1-2", "5000-5001", "10499-10500"]
+            }),
+            &small_ctx,
+        )
+        .expect("ranges within output cap on >10k-page input must succeed");
+        assert_eq!(out_ranges.artifacts.len(), 3);
+        assert_eq!(inspect_bytes(&out_ranges.artifacts[0].bytes).page_count, 2);
+        assert_eq!(inspect_bytes(&out_ranges.artifacts[1].bytes).page_count, 2);
+        assert_eq!(inspect_bytes(&out_ranges.artifacts[2].bytes).page_count, 2);
+        assert!(extract_text_from_bytes(&out_ranges.artifacts[0].bytes).contains("Header"));
+        assert!(extract_text_from_bytes(&out_ranges.artifacts[2].bytes).contains("Footer"));
+
+        // 2. Blank-separator mode on the 10,500-page input drops the 10,496 blank separator pages
+        //    and emits the two 2-page non-blank runs (4 cumulative output pages <= 6).
+        let out_blank = run_tool(
+            "pdf.split",
+            std::slice::from_ref(&input),
+            &json!({ "mode": "blank_separator" }),
+            &small_ctx,
+        )
+        .expect("blank_separator within output cap on >10k-page input must succeed");
+        assert_eq!(out_blank.artifacts.len(), 2);
+        assert_eq!(inspect_bytes(&out_blank.artifacts[0].bytes).page_count, 2);
+        assert_eq!(inspect_bytes(&out_blank.artifacts[1].bytes).page_count, 2);
+        assert!(extract_text_from_bytes(&out_blank.artifacts[0].bytes).contains("Header"));
+        assert!(extract_text_from_bytes(&out_blank.artifacts[1].bytes).contains("Footer"));
+
+        // 3. Parts that exceed the cumulative cap still fail on cumulative output pages, never on
+        //    the 10,500 input page count.
+        let err_ranges = run_tool(
+            "pdf.split",
+            std::slice::from_ref(&input),
+            &json!({
+                "mode": "ranges",
+                "ranges": ["1-3", "5000-5001", "10499-10500"]
+            }),
+            &small_ctx,
+        )
+        .expect_err("7 cumulative output pages must fail against limit 6");
+        assert_eq!(
+            err_ranges,
+            PdfError::LimitExceeded(ReadError::TooManyPages {
+                actual: 7,
+                limit: 6,
+            })
+        );
+
+        let err_every = run_tool(
+            "pdf.split",
+            std::slice::from_ref(&input),
+            &json!({ "mode": "every", "every": 3 }),
+            &small_ctx,
+        )
+        .expect_err("every=3 must fail on the 3rd part when cumulative output reaches 9 > 6");
+        assert_eq!(
+            err_every,
+            PdfError::LimitExceeded(ReadError::TooManyPages {
+                actual: 9,
+                limit: 6,
+            })
+        );
+
+        let err_size = run_tool(
+            "pdf.split",
+            std::slice::from_ref(&input),
+            &json!({ "mode": "size", "max_bytes": 1 }),
+            &small_ctx,
+        )
+        .expect_err(
+            "size mode must fail on the 7th 1-page part when cumulative output reaches 7 > 6",
+        );
+        assert_eq!(
+            err_size,
+            PdfError::LimitExceeded(ReadError::TooManyPages {
+                actual: 7,
+                limit: 6,
+            })
+        );
+
+        let err_default_cap = run_tool(
+            "pdf.split",
+            std::slice::from_ref(&input),
+            &json!({
+                "mode": "ranges",
+                "ranges": ["1-6000", "4501-10500"]
+            }),
+            &ToolCtx::default(),
+        )
+        .expect_err("12,000 cumulative output pages must fail against default 10,000 cap");
+        assert_eq!(
+            err_default_cap,
+            PdfError::LimitExceeded(ReadError::TooManyPages {
+                actual: 12_000,
+                limit: 10_000,
+            })
+        );
+    }
 }

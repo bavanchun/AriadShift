@@ -450,6 +450,16 @@ fn register_cloned_widgets(
         return Ok(());
     }
     let acroform = entry_loc(doc, &DictLoc::Id(catalog_id(doc)?), b"AcroForm");
+    let top_level_fields: HashSet<ObjectId> = acroform
+        .as_ref()
+        .and_then(|form| array_entry(doc, form, b"Fields"))
+        .map(|fields| {
+            fields
+                .iter()
+                .filter_map(|item| item.as_reference().ok())
+                .collect()
+        })
+        .unwrap_or_default();
     for &(source, clone) in widgets {
         ctx.check()?;
         let parent = doc
@@ -462,9 +472,8 @@ fn register_cloned_widgets(
             if let Some(kids) = array_entry_mut(doc, &DictLoc::Id(parent_id), b"Kids") {
                 kids.push(Object::Reference(clone));
             }
-        } else if let Some(form) = &acroform
-            && array_entry(doc, form, b"Fields")
-                .is_some_and(|fields| fields.contains(&Object::Reference(source)))
+        } else if top_level_fields.contains(&source)
+            && let Some(form) = &acroform
             && let Some(fields) = array_entry_mut(doc, form, b"Fields")
         {
             fields.push(Object::Reference(clone));
