@@ -584,6 +584,49 @@ impl PreflightBudget<'_> {
     }
 }
 
+// Each scope stores only its own resource entries. The digest identifies the
+// resource chain without retaining a copy of the inherited table in memo keys.
+struct XobjectScope<'a> {
+    objects: BTreeMap<Vec<u8>, PdfObjectId>,
+    parent: Option<&'a XobjectScope<'a>>,
+    digest: [u8; 32],
+}
+
+impl<'a> XobjectScope<'a> {
+    fn new(objects: BTreeMap<Vec<u8>, PdfObjectId>) -> Self {
+        let mut hash = Sha256::new();
+        for (name, (number, generation)) in &objects {
+            hash.update((name.len() as u64).to_be_bytes());
+            hash.update(name);
+            hash.update(number.to_be_bytes());
+            hash.update(generation.to_be_bytes());
+        }
+        Self {
+            objects,
+            parent: None,
+            digest: hash.finalize().into(),
+        }
+    }
+
+    fn child(&'a self, objects: BTreeMap<Vec<u8>, PdfObjectId>, id: PdfObjectId) -> Self {
+        let mut hash = Sha256::new();
+        hash.update(self.digest);
+        hash.update(id.0.to_be_bytes());
+        hash.update(id.1.to_be_bytes());
+        Self {
+            objects,
+            parent: Some(self),
+            digest: hash.finalize().into(),
+        }
+    }
+
+    fn get(&self, name: &[u8]) -> Option<&PdfObjectId> {
+        self.objects
+            .get(name)
+            .or_else(|| self.parent.and_then(|p| p.get(name)))
+    }
+}
+
 // Refuse any content we cannot inspect before PDFium parses the page.
 fn preflight_page_images(
     ctx: &ToolContext<'_>,
@@ -650,9 +693,9 @@ fn preflight_page_images(
     if ancestors.len() > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    let xobjects = resolve_page_xobject_map(pdf_doc, page_id, max_depth);
+    let xobjects = XobjectScope::new(resolve_page_xobject_map(pdf_doc, page_id, max_depth));
     let mut seen = HashMap::new();
-    for id in xobjects.values() {
+    for id in xobjects.objects.values() {
         preflight_xobject(
             ctx,
             pdf_doc,
@@ -807,8 +850,9 @@ fn preflight_type3_fonts(
             )?;
             let mut xobjects = BTreeMap::new();
             insert_xobjects_from_resources!(doc, resources, xobjects);
+            let xobjects = XobjectScope::new(xobjects);
             let mut seen = HashMap::new();
-            for id in xobjects.values() {
+            for id in xobjects.objects.values() {
                 preflight_xobject(
                     ctx,
                     pdf_doc,
@@ -858,21 +902,21 @@ fn preflight_xobject(
     max_bytes: usize,
     max_depth: usize,
     depth: usize,
-    seen: &mut HashMap<(PdfObjectId, BTreeMap<Vec<u8>, PdfObjectId>), usize>,
-    parent_xobjects: &BTreeMap<Vec<u8>, PdfObjectId>,
+    seen: &mut HashMap<(PdfObjectId, [u8; 32]), usize>,
+    parent_xobjects: &XobjectScope<'_>,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<usize, EngineFailure> {
     charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    let scope_key = (id, parent_xobjects.clone());
+    let scope_key = (id, parent_xobjects.digest);
     if let Some(&cost) = seen.get(&scope_key) {
         return (cost != 0)
             .then_some(cost)
             .ok_or_else(EngineFailure::limit_exceeded);
     }
-    seen.insert(scope_key.clone(), 0);
+    seen.insert(scope_key, 0);
     let mut expansion_cost = 1usize;
     ctx.check()?;
     let doc = pdf_doc.inner();
@@ -955,7 +999,6 @@ fn preflight_xobject(
             let bytes = preflight_stream_bytes(doc, stream, budget.remaining_content(max_bytes)?)?;
             budget.charge_content(bytes.len(), max_bytes)?;
             let names = preflight_content(ctx, doc, &bytes, max_bytes, budget)?;
-            let mut xobjects = parent_xobjects.clone();
             let mut own_children = BTreeMap::new();
             if let Ok(resources) = stream.dict.get(b"Resources") {
                 validate_xobject_resources(doc, resources)?;
@@ -970,7 +1013,7 @@ fn preflight_xobject(
                 )?;
                 insert_xobjects_from_resources!(doc, resources, own_children);
             }
-            xobjects.extend(own_children.clone());
+            let xobjects = parent_xobjects.child(own_children.clone(), id);
             let mut invoked = HashSet::new();
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
@@ -1684,7 +1727,7 @@ fn collect_page_image_xobjects(
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    expanded_forms: &mut HashSet<(PdfObjectId, BTreeMap<Vec<u8>, PdfObjectId>)>,
+    expanded_forms: &mut HashSet<(PdfObjectId, [u8; 32])>,
     page_work: &mut usize,
     document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
@@ -1694,7 +1737,7 @@ fn collect_page_image_xobjects(
     }
     ctx.check()?;
 
-    let xobject_map = resolve_page_xobject_map(pdf_doc, page_id, max_depth);
+    let xobject_map = XobjectScope::new(resolve_page_xobject_map(pdf_doc, page_id, max_depth));
     let content_bytes = read_page_content_bytes(pdf_doc, page_id, max_decompressed)?;
 
     collect_from_content_and_xobject_map(
@@ -1718,12 +1761,12 @@ fn collect_from_content_and_xobject_map(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
     content_bytes: &[u8],
-    xobject_map: &BTreeMap<Vec<u8>, PdfObjectId>,
+    xobject_map: &XobjectScope<'_>,
     depth: usize,
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    expanded_forms: &mut HashSet<(PdfObjectId, BTreeMap<Vec<u8>, PdfObjectId>)>,
+    expanded_forms: &mut HashSet<(PdfObjectId, [u8; 32])>,
     page_work: &mut usize,
     document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
@@ -1731,7 +1774,7 @@ fn collect_from_content_and_xobject_map(
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    if xobject_map.is_empty() {
+    if xobject_map.objects.is_empty() && xobject_map.parent.is_none() {
         return Ok(());
     }
 
@@ -1763,24 +1806,28 @@ fn collect_from_content_and_xobject_map(
         }
     }
 
-    for (key, &target_id) in xobject_map {
-        if visited_keys.contains(key) {
-            continue;
+    let mut scope = Some(xobject_map);
+    while let Some(current) = scope {
+        for (key, &target_id) in &current.objects {
+            if !visited_keys.insert(key.clone()) {
+                continue;
+            }
+            visit_xobject_target(
+                ctx,
+                pdf_doc,
+                target_id,
+                xobject_map,
+                depth,
+                max_depth,
+                max_decompressed,
+                mask_ids,
+                expanded_forms,
+                page_work,
+                document_work,
+                out,
+            )?;
         }
-        visit_xobject_target(
-            ctx,
-            pdf_doc,
-            target_id,
-            xobject_map,
-            depth,
-            max_depth,
-            max_decompressed,
-            mask_ids,
-            expanded_forms,
-            page_work,
-            document_work,
-            out,
-        )?;
+        scope = current.parent;
     }
 
     Ok(())
@@ -1791,12 +1838,12 @@ fn visit_xobject_target(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
     target_id: PdfObjectId,
-    parent_xobjects: &BTreeMap<Vec<u8>, PdfObjectId>,
+    parent_xobjects: &XobjectScope<'_>,
     depth: usize,
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    expanded_forms: &mut HashSet<(PdfObjectId, BTreeMap<Vec<u8>, PdfObjectId>)>,
+    expanded_forms: &mut HashSet<(PdfObjectId, [u8; 32])>,
     page_work: &mut usize,
     document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
@@ -1828,13 +1875,14 @@ fn visit_xobject_target(
         }
         out.push(target_id);
     } else if subtype == b"Form" {
-        if !expanded_forms.insert((target_id, parent_xobjects.clone())) {
+        if !expanded_forms.insert((target_id, parent_xobjects.digest)) {
             return Ok(());
         }
-        let mut form_xobjects = parent_xobjects.clone();
+        let mut form_xobjects = BTreeMap::new();
         if let Ok(res_obj) = stream.dict.get(b"Resources") {
             insert_xobjects_from_resources!(doc, res_obj, form_xobjects);
         }
+        let form_xobjects = parent_xobjects.child(form_xobjects, target_id);
         let form_content = preflight_stream_bytes(doc, stream, max_decompressed)?;
         collect_from_content_and_xobject_map(
             ctx,
@@ -2753,6 +2801,21 @@ mod corpus_tests {
     }
 
     #[test]
+    fn resource_scopes_share_large_parent_and_preserve_overrides() {
+        let entries = (0..20_000)
+            .map(|n| (format!("X{n}").into_bytes(), (n, 0)))
+            .collect();
+        let parent = XobjectScope::new(entries);
+        let first = parent.child(BTreeMap::from([(b"X1".to_vec(), (30_000, 0))]), (40_000, 0));
+        let second = parent.child(BTreeMap::new(), (40_001, 0));
+        assert_eq!(first.objects.len(), 1);
+        assert_eq!(second.objects.len(), 0);
+        assert_eq!(first.get(b"X1"), Some(&(30_000, 0)));
+        assert_eq!(second.get(b"X1"), Some(&(1, 0)));
+        assert_ne!(first.digest, second.digest);
+    }
+
+    #[test]
     fn string_operands_resolve_xobject_names() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunToolPaths {
@@ -2897,7 +2960,7 @@ mod corpus_tests {
                 &ctx,
                 &doc,
                 (4, 0),
-                &scope,
+                &XobjectScope::new(scope.clone()),
                 0,
                 64,
                 1024 * 1024,
