@@ -337,10 +337,10 @@ fn remove_layers(
         if prop_names.is_empty() {
             continue;
         }
-        if let Some(reason) = strip_page_layer_content(doc, *page_id, prop_names, budget, ctx)? {
+        if strip_page_layer_content(doc, *page_id, prop_names, budget, ctx)? {
             warnings.push(format!(
-                "page {page_no}: content stream could not be {reason}; \
-                 layer content on this page was left unchanged"
+                "page {page_no}: content could not be decoded and was skipped, \
+                 so layer content there may remain"
             ));
         }
     }
@@ -682,19 +682,19 @@ fn strip_page_layer_content(
     removed_prop_names: &HashSet<Vec<u8>>,
     budget: &mut DecodeBudget,
     ctx: &ToolCtx,
-) -> Result<Option<&'static str>, PdfError> {
+) -> Result<bool, PdfError> {
     if removed_prop_names.is_empty() {
-        return Ok(None);
+        return Ok(false);
     }
 
     let Some(content_bytes) = decode_page_content_bounded(doc, page_id, budget, ctx)? else {
-        return Ok(Some("decoded"));
+        return Ok(true);
     };
     if content_bytes.is_empty() {
-        return Ok(None);
+        return Ok(false);
     }
     let Ok(content) = Content::decode(&content_bytes) else {
-        return Ok(Some("parsed"));
+        return Ok(true);
     };
 
     let mut filtered_ops = Vec::with_capacity(content.operations.len());
@@ -736,7 +736,7 @@ fn strip_page_layer_content(
     if let Ok(Object::Dictionary(page_dict)) = doc.get_object_mut(page_id) {
         page_dict.set("Contents", Object::Reference(new_stream_id));
     }
-    Ok(None)
+    Ok(false)
 }
 
 fn find_matching_resource_properties(

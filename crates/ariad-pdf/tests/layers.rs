@@ -832,10 +832,14 @@ fn layers_remove_skips_pages_whose_content_cannot_be_decoded_and_warns() {
 
         assert_eq!(out.artifacts.len(), 1, "{label}");
         assert!(
-            out.warnings
-                .iter()
-                .any(|w| w.contains("page 1") && w.contains("left unchanged")),
-            "{label}: expected a per-page warning, got {:?}",
+            out.warnings.iter().any(|w| {
+                w.contains("page 1")
+                    && w.contains("content could not be decoded")
+                    && w.contains("skipped")
+                    && w.contains("layer content there may remain")
+                    && !w.contains("left unchanged")
+            }),
+            "{label}: expected a truthful per-page warning, got {:?}",
             out.warnings
         );
         assert!(
