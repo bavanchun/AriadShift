@@ -64,7 +64,7 @@ pub enum RunError {
     Timeout,
     #[error("engine run was cancelled")]
     Cancelled,
-    #[error("engine reported {code:?}: {message}{}", memory_limit_hint(*memory_limit_mb))]
+    #[error("engine reported {code:?}: {message}")]
     EngineFailed {
         code: ErrorCode,
         message: String,
@@ -1417,11 +1417,7 @@ impl EngineProcess {
             return match result {
                 Some((false, _, Some(EngineError { code, message }))) => {
                     Err(RunError::EngineFailed {
-                        memory_limit_mb: if code == ErrorCode::EngineFailure {
-                            job.memory_limit_mb
-                        } else {
-                            None
-                        },
+                        memory_limit_mb: None,
                         code,
                         message,
                     })
@@ -1442,11 +1438,7 @@ impl EngineProcess {
         let _ = self.child.start_kill();
         match result {
             Some((false, _, Some(EngineError { code, message }))) => Err(RunError::EngineFailed {
-                memory_limit_mb: if code == ErrorCode::EngineFailure {
-                    job.memory_limit_mb
-                } else {
-                    None
-                },
+                memory_limit_mb: None,
                 code,
                 message,
             }),

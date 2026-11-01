@@ -602,7 +602,7 @@ fn pdfium_address_limit_blocks_excess_allocation() {
 }
 
 #[test]
-fn engine_crashes_and_generic_failures_include_only_applied_memory_ceilings() {
+fn memory_hint_is_limited_to_crashes() {
     for action in ["crash", "fail"] {
         for limit in [Some(256), None] {
             let workspace = Workspace::new().expect("workspace");
@@ -631,14 +631,14 @@ fn engine_crashes_and_generic_failures_include_only_applied_memory_ceilings() {
                         ..
                     },
                     "fail",
-                ) => assert_eq!(*memory_limit_mb, limit),
+                ) => assert_eq!(*memory_limit_mb, None),
                 _ => panic!("unexpected error: {error:?}"),
             }
             assert_eq!(
                 error
                     .to_string()
                     .contains("may have hit its memory limit (256 MiB)"),
-                limit.is_some()
+                action == "crash" && limit.is_some()
             );
         }
     }

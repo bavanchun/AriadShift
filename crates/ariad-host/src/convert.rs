@@ -1884,11 +1884,6 @@ fn map_engine_error(engine: &str, error: RunError) -> ConvertError {
         RunError::Crash {
             memory_limit_mb: Some(limit_mb),
             ..
-        }
-        | RunError::EngineFailed {
-            code: ErrorCode::EngineFailure,
-            memory_limit_mb: Some(limit_mb),
-            ..
         } => ConvertError::FailedWithMemoryHint { limit_mb },
         _ => ConvertError::Failed,
     }
