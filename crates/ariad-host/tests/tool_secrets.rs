@@ -14,9 +14,9 @@ use ariad_core::{
         ToolRuntime, ToolSpec, schema_with_secrets,
     },
 };
-use ariad_host::tools::{
-    InputRef, OutputTarget, REDACTED, RecipeRequest, SecretBag, ToolRequest, run_recipe, run_tool,
-};
+use ariad_host::tools::{InputRef, OutputTarget, RecipeRequest, ToolRequest, run_recipe, run_tool};
+#[cfg(unix)]
+use ariad_host::tools::{REDACTED, SecretBag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -37,6 +37,7 @@ fn decrypt_test_spec() -> ToolSpec {
         inputs: InputArity::One,
         input_formats: &["pdf"],
         output_format: "pdf",
+        output_formats: &[],
         tier: Tier::Free,
         runtimes: &[ToolRuntime::Local],
         engine: "qpdf",
@@ -482,6 +483,7 @@ fn recipe_isolates_secrets_per_step_tool_spec() {
         inputs: InputArity::One,
         input_formats: &["pdf"],
         output_format: "pdf",
+        output_formats: &[],
         tier: Tier::Free,
         runtimes: &[ToolRuntime::Local],
         engine: "qpdf",
@@ -598,6 +600,7 @@ fn compiled_json_schema_validator_enforces_draft202012_keywords() {
         inputs: InputArity::One,
         input_formats: &["pdf"],
         output_format: "json",
+        output_formats: &[],
         tier: Tier::Free,
         runtimes: &[ToolRuntime::Local],
         engine: "ariad-pdf",

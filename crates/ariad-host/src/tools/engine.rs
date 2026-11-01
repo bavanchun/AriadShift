@@ -16,7 +16,7 @@ use ariad_core::{
     limits::Limits,
     protocol::{
         ErrorCode, Input,
-        v2::{EventV2, MAX_INLINE_PARAMS_BYTES, OutputDir, PROTOCOL_V2, RequestV2},
+        v2::{EventV2, OutputDir, PROTOCOL_V2, RequestV2},
     },
     tools::ToolSpec,
 };
@@ -40,6 +40,7 @@ use crate::{
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
     spec: &ToolSpec,
+    effective_engine: &str,
     staged_inputs: &[(PathBuf, String)],
     engine_params: &Value,
     has_secrets: bool,
@@ -55,7 +56,8 @@ pub fn execute(
         return Err(ToolError::Interrupted);
     }
 
-    let command = resolve_engine_command(spec.engine, engine_program, engine_command_override)?;
+    let command =
+        resolve_engine_command(effective_engine, engine_program, engine_command_override)?;
 
     let inputs: Vec<Input> = staged_inputs
         .iter()
@@ -105,7 +107,7 @@ pub fn execute(
     // Defense-in-depth: ensure `<work_dir>/params.json` is removed immediately after the engine exits.
     let _ = fs::remove_file(&params_file_path);
 
-    let outcome = run_result.map_err(|err| map_run_error(err, spec, scrubber))?;
+    let outcome = run_result.map_err(|err| map_run_error(err, spec, effective_engine, scrubber))?;
 
     let canonical_out_dir = fs::canonicalize(workspace.output_dir()).map_err(|_| {
         ToolError::EngineFailure("could not resolve workspace output directory".to_owned())
@@ -131,19 +133,20 @@ pub fn execute(
         }
     }
 
-    // For JSON-emitting tools (`<= 256 KiB`), capture the structured JSON payload inline
+    // For JSON-emitting tools, capture the structured JSON payload inline
     // using the workspace's O_NOFOLLOW handle rather than re-opening by raw path.
     let mut inline_json = None;
+    let inline_cap = limits.max_decompressed_bytes.min(32 * 1024 * 1024);
     if spec.output_format.eq_ignore_ascii_case("json")
         && artifacts.len() == 1
         && let Ok(file) = workspace.open_artifact(&artifacts[0].0)
     {
         let mut bytes = Vec::new();
         if file
-            .take((MAX_INLINE_PARAMS_BYTES + 1) as u64)
+            .take(inline_cap.saturating_add(1))
             .read_to_end(&mut bytes)
             .is_ok()
-            && bytes.len() <= MAX_INLINE_PARAMS_BYTES
+            && (bytes.len() as u64) <= inline_cap
             && let Ok(parsed) = serde_json::from_slice::<Value>(&bytes)
         {
             inline_json = Some(scrubber.scrub_value(&parsed));
@@ -231,7 +234,8 @@ fn validate_engine_artifact(
     Ok(canonical_parent.join(file_name))
 }
 
-fn resolve_engine_command(
+/// Resolves the [`EngineCommand`] for an out-of-process tool engine (`pdfium`, `qpdf`, etc.).
+pub fn resolve_engine_command(
     engine_id: &str,
     engine_program: Option<&Path>,
     override_cmd: Option<&EngineCommand>,
@@ -254,24 +258,29 @@ fn resolve_engine_command(
     Err(ToolError::from_missing_engine(engine_id))
 }
 
-fn map_run_error(err: RunError, spec: &ToolSpec, scrubber: &SecretScrubber) -> ToolError {
+fn map_run_error(
+    err: RunError,
+    spec: &ToolSpec,
+    effective_engine: &str,
+    scrubber: &SecretScrubber,
+) -> ToolError {
     match err {
         RunError::Cancelled => ToolError::Interrupted,
         RunError::Timeout | RunError::MemoryLimitExceeded { .. } => ToolError::LimitExceeded,
         RunError::SandboxUnavailable(msg) | RunError::SandboxLaunchFailed(msg) => {
             ToolError::SandboxUnavailable(scrubber.scrub(&msg))
         }
-        RunError::Spawn(_) => ToolError::from_missing_engine(spec.engine),
+        RunError::Spawn(_) => ToolError::from_missing_engine(effective_engine),
         RunError::EngineFailed { code, message } => {
             let scrubbed = scrubber.scrub(&message);
             match code {
                 ErrorCode::LimitExceeded => ToolError::LimitExceeded,
                 ErrorCode::ToolMissing | ErrorCode::ToolVersion => {
-                    ToolError::from_missing_engine(spec.engine)
+                    ToolError::from_missing_engine(effective_engine)
                 }
                 ErrorCode::UnsupportedRoute => ToolError::EngineFailure(format!(
-                    "engine '{}' does not implement tool '{}': {scrubbed}",
-                    spec.engine, spec.id
+                    "engine '{effective_engine}' does not implement tool '{}': {scrubbed}",
+                    spec.id
                 )),
                 ErrorCode::InvalidRequest | ErrorCode::EngineFailure | ErrorCode::Io => {
                     ToolError::EngineFailure(scrubbed)
@@ -281,8 +290,7 @@ fn map_run_error(err: RunError, spec: &ToolSpec, scrubber: &SecretScrubber) -> T
         RunError::Crash { exit, stderr_tail } => {
             let scrubbed_tail = scrubber.scrub(&stderr_tail);
             ToolError::EngineFailure(format!(
-                "engine '{}' crashed (exit {exit:?}): {scrubbed_tail}",
-                spec.engine
+                "engine '{effective_engine}' crashed (exit {exit:?}): {scrubbed_tail}",
             ))
         }
         RunError::ProtocolViolation(reason) => ToolError::EngineFailure(scrubber.scrub(reason)),

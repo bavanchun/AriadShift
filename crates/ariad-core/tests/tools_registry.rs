@@ -220,6 +220,7 @@ fn secret_params_annotation_and_channel_validation_work_end_to_end() {
         inputs: InputArity::One,
         input_formats: &["pdf"],
         output_format: "pdf",
+        output_formats: &[],
         tier: Tier::Free,
         runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
         engine: "qpdf",
@@ -314,4 +315,38 @@ fn secret_params_annotation_and_channel_validation_work_end_to_end() {
     let roundtripped: ToolDescriptor = serde_json::from_str(&serialized).unwrap();
     assert_eq!(roundtripped, desc);
     let _ = schema_for_params::<InfoParams>();
+}
+
+#[test]
+fn tools_schema_accepts_legacy_and_multi_format_descriptor_shapes() {
+    let schema_json: serde_json::Value =
+        serde_json::from_str(&generated_tools_schema()).expect("valid generated tools schema");
+    let validator =
+        jsonschema::validator_for(&schema_json).expect("tools.v1.json compiles as JSON Schema");
+
+    // 1. Legacy single-output descriptor shape (no `output_formats` key).
+    let info_spec = find("pdf.info").expect("pdf.info registered");
+    let legacy_val = serde_json::to_value(info_spec.to_descriptor()).unwrap();
+    assert!(
+        legacy_val.get("output_formats").is_none(),
+        "single-format tools omit `output_formats` on the wire"
+    );
+    assert!(validator.is_valid(&legacy_val));
+    let roundtrip_legacy: ToolDescriptor = serde_json::from_value(legacy_val).unwrap();
+    assert!(roundtrip_legacy.output_formats.is_empty());
+
+    // 2. New multi-format descriptor shape (`output_formats` present alongside `output_format`).
+    let render_spec = find("pdf.render").expect("pdf.render registered");
+    let multi_val = serde_json::to_value(render_spec.to_descriptor()).unwrap();
+    assert_eq!(multi_val["output_format"], json!("png"));
+    assert_eq!(
+        multi_val["output_formats"],
+        json!(["png", "jpeg", "webp", "bmp", "tiff", "zip"])
+    );
+    assert!(validator.is_valid(&multi_val));
+    let roundtrip_multi: ToolDescriptor = serde_json::from_value(multi_val).unwrap();
+    assert_eq!(
+        roundtrip_multi.output_formats,
+        vec!["png", "jpeg", "webp", "bmp", "tiff", "zip"]
+    );
 }

@@ -469,6 +469,7 @@ mod tests {
             inputs: InputArity::One,
             input_formats: &["pdf"],
             output_format: "pdf",
+            output_formats: &[],
             params_schema: schema_for_params::<RotateParams>,
             tier: Tier::Free,
             runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],

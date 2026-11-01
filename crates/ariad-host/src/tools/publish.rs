@@ -15,11 +15,12 @@ use std::{
 
 use ariad_core::{
     format::Format,
-    tools::{NamingTemplateError, validate_naming_template},
+    tools::{NamingTemplateError, ToolSpec, normalize_tool_format, validate_naming_template},
 };
 use cap_std::{ambient_authority, fs::Dir};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{
     confine::AllowedDirs,
@@ -34,7 +35,7 @@ pub fn validate_output_path_extension(
     output_path: &Path,
     spec_output_format: &str,
 ) -> Result<(), ToolError> {
-    let expected_fmt = Format::from_user_name(spec_output_format).ok_or_else(|| {
+    let expected_fmt = normalize_tool_format(spec_output_format).ok_or_else(|| {
         ToolError::EngineFailure(format!(
             "unrecognized tool output format '{spec_output_format}'"
         ))
@@ -43,11 +44,42 @@ pub fn validate_output_path_extension(
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-    if Format::from_extension(ext) != Some(expected_fmt) {
+    if normalize_tool_format(ext) != Some(expected_fmt) {
+        return Err(ToolError::Confinement(format!(
+            "output path '{}' extension does not match target format '{expected_fmt}'",
+            output_path.display(),
+        )));
+    }
+    Ok(())
+}
+
+/// Validates that an explicit output file path's extension is allowed for `spec` and `params`.
+pub fn validate_output_path_for_spec(
+    output_path: &Path,
+    spec: &ToolSpec,
+    params: &Value,
+    emits_json: bool,
+) -> Result<(), ToolError> {
+    if emits_json {
+        return validate_output_path_extension(output_path, "json");
+    }
+    let ext = output_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let Some(ext_fmt) = normalize_tool_format(ext) else {
         return Err(ToolError::Confinement(format!(
             "output path '{}' extension does not match target format '{}'",
             output_path.display(),
-            expected_fmt.user_name()
+            spec.output_format
+        )));
+    };
+    if !spec.allows_artifact_format(ext_fmt, params) {
+        return Err(ToolError::Confinement(format!(
+            "output path '{}' extension '{}' is not allowed for tool '{}'",
+            output_path.display(),
+            ext,
+            spec.id
         )));
     }
     Ok(())
@@ -59,20 +91,19 @@ pub fn validate_artifact_extensions(
     spec_output_format: &str,
     staged: &[StagedArtifact],
 ) -> Result<(), ToolError> {
-    let expected_fmt = Format::from_user_name(spec_output_format).ok_or_else(|| {
+    let expected_fmt = normalize_tool_format(spec_output_format).ok_or_else(|| {
         ToolError::EngineFailure(format!(
             "unrecognized tool output format '{spec_output_format}'"
         ))
     })?;
 
     for item in staged {
-        let reported_fmt = Format::from_user_name(&item.format);
+        let reported_fmt = normalize_tool_format(&item.format);
         if reported_fmt != Some(expected_fmt) {
             return Err(ToolError::EngineFailure(format!(
-                "artifact '{}' reported format '{}', expected '{}'",
+                "artifact '{}' reported format '{}', expected '{expected_fmt}'",
                 item.staged_path.display(),
                 item.format,
-                expected_fmt.user_name()
             )));
         }
 
@@ -81,15 +112,61 @@ pub fn validate_artifact_extensions(
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        if Format::from_user_name(staged_ext) != Some(expected_fmt) {
+        if normalize_tool_format(staged_ext) != Some(expected_fmt) {
             return Err(ToolError::EngineFailure(format!(
-                "staged artifact '{}' extension does not match expected format '{}'",
+                "staged artifact '{}' extension does not match expected format '{expected_fmt}'",
                 item.staged_path.display(),
-                expected_fmt.user_name()
             )));
         }
 
-        validate_output_path_extension(Path::new(&item.target_name), spec_output_format)?;
+        validate_output_path_extension(Path::new(&item.target_name), expected_fmt)?;
+    }
+
+    Ok(())
+}
+
+/// Validates that every staged artifact's reported format, staged filename extension, and target
+/// filename extension are allowed by `spec` (`output_format` / `output_formats`) and `params`.
+pub fn validate_spec_artifact_extensions(
+    spec: &ToolSpec,
+    params: &Value,
+    emits_json: bool,
+    staged: &[StagedArtifact],
+) -> Result<(), ToolError> {
+    if emits_json {
+        return validate_artifact_extensions("json", staged);
+    }
+
+    for item in staged {
+        let Some(reported_fmt) = normalize_tool_format(&item.format) else {
+            return Err(ToolError::EngineFailure(format!(
+                "artifact '{}' reported unrecognized format '{}'",
+                item.staged_path.display(),
+                item.format
+            )));
+        };
+        if !spec.allows_artifact_format(reported_fmt, params) {
+            return Err(ToolError::EngineFailure(format!(
+                "artifact '{}' reported format '{}', which is not allowed for tool '{}'",
+                item.staged_path.display(),
+                item.format,
+                spec.id
+            )));
+        }
+
+        let staged_ext = item
+            .staged_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if normalize_tool_format(staged_ext) != Some(reported_fmt) {
+            return Err(ToolError::EngineFailure(format!(
+                "staged artifact '{}' extension does not match reported format '{reported_fmt}'",
+                item.staged_path.display(),
+            )));
+        }
+
+        validate_output_path_extension(Path::new(&item.target_name), reported_fmt)?;
     }
 
     Ok(())
@@ -378,7 +455,7 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.extract_pages" => "extracted".to_owned(),
         "pdf.delete_pages" => "trimmed".to_owned(),
         "pdf.reorder" => "reordered".to_owned(),
-        "pdf.crop" => "cropped".to_owned(),
+        "pdf.crop" | "pdf.crop_whitespace" => "cropped".to_owned(),
         "pdf.scale" => "scaled".to_owned(),
         "pdf.nup" => "nup".to_owned(),
         "pdf.booklet" => "booklet".to_owned(),
@@ -451,6 +528,26 @@ pub fn default_multi_artifact_name(
         _ => default_tool_suffix(tool_id),
     };
     format!("{stem}.{label}-{index_1_based:03}.{clean_ext}")
+}
+
+/// When an out-of-process tool stages an artifact named `input-0.<rest>`, replaces the staged
+/// `input-0` prefix with the sanitized stem of `first_input` so `<stem>.page-001.png`,
+/// `<stem>.combined.png`, `<stem>.pages.zip`, `<stem>.thumbnails.json`, `<stem>.image-001.jpg`,
+/// etc. preserve their exact suffix.
+#[must_use]
+pub fn replace_staged_input_stem(staged_path: &Path, first_input: &Path) -> Option<String> {
+    let file_name = staged_path.file_name()?.to_str()?;
+    let rest = file_name.strip_prefix("input-0.")?;
+    if rest.is_empty() {
+        return None;
+    }
+    let stem = sanitize_stem(
+        first_input
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("document"),
+    );
+    Some(format!("{stem}.{rest}"))
 }
 
 /// Renders a recipe output naming template (`{stem}`, `{n}`, `{date}`) for a 1-based artifact index.
@@ -722,19 +819,17 @@ pub fn publish_atomic(
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        if let Some(item_fmt) = Format::from_user_name(&item.format) {
-            if Format::from_user_name(staged_ext) != Some(item_fmt) {
+        if let Some(item_fmt) = normalize_tool_format(&item.format) {
+            if normalize_tool_format(staged_ext) != Some(item_fmt) {
                 return Err(PublishError::InvalidStagedArtifact(format!(
-                    "staged artifact '{}' extension does not match format '{}'",
+                    "staged artifact '{}' extension does not match format '{item_fmt}'",
                     item.staged_path.display(),
-                    item_fmt.user_name()
                 )));
             }
-            if Format::from_extension(target_ext) != Some(item_fmt) {
+            if normalize_tool_format(target_ext) != Some(item_fmt) {
                 return Err(PublishError::Confinement(format!(
-                    "output path '{}' extension does not match target format '{}'",
+                    "output path '{}' extension does not match target format '{item_fmt}'",
                     item.target_name,
-                    item_fmt.user_name()
                 )));
             }
         } else if is_valid_extension_shape(&item.format) {

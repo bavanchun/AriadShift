@@ -6,6 +6,7 @@ pub mod organize_info;
 pub mod organize_layout;
 pub mod organize_pages;
 pub mod organize_sequence;
+pub mod pdfium;
 
 use crate::tools::ToolSpec;
 
@@ -19,5 +20,6 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(organize_geometry::specs());
     list.extend(organize_layout::specs());
     list.extend(organize_document::specs());
+    list.extend(pdfium::specs());
     list
 }

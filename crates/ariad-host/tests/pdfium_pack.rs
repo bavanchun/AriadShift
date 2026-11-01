@@ -268,17 +268,7 @@ fn an_entrypoint_that_leaves_the_pack_root_is_refused() {
 
 #[test]
 fn a_missing_pdfium_pack_fails_every_pdfium_tool_with_exit_5_and_the_install_hint() {
-    use ariad_core::tools::{InputArity, Tier, ToolGroup, ToolRuntime, ToolSpec};
     use ariad_host::tools::{InputRef, OutputTarget, ToolError, ToolRequest, run_tool};
-
-    fn empty_schema() -> schemars::Schema {
-        serde_json::from_value(serde_json::json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "type": "object",
-            "additionalProperties": false
-        }))
-        .expect("empty schema")
-    }
 
     let data = support::temp();
     if !in_child(
@@ -301,33 +291,49 @@ fn a_missing_pdfium_pack_fails_every_pdfium_tool_with_exit_5_and_the_install_hin
     let input = work.path().join("in.pdf");
     fs::write(&input, b"%PDF-1.7\n1 0 obj <<>> endobj\n").expect("input pdf");
     let hint = engines::PDFIUM.install_hint;
+    let pdfium_specs: Vec<_> = ariad_core::tools::all()
+        .iter()
+        .filter(|s| s.engine == "pdfium")
+        .collect();
+    assert_eq!(pdfium_specs.len(), PDFIUM_TOOLS.len());
     for &id in PDFIUM_TOOLS {
-        let spec = ToolSpec {
-            id,
-            version: "1",
-            group: ToolGroup::Convert,
-            summary: "A pdfium tool.",
-            inputs: InputArity::One,
-            input_formats: &["pdf"],
-            output_format: "png",
-            tier: Tier::Free,
-            runtimes: &[ToolRuntime::Local],
-            engine: "pdfium",
-            params_schema: empty_schema,
-            secret_params: &[],
-        };
-        let request =
-            ToolRequest::new(id, vec![InputRef::new(&input)], OutputTarget::None).with_spec(spec);
+        assert!(
+            pdfium_specs.iter().any(|s| s.id == id),
+            "expected {id} to be registered with engine = \"pdfium\""
+        );
+    }
+    for spec in pdfium_specs {
+        let request = ToolRequest::new(spec.id, vec![InputRef::new(&input)], OutputTarget::None);
         let error = run_tool(&request).expect_err("a missing pack must fail the tool");
         assert!(
             matches!(&error, ToolError::ToolMissing { engine, hint: shown }
                 if engine == "pdfium" && shown == hint),
-            "{id}: {error:?}"
+            "{}: {error:?}",
+            spec.id
         );
-        assert_eq!(error.exit_code(), 5, "{id}");
-        assert_eq!(error.code(), "tool_missing", "{id}");
+        assert_eq!(error.exit_code(), 5, "{}", spec.id);
+        assert_eq!(error.code(), "tool_missing", "{}", spec.id);
         assert!(hint.contains("ashift engines install pdfium"), "{hint}");
     }
+
+    // `pdf.split` with `mode = "blank-separator"` and `detect = "pixel"` also routes to `pdfium`
+    // and fails before running when the pack is not installed.
+    let split_pixel_req =
+        ToolRequest::new("pdf.split", vec![InputRef::new(&input)], OutputTarget::None).with_params(
+            serde_json::json!({
+                "mode": "blank-separator",
+                "detect": "pixel"
+            }),
+        );
+    let split_err =
+        run_tool(&split_pixel_req).expect_err("missing pdfium pack must fail pixel split");
+    assert!(
+        matches!(&split_err, ToolError::ToolMissing { engine, hint: shown }
+            if engine == "pdfium" && shown == hint),
+        "pdf.split (detect=pixel): {split_err:?}"
+    );
+    assert_eq!(split_err.exit_code(), 5);
+    assert_eq!(split_err.code(), "tool_missing");
 }
 
 #[cfg(feature = "test-probe")]

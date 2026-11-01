@@ -72,7 +72,7 @@ pub use rotate::RotateParams;
 pub use rotate_content::RotateContentParams;
 pub use scale::{ScaleFit, ScaleParams};
 pub use single_page::SinglePageParams;
-pub use split::{SplitMode, SplitParams};
+pub use split::{SplitDetectMode, SplitMode, SplitParams};
 pub use text_layout::TextLayoutParams;
 pub use thumbnails::ThumbnailsParams;
 pub use viewer_prefs::{ViewerPageLayout, ViewerPageMode, ViewerPrefsParams};
