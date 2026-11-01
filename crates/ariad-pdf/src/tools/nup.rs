@@ -411,7 +411,6 @@ pub(crate) fn finalize_layout_document(
 struct OutlineNode {
     title: Object,
     target_page: ObjectId,
-    dest_tail: Vec<Object>,
     children: Vec<Self>,
 }
 
@@ -482,7 +481,7 @@ fn read_outline_siblings(
             .cloned()
             .unwrap_or_else(|_| Object::string_literal("Bookmark"));
         let mapped_dest = extract_outline_dest(src_doc, dict)
-            .and_then(|(pid, tail)| page_map.get(&pid).copied().map(|mapped| (mapped, tail)));
+            .and_then(|source_page| page_map.get(&source_page).copied());
 
         let children = if let Ok(child_first) = dict.get(b"First").and_then(Object::as_reference) {
             read_outline_siblings(src_doc, child_first, page_map, depth + 1, visited, ctx)?
@@ -490,11 +489,10 @@ fn read_outline_siblings(
             Vec::new()
         };
 
-        if let Some((target_page, dest_tail)) = mapped_dest {
+        if let Some(target_page) = mapped_dest {
             out.push(OutlineNode {
                 title,
                 target_page,
-                dest_tail,
                 children,
             });
         } else if !children.is_empty() {
@@ -505,7 +503,7 @@ fn read_outline_siblings(
     Ok(out)
 }
 
-fn extract_outline_dest(doc: &Document, item_dict: &Dictionary) -> Option<(ObjectId, Vec<Object>)> {
+fn extract_outline_dest(doc: &Document, item_dict: &Dictionary) -> Option<ObjectId> {
     if let Ok(dest) = item_dict.get(b"Dest")
         && let Some(resolved) = dest_from_object(doc, dest)
     {
@@ -522,11 +520,12 @@ fn extract_outline_dest(doc: &Document, item_dict: &Dictionary) -> Option<(Objec
     None
 }
 
-fn dest_from_object(doc: &Document, dest: &Object) -> Option<(ObjectId, Vec<Object>)> {
+/// Returns the source page an explicit destination array points at. The remainder of the array
+/// (for example `/XYZ x y zoom`) is in source-page coordinates, which mean nothing on the
+/// re-laid-out output sheet, so it is intentionally not returned.
+fn dest_from_object(doc: &Document, dest: &Object) -> Option<ObjectId> {
     let arr = resolve_object_bounded(doc, dest)?.as_array().ok()?;
-    let page_id = arr.first()?.as_reference().ok()?;
-    let tail = arr[1..].to_vec();
-    Some((page_id, tail))
+    arr.first()?.as_reference().ok()
 }
 
 fn write_outline_siblings(
@@ -546,15 +545,12 @@ fn write_outline_siblings(
         ctx.check()?;
         let id = ids[idx];
         let copied_title = copier.copy_object(src_doc, target_doc, &node.title, ctx)?;
-        let mut dest_arr = Vec::with_capacity(1 + node.dest_tail.len().max(1));
-        dest_arr.push(Object::Reference(node.target_page));
-        if node.dest_tail.is_empty() {
-            dest_arr.push(Object::Name(b"Fit".to_vec()));
-        } else {
-            for item in &node.dest_tail {
-                dest_arr.push(copier.copy_object(src_doc, target_doc, item, ctx)?);
-            }
-        }
+        // Source-page coordinates do not map onto the output sheet, so every destination fits
+        // the whole sheet page.
+        let dest_arr = vec![
+            Object::Reference(node.target_page),
+            Object::Name(b"Fit".to_vec()),
+        ];
         let mut dict = dictionary! {
             "Title" => copied_title,
             "Parent" => Object::Reference(parent_id),
