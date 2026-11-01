@@ -32,7 +32,11 @@ fn assert_json_snapshot(name: &str, value: &Value) {
         "---\nsource: crates/ariad-pdf/tests/decompress.rs\nexpression: info_json\n---\n{body}\n"
     );
     let path = snapshot_path(name);
-    if std::env::var("BLESS_SNAPSHOTS").as_deref() == Ok("1") {
+    let update = std::env::var("UPDATE_SNAPSHOTS").as_deref() == Ok("1")
+        || std::env::var("UPDATE_SNAPSHOTS").as_deref() == Ok("always")
+        || std::env::var("INSTA_UPDATE").as_deref() == Ok("always")
+        || std::env::var("BLESS_SNAPSHOTS").as_deref() == Ok("1");
+    if update {
         std::fs::create_dir_all(path.parent().unwrap()).expect("create snapshots dir");
         std::fs::write(&path, &full).expect("write snapshot");
     }
@@ -211,4 +215,70 @@ fn decompress_enforces_decode_budget_and_rejects_bad_params() {
         decompress::run(&[doc.clone(), doc], &typed, &ctx),
         Err(PdfError::InvalidParams(_))
     ));
+}
+
+#[test]
+fn decompress_object_streams_keep_preserves_objstm_while_expand_removes_it() {
+    let raw = read_fixture("object-streams.pdf");
+    let before_text = extract_plain_text(&raw);
+    let ctx = ToolCtx::default();
+
+    let expanded = run_tool(
+        "pdf.decompress",
+        &[InputDoc::new("object-streams.pdf", raw.clone())],
+        &json!({ "object_streams": "expand" }),
+        &ctx,
+    )
+    .expect("decompress expand");
+    let expanded_doc = open(&expanded.artifacts[0].bytes, &Limits::local()).expect("open expanded");
+    let expanded_objstm_count = expanded_doc
+        .inner()
+        .objects
+        .values()
+        .filter(|obj| matches!(obj, lopdf::Object::Stream(s) if s.dict.has_type(b"ObjStm")))
+        .count();
+    assert_eq!(
+        expanded_objstm_count, 0,
+        "object_streams=expand must remove /Type /ObjStm streams"
+    );
+
+    let kept1 = run_tool(
+        "pdf.decompress",
+        &[InputDoc::new("object-streams.pdf", raw.clone())],
+        &json!({ "object_streams": "keep" }),
+        &ctx,
+    )
+    .expect("decompress keep 1");
+    let kept2 = run_tool(
+        "pdf.decompress",
+        &[InputDoc::new("object-streams.pdf", raw)],
+        &json!({ "object_streams": "keep" }),
+        &ctx,
+    )
+    .expect("decompress keep 2");
+    assert_eq!(
+        kept1.artifacts[0].bytes, kept2.artifacts[0].bytes,
+        "object_streams=keep must be byte-for-byte deterministic"
+    );
+
+    let kept_doc = open(&kept1.artifacts[0].bytes, &Limits::local()).expect("open kept");
+    let kept_objstm_count = kept_doc
+        .inner()
+        .objects
+        .values()
+        .filter(|obj| matches!(obj, lopdf::Object::Stream(s) if s.dict.has_type(b"ObjStm")))
+        .count();
+    assert!(
+        kept_objstm_count > 0,
+        "object_streams=keep must preserve /Type /ObjStm streams in the output PDF"
+    );
+    for obj in kept_doc.inner().objects.values() {
+        if let lopdf::Object::Stream(s) = obj {
+            assert!(
+                !s.dict.has(b"Filter"),
+                "all streams in decompressed PDF (including kept /ObjStm) must be uncompressed"
+            );
+        }
+    }
+    assert_eq!(extract_plain_text(&kept1.artifacts[0].bytes), before_text);
 }

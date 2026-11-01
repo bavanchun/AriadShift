@@ -25,7 +25,10 @@ mod insta {
             .join("tests/snapshots")
             .join(format!("{module}__{name}.snap"));
         let pretty = serde_json::to_string_pretty(value).expect("serialize snapshot json");
-        if std::env::var("INSTA_UPDATE").as_deref() == Ok("always") || !snap_path.exists() {
+        let update = std::env::var("UPDATE_SNAPSHOTS").as_deref() == Ok("1")
+            || std::env::var("UPDATE_SNAPSHOTS").as_deref() == Ok("always")
+            || std::env::var("INSTA_UPDATE").as_deref() == Ok("always");
+        if update {
             if let Some(parent) = snap_path.parent() {
                 std::fs::create_dir_all(parent).expect("create snapshots dir");
             }
@@ -34,6 +37,11 @@ mod insta {
             );
             std::fs::write(&snap_path, content).expect("write snapshot file");
         }
+        assert!(
+            snap_path.exists(),
+            "missing snapshot file {} (set UPDATE_SNAPSHOTS=1 to create)",
+            snap_path.display()
+        );
         let raw = std::fs::read_to_string(&snap_path).expect("read snapshot file");
         let body = raw
             .strip_prefix("---\n")

@@ -1,22 +1,28 @@
 //! Implementation of the `pdf.outline` tool.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use ariad_core::{
     ir::{Block, Inline},
     limits::Limits,
+    reader::pdf::ReadError,
     tools::params::outline::{OutlineAction, OutlineNode, OutlineParams},
 };
-use lopdf::{Dictionary, Object, ObjectId, StringFormat};
+use lopdf::{Dictionary, Object, ObjectId, Stream, StringFormat};
 use serde_json::{Value, json};
 
 use crate::{
-    document::{PdfDoc, ToolCtx},
+    document::{DecodeBudget, PdfDoc, ToolCtx},
     error::PdfError,
     naming,
     tools::{OutputDoc, metadata::catalog_object_id},
     writer,
 };
+
+const MAX_TREE_DEPTH: usize = 64;
+const MAX_REF_HOPS: usize = 16;
+const MAX_OUTLINE_NODES: usize = 100_000;
+const MAX_NAME_TREE_NODES: usize = 10_000;
 
 const PDFDOC_LOW: [char; 32] = [
     '\u{2022}', '\u{2020}', '\u{2021}', '\u{2026}', '\u{2014}', '\u{2013}', '\u{0192}', '\u{2044}',
@@ -49,8 +55,8 @@ pub fn run(
                     "pdf.outline `json` must not be provided when `action` is `export`".to_owned(),
                 ));
             }
-            let nodes = export_outlines(pdf.inner())?;
-            let json_val = nodes_to_json(&nodes);
+            let nodes = export_outlines(pdf.inner(), ctx)?;
+            let json_val = nodes_to_json(&nodes, 0);
             let out_name = naming::single_output_name(&stem, "outline", "json");
             Ok(vec![OutputDoc::from_json(out_name, json_val)?])
         }
@@ -63,8 +69,9 @@ pub fn run(
             };
             let mut out_pdf = pdf.clone();
             let page_count = u32::try_from(out_pdf.inner().get_pages().len()).unwrap_or(0);
-            validate_outline_nodes(nodes, page_count)?;
-            write_outlines(out_pdf.inner_mut()?, nodes)?;
+            let mut total_nodes = 0usize;
+            validate_outline_nodes(nodes, page_count, 0, &mut total_nodes, ctx)?;
+            write_outlines(out_pdf.inner_mut()?, nodes, ctx)?;
             Ok(vec![OutputDoc::from_pdf(
                 naming::default_pdf_output_name(&stem, "pdf.outline"),
                 out_pdf,
@@ -92,7 +99,7 @@ pub fn run(
             }
             let mut out_pdf = pdf.clone();
             let nodes = detect_heading_outlines(&out_pdf, ctx)?;
-            write_outlines(out_pdf.inner_mut()?, &nodes)?;
+            write_outlines(out_pdf.inner_mut()?, &nodes, ctx)?;
             Ok(vec![OutputDoc::from_pdf(
                 naming::default_pdf_output_name(&stem, "pdf.outline"),
                 out_pdf,
@@ -101,7 +108,10 @@ pub fn run(
     }
 }
 
-fn nodes_to_json(nodes: &[OutlineNode]) -> Value {
+fn nodes_to_json(nodes: &[OutlineNode], depth: usize) -> Value {
+    if depth >= MAX_TREE_DEPTH {
+        return Value::Array(Vec::new());
+    }
     Value::Array(
         nodes
             .iter()
@@ -109,15 +119,34 @@ fn nodes_to_json(nodes: &[OutlineNode]) -> Value {
                 json!({
                     "title": n.title,
                     "page": n.page,
-                    "children": nodes_to_json(&n.children),
+                    "children": nodes_to_json(&n.children, depth + 1),
                 })
             })
             .collect(),
     )
 }
 
-fn validate_outline_nodes(nodes: &[OutlineNode], page_count: u32) -> Result<(), PdfError> {
+fn validate_outline_nodes(
+    nodes: &[OutlineNode],
+    page_count: u32,
+    depth: usize,
+    total_nodes: &mut usize,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    ctx.check()?;
+    if depth >= MAX_TREE_DEPTH {
+        return Err(PdfError::InvalidParams(format!(
+            "outline hierarchy exceeds maximum nesting depth of {MAX_TREE_DEPTH}"
+        )));
+    }
     for node in nodes {
+        ctx.check()?;
+        *total_nodes = total_nodes.saturating_add(1);
+        if *total_nodes > MAX_OUTLINE_NODES {
+            return Err(PdfError::InvalidParams(format!(
+                "outline hierarchy exceeds maximum node count of {MAX_OUTLINE_NODES}"
+            )));
+        }
         if node.title.trim().is_empty() {
             return Err(PdfError::InvalidParams(
                 "outline node `title` must not be empty".to_owned(),
@@ -129,12 +158,16 @@ fn validate_outline_nodes(nodes: &[OutlineNode], page_count: u32) -> Result<(), 
                 node.title, node.page
             )));
         }
-        validate_outline_nodes(&node.children, page_count)?;
+        validate_outline_nodes(&node.children, page_count, depth + 1, total_nodes, ctx)?;
     }
     Ok(())
 }
 
-pub(crate) fn export_outlines(doc: &lopdf::Document) -> Result<Vec<OutlineNode>, PdfError> {
+pub(crate) fn export_outlines(
+    doc: &lopdf::Document,
+    ctx: &ToolCtx,
+) -> Result<Vec<OutlineNode>, PdfError> {
+    ctx.check()?;
     let catalog_id = catalog_object_id(doc)?;
     let Ok(Object::Dictionary(catalog)) = doc.get_object(catalog_id) else {
         return Ok(Vec::new());
@@ -152,25 +185,39 @@ pub(crate) fn export_outlines(doc: &lopdf::Document) -> Result<Vec<OutlineNode>,
         .map(|(num, id)| (id, num))
         .collect();
 
-    let mut visited = HashSet::new();
-    Ok(read_outline_siblings(
+    let mut visited = BTreeSet::new();
+    let mut node_count = 0usize;
+    read_outline_siblings(
         doc,
         outlines_dict.get(b"First").ok(),
         &page_id_to_num,
         &mut visited,
-    ))
+        0,
+        &mut node_count,
+        ctx,
+    )
 }
 
 fn read_outline_siblings(
     doc: &lopdf::Document,
     first_obj: Option<&Object>,
     page_id_to_num: &BTreeMap<ObjectId, u32>,
-    visited: &mut HashSet<ObjectId>,
-) -> Vec<OutlineNode> {
+    visited: &mut BTreeSet<ObjectId>,
+    depth: usize,
+    node_count: &mut usize,
+    ctx: &ToolCtx,
+) -> Result<Vec<OutlineNode>, PdfError> {
+    if depth >= MAX_TREE_DEPTH {
+        return Ok(Vec::new());
+    }
     let mut nodes = Vec::new();
     let mut current = first_obj;
 
     while let Some(obj) = current {
+        ctx.check()?;
+        if *node_count >= MAX_OUTLINE_NODES {
+            break;
+        }
         if let Object::Reference(id) = obj
             && !visited.insert(*id)
         {
@@ -179,14 +226,23 @@ fn read_outline_siblings(
         let Some(dict) = resolve_dict(doc, obj) else {
             break;
         };
+        *node_count = node_count.saturating_add(1);
         let title = dict
             .get(b"Title")
             .ok()
             .and_then(|o| resolve_object(doc, o))
             .and_then(decode_pdf_object_string)
             .unwrap_or_default();
-        let page = resolve_outline_item_page(doc, dict, page_id_to_num).unwrap_or(1);
-        let children = read_outline_siblings(doc, dict.get(b"First").ok(), page_id_to_num, visited);
+        let page = resolve_outline_item_page(doc, dict, page_id_to_num, ctx)?.unwrap_or(1);
+        let children = read_outline_siblings(
+            doc,
+            dict.get(b"First").ok(),
+            page_id_to_num,
+            visited,
+            depth + 1,
+            node_count,
+            ctx,
+        )?;
         nodes.push(OutlineNode {
             title,
             page,
@@ -195,48 +251,120 @@ fn read_outline_siblings(
         current = dict.get(b"Next").ok();
     }
 
-    nodes
+    Ok(nodes)
 }
 
 fn resolve_outline_item_page(
     doc: &lopdf::Document,
     item_dict: &Dictionary,
     page_id_to_num: &BTreeMap<ObjectId, u32>,
-) -> Option<u32> {
-    if let Ok(dest) = item_dict.get(b"Dest")
-        && let Some(page) = resolve_dest_page(doc, dest, page_id_to_num)
-    {
-        return Some(page);
+    ctx: &ToolCtx,
+) -> Result<Option<u32>, PdfError> {
+    if let Ok(dest) = item_dict.get(b"Dest") {
+        let mut visited_objs = BTreeSet::new();
+        let mut visited_names = BTreeSet::new();
+        if let Some(page) = resolve_dest_page(
+            doc,
+            dest,
+            page_id_to_num,
+            &mut visited_objs,
+            &mut visited_names,
+            0,
+            ctx,
+        )? {
+            return Ok(Some(page));
+        }
     }
-    if let Ok(action_obj) = item_dict.get(b"A")
-        && let Some(action_dict) = resolve_dict(doc, action_obj)
-        && let Ok(dest) = action_dict.get(b"D")
-    {
-        return resolve_dest_page(doc, dest, page_id_to_num);
+    if let Ok(action_obj) = item_dict.get(b"A") {
+        let mut visited_objs = BTreeSet::new();
+        let mut visited_names = BTreeSet::new();
+        if let Object::Reference(id) = action_obj {
+            visited_objs.insert(*id);
+        }
+        if let Some(action_dict) = resolve_dict(doc, action_obj)
+            && let Ok(dest) = action_dict.get(b"D")
+        {
+            return resolve_dest_page(
+                doc,
+                dest,
+                page_id_to_num,
+                &mut visited_objs,
+                &mut visited_names,
+                0,
+                ctx,
+            );
+        }
     }
-    None
+    Ok(None)
 }
 
 fn resolve_dest_page(
     doc: &lopdf::Document,
     dest_obj: &Object,
     page_id_to_num: &BTreeMap<ObjectId, u32>,
-) -> Option<u32> {
-    let resolved = resolve_object(doc, dest_obj)?;
+    visited_objs: &mut BTreeSet<ObjectId>,
+    visited_names: &mut BTreeSet<Vec<u8>>,
+    depth: usize,
+    ctx: &ToolCtx,
+) -> Result<Option<u32>, PdfError> {
+    ctx.check()?;
+    if depth >= MAX_TREE_DEPTH {
+        return Ok(None);
+    }
+
+    let mut resolved = dest_obj;
+    for _ in 0..MAX_REF_HOPS {
+        match resolved {
+            Object::Reference(id) => {
+                if !visited_objs.insert(*id) {
+                    return Ok(None);
+                }
+                let Ok(next) = doc.get_object(*id) else {
+                    return Ok(None);
+                };
+                resolved = next;
+            }
+            _ => break,
+        }
+    }
+
     match resolved {
-        Object::Array(items) => match items.first()? {
-            Object::Reference(page_id) => page_id_to_num.get(page_id).copied(),
-            Object::Integer(zero_based) if *zero_based >= 0 => Some((*zero_based as u32) + 1),
-            _ => None,
-        },
+        Object::Array(items) => {
+            let Some(first) = items.first() else {
+                return Ok(None);
+            };
+            match first {
+                Object::Reference(page_id) => Ok(page_id_to_num.get(page_id).copied()),
+                Object::Integer(zero_based) if *zero_based >= 0 => Ok(u32::try_from(*zero_based)
+                    .ok()
+                    .and_then(|n| n.checked_add(1))),
+                _ => Ok(None),
+            }
+        }
         Object::Dictionary(dict) => {
-            let d = dict.get(b"D").ok()?;
-            resolve_dest_page(doc, d, page_id_to_num)
+            let Ok(d) = dict.get(b"D") else {
+                return Ok(None);
+            };
+            resolve_dest_page(
+                doc,
+                d,
+                page_id_to_num,
+                visited_objs,
+                visited_names,
+                depth + 1,
+                ctx,
+            )
         }
-        Object::String(name, _) | Object::Name(name) => {
-            resolve_named_dest_page(doc, name, page_id_to_num)
-        }
-        _ => None,
+        Object::String(name, _) | Object::Name(name) => resolve_named_dest_page(
+            doc,
+            name,
+            page_id_to_num,
+            visited_objs,
+            visited_names,
+            depth + 1,
+            ctx,
+        ),
+        _ => Ok(None),
     }
 }
 
@@ -244,31 +372,88 @@ fn resolve_named_dest_page(
     doc: &lopdf::Document,
     name: &[u8],
     page_id_to_num: &BTreeMap<ObjectId, u32>,
-) -> Option<u32> {
-    let catalog_id = catalog_object_id(doc).ok()?;
-    let catalog = doc.get_object(catalog_id).ok()?.as_dict().ok()?;
+    visited_objs: &mut BTreeSet<ObjectId>,
+    visited_names: &mut BTreeSet<Vec<u8>>,
+    depth: usize,
+    ctx: &ToolCtx,
+) -> Result<Option<u32>, PdfError> {
+    ctx.check()?;
+    if depth >= MAX_TREE_DEPTH || !visited_names.insert(name.to_vec()) {
+        return Ok(None);
+    }
+
+    let Ok(catalog_id) = catalog_object_id(doc) else {
+        return Ok(None);
+    };
+    let Some(catalog) = doc
+        .get_object(catalog_id)
+        .ok()
+        .and_then(|o| o.as_dict().ok())
+    else {
+        return Ok(None);
+    };
     if let Ok(dests_obj) = catalog.get(b"Dests")
         && let Some(dests_dict) = resolve_dict(doc, dests_obj)
         && let Ok(target) = dests_dict.get(name)
     {
-        return resolve_dest_page(doc, target, page_id_to_num);
+        return resolve_dest_page(
+            doc,
+            target,
+            page_id_to_num,
+            visited_objs,
+            visited_names,
+            depth + 1,
+            ctx,
+        );
     }
     if let Ok(names_obj) = catalog.get(b"Names")
         && let Some(names_dict) = resolve_dict(doc, names_obj)
         && let Ok(dests_tree_obj) = names_dict.get(b"Dests")
         && let Some(dests_tree) = resolve_dict(doc, dests_tree_obj)
-        && let Some(target) = lookup_name_tree(doc, dests_tree, name)
     {
-        return resolve_dest_page(doc, target, page_id_to_num);
+        let mut visited_tree_nodes = BTreeSet::new();
+        if let Object::Reference(root_id) = dests_tree_obj {
+            visited_tree_nodes.insert(*root_id);
+        }
+        let mut visited_count = 0usize;
+        if let Some(target) = lookup_name_tree(
+            doc,
+            dests_tree,
+            name,
+            &mut visited_tree_nodes,
+            &mut visited_count,
+            0,
+            ctx,
+        )? {
+            return resolve_dest_page(
+                doc,
+                target,
+                page_id_to_num,
+                visited_objs,
+                visited_names,
+                depth + 1,
+                ctx,
+            );
+        }
     }
-    None
+    Ok(None)
 }
 
 fn lookup_name_tree<'a>(
     doc: &'a lopdf::Document,
     node: &'a Dictionary,
     target_name: &[u8],
-) -> Option<&'a Object> {
+    visited_nodes: &mut BTreeSet<ObjectId>,
+    visited_count: &mut usize,
+    depth: usize,
+    ctx: &ToolCtx,
+) -> Result<Option<&'a Object>, PdfError> {
+    ctx.check()?;
+    if depth >= MAX_TREE_DEPTH || *visited_count >= MAX_NAME_TREE_NODES {
+        return Ok(None);
+    }
+    *visited_count = visited_count.saturating_add(1);
+
     if let Ok(names_obj) = node.get(b"Names")
         && let Some(Object::Array(arr)) = resolve_object(doc, names_obj)
     {
@@ -276,7 +461,7 @@ fn lookup_name_tree<'a>(
             if let Some(Object::String(k, _) | Object::Name(k)) = resolve_object(doc, k_obj)
                 && k.as_slice() == target_name
             {
-                return Some(v_obj);
+                return Ok(Some(v_obj));
             }
         }
     }
@@ -284,14 +469,27 @@ fn lookup_name_tree<'a>(
         && let Some(Object::Array(kids)) = resolve_object(doc, kids_obj)
     {
         for kid in kids {
-            if let Some(kid_dict) = resolve_dict(doc, kid)
-                && let Some(found) = lookup_name_tree(doc, kid_dict, target_name)
+            if let Object::Reference(kid_id) = kid
+                && !visited_nodes.insert(*kid_id)
             {
-                return Some(found);
+                continue;
+            }
+            if let Some(kid_dict) = resolve_dict(doc, kid)
+                && let Some(found) = lookup_name_tree(
+                    doc,
+                    kid_dict,
+                    target_name,
+                    visited_nodes,
+                    visited_count,
+                    depth + 1,
+                    ctx,
+                )?
+            {
+                return Ok(Some(found));
             }
         }
     }
-    None
+    Ok(None)
 }
 
 fn clear_outlines(doc: &mut lopdf::Document) -> Result<(), PdfError> {
@@ -305,14 +503,19 @@ fn clear_outlines(doc: &mut lopdf::Document) -> Result<(), PdfError> {
     Ok(())
 }
 
-fn write_outlines(doc: &mut lopdf::Document, nodes: &[OutlineNode]) -> Result<(), PdfError> {
+fn write_outlines(
+    doc: &mut lopdf::Document,
+    nodes: &[OutlineNode],
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
     if nodes.is_empty() {
         return clear_outlines(doc);
     }
 
     let pages = doc.get_pages();
     let root_id = doc.new_object_id();
-    let (first_id, last_id, total_count) = build_outline_siblings(doc, root_id, nodes, &pages)?;
+    let (first_id, last_id, total_count) =
+        build_outline_siblings(doc, root_id, nodes, &pages, 0, ctx)?;
 
     let mut root_dict = Dictionary::new();
     root_dict.set("Type", Object::Name(b"Outlines".to_vec()));
@@ -340,15 +543,24 @@ fn build_outline_siblings(
     parent_id: ObjectId,
     siblings: &[OutlineNode],
     pages: &BTreeMap<u32, ObjectId>,
+    depth: usize,
+    ctx: &ToolCtx,
 ) -> Result<(Option<ObjectId>, Option<ObjectId>, usize), PdfError> {
+    ctx.check()?;
     if siblings.is_empty() {
         return Ok((None, None, 0));
+    }
+    if depth >= MAX_TREE_DEPTH {
+        return Err(PdfError::InvalidParams(format!(
+            "outline hierarchy exceeds maximum nesting depth of {MAX_TREE_DEPTH}"
+        )));
     }
 
     let ids: Vec<ObjectId> = (0..siblings.len()).map(|_| doc.new_object_id()).collect();
     let mut total_count = siblings.len();
 
     for (idx, node) in siblings.iter().enumerate() {
+        ctx.check()?;
         let item_id = ids[idx];
         let page_id = pages.get(&node.page).copied().ok_or_else(|| {
             PdfError::InvalidParams(format!(
@@ -358,7 +570,7 @@ fn build_outline_siblings(
         })?;
 
         let (child_first, child_last, child_count) =
-            build_outline_siblings(doc, item_id, &node.children, pages)?;
+            build_outline_siblings(doc, item_id, &node.children, pages, depth + 1, ctx)?;
         total_count += child_count;
 
         let mut dict = Dictionary::new();
@@ -392,11 +604,86 @@ fn build_outline_siblings(
     Ok((ids.first().copied(), ids.last().copied(), total_count))
 }
 
+fn budget_decompressed_limit(budget: DecodeBudget) -> u64 {
+    let mut probe = budget;
+    match probe.charge(usize::MAX) {
+        Err(PdfError::LimitExceeded(ReadError::DecompressedTooLarge { limit })) => limit,
+        _ => Limits::local().max_decompressed_bytes,
+    }
+}
+
+fn charge_page_contents(
+    doc: &lopdf::Document,
+    page_id: ObjectId,
+    budget: &mut DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    let Ok(page_dict) = doc.get_dictionary(page_id) else {
+        return Ok(());
+    };
+    let Ok(contents_obj) = page_dict.get(b"Contents") else {
+        return Ok(());
+    };
+
+    let mut streams: Vec<&Stream> = Vec::new();
+    match contents_obj {
+        Object::Reference(id) => match doc.get_object(*id) {
+            Ok(Object::Stream(stream)) => streams.push(stream),
+            Ok(Object::Array(arr)) => {
+                for item in arr {
+                    match item {
+                        Object::Reference(sid) => {
+                            if let Ok(Object::Stream(s)) = doc.get_object(*sid) {
+                                streams.push(s);
+                            }
+                        }
+                        Object::Stream(s) => streams.push(s),
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        },
+        Object::Array(arr) => {
+            for item in arr {
+                match item {
+                    Object::Reference(sid) => {
+                        if let Ok(Object::Stream(s)) = doc.get_object(*sid) {
+                            streams.push(s);
+                        }
+                    }
+                    Object::Stream(s) => streams.push(s),
+                    _ => {}
+                }
+            }
+        }
+        Object::Stream(stream) => streams.push(stream),
+        _ => {}
+    }
+
+    for stream in streams {
+        ctx.check()?;
+        budget.decode(stream)?;
+    }
+    Ok(())
+}
+
 fn detect_heading_outlines(pdf: &PdfDoc, ctx: &ToolCtx) -> Result<Vec<OutlineNode>, PdfError> {
+    ctx.check()?;
+    let mut budget = pdf.decode_budget();
+    for page_id in pdf.inner().page_iter() {
+        ctx.check()?;
+        charge_page_contents(pdf.inner(), page_id, &mut budget, ctx)?;
+    }
+
+    let mut reader_limits = Limits::local();
+    reader_limits.max_decompressed_bytes = budget_decompressed_limit(pdf.decode_budget());
+
     let mut temp_pdf = pdf.clone();
     let bytes = writer::save(&mut temp_pdf, ctx)?;
-    let read_out =
-        ariad_core::reader::pdf::read(&bytes, &Limits::local()).map_err(PdfError::from)?;
+    ctx.check()?;
+    let read_out = ariad_core::reader::pdf::read(&bytes, &reader_limits).map_err(PdfError::from)?;
+    ctx.check()?;
 
     let page_count = u32::try_from(pdf.inner().get_pages().len())
         .unwrap_or(1)
@@ -404,8 +691,9 @@ fn detect_heading_outlines(pdf: &PdfDoc, ctx: &ToolCtx) -> Result<Vec<OutlineNod
     let mut raw_headings: Vec<(u8, String, u32)> = Vec::new();
 
     for (block_idx, block) in read_out.document.body.iter().enumerate() {
+        ctx.check()?;
         if let Block::Heading { level, content } = block {
-            let title = inlines_to_plain_text(content).trim().to_owned();
+            let title = inlines_to_plain_text(content, 0).trim().to_owned();
             if !title.is_empty() {
                 let key = format!("body/{block_idx}");
                 let page = read_out
@@ -423,8 +711,9 @@ fn detect_heading_outlines(pdf: &PdfDoc, ctx: &ToolCtx) -> Result<Vec<OutlineNod
 
     if raw_headings.is_empty() {
         for (block_idx, block) in read_out.document.body.iter().enumerate() {
+            ctx.check()?;
             if let Block::Paragraph { content } = block {
-                let text = inlines_to_plain_text(content).trim().to_owned();
+                let text = inlines_to_plain_text(content, 0).trim().to_owned();
                 if let Some(level) = classify_fallback_heading_line(&text) {
                     let key = format!("body/{block_idx}");
                     let page = read_out
@@ -441,7 +730,7 @@ fn detect_heading_outlines(pdf: &PdfDoc, ctx: &ToolCtx) -> Result<Vec<OutlineNod
         }
     }
 
-    Ok(build_heading_tree(&raw_headings))
+    Ok(build_heading_tree(&raw_headings, 0))
 }
 
 fn classify_fallback_heading_line(text: &str) -> Option<u8> {
@@ -458,7 +747,10 @@ fn classify_fallback_heading_line(text: &str) -> Option<u8> {
     }
 }
 
-fn build_heading_tree(items: &[(u8, String, u32)]) -> Vec<OutlineNode> {
+fn build_heading_tree(items: &[(u8, String, u32)], depth: usize) -> Vec<OutlineNode> {
+    if depth >= MAX_TREE_DEPTH {
+        return Vec::new();
+    }
     let Some(&(first_level, _, _)) = items.first() else {
         return Vec::new();
     };
@@ -477,7 +769,7 @@ fn build_heading_tree(items: &[(u8, String, u32)]) -> Vec<OutlineNode> {
             while end_children < items.len() && items[end_children].0 > min_level {
                 end_children += 1;
             }
-            let children = build_heading_tree(&items[start_children..end_children]);
+            let children = build_heading_tree(&items[start_children..end_children], depth + 1);
             result.push(OutlineNode {
                 title: title.clone(),
                 page,
@@ -489,14 +781,17 @@ fn build_heading_tree(items: &[(u8, String, u32)]) -> Vec<OutlineNode> {
             while end_group < items.len() && items[end_group].0 > min_level {
                 end_group += 1;
             }
-            result.extend(build_heading_tree(&items[i..end_group]));
+            result.extend(build_heading_tree(&items[i..end_group], depth + 1));
             i = end_group;
         }
     }
     result
 }
 
-fn inlines_to_plain_text(inlines: &[Inline]) -> String {
+fn inlines_to_plain_text(inlines: &[Inline], depth: usize) -> String {
+    if depth >= MAX_TREE_DEPTH {
+        return String::new();
+    }
     let mut out = String::new();
     for inline in inlines {
         match inline {
@@ -511,7 +806,7 @@ fn inlines_to_plain_text(inlines: &[Inline]) -> String {
             | Inline::Superscript { content }
             | Inline::Subscript { content }
             | Inline::Link { content, .. } => {
-                out.push_str(&inlines_to_plain_text(content));
+                out.push_str(&inlines_to_plain_text(content, depth + 1));
             }
             Inline::Image { alt, .. } => out.push_str(alt),
             Inline::FootnoteRef { id } => out.push_str(id),
@@ -521,10 +816,14 @@ fn inlines_to_plain_text(inlines: &[Inline]) -> String {
 }
 
 fn resolve_object<'a>(doc: &'a lopdf::Document, obj: &'a Object) -> Option<&'a Object> {
-    match obj {
-        Object::Reference(id) => doc.get_object(*id).ok(),
-        other => Some(other),
+    let mut current = obj;
+    for _ in 0..MAX_REF_HOPS {
+        match current {
+            Object::Reference(id) => current = doc.get_object(*id).ok()?,
+            other => return Some(other),
+        }
     }
+    None
 }
 
 fn resolve_dict<'a>(doc: &'a lopdf::Document, obj: &'a Object) -> Option<&'a Dictionary> {
@@ -560,6 +859,18 @@ pub(crate) fn decode_pdf_bytes(bytes: &[u8]) -> String {
             .iter()
             .copied()
             .map(u16::from_be_bytes)
+            .collect();
+        return String::from_utf16_lossy(&units)
+            .trim_matches('\0')
+            .to_owned();
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        let units: Vec<u16> = bytes[2..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .copied()
+            .map(u16::from_le_bytes)
             .collect();
         return String::from_utf16_lossy(&units)
             .trim_matches('\0')

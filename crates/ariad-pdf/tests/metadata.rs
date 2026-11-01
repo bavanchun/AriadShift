@@ -25,7 +25,10 @@ mod insta {
             .join("tests/snapshots")
             .join(format!("{module}__{name}.snap"));
         let pretty = serde_json::to_string_pretty(value).expect("serialize snapshot json");
-        if std::env::var("INSTA_UPDATE").as_deref() == Ok("always") || !snap_path.exists() {
+        let update = std::env::var("UPDATE_SNAPSHOTS").as_deref() == Ok("1")
+            || std::env::var("UPDATE_SNAPSHOTS").as_deref() == Ok("always")
+            || std::env::var("INSTA_UPDATE").as_deref() == Ok("always");
+        if update {
             if let Some(parent) = snap_path.parent() {
                 std::fs::create_dir_all(parent).expect("create snapshots dir");
             }
@@ -34,6 +37,11 @@ mod insta {
             );
             std::fs::write(&snap_path, content).expect("write snapshot file");
         }
+        assert!(
+            snap_path.exists(),
+            "missing snapshot file {} (set UPDATE_SNAPSHOTS=1 to create)",
+            snap_path.display()
+        );
         let raw = std::fs::read_to_string(&snap_path).expect("read snapshot file");
         let body = raw
             .strip_prefix("---\n")
@@ -312,4 +320,169 @@ fn metadata_recovers_broken_xref_with_warning() {
     let report = info::run(&out.artifacts[0].bytes, &Limits::local()).expect("valid rewritten pdf");
     assert!(!report.repaired_xref);
     assert_eq!(report.metadata.title.as_deref(), Some("Repaired Title"));
+}
+
+#[test]
+fn metadata_encodes_non_ascii_as_utf16be_preserves_pdfdocencoding_and_strips_when_empty() {
+    use lopdf::{Object, StringFormat};
+
+    let ctx = ToolCtx::default();
+
+    // 1. Non-ASCII fields must be written with a UTF-16BE BOM (FE FF) in /Info
+    let base = InputDoc::new("annotations.pdf", fixture_bytes("annotations.pdf"));
+    let non_ascii_out = run_tool(
+        "pdf.metadata",
+        &[base],
+        &json!({
+            "set": {
+                "title": "Khu vườn đọc sách — Tập 1",
+                "author": "Nguyễn Văn A",
+                "custom": {
+                    "CopyrightNotice": "Bản quyền © 2026"
+                }
+            }
+        }),
+        &ctx,
+    )
+    .expect("set non-ascii metadata");
+    let non_ascii_doc =
+        Document::load_mem(&non_ascii_out.artifacts[0].bytes).expect("load non-ascii output");
+    let info_id = non_ascii_doc
+        .trailer
+        .get(b"Info")
+        .and_then(Object::as_reference)
+        .expect("trailer /Info ref");
+    let info_dict = non_ascii_doc
+        .get_object(info_id)
+        .and_then(Object::as_dict)
+        .expect("/Info dict");
+    let title_bytes = info_dict
+        .get(b"Title")
+        .and_then(Object::as_str)
+        .expect("/Title bytes");
+    assert!(
+        title_bytes.starts_with(&[0xFE, 0xFF]),
+        "non-ASCII /Title in /Info must start with UTF-16BE BOM FE FF, got {title_bytes:?}"
+    );
+    let custom_bytes = info_dict
+        .get(b"CopyrightNotice")
+        .and_then(Object::as_str)
+        .expect("/CopyrightNotice bytes");
+    assert!(
+        custom_bytes.starts_with(&[0xFE, 0xFF]),
+        "non-ASCII custom field in /Info must start with UTF-16BE BOM FE FF"
+    );
+    let info_report =
+        info::run(&non_ascii_out.artifacts[0].bytes, &Limits::local()).expect("info report");
+    assert_eq!(
+        info_report.metadata.title.as_deref(),
+        Some("Khu vườn đọc sách — Tập 1")
+    );
+    assert_eq!(info_report.metadata.author.as_deref(), Some("Nguyễn Văn A"));
+
+    // 2. Existing PDFDocEncoding bytes (0x80..=0xFF without BOM) in /Info must survive updates
+    let mut pdfdoc_src =
+        Document::load_mem(&fixture_bytes("annotations.pdf")).expect("load base pdf");
+    let src_info_id = pdfdoc_src
+        .trailer
+        .get(b"Info")
+        .and_then(Object::as_reference)
+        .expect("src /Info");
+    if let Ok(Object::Dictionary(d)) = pdfdoc_src.get_object_mut(src_info_id) {
+        // 0xA9 = '©', 0x84 = '—' (em dash in PDFDocEncoding), 0xE9 = 'é'
+        d.set(
+            "Subject",
+            Object::String(
+                b"Copyright \xA9 2026 \x84 Report".to_vec(),
+                StringFormat::Literal,
+            ),
+        );
+        d.set(
+            "Keywords",
+            Object::String(b"caf\xE9, r\xE9sum\xE9".to_vec(), StringFormat::Literal),
+        );
+        d.set(
+            "ArchiveNote",
+            Object::String(b"Note \xA9 2026".to_vec(), StringFormat::Literal),
+        );
+    }
+    let mut pdfdoc_bytes = Vec::new();
+    pdfdoc_src
+        .save_to(&mut pdfdoc_bytes)
+        .expect("save pdfdoc_src");
+
+    let updated_pdfdoc = run_tool(
+        "pdf.metadata",
+        &[InputDoc::new("annotations.pdf", pdfdoc_bytes)],
+        &json!({
+            "set": {
+                "title": "Updated Title Only"
+            }
+        }),
+        &ctx,
+    )
+    .expect("update title on PDFDocEncoding pdf");
+    let reloaded =
+        Document::load_mem(&updated_pdfdoc.artifacts[0].bytes).expect("reload updated_pdfdoc");
+    let rel_info_id = reloaded
+        .trailer
+        .get(b"Info")
+        .and_then(Object::as_reference)
+        .expect("reloaded /Info");
+    let rel_info = reloaded
+        .get_object(rel_info_id)
+        .and_then(Object::as_dict)
+        .expect("reloaded /Info dict");
+    assert!(
+        rel_info.has(b"Subject"),
+        "PDFDocEncoding /Subject must not be dropped"
+    );
+    assert!(
+        rel_info.has(b"Keywords"),
+        "PDFDocEncoding /Keywords must not be dropped"
+    );
+    assert!(
+        rel_info.has(b"ArchiveNote"),
+        "PDFDocEncoding custom field /ArchiveNote must not be dropped"
+    );
+
+    // 3. Removing all remaining fields via `remove` (with `strip_all: false`) must omit /Info and /Metadata
+    let single_field_out = run_tool(
+        "pdf.metadata",
+        &[InputDoc::new(
+            "annotations.pdf",
+            fixture_bytes("annotations.pdf"),
+        )],
+        &json!({
+            "strip_all": true,
+            "set": {
+                "title": "Sole Field"
+            }
+        }),
+        &ctx,
+    )
+    .expect("set sole field");
+    let cleared_via_remove = run_tool(
+        "pdf.metadata",
+        &[InputDoc::new(
+            "annotations.pdf",
+            single_field_out.artifacts[0].bytes.clone(),
+        )],
+        &json!({
+            "remove": ["title"]
+        }),
+        &ctx,
+    )
+    .expect("remove sole field");
+    let cleared_doc =
+        Document::load_mem(&cleared_via_remove.artifacts[0].bytes).expect("load cleared doc");
+    assert!(
+        cleared_doc.trailer.get(b"Info").is_err(),
+        "removing the last metadata field must omit /Info from trailer"
+    );
+    let cleared_catalog = cleared_doc.catalog().expect("catalog");
+    assert!(
+        cleared_catalog.get(b"Metadata").is_err(),
+        "removing the last metadata field must omit /Metadata from catalog"
+    );
 }

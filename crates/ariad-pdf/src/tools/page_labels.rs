@@ -37,6 +37,7 @@ pub fn run(
 
     let mut seen_from = HashSet::with_capacity(params.ranges.len());
     for range in &params.ranges {
+        ctx.check()?;
         if range.from == 0 || range.from > page_count {
             return Err(PdfError::InvalidParams(format!(
                 "page label range `from` ({}) is out of bounds for {page_count}-page document",
@@ -61,6 +62,7 @@ pub fn run(
 
     let mut nums = Vec::with_capacity(sorted_ranges.len() * 2);
     for range in &sorted_ranges {
+        ctx.check()?;
         let zero_based = i64::from(range.from - 1);
         let mut label_dict = Dictionary::new();
         label_dict.set("Type", Object::Name(b"PageLabel".to_vec()));
