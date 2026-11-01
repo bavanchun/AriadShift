@@ -157,7 +157,7 @@ Both `ariad-host` and `ariad-wasm` enforce `ToolSpec::allowed_output_formats()` 
 
 Engine availability for `pdf.split` is decided **before execution** via `ToolSpec::engine_for_params(params)`:
 - When `mode = "blank-separator"` and `detect = "pixel"`, the effective engine is `"pdfium"`.
-- On `ariad-wasm` (where out-of-process engines do not exist) or on `ariad-host` when the `pdfium` engine pack is not installed, the call fails upfront at validation/plan time (before staging inputs or running any structural fallback) with exit code `5` (`tool_missing` / `engine_unavailable`) naming the missing `"pdfium"` engine and its install hint (`ashift engines install pdfium`). It **never** falls back silently to `"content"` detection.
+- On `ariad-wasm` (where out-of-process engines do not exist) or on `ariad-host` when the `pdfium` engine pack is not installed, the call fails upfront at validation/plan time (before staging inputs or running any structural fallback) with exit code `5` (`engine_unavailable` on WASM; `tool_missing` on the host) naming the missing `"pdfium"` engine and its install hint (`ashift engines install pdfium`). It **never** falls back silently to `"content"` detection.
 
 ---
 
