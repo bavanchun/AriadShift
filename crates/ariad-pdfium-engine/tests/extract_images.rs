@@ -408,19 +408,7 @@ fn refuses_image_exceeding_max_image_pixels_and_encrypted_pdfs() {
 #[test]
 fn inline_images_check_dimensions_before_decoding() {
     let lib_dir = require_pdfium!();
-    let mut content = Vec::new();
-    for _ in 0..40 {
-        content.extend_from_slice(
-            b"q 1 0 0 1 0 0 cm BI /W 20000 /H 20000 /BPC 8 /CS /G /F /AHx ID 00> EI Q\n",
-        );
-    }
-    let pdf = assemble_pdf(&[
-        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>".to_vec(),
-        stream_object("", &content),
-    ]);
-    let ws = TestWorkspace::from_bytes("inline.pdf", &pdf);
+    let ws = TestWorkspace::from_fixture("fixtures/pdf/inline-image-bomb.pdf");
     let mut sink = Vec::new();
     let mut ctx = ToolContext::new(
         "inline-limit",
@@ -717,5 +705,146 @@ fn repeated_operators_obey_the_traversal_budget() {
     .with_library_dir(lib_dir);
     let err = extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
         .expect_err("operator budget must be enforced");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn refuses_cumulative_inline_pixels_on_page() {
+    let lib_dir = require_pdfium!();
+    let content = b"q BI /Width 4 /Height 4 /BitsPerComponent 8 /ColorSpace /DeviceGray /Filter /ASCIIHexDecode ID 00> EI Q\n".repeat(2);
+    let pdf = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Contents 4 0 R >>".to_vec(),
+        stream_object("", &content),
+    ]);
+    let ws = TestWorkspace::from_bytes("inline-total.pdf", &pdf);
+    let mut limits = Limits::local();
+    limits.max_asset_bytes = Some(100);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "inline-total",
+        "pdf.extract_images",
+        ws.paths,
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("page total must be bounded");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn refuses_cumulative_inline_pixels_in_forms() {
+    let lib_dir = require_pdfium!();
+    let form = b"BI /W 4 /H 4 /BPC 8 /CS /G /F /AHx ID 00> EI";
+    let pdf = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << /XObject << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/F1 Do /F2 Do"),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", form),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", form),
+    ]);
+    let ws = TestWorkspace::from_bytes("inline-form-total.pdf", &pdf);
+    let mut limits = Limits::local();
+    limits.max_asset_bytes = Some(100);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "form-total",
+        "pdf.extract_images",
+        ws.paths,
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("form images must count toward page total");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn refuses_repeated_form_containing_inline_image() {
+    let lib_dir = require_pdfium!();
+    let pdf = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << /XObject << /F 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/F Do /F Do"),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"BI /W 4 /H 4 /BPC 8 /CS /G /F /AHx ID 00> EI"),
+    ]);
+    let ws = TestWorkspace::from_bytes("repeated-inline.pdf", &pdf);
+    let mut limits = Limits::local();
+    limits.max_asset_bytes = Some(100);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "repeated-inline",
+        "pdf.extract_images",
+        ws.paths,
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("repeated form must not bypass page budget");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn refuses_inline_images_with_missing_or_invalid_dictionary_values() {
+    let lib_dir = require_pdfium!();
+    for content in [
+        b"BI /W 1 /H 1 /BPC 8 /F /AHx ID 00> EI".as_slice(),
+        b"BI /W 1 /H 1 /BPC 3 /CS /G /F /AHx ID 00> EI".as_slice(),
+        b"BI /W 1 /H 1 /BPC 8 /CS /G /IM /bad /F /AHx ID 00> EI".as_slice(),
+    ] {
+        let pdf = assemble_pdf(&[
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Contents 4 0 R >>".to_vec(),
+            stream_object("", content),
+        ]);
+        let ws = TestWorkspace::from_bytes("invalid-inline.pdf", &pdf);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "invalid-inline",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+            .expect_err("invalid inline image must be refused");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+    }
+}
+
+#[test]
+fn inherited_form_resources_are_checked_before_page_load() {
+    let lib_dir = require_pdfium!();
+    let pdf = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << /XObject << /A 5 0 R /B 6 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/A Do"),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"/B Do"),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"BI /W 4 /H 4 /BPC 8 /CS /G /F /AHx ID 00> EI"),
+    ]);
+    let ws = TestWorkspace::from_bytes("inherited-inline.pdf", &pdf);
+    let mut limits = Limits::local();
+    limits.max_asset_bytes = Some(100);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "inherited-inline",
+        "pdf.extract_images",
+        ws.paths,
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("shared form path must not bypass the page budget");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
 }

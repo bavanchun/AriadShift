@@ -4037,3 +4037,22 @@ license = "Apache-2.0"
 license_basis = "Original JSONL test vector authored for AriadShift."
 attribution = "AriadShift contributors"
 
+
+[[fixture]]
+id = "inline-image-bomb-pdf"
+path = "fixtures/pdf/inline-image-bomb.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Oversized inline image declarations"
+origin = "generated"
+generated_by = "fixtures/gen/inline_image_bomb.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5686f196d1bfe604fdac9168800c03408537730d48210883030e4cc9385820ce"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

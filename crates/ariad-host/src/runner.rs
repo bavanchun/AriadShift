@@ -809,7 +809,13 @@ where
         };
         (writable, ipc)
     };
-    let (program, args, sandbox) = prepare_launch_with_read_only(command, &writable, &read_only)?;
+    let memory_limit = if command.engine == "pdfium" {
+        request.limits().and_then(|limits| limits.max_memory_mb)
+    } else {
+        None
+    };
+    let (program, args, sandbox) =
+        prepare_launch_with_limit(command, &writable, &read_only, memory_limit)?;
     let tmp_dir = request.work_dir().map_or_else(
         || {
             describe_workspace
@@ -846,10 +852,15 @@ where
                 return Err(RunError::SandboxLaunchFailed(message));
             }
             Err(RunError::Crash { exit, .. }) => {
-                return Err(RunError::Crash {
-                    exit,
-                    stderr_tail: process.stderr_tail(),
-                });
+                let stderr_tail = process.stderr_tail();
+                #[cfg(target_os = "linux")]
+                if let Some(limit_mb) = memory_limit
+                    && stderr_tail.contains("memory allocation of ")
+                    && stderr_tail.contains(" failed")
+                {
+                    return Err(RunError::MemoryLimitExceeded { limit_mb });
+                }
+                return Err(RunError::Crash { exit, stderr_tail });
             }
             Err(error) => return Err(error),
         };
@@ -993,12 +1004,34 @@ pub(crate) fn prepare_launch_with_read_only(
     writable: &[PathBuf],
     read_only: &[PathBuf],
 ) -> Result<(PathBuf, Vec<OsString>, SandboxOutcome), RunError> {
+    prepare_launch_with_limit(command, writable, read_only, None)
+}
+
+fn prepare_launch_with_limit(
+    command: &EngineCommand,
+    writable: &[PathBuf],
+    read_only: &[PathBuf],
+    memory_limit_mb: Option<u32>,
+) -> Result<(PathBuf, Vec<OsString>, SandboxOutcome), RunError> {
     let mode = match command.sandbox {
         Some(mode) => mode,
         None => sandbox::effective_mode().map_err(RunError::SandboxUnavailable)?,
     };
     let direct = |outcome| Ok((command.program.clone(), command.args.clone(), outcome));
     if mode == SandboxMode::Off {
+        #[cfg(target_os = "linux")]
+        if let Some(limit_mb) = memory_limit_mb {
+            let launcher = command.launcher.as_ref().ok_or_else(|| {
+                RunError::SandboxUnavailable("PDFium requires a resource-limit launcher".to_owned())
+            })?;
+            let mut policy = SandboxPolicy::default();
+            policy
+                .rlimits
+                .push(("as".to_owned(), u64::from(limit_mb) * 1024 * 1024));
+            let mut args = policy.launcher_args(false, &command.program, &command.args);
+            args.insert(1, OsString::from("--limits-only"));
+            return Ok((launcher.clone(), args, SandboxOutcome::Off));
+        }
         return direct(SandboxOutcome::Off);
     }
     let strict = crate::engines::sandbox::requires_isolation(&command.engine, mode);
@@ -1053,6 +1086,14 @@ pub(crate) fn prepare_launch_with_read_only(
         )));
     }
     let mut policy = SandboxPolicy::for_engine(&command.engine, &command.program, writable);
+    #[cfg(target_os = "linux")]
+    if let Some(limit_mb) = memory_limit_mb {
+        policy
+            .rlimits
+            .push(("as".to_owned(), u64::from(limit_mb) * 1024 * 1024));
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = memory_limit_mb;
     if let Some(root) = &command.install_root {
         policy.exec.push(root.clone());
     }
