@@ -46,18 +46,47 @@ Musl targets remain a follow-up: removing targets changes release coverage and i
 not a one-line exclusion. `cargo fmt --all --check` passed after formatting. The final gate handoff records
 the post-merge results.
 
-## Round 4 (incomplete)
+## Round 4
 
-- String `Do` operands: `23ff7db` parses literal and hexadecimal strings in
-  both preflight and extraction traversal. `string_operands_resolve_xobject_names`
-  passed. The regression was not run against the original revision.
-- Memory hints: `4b2f8a8` reserves the hint for process crashes and keeps typed
-  engine failure messages free of it. `memory_hint_is_limited_to_crashes` and
-  `memory_hint_is_only_added_to_crashes` passed. The changed regression was not
-  run against the original revision.
-- The per-page cumulative budget, compact scope memoization, and inline-image
-  compatibility work remain unfinished. A scope-table hashing experiment was
-  discarded because recomputing it per object produces quadratic CPU work.
-- Focused clippy passed for `ariad-pdfium-engine` and `ariad-host` with
-  `test-probe`. The full gate, pack rebuild, push, and macOS checks were not run.
-  The Linux gate is red until the remaining work and complete gate succeed.
+The final Linux gate passed on code revision `b3d89bdf`. The report commit
+changes documentation only. The earlier incomplete handoff is superseded.
+
+- Page preflight (`68daa4e8`): page content previously discarded form costs
+  and did not charge glyph use. Operator, invocation, inline-image and Type3
+  work now contribute to cumulative page limits. The focused
+  `page_preflight_counts_repeated_form_execution`,
+  `page_preflight_charges_type3_glyph_uses`,
+  `repeated_inline_form_charges_each_invocation` and
+  `repeated_large_form_exceeds_page_work_budget_before_load` tests passed.
+- String operands (`23ff7db2`): both content scans now resolve literal and
+  hexadecimal strings as XObject names. `string_operands_resolve_xobject_names`
+  passed.
+- Resource scopes (`274d0f60`, `218eddf2`, `42bd8e2d`, `b3d89bdf`): memo
+  entries previously copied complete XObject tables. Scopes now share their
+  parents and use a digest of effective bindings. The
+  `resource_scopes_share_large_parent_and_preserve_overrides`,
+  `shared_form_expands_each_inherited_resource_scope` and
+  `inherited_form_resources_are_checked_before_page_load` tests passed. The
+  initial scope identity caused a fixture regression; canonicalizing equivalent
+  bindings fixed it, and the complete extraction suite passed.
+- Inline images (`025d363c`): masks no longer require a color space or explicit
+  bit depth, and permitted lossless chains can end in CCITT or JPEG. JPEG frame
+  dimensions are checked. `inline_masks_and_supported_filter_chains_are_checked`
+  and `extracts_type3_bitmap_font_without_refusal` passed. The generated Type3
+  fixture is in the manifest. The 53-PDF preflight corpus had zero refusals for
+  43 legitimate files and refused all 10 adversarial fixtures as expected.
+- Memory hints (`4b2f8a8c`): deterministic engine failures previously received
+  the same hint as crashes. `memory_hint_is_limited_to_crashes` and
+  `memory_hint_is_only_added_to_crashes` passed.
+
+The pack was rebuilt and verified before the complete sequential gate. All gate
+commands passed; results and timings are in the external handoff. A shell log
+wrapper hit zsh's read-only `status` variable after one pack build; rerunning the
+pack command directly passed. Focused clippy initially found a complex type and
+an abbreviated byte slice; both were fixed and the final clippy passed. The
+string and memory-hint regression tests were not run on the original revision.
+
+The glyph budget conservatively charges string bytes using the highest inspected
+Type3 glyph cost, which can reject some mixed-font pages before the actual work
+would reach the limit. The corpus found no such refusal. macOS goldens and the
+native macOS gate remain for the Mac PM.
