@@ -409,6 +409,8 @@ Every tool invocation receives an `ariad_core::limits::Limits` struct (`Limits::
 | Decoded stream & object caps | `ariad-pdf` opens every PDF exclusively through `ariad_core::reader::pdf::load_bounded(bytes, &limits)`, enforcing `max_decompressed_bytes` across Flate/LZW/filter streams, `max_nesting_depth` (< 100), and `MAX_OBJECTS` (object count ceiling). |
 | `max_asset_bytes` | Bounds individual embedded images, fonts, or file attachments added or extracted by a tool. |
 
+For PDFium tools, an unspecified `timeout_s` or `max_memory_mb` uses the cloud defaults (600 seconds and 4096 MiB respectively), including local runs. Explicit limits remain unchanged. `pdf.render` and `pdf.to_images` also cap the cumulative encoded page bytes and the final ZIP size at `max_decompressed_bytes`; a limit failure publishes no artifacts.
+
 Exceeding any limit terminates the job immediately and returns `limit_exceeded` (exit code `4`).
 
 ### Sandbox and Network Isolation (AD-15)

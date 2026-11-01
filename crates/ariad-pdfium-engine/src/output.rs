@@ -35,8 +35,10 @@ use ariad_core::{
 use ariad_engine_io::{EngineFailure, RunToolPaths, emit_v2};
 use ariad_pdf::{PdfError, ToolCtx as PdfToolCtx, document as pdf_document};
 use image::{
-    DynamicImage, ExtendedColorType, ImageEncoder, ImageFormat, RgbaImage,
-    codecs::{bmp::BmpEncoder, jpeg::JpegEncoder, tiff::TiffEncoder, webp::WebPEncoder},
+    ExtendedColorType, ImageEncoder, RgbaImage,
+    codecs::{
+        bmp::BmpEncoder, jpeg::JpegEncoder, png::PngEncoder, tiff::TiffEncoder, webp::WebPEncoder,
+    },
 };
 use pdfium_render::prelude::{PdfBitmap, Pdfium, PdfiumError, PdfiumInternalError};
 use serde_json::Value;
@@ -284,11 +286,9 @@ impl<'a> ToolContext<'a> {
         let bytes = std::fs::read(&input_path).map_err(|_| EngineFailure::io())?;
         self.check()?;
 
-        let pdf_ctx = PdfToolCtx {
-            deadline: self.deadline,
-            cancel: Arc::clone(&self.cancel.0),
-            max_pages: self.limits.max_pages,
-        };
+        let mut pdf_ctx = PdfToolCtx::with_cancel(Arc::clone(&self.cancel.0))
+            .with_max_pages(self.limits.max_pages);
+        pdf_ctx.deadline = self.deadline;
 
         // Allow opening the document up to the global local page ceiling so `PageRange` can
         // select a smaller subset when `limits.max_pages` is tighter than the whole document;
@@ -536,10 +536,17 @@ pub fn encode_raster_image(
 ) -> Result<Vec<u8>, EngineFailure> {
     let mut buf = Vec::new();
     let res = match format {
-        RasterFormat::Png => DynamicImage::ImageRgba8(image.clone())
-            .write_to(&mut Cursor::new(&mut buf), ImageFormat::Png),
+        RasterFormat::Png => PngEncoder::new(&mut buf).write_image(
+            image.as_raw(),
+            image.width(),
+            image.height(),
+            ExtendedColorType::Rgba8,
+        ),
         RasterFormat::Jpeg => {
-            let rgb = DynamicImage::ImageRgba8(image.clone()).into_rgb8();
+            let rgb = image::ImageBuffer::from_fn(image.width(), image.height(), |x, y| {
+                let [r, g, b, _] = image.get_pixel(x, y).0;
+                image::Rgb([r, g, b])
+            });
             let mut encoder = JpegEncoder::new_with_quality(&mut buf, quality.unwrap_or(85));
             encoder.encode_image(&rgb)
         }

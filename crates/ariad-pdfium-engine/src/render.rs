@@ -16,7 +16,7 @@
 //!    `FORM_DoPageAAction`.
 //! 4. The out-of-process engine executes without network access.
 
-use std::fs;
+use std::{fs, io::Write};
 
 use ariad_core::{
     protocol::ErrorCode,
@@ -26,10 +26,11 @@ use ariad_engine_io::EngineFailure;
 use image::{Rgba, RgbaImage, imageops};
 use pdfium_render::prelude::{PdfColor, PdfPage, PdfRenderConfig};
 use serde_json::json;
+use zip::{CompressionMethod, DateTime, ZipWriter, write::SimpleFileOptions};
 
 use crate::output::{
     Metrics, ToolContext, ToolResult, bitmap_to_rgba, encode_raster_image, map_pdfium_open_error,
-    page_artifact_name, write_zip_archive,
+    page_artifact_name,
 };
 
 /// Selected-page count above which uncombined per-page images are packaged into a single `.zip`
@@ -132,13 +133,30 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RenderParams) -> ToolResult {
             }
 
             let encoded = encode_raster_image(&canvas, params.format, params.quality)?;
+            if encoded.len() as u64 > ctx.limits().max_decompressed_bytes {
+                return Err(EngineFailure::limit_exceeded());
+            }
             let file_name = format!("{stem}.combined.{ext}");
             let out_path = ctx.artifact_path(&file_name)?;
             fs::write(&out_path, &encoded).map_err(|_| EngineFailure::io())?;
             ctx.artifact(&out_path, ext)?;
         }
         Combine::None => {
-            let mut encoded_pages: Vec<(u32, Vec<u8>)> = Vec::with_capacity(total_selected);
+            let zipped = total_selected > ZIP_PAGE_THRESHOLD;
+            let zip_name = format!("{stem}.pages.zip");
+            let zip_scratch = ctx.work_dir().join(&zip_name);
+            let mut zip = if zipped {
+                Some(ZipWriter::new(
+                    fs::File::create(&zip_scratch).map_err(|_| EngineFailure::io())?,
+                ))
+            } else {
+                None
+            };
+            let options = SimpleFileOptions::default()
+                .compression_method(CompressionMethod::Deflated)
+                .last_modified_time(DateTime::default());
+            let mut files = Vec::with_capacity(total_selected.min(ZIP_PAGE_THRESHOLD));
+            let mut output_bytes = 0_u64;
 
             for (idx, &page_num) in selected_pages.iter().enumerate() {
                 ctx.check()?;
@@ -169,28 +187,46 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RenderParams) -> ToolResult {
                 let page_u32 = u32::try_from(page_num).map_err(|_| {
                     EngineFailure::new(ErrorCode::InvalidRequest, "Page number overflow.")
                 })?;
-                encoded_pages.push((page_u32, encoded));
+                output_bytes = output_bytes
+                    .checked_add(encoded.len() as u64)
+                    .filter(|&size| size <= ctx.limits().max_decompressed_bytes)
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                let name = page_artifact_name(&stem, page_u32, ext);
+                if let Some(writer) = &mut zip {
+                    writer.start_file(&name, options).map_err(|err| {
+                        EngineFailure::owned(ErrorCode::EngineFailure, err.to_string())
+                    })?;
+                    writer
+                        .write_all(&encoded)
+                        .map_err(|_| EngineFailure::io())?;
+                } else {
+                    let scratch = ctx.work_dir().join(&name);
+                    fs::write(&scratch, &encoded).map_err(|_| EngineFailure::io())?;
+                    files.push((scratch, name));
+                }
 
                 ctx.progress("render", (idx + 1) as u64, total_selected as u64)?;
             }
 
             ctx.check()?;
-            if total_selected > ZIP_PAGE_THRESHOLD {
-                let zip_entries: Vec<(String, Vec<u8>)> = encoded_pages
-                    .into_iter()
-                    .map(|(page_no, bytes)| (page_artifact_name(&stem, page_no, ext), bytes))
-                    .collect();
-                let zip_name = format!("{stem}.pages.zip");
-                let zip_path = ctx.artifact_path(&zip_name)?;
-                write_zip_archive(&zip_path, &zip_entries)?;
-                ctx.artifact(&zip_path, "zip")?;
-            } else {
-                for (page_no, bytes) in encoded_pages {
-                    let name = page_artifact_name(&stem, page_no, ext);
-                    let path = ctx.artifact_path(&name)?;
-                    fs::write(&path, &bytes).map_err(|_| EngineFailure::io())?;
-                    ctx.artifact(&path, ext)?;
+            if let Some(writer) = zip {
+                writer.finish().map_err(|err| {
+                    EngineFailure::owned(ErrorCode::EngineFailure, err.to_string())
+                })?;
+                if fs::metadata(&zip_scratch)
+                    .map_err(|_| EngineFailure::io())?
+                    .len()
+                    > ctx.limits().max_decompressed_bytes
+                {
+                    return Err(EngineFailure::limit_exceeded());
                 }
+                files.push((zip_scratch, zip_name));
+            }
+            let format = if zipped { "zip" } else { ext };
+            for (scratch, name) in files {
+                let path = ctx.artifact_path(&name)?;
+                fs::rename(scratch, &path).map_err(|_| EngineFailure::io())?;
+                ctx.artifact(&path, format)?;
             }
         }
     }

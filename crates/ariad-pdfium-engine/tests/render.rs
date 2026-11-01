@@ -825,3 +825,63 @@ fn encrypted_and_malformed_inputs_fail_with_typed_errors() {
     let bad_err = render::run(&mut ctx_bad, RenderParams::default()).unwrap_err();
     assert_eq!(bad_err.code, ErrorCode::EngineFailure);
 }
+
+#[test]
+fn render_streams_each_page_and_rejects_cumulative_output_without_artifacts() {
+    struct ObserveWrites {
+        work_dir: PathBuf,
+        counts: Vec<usize>,
+        events: Vec<u8>,
+    }
+    impl std::io::Write for ObserveWrites {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.events.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            let event = self
+                .events
+                .split(|&b| b == b'\n')
+                .rev()
+                .nth(1)
+                .unwrap_or_default();
+            if event
+                .windows(b"\"stage\":\"render\"".len())
+                .any(|w| w == b"\"stage\":\"render\"")
+            {
+                self.counts.push(fs::read_dir(&self.work_dir)?.count());
+            }
+            Ok(())
+        }
+    }
+    let lib_dir = require_pdfium!();
+    let ws = setup_fixture_workspace("multipage-20.pdf");
+    let mut sink = ObserveWrites {
+        work_dir: ws.paths.work_dir.clone(),
+        counts: Vec::new(),
+        events: Vec::new(),
+    };
+    let limits = Limits {
+        max_decompressed_bytes: 3_000_000,
+        ..Limits::local()
+    };
+    let mut ctx = ToolContext::new("budget", "pdf.render", ws.paths.clone(), limits, &mut sink)
+        .with_library_dir(lib_dir);
+    let err = render::run(
+        &mut ctx,
+        RenderParams {
+            pages: "1-3".parse().unwrap(),
+            dpi: 72,
+            format: RasterFormat::Bmp,
+            quality: None,
+            background: Background::White,
+            annotations: true,
+            combine: Combine::None,
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(sink.counts, vec![1]);
+    assert!(artifact_events(&parse_events(&sink.events)).is_empty());
+    assert_eq!(fs::read_dir(&ws.paths.output_dir).unwrap().count(), 0);
+}
