@@ -242,8 +242,14 @@ pub(crate) fn detect_blank_pages_in_bytes(
             .scale_page_by_factor(scale)
             .render_form_data(true)
             .render_annotations(true);
-        let bitmap = page.render_with_config(&render_cfg).map_err(|_| {
-            EngineFailure::new(ErrorCode::EngineFailure, "Failed to render PDF page.")
+        let bitmap = page.render_with_config(&render_cfg).map_err(|err| {
+            crate::render::map_render_error(
+                err,
+                (page.width().value * scale).round() as u64,
+                (page.height().value * scale).round() as u64,
+                ctx.limits().max_memory_mb,
+                idx as usize + 1,
+            )
         })?;
         let gray = bitmap_to_gray(ctx, &bitmap)?;
 

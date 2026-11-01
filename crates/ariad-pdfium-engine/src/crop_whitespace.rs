@@ -83,8 +83,14 @@ pub fn run(ctx: &mut ToolContext<'_>, params: CropWhitespaceParams) -> ToolResul
             .render_form_data(true)
             .render_annotations(true);
         let gray = {
-            let bitmap = page.render_with_config(&render_cfg).map_err(|_| {
-                EngineFailure::new(ErrorCode::EngineFailure, "Failed to render PDF page.")
+            let bitmap = page.render_with_config(&render_cfg).map_err(|err| {
+                crate::render::map_render_error(
+                    err,
+                    (page.width().value * scale).round() as u64,
+                    (page.height().value * scale).round() as u64,
+                    ctx.limits().max_memory_mb,
+                    page_no as usize,
+                )
             })?;
             bitmap_to_gray(ctx, &bitmap)?
         };

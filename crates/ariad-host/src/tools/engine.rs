@@ -282,8 +282,15 @@ fn map_run_error(
             ToolError::SandboxUnavailable(scrubber.scrub(&msg))
         }
         RunError::Spawn(_) => ToolError::from_missing_engine(effective_engine),
-        RunError::EngineFailed { code, message } => {
-            let scrubbed = scrubber.scrub(&message);
+        RunError::EngineFailed {
+            code,
+            message,
+            memory_limit_mb,
+        } => {
+            let scrubbed = scrubber.scrub(&format!(
+                "{message}{}",
+                runner::memory_limit_hint(memory_limit_mb)
+            ));
             match code {
                 ErrorCode::LimitExceeded => ToolError::LimitExceeded,
                 ErrorCode::ToolMissing | ErrorCode::ToolVersion => {
@@ -298,10 +305,15 @@ fn map_run_error(
                 }
             }
         }
-        RunError::Crash { exit, stderr_tail } => {
+        RunError::Crash {
+            exit,
+            stderr_tail,
+            memory_limit_mb,
+        } => {
             let scrubbed_tail = scrubber.scrub(&stderr_tail);
             ToolError::EngineFailure(format!(
-                "engine '{effective_engine}' crashed (exit {exit:?}): {scrubbed_tail}",
+                "engine '{effective_engine}' crashed (exit {exit:?}): {scrubbed_tail}{}",
+                runner::memory_limit_hint(memory_limit_mb),
             ))
         }
         RunError::ProtocolViolation(reason) => ToolError::EngineFailure(scrubber.scrub(reason)),
@@ -312,6 +324,32 @@ fn map_run_error(
 #[cfg(test)]
 mod pdfium_limit_tests {
     use super::*;
+
+    #[test]
+    fn generic_engine_errors_keep_classification_and_show_the_ceiling() {
+        let spec = ariad_core::tools::find("pdf.render").unwrap();
+        let scrubber = SecretScrubber::default();
+        for error in [
+            RunError::Crash {
+                exit: Some(9),
+                stderr_tail: "crashed".into(),
+                memory_limit_mb: Some(256),
+            },
+            RunError::EngineFailed {
+                code: ErrorCode::EngineFailure,
+                message: "failed".into(),
+                memory_limit_mb: Some(256),
+            },
+        ] {
+            let mapped = map_run_error(error, spec, "pdfium", &scrubber);
+            assert_eq!(mapped.code(), "engine_failure");
+            assert!(
+                mapped
+                    .to_string()
+                    .contains("may have hit its memory limit (256 MiB)")
+            );
+        }
+    }
 
     #[test]
     fn local_pdfium_uses_default_ceilings_without_overriding_explicit_limits() {

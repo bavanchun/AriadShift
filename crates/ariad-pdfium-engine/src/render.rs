@@ -24,7 +24,9 @@ use ariad_core::{
 };
 use ariad_engine_io::EngineFailure;
 use image::{Rgba, RgbaImage, imageops};
-use pdfium_render::prelude::{PdfColor, PdfPage, PdfRenderConfig};
+use pdfium_render::prelude::{
+    PdfColor, PdfPage, PdfRenderConfig, PdfiumError, PdfiumInternalError,
+};
 use serde_json::json;
 use zip::{CompressionMethod, DateTime, ZipWriter, write::SimpleFileOptions};
 
@@ -101,6 +103,7 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RenderParams) -> ToolResult {
                     height_px,
                     clear_color,
                     params.annotations,
+                    ctx.limits().max_memory_mb,
                 )?;
                 ctx.check_pixels(u64::from(rgba.width()), u64::from(rgba.height()))?;
                 rendered_pages.push(rgba);
@@ -180,6 +183,7 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RenderParams) -> ToolResult {
                     height_px,
                     clear_color,
                     params.annotations,
+                    ctx.limits().max_memory_mb,
                 )?;
                 ctx.check_pixels(u64::from(rgba.width()), u64::from(rgba.height()))?;
 
@@ -271,6 +275,7 @@ pub(crate) fn render_page_rgba(
     height_px: u64,
     clear_color: PdfColor,
     annotations: bool,
+    memory_limit_mb: Option<u32>,
 ) -> Result<RgbaImage, EngineFailure> {
     let target_w = i32::try_from(width_px).map_err(|_| EngineFailure::limit_exceeded())?;
     let target_h = i32::try_from(height_px).map_err(|_| EngineFailure::limit_exceeded())?;
@@ -281,11 +286,58 @@ pub(crate) fn render_page_rgba(
         .render_annotations(annotations)
         .render_form_data(annotations);
 
-    let bitmap = page.render_with_config(&config).map_err(|err| {
-        EngineFailure::owned(
-            ErrorCode::EngineFailure,
-            format!("PDFium failed to render page {page_num}: {err}"),
-        )
-    })?;
+    let bitmap = page
+        .render_with_config(&config)
+        .map_err(|err| map_render_error(err, width_px, height_px, memory_limit_mb, page_num))?;
     bitmap_to_rgba(&bitmap)
+}
+
+pub(crate) fn map_render_error(
+    err: PdfiumError,
+    width_px: u64,
+    height_px: u64,
+    memory_limit_mb: Option<u32>,
+    page_num: usize,
+) -> EngineFailure {
+    // pdfium-render 0.9.5 produces this error here only when
+    // FPDFBitmap_CreateEx returns null after dimensions were validated.
+    if width_px > 0
+        && height_px > 0
+        && matches!(
+            err,
+            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::Unknown)
+        )
+    {
+        let limit = memory_limit_mb.map_or_else(
+            || "no configured memory limit".to_owned(),
+            |mb| format!("memory limit {mb} MiB"),
+        );
+        return EngineFailure::owned(
+            ErrorCode::LimitExceeded,
+            format!("PDFium could not allocate a {width_px} x {height_px} pixel bitmap ({limit})."),
+        );
+    }
+    EngineFailure::owned(
+        ErrorCode::EngineFailure,
+        format!("PDFium failed to render page {page_num}: {err}"),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn other_render_errors_remain_engine_failures() {
+        let failure = map_render_error(PdfiumError::UnknownBitmapFormat, 100, 100, Some(256), 1);
+        assert_eq!(failure.code, ErrorCode::EngineFailure);
+        let failure = map_render_error(
+            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::Unknown),
+            0,
+            100,
+            Some(256),
+            1,
+        );
+        assert_eq!(failure.code, ErrorCode::EngineFailure);
+    }
 }

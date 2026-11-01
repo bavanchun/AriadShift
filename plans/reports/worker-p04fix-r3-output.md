@@ -1,8 +1,8 @@
 # Image output and scan coverage changes
 
-Status: complete for the bounded investigation. The observed native PDFium
-allocation failure remains generic because it provides no reliable marker to
-the host; see the reproduction below.
+Status: complete. Following the maintainer decision, validated bitmap allocation
+failure is mapped in the engine, and generic host failures retain their existing
+classification with an explanatory memory-ceiling hint.
 
 - Image extraction previously accumulated encoded payloads and duplicated the
   original JPEG. The tool now writes each payload to scratch, charges the same
@@ -17,9 +17,9 @@ the host; see the reproduction below.
   `many_overlapping_images_report_saturated_coverage` and
   `image_object_work_budget_still_fails`.
 - The watchdog returns `MemoryLimitExceeded` when it detects an RSS excess, and
-  Linux maps the Rust allocator's explicit failure message. The native PDFium
-  failure reproduced below returns a generic engine error without an OOM marker.
-  No host mapping was added.
+  Linux maps the Rust allocator's explicit failure message. The bitmap failure
+  reproduced below is now recognized in the engine; other generic failures
+  retain their classification and carry a possible-memory-limit hint.
 
 ## Checks
 
@@ -86,7 +86,48 @@ failed` followed by the Rust backtrace hint. This is the Rust allocation
 path already recognized by the runner, not evidence of a native PDFium abort.
 The attempted rendering cases did not reproduce a native PDFium abort.
 
-No source mapping was changed. The existing host behavior is unchanged,
-including for the generic native failure; the macOS watchdog was not exercised
-on this Linux host. Mac PM can decide whether the generic failure warrants a
-separate engine-side contract or instrumentation.
+This investigation preceded the maintainer decision below. The macOS watchdog
+was not exercised on this Linux host.
+
+## Maintainer decision and implementation
+
+The maintainer decided that a null `FPDFBitmap_CreateEx` result after validating
+the bitmap dimensions identifies allocation failure. The pinned
+`pdfium-render` version returns `PdfiumLibraryInternalError(Unknown)` from
+`render_with_config` only for that null result; its subsequent render function
+returns `Ok`. The render, thumbnail, blank detection, and crop-whitespace paths
+now map that error to `limit_exceeded` with pixel dimensions and the configured
+memory ceiling. Page loading and image-object bitmap APIs were not reclassified:
+their null results can have other causes.
+
+The host retains generic engine failure or crash classification and adds the
+configured MiB ceiling as a possible explanation. This applies to one-shot and
+session runner results and is preserved in tool and conversion error messages.
+A process watchdog applies the requested ceiling across these runs. The local
+bitmap integration regression uses the worktree-built engine with the pack's
+real libpdfium under `prlimit`, inside a 2 GiB systemd scope. The regression is
+`render_bitmap_allocation_failure_reports_memory_limit`; it asserts the code,
+bitmap dimensions, ceiling, and absence of artifacts. The probe regression is
+`engine_crashes_and_generic_failures_include_only_applied_memory_ceilings`;
+`generic_engine_errors_keep_classification_and_show_the_ceiling` checks the
+tool-facing mapping.
+
+Checks after the maintainer decision:
+
+- `cargo fmt --all --check`: passed.
+- `cargo clippy --locked -p ariad-pdfium-engine -p ariad-host -p ariad-server -p ariad-cli --features ariad-host/test-probe --all-targets -- -D warnings`: passed.
+- `cargo test --locked -p ariad-pdfium-engine`: passed with one ignored corpus
+  scan; the final zero-dimension guard was subsequently checked by the focused
+  `other_render_errors_remain_engine_failures` test.
+- The real-libpdfium regression passed inside a 2 GiB systemd scope with a
+  256 MiB RLIMIT_AS, after the final engine change.
+- `cargo test --locked -p ariad-host --features test-probe --lib`: 186 passed.
+  The initial invocation omitted `ASHIFT_PANDOC` and had seven missing-Pandoc
+  failures; all passed after setting the prescribed path.
+- Host `runner` (25), `session` (19), and `tool_runner_limits` (12) integration
+  tests passed. The additional final session ceiling-hint regression passed
+  separately.
+- `cargo check --locked` across the engine, host, server, and CLI targets, and
+  `git diff --check`, passed. All Cargo commands used the shared build lock.
+
+The macOS execution path has not been run on this Linux host.
