@@ -396,6 +396,7 @@ function setUpSignIn() {
         );
       }
       const token = captchaToken;
+      let navigating = false;
       try {
         const headers = token ? { "x-captcha-response": token } : {};
         await call(
@@ -414,9 +415,10 @@ function setUpSignIn() {
             "Account created, but the authorization could not continue. Start again from your application.",
           );
         }
+        navigating = true;
         show("Account created. Continuing…");
       } finally {
-        if (signingUp && turnstileActive()) {
+        if (!navigating && signingUp && turnstileActive()) {
           await mountTurnstile();
         }
       }

@@ -234,8 +234,10 @@ export function parseConfig(env: Env): AuthServiceConfig {
   const passkeyRpId = read(env, "AUTH_PASSKEY_RP_ID") ?? new URL(firstOrigin).hostname;
   const turnstileSecret = secretOption(env, "AUTH_TURNSTILE_SECRET");
   const turnstileSiteKey = read(env, "AUTH_TURNSTILE_SITE_KEY");
-  if (turnstileSecret && !turnstileSiteKey) {
-    throw new ConfigError("AUTH_TURNSTILE_SITE_KEY is required when AUTH_TURNSTILE_SECRET is set");
+  if (allowSignUp && turnstileSecret && !turnstileSiteKey) {
+    throw new ConfigError(
+      "AUTH_TURNSTILE_SITE_KEY is required when signup is enabled and AUTH_TURNSTILE_SECRET is set",
+    );
   }
 
   return {

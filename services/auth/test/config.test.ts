@@ -186,23 +186,29 @@ describe("parseConfig", () => {
     );
   });
 
-  it("requires AUTH_TURNSTILE_SITE_KEY when AUTH_TURNSTILE_SECRET is set", () => {
-    expect(() => parseConfig(env({ AUTH_TURNSTILE_SECRET: "turnstile-secret" }))).toThrow(
-      /AUTH_TURNSTILE_SITE_KEY is required when AUTH_TURNSTILE_SECRET is set/,
+  it("requires the Turnstile site key only when signup and the secret are enabled", () => {
+    expect(parseConfig(env({ AUTH_TURNSTILE_SECRET: "turnstile-secret" })).turnstileSecret).toBe(
+      "turnstile-secret",
     );
-    expect(() =>
-      parseConfig(
-        env({ AUTH_TURNSTILE_SECRET: "turnstile-secret", AUTH_TURNSTILE_SITE_KEY: "   " }),
-      ),
-    ).toThrow(/AUTH_TURNSTILE_SITE_KEY is required when AUTH_TURNSTILE_SECRET is set/);
-
+    for (const siteKey of [undefined, "   "]) {
+      expect(() =>
+        parseConfig(
+          env({
+            AUTH_ALLOW_SIGN_UP: "true",
+            AUTH_TURNSTILE_SECRET: "turnstile-secret",
+            AUTH_TURNSTILE_SITE_KEY: siteKey,
+          }),
+        ),
+      ).toThrow(/AUTH_TURNSTILE_SITE_KEY is required/);
+    }
+    expect(parseConfig(env({ AUTH_ALLOW_SIGN_UP: "true" })).turnstileSiteKey).toBeUndefined();
     const configured = parseConfig(
       env({
+        AUTH_ALLOW_SIGN_UP: "true",
         AUTH_TURNSTILE_SECRET: "turnstile-secret",
         AUTH_TURNSTILE_SITE_KEY: "site-key-prod",
       }),
     );
-    expect(configured.turnstileSecret).toBe("turnstile-secret");
     expect(configured.turnstileSiteKey).toBe("site-key-prod");
   });
 });

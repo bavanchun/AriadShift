@@ -477,6 +477,7 @@ describe("sign-in page sign-up", () => {
     expect(continueSent.created).toBe(true);
     expect(continueSent.oauth_query).toBe(sent.oauth_query);
     expect(assigned).toEqual([`http://localhost:3001/oauth/consent${search}`]);
+    expect(renderedWidgets).toHaveLength(1);
   });
 
   it("opens the sign-up form automatically on prompt=create and continues to consent", async () => {
@@ -542,6 +543,8 @@ describe("sign-in page sign-up", () => {
     ],
     ["free-form return_to", consentSearch(signed(), [["return_to", "https://evil.example/steal"]])],
     ["free-form callbackURL", consentSearch(signed(), [["callbackURL", "https://evil.example"]])],
+    ["signed custom next", consentSearch([...signed(), ["next", "custom-value"]])],
+    ["signed custom url", consentSearch([...signed(), ["url", "custom-value"]])],
     [
       "unsigned state",
       consentSearch(
@@ -568,7 +571,7 @@ describe("sign-in page sign-up", () => {
 
   it("reports an error when /oauth2/continue does not return a safe redirect", async () => {
     const search = consentSearch(signed());
-    const { byId, calls, assigned, flush } = await renderSignIn(search, {
+    const { byId, calls, assigned, renderedWidgets, flush } = await renderSignIn(search, {
       continueResponse: {
         ok: true,
         status: 200,
@@ -581,6 +584,7 @@ describe("sign-in page sign-up", () => {
     await flush();
     expect(calls).toHaveLength(2);
     expect(assigned).toHaveLength(0);
+    expect(renderedWidgets).toHaveLength(2);
     expect(byId("status").textContent).toMatch(/could not continue/);
   });
 
