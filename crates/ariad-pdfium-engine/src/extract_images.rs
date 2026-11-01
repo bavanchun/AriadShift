@@ -769,7 +769,7 @@ fn preflight_xobject(
     max_bytes: usize,
     max_depth: usize,
     depth: usize,
-    seen: &mut HashMap<PdfObjectId, usize>,
+    seen: &mut HashMap<(PdfObjectId, BTreeMap<Vec<u8>, PdfObjectId>), usize>,
     parent_xobjects: &BTreeMap<Vec<u8>, PdfObjectId>,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<usize, EngineFailure> {
@@ -777,12 +777,13 @@ fn preflight_xobject(
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    if let Some(&cost) = seen.get(&id) {
+    let scope_key = (id, parent_xobjects.clone());
+    if let Some(&cost) = seen.get(&scope_key) {
         return (cost != 0)
             .then_some(cost)
             .ok_or_else(EngineFailure::limit_exceeded);
     }
-    seen.insert(id, 0);
+    seen.insert(scope_key.clone(), 0);
     let mut expansion_cost = 1usize;
     ctx.check()?;
     let doc = pdf_doc.inner();
@@ -924,7 +925,7 @@ fn preflight_xobject(
         }
         _ => return Err(EngineFailure::limit_exceeded()),
     }
-    seen.insert(id, expansion_cost);
+    seen.insert(scope_key, expansion_cost);
     Ok(expansion_cost)
 }
 
@@ -1584,7 +1585,7 @@ fn collect_page_image_xobjects(
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    expanded_forms: &mut HashSet<PdfObjectId>,
+    expanded_forms: &mut HashSet<(PdfObjectId, BTreeMap<Vec<u8>, PdfObjectId>)>,
     page_work: &mut usize,
     document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
@@ -1623,7 +1624,7 @@ fn collect_from_content_and_xobject_map(
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    expanded_forms: &mut HashSet<PdfObjectId>,
+    expanded_forms: &mut HashSet<(PdfObjectId, BTreeMap<Vec<u8>, PdfObjectId>)>,
     page_work: &mut usize,
     document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
@@ -1696,7 +1697,7 @@ fn visit_xobject_target(
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    expanded_forms: &mut HashSet<PdfObjectId>,
+    expanded_forms: &mut HashSet<(PdfObjectId, BTreeMap<Vec<u8>, PdfObjectId>)>,
     page_work: &mut usize,
     document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
@@ -1728,7 +1729,7 @@ fn visit_xobject_target(
         }
         out.push(target_id);
     } else if subtype == b"Form" {
-        if !expanded_forms.insert(target_id) {
+        if !expanded_forms.insert((target_id, parent_xobjects.clone())) {
             return Ok(());
         }
         let mut form_xobjects = parent_xobjects.clone();
@@ -2697,6 +2698,60 @@ mod corpus_tests {
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
         assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+    }
+
+    #[test]
+    fn shared_form_expands_each_inherited_resource_scope() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let work = dir.path().canonicalize().expect("workspace");
+        for sub in ["in", "out", "tmp"] {
+            fs::create_dir(work.join(sub)).expect("directory");
+        }
+        let input = work.join("in/doc.pdf");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/form-resource-scopes.pdf"),
+            &input,
+        )
+        .expect("fixture");
+        let paths = RunToolPaths {
+            workspace: work.clone(),
+            inputs: vec![input],
+            output_dir: work.join("out"),
+            work_dir: work.join("tmp"),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "indirect",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
+        let mut expanded = HashSet::new();
+        let mut page_work = 0;
+        let mut document_work = 0;
+        let mut images = Vec::new();
+        for image in [(5, 0), (6, 0)] {
+            let scope = BTreeMap::from([(b"Im".to_vec(), image)]);
+            visit_xobject_target(
+                &ctx,
+                &doc,
+                (4, 0),
+                &scope,
+                0,
+                64,
+                1024 * 1024,
+                &HashSet::new(),
+                &mut expanded,
+                &mut page_work,
+                &mut document_work,
+                &mut images,
+            )
+            .expect("traversal");
+        }
+        assert_eq!(images, vec![(5, 0), (6, 0)]);
     }
 
     #[test]

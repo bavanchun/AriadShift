@@ -4232,3 +4232,19 @@ attribution = "AriadShift contributors"
 sha256 = "afeb4d5699c6081864660c291e388699484cbfa05c9cebb9b96ea86bc1d0115e"
 pages = 1
 tags = []
+
+[[fixture]]
+id = "form-resource-scopes-pdf"
+path = "fixtures/pdf/form-resource-scopes.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Shared form with distinct inherited resources"
+origin = "generated"
+generated_by = "fixtures/gen/form_resource_scopes.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "924285c4e27ff379f7f2f50a3fae122684dcc155b004a4dc973927a9f8e2dab9"
+pages = 1
+tags = []
