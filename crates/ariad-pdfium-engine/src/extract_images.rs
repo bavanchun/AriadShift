@@ -1505,30 +1505,37 @@ fn preflight_content(
                 return Err(EngineFailure::limit_exceeded());
             }
         }
-        let inline_bpc = dict
+        let mask = dict
+            .get(b"ImageMask")
+            .or_else(|_| dict.get(b"IM"))
+            .ok()
+            .map(|v| {
+                resolve(Some(doc), v)
+                    .and_then(|(_, v)| v.as_bool().map_err(|_| EngineFailure::limit_exceeded()))
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let bpc = dict
             .get(b"BitsPerComponent")
             .or_else(|_| dict.get(b"BPC"))
-            .map_err(|_| EngineFailure::limit_exceeded())?;
-        let inline_bpc = resolve(Some(doc), inline_bpc)?
-            .1
-            .as_i64()
-            .map_err(|_| EngineFailure::limit_exceeded())?;
-        if !matches!(inline_bpc, 1 | 2 | 4 | 8 | 16) {
+            .ok()
+            .map(|v| {
+                resolve(Some(doc), v)
+                    .and_then(|(_, v)| v.as_i64().map_err(|_| EngineFailure::limit_exceeded()))
+            })
+            .transpose()?;
+        if !matches!(bpc, Some(1 | 2 | 4 | 8 | 16)) && !(mask && bpc.is_none()) {
             return Err(EngineFailure::limit_exceeded());
         }
-        let colorspace = dict
-            .get(b"ColorSpace")
-            .or_else(|_| dict.get(b"CS"))
-            .map_err(|_| EngineFailure::limit_exceeded())?;
-        color_components(colorspace, Some(doc), 0)?;
-        if let Ok(mask) = dict.get(b"ImageMask").or_else(|_| dict.get(b"IM"))
-            && resolve(Some(doc), mask)?
-                .1
-                .as_bool()
-                .map_err(|_| EngineFailure::limit_exceeded())?
-            && inline_bpc != 1
-        {
+        if mask && bpc.is_some_and(|v| v != 1) {
             return Err(EngineFailure::limit_exceeded());
+        }
+        if !mask {
+            let colorspace = dict
+                .get(b"ColorSpace")
+                .or_else(|_| dict.get(b"CS"))
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            color_components(colorspace, Some(doc), 0)?;
         }
         let decoded_len = preflight_image_dict(ctx, dict, Some(doc), None)?;
         budget.charge_image(ctx, dict, doc, decoded_len)?;
@@ -1555,12 +1562,55 @@ fn preflight_content(
         }
         // Allow a small amount of predictor overhead, but never inflate a tiny
         // declared image up to the global multi-gigabyte content limit.
-        let decoded_cap = decoded_len.saturating_add(1024).min(data_cap);
-        let filter = dict.get(b"F").or_else(|_| dict.get(b"Filter"));
-        let filter = match filter {
-            Ok(value) => Some(resolve(Some(doc), value)?.1),
-            Err(_) => None,
+        let final_cap = decoded_len.saturating_add(1024).min(data_cap);
+        let mut filters = Vec::new();
+        if let Ok(value) = dict.get(b"F").or_else(|_| dict.get(b"Filter")) {
+            let resolved = resolve(Some(doc), value)?.1;
+            let items: Vec<&Object> = match resolved {
+                Object::Array(items) if !items.is_empty() => items.iter().collect(),
+                Object::Name(_) => vec![resolved],
+                _ => return Err(EngineFailure::limit_exceeded()),
+            };
+            for item in items {
+                let name = resolve(Some(doc), item)?
+                    .1
+                    .as_name()
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                let canonical = match name {
+                    b"AHx" | b"ASCIIHexDecode" => b"ASCIIHexDecode".as_slice(),
+                    b"A85" | b"ASCII85Decode" => b"ASCII85Decode",
+                    b"Fl" | b"FlateDecode" => b"FlateDecode",
+                    b"RL" | b"RunLengthDecode" => b"RunLengthDecode",
+                    b"LZW" | b"LZWDecode" => b"LZWDecode",
+                    b"CCF" | b"CCITTFaxDecode" => b"CCITTFaxDecode",
+                    b"DCT" | b"DCTDecode" => b"DCTDecode",
+                    _ => return Err(EngineFailure::limit_exceeded()),
+                };
+                filters.push(canonical);
+            }
+        }
+        let terminal = filters
+            .last()
+            .copied()
+            .filter(|v| matches!(*v, b"CCITTFaxDecode" | b"DCTDecode"));
+        if filters
+            .iter()
+            .take(
+                filters
+                    .len()
+                    .saturating_sub(usize::from(terminal.is_some())),
+            )
+            .any(|v| matches!(*v, b"CCITTFaxDecode" | b"DCTDecode"))
+        {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let decoded_cap = if filters.len() > 1 || terminal.is_some() {
+            data_cap
+        } else {
+            final_cap
         };
+        let first_filter = filters.first().map(|name| Object::Name(name.to_vec()));
+        let filter = first_filter.as_ref();
         if let Ok(value) = dict.get(b"DP").or_else(|_| dict.get(b"DecodeParms")) {
             validate_nested_references(doc, value, 0)?;
         }
@@ -1659,16 +1709,26 @@ fn preflight_content(
             Some(Object::Name(name)) if name == b"LZWDecode" || name == b"LZW" => {
                 let early = match dict.get(b"DP").or_else(|_| dict.get(b"DecodeParms")) {
                     Ok(value) => {
-                        let params = resolve(Some(doc), value)?
-                            .1
-                            .as_dict()
-                            .map_err(|_| EngineFailure::limit_exceeded())?;
-                        match params.get(b"EarlyChange") {
-                            Ok(value) => resolve(Some(doc), value)?
+                        let params = resolve(Some(doc), value)?.1;
+                        let params = if let Object::Array(items) = params {
+                            items.first().ok_or_else(EngineFailure::limit_exceeded)?
+                        } else {
+                            params
+                        };
+                        if matches!(params, Object::Null) {
+                            1
+                        } else {
+                            let params = resolve(Some(doc), params)?
                                 .1
-                                .as_i64()
-                                .map_err(|_| EngineFailure::limit_exceeded())?,
-                            Err(_) => 1,
+                                .as_dict()
+                                .map_err(|_| EngineFailure::limit_exceeded())?;
+                            match params.get(b"EarlyChange") {
+                                Ok(value) => resolve(Some(doc), value)?
+                                    .1
+                                    .as_i64()
+                                    .map_err(|_| EngineFailure::limit_exceeded())?,
+                                Err(_) => 1,
+                            }
                         }
                     }
                     Err(_) => 1,
@@ -1678,10 +1738,92 @@ fn preflight_content(
                 }
                 cursor += inline_lzw_len(ctx, &bytes[cursor..], decoded_cap, early as usize)?;
             }
+            Some(Object::Name(name)) if name == b"CCITTFaxDecode" || name == b"DCTDecode" => {
+                let tail = &bytes[cursor..];
+                let pos = tail
+                    .windows(3)
+                    .enumerate()
+                    .find(|(pos, w)| {
+                        is_pdf_ws(w[0])
+                            && &w[1..] == b"EI"
+                            && tail.get(pos + 3).is_none_or(|b| is_pdf_delimiter_or_ws(*b))
+                    })
+                    .map(|(pos, _)| pos)
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                cursor += pos;
+            }
             _ => return Err(EngineFailure::limit_exceeded()),
         }
         if cursor - data_start > data_cap {
             return Err(EngineFailure::limit_exceeded());
+        }
+        if !filters.is_empty() {
+            let lossless_count = filters.len() - usize::from(terminal.is_some());
+            let mut payload = bytes[data_start..cursor].to_vec();
+            let params = dict
+                .get(b"DP")
+                .or_else(|_| dict.get(b"DecodeParms"))
+                .ok()
+                .map(|v| resolve_tree(doc, v, 0))
+                .transpose()?;
+            for (index, filter) in filters[..lossless_count].iter().enumerate() {
+                let mut decode_dict = Dictionary::new();
+                decode_dict.set("Filter", Object::Name(filter.to_vec()));
+                let param = match &params {
+                    Some(Object::Array(items)) => items.get(index),
+                    Some(value) => Some(value),
+                    None => None,
+                };
+                if let Some(value) = param {
+                    decode_dict.set("DecodeParms", value.clone());
+                }
+                let cap = if terminal.is_none() && index + 1 == lossless_count {
+                    final_cap
+                } else {
+                    data_cap
+                };
+                if *filter == b"FlateDecode" {
+                    let mut decoder = flate2::read::ZlibDecoder::new(payload.as_slice());
+                    let mut count = 0usize;
+                    let mut buffer = [0; 8192];
+                    loop {
+                        ctx.check()?;
+                        let read = decoder
+                            .read(&mut buffer)
+                            .map_err(|_| EngineFailure::limit_exceeded())?;
+                        if read == 0 {
+                            break;
+                        }
+                        count = count
+                            .checked_add(read)
+                            .filter(|n| *n <= cap)
+                            .ok_or_else(EngineFailure::limit_exceeded)?;
+                    }
+                }
+                payload = lopdf::Stream::new(decode_dict, payload)
+                    .decompressed_content_with_limit(cap)
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+            }
+            if terminal == Some(b"DCTDecode".as_slice()) {
+                use image::ImageDecoder;
+                let jpeg = image::codecs::jpeg::JpegDecoder::new(Cursor::new(&payload))
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                let (width, height) = jpeg.dimensions();
+                ctx.check_pixels(u64::from(width), u64::from(height))?;
+                let declared = |long: &[u8], short: &[u8]| {
+                    dict.get(long)
+                        .or_else(|_| dict.get(short))
+                        .ok()
+                        .and_then(|v| resolve(Some(doc), v).ok())
+                        .and_then(|(_, v)| v.as_i64().ok())
+                        .unwrap_or(0)
+                };
+                if i64::from(width) > declared(b"Width", b"W")
+                    || i64::from(height) > declared(b"Height", b"H")
+                {
+                    return Err(EngineFailure::limit_exceeded());
+                }
+            }
         }
         let (s, e) =
             next_content_token(bytes, &mut cursor)?.ok_or_else(EngineFailure::limit_exceeded)?;
@@ -3119,6 +3261,96 @@ mod corpus_tests {
     }
 
     #[test]
+    fn inline_masks_and_supported_filter_chains_are_checked() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+            .encode(&[128; 12], 2, 2, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        z.write_all(&[0]).unwrap();
+        let z = z.finish().unwrap();
+        let hex = |data: &[u8]| -> Vec<u8> {
+            data.iter()
+                .flat_map(|b| format!("{b:02X}").into_bytes())
+                .chain(*b">")
+                .collect()
+        };
+        let make = |dict: &[u8], data: &[u8]| {
+            let mut c = b"BI ".to_vec();
+            c.extend_from_slice(dict);
+            c.extend_from_slice(b" ID ");
+            c.extend_from_slice(data);
+            c.extend_from_slice(b" EI");
+            c
+        };
+        let samples = vec![
+            (make(b"/W 8 /H 1 /IM true", &[0]), true),
+            (make(b"/W 8 /H 8 /IM true /F /CCF", &[0xff]), true),
+            (
+                make(b"/W 8 /H 8 /IM true /F [/AHx /CCF]", &hex(&[0xff])),
+                true,
+            ),
+            (
+                make(b"/W 1 /H 1 /BPC 8 /CS /G /F [/AHx /Fl]", &hex(&z)),
+                true,
+            ),
+            (make(b"/W 2 /H 2 /BPC 8 /CS /RGB /F /DCT", &jpeg), true),
+            (
+                make(b"/W 2 /H 2 /BPC 8 /CS /RGB /F [/AHx /DCT]", &hex(&jpeg)),
+                true,
+            ),
+            (make(b"/W 1 /H 1 /BPC 8 /CS /RGB /F /DCT", &jpeg), false),
+            (
+                make(b"/W 1 /H 1 /BPC 8 /CS /RGB /F [/DCT /AHx]", &jpeg),
+                false,
+            ),
+        ];
+        for (content, accepted) in samples {
+            let mut document_work = 0;
+            let mut budget = PreflightBudget {
+                scanned: 0,
+                image_bytes: 0,
+                image_pixels: 0,
+                page_work: 0,
+                glyph_count: 0,
+                glyph_max: 0,
+                glyph_max_pixels: 0,
+                glyph_max_bytes: 0,
+                font_ids: HashSet::new(),
+                document_work: &mut document_work,
+            };
+            let result = preflight_content(
+                &ctx,
+                &lopdf::Document::new(),
+                &content,
+                1024 * 1024,
+                &mut budget,
+            );
+            if accepted {
+                result.expect("supported inline image");
+            } else {
+                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+            }
+        }
+    }
+
+    #[test]
     fn preflight_resolves_form_subtype() {
         let dir = tempfile::tempdir().expect("tempdir");
         let work = dir.path().canonicalize().expect("workspace");
@@ -3430,9 +3662,12 @@ mod corpus_tests {
         .into_iter()
         .map(str::to_owned)
         .collect();
+        let legitimate_refusals = actual.difference(&expected).count();
+        eprintln!("CORPUS legitimate refusals: {legitimate_refusals}");
+        assert_eq!(legitimate_refusals, 0);
         assert_eq!(
             actual, expected,
-            "only adversarial fixtures should be refused"
+            "all adversarial fixtures should be refused"
         );
     }
 }

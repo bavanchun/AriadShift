@@ -4303,3 +4303,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "type3-bitmap-font-pdf"
+path = "fixtures/pdf/type3-bitmap-font.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 bitmap font with CCITT inline image mask"
+origin = "generated"
+generated_by = "fixtures/gen/type3-bitmap-font.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7d1d1bd7035c8a81f4de760b4c1024da0a06c0952798ea016bae04fd9f83407f"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

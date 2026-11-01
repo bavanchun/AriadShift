@@ -406,6 +406,22 @@ fn refuses_image_exceeding_max_image_pixels_and_encrypted_pdfs() {
 }
 
 #[test]
+fn extracts_type3_bitmap_font_without_refusal() {
+    let lib_dir = require_pdfium!();
+    let ws = TestWorkspace::from_fixture("fixtures/pdf/type3-bitmap-font.pdf");
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "bitmap-font",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::run(&mut ctx, ExtractImagesParams::default()).expect("bitmap font is accepted");
+}
+
+#[test]
 fn inline_images_check_dimensions_before_decoding() {
     let lib_dir = require_pdfium!();
     let ws = TestWorkspace::from_fixture("fixtures/pdf/inline-image-bomb.pdf");
