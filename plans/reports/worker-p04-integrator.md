@@ -132,3 +132,9 @@ All heavy commands were executed under `/home/vchun/Codes/01-AriadShift/.run/coo
 | `bash scripts/test-ci-scope.sh` | PASS | 90 passed, 0 failed |
 | `(cd fuzz && cargo check --locked)` | PASS | All fuzz targets compile cleanly |
 | `sh scripts/check-commits.sh origin/dev..HEAD` | PASS | All commits conform to Conventional Commits with no AI/tool references |
+
+## Fix-round status
+
+The fix-round integration and its focused checks are recorded in
+[worker-p04fix-integrator.md](worker-p04fix-integrator.md). The final extraction
+merge and complete gate remain pending the manager's readiness signal.
