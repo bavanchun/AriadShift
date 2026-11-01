@@ -145,6 +145,8 @@ Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"pn
 - `pdf.thumbnails`: `output_format: "png"`, `output_formats: ["png", "json"]`
 - `pdf.extract_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "zip"]`
 
+Before opening each selected page, `pdf.extract_images` checks image dimensions and data against the job's limits. Inline images are accepted when their data is unfiltered or uses a single ASCIIHex, ASCII85, or Flate filter and their color components can be determined from their dictionary. If the engine cannot safely inspect an inline image or a referenced image's color space, it fails with `limit_exceeded` instead of opening the page. This includes inline images with other filters, filter chains, or color-space aliases.
+
 Both `ariad-host` and `ariad-wasm` enforce `ToolSpec::allowed_output_formats()` (`output_formats` when non-empty, otherwise `[output_format]`):
 1. When the caller selects a target format via `params.format` or an explicit `-o <FILE>` extension, the requested format must be in `allowed_output_formats()`.
 2. Before publishing or returning any produced artifact, every emitted artifact's format (and file extension) is checked against `allowed_output_formats()` and, when `params.format` was specified on a single-format-per-run tool (`pdf.render` / `pdf.to_images`), against that requested format.

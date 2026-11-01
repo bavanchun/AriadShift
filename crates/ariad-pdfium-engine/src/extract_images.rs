@@ -4,7 +4,7 @@
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
-    io::Cursor,
+    io::{Cursor, Read},
 };
 
 use ariad_core::{
@@ -17,6 +17,7 @@ use image::{
     ColorType, DynamicImage, GrayImage, ImageEncoder, ImageFormat, RgbImage, RgbaImage,
     codecs::png::PngEncoder,
 };
+use lopdf::{Dictionary, Object, content::Content};
 use pdfium_render::prelude::*;
 use serde_json::json;
 
@@ -224,6 +225,10 @@ pub fn extract_document_images(
 
     for (idx, &page_num) in selected_pages.iter().enumerate() {
         ctx.check()?;
+        let page_obj_id = *lopdf_pages
+            .get(&page_num)
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        preflight_page_images(ctx, &pdf_doc, page_obj_id, max_decompressed, max_depth)?;
         let page_index =
             PdfPageIndex::try_from(page_num - 1).map_err(|_| EngineFailure::limit_exceeded())?;
         let pdfium_page = pdfium_doc
@@ -312,6 +317,647 @@ pub fn extract_document_images(
     }
 
     Ok(outcome)
+}
+
+// Refuse any content we cannot inspect before PDFium parses the page.
+fn preflight_page_images(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    page_id: PdfObjectId,
+    max_bytes: usize,
+    max_depth: usize,
+) -> Result<(), EngineFailure> {
+    let doc = pdf_doc.inner();
+    let page = doc
+        .get_dictionary(page_id)
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    if let Ok(contents) = page.get(b"Contents") {
+        preflight_content_object(
+            ctx,
+            doc,
+            contents,
+            max_bytes,
+            max_depth,
+            0,
+            &mut HashSet::new(),
+        )?;
+    }
+    let mut node = page_id;
+    let mut ancestors = HashSet::new();
+    for _ in 0..=max_depth {
+        if !ancestors.insert(node) {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let dict = doc
+            .get_dictionary(node)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        if let Ok(resources) = dict.get(b"Resources") {
+            validate_xobject_resources(doc, resources)?;
+        }
+        match dict.get(b"Parent") {
+            Ok(parent) => {
+                node = parent
+                    .as_reference()
+                    .map_err(|_| EngineFailure::limit_exceeded())?
+            }
+            Err(_) => break,
+        }
+    }
+    if ancestors.len() > max_depth {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    let xobjects = resolve_page_xobject_map(pdf_doc, page_id, max_depth);
+    let mut seen = HashSet::new();
+    for id in xobjects.values() {
+        preflight_xobject(ctx, pdf_doc, *id, max_bytes, max_depth, 0, &mut seen)?;
+    }
+    Ok(())
+}
+
+fn preflight_content_object(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    object: &Object,
+    max_bytes: usize,
+    max_depth: usize,
+    depth: usize,
+    active: &mut HashSet<PdfObjectId>,
+) -> Result<(), EngineFailure> {
+    if depth > max_depth {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    match object {
+        Object::Reference(id) => {
+            if !active.insert(*id) {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            let value = doc
+                .get_object(*id)
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            let result =
+                preflight_content_object(ctx, doc, value, max_bytes, max_depth, depth + 1, active);
+            active.remove(id);
+            result
+        }
+        Object::Array(values) => {
+            for value in values {
+                preflight_content_object(ctx, doc, value, max_bytes, max_depth, depth + 1, active)?;
+            }
+            Ok(())
+        }
+        Object::Stream(stream) => {
+            let bytes = stream
+                .decompressed_content_with_limit(max_bytes)
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            preflight_content(ctx, &bytes, max_bytes)
+        }
+        Object::Null => Ok(()),
+        _ => Err(EngineFailure::limit_exceeded()),
+    }
+}
+
+fn validate_xobject_resources(
+    doc: &lopdf::Document,
+    resources: &Object,
+) -> Result<(), EngineFailure> {
+    let resources = match resources {
+        Object::Reference(id) => doc
+            .get_object(*id)
+            .map_err(|_| EngineFailure::limit_exceeded())?,
+        other => other,
+    }
+    .as_dict()
+    .map_err(|_| EngineFailure::limit_exceeded())?;
+    let Ok(xobjects) = resources.get(b"XObject") else {
+        return Ok(());
+    };
+    let xobjects = match xobjects {
+        Object::Reference(id) => doc
+            .get_object(*id)
+            .map_err(|_| EngineFailure::limit_exceeded())?,
+        other => other,
+    }
+    .as_dict()
+    .map_err(|_| EngineFailure::limit_exceeded())?;
+    for (_, object) in xobjects.iter() {
+        let id = object
+            .as_reference()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        doc.get_object(id)
+            .and_then(Object::as_stream)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+    }
+    Ok(())
+}
+
+fn preflight_xobject(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    id: PdfObjectId,
+    max_bytes: usize,
+    max_depth: usize,
+    depth: usize,
+    seen: &mut HashSet<PdfObjectId>,
+) -> Result<(), EngineFailure> {
+    if depth > max_depth {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    if !seen.insert(id) {
+        return Ok(());
+    }
+    ctx.check()?;
+    let doc = pdf_doc.inner();
+    let stream = doc
+        .get_object(id)
+        .and_then(Object::as_stream)
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    match stream
+        .dict
+        .get(b"Subtype")
+        .and_then(Object::as_name)
+        .unwrap_or(b"")
+    {
+        b"Image" => {
+            let jpx = stream
+                .dict
+                .get(b"Filter")
+                .or_else(|_| stream.dict.get(b"F"))
+                .and_then(Object::as_name)
+                .is_ok_and(|name| name == b"JPXDecode");
+            let jpx_info = if jpx {
+                Some(jpx_dimensions(&stream.content)?)
+            } else {
+                None
+            };
+            if let Some((width, height, _, _)) = jpx_info {
+                ctx.check_pixels(width, height)?;
+            }
+            preflight_image_dict(ctx, &stream.dict, Some(doc), jpx_info)?;
+            if stream.content.len() > max_bytes {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            for key in [b"SMask".as_slice(), b"Mask".as_slice()] {
+                if let Ok(mask) = stream.dict.get(key).and_then(Object::as_reference) {
+                    preflight_xobject(ctx, pdf_doc, mask, max_bytes, max_depth, depth + 1, seen)?;
+                }
+            }
+        }
+        b"Form" => {
+            let bytes = stream
+                .decompressed_content_with_limit(max_bytes)
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            preflight_content(ctx, &bytes, max_bytes)?;
+            let mut children = BTreeMap::new();
+            if let Ok(resources) = stream.dict.get(b"Resources") {
+                validate_xobject_resources(doc, resources)?;
+                insert_xobjects_from_resources!(doc, resources, children);
+            }
+            for child in children.values() {
+                preflight_xobject(ctx, pdf_doc, *child, max_bytes, max_depth, depth + 1, seen)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn preflight_image_dict(
+    ctx: &ToolContext<'_>,
+    dict: &Dictionary,
+    doc: Option<&lopdf::Document>,
+    jpx_info: Option<(u64, u64, u64, u64)>,
+) -> Result<usize, EngineFailure> {
+    let get = |long: &[u8], short: &[u8]| dict.get(long).or_else(|_| dict.get(short));
+    let number = |long: &[u8], short: &[u8]| -> Result<u64, EngineFailure> {
+        get(long, short)
+            .and_then(Object::as_i64)
+            .ok()
+            .and_then(|v| u64::try_from(v).ok())
+            .filter(|v| *v > 0)
+            .ok_or_else(EngineFailure::limit_exceeded)
+    };
+    let width = number(b"Width", b"W")?;
+    let height = number(b"Height", b"H")?;
+    ctx.check_pixels(width, height)?;
+    let mask = get(b"ImageMask", b"IM")
+        .and_then(Object::as_bool)
+        .unwrap_or(false);
+    let bpc = if mask {
+        1
+    } else if get(b"BitsPerComponent", b"BPC").is_err() {
+        jpx_info
+            .map(|(_, _, bits, _)| bits)
+            .ok_or_else(EngineFailure::limit_exceeded)?
+    } else {
+        number(b"BitsPerComponent", b"BPC")?
+    };
+    let colors = if mask {
+        1
+    } else {
+        match get(b"ColorSpace", b"CS") {
+            Ok(obj) => color_components(obj, doc, 0)?,
+            Err(_) => jpx_info
+                .map(|(_, _, _, components)| components)
+                .ok_or_else(EngineFailure::limit_exceeded)?,
+        }
+    };
+    let (width, height, bpc, colors) = match jpx_info {
+        Some((actual_width, actual_height, actual_bpc, actual_colors)) => (
+            width.max(actual_width),
+            height.max(actual_height),
+            bpc.max(actual_bpc),
+            colors.max(actual_colors),
+        ),
+        None => (width, height, bpc, colors),
+    };
+    let bytes = width
+        .checked_mul(colors)
+        .and_then(|v| v.checked_mul(bpc))
+        .and_then(|v| v.checked_add(7))
+        .map(|v| v / 8)
+        .and_then(|v| v.checked_mul(height))
+        .ok_or_else(EngineFailure::limit_exceeded)?;
+    if bytes > ctx.limits().max_decompressed_bytes
+        || ctx.limits().max_asset_bytes.is_some_and(|cap| bytes > cap)
+        || ctx
+            .limits()
+            .max_memory_mb
+            .is_some_and(|mb| bytes > u64::from(mb) * 1024 * 1024)
+    {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    usize::try_from(bytes).map_err(|_| EngineFailure::limit_exceeded())
+}
+
+fn jpx_dimensions(data: &[u8]) -> Result<(u64, u64, u64, u64), EngineFailure> {
+    let invalid = EngineFailure::limit_exceeded;
+    let mut codestream = data;
+    if !data.starts_with(&[0xff, 0x4f]) {
+        let mut offset = 0usize;
+        let mut found = None;
+        while offset < data.len() {
+            let header = data.get(offset..offset + 8).ok_or_else(invalid)?;
+            let length = u32::from_be_bytes(header[..4].try_into().map_err(|_| invalid())?);
+            let (box_len, header_len) = if length == 1 {
+                let ext = data.get(offset + 8..offset + 16).ok_or_else(invalid)?;
+                (
+                    usize::try_from(u64::from_be_bytes(ext.try_into().map_err(|_| invalid())?))
+                        .map_err(|_| invalid())?,
+                    16,
+                )
+            } else if length == 0 {
+                (data.len() - offset, 8)
+            } else {
+                (usize::try_from(length).map_err(|_| invalid())?, 8)
+            };
+            if box_len < header_len {
+                return Err(invalid());
+            }
+            let end = offset
+                .checked_add(box_len)
+                .filter(|end| *end <= data.len())
+                .ok_or_else(invalid)?;
+            if &header[4..8] == b"jp2c" {
+                found = data.get(offset + header_len..end);
+                break;
+            }
+            offset = end;
+        }
+        codestream = found.ok_or_else(invalid)?;
+    }
+    if !codestream.starts_with(&[0xff, 0x4f, 0xff, 0x51]) {
+        return Err(invalid());
+    }
+    let head = codestream.get(..42).ok_or_else(invalid)?;
+    let u32_at = |pos: usize| -> Result<u64, EngineFailure> {
+        Ok(u64::from(u32::from_be_bytes(
+            head[pos..pos + 4].try_into().map_err(|_| invalid())?,
+        )))
+    };
+    let width = u32_at(8)?
+        .checked_sub(u32_at(16)?)
+        .filter(|v| *v > 0)
+        .ok_or_else(invalid)?;
+    let height = u32_at(12)?
+        .checked_sub(u32_at(20)?)
+        .filter(|v| *v > 0)
+        .ok_or_else(invalid)?;
+    let components = usize::from(u16::from_be_bytes(
+        head[40..42].try_into().map_err(|_| invalid())?,
+    ));
+    if components == 0 {
+        return Err(invalid());
+    }
+    let marker_len = usize::from(u16::from_be_bytes(
+        head[4..6].try_into().map_err(|_| invalid())?,
+    ));
+    let required = 38usize
+        .checked_add(components.checked_mul(3).ok_or_else(invalid)?)
+        .ok_or_else(invalid)?;
+    if marker_len != required {
+        return Err(invalid());
+    }
+    let entries = codestream
+        .get(42..42 + components * 3)
+        .ok_or_else(invalid)?;
+    let bits = entries
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|entry| u64::from((entry[0] & 0x7f) + 1))
+        .max()
+        .ok_or_else(invalid)?;
+    Ok((
+        width,
+        height,
+        bits,
+        u64::try_from(components).map_err(|_| invalid())?,
+    ))
+}
+
+fn color_components(
+    obj: &Object,
+    doc: Option<&lopdf::Document>,
+    depth: usize,
+) -> Result<u64, EngineFailure> {
+    if depth > 16 {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    match obj {
+        Object::Reference(id) => color_components(
+            doc.ok_or_else(EngineFailure::limit_exceeded)?
+                .get_object(*id)
+                .map_err(|_| EngineFailure::limit_exceeded())?,
+            doc,
+            depth + 1,
+        ),
+        Object::Name(name) => match name.as_slice() {
+            b"DeviceGray" | b"G" => Ok(1),
+            b"DeviceRGB" | b"RGB" => Ok(3),
+            b"DeviceCMYK" | b"CMYK" => Ok(4),
+            _ => Err(EngineFailure::limit_exceeded()),
+        },
+        Object::Array(parts) => match parts.first().and_then(|v| v.as_name().ok()) {
+            Some(b"Indexed" | b"I" | b"Separation") => Ok(1),
+            Some(b"CalGray") => Ok(1),
+            Some(b"CalRGB" | b"Lab") => Ok(3),
+            Some(b"DeviceN" | b"NChannel") => parts
+                .get(1)
+                .and_then(|v| v.as_array().ok())
+                .and_then(|v| u64::try_from(v.len()).ok())
+                .filter(|v| *v > 0)
+                .ok_or_else(EngineFailure::limit_exceeded),
+            Some(b"ICCBased") => {
+                let profile = parts.get(1).ok_or_else(EngineFailure::limit_exceeded)?;
+                let profile = match profile {
+                    Object::Reference(id) => doc
+                        .ok_or_else(EngineFailure::limit_exceeded)?
+                        .get_object(*id)
+                        .map_err(|_| EngineFailure::limit_exceeded())?,
+                    _ => profile,
+                };
+                profile
+                    .as_stream()
+                    .ok()
+                    .and_then(|s| s.dict.get(b"N").ok())
+                    .and_then(|v| v.as_i64().ok())
+                    .and_then(|v| u64::try_from(v).ok())
+                    .filter(|v| *v > 0)
+                    .ok_or_else(EngineFailure::limit_exceeded)
+            }
+            _ => Err(EngineFailure::limit_exceeded()),
+        },
+        _ => Err(EngineFailure::limit_exceeded()),
+    }
+}
+
+fn preflight_content(
+    ctx: &ToolContext<'_>,
+    bytes: &[u8],
+    max_bytes: usize,
+) -> Result<(), EngineFailure> {
+    let mut cursor = 0;
+    while let Some((start, end)) = next_content_token(bytes, &mut cursor)? {
+        if &bytes[start..end] != b"BI" {
+            continue;
+        }
+        let dict_start = end;
+        let mut nesting = 0usize;
+        let dict_end = loop {
+            let (s, e) = next_content_token(bytes, &mut cursor)?
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            match &bytes[s..e] {
+                b"[" | b"<<" => nesting += 1,
+                b"]" | b">>" => {
+                    nesting = nesting
+                        .checked_sub(1)
+                        .ok_or_else(EngineFailure::limit_exceeded)?
+                }
+                b"ID" if nesting == 0 => break s,
+                _ => {}
+            }
+        };
+        let mut dictionary = b"<< ".to_vec();
+        dictionary.extend_from_slice(&bytes[dict_start..dict_end]);
+        dictionary.extend_from_slice(b" >> q");
+        let content = Content::decode(&dictionary).map_err(|_| EngineFailure::limit_exceeded())?;
+        let dict = content
+            .operations
+            .first()
+            .and_then(|op| op.operands.first())
+            .and_then(|o| o.as_dict().ok())
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        let decoded_len = preflight_image_dict(ctx, dict, None, None)?;
+        if cursor >= bytes.len() || !is_pdf_ws(bytes[cursor]) {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        if bytes[cursor] == b'\r' && bytes.get(cursor + 1) == Some(&b'\n') {
+            cursor += 2;
+        } else {
+            cursor += 1;
+        }
+        let data_start = cursor;
+        let mut data_cap = ctx.limits().max_asset_bytes.map_or(max_bytes, |cap| {
+            max_bytes.min(usize::try_from(cap).unwrap_or(usize::MAX))
+        });
+        if let Some(mb) = ctx.limits().max_memory_mb {
+            data_cap =
+                data_cap.min(usize::try_from(u64::from(mb) * 1024 * 1024).unwrap_or(usize::MAX));
+        }
+        match dict.get(b"Filter").or_else(|_| dict.get(b"F")) {
+            Err(_) => {
+                cursor = cursor
+                    .checked_add(decoded_len)
+                    .filter(|end| *end <= bytes.len())
+                    .ok_or_else(EngineFailure::limit_exceeded)?
+            }
+            Ok(Object::Name(name)) if name == b"ASCIIHexDecode" || name == b"AHx" => {
+                let pos = bytes[cursor..]
+                    .iter()
+                    .position(|b| *b == b'>')
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                if bytes[cursor..cursor + pos]
+                    .iter()
+                    .any(|b| !is_pdf_ws(*b) && !b.is_ascii_hexdigit())
+                {
+                    return Err(EngineFailure::limit_exceeded());
+                }
+                cursor += pos + 1;
+            }
+            Ok(Object::Name(name)) if name == b"ASCII85Decode" || name == b"A85" => {
+                let tail = &bytes[cursor..];
+                let pos = tail
+                    .windows(2)
+                    .position(|pair| pair == b"~>")
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                let mut group = 0usize;
+                let mut output_len = 0usize;
+                for &byte in &tail[..pos] {
+                    if is_pdf_ws(byte) {
+                        continue;
+                    }
+                    match byte {
+                        b'z' if group == 0 => {
+                            output_len = output_len
+                                .checked_add(4)
+                                .ok_or_else(EngineFailure::limit_exceeded)?
+                        }
+                        b'!'..=b'u' => {
+                            group += 1;
+                            if group == 5 {
+                                output_len = output_len
+                                    .checked_add(4)
+                                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                                group = 0;
+                            }
+                        }
+                        _ => return Err(EngineFailure::limit_exceeded()),
+                    }
+                    if output_len > data_cap {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
+                }
+                if group == 1
+                    || output_len
+                        .checked_add(group.saturating_sub(1))
+                        .is_none_or(|n| n > data_cap)
+                {
+                    return Err(EngineFailure::limit_exceeded());
+                }
+                cursor += pos + 2;
+            }
+            Ok(Object::Name(name)) if name == b"FlateDecode" || name == b"Fl" => {
+                let mut decoder = flate2::read::ZlibDecoder::new(&bytes[cursor..]);
+                let mut buffer = [0u8; 8192];
+                let mut output_len = 0usize;
+                loop {
+                    ctx.check()?;
+                    let count = decoder
+                        .read(&mut buffer)
+                        .map_err(|_| EngineFailure::limit_exceeded())?;
+                    if count == 0 {
+                        break;
+                    }
+                    output_len = output_len
+                        .checked_add(count)
+                        .filter(|n| *n <= data_cap)
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    if decoder.total_in() > u64::try_from(data_cap).unwrap_or(u64::MAX) {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
+                }
+                cursor = cursor
+                    .checked_add(
+                        usize::try_from(decoder.total_in())
+                            .map_err(|_| EngineFailure::limit_exceeded())?,
+                    )
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
+            }
+            _ => return Err(EngineFailure::limit_exceeded()),
+        }
+        if cursor - data_start > data_cap {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let (s, e) =
+            next_content_token(bytes, &mut cursor)?.ok_or_else(EngineFailure::limit_exceeded)?;
+        if &bytes[s..e] != b"EI" {
+            return Err(EngineFailure::limit_exceeded());
+        }
+    }
+    Ok(())
+}
+
+fn next_content_token(
+    bytes: &[u8],
+    cursor: &mut usize,
+) -> Result<Option<(usize, usize)>, EngineFailure> {
+    while *cursor < bytes.len() {
+        if is_pdf_ws(bytes[*cursor]) {
+            *cursor += 1;
+            continue;
+        }
+        if bytes[*cursor] == b'%' {
+            while *cursor < bytes.len() && bytes[*cursor] != b'\n' && bytes[*cursor] != b'\r' {
+                *cursor += 1;
+            }
+            continue;
+        }
+        break;
+    }
+    if *cursor == bytes.len() {
+        return Ok(None);
+    }
+    let start = *cursor;
+    match bytes[*cursor] {
+        b'(' => {
+            *cursor += 1;
+            let mut depth = 1usize;
+            while *cursor < bytes.len() && depth != 0 {
+                match bytes[*cursor] {
+                    b'\\' => *cursor = (*cursor + 2).min(bytes.len()),
+                    b'(' => {
+                        depth += 1;
+                        *cursor += 1;
+                    }
+                    b')' => {
+                        depth -= 1;
+                        *cursor += 1;
+                    }
+                    _ => *cursor += 1,
+                }
+            }
+            if depth != 0 {
+                return Err(EngineFailure::limit_exceeded());
+            }
+        }
+        b'<' if bytes.get(*cursor + 1) != Some(&b'<') => {
+            *cursor += 1;
+            while *cursor < bytes.len() && bytes[*cursor] != b'>' {
+                *cursor += 1;
+            }
+            if *cursor == bytes.len() {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            *cursor += 1;
+        }
+        b'<' | b'>' if bytes.get(*cursor + 1) == Some(&bytes[*cursor]) => *cursor += 2,
+        b'/' => {
+            *cursor += 1;
+            while *cursor < bytes.len() && !is_pdf_delimiter_or_ws(bytes[*cursor]) {
+                *cursor += 1;
+            }
+        }
+        b'[' | b']' | b'{' | b'}' | b'>' => *cursor += 1,
+        _ => {
+            while *cursor < bytes.len() && !is_pdf_delimiter_or_ws(bytes[*cursor]) {
+                *cursor += 1;
+            }
+            if *cursor == start {
+                return Err(EngineFailure::limit_exceeded());
+            }
+        }
+    }
+    Ok(Some((start, *cursor)))
 }
 
 fn collect_mask_object_ids(pdf_doc: &PdfDoc) -> HashSet<PdfObjectId> {
@@ -1200,15 +1846,23 @@ fn extract_dynamic_image_from_pdfium_obj(
         return Err(EngineFailure::limit_exceeded());
     };
     ctx.check_pixels(width, height)?;
-    if let Ok(raw_bitmap) = img_obj.get_raw_bitmap()
-        && let Some(img) = pdf_bitmap_to_dynamic_image(&raw_bitmap)
-    {
-        return Ok(Some(img));
+    if let Ok(raw_bitmap) = img_obj.get_raw_bitmap() {
+        ctx.check_pixels(
+            u64::try_from(raw_bitmap.width()).map_err(|_| EngineFailure::limit_exceeded())?,
+            u64::try_from(raw_bitmap.height()).map_err(|_| EngineFailure::limit_exceeded())?,
+        )?;
+        if let Some(img) = pdf_bitmap_to_dynamic_image(&raw_bitmap) {
+            return Ok(Some(img));
+        }
     }
-    if let Ok(proc_bitmap) = img_obj.get_processed_bitmap(pdfium_doc)
-        && let Some(img) = pdf_bitmap_to_dynamic_image(&proc_bitmap)
-    {
-        return Ok(Some(img));
+    if let Ok(proc_bitmap) = img_obj.get_processed_bitmap(pdfium_doc) {
+        ctx.check_pixels(
+            u64::try_from(proc_bitmap.width()).map_err(|_| EngineFailure::limit_exceeded())?,
+            u64::try_from(proc_bitmap.height()).map_err(|_| EngineFailure::limit_exceeded())?,
+        )?;
+        if let Some(img) = pdf_bitmap_to_dynamic_image(&proc_bitmap) {
+            return Ok(Some(img));
+        }
     }
     Ok(None)
 }

@@ -1,17 +1,16 @@
 # Image extraction decode bounds
 
-Status: incomplete. Do not integrate this branch as a complete resource-exhaustion fix.
+Status: complete, with fail-closed compatibility limits described below.
 
-The fallback decoded every page image before selecting the requested image, and the inline path checked dimensions only after decoding. The change walks image objects in order, decodes only the selected fallback object, checks PDFium-reported dimensions before requesting a bitmap, and handles inline images one at a time. It also updates `PdfToolCtx` construction to match the existing non-exhaustive API; the base branch did not compile without that adjustment.
+PDFium parses inline image data while opening a page, before the bitmap checks in the extraction path. The engine now scans each selected page's decoded content and reachable image resources before asking PDFium to open it. It checks dimensions, bit depth, color components, decoded byte estimates, masks, inline encoded data and Flate expansion against the applicable limits. JPEG 2000 codestream headers are checked independently of the PDF dictionary. The original PDFium-reported dimensions check and the actual bitmap dimensions check remain in place, and the fallback decodes only the requested image object.
 
-The tests `inline_images_check_dimensions_before_decoding` and `extracts_single_inline_image_pixels` pass with the real PDFium pack. The first also passes on the old implementation, so it is not a valid regression proof. A 40-image inline PDF with 20,000 by 20,000 declared dimensions drove the test process to roughly 11 GiB RSS before the check could stop it; the process was terminated. The exact PDFium operation responsible has not been isolated. The checked metadata is therefore insufficient to establish a fail-fast bound for that input. A stronger pre-PDFium or engine-level bound and a regression test are still needed.
+Inline data with no filter or one ASCIIHex, ASCII85, or Flate filter can be bounded. Other filters, filter chains, unresolved color-space aliases, and malformed content that cannot be inspected are refused with `limit_exceeded`; this conservative compatibility boundary is documented in `docs/tools.md`. Generated PDFs exist only in test code, so no fixture manifest entry is needed.
 
-Validation so far:
+Regression coverage: `inline_images_check_dimensions_before_decoding` checks 40 tiny inline streams declaring 20,000 by 20,000 pixels and asserts a limit error within five seconds. `refuses_inline_image_data_over_asset_limit`, `refuses_inline_flate_expansion_over_asset_limit`, `refuses_oversized_mask_before_opening_page`, `refuses_jpx_header_larger_than_image_dictionary`, and `refuses_uninspectable_page_content_entry` cover additional boundaries. `extracts_single_inline_image_pixels` and `extracts_flate_inline_image` verify valid output pixels. The inline-data-size test failed on the previous source and passes with this change. The 40-image test also returned a limit error on the previous source under the 2 GiB ceiling, so it alone does not prove the regression.
+
+Validation:
 
 - `cargo fmt --all --check`: passed.
-- Locked `cargo test --locked -p ariad-pdfium-engine --test extract_images inline_ -- --nocapture`: passed, two tests.
-- The same limit test on the original extraction source: passed, demonstrating the regression gap.
 - Locked `cargo clippy --locked -p ariad-pdfium-engine --all-targets -- -D warnings`: passed.
-- Locked `cargo test --locked -p ariad-pdfium-engine`: exited successfully, but the shared target supplied another worktree’s extraction integration test binary, so that portion is not valid evidence for this branch.
-
-Assumption: generated test PDFs are ephemeral test-code data and are not committed fixtures.
+- Locked `cargo test --locked -p ariad-pdfium-engine`: passed, including all 12 extraction tests. Test executables ran through `systemd-run --user --scope --quiet -p MemoryMax=2G -p MemorySwapMax=0` with the configured PDFium pack.
+- The earlier direct risk test was stopped at roughly 11 GiB RSS; all repeated risk tests in this session used the 2 GiB ceiling.

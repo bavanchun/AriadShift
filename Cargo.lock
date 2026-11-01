@@ -331,6 +331,7 @@ dependencies = [
  "ariad-core",
  "ariad-engine-io",
  "ariad-pdf",
+ "flate2",
  "image",
  "jsonschema",
  "lopdf",
