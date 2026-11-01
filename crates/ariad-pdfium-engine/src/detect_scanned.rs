@@ -141,6 +141,8 @@ pub fn run(ctx: &mut ToolContext<'_>, _params: DetectScannedParams) -> ToolResul
     let max_depth = usize::from(ctx.limits().max_nesting_depth);
     let total_u64 = u64::try_from(total_pages).unwrap_or(u64::MAX);
 
+    let mut document_visits = 0usize;
+    let mut document_sweep_work = 0usize;
     let mut pages = Vec::with_capacity(total_pages);
     let mut scanned_pages: usize = 0;
     let mut digital_pages: usize = 0;
@@ -157,9 +159,29 @@ pub fn run(ctx: &mut ToolContext<'_>, _params: DetectScannedParams) -> ToolResul
 
         let page_rect = page_bounds(&page);
         let mut image_rects = Vec::new();
-        collect_image_rects_from_iter(ctx, page.objects().iter(), 0, max_depth, &mut image_rects)?;
+        let mut page_visits = 0usize;
+        collect_image_rects_from_iter(
+            ctx,
+            page.objects().iter(),
+            0,
+            max_depth,
+            &mut page_visits,
+            &mut document_visits,
+            &mut image_rects,
+        )?;
 
-        let image_coverage_ratio = compute_image_coverage_ratio(page_rect, &image_rects);
+        let mut page_sweep_work = 0usize;
+        let image_coverage_ratio = coverage_ratio_checked(page_rect, &image_rects, || {
+            page_sweep_work += 1;
+            document_sweep_work += 1;
+            if page_sweep_work > 2_000_000 || document_sweep_work > 20_000_000 {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            if page_sweep_work.is_multiple_of(1024) {
+                ctx.check()?;
+            }
+            Ok(())
+        })?;
         let verdict = classify_page(has_text_layer, image_coverage_ratio, &thresholds);
 
         match verdict {
@@ -258,6 +280,14 @@ pub const fn classify_document(
 /// right, top]`), divided by the area of `page_rect` and clamped to `[0.0, 1.0]`.
 #[must_use]
 pub fn compute_image_coverage_ratio(page_rect: [f64; 4], image_rects: &[[f64; 4]]) -> f64 {
+    coverage_ratio_checked(page_rect, image_rects, || Ok(())).unwrap_or(0.0)
+}
+
+fn coverage_ratio_checked(
+    page_rect: [f64; 4],
+    image_rects: &[[f64; 4]],
+    mut check: impl FnMut() -> Result<(), EngineFailure>,
+) -> Result<f64, EngineFailure> {
     let p_left = page_rect[0].min(page_rect[2]);
     let p_right = page_rect[0].max(page_rect[2]);
     let p_bottom = page_rect[1].min(page_rect[3]);
@@ -267,13 +297,14 @@ pub fn compute_image_coverage_ratio(page_rect: [f64; 4], image_rects: &[[f64; 4]
     let page_h = (p_top - p_bottom).max(0.0);
     let page_area = page_w * page_h;
     if !page_area.is_finite() || page_area <= 0.0 || image_rects.is_empty() {
-        return 0.0;
+        return Ok(0.0);
     }
 
     let mut clipped: Vec<[f64; 4]> = Vec::with_capacity(image_rects.len());
     let mut xs: Vec<f64> = Vec::with_capacity(image_rects.len() * 2);
 
     for rect in image_rects {
+        check()?;
         if !rect.iter().all(|v| v.is_finite()) {
             continue;
         }
@@ -289,7 +320,7 @@ pub fn compute_image_coverage_ratio(page_rect: [f64; 4], image_rects: &[[f64; 4]
     }
 
     if clipped.is_empty() {
-        return 0.0;
+        return Ok(0.0);
     }
 
     xs.sort_by(f64::total_cmp);
@@ -299,6 +330,7 @@ pub fn compute_image_coverage_ratio(page_rect: [f64; 4], image_rects: &[[f64; 4]
     let mut y_intervals: Vec<(f64, f64)> = Vec::with_capacity(clipped.len());
 
     for window in xs.windows(2) {
+        check()?;
         let x0 = window[0];
         let x1 = window[1];
         let dx = x1 - x0;
@@ -308,6 +340,7 @@ pub fn compute_image_coverage_ratio(page_rect: [f64; 4], image_rects: &[[f64; 4]
         let mid_x = (x0 + x1) * 0.5;
         y_intervals.clear();
         for rect in &clipped {
+            check()?;
             if rect[0] <= mid_x && rect[2] >= mid_x {
                 y_intervals.push((rect[1], rect[3]));
             }
@@ -321,6 +354,7 @@ pub fn compute_image_coverage_ratio(page_rect: [f64; 4], image_rects: &[[f64; 4]
         let mut cur_end = y_intervals[0].1;
         let mut covered_y = 0.0;
         for &(y0, y1) in &y_intervals[1..] {
+            check()?;
             if y0 <= cur_end {
                 cur_end = cur_end.max(y1);
             } else {
@@ -334,7 +368,7 @@ pub fn compute_image_coverage_ratio(page_rect: [f64; 4], image_rects: &[[f64; 4]
     }
 
     let raw_ratio = (union_area / page_area).clamp(0.0, 1.0);
-    ((raw_ratio * 10_000.0).round() / 10_000.0).clamp(0.0, 1.0)
+    Ok(((raw_ratio * 10_000.0).round() / 10_000.0).clamp(0.0, 1.0))
 }
 
 fn page_bounds(page: &PdfPage<'_>) -> [f64; 4] {
@@ -385,12 +419,22 @@ fn collect_image_rects_from_iter<'a>(
     iter: PdfPageObjectsIterator<'a>,
     depth: usize,
     max_depth: usize,
+    page_visits: &mut usize,
+    document_visits: &mut usize,
     out: &mut Vec<[f64; 4]>,
 ) -> Result<(), EngineFailure> {
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
     for (idx, obj) in iter.enumerate() {
+        *page_visits += 1;
+        *document_visits += 1;
+        if *page_visits > 100_000
+            || *document_visits > 1_000_000
+            || *document_visits > ctx.limits().max_blocks as usize
+        {
+            return Err(EngineFailure::limit_exceeded());
+        }
         if idx % 64 == 0 {
             ctx.check()?;
         }
@@ -402,14 +446,49 @@ fn collect_image_rects_from_iter<'a>(
                     let r = f64::from(rect.right().value);
                     let b = f64::from(rect.bottom().value);
                     let t = f64::from(rect.top().value);
+                    if out.len() >= 2_000 {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
                     out.push([l.min(r), b.min(t), l.max(r), b.max(t)]);
                 }
             }
             PdfPageObject::XObjectForm(form_obj) => {
-                collect_image_rects_from_iter(ctx, form_obj.iter(), depth + 1, max_depth, out)?;
+                collect_image_rects_from_iter(
+                    ctx,
+                    form_obj.iter(),
+                    depth + 1,
+                    max_depth,
+                    page_visits,
+                    document_visits,
+                    out,
+                )?;
             }
             _ => {}
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod coverage_tests {
+    use super::*;
+
+    #[test]
+    fn coverage_sweep_checks_for_interruption_while_processing_overlaps() {
+        let rects: Vec<_> = (0..1000)
+            .map(|i| [f64::from(i), 0.0, f64::from(i + 1000), 100.0])
+            .collect();
+        let mut checks = 0;
+        let err = coverage_ratio_checked([0.0, 0.0, 2000.0, 100.0], &rects, || {
+            checks += 1;
+            if checks == 1500 {
+                Err(EngineFailure::limit_exceeded())
+            } else {
+                Ok(())
+            }
+        })
+        .expect_err("sweep must propagate interruption");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(checks, 1500);
+    }
 }

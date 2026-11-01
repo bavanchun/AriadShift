@@ -330,3 +330,29 @@ fn rejects_encrypted_and_corrupt_pdfs() {
         .expect_err("corrupt PDF must be rejected");
     assert_eq!(bad_err.code, ErrorCode::EngineFailure);
 }
+
+#[test]
+fn many_overlapping_images_exceed_the_coverage_limit() {
+    let lib_dir = require_pdfium!();
+    let content = b"q 10 0 0 10 0 0 cm /Im Do Q\n".repeat(2001);
+    let objects = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", &content),
+        stream_object("/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8", &[128, 128, 128]),
+    ];
+    let ws = TestWorkspace::from_bytes("overlap.pdf", &assemble_pdf(&objects));
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "overlap",
+        "pdf.detect_scanned",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = detect_scanned::run(&mut ctx, DetectScannedParams::default())
+        .expect_err("rectangle count must be bounded");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}

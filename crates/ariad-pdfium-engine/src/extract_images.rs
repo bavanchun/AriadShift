@@ -222,6 +222,7 @@ pub fn extract_document_images(
     };
 
     let selected_total = u64::try_from(selected_pages.len()).unwrap_or(u64::MAX);
+    let mut document_work = 0usize;
 
     for (idx, &page_num) in selected_pages.iter().enumerate() {
         ctx.check()?;
@@ -238,7 +239,8 @@ pub fn extract_document_images(
 
         let mut page_image_refs = Vec::new();
         if let Some(&page_obj_id) = lopdf_pages.get(&page_num) {
-            let mut active_forms = HashSet::new();
+            let mut expanded_forms = HashSet::new();
+            let mut page_work = 0usize;
             collect_page_image_xobjects(
                 ctx,
                 &pdf_doc,
@@ -247,7 +249,9 @@ pub fn extract_document_images(
                 max_depth,
                 max_decompressed,
                 &mask_ids,
-                &mut active_forms,
+                &mut expanded_forms,
+                &mut page_work,
+                &mut document_work,
                 &mut page_image_refs,
             )?;
         }
@@ -984,7 +988,9 @@ fn collect_page_image_xobjects(
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    active_forms: &mut HashSet<PdfObjectId>,
+    expanded_forms: &mut HashSet<PdfObjectId>,
+    page_work: &mut usize,
+    document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
 ) -> Result<(), EngineFailure> {
     if depth > max_depth {
@@ -1004,7 +1010,9 @@ fn collect_page_image_xobjects(
         max_depth,
         max_decompressed,
         mask_ids,
-        active_forms,
+        expanded_forms,
+        page_work,
+        document_work,
         out,
     )
 }
@@ -1019,7 +1027,9 @@ fn collect_from_content_and_xobject_map(
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    active_forms: &mut HashSet<PdfObjectId>,
+    expanded_forms: &mut HashSet<PdfObjectId>,
+    page_work: &mut usize,
+    document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
 ) -> Result<(), EngineFailure> {
     if depth > max_depth {
@@ -1030,13 +1040,15 @@ fn collect_from_content_and_xobject_map(
     }
 
     let mut visited_keys: HashSet<Vec<u8>> = HashSet::new();
-    let invoked_names = scan_do_operators(content_bytes);
+    let invoked_names = scan_do_operators(ctx, content_bytes, page_work, document_work)?;
 
     for (idx, name) in invoked_names.into_iter().enumerate() {
         if idx % 128 == 0 {
             ctx.check()?;
         }
-        visited_keys.insert(name.clone());
+        if !visited_keys.insert(name.clone()) {
+            continue;
+        }
         if let Some(&target_id) = xobject_map.get(&name) {
             visit_xobject_target(
                 ctx,
@@ -1047,7 +1059,9 @@ fn collect_from_content_and_xobject_map(
                 max_depth,
                 max_decompressed,
                 mask_ids,
-                active_forms,
+                expanded_forms,
+                page_work,
+                document_work,
                 out,
             )?;
         }
@@ -1066,7 +1080,9 @@ fn collect_from_content_and_xobject_map(
             max_depth,
             max_decompressed,
             mask_ids,
-            active_forms,
+            expanded_forms,
+            page_work,
+            document_work,
             out,
         )?;
     }
@@ -1084,13 +1100,16 @@ fn visit_xobject_target(
     max_depth: usize,
     max_decompressed: usize,
     mask_ids: &HashSet<PdfObjectId>,
-    active_forms: &mut HashSet<PdfObjectId>,
+    expanded_forms: &mut HashSet<PdfObjectId>,
+    page_work: &mut usize,
+    document_work: &mut usize,
     out: &mut Vec<PdfObjectId>,
 ) -> Result<(), EngineFailure> {
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
     ctx.check()?;
+    charge_traversal(ctx, page_work, document_work)?;
     if mask_ids.contains(&target_id) {
         return Ok(());
     }
@@ -1105,9 +1124,12 @@ fn visit_xobject_target(
         .unwrap_or(b"");
 
     if subtype == b"Image" {
+        if out.len() >= 100_000 || out.len() >= ctx.limits().max_blocks as usize {
+            return Err(EngineFailure::limit_exceeded());
+        }
         out.push(target_id);
     } else if subtype == b"Form" {
-        if !active_forms.insert(target_id) {
+        if !expanded_forms.insert(target_id) {
             return Ok(());
         }
         let mut form_xobjects = parent_xobjects.clone();
@@ -1117,7 +1139,7 @@ fn visit_xobject_target(
         let form_content = stream
             .decompressed_content_with_limit(max_decompressed)
             .unwrap_or_else(|_| stream.content.clone());
-        let res = collect_from_content_and_xobject_map(
+        collect_from_content_and_xobject_map(
             ctx,
             pdf_doc,
             &form_content,
@@ -1126,11 +1148,11 @@ fn visit_xobject_target(
             max_depth,
             max_decompressed,
             mask_ids,
-            active_forms,
+            expanded_forms,
+            page_work,
+            document_work,
             out,
-        );
-        active_forms.remove(&target_id);
-        res?;
+        )?;
     }
     Ok(())
 }
@@ -1192,8 +1214,26 @@ fn read_page_content_bytes(
     combined
 }
 
+fn charge_traversal(
+    ctx: &ToolContext<'_>,
+    page: &mut usize,
+    document: &mut usize,
+) -> Result<(), EngineFailure> {
+    *page = page.saturating_add(1);
+    *document = document.saturating_add(1);
+    if *page > 100_000 || *document > 1_000_000 || *document > ctx.limits().max_blocks as usize {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    Ok(())
+}
+
 /// Scans a PDF content stream for `/Name Do` XObject invocations in appearance order.
-fn scan_do_operators(content: &[u8]) -> Vec<Vec<u8>> {
+fn scan_do_operators(
+    ctx: &ToolContext<'_>,
+    content: &[u8],
+    page: &mut usize,
+    document: &mut usize,
+) -> Result<Vec<Vec<u8>>, EngineFailure> {
     let mut names = Vec::new();
     let mut last_name: Option<Vec<u8>> = None;
     let mut i = 0;
@@ -1261,6 +1301,10 @@ fn scan_do_operators(content: &[u8]) -> Vec<Vec<u8>> {
             i += 1;
         }
         let token = &content[start..i];
+        charge_traversal(ctx, page, document)?;
+        if (*page).is_multiple_of(128) {
+            ctx.check()?;
+        }
         if token == b"Do" {
             if let Some(name) = last_name.take() {
                 names.push(name);
@@ -1282,7 +1326,7 @@ fn scan_do_operators(content: &[u8]) -> Vec<Vec<u8>> {
             last_name = None;
         }
     }
-    names
+    Ok(names)
 }
 
 const fn is_pdf_ws(b: u8) -> bool {

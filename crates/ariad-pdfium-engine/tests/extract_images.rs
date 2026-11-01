@@ -653,3 +653,69 @@ fn refuses_uninspectable_page_content_entry() {
         .expect_err("uninspectable content must be refused");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
 }
+
+#[test]
+fn repeated_nested_forms_are_expanded_once() {
+    let lib_dir = require_pdfium!();
+    let depth = 12usize;
+    let mut objects = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /F 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/F Do /F Do"),
+    ];
+    for index in 0..depth {
+        let child = index + 6;
+        let resources = format!(
+            "/Type /XObject /Subtype /Form /BBox [0 0 100 100] /Resources << /XObject << /F {child} 0 R >> >>"
+        );
+        objects.push(stream_object(&resources, b"/F Do /F Do"));
+    }
+    objects.push(stream_object(
+        "/Type /XObject /Subtype /Image /Width 16 /Height 16 /ColorSpace /DeviceRGB /BitsPerComponent 8",
+        &vec![128; 16 * 16 * 3],
+    ));
+    let ws = TestWorkspace::from_bytes("nested.pdf", &assemble_pdf(&objects));
+    let mut sink = Vec::new();
+    let mut limits = Limits::local();
+    limits.max_blocks = 200;
+    let mut ctx = ToolContext::new("nested", "pdf.extract_images", ws.paths, limits, &mut sink)
+        .with_library_dir(lib_dir);
+    let outcome =
+        extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+            .expect("nested forms stay within the traversal budget");
+    assert_eq!(outcome.images.len(), 1);
+    assert_eq!(outcome.images_deduplicated, 0);
+    assert_eq!(
+        (outcome.images[0].width, outcome.images[0].height),
+        (16, 16)
+    );
+}
+
+#[test]
+fn repeated_operators_obey_the_traversal_budget() {
+    let lib_dir = require_pdfium!();
+    let content = b"/Im Do ".repeat(100);
+    let objects = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", &content),
+        stream_object("/Type /XObject /Subtype /Image /Width 16 /Height 16 /ColorSpace /DeviceRGB /BitsPerComponent 8", &vec![128; 16 * 16 * 3]),
+    ];
+    let ws = TestWorkspace::from_bytes("operators.pdf", &assemble_pdf(&objects));
+    let mut sink = Vec::new();
+    let mut limits = Limits::local();
+    limits.max_blocks = 20;
+    let mut ctx = ToolContext::new(
+        "operators",
+        "pdf.extract_images",
+        ws.paths,
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let err = extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+        .expect_err("operator budget must be enforced");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}

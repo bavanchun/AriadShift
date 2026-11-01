@@ -411,6 +411,8 @@ Every tool invocation receives an `ariad_core::limits::Limits` struct (`Limits::
 | Decoded stream & object caps | `ariad-pdf` opens every PDF exclusively through `ariad_core::reader::pdf::load_bounded(bytes, &limits)`, enforcing `max_decompressed_bytes` across Flate/LZW/filter streams, `max_nesting_depth` (< 100), and `MAX_OBJECTS` (object count ceiling). |
 | `max_asset_bytes` | Bounds individual embedded images, fonts, or file attachments added or extracted by a tool. |
 
+PDFium image extraction and scan detection also bound object traversal per page and document. Scan detection accepts at most 2,000 image rectangles per page and bounds the work used to calculate their exact union. Complex inputs may therefore reach a limit even when their file size is small.
+
 Exceeding any limit terminates the job immediately and returns `limit_exceeded` (exit code `4`).
 
 ### Sandbox and Network Isolation (AD-15)
