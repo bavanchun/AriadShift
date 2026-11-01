@@ -1152,6 +1152,14 @@ fn publish_atomic_quarantines_risky_extracted_files_and_reports_one_warning_each
         ("doc.run.exe", "exe", "doc.run.exe", true),
         ("doc.script.PY", "py", "doc.script.PY", true),
         ("doc.x.pdf.exe", "exe", "doc.x.pdf.exe", true),
+        ("doc.image.ISO", "iso", "doc.image.ISO", true),
+        (
+            "doc.pkg.msixbundle",
+            "msixbundle",
+            "doc.pkg.msixbundle",
+            true,
+        ),
+        ("doc.help.CHM", "chm", "doc.help.CHM", true),
         ("doc.a.svg", "svg", "doc.a.svg", false),
         ("doc.n.pdf", "pdf", "doc.n.pdf", false),
     ];

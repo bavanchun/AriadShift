@@ -101,12 +101,15 @@ pub fn validate_artifact_extensions(
 const RISKY_EXTRACTED_EXTENSIONS: &[&str] = &[
     "ade",
     "adp",
-    "app",
-    "applescript",
-    "appimage",
     "apk",
+    "app",
+    "appimage",
+    "applescript",
+    "appx",
+    "appxbundle",
     "bash",
     "bat",
+    "chm",
     "cjs",
     "cmd",
     "com",
@@ -123,8 +126,10 @@ const RISKY_EXTRACTED_EXTENSIONS: &[&str] = &[
     "fish",
     "gadget",
     "hta",
+    "img",
     "inetloc",
     "ipa",
+    "iso",
     "jar",
     "jnlp",
     "js",
@@ -134,6 +139,8 @@ const RISKY_EXTRACTED_EXTENSIONS: &[&str] = &[
     "mjs",
     "msc",
     "msi",
+    "msix",
+    "msixbundle",
     "msp",
     "mst",
     "php",
@@ -159,6 +166,8 @@ const RISKY_EXTRACTED_EXTENSIONS: &[&str] = &[
     "vb",
     "vbe",
     "vbs",
+    "vhd",
+    "vhdx",
     "webloc",
     "workflow",
     "ws",
@@ -945,6 +954,26 @@ mod tests {
             "m.psm1",
             "c.cpl",
             "r.reg",
+            "disc.iso",
+            "DISC.ISO",
+            "image.img",
+            "IMAGE.IMG",
+            "virtual.vhd",
+            "VIRTUAL.VHD",
+            "virtual2.vhdx",
+            "VIRTUAL2.VHDX",
+            "help.chm",
+            "HELP.CHM",
+            "pkg.msix",
+            "PKG.MSIX",
+            "bundle.msixbundle",
+            "BUNDLE.MSIXBUNDLE",
+            "store.appx",
+            "STORE.APPX",
+            "store.appxbundle",
+            "STORE.APPXBUNDLE",
+            "report.pdf.iso.",
+            "installer.msixbundle. ",
         ] {
             assert!(is_risky_extracted_name(risky), "{risky} must be risky");
         }
@@ -961,8 +990,33 @@ mod tests {
         ] {
             assert!(!is_risky_extracted_name(safe), "{safe} must not be risky");
         }
-        assert!(!is_safe_extracted_extension("exe"));
-        assert!(!is_safe_extracted_extension("LNK"));
+        for ext in [
+            "exe",
+            "LNK",
+            "iso",
+            "ISO",
+            "img",
+            "IMG",
+            "vhd",
+            "VHD",
+            "vhdx",
+            "VHDX",
+            "chm",
+            "CHM",
+            "msix",
+            "MSIX",
+            "msixbundle",
+            "MSIXBUNDLE",
+            "appx",
+            "APPX",
+            "appxbundle",
+            "APPXBUNDLE",
+        ] {
+            assert!(
+                !is_safe_extracted_extension(ext),
+                "{ext} must not be a safe extracted extension"
+            );
+        }
         assert!(is_safe_extracted_extension("svg"));
         assert!(is_safe_extracted_extension("html"));
         assert!(is_safe_extracted_extension("htm"));
