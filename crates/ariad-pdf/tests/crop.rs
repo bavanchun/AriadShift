@@ -29,7 +29,10 @@ fn assert_json_snapshot(name: &str, value: &Value) {
         "---\nsource: crates/ariad-pdf/tests/crop.rs\nexpression: info_json\n---\n{body}\n"
     );
     let path = snapshot_path(name);
-    if std::env::var("BLESS_SNAPSHOTS").as_deref() == Ok("1") {
+    if std::env::var_os("UPDATE_SNAPSHOTS").is_some()
+        || std::env::var("INSTA_UPDATE").as_deref() == Ok("always")
+        || std::env::var("BLESS_SNAPSHOTS").as_deref() == Ok("1")
+    {
         std::fs::create_dir_all(path.parent().unwrap()).expect("create snapshots dir");
         std::fs::write(&path, &full).expect("write snapshot");
     }
@@ -261,7 +264,23 @@ fn crop_rejects_inverted_boxes_disjoint_cropbox_duplicates_and_wrong_arity() {
     }))
     .unwrap();
     assert!(matches!(
-        crop::run(&[doc.clone(), doc], &typed, &ctx),
+        crop::run(&[doc.clone(), doc.clone()], &typed, &ctx),
         Err(PdfError::InvalidParams(_))
     ));
+
+    // Cyclic indirect reference in `/MediaBox` does not overflow the stack
+    let mut cyclic_doc = doc;
+    let inner = cyclic_doc.inner_mut().unwrap();
+    let cycle_id = inner.new_object_id();
+    inner
+        .objects
+        .insert(cycle_id, lopdf::Object::Reference(cycle_id));
+    let first_page_id = inner.page_iter().next().unwrap();
+    inner
+        .get_dictionary_mut(first_page_id)
+        .unwrap()
+        .set("MediaBox", lopdf::Object::Reference(cycle_id));
+    let cropped = crop::run(&[cyclic_doc], &typed, &ctx)
+        .expect("crop on page with cyclic MediaBox reference falls back to default MediaBox");
+    assert_eq!(cropped.len(), 1);
 }

@@ -17,7 +17,7 @@ use crate::{
     tools::{
         OutputDoc,
         rotate::{collect_page_ids, materialize_inferred_rotations},
-        scale::{apply_transformed_page_state, charge_page_contents, transform_page_annotations},
+        scale::{apply_transformed_page_state, transform_page_annotations},
     },
     xobject::{self, PdfRect},
 };
@@ -60,9 +60,8 @@ pub fn run(
     for page_num in selected_pages {
         ctx.check()?;
         let page_id = page_ids[(page_num - 1) as usize];
-        charge_page_contents(inner, page_id, &mut budget, ctx)?;
 
-        let form = xobject::page_to_form_xobject_in_place(inner, page_id, ctx)?;
+        let form = xobject::page_to_form_xobject_in_place(inner, page_id, &mut budget, ctx)?;
         let rot = form.rotation.rem_euclid(360);
 
         let (matrix, new_box) = if rot == 0 {

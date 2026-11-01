@@ -2,9 +2,12 @@
 
 use std::collections::HashMap;
 
-use ariad_core::tools::{
-    page_range::DuplicatePolicy,
-    params::{posterize::PosterizeParams, scale::ScaleFit},
+use ariad_core::{
+    reader::pdf::ReadError,
+    tools::{
+        page_range::DuplicatePolicy,
+        params::{posterize::PosterizeParams, scale::ScaleFit},
+    },
 };
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
@@ -15,13 +18,18 @@ use crate::{
     tools::{
         OutputDoc,
         nup::{
-            append_clipped_xobject, collect_ordered_page_ids, convert_page_with_budget,
-            effective_version, finalize_layout_document, fmt_f64, insert_sheet_page,
+            MAX_OUTPUT_PAGES, append_clipped_xobject, collect_ordered_page_ids,
+            convert_page_with_budget, effective_version, finalize_layout_document, fmt_f64,
+            insert_sheet_page,
         },
     },
     xobject::{self, Matrix, ObjectCopier, PdfRect},
 };
 
+/// Maximum number of tile columns or rows per axis (`16 × 16 = 256` tiles per page).
+const MAX_TILES: u8 = 16;
+/// Minimum allowed sheet side length in PDF points (`0.5 in`).
+const MIN_PAPER_SIDE_PT: f64 = 36.0;
 /// Inset from sheet edges (in points) reserved for corner crop marks when `crop_marks == true`.
 const CROP_MARK_INSET_PT: f64 = 18.0;
 /// Offset gap (in points) between a trim corner and the start of a crop mark tick.
@@ -55,10 +63,10 @@ pub fn run(
         )));
     }
     if let Some(tiles) = params.tiles
-        && (!(1..=32).contains(&tiles.cols) || !(1..=32).contains(&tiles.rows))
+        && (!(1..=MAX_TILES).contains(&tiles.cols) || !(1..=MAX_TILES).contains(&tiles.rows))
     {
         return Err(PdfError::InvalidParams(format!(
-            "invalid tiles ({}x{}): expected cols and rows in 1..=32",
+            "invalid tiles ({}x{}): expected cols and rows in 1..={MAX_TILES}",
             tiles.cols, tiles.rows
         )));
     }
@@ -81,6 +89,11 @@ pub fn run(
     let sheet_dims = paper::resolve_paper_size(&params.sheet)?;
     let sheet_w = sheet_dims.width_pt;
     let sheet_h = sheet_dims.height_pt;
+    if sheet_w < MIN_PAPER_SIDE_PT || sheet_h < MIN_PAPER_SIDE_PT {
+        return Err(PdfError::InvalidParams(format!(
+            "sheet dimensions ({sheet_w} x {sheet_h} pt) must be at least {MIN_PAPER_SIDE_PT} pt on each side"
+        )));
+    }
     let sheet_box = PdfRect::from_size(sheet_w, sheet_h);
 
     let overlap_pt = f64::from(params.overlap_mm) * (72.0 / 25.4);
@@ -142,12 +155,26 @@ pub fn run(
             (c, r, pw, ph)
         } else {
             let scale = f64::from(params.scale.unwrap_or(2.0));
-            let c = (((visual_w * scale) / sheet_w - 1e-3).ceil().max(1.0)) as usize;
-            let r = (((visual_h * scale) / sheet_h - 1e-3).ceil().max(1.0)) as usize;
-            let pw = (c as f64) * tile_w - ((c - 1) as f64) * overlap_pt;
-            let ph = (r as f64) * tile_h - ((r - 1) as f64) * overlap_pt;
-            (c, r, pw, ph)
+            let pw = visual_w * scale;
+            let ph = visual_h * scale;
+            let cols_f = ((pw - overlap_pt) / step_x - 1e-9).ceil().max(1.0);
+            let rows_f = ((ph - overlap_pt) / step_y - 1e-9).ceil().max(1.0);
+            if cols_f > f64::from(MAX_TILES) || rows_f > f64::from(MAX_TILES) {
+                return Err(PdfError::InvalidParams(format!(
+                    "scale {scale} requires {}x{} tiles, exceeding the maximum grid of {MAX_TILES}x{MAX_TILES}",
+                    cols_f as u64, rows_f as u64
+                )));
+            }
+            (cols_f as usize, rows_f as usize, pw, ph)
         };
+
+        let next_total = new_page_ids.len().saturating_add(cols.saturating_mul(rows));
+        if (next_total as u64) > u64::from(MAX_OUTPUT_PAGES) {
+            return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+                actual: next_total as u64,
+                limit: MAX_OUTPUT_PAGES,
+            }));
+        }
 
         let poster_rect = PdfRect::from_size(poster_w, poster_h);
         let poster_matrix =

@@ -2,9 +2,12 @@
 
 use std::collections::HashMap;
 
-use ariad_core::tools::params::{
-    booklet::{BookletBinding, BookletParams},
-    scale::ScaleFit,
+use ariad_core::{
+    reader::pdf::ReadError,
+    tools::params::{
+        booklet::{BookletBinding, BookletParams},
+        scale::ScaleFit,
+    },
 };
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
@@ -15,8 +18,9 @@ use crate::{
     tools::{
         OutputDoc,
         nup::{
-            append_clipped_xobject, collect_ordered_page_ids, convert_page_with_budget,
-            effective_version, finalize_layout_document, insert_sheet_page,
+            MAX_OUTPUT_PAGES, append_clipped_xobject, collect_ordered_page_ids,
+            convert_page_with_budget, effective_version, finalize_layout_document,
+            insert_sheet_page,
         },
     },
     xobject::{self, ObjectCopier, PdfRect},
@@ -53,13 +57,20 @@ pub fn run(
     let page_count = src_pages.len();
     let padded_total = page_count.div_ceil(4) * 4;
     let num_sheets = padded_total / 4;
+    let total_out_pages = num_sheets.saturating_mul(2);
+    if (total_out_pages as u64) > u64::from(MAX_OUTPUT_PAGES) {
+        return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+            actual: total_out_pages as u64,
+            limit: MAX_OUTPUT_PAGES,
+        }));
+    }
 
     let mut target_doc = Document::with_version(effective_version(src_doc));
     let pages_root_id = target_doc.new_object_id();
     let mut copier = ObjectCopier::new();
     let mut budget = src_pdf.decode_budget();
 
-    let mut new_page_ids = Vec::with_capacity(num_sheets * 2);
+    let mut new_page_ids = Vec::with_capacity(total_out_pages);
     let mut page_map: HashMap<ObjectId, ObjectId> = HashMap::with_capacity(page_count);
     let sheet_box = PdfRect::from_size(sheet_w, sheet_h);
 

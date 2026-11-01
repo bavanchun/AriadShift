@@ -202,9 +202,9 @@ fn dict_get_resolved<'a>(
 
 fn resolve_obj<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Object> {
     let mut current = obj;
-    for _ in 0..16 {
+    for _ in 0..8 {
         match current {
-            Object::Reference(id) => current = doc.get_object(*id).ok()?,
+            Object::Reference(id) => current = doc.objects.get(id)?,
             other => return Some(other),
         }
     }

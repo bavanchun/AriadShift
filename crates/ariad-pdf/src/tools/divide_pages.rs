@@ -2,9 +2,12 @@
 
 use std::collections::HashMap;
 
-use ariad_core::tools::{
-    page_range::DuplicatePolicy,
-    params::{common::GridOrder, divide_pages::DividePagesParams, scale::ScaleFit},
+use ariad_core::{
+    reader::pdf::ReadError,
+    tools::{
+        page_range::DuplicatePolicy,
+        params::{common::GridOrder, divide_pages::DividePagesParams, scale::ScaleFit},
+    },
 };
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
@@ -14,8 +17,9 @@ use crate::{
     tools::{
         OutputDoc,
         nup::{
-            append_clipped_xobject, collect_ordered_page_ids, convert_page_with_budget,
-            effective_version, finalize_layout_document, insert_sheet_page,
+            MAX_OUTPUT_PAGES, append_clipped_xobject, collect_ordered_page_ids,
+            convert_page_with_budget, effective_version, finalize_layout_document,
+            insert_sheet_page,
         },
     },
     xobject::{self, Matrix, ObjectCopier, PdfRect},
@@ -52,6 +56,12 @@ pub fn run(
 
     let cells_per_page = usize::from(params.cols) * usize::from(params.rows);
     let total_out_pages = selected.len().saturating_mul(cells_per_page);
+    if (total_out_pages as u64) > u64::from(MAX_OUTPUT_PAGES) {
+        return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+            actual: total_out_pages as u64,
+            limit: MAX_OUTPUT_PAGES,
+        }));
+    }
 
     let mut target_doc = Document::with_version(effective_version(src_doc));
     let pages_root_id = target_doc.new_object_id();

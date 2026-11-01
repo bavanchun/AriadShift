@@ -69,16 +69,20 @@ fn extract_text(pdf_bytes: &[u8], limits: &Limits) -> String {
 
 fn assert_json_snapshot(snap_name: &str, value: &Value) {
     let snap_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots");
-    fs::create_dir_all(&snap_dir).expect("create snapshots dir");
     let snap_path = snap_dir.join(format!("{snap_name}.snap"));
     let body = serde_json::to_string_pretty(value).expect("serialize snapshot json");
     let full = format!(
         "---\nsource: crates/ariad-pdf/tests/overlay.rs\nexpression: info_json\n---\n{body}\n"
     );
-    if std::env::var_os("UPDATE_SNAPSHOTS").is_some() || !snap_path.exists() {
+    if std::env::var_os("UPDATE_SNAPSHOTS").is_some()
+        || std::env::var("INSTA_UPDATE").as_deref() == Ok("always")
+    {
+        fs::create_dir_all(&snap_dir).expect("create snapshots dir");
         fs::write(&snap_path, &full).expect("write snapshot");
     }
-    let existing = fs::read_to_string(&snap_path).expect("read snapshot");
+    let existing = fs::read_to_string(&snap_path)
+        .unwrap_or_else(|e| panic!("missing snapshot {}: {e}", snap_path.display()))
+        .replace("\r\n", "\n");
     assert_eq!(existing, full, "snapshot mismatch for {snap_name}");
 }
 
@@ -118,9 +122,11 @@ fn overlay_first_cycle_matching_over_under_determinism_and_snapshot() {
         "Over position must draw /FmBase before /FmOverlay: {p1_content}"
     );
 
-    let preview_dir = std::env::temp_dir().join("ariad-p03-s4-preview");
-    fs::create_dir_all(&preview_dir).expect("create preview dir");
-    fs::write(preview_dir.join("overlay.pdf"), bytes_over).expect("write preview overlay.pdf");
+    if let Some(preview_dir) = std::env::var_os("ARIAD_PREVIEW_DIR") {
+        let preview_dir = PathBuf::from(preview_dir);
+        fs::create_dir_all(&preview_dir).expect("create preview dir");
+        fs::write(preview_dir.join("overlay.pdf"), bytes_over).expect("write preview overlay.pdf");
+    }
 
     let info_over = info::run(bytes_over, &limits).expect("inspect overlay");
     assert_eq!(info_over.page_count, 6);
@@ -238,4 +244,96 @@ fn overlay_error_cases_and_broken_xref() {
     assert_eq!(out.warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
     let reopened = document::open(&out.artifacts[0].bytes, &limits).expect("reopen repaired");
     assert!(!reopened.repaired_xref());
+}
+
+#[test]
+fn overlay_normalizes_rotated_base_pages_and_preserves_non_xobject_resources() {
+    let ctx = ToolCtx::default();
+    let limits = Limits::local();
+
+    // Build a 1-page base PDF with `/MediaBox [0, 0, 612, 792]`, `/Rotate 90` (landscape 792x612),
+    // and non-XObject page `/Resources` (`/ExtGState` and `/Properties`).
+    let mut base_doc = Document::with_version("1.5");
+    let pages_id = base_doc.new_object_id();
+    let font_id = base_doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Helvetica",
+    });
+    let content_id = base_doc.add_object(Object::Stream(Stream::new(
+        dictionary! {},
+        b"BT /F1 18 Tf 72 400 Td (RotatedBasePage) Tj ET\n".to_vec(),
+    )));
+    let res = dictionary! {
+        "Font" => dictionary! { "F1" => Object::Reference(font_id) },
+        "ExtGState" => dictionary! {
+            "GS1" => dictionary! { "Type" => "ExtGState", "ca" => 0.5 },
+        },
+        "Properties" => dictionary! {
+            "MC0" => dictionary! { "Type" => "OCG", "Name" => Object::string_literal("Layer0") },
+        },
+    };
+    let page_id = base_doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => Object::Reference(pages_id),
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Rotate" => 90,
+        "Resources" => Object::Dictionary(res),
+        "Contents" => Object::Reference(content_id),
+    });
+    base_doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page_id)],
+            "Count" => 1,
+        }),
+    );
+    let cat_id = base_doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => Object::Reference(pages_id),
+    });
+    base_doc.trailer.set("Root", Object::Reference(cat_id));
+    let mut base_bytes = Vec::new();
+    base_doc
+        .save_to(&mut base_bytes)
+        .expect("save rotated base");
+
+    let stamp_bytes = build_stamp_pdf(&["UPRIGHTSTAMP"]);
+    let out = run_tool(
+        "pdf.overlay",
+        &[
+            InputDoc::new("rotated-base.pdf", base_bytes),
+            InputDoc::new("stamp.pdf", stamp_bytes),
+        ],
+        &json!({ "position": "over", "overlay_pages": "first" }),
+        &ctx,
+    )
+    .expect("run overlay on rotated base page");
+
+    let out_bytes = &out.artifacts[0].bytes;
+    let out_info = info::run(out_bytes, &limits).expect("inspect overlaid rotated base");
+    assert_eq!(out_info.page_count, 1);
+    assert_eq!(out_info.pages[0].rotation, 0);
+    assert!((out_info.pages[0].width_pt - 792.0).abs() < 0.05);
+    assert!((out_info.pages[0].height_pt - 612.0).abs() < 0.05);
+
+    let out_doc = document::open(out_bytes, &limits).expect("open overlaid rotated base");
+    let out_pid = out_doc.inner().page_iter().next().unwrap();
+    let out_pdict = out_doc.inner().get_dictionary(out_pid).unwrap();
+    let out_res = out_pdict
+        .get(b"Resources")
+        .unwrap()
+        .as_dict()
+        .expect("page Resources dict");
+    assert!(
+        out_res.has(b"ExtGState"),
+        "non-XObject /ExtGState resource must be preserved on overlaid page"
+    );
+    assert!(
+        out_res.has(b"Properties"),
+        "non-XObject /Properties resource must be preserved on overlaid page"
+    );
+    let xobj_dict = out_res.get(b"XObject").unwrap().as_dict().unwrap();
+    assert!(xobj_dict.has(b"FmBase") && xobj_dict.has(b"FmOverlay"));
 }

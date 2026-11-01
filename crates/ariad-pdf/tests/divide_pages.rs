@@ -77,16 +77,20 @@ fn extract_text(pdf_bytes: &[u8], limits: &Limits) -> String {
 
 fn assert_json_snapshot(snap_name: &str, value: &Value) {
     let snap_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots");
-    fs::create_dir_all(&snap_dir).expect("create snapshots dir");
     let snap_path = snap_dir.join(format!("{snap_name}.snap"));
     let body = serde_json::to_string_pretty(value).expect("serialize snapshot json");
     let full = format!(
         "---\nsource: crates/ariad-pdf/tests/divide_pages.rs\nexpression: info_json\n---\n{body}\n"
     );
-    if std::env::var_os("UPDATE_SNAPSHOTS").is_some() || !snap_path.exists() {
+    if std::env::var_os("UPDATE_SNAPSHOTS").is_some()
+        || std::env::var("INSTA_UPDATE").as_deref() == Ok("always")
+    {
+        fs::create_dir_all(&snap_dir).expect("create snapshots dir");
         fs::write(&snap_path, &full).expect("write snapshot");
     }
-    let existing = fs::read_to_string(&snap_path).expect("read snapshot");
+    let existing = fs::read_to_string(&snap_path)
+        .unwrap_or_else(|e| panic!("missing snapshot {}: {e}", snap_path.display()))
+        .replace("\r\n", "\n");
     assert_eq!(existing, full, "snapshot mismatch for {snap_name}");
 }
 
@@ -115,9 +119,12 @@ fn divide_pages_2x2_dimensions_row_vs_column_text_and_snapshot() {
     .expect("run divide_pages 2x2");
     let bytes = &out.artifacts[0].bytes;
 
-    let preview_dir = std::env::temp_dir().join("ariad-p03-s4-preview");
-    fs::create_dir_all(&preview_dir).expect("create preview dir");
-    fs::write(preview_dir.join("divide-pages.pdf"), bytes).expect("write preview divide-pages.pdf");
+    if let Some(preview_dir) = std::env::var_os("ARIAD_PREVIEW_DIR") {
+        let preview_dir = PathBuf::from(preview_dir);
+        fs::create_dir_all(&preview_dir).expect("create preview dir");
+        fs::write(preview_dir.join("divide-pages.pdf"), bytes)
+            .expect("write preview divide-pages.pdf");
+    }
 
     let info_val = info::run(bytes, &limits).expect("inspect divided pdf");
     assert_eq!(info_val.page_count, 4);
@@ -239,4 +246,52 @@ fn divide_pages_error_cases_and_broken_xref() {
     assert_eq!(out.warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
     let reopened = document::open(&out.artifacts[0].bytes, &limits).expect("reopen repaired");
     assert!(!reopened.repaired_xref());
+
+    // Output page cap: 1,300 pages * 8x1 = 10,400 output pages (> 10,000)
+    let mut huge_doc = Document::with_version("1.5");
+    let pages_id = huge_doc.new_object_id();
+    let stream_id = huge_doc.add_object(Object::Stream(Stream::new(dictionary! {}, Vec::new())));
+    let mut kids = Vec::with_capacity(1_300);
+    for _ in 0..1_300 {
+        let pid = huge_doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => Object::Reference(pages_id),
+            "Contents" => Object::Reference(stream_id),
+        });
+        kids.push(Object::Reference(pid));
+    }
+    huge_doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => Object::Array(kids),
+            "Count" => 1_300,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        }),
+    );
+    let cat_id = huge_doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => Object::Reference(pages_id),
+    });
+    huge_doc.trailer.set("Root", Object::Reference(cat_id));
+    let mut huge_pdf = src.clone();
+    *huge_pdf.inner_mut().unwrap() = huge_doc;
+    let huge_params = DividePagesParams {
+        pages: PageRange::all(),
+        cols: 8,
+        rows: 1,
+        order: GridOrder::Row,
+    };
+    let cap_err = divide_pages::run(&[huge_pdf], &huge_params, &ctx)
+        .expect_err("divide_pages exceeding output page limit must fail");
+    assert!(
+        matches!(
+            cap_err,
+            PdfError::LimitExceeded(ariad_core::reader::pdf::ReadError::TooManyPages {
+                actual: 10_400,
+                limit: 10_000,
+            })
+        ),
+        "expected TooManyPages(10400, 10000), got {cap_err:?}"
+    );
 }

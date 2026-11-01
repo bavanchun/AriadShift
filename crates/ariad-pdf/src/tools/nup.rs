@@ -3,10 +3,13 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ariad_core::tools::params::{
-    common::{GridOrder, PaperSize},
-    nup::NupParams,
-    scale::ScaleFit,
+use ariad_core::{
+    reader::pdf::ReadError,
+    tools::params::{
+        common::{GridOrder, PaperSize},
+        nup::NupParams,
+        scale::ScaleFit,
+    },
 };
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, dictionary};
 
@@ -20,6 +23,12 @@ use crate::{
 
 /// Maximum outline hierarchy depth traversed when remapping bookmark destinations.
 const MAX_OUTLINE_DEPTH: usize = 32;
+
+/// Maximum number of indirect reference hops followed when inspecting outline dictionaries.
+const MAX_REF_HOPS: usize = 8;
+
+/// Hard upper bound on total output pages produced by layout/expansion tools.
+pub(crate) const MAX_OUTPUT_PAGES: u32 = 10_000;
 
 /// Places multiple input pages onto each output sheet in an N-up grid layout.
 pub fn run(
@@ -84,7 +93,14 @@ pub fn run(
     let mut budget = src_pdf.decode_budget();
 
     let per_sheet = usize::from(params.per_sheet);
-    let mut new_page_ids = Vec::with_capacity(src_pages.len().div_ceil(per_sheet));
+    let out_page_count = src_pages.len().div_ceil(per_sheet);
+    if (out_page_count as u64) > u64::from(MAX_OUTPUT_PAGES) {
+        return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
+            actual: out_page_count as u64,
+            limit: MAX_OUTPUT_PAGES,
+        }));
+    }
+    let mut new_page_ids = Vec::with_capacity(out_page_count);
     let mut page_map: HashMap<ObjectId, ObjectId> = HashMap::with_capacity(src_pages.len());
 
     let sheet_box = PdfRect::from_size(sheet_dims.width_pt, sheet_dims.height_pt);
@@ -220,8 +236,8 @@ pub(crate) fn effective_version(doc: &Document) -> String {
     }
 }
 
-/// Charges `budget` for all content streams of `page_id` in `source_doc` and converts the page
-/// into a [`FormXObject`] in `target_doc`.
+/// Converts `page_id` from `source_doc` into a [`FormXObject`] in `target_doc`, decoding and
+/// charging content and resource streams once against `budget`.
 pub(crate) fn convert_page_with_budget(
     source_doc: &Document,
     page_id: ObjectId,
@@ -230,53 +246,7 @@ pub(crate) fn convert_page_with_budget(
     budget: &mut DecodeBudget,
     ctx: &ToolCtx,
 ) -> Result<FormXObject, PdfError> {
-    ctx.check()?;
-    charge_page_streams(source_doc, page_id, budget, ctx)?;
-    xobject::page_to_form_xobject(source_doc, page_id, target_doc, copier, ctx)
-}
-
-/// Charges `budget` for all `/Contents` streams referenced by `page_id`.
-pub(crate) fn charge_page_streams(
-    doc: &Document,
-    page_id: ObjectId,
-    budget: &mut DecodeBudget,
-    ctx: &ToolCtx,
-) -> Result<(), PdfError> {
-    let Ok(page_dict) = doc.get_dictionary(page_id) else {
-        return Err(PdfError::Malformed);
-    };
-    let Ok(contents_obj) = page_dict.get(b"Contents") else {
-        return Ok(());
-    };
-    let mut stream_ids = Vec::new();
-    match contents_obj {
-        Object::Reference(id) => match doc.get_object(*id) {
-            Ok(Object::Array(arr)) => {
-                for item in arr {
-                    if let Ok(sid) = item.as_reference() {
-                        stream_ids.push(sid);
-                    }
-                }
-            }
-            _ => stream_ids.push(*id),
-        },
-        Object::Array(arr) => {
-            for item in arr {
-                if let Ok(sid) = item.as_reference() {
-                    stream_ids.push(sid);
-                }
-            }
-        }
-        _ => {}
-    }
-
-    for sid in stream_ids {
-        ctx.check()?;
-        if let Ok(Object::Stream(stream)) = doc.get_object(sid) {
-            let _ = budget.decode(stream)?;
-        }
-    }
-    Ok(())
+    xobject::page_to_form_xobject(source_doc, page_id, target_doc, copier, budget, ctx)
 }
 
 /// Appends a clipped Form XObject placement (`q x y w h re W n a b c d e f cm /<name> Do Q\n`)
@@ -416,7 +386,7 @@ pub(crate) fn finalize_layout_document(
             catalog.set("PageLabels", copied);
         }
         if let Some(outlines_id) =
-            copy_remapped_outlines(src_doc, src_cat, &mut target_doc, page_map, ctx)?
+            copy_remapped_outlines(src_doc, src_cat, &mut target_doc, page_map, copier, ctx)?
         {
             catalog.set("Outlines", Object::Reference(outlines_id));
         }
@@ -441,6 +411,7 @@ pub(crate) fn finalize_layout_document(
 struct OutlineNode {
     title: Object,
     target_page: ObjectId,
+    dest_tail: Vec<Object>,
     children: Vec<Self>,
 }
 
@@ -449,6 +420,7 @@ fn copy_remapped_outlines(
     src_catalog: &Dictionary,
     target_doc: &mut Document,
     page_map: &HashMap<ObjectId, ObjectId>,
+    copier: &mut ObjectCopier,
     ctx: &ToolCtx,
 ) -> Result<Option<ObjectId>, PdfError> {
     let Ok(outlines_ref) = src_catalog.get(b"Outlines") else {
@@ -469,7 +441,7 @@ fn copy_remapped_outlines(
 
     let root_id = target_doc.new_object_id();
     let (first_child, last_child, total_count) =
-        write_outline_siblings(target_doc, root_id, &nodes, ctx)?;
+        write_outline_siblings(src_doc, target_doc, root_id, &nodes, copier, ctx)?;
     target_doc.objects.insert(
         root_id,
         Object::Dictionary(dictionary! {
@@ -509,8 +481,8 @@ fn read_outline_siblings(
             .get(b"Title")
             .cloned()
             .unwrap_or_else(|_| Object::string_literal("Bookmark"));
-        let raw_page = extract_outline_page_id(src_doc, dict);
-        let mapped_page = raw_page.and_then(|pid| page_map.get(&pid).copied());
+        let mapped_dest = extract_outline_dest(src_doc, dict)
+            .and_then(|(pid, tail)| page_map.get(&pid).copied().map(|mapped| (mapped, tail)));
 
         let children = if let Ok(child_first) = dict.get(b"First").and_then(Object::as_reference) {
             read_outline_siblings(src_doc, child_first, page_map, depth + 1, visited, ctx)?
@@ -518,10 +490,11 @@ fn read_outline_siblings(
             Vec::new()
         };
 
-        if let Some(target_page) = mapped_page {
+        if let Some((target_page, dest_tail)) = mapped_dest {
             out.push(OutlineNode {
                 title,
                 target_page,
+                dest_tail,
                 children,
             });
         } else if !children.is_empty() {
@@ -532,34 +505,36 @@ fn read_outline_siblings(
     Ok(out)
 }
 
-fn extract_outline_page_id(doc: &Document, item_dict: &Dictionary) -> Option<ObjectId> {
+fn extract_outline_dest(doc: &Document, item_dict: &Dictionary) -> Option<(ObjectId, Vec<Object>)> {
     if let Ok(dest) = item_dict.get(b"Dest")
-        && let Some(pid) = page_id_from_dest(doc, dest)
+        && let Some(resolved) = dest_from_object(doc, dest)
     {
-        return Some(pid);
+        return Some(resolved);
     }
     if let Ok(action_obj) = item_dict.get(b"A")
         && let Some(action_dict) = deref_dict(doc, action_obj)
+        && let Ok(subtype) = action_dict.get(b"S")
+        && deref_name(doc, subtype) == Some(b"GoTo")
         && let Ok(dest) = action_dict.get(b"D")
     {
-        return page_id_from_dest(doc, dest);
+        return dest_from_object(doc, dest);
     }
     None
 }
 
-fn page_id_from_dest(doc: &Document, dest: &Object) -> Option<ObjectId> {
-    let arr = match dest {
-        Object::Array(a) => Some(a),
-        Object::Reference(id) => doc.get_object(*id).ok()?.as_array().ok(),
-        _ => None,
-    }?;
-    arr.first()?.as_reference().ok()
+fn dest_from_object(doc: &Document, dest: &Object) -> Option<(ObjectId, Vec<Object>)> {
+    let arr = resolve_object_bounded(doc, dest)?.as_array().ok()?;
+    let page_id = arr.first()?.as_reference().ok()?;
+    let tail = arr[1..].to_vec();
+    Some((page_id, tail))
 }
 
 fn write_outline_siblings(
+    src_doc: &Document,
     target_doc: &mut Document,
     parent_id: ObjectId,
     nodes: &[OutlineNode],
+    copier: &mut ObjectCopier,
     ctx: &ToolCtx,
 ) -> Result<(ObjectId, ObjectId, i64), PdfError> {
     let ids: Vec<ObjectId> = (0..nodes.len())
@@ -570,13 +545,20 @@ fn write_outline_siblings(
     for (idx, node) in nodes.iter().enumerate() {
         ctx.check()?;
         let id = ids[idx];
+        let copied_title = copier.copy_object(src_doc, target_doc, &node.title, ctx)?;
+        let mut dest_arr = Vec::with_capacity(1 + node.dest_tail.len().max(1));
+        dest_arr.push(Object::Reference(node.target_page));
+        if node.dest_tail.is_empty() {
+            dest_arr.push(Object::Name(b"Fit".to_vec()));
+        } else {
+            for item in &node.dest_tail {
+                dest_arr.push(copier.copy_object(src_doc, target_doc, item, ctx)?);
+            }
+        }
         let mut dict = dictionary! {
-            "Title" => node.title.clone(),
+            "Title" => copied_title,
             "Parent" => Object::Reference(parent_id),
-            "Dest" => Object::Array(vec![
-                Object::Reference(node.target_page),
-                Object::Name(b"Fit".to_vec()),
-            ]),
+            "Dest" => Object::Array(dest_arr),
         };
         if idx > 0 {
             dict.set("Prev", Object::Reference(ids[idx - 1]));
@@ -586,7 +568,7 @@ fn write_outline_siblings(
         }
         if !node.children.is_empty() {
             let (c_first, c_last, c_count) =
-                write_outline_siblings(target_doc, id, &node.children, ctx)?;
+                write_outline_siblings(src_doc, target_doc, id, &node.children, copier, ctx)?;
             dict.set("First", Object::Reference(c_first));
             dict.set("Last", Object::Reference(c_last));
             dict.set("Count", Object::Integer(c_count));
@@ -599,12 +581,27 @@ fn write_outline_siblings(
     Ok((ids[0], *ids.last().unwrap(), total_count))
 }
 
-fn deref_dict<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Dictionary> {
-    match obj {
-        Object::Dictionary(d) => Some(d),
-        Object::Reference(id) => doc.get_object(*id).ok()?.as_dict().ok(),
-        _ => None,
+fn resolve_object_bounded<'a>(doc: &'a Document, mut obj: &'a Object) -> Option<&'a Object> {
+    for _ in 0..MAX_REF_HOPS {
+        match obj {
+            Object::Reference(id) => {
+                obj = doc.objects.get(id)?;
+            }
+            other => return Some(other),
+        }
     }
+    match obj {
+        Object::Reference(_) => None,
+        other => Some(other),
+    }
+}
+
+fn deref_dict<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a Dictionary> {
+    resolve_object_bounded(doc, obj)?.as_dict().ok()
+}
+
+fn deref_name<'a>(doc: &'a Document, obj: &'a Object) -> Option<&'a [u8]> {
+    resolve_object_bounded(doc, obj)?.as_name().ok()
 }
 
 #[allow(dead_code)]
