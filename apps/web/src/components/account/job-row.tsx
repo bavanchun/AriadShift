@@ -16,6 +16,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
+import { downloadAndSaveOutput } from "@/lib/cloud/cloud-job";
 import { formatBytes } from "@/lib/format-bytes";
 import { formatLabel } from "@/lib/formats";
 import { useAccount } from "./account-context";
@@ -30,7 +31,7 @@ import {
   jobStepLabel,
   type LiveJobState,
 } from "./job-status";
-import { type JobsApi, saveBlob } from "./jobs-api";
+import type { JobsApi } from "./jobs-api";
 import { useNow } from "./use-now";
 
 /** How often to read the job when its event stream is unavailable. */
@@ -235,8 +236,10 @@ export function JobRow({
       // Presigned URLs last five minutes, so ask for fresh ones on every download.
       const fresh = (await api.outputs(entry.id)).outputs;
       const target = fresh.find((candidate) => candidate.id === output.id) ?? output;
-      saveBlob(await api.download(target), target.filename);
-      announce(`Downloading ${target.filename}.`);
+      const saved = await downloadAndSaveOutput(api, target);
+      if (saved) {
+        announce(`Downloading ${target.filename}.`);
+      }
     } catch (error) {
       setRowError(apiErrorCopy(error));
       if (errorCode(error) === "expired") {
