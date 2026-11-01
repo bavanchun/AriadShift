@@ -1,3 +1,8 @@
+// On macOS, ld emits an informational warning when the unstripped binary's
+// `__eh_frame` section exceeds the 16 MB compact-unwind encoding threshold,
+// which otherwise trips `CARGO_BUILD_WARNINGS=deny` via `#[warn(linker_messages)]`.
+#![cfg_attr(target_os = "macos", allow(linker_messages))]
+
 use std::{
     io::{self, IsTerminal, Write},
     path::PathBuf,

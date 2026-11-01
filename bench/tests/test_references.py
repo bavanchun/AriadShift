@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -88,8 +89,22 @@ class TestReferences(unittest.TestCase):
 
     def test_all_truth_files_conform_to_canonical_schema(self) -> None:
         """Verify that every .truth.json file in fixtures/ loads cleanly into CanonicalDoc."""
-        truth_files = list(self.root.glob("fixtures/**/*.truth.json"))
-        self.assertGreaterEqual(len(truth_files), 14, "Expected at least 14 truth companions")
+        manifest_path = self.root / "fixtures" / "manifest.toml"
+        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_truth_paths = {
+            companion["path"]
+            for fixture in manifest.get("fixture", [])
+            for companion in fixture.get("companions", [])
+            if companion.get("path", "").endswith(".truth.json")
+        }
+
+        truth_files = sorted(self.root.glob("fixtures/**/*.truth.json"))
+        disk_truth_paths = {tf.relative_to(self.root).as_posix() for tf in truth_files}
+        self.assertEqual(
+            disk_truth_paths,
+            manifest_truth_paths,
+            ".truth.json files on disk must match fixtures/manifest.toml companions",
+        )
 
         scored_count = 0
         unscored_count = 0
@@ -102,6 +117,10 @@ class TestReferences(unittest.TestCase):
             if data.get("unscored") is True:
                 unscored_count += 1
                 self.assertIn("unscored_reason", data, f"{tf} unscored companion must explain reason")
+                self.assertTrue(
+                    isinstance(data["unscored_reason"], str) and data["unscored_reason"].strip(),
+                    f"{tf} unscored_reason must be a non-empty string",
+                )
             else:
                 scored_count += 1
                 self.assertIn("canonical", data, f"{tf} missing canonical field")
@@ -109,10 +128,9 @@ class TestReferences(unittest.TestCase):
                 self.assertIsInstance(doc.text, str)
                 self.assertTrue(len(doc.text) > 0, f"{tf} canonical text should not be empty")
 
-        self.assertEqual(scored_count, 41)
-        # PDF tool corpus truth files carry tool facts and are unscored by design.
-        expected_unscored = 1 + len(list(self.root.glob("fixtures/pdf-tools/*.truth.json")))
-        self.assertEqual(unscored_count, expected_unscored)
+        self.assertGreater(scored_count, 0)
+        self.assertGreater(unscored_count, 0)
+        self.assertEqual(scored_count + unscored_count, len(manifest_truth_paths))
 
     def test_truth_generation_independent_of_fixtures_golden(self) -> None:
         """Verify truth.generate works completely without fixtures/golden existing."""

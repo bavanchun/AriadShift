@@ -445,3 +445,81 @@ fn replacing_file_and_restoring_mtime_invalidates_verification_cache() {
         "changed ctime must invalidate the verification cache even when inode, mtime and size match"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn archive_pack_with_symlink_entrypoint_and_runtime_executables_resolves_cleanly() {
+    use support::{Entry, tar_bytes, zstd};
+
+    let key = Key::generate();
+    let data = support::temp();
+    let source = support::temp();
+
+    let runtime = zstd(&tar_bytes(&[
+        Entry::Dir("runtime/"),
+        Entry::Dir("runtime/bin/"),
+        Entry::Dir("runtime/lib/"),
+        Entry::File(
+            "runtime/bin/python3.14",
+            b"#!/bin/sh\nexit 0\n".to_vec(),
+            0o755,
+        ),
+        Entry::Symlink("runtime/bin/python3", "python3.14"),
+        Entry::File(
+            "runtime/lib/libpython3.14.so.1.0",
+            b"\x7fELF-mock-shared-object".to_vec(),
+            0o755,
+        ),
+        Entry::File("runtime/lib/module.py", b"print('ok')\n".to_vec(), 0o644),
+        Entry::File("LICENSE.txt", b"MIT License\n".to_vec(), 0o644),
+    ]));
+
+    let mut builder =
+        PackBuilder::new("docling", "1.0.0").component("runtime", "runtime.tar.zst", runtime, ".");
+    builder.entrypoint = vec![
+        "runtime/bin/python3".to_owned(),
+        "-I".to_owned(),
+        "-m".to_owned(),
+        "ariad_docling".to_owned(),
+    ];
+    builder.write(source.path(), &key);
+
+    let ctx = context(data.path(), key.trusted());
+    let report = packs::install(
+        &ctx,
+        &InstallRequest {
+            name: "docling".to_owned(),
+            version: None,
+            source: InstallSource::Directory(source.path().to_path_buf()),
+        },
+        &CancellationToken::new(),
+        &mut |_| {},
+    )
+    .expect("install docling archive pack");
+
+    let resolved_pack = packs::resolve_in(&ctx, "docling")
+        .expect("packs::resolve_in succeeds")
+        .expect("docling pack is installed");
+    assert_eq!(
+        resolved_pack.program,
+        report.root.join("runtime/bin/python3")
+    );
+
+    let command = resolve_pack_in(&ctx, "docling").expect("resolve_pack_in succeeds");
+    assert_eq!(command.engine, "docling");
+    assert_eq!(command.program, report.root.join("runtime/bin/python3"));
+
+    // Marking a 0644 archive member as +x after install is still rejected as an unlisted executable.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let module_py = report.root.join("runtime/lib/module.py");
+        fs::set_permissions(&module_py, fs::Permissions::from_mode(0o755)).unwrap();
+        let err = resolve_pack_in(&ctx, "docling")
+            .expect_err("non-executable archive file marked +x must be refused");
+        assert_eq!(err.code(), "tool_missing");
+        assert!(
+            err.to_string().contains("unlisted executable"),
+            "expected unlisted executable rejection, got: {err}"
+        );
+    }
+}

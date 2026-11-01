@@ -69,6 +69,7 @@ pub(crate) struct FileRecord {
     pub path: String,
     pub sha256: String,
     pub size: u64,
+    pub executable: bool,
 }
 
 /// A symbolic link written by extraction.
@@ -786,10 +787,15 @@ impl Writer<'_> {
         Ok((hex::encode(hasher.finalize()), size))
     }
 
-    fn record_file(&mut self, full: &[String], sha256: String, size: u64) {
+    fn record_file(&mut self, full: &[String], sha256: String, size: u64, executable: bool) {
         let path = full.join("/");
         self.file_index.insert(path.clone(), self.files.len());
-        self.files.push(FileRecord { path, sha256, size });
+        self.files.push(FileRecord {
+            path,
+            sha256,
+            size,
+            executable,
+        });
     }
 }
 
@@ -819,7 +825,7 @@ impl Sink for Writer<'_> {
         let path = self.prepare_parent(full)?;
         let mut file = self.create_file(&path, full, executable)?;
         let (sha256, size) = self.copy_into(reader, &mut file, &path, budget)?;
-        self.record_file(full, sha256, size);
+        self.record_file(full, sha256, size, executable);
         Ok(())
     }
 
@@ -867,12 +873,12 @@ impl Sink for Writer<'_> {
         let source_path = join_parts(self.root, &key);
         let mut source = File::open(&source_path)
             .map_err(|error| PackError::io("could not open", &source_path, error))?;
-        let executable = executable_bits(&source);
+        let executable = self.files[index].executable || executable_bits(&source);
         let path = self.prepare_parent(full)?;
         let mut file = self.create_file(&path, full, executable)?;
         let (sha256, size) = self.copy_into(&mut source, &mut file, &path, budget)?;
         debug_assert_eq!(sha256, self.files[index].sha256);
-        self.record_file(full, sha256, size);
+        self.record_file(full, sha256, size, executable);
         Ok(())
     }
 }

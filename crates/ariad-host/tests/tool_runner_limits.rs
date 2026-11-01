@@ -14,7 +14,7 @@ use ariad_core::{
 use ariad_host::{
     engines::{self, Protocol},
     runner::{self, EngineCommand, JobRequest, RunError, writable_paths_for_job},
-    sandbox::{self, SandboxMode, SandboxOutcome},
+    sandbox::{SandboxMode, SandboxOutcome},
     session::{PoolConfig, SessionPool},
     workspace::Workspace,
 };
@@ -147,7 +147,7 @@ fn writable_roots_for_run_tool_are_strictly_out_and_private_tmp() {
 #[test]
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn sandboxed_v2_run_tool_grants_only_out_and_tmp_as_writable() {
-    let support = sandbox::support();
+    let support = ariad_host::sandbox::support();
     if !support.gaps().is_empty() {
         eprintln!(
             "skipping OS sandbox enforcement check: {:?}",
@@ -219,6 +219,8 @@ fn params_file_is_written_mode_0600_for_oversized_or_secret_params_and_deleted_a
         Some(&json!(0o600)),
         "params.json must be created with mode 0600"
     );
+    #[cfg(not(unix))]
+    assert!(metrics.is_object(), "probe metrics must be a JSON object");
     assert!(
         !params_json_path.exists(),
         "params.json must be deleted after the job completes"
@@ -245,6 +247,8 @@ fn params_file_is_written_mode_0600_for_oversized_or_secret_params_and_deleted_a
     let metrics = outcome.metrics.expect("metrics");
     #[cfg(unix)]
     assert_eq!(metrics.get("params_file_mode"), Some(&json!(0o600)));
+    #[cfg(not(unix))]
+    assert!(metrics.is_object(), "probe metrics must be a JSON object");
     assert!(
         !params_json_path.exists(),
         "oversized params.json must be deleted after the job completes"

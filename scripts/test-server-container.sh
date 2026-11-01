@@ -5,16 +5,18 @@ set -euo pipefail
 image=ariadshift-server-smoke
 api=ariadshift-smoke-api
 worker=ariadshift-smoke-worker
+port="${ARIAD_CONTAINER_SMOKE_PORT:-28042}"
 for container in "$api" "$worker"; do
     if docker inspect "$container" >/dev/null 2>&1; then
         echo "refusing to replace existing container $container" >&2
         exit 1
     fi
 done
-python3 - <<'PY'
-import socket
+ARIAD_CONTAINER_SMOKE_PORT="$port" python3 - <<'PY'
+import os, socket
+port = int(os.environ["ARIAD_CONTAINER_SMOKE_PORT"])
 with socket.socket() as listener:
-    listener.bind(("127.0.0.1", 58042))
+    listener.bind(("127.0.0.1", port))
 PY
 docker build --check -f infra/docker/server.Dockerfile .
 docker build -f infra/docker/server.Dockerfile -t "$image" .
@@ -50,15 +52,16 @@ args=(--network host --read-only --cap-drop ALL --cap-add SETUID --cap-add SETGI
 docker run --rm "${args[@]}" "$image" migrate
 docker run -d --name "$api" "${args[@]}" \
     -e ARIAD_SECRET=container-smoke-secret-0123456789abcdef \
-    -e ARIAD_BIND=127.0.0.1:58042 -e ARIAD_PUBLIC_URL=http://127.0.0.1:58042 \
+    -e "ARIAD_BIND=127.0.0.1:$port" -e "ARIAD_PUBLIC_URL=http://127.0.0.1:$port" \
     "$image" api >/dev/null
 docker run -d --name "$worker" "${args[@]}" \
     -e ARIAD_WORK_DIR=/work -e ARIAD_SANDBOX=required -e ARIAD_WORKER_POLL_S=1 \
     "$image" worker --packs core >/dev/null
-python3 - <<'PY'
-import hashlib, io, json, time, urllib.request, zipfile
+ARIAD_CONTAINER_SMOKE_PORT="$port" python3 - <<'PY'
+import hashlib, io, json, os, time, urllib.request, zipfile
 
-base = "http://127.0.0.1:58042"
+port = int(os.environ["ARIAD_CONTAINER_SMOKE_PORT"])
+base = f"http://127.0.0.1:{port}"
 def call(path, body=None):
     data = None if body is None else json.dumps(body).encode()
     with urllib.request.urlopen(urllib.request.Request(base + path, data=data, headers={"Content-Type": "application/json"}), timeout=5) as response:
