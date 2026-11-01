@@ -35,6 +35,8 @@ pub struct Workspace {
     input_dir: PathBuf,
     output_dir: PathBuf,
     output_handle: Option<cap_std::fs::Dir>,
+    backup_dir: PathBuf,
+    backup_handle: Option<cap_std::fs::Dir>,
     work_dir: PathBuf,
     log_dir: PathBuf,
 }
@@ -61,15 +63,23 @@ impl Workspace {
         let root = temp_dir.path().to_path_buf();
         let input_dir = root.join("in");
         let output_dir = root.join("out");
+        let backup_dir = root.join("backup");
         let work_dir = root.join("tmp");
         let log_dir = root.join("log");
 
-        for directory in [&input_dir, &output_dir, &work_dir, &log_dir] {
+        for directory in [&input_dir, &output_dir, &backup_dir, &work_dir, &log_dir] {
             fs::create_dir(directory)?;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&backup_dir, fs::Permissions::from_mode(0o700))?;
         }
 
         let output_handle =
             cap_std::fs::Dir::open_ambient_dir(&output_dir, cap_std::ambient_authority())?;
+        let backup_handle =
+            cap_std::fs::Dir::open_ambient_dir(&backup_dir, cap_std::ambient_authority())?;
 
         Ok(Self {
             temp_dir: Some(temp_dir),
@@ -77,6 +87,8 @@ impl Workspace {
             input_dir,
             output_dir,
             output_handle: Some(output_handle),
+            backup_dir,
+            backup_handle: Some(backup_handle),
             work_dir,
             log_dir,
         })
@@ -98,6 +110,11 @@ impl Workspace {
     }
 
     #[must_use]
+    pub fn backup_dir(&self) -> &Path {
+        &self.backup_dir
+    }
+
+    #[must_use]
     pub fn work_dir(&self) -> &Path {
         &self.work_dir
     }
@@ -114,6 +131,7 @@ impl Workspace {
         };
 
         self.output_handle.take();
+        self.backup_handle.take();
         remove_workspace(temp_dir.path()).map_err(WorkspaceError::Cleanup)?;
         self.temp_dir.take();
         Ok(())
@@ -243,6 +261,155 @@ impl Workspace {
 
         Ok(())
     }
+
+    /// Moves an existing regular file `file_name` from `parent_dir` into the workspace's private
+    /// backup directory before it is overwritten, returning the backup filename when a file existed.
+    pub fn backup_existing_into(
+        &self,
+        parent_dir: &cap_std::fs::Dir,
+        file_name: &Path,
+    ) -> Result<Option<String>, WorkspaceError> {
+        ensure_single_normal_component(file_name)?;
+
+        let meta = match parent_dir.symlink_metadata(file_name) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(WorkspaceError::Io(error)),
+        };
+
+        if meta.is_symlink() {
+            return Err(WorkspaceError::Promotion(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "destination is a symlink",
+            )));
+        }
+        if !meta.is_file() {
+            return Err(WorkspaceError::Promotion(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                "destination is not a regular file",
+            )));
+        }
+
+        let backup_dir = self
+            .backup_handle
+            .as_ref()
+            .ok_or_else(|| io::Error::other("workspace is closed"))?;
+        let backup_name = format!("backup-{}.bak", uuid::Uuid::new_v4());
+
+        match parent_dir.rename(file_name, backup_dir, &backup_name) {
+            Ok(()) => Ok(Some(backup_name)),
+            Err(err) if is_cross_device(&err) => {
+                let mut src = crate::confine::open_file_nofollow(parent_dir, file_name)
+                    .map_err(WorkspaceError::Promotion)?;
+                let src_meta = src.metadata().map_err(WorkspaceError::Promotion)?;
+                if !src_meta.is_file() {
+                    return Err(WorkspaceError::Promotion(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "destination is not a regular file",
+                    )));
+                }
+                let copy_res = (|| -> io::Result<()> {
+                    let mut dst = backup_dir.create(&backup_name)?;
+                    io::copy(&mut src, &mut dst)?;
+                    let _ = dst.set_permissions(cap_std::fs::Permissions::from_std(
+                        src_meta.permissions(),
+                    ));
+                    dst.sync_all()?;
+                    drop(dst);
+                    drop(src);
+                    parent_dir.remove_file(file_name)?;
+                    Ok(())
+                })();
+                if let Err(copy_err) = copy_res {
+                    let _ = backup_dir.remove_file(&backup_name);
+                    return Err(WorkspaceError::Promotion(copy_err));
+                }
+                Ok(Some(backup_name))
+            }
+            Err(err) => Err(WorkspaceError::Promotion(err)),
+        }
+    }
+
+    /// Restores a previously backed-up file `backup_name` from the workspace's private backup
+    /// directory back to `file_name` inside `parent_dir`.
+    pub fn restore_backup_into(
+        &self,
+        backup_name: &str,
+        parent_dir: &cap_std::fs::Dir,
+        file_name: &Path,
+    ) -> Result<(), WorkspaceError> {
+        ensure_single_normal_component(Path::new(backup_name))?;
+        ensure_single_normal_component(file_name)?;
+
+        let backup_dir = self
+            .backup_handle
+            .as_ref()
+            .ok_or_else(|| io::Error::other("workspace is closed"))?;
+
+        if backup_dir
+            .rename(backup_name, parent_dir, file_name)
+            .is_ok()
+        {
+            return Ok(());
+        }
+
+        let temp_name = format!(".ariadshift-restore-{}.tmp", uuid::Uuid::new_v4());
+        let restore_res = (|| -> io::Result<()> {
+            let mut src = crate::confine::open_file_nofollow(backup_dir, Path::new(backup_name))?;
+            let src_meta = src.metadata()?;
+            let mut dst = parent_dir.create(&temp_name)?;
+            io::copy(&mut src, &mut dst)?;
+            let _ = dst.set_permissions(cap_std::fs::Permissions::from_std(src_meta.permissions()));
+            dst.sync_all()?;
+            drop(dst);
+            drop(src);
+
+            #[cfg(windows)]
+            let _ = parent_dir.remove_file(file_name);
+            parent_dir.rename(&temp_name, parent_dir, file_name)?;
+            let _ = backup_dir.remove_file(backup_name);
+            Ok(())
+        })();
+
+        if let Err(err) = restore_res {
+            let _ = parent_dir.remove_file(&temp_name);
+            return Err(WorkspaceError::Promotion(err));
+        }
+
+        Ok(())
+    }
+
+    /// Removes a backup file from the workspace's private backup directory after batch commit.
+    pub fn remove_backup(&self, backup_name: &str) -> Result<(), WorkspaceError> {
+        ensure_single_normal_component(Path::new(backup_name))?;
+        let backup_dir = self
+            .backup_handle
+            .as_ref()
+            .ok_or_else(|| io::Error::other("workspace is closed"))?;
+        match backup_dir.remove_file(backup_name) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(WorkspaceError::Cleanup(err)),
+        }
+    }
+}
+
+fn ensure_single_normal_component(path: &Path) -> Result<(), WorkspaceError> {
+    if path.components().count() != 1
+        || !matches!(path.components().next(), Some(Component::Normal(_)))
+    {
+        return Err(WorkspaceError::Promotion(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "file_name must be a single path component",
+        )));
+    }
+    Ok(())
+}
+
+fn is_cross_device(err: &io::Error) -> bool {
+    err.kind() == io::ErrorKind::CrossesDevices
+        || err.raw_os_error() == Some(18)
+        || err.raw_os_error() == Some(17)
 }
 
 fn sweep_stale_promote_tmp_in_dir(
