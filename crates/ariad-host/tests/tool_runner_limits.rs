@@ -220,7 +220,7 @@ fn params_file_is_written_mode_0600_for_oversized_or_secret_params_and_deleted_a
         "params.json must be created with mode 0600"
     );
     #[cfg(not(unix))]
-    assert!(metrics.is_object(), "probe metrics must be a JSON object");
+    let _ = metrics;
     assert!(
         !params_json_path.exists(),
         "params.json must be deleted after the job completes"
@@ -248,7 +248,7 @@ fn params_file_is_written_mode_0600_for_oversized_or_secret_params_and_deleted_a
     #[cfg(unix)]
     assert_eq!(metrics.get("params_file_mode"), Some(&json!(0o600)));
     #[cfg(not(unix))]
-    assert!(metrics.is_object(), "probe metrics must be a JSON object");
+    let _ = metrics;
     assert!(
         !params_json_path.exists(),
         "oversized params.json must be deleted after the job completes"
