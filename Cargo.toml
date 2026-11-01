@@ -57,7 +57,7 @@ rmcp = { version = "3.5.1", default-features = false }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8.5"
 ruzstd = "0.9.1"
-saphyr-parser = "0.2.2"
+saphyr-parser = "0.3.0"
 schemars = "1.2.2"
 semver = "1.0.28"
 serde = "1.0.229"
