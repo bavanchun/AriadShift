@@ -55,6 +55,7 @@ entries = 23456
 | `version` | SemVer. |
 | `license` | SPDX summary of everything the pack contains. Packs follow the licensing rules in [AGENTS.md](../AGENTS.md): no AGPL, no non-OSI code, no excluded model licences. |
 | `requires_ashift` | SemVer requirement on `ashift`. A mismatch is exit code 5. |
+| `engine_protocol` | Optional: `ariad-engine/1` or `ariad-engine/2`. Absent means `ariad-engine/1`, so existing manifests (Docling) need no change. Install and resolve refuse a pack whose value differs from the protocol `ashift` registers for the engine of the same name, and any other value; see [Engine protocol](#engine-protocol). |
 | `notices` | Licence and notice files inside the install root. Each must exist after extraction. |
 | `targets[].triple` | Rust target triple of the pack's own binaries. |
 | `targets[].entrypoint` | Engine argv. The first element is a path relative to the install root; later elements may use `{root}`. |
@@ -74,16 +75,24 @@ entries = 23456
 The Docling 0.2.0 pack supports `ashift >=0.2.0, <2.0.0`. Compatibility rests
 on the frozen `ariad-engine/1` protocol and `ariad-pack/1` manifest schema,
 which the 1.x host line keeps. The host checks `requires_ashift` at install
-time and validates the manifest schema separately. The engine protocol is
-checked only when an engine parses a host request; installation does not
-perform an engine handshake or compare an advertised protocol version.
+time and validates the manifest schema separately. Installation does not
+perform an engine handshake; it compares the manifest's declared
+`engine_protocol` with the protocol `ashift` registers for the engine.
 
 A protocol break must ship together with the 2.0 major release. The
-`<2.0.0` bound then refuses that host at installation. An install-time
-`engine_protocol` manifest check is planned for v1.x. Before approving
+`<2.0.0` bound then refuses that host at installation. The manifest's
+`engine_protocol` field is checked at install and resolve (below). Before approving
 v1.0.0, release conformance must install the actual 0.2.0 pack on a
 1.0.0-versioned host and complete a Docling conversion with the shipped
 manifest range unchanged.
+
+### Engine protocol
+
+The wire protocol of each pack engine is registered statically in `ashift` (`EngineSpec.protocol`): `docling` speaks `ariad-engine/1`; `pdfium`, `qpdf`, `tesseract`, `sign`, `verapdf`, `ai` and `inpaint` speak `ariad-engine/2`. The manifest parser checks the declared `engine_protocol` against that registration whenever a manifest is parsed: at install, at every resolve of an installed pack, for an `ASHIFT_PACK_<NAME>` development directory, and when `ashift __pack manifest` generates one. A mismatch fails with an error such as `engine_protocol is 'ariad-engine/1' (the default when the field is absent) but the 'pdfium' engine speaks 'ariad-engine/2'`; an unknown value fails with `engine_protocol 'x' is not supported`. At install nothing is extracted. At resolve the engine is reported as `tool_missing` (exit 5) with a reinstall hint.
+
+A host older than the field rejects a manifest that sets it, because manifests are parsed strictly. A pack that sets `engine_protocol` therefore sets `requires_ashift` to the first release that knows the field.
+
+`ashift __pack manifest` takes the field from the `--base` manifest or template like the other pack fields; it has no flag of its own.
 
 ### Targets
 
@@ -143,6 +152,8 @@ An install extracts into `.staging`, checks links, notices and the entrypoint, w
 `ariad_host::packs::resolve(name)` returns the active version's `InstalledPack`: install root, target, program (`entrypoint[0]` under the root), arguments, environment and options with `{root}` substituted. Create `runner::EngineCommand::from_pack(ashift, &pack)` and pass it to `runner::run_command` or `SessionPool::lease`. The command adds the pack's allow-listed environment to the cleared engine environment and grants its install root read and execute access through the Linux sandbox. The explicit environment and root participate in the session-pool key. `runner::run_with_env` and `describe_with_env` remain available for callers supplying their own launch policy. A pack built for another platform or another `ashift` range does not resolve.
 
 `ASHIFT_PACK_<NAME>=<dir>` (name upper-cased, `-` written as `_`) overrides resolution with an unpacked development pack: `<dir>/pack.toml` is read without a signature check and `<dir>` is the root.
+
+Resolution of a sandboxed pack engine (`pdfium` and the other `ariad-engine/2` packs) goes through `ariad_host::engines::resolve_pack(id)`. Besides the checks above, it refuses an entrypoint that leaves the pack root once links are followed (`tool_missing`, exit 5, reinstall hint). A missing, unverifiable or mismatched pack never falls back to another engine: every tool that needs it fails with exit 5 and the pack's install hint.
 
 ## Building a pack
 
@@ -205,11 +216,28 @@ the [Docling guide](docling.md#the-pack).
 
 To try a build without signing it, unpack the components into one directory, add `pack.toml`, and point `ASHIFT_PACK_DOCLING` at it; `build.py verify` does exactly that, and with `--offline` runs the conversion in a network namespace. How the inputs are pinned, how the licence gate works and what CI checks: [docling.md](docling.md#the-pack).
 
+## The pdfium pack
+
+The `pdfium` pack provides the PDFium engine (`ariad-engine/2`, stateless per request) for page rendering, thumbnails, images and text with positions. Its pack name is its engine id.
+
+| Item | Value |
+|---|---|
+| Contents | `ariad-pdfium-engine` binary, pinned `libpdfium` (PDFium `chromium/8125`, from `bblanchon/pdfium-binaries`, SHA-256 pinned per target), and the bundled third-party notices (FreeType, ICU, libjpeg-turbo, OpenJPEG, LCMS, libpng, zlib, HarfBuzz, Abseil, AGG) |
+| Targets | `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`. Windows packs are deferred because Windows engines have no filesystem or network sandbox |
+| Manifest | `engine_protocol = "ariad-engine/2"`; `requires_ashift` names the release that adds the field |
+| Library lookup | The engine loads `libpdfium` from the directory of its own binary. The manifest sets no library-path variable, and `ALLOWED_ENV` has none |
+| Sandbox | `sandbox_required`: the pack root is readable and executable but not writable, `/tmp` is private to the job, the job directory is the only writable location and the network is closed. `best-effort` mode refuses to start the engine when isolation is unavailable; only `ASHIFT_SANDBOX=off` runs it unsandboxed |
+| Release | Tag `pack-pdfium-v<version>`. Signing happens only in the pack workflow on that tag, under the protected `release` environment; local builds are unsigned |
+
+Install it once a release exists with `ashift engines install pdfium`. Until the embedded index ([`crates/ariad-host/data/packs.toml`](../crates/ariad-host/data/packs.toml)) has a `pdfium` entry, that command reports an unknown pack; install from a release's files with `--manifest <url>` or `--from <dir>`. To use an unpacked build without signing it, point `ASHIFT_PACK_PDFIUM` at a directory holding an unsigned `pack.toml`, the entrypoint it names and `libpdfium` beside it; `ashift doctor` then reports the pack as coming from the development override.
+
+Without the pack, every PDFium tool fails with exit code 5 (`tool_missing`) and the hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. `ashift doctor` lists a `pdfium_engine` check and `ashift engines` a `pdfium` row either way: not installed (with that hint), or installed with the pack version and the protocol `ariad-engine/2`.
+
 ## Signing and publishing
 
 1. Create the signing key once with `minisign -G -p ariadshift-packs.pub -s ariadshift-packs.key`. The secret key and its password live only in the `release` environment secrets and an offline backup; never in the repository. Commit the public key as `crates/ariad-host/data/pack-keys/<key-id>.pub` and release an `ashift` that contains it before the first pack signed with it.
 2. Build every target and merge the manifests with `ashift __pack manifest --base`.
-3. Sign: `minisign -S -s ariadshift-packs.key -m pack.toml -t "pack:docling version:0.2.0"`.
+3. Sign: `minisign -S -s ariadshift-packs.key -m pack.toml -t "pack:docling version:0.2.0"`. Signing keys exist only in the `release` environment; the `pdfium` pack is signed only by its pack workflow on a `pack-pdfium-v*` tag, never on a developer machine.
 4. Check locally: `ASHIFT_DATA_DIR=$(mktemp -d) ashift engines install docling --from dist/`.
 5. Publish `pack.toml`, `pack.toml.minisig` and the component files as assets of the GitHub release tagged `pack-<name>-v<version>`.
 6. Point the built-in index ([`crates/ariad-host/data/packs.toml`](../crates/ariad-host/data/packs.toml)) at the new recommended version. The index's URL template resolves to `https://github.com/bavanchun/AriadShift/releases/download/pack-<name>-v<version>/pack.toml`.
@@ -218,7 +246,7 @@ To try a build without signing it, unpack the components into one directory, add
 
 | Code | Pack failure |
 |---|---|
-| 1 | Signature, hash, size, download, unsafe archive, corrupt archive, receipt or I/O failure; another process holds the pack's lock; `verify` found differences |
+| 1 | Signature, hash, size, download, unsafe archive, corrupt archive, rejected manifest (including a mismatched `engine_protocol`), receipt or I/O failure; another process holds the pack's lock; `verify` found differences |
 | 2 | Invalid arguments, a pack name or version that is not well formed, plain HTTP to a non-loopback host |
 | 3 | Pack not in the index, pack or version not installed, no build for this platform |
 | 4 | An archive unpacks beyond its declared bounds |
