@@ -39,6 +39,7 @@
 - `/home/vchun/Codes/01-AriadShift/.run/coord/bin/build-lock.sh cargo fmt --all --check`: **PASS**
 - `/home/vchun/Codes/01-AriadShift/.run/coord/bin/build-lock.sh cargo clippy -p ariad-server --all-targets -- -D warnings`: **PASS**
 - `/home/vchun/Codes/01-AriadShift/.run/coord/bin/build-lock.sh cargo test -p ariad-server --test blob-transfers`: **PASS** (13 passed, 0 failed)
+- `sh scripts/check-commits.sh origin/dev..HEAD`: failed only because `.tools/bin/committed` is missing in the worktree; `/home/vchun/Codes/01-AriadShift/.tools/bin/committed --config committed.toml origin/dev..HEAD`: **PASS**
 
 ### What Only CI or Another OS Can Verify
 - Full PostgreSQL-backed and SeaweedFS S3-backed server test suites in CI across Linux, macOS, and Windows targets.
