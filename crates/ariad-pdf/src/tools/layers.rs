@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    document::{PdfDoc, ToolCtx},
+    document::{DecodeBudget, PdfDoc, ToolCtx},
     error::PdfError,
     naming,
     tools::{OutputDoc, metadata::catalog_object_id, outline::decode_pdf_object_string},
@@ -109,7 +109,8 @@ pub fn run(
             }
 
             let mut out_pdf = pdf.clone();
-            remove_layers(out_pdf.inner_mut()?, names, ctx)?;
+            let mut budget = out_pdf.decode_budget();
+            remove_layers(out_pdf.inner_mut()?, names, &mut budget, ctx)?;
             Ok(vec![OutputDoc::from_pdf(
                 naming::default_pdf_output_name(&stem, "pdf.layers"),
                 out_pdf,
@@ -298,6 +299,7 @@ fn extract_ref_vec(doc: &lopdf::Document, arr_obj: Option<&Object>) -> Vec<Objec
 fn remove_layers(
     doc: &mut lopdf::Document,
     target_names: &[String],
+    budget: &mut DecodeBudget,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     let ocgs = inspect_ocgs(doc)?;
@@ -326,7 +328,7 @@ fn remove_layers(
     for (page_id, prop_names) in &page_prop_names {
         ctx.check()?;
         if !prop_names.is_empty() {
-            strip_page_layer_content(doc, *page_id, prop_names)?;
+            strip_page_layer_content(doc, *page_id, prop_names, budget, ctx)?;
         }
     }
 
@@ -376,17 +378,24 @@ fn remove_layers(
             .and_then(|o| resolve_dict(doc, o))
             .cloned()
         {
-            for key in [b"ON".as_slice(), b"OFF".as_slice(), b"Order".as_slice()] {
-                let filtered: Vec<Object> = extract_ref_vec(doc, d_dict.get(key).ok())
-                    .into_iter()
-                    .filter(|id| !removed_ids.contains(id))
-                    .map(Object::Reference)
-                    .collect();
-                if d_dict.has(key) {
-                    d_dict.set(key.to_vec(), Object::Array(filtered));
+            clean_oc_config_dict(doc, &mut d_dict, &removed_ids);
+            oc_props.set("D", Object::Dictionary(d_dict));
+        }
+
+        if let Some(Object::Array(configs_arr)) = oc_props
+            .get(b"Configs")
+            .ok()
+            .and_then(|o| resolve_object(doc, o))
+            .cloned()
+        {
+            let mut cleaned_configs = Vec::with_capacity(configs_arr.len());
+            for cfg_obj in &configs_arr {
+                if let Some(mut cfg_dict) = resolve_dict(doc, cfg_obj).cloned() {
+                    clean_oc_config_dict(doc, &mut cfg_dict, &removed_ids);
+                    cleaned_configs.push(Object::Dictionary(cfg_dict));
                 }
             }
-            oc_props.set("D", Object::Dictionary(d_dict));
+            oc_props.set("Configs", Object::Array(cleaned_configs));
         }
 
         let catalog = doc
@@ -404,27 +413,210 @@ fn remove_layers(
     Ok(())
 }
 
+fn clean_oc_config_dict(
+    doc: &lopdf::Document,
+    cfg_dict: &mut Dictionary,
+    removed_ids: &HashSet<ObjectId>,
+) {
+    for key in [b"ON".as_slice(), b"OFF".as_slice(), b"Locked".as_slice()] {
+        if cfg_dict.has(key) {
+            let filtered: Vec<Object> = extract_ref_vec(doc, cfg_dict.get(key).ok())
+                .into_iter()
+                .filter(|id| !removed_ids.contains(id))
+                .map(Object::Reference)
+                .collect();
+            cfg_dict.set(key.to_vec(), Object::Array(filtered));
+        }
+    }
+
+    if let Ok(order_obj) = cfg_dict.get(b"Order")
+        && let Some(Object::Array(order_arr)) = resolve_object(doc, order_obj)
+    {
+        let filtered_order = filter_order_array(doc, order_arr, removed_ids, 0);
+        cfg_dict.set("Order", Object::Array(filtered_order));
+    }
+
+    if let Ok(rb_obj) = cfg_dict.get(b"RBGroups")
+        && let Some(Object::Array(rb_arr)) = resolve_object(doc, rb_obj)
+    {
+        let mut filtered_groups = Vec::new();
+        for group_obj in rb_arr {
+            if let Some(Object::Array(group)) = resolve_object(doc, group_obj) {
+                let kept: Vec<Object> = group
+                    .iter()
+                    .filter_map(|item| match item {
+                        Object::Reference(id) if !removed_ids.contains(id) => {
+                            Some(Object::Reference(*id))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                if !kept.is_empty() {
+                    filtered_groups.push(Object::Array(kept));
+                }
+            }
+        }
+        cfg_dict.set("RBGroups", Object::Array(filtered_groups));
+    }
+
+    if let Ok(as_obj) = cfg_dict.get(b"AS")
+        && let Some(Object::Array(as_arr)) = resolve_object(doc, as_obj)
+    {
+        let mut filtered_as = Vec::new();
+        for item in as_arr {
+            if let Some(mut app_dict) = resolve_dict(doc, item).cloned() {
+                if app_dict.has(b"OCGs") {
+                    let kept: Vec<Object> = extract_ref_vec(doc, app_dict.get(b"OCGs").ok())
+                        .into_iter()
+                        .filter(|id| !removed_ids.contains(id))
+                        .map(Object::Reference)
+                        .collect();
+                    if kept.is_empty() {
+                        continue;
+                    }
+                    app_dict.set("OCGs", Object::Array(kept));
+                }
+                filtered_as.push(Object::Dictionary(app_dict));
+            }
+        }
+        cfg_dict.set("AS", Object::Array(filtered_as));
+    }
+}
+
+fn filter_order_array(
+    doc: &lopdf::Document,
+    items: &[Object],
+    removed_ids: &HashSet<ObjectId>,
+    depth: usize,
+) -> Vec<Object> {
+    if depth >= 64 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut has_surviving_ocg = false;
+
+    for item in items {
+        match item {
+            Object::Reference(id) => {
+                if removed_ids.contains(id) {
+                    continue;
+                }
+                if let Ok(Object::Array(sub_arr)) = doc.get_object(*id) {
+                    let nested = filter_order_array(doc, sub_arr, removed_ids, depth + 1);
+                    if !nested.is_empty() {
+                        has_surviving_ocg = true;
+                        out.push(Object::Array(nested));
+                    }
+                } else {
+                    has_surviving_ocg = true;
+                    out.push(Object::Reference(*id));
+                }
+            }
+            Object::Array(sub_arr) => {
+                let nested = filter_order_array(doc, sub_arr, removed_ids, depth + 1);
+                if !nested.is_empty() {
+                    has_surviving_ocg = true;
+                    out.push(Object::Array(nested));
+                }
+            }
+            other => {
+                out.push(other.clone());
+            }
+        }
+    }
+
+    if depth > 0 && !has_surviving_ocg {
+        Vec::new()
+    } else {
+        out
+    }
+}
+
+fn decode_page_content_bounded(
+    doc: &lopdf::Document,
+    page_id: ObjectId,
+    budget: &mut DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<Vec<u8>, PdfError> {
+    let Ok(page_dict) = doc.get_dictionary(page_id) else {
+        return Ok(Vec::new());
+    };
+    let Ok(contents_obj) = page_dict.get(b"Contents") else {
+        return Ok(Vec::new());
+    };
+
+    let mut streams: Vec<&Stream> = Vec::new();
+    match contents_obj {
+        Object::Reference(id) => match doc.get_object(*id) {
+            Ok(Object::Stream(stream)) => streams.push(stream),
+            Ok(Object::Array(arr)) => {
+                for item in arr {
+                    match item {
+                        Object::Reference(sid) => {
+                            if let Ok(Object::Stream(s)) = doc.get_object(*sid) {
+                                streams.push(s);
+                            }
+                        }
+                        Object::Stream(s) => streams.push(s),
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        },
+        Object::Array(arr) => {
+            for item in arr {
+                match item {
+                    Object::Reference(sid) => {
+                        if let Ok(Object::Stream(s)) = doc.get_object(*sid) {
+                            streams.push(s);
+                        }
+                    }
+                    Object::Stream(s) => streams.push(s),
+                    _ => {}
+                }
+            }
+        }
+        Object::Stream(stream) => streams.push(stream),
+        _ => {}
+    }
+
+    let mut combined = Vec::new();
+    for (idx, stream) in streams.into_iter().enumerate() {
+        ctx.check()?;
+        let decoded = budget.decode(stream)?.ok_or(PdfError::Malformed)?;
+        if idx > 0 && !combined.ends_with(b"\n") && !combined.ends_with(b"\r") {
+            combined.push(b'\n');
+        }
+        combined.extend_from_slice(&decoded);
+    }
+    Ok(combined)
+}
+
 fn strip_page_layer_content(
     doc: &mut lopdf::Document,
     page_id: ObjectId,
     removed_prop_names: &HashSet<Vec<u8>>,
+    budget: &mut DecodeBudget,
+    ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     if removed_prop_names.is_empty() {
         return Ok(());
     }
 
-    let content_bytes = doc.get_page_content(page_id);
+    let content_bytes = decode_page_content_bounded(doc, page_id, budget, ctx)?;
     if content_bytes.is_empty() {
         return Ok(());
     }
-    let Ok(content) = Content::decode(&content_bytes) else {
-        return Ok(());
-    };
+    let content = Content::decode(&content_bytes).map_err(|_| PdfError::Malformed)?;
 
     let mut filtered_ops = Vec::with_capacity(content.operations.len());
     let mut skip_depth = 0usize;
 
-    for op in content.operations {
+    for (idx, op) in content.operations.into_iter().enumerate() {
+        if idx.is_multiple_of(256) {
+            ctx.check()?;
+        }
         if skip_depth > 0 {
             if op.operator == "BDC" || op.operator == "BMC" {
                 skip_depth += 1;
@@ -466,11 +658,13 @@ fn find_matching_resource_properties(
     removed_ids: &HashSet<ObjectId>,
 ) -> HashSet<Vec<u8>> {
     let mut matching_props = HashSet::new();
+    let mut seen_keys = HashSet::new();
+    let mut visited_nodes = HashSet::new();
     let mut current_id = Some(page_id);
     let mut depth = 0usize;
 
     while let Some(node_id) = current_id {
-        if depth > 16 {
+        if depth >= 64 || !visited_nodes.insert(node_id) {
             break;
         }
         depth += 1;
@@ -483,13 +677,13 @@ fn find_matching_resource_properties(
             && let Some(pdict) = resolve_dict(doc, props_obj)
         {
             for (k, v) in pdict.iter() {
-                if let Object::Reference(id) = v
+                if seen_keys.insert(k.clone())
+                    && let Object::Reference(id) = v
                     && removed_ids.contains(id)
                 {
                     matching_props.insert(k.clone());
                 }
             }
-            break;
         }
         current_id = node_dict
             .get(b"Parent")
@@ -506,27 +700,56 @@ fn remove_matching_resource_properties(
     removed_ids: &HashSet<ObjectId>,
 ) -> HashSet<Vec<u8>> {
     let mut matching_props = HashSet::new();
+    let mut visited_nodes = HashSet::new();
+    let mut current_id = Some(page_id);
+    let mut depth = 0usize;
 
+    while let Some(node_id) = current_id {
+        if depth >= 64 || !visited_nodes.insert(node_id) {
+            break;
+        }
+        depth += 1;
+        let next_parent = doc
+            .get_object(node_id)
+            .ok()
+            .and_then(|o| o.as_dict().ok())
+            .and_then(|d| d.get(b"Parent").ok())
+            .and_then(|p| p.as_reference().ok());
+
+        clean_node_resource_properties(doc, node_id, removed_ids, &mut matching_props);
+        current_id = next_parent;
+    }
+
+    matching_props
+}
+
+fn clean_node_resource_properties(
+    doc: &mut lopdf::Document,
+    node_id: ObjectId,
+    removed_ids: &HashSet<ObjectId>,
+    matching_props: &mut HashSet<Vec<u8>>,
+) {
     let res_obj = doc
-        .get_object(page_id)
+        .get_object(node_id)
         .ok()
         .and_then(|o| o.as_dict().ok())
         .and_then(|d| d.get(b"Resources").ok())
         .cloned();
 
     let Some(res_obj) = res_obj else {
-        return matching_props;
+        return;
     };
 
     let mut res_dict = match &res_obj {
         Object::Reference(id) => match doc.get_object(*id).ok().and_then(|o| o.as_dict().ok()) {
             Some(d) => d.clone(),
-            None => return matching_props,
+            None => return,
         },
         Object::Dictionary(d) => d.clone(),
-        _ => return matching_props,
+        _ => return,
     };
 
+    let mut modified_node = false;
     let props_obj = res_dict.get(b"Properties").ok().cloned();
     if let Some(props_obj) = props_obj {
         let mut props_dict = match &props_obj {
@@ -548,34 +771,35 @@ fn remove_matching_resource_properties(
                 })
                 .collect();
 
-            for key in keys_to_remove {
-                pdict.remove(&key);
-                matching_props.insert(key);
-            }
+            if !keys_to_remove.is_empty() {
+                modified_node = true;
+                for key in keys_to_remove {
+                    pdict.remove(&key);
+                    matching_props.insert(key);
+                }
 
-            if pdict.is_empty() {
-                res_dict.remove(b"Properties");
-            } else {
-                res_dict.set("Properties", Object::Dictionary(pdict.clone()));
+                if pdict.is_empty() {
+                    res_dict.remove(b"Properties");
+                } else {
+                    res_dict.set("Properties", Object::Dictionary(pdict.clone()));
+                }
             }
         }
     }
 
-    if !matching_props.is_empty() {
+    if modified_node {
         match res_obj {
             Object::Reference(res_id) => {
                 doc.objects.insert(res_id, Object::Dictionary(res_dict));
             }
             Object::Dictionary(_) => {
-                if let Ok(Object::Dictionary(page_dict)) = doc.get_object_mut(page_id) {
-                    page_dict.set("Resources", Object::Dictionary(res_dict));
+                if let Ok(Object::Dictionary(node_dict)) = doc.get_object_mut(node_id) {
+                    node_dict.set("Resources", Object::Dictionary(res_dict));
                 }
             }
             _ => {}
         }
     }
-
-    matching_props
 }
 
 fn resolve_object<'a>(doc: &'a lopdf::Document, obj: &'a Object) -> Option<&'a Object> {

@@ -3,13 +3,16 @@
 use std::collections::BTreeMap;
 
 use ariad_core::tools::params::metadata::{MetadataFields, MetadataParams};
-use lopdf::{Dictionary, Object, ObjectId, Stream, StringFormat, dictionary};
+use lopdf::{Dictionary, Object, ObjectId, Stream, dictionary};
 
 use crate::{
     document::{PdfDoc, ToolCtx},
     error::PdfError,
     info, naming,
-    tools::OutputDoc,
+    tools::{
+        OutputDoc,
+        outline::{decode_pdf_object_string, encode_pdf_string},
+    },
     writer::SaveOptions,
 };
 
@@ -118,7 +121,7 @@ pub fn run(
     }
 
     let doc = pdf.inner_mut()?;
-    let save_options = if state.is_empty() && params.strip_all {
+    let save_options = if state.is_empty() {
         remove_info_and_xmp(doc)?;
         SaveOptions {
             omit_info_if_absent: true,
@@ -129,7 +132,7 @@ pub fn run(
         write_info_dictionary(doc, &state);
         write_xmp_stream(doc, &state)?;
         SaveOptions {
-            omit_info_if_absent: state.is_empty(),
+            omit_info_if_absent: false,
             preserve_info_dates: true,
             ..SaveOptions::default()
         }
@@ -170,14 +173,14 @@ fn read_existing_metadata(pdf: &PdfDoc, ctx: &ToolCtx) -> Result<MetadataState, 
     };
 
     if let Some(info_dict) = resolve_info_dict(doc) {
-        state.subject = dict_string(info_dict, b"Subject");
-        state.keywords = dict_string(info_dict, b"Keywords");
+        state.subject = dict_string(doc, info_dict, b"Subject");
+        state.keywords = dict_string(doc, info_dict, b"Keywords");
         for (key, value) in info_dict.iter() {
             if STANDARD_KEYS.contains(&key.as_slice()) {
                 continue;
             }
             if let Ok(key_str) = std::str::from_utf8(key)
-                && let Some(val_str) = object_to_string(value)
+                && let Some(val_str) = object_to_string(doc, value)
             {
                 state.custom.insert(key_str.to_owned(), val_str);
             }
@@ -196,29 +199,19 @@ fn resolve_info_dict(doc: &lopdf::Document) -> Option<&Dictionary> {
     }
 }
 
-fn dict_string(dict: &Dictionary, key: &[u8]) -> Option<String> {
-    dict.get(key).ok().and_then(object_to_string)
+fn dict_string(doc: &lopdf::Document, dict: &Dictionary, key: &[u8]) -> Option<String> {
+    dict.get(key).ok().and_then(|o| object_to_string(doc, o))
 }
 
-fn object_to_string(obj: &Object) -> Option<String> {
-    match obj {
-        Object::String(bytes, _) => {
-            if bytes.starts_with(&[0xFE, 0xFF]) {
-                let utf16: Vec<u16> = bytes[2..]
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .copied()
-                    .map(u16::from_be_bytes)
-                    .collect();
-                String::from_utf16(&utf16).ok()
-            } else {
-                String::from_utf8(bytes.clone()).ok()
-            }
+fn object_to_string(doc: &lopdf::Document, obj: &Object) -> Option<String> {
+    let mut current = obj;
+    for _ in 0..8 {
+        match current {
+            Object::Reference(id) => current = doc.get_object(*id).ok()?,
+            other => return decode_pdf_object_string(other),
         }
-        Object::Name(bytes) => String::from_utf8(bytes.clone()).ok(),
-        _ => None,
     }
+    None
 }
 
 fn apply_remove_key(state: &mut MetadataState, key: &str) {
@@ -290,19 +283,16 @@ fn remove_info_and_xmp(doc: &mut lopdf::Document) -> Result<(), PdfError> {
 
 fn write_info_dictionary(doc: &mut lopdf::Document, state: &MetadataState) {
     let mut dict = Dictionary::new();
-    set_opt_literal(&mut dict, "Title", state.title.as_deref());
-    set_opt_literal(&mut dict, "Author", state.author.as_deref());
-    set_opt_literal(&mut dict, "Subject", state.subject.as_deref());
-    set_opt_literal(&mut dict, "Keywords", state.keywords.as_deref());
-    set_opt_literal(&mut dict, "Creator", state.creator.as_deref());
-    set_opt_literal(&mut dict, "Producer", state.producer.as_deref());
-    set_opt_literal(&mut dict, "CreationDate", state.created.as_deref());
-    set_opt_literal(&mut dict, "ModDate", state.modified.as_deref());
+    set_opt_pdf_string(&mut dict, "Title", state.title.as_deref());
+    set_opt_pdf_string(&mut dict, "Author", state.author.as_deref());
+    set_opt_pdf_string(&mut dict, "Subject", state.subject.as_deref());
+    set_opt_pdf_string(&mut dict, "Keywords", state.keywords.as_deref());
+    set_opt_pdf_string(&mut dict, "Creator", state.creator.as_deref());
+    set_opt_pdf_string(&mut dict, "Producer", state.producer.as_deref());
+    set_opt_pdf_string(&mut dict, "CreationDate", state.created.as_deref());
+    set_opt_pdf_string(&mut dict, "ModDate", state.modified.as_deref());
     for (key, value) in &state.custom {
-        dict.set(
-            key.as_bytes().to_vec(),
-            Object::String(value.as_bytes().to_vec(), StringFormat::Literal),
-        );
+        dict.set(key.as_bytes().to_vec(), encode_pdf_string(value));
     }
 
     if let Ok(Object::Reference(info_id)) = doc.trailer.get(b"Info").cloned()
@@ -315,12 +305,9 @@ fn write_info_dictionary(doc: &mut lopdf::Document, state: &MetadataState) {
     }
 }
 
-fn set_opt_literal(dict: &mut Dictionary, key: &str, value: Option<&str>) {
+fn set_opt_pdf_string(dict: &mut Dictionary, key: &str, value: Option<&str>) {
     if let Some(val) = value {
-        dict.set(
-            key,
-            Object::String(val.as_bytes().to_vec(), StringFormat::Literal),
-        );
+        dict.set(key, encode_pdf_string(val));
     }
 }
 
