@@ -217,8 +217,23 @@ fn decompress_enforces_decode_budget_and_rejects_bad_params() {
     ));
 }
 
+/// Returns every object number defined directly (`N G obj` on its own line) in `raw`, in file
+/// order, so tests can assert that no object is written twice.
+fn direct_object_numbers(raw: &[u8]) -> Vec<u32> {
+    raw.split(|&b| b == b'\n')
+        .filter_map(|line| {
+            let text = std::str::from_utf8(line).ok()?;
+            let mut parts = text.trim_end().split(' ');
+            let id: u32 = parts.next()?.parse().ok()?;
+            let generation = parts.next()?;
+            (generation == "0" && parts.next() == Some("obj") && parts.next().is_none())
+                .then_some(id)
+        })
+        .collect()
+}
+
 #[test]
-fn decompress_object_streams_keep_preserves_objstm_while_expand_removes_it() {
+fn decompress_object_streams_keep_emits_referenced_object_streams_and_an_xref_stream() {
     let raw = read_fixture("object-streams.pdf");
     let before_text = extract_plain_text(&raw);
     let ctx = ToolCtx::default();
@@ -256,23 +271,86 @@ fn decompress_object_streams_keep_preserves_objstm_while_expand_removes_it() {
         &ctx,
     )
     .expect("decompress keep 2");
+    let kept_bytes = &kept1.artifacts[0].bytes;
     assert_eq!(
-        kept1.artifacts[0].bytes, kept2.artifacts[0].bytes,
+        kept_bytes, &kept2.artifacts[0].bytes,
         "object_streams=keep must be byte-for-byte deterministic"
     );
 
-    let kept_doc = open(&kept1.artifacts[0].bytes, &Limits::local()).expect("open kept");
-    let kept_objstm_count = kept_doc
-        .inner()
-        .objects
-        .values()
-        .filter(|obj| matches!(obj, lopdf::Object::Stream(s) if s.dict.has_type(b"ObjStm")))
-        .count();
+    // The output is parsed through its own cross-reference stream.
+    let parsed = lopdf::Document::load_mem(kept_bytes).expect("parse kept output");
     assert!(
-        kept_objstm_count > 0,
-        "object_streams=keep must preserve /Type /ObjStm streams in the output PDF"
+        matches!(
+            parsed.reference_table.cross_reference_type,
+            lopdf::xref::XrefType::CrossReferenceStream
+        ),
+        "object_streams=keep must write an xref stream"
     );
-    for obj in kept_doc.inner().objects.values() {
+
+    // Every compressed entry names an uncompressed /ObjStm container that is itself a direct
+    // object, and each container's /N equals the number of xref entries pointing at it.
+    let mut members_per_container: std::collections::BTreeMap<u32, i64> =
+        std::collections::BTreeMap::new();
+    let mut compressed_ids = Vec::new();
+    for (&id, entry) in &parsed.reference_table.entries {
+        if let lopdf::xref::XrefEntry::Compressed { container, .. } = entry {
+            *members_per_container.entry(*container).or_default() += 1;
+            compressed_ids.push(id);
+        }
+    }
+    assert!(
+        !members_per_container.is_empty(),
+        "xref stream must reference object streams"
+    );
+    for (&container, &members) in &members_per_container {
+        assert!(
+            matches!(
+                parsed.reference_table.entries.get(&container),
+                Some(lopdf::xref::XrefEntry::Normal { .. })
+            ),
+            "container {container} must be a direct object"
+        );
+        let Some(lopdf::Object::Stream(stream)) = parsed.objects.get(&(container, 0)) else {
+            panic!("container {container} must be a stream object");
+        };
+        assert!(stream.dict.has_type(b"ObjStm"));
+        assert!(
+            !stream.dict.has(b"Filter"),
+            "kept /ObjStm must be uncompressed"
+        );
+        assert_eq!(
+            stream.dict.get(b"N").and_then(lopdf::Object::as_i64).ok(),
+            Some(members),
+            "container {container} /N must match its xref members"
+        );
+    }
+
+    // Each object is defined exactly once: compressed objects have no direct copy, and no
+    // direct object number repeats.
+    let direct = direct_object_numbers(kept_bytes);
+    let unique: std::collections::BTreeSet<u32> = direct.iter().copied().collect();
+    assert_eq!(
+        unique.len(),
+        direct.len(),
+        "an object is defined twice: {direct:?}"
+    );
+    for id in &compressed_ids {
+        assert!(
+            !unique.contains(id),
+            "object {id} is both compressed and written directly"
+        );
+    }
+    for &id in &unique {
+        assert!(
+            matches!(
+                parsed.reference_table.entries.get(&id),
+                Some(lopdf::xref::XrefEntry::Normal { .. })
+            ),
+            "directly written object {id} must have a normal xref entry"
+        );
+    }
+
+    for obj in parsed.objects.values() {
         if let lopdf::Object::Stream(s) = obj {
             assert!(
                 !s.dict.has(b"Filter"),
@@ -280,5 +358,125 @@ fn decompress_object_streams_keep_preserves_objstm_while_expand_removes_it() {
             );
         }
     }
-    assert_eq!(extract_plain_text(&kept1.artifacts[0].bytes), before_text);
+    assert_eq!(extract_plain_text(kept_bytes), before_text);
+}
+
+/// Builds a one-page document whose resource name `/ObjStrX` and content string `ObjStr`
+/// resemble the former placeholder bytes, saved with object streams and compressed streams.
+fn build_objstr_lookalike_pdf() -> Vec<u8> {
+    use lopdf::{Document, Object, Stream, dictionary};
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let font_id = doc.add_object(dictionary! {
+        "Type" => "Font",
+        "Subtype" => "Type1",
+        "BaseFont" => "Helvetica",
+    });
+    let content = b"q /ObjStrX gs BT /F1 12 Tf 10 10 Td (ObjStr marker) Tj ET Q\n".to_vec();
+    let content_id = doc.add_object(Object::Stream(Stream::new(dictionary! {}, content)));
+    let page_id = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => Object::Reference(pages_id),
+        "MediaBox" => vec![0.into(), 0.into(), 200.into(), 200.into()],
+        "Resources" => dictionary! {
+            "Font" => dictionary! { "F1" => Object::Reference(font_id) },
+            "ExtGState" => dictionary! {
+                "ObjStrX" => dictionary! { "CA" => Object::Real(1.0) },
+            },
+        },
+        "Contents" => Object::Reference(content_id),
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page_id)],
+            "Count" => 1,
+        }),
+    );
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => Object::Reference(pages_id),
+    });
+    doc.trailer.set("Root", Object::Reference(catalog_id));
+    doc.compress();
+    let mut out = Vec::new();
+    doc.save_modern(&mut out).expect("save with object streams");
+    out
+}
+
+fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
+    haystack
+        .windows(needle.len())
+        .filter(|w| *w == needle)
+        .count()
+}
+
+#[test]
+fn decompress_keep_and_expand_leave_objstr_lookalike_bytes_untouched() {
+    let input = build_objstr_lookalike_pdf();
+    assert!(
+        document_has_objstm(&input),
+        "fixture must contain a real object stream so that keep takes the object-stream path"
+    );
+    let ctx = ToolCtx::default();
+
+    for mode in ["keep", "expand"] {
+        let out = run_tool(
+            "pdf.decompress",
+            &[InputDoc::new("lookalike.pdf", input.clone())],
+            &json!({ "object_streams": mode }),
+            &ctx,
+        )
+        .unwrap_or_else(|e| panic!("decompress {mode}: {e:?}"));
+        let bytes = &out.artifacts[0].bytes;
+
+        assert_eq!(
+            count_occurrences(bytes, b"/ObjStrX"),
+            2,
+            "{mode}: /ObjStrX must survive in the content stream and the resource dictionary"
+        );
+        assert_eq!(
+            count_occurrences(bytes, b"/ObjStmX"),
+            0,
+            "{mode}: /ObjStrX must never be rewritten to /ObjStmX"
+        );
+        assert_eq!(
+            count_occurrences(bytes, b"(ObjStr marker) Tj"),
+            1,
+            "{mode}: the content string must survive byte for byte"
+        );
+        assert_eq!(
+            count_occurrences(bytes, b"/ObjStr "),
+            0,
+            "{mode}: no /ObjStr placeholder may appear in the output"
+        );
+
+        let parsed = lopdf::Document::load_mem(bytes).expect("parse output");
+        let page_id = *parsed.get_pages().values().next().expect("one page");
+        let resources = parsed
+            .get_page_resources(page_id)
+            .expect("page resources")
+            .0
+            .expect("resources dictionary");
+        let ext_g_state = resources
+            .get(b"ExtGState")
+            .and_then(|o| parsed.dereference(o))
+            .and_then(|(_, o)| o.as_dict())
+            .expect("ExtGState dictionary");
+        assert!(
+            ext_g_state.has(b"ObjStrX"),
+            "{mode}: resource name ObjStrX must remain"
+        );
+        assert!(!ext_g_state.has(b"ObjStmX"));
+    }
+}
+
+fn document_has_objstm(bytes: &[u8]) -> bool {
+    lopdf::Document::load_mem(bytes).is_ok_and(|doc| {
+        doc.objects
+            .values()
+            .any(|obj| matches!(obj, lopdf::Object::Stream(s) if s.dict.has_type(b"ObjStm")))
+    })
 }
