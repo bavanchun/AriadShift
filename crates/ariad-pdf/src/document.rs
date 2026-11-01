@@ -78,14 +78,23 @@ impl ToolCtx {
 /// Shared across `ObjStm` / `XRef` streams on load, page `/Contents` streams, `/Form` XObject
 /// streams, and XMP `/Metadata` streams. Every stream reference charges its decoded byte count
 /// against the budget.
+///
+/// Public so that callers outside the crate can drive [`crate::xobject::page_to_form_xobject`] and
+/// [`crate::xobject::page_to_form_xobject_in_place`]; create one with [`DecodeBudget::from_limits`].
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct DecodeBudget {
+pub struct DecodeBudget {
     decoded: u64,
     limit: u64,
 }
 
 impl DecodeBudget {
-    pub(crate) fn from_limits(input_len: usize, limits: &Limits) -> Self {
+    /// Creates a fresh budget for a document of `input_len` serialized bytes.
+    ///
+    /// The ceiling is the smaller of `limits.max_decompressed_bytes` and an amplification bound
+    /// that grows with `input_len`, so a tiny hostile file cannot claim the full limit. Nothing is
+    /// charged yet; every decoded stream then draws from the same ceiling.
+    #[must_use]
+    pub fn from_limits(input_len: usize, limits: &Limits) -> Self {
         let amplification = CONTENT_BUDGET_BASE
             .saturating_add(CONTENT_BUDGET_PER_INPUT_BYTE.saturating_mul(input_len as u64))
             .min((usize::MAX / 4) as u64);
