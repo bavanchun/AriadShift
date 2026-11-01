@@ -51,7 +51,7 @@ the post-merge results.
 The final Linux gate passed on code revision `b3d89bdf`. The report commit
 changes documentation only. The earlier incomplete handoff is superseded.
 
-- Page preflight (`68daa4e8`): page content previously discarded form costs
+- Page preflight: page content previously discarded form costs
   and did not charge glyph use. Operator, invocation, inline-image and Type3
   work now contribute to cumulative page limits. The focused
   `page_preflight_counts_repeated_form_execution`,
