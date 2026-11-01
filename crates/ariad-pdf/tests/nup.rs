@@ -243,7 +243,7 @@ fn nup_error_cases_and_broken_xref_repair() {
 }
 
 #[test]
-fn nup_preserves_goto_dest_tail_ignores_non_goto_and_handles_inline_or_corrupt_streams() {
+fn nup_outline_destinations_fit_the_sheet_ignore_non_goto_and_handle_inline_or_corrupt_streams() {
     let ctx = ToolCtx::default();
     let limits = Limits::local();
 
@@ -382,7 +382,8 @@ fn nup_preserves_goto_dest_tail_ignores_non_goto_and_handles_inline_or_corrupt_s
         "inline stream in /Contents array must be decoded into Form XObject, got: {extracted}"
     );
 
-    // 2. Non-GoTo action (`/S /URI`) must be dropped while GoTo action preserves `[/XYZ 12 34 2]` tail.
+    // 2. Non-GoTo action (`/S /URI`) must be dropped, and the GoTo destination must become
+    //    `[sheet-page /Fit]` because its `/XYZ 12 34 2` tail is in source-page coordinates.
     let out_info = info::run(out_bytes, &limits).expect("inspect nup outlines");
     assert_eq!(out_info.outline_count, 1);
 
@@ -393,11 +394,35 @@ fn nup_preserves_goto_dest_tail_ignores_non_goto_and_handles_inline_or_corrupt_s
     let first_id = out_root.get(b"First").unwrap().as_reference().unwrap();
     let first_dict = out_doc.inner().get_dictionary(first_id).unwrap();
     let dest_arr = first_dict.get(b"Dest").unwrap().as_array().unwrap();
-    assert_eq!(dest_arr.len(), 5);
-    assert_eq!(dest_arr[1], Object::Name(b"XYZ".to_vec()));
-    assert_eq!(dest_arr[2], Object::Integer(12));
-    assert_eq!(dest_arr[3], Object::Integer(34));
-    assert_eq!(dest_arr[4], Object::Integer(2));
+    assert_eq!(
+        dest_arr.len(),
+        2,
+        "destination must be [page /Fit] with no source-page coordinates: {dest_arr:?}"
+    );
+    assert_eq!(dest_arr[1], Object::Name(b"Fit".to_vec()));
+    let dest_page_id = dest_arr[0]
+        .as_reference()
+        .expect("destination page reference");
+    let dest_page = out_doc
+        .inner()
+        .get_dictionary(dest_page_id)
+        .expect("destination resolves to an output sheet page");
+    assert_eq!(
+        dest_page.get(b"Type").and_then(Object::as_name).ok(),
+        Some(b"Page".as_slice())
+    );
+    assert!(
+        out_doc
+            .inner()
+            .get_pages()
+            .values()
+            .any(|&page_id| page_id == dest_page_id),
+        "destination must point at a page of the n-up output"
+    );
+    assert!(
+        !out_bytes.windows(3).any(|w| w == b"XYZ"),
+        "no /XYZ destination may survive into the n-up output"
+    );
 
     // 3. Corrupt filtered content stream must fail with PdfError::Malformed instead of splicing raw bytes.
     let mut bad_doc = Document::with_version("1.5");

@@ -95,51 +95,144 @@ pub fn validate_artifact_extensions(
     Ok(())
 }
 
+/// File extensions of executable, script, shortcut and installer types. Extracted attachments with
+/// one of these as their final extension are saved with `.bin` appended to their file name.
+/// `svg`, `html` and `htm` are intentionally absent: they are ordinary document formats.
+const RISKY_EXTRACTED_EXTENSIONS: &[&str] = &[
+    "ade",
+    "adp",
+    "app",
+    "applescript",
+    "appimage",
+    "apk",
+    "bash",
+    "bat",
+    "cjs",
+    "cmd",
+    "com",
+    "command",
+    "cpl",
+    "csh",
+    "deb",
+    "desktop",
+    "dll",
+    "dmg",
+    "dylib",
+    "exe",
+    "fileloc",
+    "fish",
+    "gadget",
+    "hta",
+    "inetloc",
+    "ipa",
+    "jar",
+    "jnlp",
+    "js",
+    "jse",
+    "ksh",
+    "lnk",
+    "mjs",
+    "msc",
+    "msi",
+    "msp",
+    "mst",
+    "php",
+    "pif",
+    "pkg",
+    "pl",
+    "ps1",
+    "ps1xml",
+    "psd1",
+    "psm1",
+    "py",
+    "rb",
+    "reg",
+    "rpm",
+    "run",
+    "scf",
+    "scpt",
+    "scr",
+    "sh",
+    "so",
+    "terminal",
+    "url",
+    "vb",
+    "vbe",
+    "vbs",
+    "webloc",
+    "workflow",
+    "ws",
+    "wsc",
+    "wsf",
+    "wsh",
+    "zsh",
+];
+
+/// Suffix appended to the file name of a quarantined extracted attachment.
+const QUARANTINE_SUFFIX: &str = ".bin";
+
+fn is_valid_extension_shape(ext: &str) -> bool {
+    let lower = ext.trim();
+    !lower.is_empty()
+        && lower.len() <= 16
+        && lower
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// Returns `true` if `ext` (without the leading dot, matched case-insensitively) belongs to an
+/// executable, script, shortcut or installer file type.
+#[must_use]
+pub fn is_risky_extracted_extension(ext: &str) -> bool {
+    let lower = ext.trim().to_ascii_lowercase();
+    RISKY_EXTRACTED_EXTENSIONS.contains(&lower.as_str())
+}
+
+/// Returns `true` if the final extension of `file_name` is risky (see
+/// [`is_risky_extracted_extension`]). Trailing dots and spaces are ignored, so `run.exe. ` and
+/// `report.pdf.exe` are both caught, and matching is case-insensitive.
+#[must_use]
+pub fn is_risky_extracted_name(file_name: &str) -> bool {
+    let trimmed = file_name.trim_end_matches(['.', ' ']);
+    trimmed
+        .rsplit_once('.')
+        .is_some_and(|(_, ext)| is_risky_extracted_extension(ext))
+}
+
 /// Returns `true` if `ext` is a safe non-executable file extension permitted for extracted
 /// embedded attachments (`pdf.attachments` / `pdf.portfolio` `extract`).
 #[must_use]
 pub fn is_safe_extracted_extension(ext: &str) -> bool {
-    let lower = ext.trim().to_ascii_lowercase();
-    if lower.is_empty()
-        || lower.len() > 16
-        || !lower
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    is_valid_extension_shape(ext) && !is_risky_extracted_extension(ext)
+}
+
+/// Returns the quarantined target file name (original name plus `.bin`) when `item` is an
+/// extracted attachment of a risky type, and `None` when it is published under its own name.
+fn quarantined_target_name(item: &StagedArtifact) -> Option<String> {
+    if Format::from_user_name(&item.format).is_some() || !is_risky_extracted_name(&item.target_name)
     {
-        return false;
+        return None;
     }
-    !matches!(
-        lower.as_str(),
-        "app"
-            | "bash"
-            | "bat"
-            | "cjs"
-            | "cmd"
-            | "com"
-            | "command"
-            | "csh"
-            | "dll"
-            | "dylib"
-            | "exe"
-            | "fish"
-            | "hta"
-            | "jar"
-            | "js"
-            | "ksh"
-            | "mjs"
-            | "msi"
-            | "php"
-            | "pl"
-            | "ps1"
-            | "py"
-            | "rb"
-            | "scr"
-            | "sh"
-            | "so"
-            | "vbs"
-            | "wsf"
-            | "zsh"
-    )
+    let base = item.target_name.trim_end_matches(['.', ' ']);
+    Some(format!("{base}{QUARANTINE_SUFFIX}"))
+}
+
+/// One warning per staged extracted attachment that [`publish_atomic`] saves under a `.bin` file
+/// name because its type is an executable, script, shortcut or installer.
+#[must_use]
+pub fn extracted_quarantine_warnings(staged: &[StagedArtifact]) -> Vec<String> {
+    staged
+        .iter()
+        .filter_map(|item| {
+            quarantined_target_name(item).map(|renamed| {
+                format!(
+                    "extracted attachment '{}' is an executable, script, shortcut or installer \
+                     type; it was saved as '{renamed}'",
+                    item.target_name
+                )
+            })
+        })
+        .collect()
 }
 
 /// Validates staged artifacts produced by attachment/portfolio extraction, where each extracted
@@ -165,7 +258,7 @@ pub fn validate_extracted_artifact_extensions(staged: &[StagedArtifact]) -> Resu
                 )));
             }
             validate_output_path_extension(Path::new(&item.target_name), &item.format)?;
-        } else if is_safe_extracted_extension(&item.format) {
+        } else if is_valid_extension_shape(&item.format) {
             if !staged_ext.eq_ignore_ascii_case(&item.format) {
                 return Err(ToolError::EngineFailure(format!(
                     "staged artifact '{}' extension '{}' does not match format '{}'",
@@ -567,8 +660,16 @@ pub fn publish_atomic(
 
     // Pre-validate every staged artifact and destination filename before touching the target dir.
     let mut staged_sizes = Vec::with_capacity(staged.len());
+    // Final file name and reported format per artifact; risky extracted attachments are
+    // published under a `.bin` name instead of failing the batch.
+    let mut finals: Vec<(String, String)> = Vec::with_capacity(staged.len());
     for item in staged {
         ensure_no_parent_traversal(&item.staged_path)?;
+        let quarantined_name = quarantined_target_name(item);
+        let (final_name, final_format) = match &quarantined_name {
+            Some(renamed) => (renamed.clone(), "bin".to_owned()),
+            None => (item.target_name.clone(), item.format.clone()),
+        };
         let staged_meta = fs::symlink_metadata(&item.staged_path).map_err(|e| {
             PublishError::InvalidStagedArtifact(format!(
                 "staged artifact '{}' could not be stat'd: {e}",
@@ -594,9 +695,9 @@ pub fn publish_atomic(
             )));
         }
 
-        validate_target_filename(&item.target_name, allowed_dirs.is_some())?;
+        validate_target_filename(&final_name, allowed_dirs.is_some())?;
 
-        let target_full_path = canon_dest_dir.join(&item.target_name);
+        let target_full_path = canon_dest_dir.join(&final_name);
         for input in inputs {
             if paths_refer_to_same_file(input, &target_full_path) {
                 return Err(PublishError::DestinationSameAsInput);
@@ -627,7 +728,7 @@ pub fn publish_atomic(
                     item_fmt.user_name()
                 )));
             }
-        } else if is_safe_extracted_extension(&item.format) {
+        } else if is_valid_extension_shape(&item.format) {
             if !staged_ext.eq_ignore_ascii_case(&item.format) {
                 return Err(PublishError::InvalidStagedArtifact(format!(
                     "staged artifact '{}' extension does not match format '{}'",
@@ -649,7 +750,7 @@ pub fn publish_atomic(
         }
 
         // Reject symlink or directory at destination target path.
-        if let Ok(dest_meta) = dest_cap_dir.symlink_metadata(&item.target_name) {
+        if let Ok(dest_meta) = dest_cap_dir.symlink_metadata(&final_name) {
             if dest_meta.file_type().is_symlink() {
                 return Err(PublishError::Confinement(format!(
                     "destination '{}' is a symlink",
@@ -665,24 +766,30 @@ pub fn publish_atomic(
         }
 
         staged_sizes.push(staged_meta.len());
+        finals.push((final_name, final_format));
     }
 
     let mut published = Vec::with_capacity(staged.len());
     let mut batch_entries: Vec<BatchEntry> = Vec::with_capacity(staged.len());
 
-    for (idx, (item, &bytes)) in staged.iter().zip(staged_sizes.iter()).enumerate() {
+    for (idx, ((item, &bytes), (final_name, final_format))) in staged
+        .iter()
+        .zip(staged_sizes.iter())
+        .zip(finals.iter())
+        .enumerate()
+    {
         if fail_at_index == Some(idx) {
             rollback_batch(workspace, &dest_cap_dir, &batch_entries);
             return Err(PublishError::InjectedFailure { index: idx });
         }
 
-        let target_rel = Path::new(&item.target_name);
+        let target_rel = Path::new(final_name);
         let backup_name = if overwrite {
             match workspace.backup_existing_into(&dest_cap_dir, target_rel) {
                 Ok(bkp) => bkp,
                 Err(err) => {
                     rollback_batch(workspace, &dest_cap_dir, &batch_entries);
-                    return Err(map_workspace_error(err, item));
+                    return Err(map_workspace_error(err, item, final_name));
                 }
             }
         } else {
@@ -692,12 +799,12 @@ pub fn publish_atomic(
         match workspace.promote_into(&item.staged_path, &dest_cap_dir, target_rel, overwrite) {
             Ok(()) => {
                 batch_entries.push(BatchEntry {
-                    target_name: item.target_name.clone(),
+                    target_name: final_name.clone(),
                     backup_name,
                 });
                 published.push(PublishedArtifact {
-                    path: canon_dest_dir.join(&item.target_name),
-                    format: item.format.clone(),
+                    path: canon_dest_dir.join(final_name),
+                    format: final_format.clone(),
                     bytes,
                 });
             }
@@ -706,7 +813,7 @@ pub fn publish_atomic(
                     let _ = workspace.restore_backup_into(bkp, &dest_cap_dir, target_rel);
                 }
                 rollback_batch(workspace, &dest_cap_dir, &batch_entries);
-                return Err(map_workspace_error(err, item));
+                return Err(map_workspace_error(err, item, final_name));
             }
         }
     }
@@ -725,10 +832,14 @@ struct BatchEntry {
     backup_name: Option<String>,
 }
 
-fn map_workspace_error(err: WorkspaceError, item: &StagedArtifact) -> PublishError {
+fn map_workspace_error(
+    err: WorkspaceError,
+    item: &StagedArtifact,
+    target_name: &str,
+) -> PublishError {
     match err {
         WorkspaceError::DestinationExists => {
-            PublishError::DestinationExists(item.target_name.clone())
+            PublishError::DestinationExists(target_name.to_owned())
         }
         WorkspaceError::ArtifactOutsideOutput | WorkspaceError::ArtifactNotFile => {
             PublishError::InvalidStagedArtifact(format!(
@@ -813,5 +924,73 @@ mod tests {
         let err = validate_artifact_extensions("pdf", &bad_target_ext).unwrap_err();
         assert_eq!(err.exit_code(), 2);
         assert_eq!(err.code(), "usage");
+    }
+
+    #[test]
+    fn risky_extracted_names_match_case_insensitively_with_double_extensions_and_trailing_dots() {
+        for risky in [
+            "run.exe",
+            "RUN.EXE",
+            "x.pdf.exe",
+            "setup.LNK",
+            "tool.py",
+            "link.webloc",
+            "a.terminal",
+            "disk.dmg",
+            "app.AppImage",
+            "run.exe.",
+            "run.exe. ",
+            "run.exe...",
+            "x.desktop",
+            "m.psm1",
+            "c.cpl",
+            "r.reg",
+        ] {
+            assert!(is_risky_extracted_name(risky), "{risky} must be risky");
+        }
+        for safe in [
+            "a.pdf",
+            "a.svg",
+            "page.html",
+            "page.HTM",
+            "notes.txt",
+            "archive.tar.gz",
+            "x.exe.pdf",
+            "noextension",
+            "report.bin",
+        ] {
+            assert!(!is_risky_extracted_name(safe), "{safe} must not be risky");
+        }
+        assert!(!is_safe_extracted_extension("exe"));
+        assert!(!is_safe_extracted_extension("LNK"));
+        assert!(is_safe_extracted_extension("svg"));
+        assert!(is_safe_extracted_extension("html"));
+        assert!(is_safe_extracted_extension("htm"));
+        assert!(!is_safe_extracted_extension(""));
+        assert!(!is_safe_extracted_extension("a b"));
+    }
+
+    #[test]
+    fn quarantine_appends_bin_only_to_risky_extracted_names_and_warns_per_file() {
+        let staged = vec![
+            StagedArtifact::new("/w/out/a.run.exe", "exe", "a.run.exe"),
+            StagedArtifact::new("/w/out/a.x.svg", "svg", "a.x.svg"),
+            StagedArtifact::new("/w/out/a.y.pdf", "pdf", "a.y.pdf"),
+            StagedArtifact::new("/w/out/a.z.LNK", "lnk", "a.z.LNK"),
+        ];
+        let renamed: Vec<Option<String>> = staged.iter().map(quarantined_target_name).collect();
+        assert_eq!(
+            renamed,
+            vec![
+                Some("a.run.exe.bin".to_owned()),
+                None,
+                None,
+                Some("a.z.LNK.bin".to_owned()),
+            ]
+        );
+        let warnings = extracted_quarantine_warnings(&staged);
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings[0].contains("'a.run.exe'") && warnings[0].contains("'a.run.exe.bin'"));
+        assert!(warnings[1].contains("'a.z.LNK'") && warnings[1].contains("'a.z.LNK.bin'"));
     }
 }

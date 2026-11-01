@@ -705,7 +705,6 @@ pub struct FormXObject {
 /// Converts `page_id` from `source_doc` (resolving inherited `/Resources`, `/Rotate`, `/MediaBox`,
 /// and `/CropBox`) into a `/Subtype /Form` XObject inside `target_doc`, charging decoded content
 /// and copied resource streams against `budget`.
-#[allow(private_interfaces)]
 pub fn page_to_form_xobject(
     source_doc: &Document,
     page_id: ObjectId,
@@ -750,7 +749,6 @@ pub fn page_to_form_xobject(
 
 /// Converts `page_id` into a `/Subtype /Form` XObject within the same [`Document`], decoding each
 /// content stream once through `budget`.
-#[allow(private_interfaces)]
 pub fn page_to_form_xobject_in_place(
     doc: &mut Document,
     page_id: ObjectId,

@@ -10,7 +10,7 @@ use ariad_core::tools::{
     page_range::DuplicatePolicy,
     params::decompress::{DecompressParams, ObjectStreamsMode},
 };
-use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat, dictionary};
+use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use crate::{
     document::{DecodeBudget, PdfDoc, ToolCtx},
@@ -107,8 +107,7 @@ pub fn run(
     }
 
     if keep_objstm {
-        let _ = writer::save(&mut doc, ctx)?;
-        let raw_bytes = save_with_uncompressed_objstm(&mut doc, ctx)?;
+        let raw_bytes = save_with_object_streams(&mut doc, ctx)?;
         return Ok(vec![OutputDoc::from_bytes(String::new(), "pdf", raw_bytes)]);
     }
 
@@ -134,137 +133,27 @@ fn is_objstm_or_xref_stream(obj: &Object) -> bool {
     )
 }
 
-fn save_with_uncompressed_objstm(doc: &mut PdfDoc, ctx: &ToolCtx) -> Result<Vec<u8>, PdfError> {
+/// Serializes `doc` with real object streams and a cross-reference stream.
+///
+/// [`writer::save`] runs first for its side effects on `doc` (garbage collection, stream
+/// de-duplication, breadth-first renumbering, key sorting and the deterministic trailer `/ID`),
+/// so the result keeps the same determinism contract as every other tool. The document is then
+/// written through the `lopdf` object-stream writer, which moves every eligible non-stream
+/// object into a referenced `/ObjStm` and records it in the xref stream instead of writing a
+/// second copy. Object streams stay uncompressed to match the rest of the decompressed output.
+fn save_with_object_streams(doc: &mut PdfDoc, ctx: &ToolCtx) -> Result<Vec<u8>, PdfError> {
+    let _ = writer::save(doc, ctx)?;
     ctx.check()?;
-    let inner = doc.inner_mut()?;
-    let mut non_stream_entries: Vec<(u32, Object)> = inner
-        .objects
-        .iter()
-        .filter(|&(&(_, gen_nr), obj)| gen_nr == 0 && !matches!(obj, Object::Stream(_)))
-        .map(|(&(obj_nr, _), obj)| (obj_nr, obj.clone()))
-        .collect();
-    non_stream_entries.sort_by_key(|(obj_nr, _)| *obj_nr);
-
-    let mut header = Vec::new();
-    let mut body = Vec::new();
-    for (idx, (obj_nr, obj)) in non_stream_entries.iter().enumerate() {
-        ctx.check()?;
-        if idx > 0 {
-            body.push(b'\n');
-        }
-        let offset = body.len();
-        header.extend_from_slice(format!("{obj_nr} {offset} ").as_bytes());
-        write_pdf_object_bytes(obj, &mut body, 0);
-    }
-    if !header.is_empty() {
-        *header.last_mut().expect("non-empty header") = b'\n';
-    }
-    let first_offset = i64::try_from(header.len()).unwrap_or(0);
-    let obj_count = i64::try_from(non_stream_entries.len()).unwrap_or(0);
-    let mut content = header;
-    content.extend_from_slice(&body);
-    let content_len = i64::try_from(content.len()).unwrap_or(i64::MAX);
-
-    // `lopdf`'s serializer skips objects with `/Type /ObjStm` when writing a classic xref table,
-    // so emit a same-length placeholder `/Type /ObjStr` during `save_bytes()` and patch it in-place
-    // to `/Type /ObjStm` without shifting any cross-reference byte offsets.
-    let objstm = Stream::new(
-        dictionary! {
-            "Type" => Object::Name(b"ObjStr".to_vec()),
-            "N" => Object::Integer(obj_count),
-            "First" => Object::Integer(first_offset),
-            "Length" => Object::Integer(content_len),
-        },
-        content,
-    );
-    let next_id = inner
-        .objects
-        .keys()
-        .map(|&(id, _)| id)
-        .max()
-        .unwrap_or(inner.max_id)
-        .saturating_add(1);
-    inner.max_id = next_id;
-    inner.objects.insert((next_id, 0), Object::Stream(objstm));
-
-    let mut raw = doc.save_bytes()?;
-    for idx in 0..raw.len().saturating_sub(6) {
-        if &raw[idx..idx + 7] == b"/ObjStr" {
-            raw[idx..idx + 7].copy_from_slice(b"/ObjStm");
-        }
-    }
-    Ok(raw)
-}
-
-fn write_pdf_object_bytes(obj: &Object, out: &mut Vec<u8>, depth: usize) {
-    if depth >= 64 {
-        out.extend_from_slice(b"null");
-        return;
-    }
-    match obj {
-        Object::Null => out.extend_from_slice(b"null"),
-        Object::Boolean(true) => out.extend_from_slice(b"true"),
-        Object::Boolean(false) => out.extend_from_slice(b"false"),
-        Object::Integer(i) => out.extend_from_slice(i.to_string().as_bytes()),
-        Object::Real(f) => out.extend_from_slice(f.to_string().as_bytes()),
-        Object::Name(name) => {
-            out.push(b'/');
-            for &b in name {
-                if !(33..=126).contains(&b) || b"#()<>[]{}/%".contains(&b) {
-                    out.extend_from_slice(format!("#{b:02X}").as_bytes());
-                } else {
-                    out.push(b);
-                }
-            }
-        }
-        Object::String(bytes, StringFormat::Hexadecimal) => {
-            out.push(b'<');
-            for &b in bytes {
-                out.extend_from_slice(format!("{b:02X}").as_bytes());
-            }
-            out.push(b'>');
-        }
-        Object::String(bytes, StringFormat::Literal) => {
-            out.push(b'(');
-            for &b in bytes {
-                match b {
-                    b'\\' => out.extend_from_slice(b"\\\\"),
-                    b'(' => out.extend_from_slice(b"\\("),
-                    b')' => out.extend_from_slice(b"\\)"),
-                    b'\r' => out.extend_from_slice(b"\\r"),
-                    b'\n' => out.extend_from_slice(b"\\n"),
-                    other => out.push(other),
-                }
-            }
-            out.push(b')');
-        }
-        Object::Array(items) => {
-            out.push(b'[');
-            for (idx, item) in items.iter().enumerate() {
-                if idx > 0 {
-                    out.push(b' ');
-                }
-                write_pdf_object_bytes(item, out, depth + 1);
-            }
-            out.push(b']');
-        }
-        Object::Dictionary(dict) => {
-            out.extend_from_slice(b"<<");
-            let mut entries: Vec<(&[u8], &Object)> =
-                dict.iter().map(|(k, v)| (k.as_slice(), v)).collect();
-            entries.sort_by_key(|(k, _)| *k);
-            for (k, v) in entries {
-                write_pdf_object_bytes(&Object::Name(k.to_vec()), out, depth + 1);
-                out.push(b' ');
-                write_pdf_object_bytes(v, out, depth + 1);
-            }
-            out.extend_from_slice(b">>");
-        }
-        Object::Reference((id, gen_nr)) => {
-            out.extend_from_slice(format!("{id} {gen_nr} R").as_bytes());
-        }
-        Object::Stream(_) => out.extend_from_slice(b"null"),
-    }
+    let options = lopdf::SaveOptions::builder()
+        .use_object_streams(true)
+        .use_xref_streams(true)
+        .compression_level(0)
+        .build();
+    let mut out = Vec::new();
+    doc.inner_mut()?
+        .save_with_options(&mut out, options)
+        .map_err(|_| PdfError::Malformed)?;
+    Ok(out)
 }
 
 fn charge_and_decode_page_content_refs(

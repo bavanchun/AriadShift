@@ -14,7 +14,7 @@ use ariad_host::{
     confine::AllowedDirs,
     tools::{
         InputRef, OutputTarget, PublishError, StagedArtifact, ToolError, ToolRequest,
-        publish_atomic, run_tool,
+        publish::extracted_quarantine_warnings, publish_atomic, run_tool,
     },
     workspace::Workspace,
 };
@@ -1035,4 +1035,146 @@ fn run_tool_merge_per_file_outline_uses_original_input_filenames() {
     assert_eq!(bookmarks.len(), 2);
     assert_eq!(bookmarks[0]["title"], "chapter-alpha");
     assert_eq!(bookmarks[1]["title"], "chapter-beta");
+}
+
+#[test]
+fn run_tool_attachments_extract_quarantines_risky_types_without_failing() {
+    let tmp = TempDir::new().expect("create tempdir");
+    let carrier_pdf = tmp.path().join("carrier.pdf");
+    fs::write(
+        &carrier_pdf,
+        fs::read(sample_pdf()).expect("read sample pdf"),
+    )
+    .expect("write carrier");
+
+    // Listed in the attachment name order that extraction numbers them in.
+    let payloads: [(&str, &[u8]); 6] = [
+        ("a.svg", b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n"),
+        ("normal.pdf", b"%PDF-1.7\n% payload\n"),
+        ("run.exe", b"MZ fake executable\n"),
+        ("script.py", b"print('hi')\n"),
+        ("shortcut.LNK", b"fake shortcut\n"),
+        ("x.pdf.exe", b"MZ disguised\n"),
+    ];
+    let payload_dir = tmp.path().join("payloads");
+    fs::create_dir_all(&payload_dir).expect("create payload dir");
+    let mut inputs = vec![InputRef::new(&carrier_pdf)];
+    for (name, bytes) in payloads {
+        let path = payload_dir.join(name);
+        fs::write(&path, bytes).expect("write payload");
+        inputs.push(InputRef::new(&path));
+    }
+
+    let attached_pdf = tmp.path().join("attached.pdf");
+    let req_add = ToolRequest::new(
+        "pdf.attachments",
+        inputs,
+        OutputTarget::Path(attached_pdf.clone()),
+    )
+    .with_params(json!({ "action": "add" }));
+    run_tool(&req_add).expect("pdf.attachments add with risky and normal payloads");
+
+    let extract_dir = tmp.path().join("extracted");
+    fs::create_dir_all(&extract_dir).expect("create extract dir");
+    let req_extract = ToolRequest::new(
+        "pdf.attachments",
+        vec![InputRef::new(&attached_pdf)],
+        OutputTarget::Directory(extract_dir.clone()),
+    )
+    .with_params(json!({ "action": "extract" }));
+    let res = run_tool(&req_extract).expect("extract must succeed despite risky attachments");
+
+    let names: Vec<String> = res
+        .artifacts
+        .iter()
+        .map(|a| {
+            a.path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .expect("utf-8 file name")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "attached.attachment-001.a.svg",
+            "attached.attachment-002.normal.pdf",
+            "attached.attachment-003.run.exe.bin",
+            "attached.attachment-004.script.py.bin",
+            "attached.attachment-005.shortcut.lnk.bin",
+            "attached.attachment-006.x.pdf.exe.bin",
+        ]
+    );
+    let formats: Vec<&str> = res.artifacts.iter().map(|a| a.format.as_str()).collect();
+    assert_eq!(formats, vec!["svg", "pdf", "bin", "bin", "bin", "bin"]);
+
+    for ((_, bytes), artifact) in payloads.iter().zip(&res.artifacts) {
+        assert_eq!(
+            &fs::read(&artifact.path).expect("read extracted file"),
+            bytes
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&artifact.path)
+                .expect("stat")
+                .permissions()
+                .mode();
+            assert_eq!(
+                mode & 0o111,
+                0,
+                "{} must have no executable bit",
+                artifact.path.display()
+            );
+        }
+    }
+    let on_disk = fs::read_dir(&extract_dir)
+        .expect("list extract dir")
+        .count();
+    assert_eq!(on_disk, 6, "no stray or unrenamed risky file may remain");
+}
+
+#[test]
+fn publish_atomic_quarantines_risky_extracted_files_and_reports_one_warning_each() {
+    let workspace = Workspace::new().expect("create workspace");
+    let cases = [
+        ("doc.run.exe", "exe", "doc.run.exe", true),
+        ("doc.script.PY", "py", "doc.script.PY", true),
+        ("doc.x.pdf.exe", "exe", "doc.x.pdf.exe", true),
+        ("doc.a.svg", "svg", "doc.a.svg", false),
+        ("doc.n.pdf", "pdf", "doc.n.pdf", false),
+    ];
+    let mut staged = Vec::new();
+    for (file, format, target, _) in cases {
+        let path = workspace.output_dir().join(file);
+        fs::write(&path, file.as_bytes()).expect("write staged");
+        staged.push(StagedArtifact::new(path, format, target));
+    }
+    let out_tmp = TempDir::new().expect("create output tempdir");
+
+    let warnings = extracted_quarantine_warnings(&staged);
+    let published = publish_atomic(&workspace, &staged, out_tmp.path(), &[], None, false, None)
+        .expect("risky extracted files must not fail the batch");
+
+    let renamed_expected: Vec<&str> = cases.iter().filter(|c| c.3).map(|c| c.2).collect();
+    assert_eq!(warnings.len(), renamed_expected.len());
+    for (warning, original) in warnings.iter().zip(&renamed_expected) {
+        assert!(warning.contains(&format!("'{original}'")), "{warning}");
+        assert!(warning.contains(&format!("'{original}.bin'")), "{warning}");
+    }
+    for (artifact, (_, _, target, risky)) in published.iter().zip(cases) {
+        let name = artifact
+            .path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("name");
+        if risky {
+            assert_eq!(name, format!("{target}.bin"));
+            assert_eq!(artifact.format, "bin");
+        } else {
+            assert_eq!(name, target);
+        }
+        assert!(artifact.path.is_file());
+    }
 }
