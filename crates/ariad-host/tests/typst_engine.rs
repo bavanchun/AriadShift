@@ -559,7 +559,10 @@ fn convert_through_engine(document: &Document, options: Value) -> (Vec<Event>, V
     let Some(Event::Artifact { path, format }) = events.iter().rev().nth(1) else {
         panic!("expected an artifact before the result: {events:?}");
     };
-    assert_eq!(Path::new(path), artifact);
+    assert_eq!(
+        fs::canonicalize(path).unwrap(),
+        fs::canonicalize(artifact).unwrap()
+    );
     assert_eq!(format, "pdf");
     assert!(matches!(
         events.last(),
