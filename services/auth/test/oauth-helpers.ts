@@ -4,6 +4,7 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { getAuthTables } from "better-auth/db";
 import { createApp } from "../src/app.ts";
 import { buildAuthOptions, createAuth, discoveryDocuments } from "../src/auth.ts";
+import type { CimdFetcherOptions } from "../src/cimd.ts";
 import { parseConfig } from "../src/config.ts";
 import { pageOptions } from "../src/pages.ts";
 
@@ -23,12 +24,13 @@ export const config = parseConfig({
 export function createService(
   database?: NonNullable<BetterAuthOptions["database"]>,
   rateLimit = false,
+  cimd?: CimdFetcherOptions,
 ) {
-  const probe = buildAuthOptions(config, memoryAdapter({}));
+  const probe = buildAuthOptions(config, memoryAdapter({}), cimd);
   const db: Record<string, unknown[]> = Object.fromEntries(
     Object.values(getAuthTables(probe)).map((table) => [table.modelName, []]),
   );
-  const options = buildAuthOptions(config, database ?? memoryAdapter(db));
+  const options = buildAuthOptions(config, database ?? memoryAdapter(db), cimd);
   // Rate limits are covered elsewhere; the flow makes many quick requests.
   const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: rateLimit } });
   const app = createApp({

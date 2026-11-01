@@ -12,6 +12,7 @@ import { type BetterAuthOptions, type BetterAuthPlugin, betterAuth } from "bette
 import { jwt, twoFactor } from "better-auth/plugins";
 import pg from "pg";
 import type { DiscoveryDocument } from "./app.ts";
+import { type CimdFetcherOptions, createCimdExtension } from "./cimd.ts";
 import { AUTH_SCHEMA, type AuthServiceConfig } from "./config.ts";
 import { OAUTH_TOKEN_LIMITS, serializedOAuthHandler } from "./oauth-lock.ts";
 
@@ -203,6 +204,7 @@ function socialProviders(config: AuthServiceConfig): BetterAuthOptions["socialPr
 export function buildAuthOptions(
   config: AuthServiceConfig,
   database: NonNullable<BetterAuthOptions["database"]>,
+  cimd?: CimdFetcherOptions,
 ) {
   return {
     appName: APP_NAME,
@@ -313,6 +315,10 @@ export function buildAuthOptions(
               // Native clients (Claude Code, Cursor) often omit application_type
               // and use loopback or custom-scheme callbacks.
               clientRegistrationDefaultApplicationType: "infer",
+              // Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)
+              // let MCP clients identify themselves by an https:// metadata URL
+              // without prior dynamic registration; RFC 7591 stays enabled alongside it.
+              extensions: [createCimdExtension(cimd)],
               accessTokenExpiresIn: OAUTH_ACCESS_TOKEN_LIFETIME_S,
               refreshTokenReuseInterval: OAUTH_REFRESH_REUSE_INTERVAL_S,
               // Keyed by CLIENT_IP_HEADER like every other Better Auth limit; the

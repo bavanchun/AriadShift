@@ -225,12 +225,24 @@ authorization flow needs only the URL:
    protected-resource metadata.
 2. It reads the authorization server's RFC 8414 metadata at
    `<BETTER_AUTH_URL>/.well-known/oauth-authorization-server` (OpenID
-   discovery is at `/.well-known/openid-configuration`).
-3. It registers itself at the advertised `registration_endpoint` (RFC 7591
-   dynamic client registration; no account is needed to register). The service
-   allows at most 20 registrations per address within an hour, and a
-   registration body may be at most 8 KiB. MCP clients register once and reuse
-   their client id. Registration URLs with trailing slashes return `404`.
+   discovery is at `/.well-known/openid-configuration`). Both documents
+   advertise `client_id_metadata_document_supported: true` alongside
+   `registration_endpoint`.
+3. It identifies itself either by passing an `https://` Client ID Metadata
+   Document URL (`draft-ietf-oauth-client-id-metadata-document`, with a
+   non-root path and no credentials or fragment) directly as `client_id` at
+   the authorization endpoint, or by registering at the advertised
+   `registration_endpoint` (RFC 7591 dynamic client registration; no account
+   is needed to register). For a metadata-document URL, the auth service
+   resolves DNS first, refuses non-public IPv4 and IPv6 addresses, fetches the
+   `application/json` document over HTTPS without redirects or credentials
+   (5-second deadline, 16 KiB body cap), verifies that `client_id` in the
+   document matches the URL and that `redirect_uris` are valid, and caches the
+   document by `Cache-Control: max-age` for at most 24 hours. For dynamic
+   registration, the service allows at most 20 registrations per address
+   within an hour, caps registration bodies at 8 KiB, and returns `404` for
+   trailing-slash registration URLs; MCP clients register once and reuse their
+   client id.
 4. It opens the browser at the authorization endpoint with PKCE (`S256` only;
    requests without PKCE or with `plain` are refused) and
    `resource=<ARIAD_PUBLIC_URL>/mcp` (RFC 8707). The `redirect_uri` must match
