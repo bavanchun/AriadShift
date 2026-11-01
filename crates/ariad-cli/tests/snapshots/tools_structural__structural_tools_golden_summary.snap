@@ -1,0 +1,833 @@
+---
+source: crates/ariad-cli/tests/tools_structural.rs
+expression: snapshot_summaries
+---
+[
+  {
+    "artifacts": [
+      {
+        "bytes": 3517,
+        "file_name": "rotated-pages.merged.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 2,
+        "page_count": 5,
+        "repaired_xref": false,
+        "sha256": "7e06f9413ce81a4fd7b92ee3131eec2ec0113ffe11077fa75061b8da4f9bd987"
+      }
+    ],
+    "tool": "pdf.merge"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 1298,
+        "file_name": "rotated-pages.part-001.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 2,
+        "repaired_xref": false,
+        "sha256": "680c49f368a9b469f6c1527e3bc3cd0eefa7b2af6c2a090d44c1d99050a246c4"
+      },
+      {
+        "bytes": 1292,
+        "file_name": "rotated-pages.part-002.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 180,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 2,
+        "repaired_xref": false,
+        "sha256": "dfba0b493c9e06ea4a6a48cf44e577ef885acdfa9b24e9a55e9323be4e72b726"
+      }
+    ],
+    "tool": "pdf.split"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2064,
+        "file_name": "multipage-20.extracted.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Twenty-Page Survey Manual"
+        },
+        "outline_count": 2,
+        "page_count": 3,
+        "repaired_xref": false,
+        "sha256": "affd85393f18f6aa314e2e47cd100be7fa8a7d170f4dc935b1a9fc5a8b0fb22e"
+      }
+    ],
+    "tool": "pdf.extract_pages"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 1288,
+        "file_name": "rotated-pages.trimmed.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 2,
+        "repaired_xref": false,
+        "sha256": "fa058a4bed9ef16e448d3d947fa93d2b30f53fdd685df35d6e30ecf3cd1d7d22"
+      }
+    ],
+    "tool": "pdf.delete_pages"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2069,
+        "file_name": "rotated-pages.reordered.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 270,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "5fdd7d3bf278ba24435c34d97245f7fd610eb5ff3ec8129286003a5a0690c9ad"
+      }
+    ],
+    "tool": "pdf.reorder"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 3385,
+        "file_name": "rotated-pages.mixed.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 5,
+        "repaired_xref": false,
+        "sha256": "d15dedca0b7c6e590328a2c209cca8fe4200942739f377db3ad247b8c0b4cf4b"
+      }
+    ],
+    "tool": "pdf.alternate_mix"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2398,
+        "file_name": "rotated-pages.inserted.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 6,
+        "repaired_xref": false,
+        "sha256": "060fa12366e91d1915aa11ea44fc88f5fd3ad3e68bb346ce7a78ec48efec800d"
+      }
+    ],
+    "tool": "pdf.insert_blank"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2066,
+        "file_name": "rotated-pages.rotated.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 90,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "cd57a968b5ce1bea2bb75362c8bcf0194f4dcb62b0f104dac42acfa0f4201679"
+      }
+    ],
+    "tool": "pdf.rotate"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2147,
+        "file_name": "rotated-pages.cropped.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 720.0,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "Custom",
+          "rotation": 0,
+          "width_pt": 540.0
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "8328f45b01778a6d5c95a3666ed33d3f7a2f9fd8bb7e73b4ec2a5d153ce1d4b5"
+      }
+    ],
+    "tool": "pdf.crop"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2352,
+        "file_name": "mixed-sizes.scaled.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Mixed Paper Sizes Portfolio"
+        },
+        "outline_count": 0,
+        "page_count": 3,
+        "repaired_xref": false,
+        "sha256": "c97df7536f96b50a5ed2acbd20363265cf6e4fad781b71527a373908f8603c81"
+      }
+    ],
+    "tool": "pdf.scale"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2195,
+        "file_name": "rotated-pages.single-page.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 2874.34,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "Custom",
+          "rotation": 0,
+          "width_pt": 841.89
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 1,
+        "repaired_xref": false,
+        "sha256": "bc36a109fbfb62211612f8743a1c48a4c1467242ccd49c6d702d40ed7be41894"
+      }
+    ],
+    "tool": "pdf.single_page"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2324,
+        "file_name": "rotated-pages.rotated-content.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 1016.23,
+          "orientation": "square",
+          "page": 1,
+          "paper": "Custom",
+          "rotation": 0,
+          "width_pt": 1016.23
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "7850862a5b17b55a72fd18e92da168afbf431db96a6e3dc30b14efd13637f011"
+      }
+    ],
+    "tool": "pdf.rotate_content"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 1421,
+        "file_name": "object-streams.decompressed.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "PDF 1.5 Compressed Object and XRef Streams"
+        },
+        "outline_count": 0,
+        "page_count": 2,
+        "repaired_xref": false,
+        "sha256": "b8eeddd053fc59e8aabd65824974f20844beea9dba67a58e9eeec20e294ab056"
+      }
+    ],
+    "tool": "pdf.decompress"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2441,
+        "file_name": "rotated-pages.nup.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 2,
+        "repaired_xref": false,
+        "sha256": "fda699489cb8219c1efd2243f92ab4a36a4609f608bb8eb0dce32c404977415a"
+      }
+    ],
+    "tool": "pdf.nup"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2450,
+        "file_name": "rotated-pages.booklet.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 595.28,
+          "orientation": "landscape",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 841.89
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 2,
+        "repaired_xref": false,
+        "sha256": "ee0805e0a99cd78db762a97610b79ea41f7a38ee8717259fc97323c3bdfe5f9a"
+      }
+    ],
+    "tool": "pdf.booklet"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 3791,
+        "file_name": "rotated-pages.overlay.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "59b4b46636c28e9ff9755632f201c8faa28afbb952e2ebad171ebb2c59b1890e"
+      }
+    ],
+    "tool": "pdf.overlay"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 6018,
+        "file_name": "rotated-pages.divided.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 420.95,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "Custom",
+          "rotation": 0,
+          "width_pt": 297.64
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 16,
+        "repaired_xref": false,
+        "sha256": "871ad041dfcbc2a9280de13c6826e57ca7fecf848317357a4f796dcc84afe597"
+      }
+    ],
+    "tool": "pdf.divide_pages"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2604,
+        "file_name": "annotations.posterized.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Annotated Archive Review Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "54414a6f3c9229c1cbf385c58109ccd26a1e1364ec250c472bde7ad957227c9c"
+      }
+    ],
+    "tool": "pdf.posterize"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 3037,
+        "file_name": "rotated-pages.metadata.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Golden Title"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "6ed9ec99547555f44b9e1d39c4ba90420803dbbd61584cc5679da2397105acaf"
+      }
+    ],
+    "tool": "pdf.metadata"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 8108,
+        "file_name": "multipage-20.outline.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Twenty-Page Survey Manual"
+        },
+        "outline_count": 0,
+        "page_count": 20,
+        "repaired_xref": false,
+        "sha256": "a44e0a630ca7c1a20b650fbb990df2ca7b3041d8777c1e258862ce8a86234fd5"
+      }
+    ],
+    "tool": "pdf.outline"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 4399,
+        "file_name": "rotated-pages.attachments.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": true,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "0572cac261ed0d57f714eb8b376d163281cd48e827e3970d9fcb84cde454716b"
+      }
+    ],
+    "tool": "pdf.attachments"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 9064,
+        "file_name": "multipage-20.labeled.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Twenty-Page Survey Manual"
+        },
+        "outline_count": 6,
+        "page_count": 20,
+        "repaired_xref": false,
+        "sha256": "fba7245644bd26f20f18d21e024a089f3dd3f42c599b6929342eeda8c06727c7"
+      }
+    ],
+    "tool": "pdf.page_labels"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 2117,
+        "file_name": "rotated-pages.prefs.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Rotated Pages Inspection Sheet"
+        },
+        "outline_count": 0,
+        "page_count": 4,
+        "repaired_xref": false,
+        "sha256": "cec421de05cd279a618b8e60bae8811cfdb1026c1bdd516e1e9d8cf18f302211"
+      }
+    ],
+    "tool": "pdf.viewer_prefs"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 5554,
+        "file_name": "rotated-pages.portfolio.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 842.0,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.0
+        },
+        "has_attachments": true,
+        "metadata": {
+          "author": null,
+          "creation_date": "D:20231114221320Z",
+          "creator": null,
+          "language": null,
+          "mod_date": "D:20231114221320Z",
+          "producer": null,
+          "title": null
+        },
+        "outline_count": 0,
+        "page_count": 1,
+        "repaired_xref": false,
+        "sha256": "14dfd83f6edbe27791f4b688d5cb7181c624c5831b2d18012a80f3dd3722c009"
+      }
+    ],
+    "tool": "pdf.portfolio"
+  },
+  {
+    "artifacts": [
+      {
+        "bytes": 1942,
+        "file_name": "watermark-layer.layers.pdf",
+        "first_page": {
+          "blank": false,
+          "height_pt": 841.89,
+          "orientation": "portrait",
+          "page": 1,
+          "paper": "A4",
+          "rotation": 0,
+          "width_pt": 595.28
+        },
+        "has_attachments": false,
+        "metadata": {
+          "author": "AriadShift contributors",
+          "creation_date": "D:20231114221320Z",
+          "creator": "AriadShift fixture generator",
+          "language": "en",
+          "mod_date": "D:20231114221320Z",
+          "producer": "AriadShift fixture generator",
+          "title": "Engineering Specification with OCG Watermark"
+        },
+        "outline_count": 0,
+        "page_count": 3,
+        "repaired_xref": false,
+        "sha256": "ab39a005a4a936b52531aef2f3d4f68513879c8a70ef7dfa8c766d919f44c798"
+      }
+    ],
+    "tool": "pdf.layers"
+  }
+]
