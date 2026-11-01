@@ -138,3 +138,35 @@ All heavy commands were executed under `/home/vchun/Codes/01-AriadShift/.run/coo
 The fix-round integration and its focused checks are recorded in
 [worker-p04fix-integrator.md](worker-p04fix-integrator.md). The extraction branch was merged following the manager readiness signal; the
 external gate handoff records the complete gate results.
+
+## Round 3 integration
+
+Merged `fix/p04r3-preflight` at `2f4db9b8` and `fix/p04r3-output` at
+`e19299fb` into `feat/pdfium-engine`. Merge `920a02b` retains both branches'
+extraction regressions. The first core suite run found missing mandatory
+fixture metadata; `891a054` adds it. The focused `ir_snapshots` suite and the
+complete core/PDF/PDFium gate then passed.
+
+The pack was rebuilt and verified before the gate. On Linux, formatting,
+combined Clippy, WASM check and tests, pack tooling, core/PDF/engine tests,
+host, server, CLI, the Docling pack test, sample render, doctor, licence and
+cargo-deny checks, spelling, CI scope, fuzz check, and commit checks all passed.
+The core/PDF/PDFium command ran in a `MemoryMax=2G` systemd scope. Logs and
+command timings are in `/tmp/agent-herdr/runs/p04r3a/gate/`; samples are in
+`/tmp/agent-herdr/runs/p04r3a/rendered-samples/`.
+
+The CLI gate initially failed twice because the shared Cargo artifact lacked
+symbols present in the checked-out source. Touching the two source files forced
+Cargo to rebuild the correct crate; the unchanged CLI suite then passed. The
+first sample render failed because its output directory did not exist; creating
+it and rerunning passed. No source content was changed for either workaround.
+
+The PDFium bitmap allocation investigation found a null `FPDFBitmap_CreateEx`
+return under `RLIMIT_AS`, without a reliable host-side native OOM signature.
+The approved bitmap-specific mapping reports `limit_exceeded` with dimensions
+and the configured MiB ceiling; generic failures retain their classification
+and receive a possible-ceiling hint. macOS verification and its render goldens
+remain for the Mac. Direct JBIG2 retains dictionary dimension checks, and
+inline decoded output has a fixed 1024-byte allowance; see
+[worker-p04fix-r3-preflight.md](worker-p04fix-r3-preflight.md) and
+[worker-p04fix-r3-output.md](worker-p04fix-r3-output.md) for scope and evidence.
