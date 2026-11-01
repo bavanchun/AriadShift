@@ -374,7 +374,7 @@ Every tool invocation receives an `ariad_core::limits::Limits` struct (`Limits::
 | Limit | Enforcement |
 |---|---|
 | `max_input_bytes` | Checked per input file before staging; in `ariad-wasm`, the sum of all input `Uint8Array` byte lengths is checked against `budgetBytes` before opening any document. |
-| `max_pages` | Checked against input page counts at load and against cumulative output pages during operations such as `pdf.merge`, `pdf.insert_blank`, and `pdf.split`. |
+| `max_pages` | Checked against input page counts at load (when set in `Limits`), and combined with the fixed 10,000-page structural output ceiling as `min(10_000, max_pages)` for output-producing tools (`pdf.merge`, `pdf.insert_blank`, `pdf.extract_pages`, `pdf.reorder`, `pdf.nup`, `pdf.booklet`, `pdf.divide_pages`, `pdf.posterize`, and `pdf.split`). In `pdf.split`, both the output pages of each part and the cumulative output pages across all parts are capped at `min(10_000, max_pages)` (never the input page count), and serialized part bytes are charged against the per-document decode budget (`max_decompressed_bytes`). |
 | `timeout_s` | Wall-clock timer enforced by the host runner (`JobSpec::for_request`) and cancellation token; kills the engine process tree on expiry. |
 | `max_memory_mb` | Host watchdog samples aggregate resident set size (RSS) of the engine process tree before dispatch and every 250 ms during execution, killing the tree on violation. |
 | Decoded stream & object caps | `ariad-pdf` opens every PDF exclusively through `ariad_core::reader::pdf::load_bounded(bytes, &limits)`, enforcing `max_decompressed_bytes` across Flate/LZW/filter streams, `max_nesting_depth` (< 100), and `MAX_OBJECTS` (object count ceiling). |
