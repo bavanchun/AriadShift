@@ -122,6 +122,42 @@ pub fn execute(
     cancel: &CancellationToken,
     on_event: &mut dyn FnMut(ToolEvent),
 ) -> Result<RawToolExecution, ToolError> {
+    let named_inputs: Vec<(PathBuf, String)> = staged_inputs
+        .iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("document.pdf")
+                .to_owned();
+            (path.clone(), name)
+        })
+        .collect();
+    execute_with_names(
+        spec,
+        &named_inputs,
+        params,
+        workspace,
+        limits,
+        scrubber,
+        cancel,
+        on_event,
+    )
+}
+
+/// Executes an in-process `ariad-pdf` tool on the staged input files inside `workspace`,
+/// preserving each input's original user-facing filename in [`InputDoc`].
+#[allow(clippy::too_many_arguments)]
+pub fn execute_with_names(
+    spec: &ToolSpec,
+    staged_inputs: &[(PathBuf, String)],
+    params: &Value,
+    workspace: &Workspace,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
+    on_event: &mut dyn FnMut(ToolEvent),
+) -> Result<RawToolExecution, ToolError> {
     let bridge = CancelBridge::new(cancel);
     let ctx = build_tool_ctx(limits, Arc::clone(&bridge.flag));
 
@@ -152,18 +188,22 @@ pub fn execute(
     });
 
     let mut input_docs = Vec::with_capacity(staged_inputs.len());
-    for input_path in staged_inputs {
+    for (input_path, original_name) in staged_inputs {
         ctx.check().map_err(|err| map_pdf_error(err, scrubber))?;
         let bytes =
             read_bounded_file(input_path, limits.max_input_bytes).map_err(|err| match err {
                 ConvertError::LimitExceeded => ToolError::LimitExceeded,
                 _ => ToolError::InputIo("the input file could not be read".to_owned()),
             })?;
-        let name = input_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("document.pdf")
-            .to_owned();
+        let name = if original_name.trim().is_empty() {
+            input_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("document.pdf")
+                .to_owned()
+        } else {
+            original_name.clone()
+        };
         input_docs.push(InputDoc::with_limits(name, bytes, limits.clone()));
     }
 
@@ -198,13 +238,20 @@ pub fn execute(
         let raw_name = tool_output
             .artifacts
             .first()
-            .map_or("output.json", |out| out.name.as_str());
-        let staged_name =
-            sanitize_staged_artifact_name(raw_name, 1, spec.output_format, &mut used_names);
+            .map(|out| out.name.as_str())
+            .filter(|name| !name.is_empty())
+            .unwrap_or("output.json");
+        let out_format = tool_output
+            .artifacts
+            .first()
+            .map(|out| out.format.trim())
+            .filter(|fmt| !fmt.is_empty())
+            .unwrap_or("json");
+        let staged_name = sanitize_staged_artifact_name(raw_name, 1, out_format, &mut used_names);
         let staged_out = workspace.output_dir().join(staged_name);
         fs::write(&staged_out, &json_bytes)
             .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
-        artifacts.push((staged_out, spec.output_format.to_owned()));
+        artifacts.push((staged_out, out_format.to_owned()));
 
         if let Some(pages) = scrubbed_value.get("page_count") {
             metrics.insert("pages".to_owned(), pages.clone());
@@ -220,16 +267,17 @@ pub fn execute(
             if total_out_bytes > limits.max_decompressed_bytes {
                 return Err(ToolError::LimitExceeded);
             }
-            let staged_name = sanitize_staged_artifact_name(
-                &artifact.name,
-                idx + 1,
-                spec.output_format,
-                &mut used_names,
-            );
+            let out_format = if artifact.format.trim().is_empty() {
+                spec.output_format
+            } else {
+                artifact.format.trim()
+            };
+            let staged_name =
+                sanitize_staged_artifact_name(&artifact.name, idx + 1, out_format, &mut used_names);
             let staged_out = workspace.output_dir().join(staged_name);
             fs::write(&staged_out, &artifact.bytes)
                 .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
-            artifacts.push((staged_out, spec.output_format.to_owned()));
+            artifacts.push((staged_out, out_format.to_owned()));
         }
         metrics.insert("outputs".to_owned(), json!(artifacts.len()));
     }

@@ -40,8 +40,9 @@ use crate::{
         inprocess::{self, INPROCESS_PDF_ENGINE},
         publish::{
             PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
-            default_single_artifact_name, ensure_no_parent_traversal, open_confined_output_dir,
-            publish_atomic, render_naming_template, validate_artifact_extensions,
+            default_single_artifact_name, ensure_no_parent_traversal, is_safe_extracted_extension,
+            open_confined_output_dir, publish_atomic, render_naming_template,
+            validate_artifact_extensions, validate_extracted_artifact_extensions,
             validate_output_path_extension, validate_target_filename,
         },
         secrets::{SecretBag, SecretScrubber},
@@ -602,13 +603,24 @@ fn run_tool_inner(
     }
 
     // 8. Pre-validate output target confinement before staging or running the tool (exit code 2 / 6).
+    let emits_json = spec.output_format.eq_ignore_ascii_case("json")
+        || tool_action_emits_json(spec.id, &resolved_secrets.schema_params);
+    let extracts_attachments =
+        tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
+    let effective_output_format = if emits_json {
+        "json"
+    } else {
+        spec.output_format
+    };
+
     let mut input_paths: Vec<PathBuf> = request.inputs.iter().map(|i| i.path.clone()).collect();
     preflight_output_target(
         &request.output,
         &input_paths,
         request.allowed_dirs.as_ref(),
         request.overwrite,
-        spec.output_format,
+        effective_output_format,
+        extracts_attachments,
     )?;
 
     // 9. Confine, copy from the confined handle into `<ws>/in/`, size-check, and sniff format on the workspace copy.
@@ -618,21 +630,32 @@ fn run_tool_inner(
     let mut total_input_bytes = 0_u64;
     let mut staged_inputs_with_format: Vec<(PathBuf, String)> =
         Vec::with_capacity(request.inputs.len());
-    let mut staged_input_paths: Vec<PathBuf> = Vec::with_capacity(request.inputs.len());
+    let mut staged_inputs_with_names: Vec<(PathBuf, String)> =
+        Vec::with_capacity(request.inputs.len());
 
     for (idx, input_ref) in request.inputs.iter().enumerate() {
+        let allow_arbitrary_payload =
+            tool_input_is_attachment_payload(spec.id, &resolved_secrets.schema_params, idx);
         let (canonical_source, staged_path, format_id, bytes) = stage_and_classify_input(
             idx,
             input_ref,
             &spec,
+            allow_arbitrary_payload,
             &workspace,
             request.allowed_dirs.as_ref(),
             &request.limits,
             &request.cancel,
         )?;
+        let original_name = input_ref
+            .path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("document.pdf")
+            .to_owned();
         input_paths[idx] = canonical_source;
         total_input_bytes = total_input_bytes.saturating_add(bytes);
-        staged_input_paths.push(staged_path.clone());
+        staged_inputs_with_names.push((staged_path.clone(), original_name));
         staged_inputs_with_format.push((staged_path, format_id));
     }
 
@@ -653,9 +676,9 @@ fn run_tool_inner(
 
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let raw_exec = if spec.engine == INPROCESS_PDF_ENGINE && request.engine_command.is_none() {
-        inprocess::execute(
+        inprocess::execute_with_names(
             &spec,
-            &staged_input_paths,
+            &staged_inputs_with_names,
             &resolved_secrets.schema_params,
             &workspace,
             &request.limits,
@@ -685,6 +708,9 @@ fn run_tool_inner(
     let published = publish_tool_outputs(
         &workspace,
         &spec,
+        effective_output_format,
+        emits_json || raw_exec.inline_json.is_some(),
+        extracts_attachments,
         &raw_exec.artifacts,
         &input_paths,
         &request.output,
@@ -710,10 +736,38 @@ fn run_tool_inner(
     })
 }
 
+fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {
+    if spec_id == "pdf.info" {
+        return true;
+    }
+    let action = params.get("action").and_then(Value::as_str);
+    match spec_id {
+        "pdf.outline" => action == Some("export"),
+        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" => action == Some("list"),
+        _ => false,
+    }
+}
+
+fn tool_action_extracts_attachments(spec_id: &str, params: &Value) -> bool {
+    matches!(spec_id, "pdf.attachments" | "pdf.portfolio")
+        && params.get("action").and_then(Value::as_str) == Some("extract")
+}
+
+fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: usize) -> bool {
+    let action = params.get("action").and_then(Value::as_str);
+    match spec_id {
+        "pdf.attachments" => action == Some("add") && input_index >= 1,
+        "pdf.portfolio" => action == Some("create"),
+        _ => false,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn stage_and_classify_input(
     idx: usize,
     input_ref: &InputRef,
     spec: &ToolSpec,
+    allow_arbitrary_payload: bool,
     workspace: &Workspace,
     allowed_dirs: Option<&AllowedDirs>,
     limits: &Limits,
@@ -833,31 +887,38 @@ fn stage_and_classify_input(
         return Err(ToolError::LimitExceeded);
     }
 
-    let format_id = match classification.format {
-        Some(fmt) if spec.accepts_core_format(fmt) => fmt.id().to_owned(),
-        Some(fmt) => {
-            let _ = fs::remove_file(&raw_staged_path);
-            return Err(ToolError::WrongInput(format!(
-                "input '{}' has format '{}', which is not accepted by tool '{}' (accepted: {})",
-                input_ref.path.display(),
-                fmt.user_name(),
-                spec.id,
-                spec.input_formats.join(", ")
-            )));
-        }
-        None => {
-            let _ = fs::remove_file(&raw_staged_path);
-            let ext = input_ref
-                .path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("unknown");
-            return Err(ToolError::WrongInput(format!(
-                "input '{}' format ({ext}) is not accepted by tool '{}' (accepted: {})",
-                input_ref.path.display(),
-                spec.id,
-                spec.input_formats.join(", ")
-            )));
+    let format_id = if allow_arbitrary_payload {
+        classification
+            .format
+            .map(|fmt| fmt.id().to_owned())
+            .unwrap_or_else(|| raw_ext.to_ascii_lowercase())
+    } else {
+        match classification.format {
+            Some(fmt) if spec.accepts_core_format(fmt) => fmt.id().to_owned(),
+            Some(fmt) => {
+                let _ = fs::remove_file(&raw_staged_path);
+                return Err(ToolError::WrongInput(format!(
+                    "input '{}' has format '{}', which is not accepted by tool '{}' (accepted: {})",
+                    input_ref.path.display(),
+                    fmt.user_name(),
+                    spec.id,
+                    spec.input_formats.join(", ")
+                )));
+            }
+            None => {
+                let _ = fs::remove_file(&raw_staged_path);
+                let ext = input_ref
+                    .path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("unknown");
+                return Err(ToolError::WrongInput(format!(
+                    "input '{}' format ({ext}) is not accepted by tool '{}' (accepted: {})",
+                    input_ref.path.display(),
+                    spec.id,
+                    spec.input_formats.join(", ")
+                )));
+            }
         }
     };
 
@@ -958,6 +1019,7 @@ fn preflight_output_target(
     allowed_dirs: Option<&AllowedDirs>,
     _overwrite: bool,
     spec_output_format: &str,
+    extracts_attachments: bool,
 ) -> Result<(), ToolError> {
     match output {
         OutputTarget::None | OutputTarget::DefaultBesideInput => Ok(()),
@@ -1001,7 +1063,17 @@ fn preflight_output_target(
                     )));
                 };
                 validate_target_filename(file_name, allowed_dirs.is_some())?;
-                validate_output_path_extension(path, spec_output_format)?;
+                if extracts_attachments {
+                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                    if !is_safe_extracted_extension(ext) {
+                        return Err(ToolError::Confinement(format!(
+                            "output path '{}' does not have a valid extracted attachment extension",
+                            path.display()
+                        )));
+                    }
+                } else {
+                    validate_output_path_extension(path, spec_output_format)?;
+                }
             }
             Ok(())
         }
@@ -1012,6 +1084,9 @@ fn preflight_output_target(
 fn publish_tool_outputs(
     workspace: &Workspace,
     spec: &ToolSpec,
+    effective_output_format: &str,
+    emits_json: bool,
+    extracts_attachments: bool,
     raw_artifacts: &[(PathBuf, String)],
     inputs: &[PathBuf],
     output: &OutputTarget,
@@ -1036,8 +1111,9 @@ fn publish_tool_outputs(
     let (dest_dir, explicit_single_filename): (PathBuf, Option<String>) = match output {
         OutputTarget::None => return Ok(Vec::new()),
         OutputTarget::DefaultBesideInput => {
-            // `pdf.info` without `-o` emits structured JSON inline without writing a file next to input.
-            if spec.id == "pdf.info" && naming_template.is_none() {
+            // Inline-JSON actions (`pdf.info`, `outline export`, `attachments list`, `portfolio list`, `layers list`)
+            // without `-o` emit structured JSON inline without writing a file next to input.
+            if (spec.id == "pdf.info" || emits_json) && naming_template.is_none() {
                 return Ok(Vec::new());
             }
             let parent = first_input
@@ -1100,6 +1176,12 @@ fn publish_tool_outputs(
         } else if let Some(template) = naming_template {
             render_naming_template(template, first_stem, index_1_based)
                 .map_err(PublishError::from)?
+        } else if extracts_attachments {
+            staged_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("attachment.bin")
+                .to_owned()
         } else if multi {
             default_multi_artifact_name(first_input, spec.id, index_1_based, format)
         } else {
@@ -1112,7 +1194,11 @@ fn publish_tool_outputs(
         ));
     }
 
-    validate_artifact_extensions(spec.output_format, &staged)?;
+    if extracts_attachments {
+        validate_extracted_artifact_extensions(&staged)?;
+    } else {
+        validate_artifact_extensions(effective_output_format, &staged)?;
+    }
 
     Ok(publish_atomic(
         workspace,

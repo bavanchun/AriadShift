@@ -95,6 +95,102 @@ pub fn validate_artifact_extensions(
     Ok(())
 }
 
+/// Returns `true` if `ext` is a safe non-executable file extension permitted for extracted
+/// embedded attachments (`pdf.attachments` / `pdf.portfolio` `extract`).
+#[must_use]
+pub fn is_safe_extracted_extension(ext: &str) -> bool {
+    let lower = ext.trim().to_ascii_lowercase();
+    if lower.is_empty()
+        || lower.len() > 16
+        || !lower
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return false;
+    }
+    !matches!(
+        lower.as_str(),
+        "app"
+            | "bash"
+            | "bat"
+            | "cjs"
+            | "cmd"
+            | "com"
+            | "command"
+            | "csh"
+            | "dll"
+            | "dylib"
+            | "exe"
+            | "fish"
+            | "hta"
+            | "jar"
+            | "js"
+            | "ksh"
+            | "mjs"
+            | "msi"
+            | "php"
+            | "pl"
+            | "ps1"
+            | "py"
+            | "rb"
+            | "scr"
+            | "sh"
+            | "so"
+            | "vbs"
+            | "wsf"
+            | "zsh"
+    )
+}
+
+/// Validates staged artifacts produced by attachment/portfolio extraction, where each extracted
+/// file carries its own sanitized extension.
+pub fn validate_extracted_artifact_extensions(staged: &[StagedArtifact]) -> Result<(), ToolError> {
+    for item in staged {
+        let staged_ext = item
+            .staged_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        let target_ext = Path::new(&item.target_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+
+        if let Some(expected_fmt) = Format::from_user_name(&item.format) {
+            if Format::from_user_name(staged_ext) != Some(expected_fmt) {
+                return Err(ToolError::EngineFailure(format!(
+                    "staged artifact '{}' extension does not match expected format '{}'",
+                    item.staged_path.display(),
+                    expected_fmt.user_name()
+                )));
+            }
+            validate_output_path_extension(Path::new(&item.target_name), &item.format)?;
+        } else if is_safe_extracted_extension(&item.format) {
+            if !staged_ext.eq_ignore_ascii_case(&item.format) {
+                return Err(ToolError::EngineFailure(format!(
+                    "staged artifact '{}' extension '{}' does not match format '{}'",
+                    item.staged_path.display(),
+                    staged_ext,
+                    item.format
+                )));
+            }
+            if !target_ext.eq_ignore_ascii_case(&item.format) {
+                return Err(ToolError::Confinement(format!(
+                    "output path '{}' extension does not match extracted format '{}'",
+                    item.target_name, item.format
+                )));
+            }
+        } else {
+            return Err(ToolError::EngineFailure(format!(
+                "unsupported extracted artifact format '{}'",
+                item.format
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// A single artifact staged inside `<workspace>/out/` awaiting atomic promotion.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StagedArtifact {
@@ -507,33 +603,48 @@ pub fn publish_atomic(
             }
         }
 
-        let item_fmt = Format::from_user_name(&item.format).ok_or_else(|| {
-            PublishError::InvalidStagedArtifact(format!(
-                "unrecognized staged artifact format '{}'",
-                item.format
-            ))
-        })?;
         let staged_ext = item
             .staged_path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        if Format::from_user_name(staged_ext) != Some(item_fmt) {
-            return Err(PublishError::InvalidStagedArtifact(format!(
-                "staged artifact '{}' extension does not match format '{}'",
-                item.staged_path.display(),
-                item_fmt.user_name()
-            )));
-        }
         let target_ext = Path::new(&item.target_name)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("");
-        if Format::from_extension(target_ext) != Some(item_fmt) {
-            return Err(PublishError::Confinement(format!(
-                "output path '{}' extension does not match target format '{}'",
-                item.target_name,
-                item_fmt.user_name()
+        if let Some(item_fmt) = Format::from_user_name(&item.format) {
+            if Format::from_user_name(staged_ext) != Some(item_fmt) {
+                return Err(PublishError::InvalidStagedArtifact(format!(
+                    "staged artifact '{}' extension does not match format '{}'",
+                    item.staged_path.display(),
+                    item_fmt.user_name()
+                )));
+            }
+            if Format::from_extension(target_ext) != Some(item_fmt) {
+                return Err(PublishError::Confinement(format!(
+                    "output path '{}' extension does not match target format '{}'",
+                    item.target_name,
+                    item_fmt.user_name()
+                )));
+            }
+        } else if is_safe_extracted_extension(&item.format) {
+            if !staged_ext.eq_ignore_ascii_case(&item.format) {
+                return Err(PublishError::InvalidStagedArtifact(format!(
+                    "staged artifact '{}' extension does not match format '{}'",
+                    item.staged_path.display(),
+                    item.format
+                )));
+            }
+            if !target_ext.eq_ignore_ascii_case(&item.format) {
+                return Err(PublishError::Confinement(format!(
+                    "output path '{}' extension does not match target format '{}'",
+                    item.target_name, item.format
+                )));
+            }
+        } else {
+            return Err(PublishError::InvalidStagedArtifact(format!(
+                "unrecognized staged artifact format '{}'",
+                item.format
             )));
         }
 

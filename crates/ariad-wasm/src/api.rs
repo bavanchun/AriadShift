@@ -599,6 +599,9 @@ where
     })?;
 
     for (idx, (input_bytes, input_name)) in inputs.iter().zip(names.iter()).enumerate() {
+        if tool_input_is_attachment_payload(spec.id, &params_value, idx) {
+            continue;
+        }
         let bytes = input_bytes.as_ref();
         let name = input_name.as_ref();
         let detected = sniff_tool_input_format(bytes, name);
@@ -698,14 +701,62 @@ where
     })
 }
 
+fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: usize) -> bool {
+    let action = params.get("action").and_then(Value::as_str);
+    match spec_id {
+        "pdf.attachments" => action == Some("add") && input_index >= 1,
+        "pdf.portfolio" => action == Some("create"),
+        _ => false,
+    }
+}
+
 fn tool_output_format_meta(output_format: &str) -> (&'static str, &'static str, &'static str) {
-    match output_format {
+    match output_format.to_ascii_lowercase().as_str() {
         "json" => ("json", "application/json", "json"),
         "pdf" => ("pdf", "application/pdf", "pdf"),
         "zip" => ("zip", "application/zip", "zip"),
         "md" | "markdown" => ("markdown", "text/markdown", "md"),
         "html" | "htm" => ("html", "text/html", "html"),
-        _ => ("pdf", "application/pdf", "pdf"),
+        "csv" => ("csv", "text/csv", "csv"),
+        "txt" => ("txt", "text/plain", "txt"),
+        "xml" => ("xml", "application/xml", "xml"),
+        "png" => ("png", "image/png", "png"),
+        "jpg" | "jpeg" => ("jpeg", "image/jpeg", "jpg"),
+        "webp" => ("webp", "image/webp", "webp"),
+        "tif" | "tiff" => ("tiff", "image/tiff", "tiff"),
+        "docx" => (
+            "docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "docx",
+        ),
+        "epub" => ("epub", "application/epub+zip", "epub"),
+        "pptx" => (
+            "pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "pptx",
+        ),
+        "xlsx" => (
+            "xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xlsx",
+        ),
+        "odt" => ("odt", "application/vnd.oasis.opendocument.text", "odt"),
+        "ods" => (
+            "ods",
+            "application/vnd.oasis.opendocument.spreadsheet",
+            "ods",
+        ),
+        "odp" => (
+            "odp",
+            "application/vnd.oasis.opendocument.presentation",
+            "odp",
+        ),
+        "doc" => ("doc", "application/msword", "doc"),
+        "xls" => ("xls", "application/vnd.ms-excel", "xls"),
+        "ppt" => ("ppt", "application/vnd.ms-powerpoint", "ppt"),
+        "rtf" => ("rtf", "application/rtf", "rtf"),
+        "bin" => ("bin", "application/octet-stream", "bin"),
+        _ => ("bin", "application/octet-stream", "bin"),
     }
 }
 
@@ -1459,5 +1510,96 @@ mod tests {
                 .unwrap_or("")
                 .contains("pdf.decrypt")
         );
+    }
+
+    #[test]
+    fn run_tool_attachments_and_portfolio_support_non_pdf_payloads_and_extracted_metadata() {
+        let carrier = read_pdf_fixture("rotated-pages.pdf");
+        let csv_bytes = b"sku,qty\nA-1,4\n";
+        let txt_bytes = b"plain text note\n";
+        let budget = 64 * 1024 * 1024;
+
+        let added = run_tool(
+            [
+                carrier.as_slice(),
+                csv_bytes.as_slice(),
+                txt_bytes.as_slice(),
+            ],
+            ["carrier.pdf", "inventory.csv", "notes.txt"],
+            "pdf.attachments",
+            r#"{"action":"add"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.attachments add with non-pdf payloads in wasm");
+        assert_eq!(added.format, "pdf");
+        assert_eq!(added.media_type, "application/pdf");
+        assert_eq!(added.extension, "pdf");
+
+        let listed = run_tool(
+            [added.bytes.as_slice()],
+            ["attached.pdf"],
+            "pdf.attachments",
+            r#"{"action":"list"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.attachments list in wasm");
+        assert_eq!(listed.format, "json");
+        assert_eq!(listed.media_type, "application/json");
+        assert_eq!(listed.extension, "json");
+
+        let extracted = run_tool(
+            [added.bytes.as_slice()],
+            ["attached.pdf"],
+            "pdf.attachments",
+            r#"{"action":"extract"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.attachments extract in wasm");
+        assert_eq!(extracted.format, "csv");
+        assert_eq!(extracted.media_type, "text/csv");
+        assert_eq!(extracted.extension, "csv");
+        assert_eq!(extracted.artifacts.len(), 2);
+        assert_eq!(extracted.artifacts[0].format, "csv");
+        assert_eq!(extracted.artifacts[0].media_type, "text/csv");
+        assert_eq!(extracted.artifacts[0].extension, "csv");
+        assert_eq!(extracted.artifacts[0].bytes, csv_bytes);
+        assert_eq!(extracted.artifacts[1].format, "txt");
+        assert_eq!(extracted.artifacts[1].media_type, "text/plain");
+        assert_eq!(extracted.artifacts[1].extension, "txt");
+        assert_eq!(extracted.artifacts[1].bytes, txt_bytes);
+
+        let portfolio_created = run_tool(
+            [carrier.as_slice(), csv_bytes.as_slice()],
+            ["carrier.pdf", "inventory.csv"],
+            "pdf.portfolio",
+            r#"{"action":"create","view":"details"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.portfolio create with non-pdf payload in wasm");
+        assert_eq!(portfolio_created.format, "pdf");
+
+        let portfolio_extracted = run_tool(
+            [portfolio_created.bytes.as_slice()],
+            ["bundle.pdf"],
+            "pdf.portfolio",
+            r#"{"action":"extract"}"#,
+            budget,
+            false,
+        )
+        .expect("pdf.portfolio extract in wasm");
+        assert_eq!(portfolio_extracted.artifacts.len(), 2);
+        assert_eq!(portfolio_extracted.artifacts[0].format, "pdf");
+        assert_eq!(
+            portfolio_extracted.artifacts[0].media_type,
+            "application/pdf"
+        );
+        assert_eq!(portfolio_extracted.artifacts[0].bytes, carrier);
+        assert_eq!(portfolio_extracted.artifacts[1].format, "csv");
+        assert_eq!(portfolio_extracted.artifacts[1].media_type, "text/csv");
+        assert_eq!(portfolio_extracted.artifacts[1].bytes, csv_bytes);
     }
 }
