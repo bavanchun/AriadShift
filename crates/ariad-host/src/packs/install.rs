@@ -1008,10 +1008,14 @@ fn manifest_verified_entries(
         ));
     }
 
+    #[cfg(unix)]
     let declared_executables = manifest_allowed_executables(target);
     let recorded_file_paths: BTreeSet<&str> =
         record.files.iter().map(|file| file.path.as_str()).collect();
+    #[cfg(unix)]
     let mut allowed_executables = declared_executables.clone();
+    #[cfg(not(unix))]
+    let mut allowed_executables = manifest_allowed_executables(target);
     for exec in &record.executables {
         if recorded_file_paths.contains(exec.as_str()) {
             allowed_executables.insert(exec.clone());
