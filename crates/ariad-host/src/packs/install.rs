@@ -160,7 +160,7 @@ struct Receipt {
     links: Vec<ReceiptLink>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReceiptFile {
     path: String,
@@ -168,11 +168,22 @@ struct ReceiptFile {
     size: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ReceiptLink {
     path: String,
     target: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestRecord {
+    manifest_sha256: String,
+    target: String,
+    #[serde(default)]
+    files: Vec<ReceiptFile>,
+    #[serde(default)]
+    links: Vec<ReceiptLink>,
 }
 
 struct Layout {
@@ -187,6 +198,9 @@ impl Layout {
     }
     fn locks(&self) -> PathBuf {
         self.packs.join(".locks")
+    }
+    fn manifest_record(&self, name: &str, version: &str) -> PathBuf {
+        self.locks().join(format!("{name}-{version}.manifest"))
     }
     fn staging(&self) -> PathBuf {
         self.packs.join(".staging")
@@ -425,6 +439,21 @@ pub fn install(
     extract::check_links(&staging, &links)?;
     check_installed_paths(&staging, &manifest, &target)?;
 
+    let receipt_files: Vec<ReceiptFile> = files
+        .iter()
+        .map(|file| ReceiptFile {
+            path: file.path.clone(),
+            sha256: file.sha256.clone(),
+            size: file.size,
+        })
+        .collect();
+    let receipt_links: Vec<ReceiptLink> = links
+        .iter()
+        .map(|link| ReceiptLink {
+            path: link.path.clone(),
+            target: link.target.clone(),
+        })
+        .collect();
     let receipt = Receipt {
         schema: RECEIPT_SCHEMA.to_owned(),
         name: manifest.name.clone(),
@@ -433,23 +462,10 @@ pub fn install(
         installed_at: jiff::Timestamp::now().to_string(),
         ashift_version: env!("CARGO_PKG_VERSION").to_owned(),
         key_id: key_id.clone(),
-        manifest: manifest_text,
+        manifest: manifest_text.clone(),
         signature: signature_text,
-        files: files
-            .iter()
-            .map(|file| ReceiptFile {
-                path: file.path.clone(),
-                sha256: file.sha256.clone(),
-                size: file.size,
-            })
-            .collect(),
-        links: links
-            .iter()
-            .map(|link| ReceiptLink {
-                path: link.path.clone(),
-                target: link.target.clone(),
-            })
-            .collect(),
+        files: receipt_files.clone(),
+        links: receipt_links.clone(),
     };
     let receipt_text = toml::to_string(&receipt).map_err(|error| PackError::InvalidReceipt {
         name: manifest.name.clone(),
@@ -487,6 +503,15 @@ pub fn install(
     }
     staging_cleanup.disarm();
     drop(previous);
+    write_manifest_record(
+        &layout,
+        &manifest.name,
+        &manifest.version,
+        &manifest_text,
+        &target.triple,
+        &receipt_files,
+        &receipt_links,
+    )?;
     write_current(&layout, &manifest.name, &manifest.version)?;
     for path in &cached {
         fetch::remove_file_quietly(path);
@@ -640,6 +665,43 @@ fn sweep(layout: &Layout, name: &str) {
     }
 }
 
+fn sha256_bytes(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    hex::encode(Sha256::digest(bytes))
+}
+
+fn write_manifest_record(
+    layout: &Layout,
+    name: &str,
+    version: &str,
+    manifest_text: &str,
+    target: &str,
+    files: &[ReceiptFile],
+    links: &[ReceiptLink],
+) -> Result<(), PackError> {
+    create_dir_all(&layout.locks())?;
+    let record = ManifestRecord {
+        manifest_sha256: sha256_bytes(manifest_text.as_bytes()),
+        target: target.to_owned(),
+        files: files.to_vec(),
+        links: links.to_vec(),
+    };
+    let text = toml::to_string(&record).map_err(|error| PackError::InvalidReceipt {
+        name: name.to_owned(),
+        detail: error.to_string(),
+    })?;
+    let path = layout.manifest_record(name, version);
+    let temporary = layout
+        .locks()
+        .join(format!(".{name}-{version}.manifest.{}", new_id()));
+    fs::write(&temporary, text)
+        .map_err(|error| PackError::io("could not write", &temporary, error))?;
+    fs::rename(&temporary, &path).map_err(|error| {
+        fetch::remove_file_quietly(&temporary);
+        PackError::io("could not write", &path, error)
+    })
+}
+
 fn write_current(layout: &Layout, name: &str, version: &str) -> Result<(), PackError> {
     let path = layout.current_file(name);
     let temporary = layout
@@ -711,13 +773,18 @@ struct FileStamp {
     dev: u64,
     #[cfg(unix)]
     ino: u64,
+    #[cfg(unix)]
+    ctime_sec: i64,
+    #[cfg(unix)]
+    ctime_nsec: i64,
     mtime_sec: u64,
     mtime_nsec: u32,
     size: u64,
+    file_count: u64,
 }
 
 impl FileStamp {
-    fn from_metadata(metadata: &fs::Metadata) -> Option<Self> {
+    fn from_metadata(metadata: &fs::Metadata, file_count: u64) -> Option<Self> {
         let modified = metadata.modified().ok()?;
         let since_epoch = modified.duration_since(UNIX_EPOCH).ok()?;
         #[cfg(unix)]
@@ -727,9 +794,14 @@ impl FileStamp {
             dev: metadata.dev(),
             #[cfg(unix)]
             ino: metadata.ino(),
+            #[cfg(unix)]
+            ctime_sec: metadata.ctime(),
+            #[cfg(unix)]
+            ctime_nsec: metadata.ctime_nsec(),
             mtime_sec: since_epoch.as_secs(),
             mtime_nsec: since_epoch.subsec_nanos(),
             size: metadata.len(),
+            file_count,
         })
     }
 }
@@ -743,8 +815,12 @@ struct CachedDigest {
 static VERIFY_CACHE: LazyLock<Mutex<HashMap<PathBuf, CachedDigest>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn verified_sha256(path: &Path, metadata: &fs::Metadata) -> Result<String, PackError> {
-    let stamp = FileStamp::from_metadata(metadata);
+fn verified_sha256(
+    path: &Path,
+    metadata: &fs::Metadata,
+    file_count: u64,
+) -> Result<String, PackError> {
+    let stamp = FileStamp::from_metadata(metadata, file_count);
     if let Some(ref stamp) = stamp {
         let cache = VERIFY_CACHE
             .lock()
@@ -771,6 +847,194 @@ fn verified_sha256(path: &Path, metadata: &fs::Metadata) -> Result<String, PackE
         );
     }
     Ok(digest)
+}
+
+#[derive(Debug, Default)]
+struct PackDirScan {
+    file_count: u64,
+    found_files: BTreeSet<String>,
+    found_links: BTreeSet<String>,
+    found_executables: BTreeSet<String>,
+}
+
+fn is_executable_file(path: &Path, metadata: &fs::Metadata) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = path;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("exe")
+                    || ext.eq_ignore_ascii_case("bat")
+                    || ext.eq_ignore_ascii_case("cmd")
+            })
+    }
+}
+
+fn scan_pack_dir(root: &Path, name: &str, version: &str) -> Result<PackDirScan, PackError> {
+    fn walk(
+        root: &Path,
+        dir: &Path,
+        name: &str,
+        version: &str,
+        scan: &mut PackDirScan,
+    ) -> Result<(), PackError> {
+        let entries = fs::read_dir(dir).map_err(|error| {
+            verification_failed(
+                name,
+                version,
+                format!("could not read pack directory {}: {error}", dir.display()),
+            )
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                verification_failed(
+                    name,
+                    version,
+                    format!("could not read entry in {}: {error}", dir.display()),
+                )
+            })?;
+            let path = entry.path();
+            let rel_os = path.strip_prefix(root).map_err(|error| {
+                verification_failed(name, version, format!("invalid path in pack root: {error}"))
+            })?;
+            let rel = rel_os.to_string_lossy().replace('\\', "/");
+            if dir == root && matches!(rel.as_str(), RECEIPT_FILE | MANIFEST_FILE | SIGNATURE_FILE)
+            {
+                continue;
+            }
+            let metadata = fs::symlink_metadata(&path).map_err(|error| {
+                verification_failed(name, version, format!("could not stat '{rel}': {error}"))
+            })?;
+            let file_type = metadata.file_type();
+            if file_type.is_dir() {
+                walk(root, &path, name, version, scan)?;
+            } else if file_type.is_symlink() {
+                scan.found_links.insert(rel);
+            } else if file_type.is_file() {
+                scan.file_count += 1;
+                if is_executable_file(&path, &metadata) {
+                    scan.found_executables.insert(rel.clone());
+                }
+                scan.found_files.insert(rel);
+            } else {
+                return Err(verification_failed(
+                    name,
+                    version,
+                    format!("unexpected special file '{rel}' in pack directory"),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    let mut scan = PackDirScan::default();
+    walk(root, root, name, version, &mut scan)?;
+    Ok(scan)
+}
+
+fn manifest_allowed_executables(target: &super::Target) -> BTreeSet<String> {
+    let mut allowed = BTreeSet::new();
+    if let Some(entrypoint) = target.entrypoint.first()
+        && let Ok(parts) = relative_path(entrypoint)
+    {
+        allowed.insert(parts.join("/"));
+    }
+    for component in &target.components {
+        if component.unpack == super::Unpack::File
+            && component.executable
+            && let Ok(parts) = relative_path(&component.file_path())
+        {
+            allowed.insert(parts.join("/"));
+        }
+    }
+    allowed
+}
+
+fn manifest_verified_entries(
+    layout: &Layout,
+    name: &str,
+    version: &str,
+    manifest_text: &str,
+    target: &super::Target,
+    receipt: &Receipt,
+) -> Result<(Vec<ReceiptFile>, Vec<ReceiptLink>), PackError> {
+    let record_path = layout.manifest_record(name, version);
+    let record_text = fs::read_to_string(&record_path).map_err(|_| {
+        verification_failed(name, version, "manifest file digest record is missing")
+    })?;
+    let record: ManifestRecord = toml::from_str(&record_text).map_err(|error| {
+        verification_failed(
+            name,
+            version,
+            format!("manifest file digest record is invalid: {error}"),
+        )
+    })?;
+    let expected_manifest_sha256 = sha256_bytes(manifest_text.as_bytes());
+    if record.manifest_sha256 != expected_manifest_sha256 || record.target != target.triple {
+        return Err(verification_failed(
+            name,
+            version,
+            "manifest file digest record does not match the signed manifest",
+        ));
+    }
+
+    let mut by_path: HashMap<&str, (&str, u64)> = record
+        .files
+        .iter()
+        .map(|file| (file.path.as_str(), (file.sha256.as_str(), file.size)))
+        .collect();
+    for component in &target.components {
+        if component.unpack == super::Unpack::File {
+            let rel = relative_path(&component.file_path())
+                .map(|parts| parts.join("/"))
+                .map_err(|error| verification_failed(name, version, error))?;
+            match by_path.get(rel.as_str()) {
+                Some(&(sha256, size)) if sha256 == component.sha256 && size == component.size => {}
+                _ => {
+                    return Err(verification_failed(
+                        name,
+                        version,
+                        format!(
+                            "file '{}' does not match signed manifest component '{}'",
+                            rel, component.name
+                        ),
+                    ));
+                }
+            }
+            by_path.remove(rel.as_str());
+        }
+    }
+
+    let expected_total_bytes: u64 = target
+        .components
+        .iter()
+        .map(|component| component.unpacked_size.unwrap_or(component.size))
+        .sum();
+    let recorded_total_bytes: u64 = record.files.iter().map(|file| file.size).sum();
+    if recorded_total_bytes != expected_total_bytes {
+        return Err(verification_failed(
+            name,
+            version,
+            "recorded file byte total does not match signed manifest unpacked_size",
+        ));
+    }
+
+    if receipt.files != record.files || receipt.links != record.links {
+        return Err(verification_failed(
+            name,
+            version,
+            "unsigned receipt file table does not match the signed manifest",
+        ));
+    }
+
+    Ok((record.files, record.links))
 }
 
 fn any_version_directory(layout: &Layout, name: &str) -> Option<String> {
@@ -876,7 +1140,22 @@ pub(crate) fn resolve_installed(
                 format!("the manifest has no target '{}'", receipt.target),
             )
         })?;
-    for link in &receipt.links {
+    let scan = scan_pack_dir(&root, name, &version)?;
+    let allowed_executables = manifest_allowed_executables(target);
+    for exec_path in &scan.found_executables {
+        if !allowed_executables.contains(exec_path) {
+            return Err(verification_failed(
+                name,
+                &version,
+                format!(
+                    "unlisted executable '{exec_path}' in pack directory is not declared in the signed manifest"
+                ),
+            ));
+        }
+    }
+    let (expected_files, expected_links) =
+        manifest_verified_entries(&layout, name, &version, &receipt.manifest, target, &receipt)?;
+    for link in &expected_links {
         let path = extract::join_parts(&root, &link.path);
         match fs::read_link(&path) {
             Ok(actual) if actual == Path::new(&link.target) => {}
@@ -896,7 +1175,7 @@ pub(crate) fn resolve_installed(
             }
         }
     }
-    for file in &receipt.files {
+    for file in &expected_files {
         let path = extract::join_parts(&root, &file.path);
         let metadata = fs::symlink_metadata(&path).map_err(|_| {
             verification_failed(name, &version, format!("file '{}' is missing", file.path))
@@ -908,7 +1187,7 @@ pub(crate) fn resolve_installed(
                 format!("file '{}' size or type was modified", file.path),
             ));
         }
-        let actual_sha256 = verified_sha256(&path, &metadata)?;
+        let actual_sha256 = verified_sha256(&path, &metadata, scan.file_count)?;
         if actual_sha256 != file.sha256 {
             return Err(verification_failed(
                 name,
@@ -919,6 +1198,28 @@ pub(crate) fn resolve_installed(
                 ),
             ));
         }
+    }
+    let expected_file_paths: BTreeSet<String> = expected_files
+        .iter()
+        .map(|file| file.path.clone())
+        .collect();
+    if scan.found_files != expected_file_paths {
+        return Err(verification_failed(
+            name,
+            &version,
+            "installed files in pack directory do not match the signed manifest",
+        ));
+    }
+    let expected_link_paths: BTreeSet<String> = expected_links
+        .iter()
+        .map(|link| link.path.clone())
+        .collect();
+    if scan.found_links != expected_link_paths {
+        return Err(verification_failed(
+            name,
+            &version,
+            "installed symlinks in pack directory do not match the signed manifest",
+        ));
     }
     InstalledPack::from_manifest(&manifest, target, root, PackSource::Installed)
         .map(Some)
@@ -1045,6 +1346,16 @@ pub fn verify(
             .problems
             .push(format!("the receipt records version {}", receipt.version));
     }
+    if let Ok(manifest) = Manifest::parse(&receipt.manifest)
+        && let Some(target) = manifest
+            .targets
+            .iter()
+            .find(|target| target.triple == receipt.target)
+        && let Err(error) =
+            manifest_verified_entries(&layout, name, &version, &receipt.manifest, target, &receipt)
+    {
+        report.problems.push(error.to_string());
+    }
     for file in &receipt.files {
         if cancel.is_cancelled() {
             return Err(PackError::Interrupted);
@@ -1123,6 +1434,7 @@ pub fn remove(
         let trash = layout.staging().join(format!("{name}.{}.old", new_id()));
         fs::rename(&dir, &trash).map_err(|error| PackError::io("could not remove", &dir, error))?;
         let _ = fs::remove_dir_all(&trash);
+        fetch::remove_file_quietly(&layout.manifest_record(name, version));
     }
     let remaining: BTreeSet<&String> = installed.iter().filter(|v| !targets.contains(v)).collect();
     let active = if remaining.is_empty() {
