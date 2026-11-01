@@ -686,7 +686,7 @@ ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--param
 - `--params-json <FILE|->`: Read the tool parameter JSON object from a file or `-` (stdin). Explicit `--param` flags override keys from `--params-json`.
 - `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
 - `--overwrite`: Replace existing destination file(s).
-- `--json`: Emit structured JSON output to stdout (`PdfInfo` directly for `pdf.info` when no `-o` file is written; `ToolOutcome` otherwise).
+- `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` otherwise). Tools that produce only JSON print it to stdout without `--json` too (`pdf.info` prints a human summary instead).
 
 #### Examples
 
@@ -759,6 +759,18 @@ ashift tool pdf.outline fixtures/pdf-tools/multipage-20.pdf --param action=clear
 
 # Embed an attachment into the PDF /EmbeddedFiles name tree (-> rotated-pages.attachments.pdf)
 ashift tool pdf.attachments fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param action=add -o out/
+
+# Attach any file type, such as a CSV, and keep its name and bytes (-> rotated-pages.attachments.pdf)
+ashift tool pdf.attachments fixtures/pdf-tools/rotated-pages.pdf inventory.csv --param action=add -o out/
+
+# List embedded files as JSON on stdout; no file is written (add -o list.json to save it)
+ashift tool pdf.attachments out/rotated-pages.attachments.pdf --param action=list
+
+# Extract embedded files unchanged (-> out/extracted/rotated-pages.attachments.attachment-001.inventory.csv)
+ashift tool pdf.attachments out/rotated-pages.attachments.pdf --param action=extract -o out/extracted/
+
+# Print the bookmark tree as JSON on stdout; no file is written
+ashift tool pdf.outline out/rotated-pages.merged.pdf --param action=export
 
 # Configure /PageLabels numbering ranges (-> multipage-20.labeled.pdf)
 ashift tool pdf.page_labels fixtures/pdf-tools/multipage-20.pdf --param 'ranges=[{"from":1,"style":"roman-lower"},{"from":5,"style":"decimal","prefix":"p-","start":1}]' -o out/
