@@ -520,4 +520,42 @@ describe("jobs page with the account's job list", () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it("shows temporary retry messages when token refresh fails with 503 or 429", async () => {
+    const requestedUrls: string[] = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      requestedUrls.push(url);
+      return new Response(JSON.stringify({ jobs: [], next_cursor: null }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    try {
+      let failWith: { status: number; code: string } = { status: 503, code: "unavailable" };
+      const transientAuth: AuthApi = {
+        getSession: vi.fn(async () => USER),
+        apiToken: vi.fn(async () => {
+          throw Object.assign(new Error("transient"), failWith);
+        }),
+      } as unknown as AuthApi;
+      render(
+        <AccountShell config={CONFIG} auth={transientAuth}>
+          <JobsPanel />
+        </AccountShell>,
+      );
+      expect(
+        await screen.findByText(
+          /The server cannot verify your sign-in right now\. Try again shortly\./,
+        ),
+      ).toBeTruthy();
+
+      failWith = { status: 429, code: "rate_limited" };
+      fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(await screen.findByText(/Too many requests\. Try again shortly\./)).toBeTruthy();
+      expect(requestedUrls).toEqual([]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });

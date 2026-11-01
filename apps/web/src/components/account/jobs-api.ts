@@ -101,8 +101,32 @@ async function requireBearerToken(auth: AuthApi): Promise<string> {
       "status" in error &&
       typeof (error as { status?: unknown }).status === "number"
         ? (error as { status: number }).status
-        : 401;
-    throw new AriadApiError(status, "unauthorized", "Your session has ended. Sign in again.");
+        : undefined;
+    const code =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof (error as { code?: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : undefined;
+    if (status === 401 || code === "unauthorized" || code === "UNAUTHORIZED") {
+      throw new AriadApiError(401, "unauthorized", "Your session has ended. Sign in again.");
+    }
+    if (status === 429 || code === "rate_limited") {
+      throw new AriadApiError(429, "rate_limited", "Too many requests. Try again shortly.");
+    }
+    if (error instanceof TypeError || code === "network_error") {
+      throw new AriadApiError(
+        503,
+        "unavailable",
+        "The sign-in service cannot be reached. Check your connection and try again.",
+      );
+    }
+    throw new AriadApiError(
+      status ?? 503,
+      "unavailable",
+      "The server cannot verify your sign-in right now. Try again shortly.",
+    );
   }
   if (typeof token !== "string" || token === "") {
     throw new AriadApiError(401, "unauthorized", "Your session has ended. Sign in again.");

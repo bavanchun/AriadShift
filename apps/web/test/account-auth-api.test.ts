@@ -134,6 +134,25 @@ describe("Better Auth adapter", () => {
     expect(deleteCall?.body).toEqual({});
   });
 
+  it("maps a stale session on account deletion to reauth_required", async () => {
+    const { fetchImpl } = fakeFetch({
+      "POST /api/auth/delete-user": () =>
+        Response.json(
+          { code: "reauth_required", message: "Sign in again before deleting your account." },
+          { status: 400 },
+        ),
+    });
+    const failure = await createBetterAuthApi(AUTH, fetchImpl)
+      .deleteAccount()
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AuthError);
+    expect(failure).toMatchObject({
+      message: "Sign in again before deleting your account.",
+      status: 400,
+      code: "reauth_required",
+    });
+  });
+
   it("lists and revokes OAuth consents and registered clients", async () => {
     const { calls, fetchImpl } = fakeFetch({
       "GET /api/auth/oauth2/get-consents": () =>
@@ -233,19 +252,56 @@ describe("Better Auth adapter", () => {
     expect(await auth.apiToken()).toBe("jwt-2");
   });
 
-  it("throws a typed AuthError when token refresh fails with a non-OK response", async () => {
-    const { fetchImpl } = fakeFetch({
-      "GET /api/auth/token": () =>
-        Response.json({ code: "UNAUTHORIZED", message: "unauthorized" }, { status: 401 }),
+  it("distinguishes 401 session expiry from 503, 429 and network failures on token refresh", async () => {
+    const unauthorizedFetch = fakeFetch({
+      "GET /api/auth/token": () => new Response(null, { status: 401 }),
     });
-    const failure = await createBetterAuthApi(AUTH, fetchImpl)
+    const unauthorized = await createBetterAuthApi(AUTH, unauthorizedFetch.fetchImpl)
       .apiToken()
       .catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(AuthError);
-    expect(failure).toMatchObject({
-      message: "unauthorized",
+    expect(unauthorized).toBeInstanceOf(AuthError);
+    expect(unauthorized).toMatchObject({
+      message: "Your session has ended. Sign in again.",
       status: 401,
-      code: "UNAUTHORIZED",
+      code: "unauthorized",
+    });
+
+    const unavailableFetch = fakeFetch({
+      "GET /api/auth/token": () => new Response(null, { status: 503 }),
+    });
+    const unavailable = await createBetterAuthApi(AUTH, unavailableFetch.fetchImpl)
+      .apiToken()
+      .catch((error: unknown) => error);
+    expect(unavailable).toBeInstanceOf(AuthError);
+    expect(unavailable).toMatchObject({
+      message: "The server cannot verify your sign-in right now. Try again shortly.",
+      status: 503,
+      code: "unavailable",
+    });
+
+    const rateLimitedFetch = fakeFetch({
+      "GET /api/auth/token": () => new Response(null, { status: 429 }),
+    });
+    const rateLimited = await createBetterAuthApi(AUTH, rateLimitedFetch.fetchImpl)
+      .apiToken()
+      .catch((error: unknown) => error);
+    expect(rateLimited).toBeInstanceOf(AuthError);
+    expect(rateLimited).toMatchObject({
+      message: "Too many requests. Try again shortly.",
+      status: 429,
+      code: "rate_limited",
+    });
+
+    const networkFailure = await createBetterAuthApi(AUTH, (async () => {
+      throw new TypeError("Failed to fetch");
+    }) as typeof fetch)
+      .apiToken()
+      .catch((error: unknown) => error);
+    expect(networkFailure).toBeInstanceOf(AuthError);
+    expect(networkFailure).toMatchObject({
+      message: "The sign-in service cannot be reached. Check your connection and try again.",
+      status: undefined,
+      code: "network_error",
     });
   });
 

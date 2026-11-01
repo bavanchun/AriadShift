@@ -92,7 +92,7 @@ export interface AuthApi {
   deleteOAuthConsent(id: string): Promise<void>;
   listOAuthClients(): Promise<OAuthClientInfo[]>;
   deleteOAuthClient(clientId: string): Promise<void>;
-  /** A JWT for the API, reused until shortly before it expires; undefined without a session. */
+  /** A JWT for the API, reused until shortly before it expires; throws an AuthError on failure. */
   apiToken(): Promise<string | undefined>;
 }
 
@@ -364,6 +364,16 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
             404,
           );
         }
+        if (
+          error instanceof AuthError &&
+          (error.code === "reauth_required" || error.code === "SESSION_EXPIRED")
+        ) {
+          throw new AuthError(
+            "Sign in again before deleting your account.",
+            error.status ?? 400,
+            "reauth_required",
+          );
+        }
         throw error;
       }
       cachedToken = undefined;
@@ -428,9 +438,19 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
       if (cachedToken && Date.now() < cachedToken.until) {
         return cachedToken.token;
       }
-      const response = await fetchToken(`${authUrl}/api/auth/token`, {
-        credentials: "include",
-      });
+      let response: Response;
+      try {
+        response = await fetchToken(`${authUrl}/api/auth/token`, {
+          credentials: "include",
+        });
+      } catch {
+        cachedToken = undefined;
+        throw new AuthError(
+          "The sign-in service cannot be reached. Check your connection and try again.",
+          undefined,
+          "network_error",
+        );
+      }
       if (!response.ok) {
         cachedToken = undefined;
         let body: Record<string, unknown> = {};
@@ -439,16 +459,21 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
         } catch {
           // Non-JSON error bodies still surface a typed AuthError below.
         }
+        const defaultMessage =
+          response.status === 401
+            ? "Your session has ended. Sign in again."
+            : response.status === 429
+              ? "Too many requests. Try again shortly."
+              : "The server cannot verify your sign-in right now. Try again shortly.";
+        const defaultCode =
+          response.status === 401
+            ? "unauthorized"
+            : response.status === 429
+              ? "rate_limited"
+              : "unavailable";
         const message =
-          typeof body.message === "string" && body.message !== ""
-            ? body.message
-            : "Your session has ended. Sign in again.";
-        const code =
-          typeof body.code === "string" && body.code !== ""
-            ? body.code
-            : response.status === 401
-              ? "unauthorized"
-              : "token_refresh_failed";
+          typeof body.message === "string" && body.message !== "" ? body.message : defaultMessage;
+        const code = typeof body.code === "string" && body.code !== "" ? body.code : defaultCode;
         throw new AuthError(message, response.status, code);
       }
       let data: unknown;
