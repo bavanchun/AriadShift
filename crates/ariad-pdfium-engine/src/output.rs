@@ -13,7 +13,8 @@
 
 use std::{
     collections::BTreeMap,
-    io::Write,
+    fs::File,
+    io::{Cursor, Write},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -25,11 +26,21 @@ use std::{
 use ariad_core::{
     limits::Limits,
     protocol::{ErrorCode, v2::EventV2},
-    tools::specs::pdfium::output_formats,
+    tools::{
+        page_range::{DuplicatePolicy, PageRange},
+        params::RasterFormat,
+        specs::pdfium::output_formats,
+    },
 };
 use ariad_engine_io::{EngineFailure, RunToolPaths, emit_v2};
-use pdfium_render::prelude::Pdfium;
+use ariad_pdf::{PdfError, ToolCtx as PdfToolCtx, document as pdf_document};
+use image::{
+    DynamicImage, ExtendedColorType, ImageEncoder, ImageFormat, RgbaImage,
+    codecs::{bmp::BmpEncoder, jpeg::JpegEncoder, tiff::TiffEncoder, webp::WebPEncoder},
+};
+use pdfium_render::prelude::{PdfBitmap, Pdfium, PdfiumError, PdfiumInternalError};
 use serde_json::Value;
+use zip::{CompressionMethod, DateTime, ZipWriter, write::SimpleFileOptions};
 
 use crate::library;
 
@@ -125,6 +136,13 @@ impl<'a> ToolContext<'a> {
         self
     }
 
+    /// Overrides the deadline polled by [`Self::check`].
+    #[must_use]
+    pub fn with_deadline(mut self, deadline: Instant) -> Self {
+        self.deadline = Some(deadline);
+        self
+    }
+
     /// Job identifier from the request.
     #[must_use]
     pub fn job(&self) -> &str {
@@ -152,10 +170,11 @@ impl<'a> ToolContext<'a> {
     /// File stem of the first input, used to name artifacts (`document` when it has none).
     #[must_use]
     pub fn input_stem(&self) -> String {
-        self.input().file_stem().map_or_else(
+        let raw = self.input().file_stem().map_or_else(
             || "document".to_owned(),
             |s| s.to_string_lossy().into_owned(),
-        )
+        );
+        sanitize_stem(&raw)
     }
 
     /// Directory every artifact must be written into.
@@ -174,6 +193,24 @@ impl<'a> ToolContext<'a> {
     #[must_use]
     pub fn limits(&self) -> &Limits {
         &self.limits
+    }
+
+    /// Effective per-image pixel cap derived from [`MAX_IMAGE_PIXELS`] and [`Limits`].
+    ///
+    /// Each RGBA pixel occupies 4 bytes; when `max_asset_bytes`, `max_memory_mb`, or
+    /// `max_decompressed_bytes` sets a tighter byte ceiling than `MAX_IMAGE_PIXELS * 4`,
+    /// that tighter pixel bound is enforced.
+    #[must_use]
+    pub fn max_pixels(&self) -> u64 {
+        let mut cap = MAX_IMAGE_PIXELS;
+        if let Some(asset_bytes) = self.limits.max_asset_bytes {
+            cap = cap.min(asset_bytes / 4);
+        }
+        if let Some(mem_mb) = self.limits.max_memory_mb {
+            cap = cap.min((u64::from(mem_mb) * 1024 * 1024) / 4);
+        }
+        cap = cap.min(self.limits.max_decompressed_bytes / 4);
+        cap
     }
 
     /// Fails when the job was cancelled or its time limit passed. Call it at least once per
@@ -207,12 +244,97 @@ impl<'a> ToolContext<'a> {
         }
     }
 
-    /// Fails when a `width` x `height` image would exceed [`MAX_IMAGE_PIXELS`].
+    /// Fails when a `width` x `height` image is empty, overflows PDFium `i32` coordinates,
+    /// or exceeds [`Self::max_pixels`].
     pub fn check_pixels(&self, width: u64, height: u64) -> Result<(), EngineFailure> {
+        if width == 0 || height == 0 {
+            return Err(EngineFailure::new(
+                ErrorCode::EngineFailure,
+                "Rendered image dimensions must be at least 1x1 pixel.",
+            ));
+        }
+        if width > i32::MAX as u64 || height > i32::MAX as u64 {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let max_pixels = self.max_pixels();
         match width.checked_mul(height) {
-            Some(pixels) if pixels <= MAX_IMAGE_PIXELS => Ok(()),
+            Some(pixels) if pixels <= max_pixels => Ok(()),
             _ => Err(EngineFailure::limit_exceeded()),
         }
+    }
+
+    /// Reads and pre-validates the first input PDF against [`Limits`] and encryption rules.
+    ///
+    /// Password-protected and owner-password-encrypted PDFs fail with a typed error pointing
+    /// to `pdf.decrypt`. Corrupt inputs fail with a typed error, never a panic.
+    pub fn load_validated_pdf_bytes(&mut self) -> Result<Vec<u8>, EngineFailure> {
+        self.check()?;
+        self.limits
+            .validate()
+            .map_err(|err| EngineFailure::owned(ErrorCode::LimitExceeded, err.to_string()))?;
+
+        let input_path = self.input().to_path_buf();
+        if let Some(max_input) = self.limits.max_input_bytes
+            && let Ok(meta) = std::fs::metadata(&input_path)
+            && meta.len() > max_input
+        {
+            return Err(EngineFailure::limit_exceeded());
+        }
+
+        let bytes = std::fs::read(&input_path).map_err(|_| EngineFailure::io())?;
+        self.check()?;
+
+        let pdf_ctx = PdfToolCtx {
+            deadline: self.deadline,
+            cancel: Arc::clone(&self.cancel.0),
+        };
+
+        // Allow opening the document up to the global local page ceiling so `PageRange` can
+        // select a smaller subset when `limits.max_pages` is tighter than the whole document;
+        // `resolve_pages` then enforces `limits.max_pages` on the resolved page count.
+        let open_limits = Limits {
+            max_pages: self.limits.max_pages.map(|m| m.max(2_000)).or(Some(2_000)),
+            ..self.limits.clone()
+        };
+
+        let mut doc = pdf_document::open_with_ctx(&bytes, &open_limits, &pdf_ctx)
+            .map_err(map_pdf_open_error)?;
+
+        if doc.repaired_xref() {
+            self.warn(
+                "repaired_xref",
+                "cross-reference table was malformed and reconstructed from object offsets",
+            )?;
+            if let Ok(repaired) = doc.save_bytes() {
+                return Ok(repaired);
+            }
+        }
+
+        Ok(bytes)
+    }
+
+    /// Resolves `range` against `total_pages` with [`DuplicatePolicy::Reject`] and enforces
+    /// `limits.max_pages` on the selected page count.
+    pub fn resolve_pages(
+        &self,
+        range: &PageRange,
+        total_pages: usize,
+    ) -> Result<Vec<usize>, EngineFailure> {
+        if total_pages == 0 {
+            return Err(EngineFailure::new(
+                ErrorCode::EngineFailure,
+                "The input PDF contains no pages.",
+            ));
+        }
+        let total_u32 = u32::try_from(total_pages).map_err(|_| EngineFailure::limit_exceeded())?;
+        let pages: Vec<usize> = range
+            .expand(total_u32, DuplicatePolicy::Reject)
+            .map_err(|err| EngineFailure::owned(ErrorCode::InvalidRequest, err.to_string()))?
+            .into_iter()
+            .map(|p| p as usize)
+            .collect();
+        self.check_page_count(pages.len())?;
+        Ok(pages)
     }
 
     /// Loads libpdfium (from the directory given to [`Self::with_library_dir`], otherwise from
@@ -312,6 +434,171 @@ impl<'a> ToolContext<'a> {
 #[must_use]
 pub fn page_artifact_name(stem: &str, page: u32, ext: &str) -> String {
     format!("{stem}.page-{page:03}.{ext}")
+}
+
+/// Sanitizes an input file stem so generated artifact filenames never contain path separators,
+/// control characters, or exceed safe filename length bounds.
+#[must_use]
+pub fn sanitize_stem(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len().min(180));
+    for ch in raw.chars() {
+        if out.len() >= 180 {
+            break;
+        }
+        if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    let trimmed = out.trim_matches('.');
+    if trimmed.is_empty() {
+        "document".to_owned()
+    } else {
+        trimmed.to_owned()
+    }
+}
+
+/// Maps an [`ariad_pdf::PdfError`] from bounded pre-validation into a typed [`EngineFailure`].
+#[must_use]
+pub fn map_pdf_open_error(err: PdfError) -> EngineFailure {
+    if err.is_cancelled() {
+        return EngineFailure::new(ErrorCode::EngineFailure, "The job was cancelled.");
+    }
+    if err.is_timed_out() {
+        return EngineFailure::new(ErrorCode::LimitExceeded, "The job exceeded its time limit.");
+    }
+    match err {
+        PdfError::Encrypted { .. } => EngineFailure::new(
+            ErrorCode::EngineFailure,
+            "The input PDF is encrypted; decrypt it with 'pdf.decrypt' first.",
+        ),
+        PdfError::LimitExceeded(read_err) => {
+            EngineFailure::owned(ErrorCode::LimitExceeded, read_err.to_string())
+        }
+        PdfError::Malformed => EngineFailure::new(
+            ErrorCode::EngineFailure,
+            "The input file is not a valid or readable PDF.",
+        ),
+        PdfError::InvalidParams(message) => {
+            EngineFailure::owned(ErrorCode::InvalidRequest, message)
+        }
+        PdfError::NotImplemented(message) => {
+            EngineFailure::owned(ErrorCode::EngineFailure, message)
+        }
+    }
+}
+
+/// Maps a [`PdfiumError`] from loading a PDF document into a typed [`EngineFailure`].
+#[must_use]
+pub fn map_pdfium_open_error(err: PdfiumError) -> EngineFailure {
+    match err {
+        PdfiumError::PdfiumLibraryInternalError(
+            PdfiumInternalError::PasswordError | PdfiumInternalError::SecurityError,
+        ) => EngineFailure::new(
+            ErrorCode::EngineFailure,
+            "The input PDF is encrypted; decrypt it with 'pdf.decrypt' first.",
+        ),
+        PdfiumError::PdfiumLibraryInternalError(
+            PdfiumInternalError::FormatError | PdfiumInternalError::PageError,
+        ) => EngineFailure::new(
+            ErrorCode::EngineFailure,
+            "The input file is not a valid or readable PDF.",
+        ),
+        PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::FileError)
+        | PdfiumError::IoError(_) => EngineFailure::io(),
+        other => EngineFailure::owned(
+            ErrorCode::EngineFailure,
+            format!("PDFium failed to open the input PDF: {other}"),
+        ),
+    }
+}
+
+/// Converts a rendered [`PdfBitmap`] into an [`RgbaImage`].
+pub fn bitmap_to_rgba(bitmap: &PdfBitmap<'_>) -> Result<RgbaImage, EngineFailure> {
+    let width = u32::try_from(bitmap.width()).map_err(|_| EngineFailure::limit_exceeded())?;
+    let height = u32::try_from(bitmap.height()).map_err(|_| EngineFailure::limit_exceeded())?;
+    let bytes = bitmap.as_rgba_bytes();
+    RgbaImage::from_raw(width, height, bytes).ok_or_else(|| {
+        EngineFailure::new(
+            ErrorCode::EngineFailure,
+            "PDFium returned a bitmap buffer whose size did not match its dimensions.",
+        )
+    })
+}
+
+/// Encodes an [`RgbaImage`] into the requested [`RasterFormat`].
+pub fn encode_raster_image(
+    image: &RgbaImage,
+    format: RasterFormat,
+    quality: Option<u8>,
+) -> Result<Vec<u8>, EngineFailure> {
+    let mut buf = Vec::new();
+    let res = match format {
+        RasterFormat::Png => DynamicImage::ImageRgba8(image.clone())
+            .write_to(&mut Cursor::new(&mut buf), ImageFormat::Png),
+        RasterFormat::Jpeg => {
+            let rgb = DynamicImage::ImageRgba8(image.clone()).into_rgb8();
+            let mut encoder = JpegEncoder::new_with_quality(&mut buf, quality.unwrap_or(85));
+            encoder.encode_image(&rgb)
+        }
+        RasterFormat::Webp => {
+            let encoder = WebPEncoder::new_lossless(&mut buf);
+            encoder.write_image(
+                image.as_raw(),
+                image.width(),
+                image.height(),
+                ExtendedColorType::Rgba8,
+            )
+        }
+        RasterFormat::Bmp => {
+            let encoder = BmpEncoder::new(&mut buf);
+            encoder.write_image(
+                image.as_raw(),
+                image.width(),
+                image.height(),
+                ExtendedColorType::Rgba8,
+            )
+        }
+        RasterFormat::Tiff => {
+            let encoder = TiffEncoder::new(Cursor::new(&mut buf));
+            encoder.write_image(
+                image.as_raw(),
+                image.width(),
+                image.height(),
+                ExtendedColorType::Rgba8,
+            )
+        }
+    };
+    res.map_err(|err| {
+        EngineFailure::owned(
+            ErrorCode::EngineFailure,
+            format!("Failed to encode {} image: {err}", format.as_str()),
+        )
+    })?;
+    Ok(buf)
+}
+
+/// Writes `entries` (`(file_name, bytes)`) into a deterministic Deflate-compressed `.zip` file.
+pub fn write_zip_archive(
+    zip_path: &Path,
+    entries: &[(String, Vec<u8>)],
+) -> Result<(), EngineFailure> {
+    let file = File::create(zip_path).map_err(|_| EngineFailure::io())?;
+    let mut writer = ZipWriter::new(file);
+    let options = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .last_modified_time(DateTime::default());
+    for (name, bytes) in entries {
+        writer
+            .start_file(name, options)
+            .map_err(|err| EngineFailure::owned(ErrorCode::EngineFailure, err.to_string()))?;
+        writer.write_all(bytes).map_err(|_| EngineFailure::io())?;
+    }
+    writer
+        .finish()
+        .map_err(|err| EngineFailure::owned(ErrorCode::EngineFailure, err.to_string()))?;
+    Ok(())
 }
 
 #[cfg(test)]
