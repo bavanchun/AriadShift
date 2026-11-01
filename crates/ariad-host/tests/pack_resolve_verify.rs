@@ -651,9 +651,11 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
             &mut |_| {},
         )
         .expect_err("undeclared archive executable must fail during install");
-        assert!(legacy_err.to_string().contains(
-            "archive member 'bin/extra-helper' is executable but not declared"
-        ));
+        assert!(
+            legacy_err
+                .to_string()
+                .contains("archive member 'bin/extra-helper' is executable but not declared")
+        );
     }
 
     // Also test a pack with a non-executable Unpack::File component whose filename has an

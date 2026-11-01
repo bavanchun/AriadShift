@@ -977,7 +977,10 @@ mod tests {
     #[test]
     fn staged_artifact_suffix_replaces_control_and_bidi_characters() {
         assert_eq!(
-            replace_staged_input_stem(Path::new("input-0.page\u{202e}\n-001.png"), Path::new("report.pdf")),
+            replace_staged_input_stem(
+                Path::new("input-0.page\u{202e}\n-001.png"),
+                Path::new("report.pdf")
+            ),
             Some("report.page__-001.png".to_owned())
         );
     }
