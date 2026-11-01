@@ -2,7 +2,9 @@
 
 use ariad_core::tools::{page_range::DuplicatePolicy, params::extract_pages::ExtractPagesParams};
 
-use super::page_set::{build_extracted_doc, doc_page_count, expand_page_range_bounded};
+use super::page_set::{
+    PageSetOptions, build_page_set_output, doc_page_count, expand_page_range_capped,
+};
 use crate::{
     document::{PdfDoc, ToolCtx},
     error::PdfError,
@@ -24,14 +26,18 @@ pub fn run(
     }
     let source = &inputs[0];
     let page_count = doc_page_count(source);
-    let selected =
-        expand_page_range_bounded(&params.pages, page_count, DuplicatePolicy::KeepInOrder)?;
+    let selected = expand_page_range_capped(
+        &params.pages,
+        page_count,
+        DuplicatePolicy::KeepInOrder,
+        None,
+    )?;
     if selected.is_empty() {
         return Err(PdfError::InvalidParams(
             "selected page range produced 0 pages".to_owned(),
         ));
     }
 
-    let extracted = build_extracted_doc(source, &selected, ctx)?;
-    Ok(vec![OutputDoc::unnamed_pdf(extracted)])
+    let extracted = build_page_set_output(source, &selected, PageSetOptions::default(), ctx)?;
+    Ok(vec![extracted])
 }

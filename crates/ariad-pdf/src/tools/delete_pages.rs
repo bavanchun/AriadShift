@@ -9,7 +9,7 @@ use crate::{
     error::PdfError,
     tools::{
         OutputDoc,
-        page_set::{build_extracted_doc, doc_page_count},
+        page_set::{PageSetOptions, build_page_set_output, doc_page_count},
     },
 };
 
@@ -44,6 +44,6 @@ pub fn run(
         ));
     }
 
-    let trimmed = build_extracted_doc(source, &surviving, ctx)?;
-    Ok(vec![OutputDoc::unnamed_pdf(trimmed)])
+    let trimmed = build_page_set_output(source, &surviving, PageSetOptions::default(), ctx)?;
+    Ok(vec![trimmed])
 }
