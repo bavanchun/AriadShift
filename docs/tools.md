@@ -413,6 +413,8 @@ Every tool invocation receives an `ariad_core::limits::Limits` struct (`Limits::
 
 PDFium image extraction and scan detection also bound object traversal per page and document. Scan detection accepts at most 2,000 image rectangles per page and bounds the work used to calculate their exact union. Complex inputs may therefore reach a limit even when their file size is small.
 
+For PDFium tools, an unspecified `timeout_s` or `max_memory_mb` uses the cloud defaults (600 seconds and 4096 MiB respectively), including local runs. Explicit limits remain unchanged. `pdf.render` and `pdf.to_images` also cap the cumulative encoded page bytes and the final ZIP size at `max_decompressed_bytes`; a limit failure publishes no artifacts.
+
 Exceeding any limit terminates the job immediately and returns `limit_exceeded` (exit code `4`).
 
 ### Sandbox and Network Isolation (AD-15)

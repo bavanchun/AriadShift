@@ -75,6 +75,7 @@ pub fn execute(
         None
     };
 
+    let effective_limits = pdfium_limits(effective_engine, limits);
     let request = RequestV2::RunTool {
         protocol: PROTOCOL_V2.to_owned(),
         job: format!("tool-{}", Uuid::new_v4()),
@@ -86,7 +87,7 @@ pub fn execute(
         params: engine_params.clone(),
         params_file,
         work_dir: workspace.work_dir().display().to_string(),
-        limits: limits.clone(),
+        limits: effective_limits,
     };
 
     let mut warnings = Vec::new();
@@ -159,6 +160,16 @@ pub fn execute(
         metrics,
         inline_json,
     })
+}
+
+fn pdfium_limits(engine: &str, limits: &Limits) -> Limits {
+    let mut effective = limits.clone();
+    if engine == "pdfium" {
+        let defaults = Limits::cloud();
+        effective.timeout_s = effective.timeout_s.or(defaults.timeout_s);
+        effective.max_memory_mb = effective.max_memory_mb.or(defaults.max_memory_mb);
+    }
+    effective
 }
 
 fn validate_engine_artifact(
@@ -295,5 +306,26 @@ fn map_run_error(
         }
         RunError::ProtocolViolation(reason) => ToolError::EngineFailure(scrubber.scrub(reason)),
         RunError::Io(io_err) => ToolError::EngineFailure(scrubber.scrub(&io_err.to_string())),
+    }
+}
+
+#[cfg(test)]
+mod pdfium_limit_tests {
+    use super::*;
+
+    #[test]
+    fn local_pdfium_uses_default_ceilings_without_overriding_explicit_limits() {
+        let local = Limits::local();
+        let defaults = Limits::cloud();
+        let effective = pdfium_limits("pdfium", &local);
+        assert_eq!(effective.timeout_s, defaults.timeout_s);
+        assert_eq!(effective.max_memory_mb, defaults.max_memory_mb);
+        let explicit = Limits {
+            timeout_s: Some(12),
+            max_memory_mb: Some(512),
+            ..local.clone()
+        };
+        assert_eq!(pdfium_limits("pdfium", &explicit), explicit);
+        assert_eq!(pdfium_limits("qpdf", &local), local);
     }
 }
