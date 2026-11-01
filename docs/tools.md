@@ -344,7 +344,7 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
 - **Multi-artifact tools**:
   - `pdf.split` → `<stem>.part-001.pdf`, `<stem>.part-002.pdf`, ... (1-based index, zero-padded to at least 3 digits: `001`..`999`, widening to 4+ digits when parts >= 1,000).
   - `pdf.to_images` / `pdf.render` → `<stem>.page-001.png`, `<stem>.page-002.png`, ...
-  - `pdf.attachments` and `pdf.portfolio` (`action = "extract"`) → `<stem>.attachment-001.<sanitized-name>` confined inside `<output_dir>`; the attachment's own name and extension are kept and its bytes are written unchanged. Entries are numbered in name order.
+  - `pdf.attachments` and `pdf.portfolio` (`action = "extract"`) → `<stem>.attachment-001.<sanitized-name>` confined inside `<output_dir>`. The attachment's own name and extension are kept and its bytes are written unchanged, except that executable, script, shortcut and installer types (for example `.exe`, `.py`, `.lnk`, `.sh`, `.pkg`) get `.bin` appended to the file name, with one warning per renamed file. Files never get an executable bit. Entries are numbered in name order.
 
 When `-o <FILE>` is passed to a single-artifact tool, that exact file path is used. Passing a non-directory `-o <FILE>` to a multi-artifact tool (such as `pdf.split`) is rejected upfront with exit code `2` (`usage`).
 

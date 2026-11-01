@@ -1133,6 +1133,16 @@ fn run_tool_attachments_extract_quarantines_risky_types_without_failing() {
         .expect("list extract dir")
         .count();
     assert_eq!(on_disk, 6, "no stray or unrenamed risky file may remain");
+    assert_eq!(
+        res.warnings.len(),
+        4,
+        "expected one attachment_quarantined warning per renamed risky file"
+    );
+    assert!(
+        res.warnings
+            .iter()
+            .all(|w| w.code == "attachment_quarantined")
+    );
 }
 
 #[test]

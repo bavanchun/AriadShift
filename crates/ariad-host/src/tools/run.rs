@@ -40,10 +40,11 @@ use crate::{
         inprocess::{self, INPROCESS_PDF_ENGINE},
         publish::{
             PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
-            default_single_artifact_name, ensure_no_parent_traversal, is_safe_extracted_extension,
-            open_confined_output_dir, publish_atomic, render_naming_template,
-            validate_artifact_extensions, validate_extracted_artifact_extensions,
-            validate_output_path_extension, validate_target_filename,
+            default_single_artifact_name, ensure_no_parent_traversal,
+            extracted_quarantine_warnings, is_safe_extracted_extension, open_confined_output_dir,
+            publish_atomic, render_naming_template, validate_artifact_extensions,
+            validate_extracted_artifact_extensions, validate_output_path_extension,
+            validate_target_filename,
         },
         secrets::{SecretBag, SecretScrubber},
     },
@@ -705,7 +706,7 @@ fn run_tool_inner(
     };
 
     // 11. Plan and execute atomic multi-artifact publication.
-    let published = publish_tool_outputs(
+    let (published, publish_warnings) = publish_tool_outputs(
         &workspace,
         &spec,
         effective_output_format,
@@ -724,13 +725,18 @@ fn run_tool_inner(
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     let mut metrics = raw_exec.metrics;
     metrics.insert("elapsed_ms".to_owned(), json!(elapsed_ms));
+    let mut warnings = raw_exec.warnings;
+    warnings.extend(publish_warnings.into_iter().map(|message| ConvertWarning {
+        code: "attachment_quarantined".to_owned(),
+        message,
+    }));
 
     Ok(ToolOutcome {
         tool: spec.id.to_owned(),
         version: spec.version.to_owned(),
         engine: spec.engine.to_owned(),
         artifacts: published,
-        warnings: raw_exec.warnings,
+        warnings,
         metrics,
         inline_json: raw_exec.inline_json,
     })
@@ -1094,9 +1100,9 @@ fn publish_tool_outputs(
     allowed_dirs: Option<&AllowedDirs>,
     overwrite: bool,
     fail_at_index: Option<usize>,
-) -> Result<Vec<PublishedArtifact>, ToolError> {
+) -> Result<(Vec<PublishedArtifact>, Vec<String>), ToolError> {
     if raw_artifacts.is_empty() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
 
     let first_input = inputs
@@ -1109,12 +1115,12 @@ fn publish_tool_outputs(
         .unwrap_or("document");
 
     let (dest_dir, explicit_single_filename): (PathBuf, Option<String>) = match output {
-        OutputTarget::None => return Ok(Vec::new()),
+        OutputTarget::None => return Ok((Vec::new(), Vec::new())),
         OutputTarget::DefaultBesideInput => {
             // Inline-JSON actions (`pdf.info`, `outline export`, `attachments list`, `portfolio list`, `layers list`)
             // without `-o` emit structured JSON inline without writing a file next to input.
             if (spec.id == "pdf.info" || emits_json) && naming_template.is_none() {
-                return Ok(Vec::new());
+                return Ok((Vec::new(), Vec::new()));
             }
             let parent = first_input
                 .parent()
@@ -1200,7 +1206,12 @@ fn publish_tool_outputs(
         validate_artifact_extensions(effective_output_format, &staged)?;
     }
 
-    Ok(publish_atomic(
+    let quarantine_warnings = if extracts_attachments {
+        extracted_quarantine_warnings(&staged)
+    } else {
+        Vec::new()
+    };
+    let published = publish_atomic(
         workspace,
         &staged,
         &dest_dir,
@@ -1208,7 +1219,8 @@ fn publish_tool_outputs(
         allowed_dirs,
         overwrite,
         fail_at_index,
-    )?)
+    )?;
+    Ok((published, quarantine_warnings))
 }
 
 static COMPILED_PARAM_SCHEMAS: LazyLock<RwLock<HashMap<String, Arc<jsonschema::Validator>>>> =
