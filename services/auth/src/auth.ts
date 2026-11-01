@@ -13,6 +13,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { jwt, twoFactor } from "better-auth/plugins";
 import pg from "pg";
 import type { DiscoveryDocument } from "./app.ts";
+import { type CimdFetcherOptions, createCimdExtension } from "./cimd.ts";
 import { AUTH_SCHEMA, type AuthServiceConfig } from "./config.ts";
 import { OAUTH_TOKEN_LIMITS, serializedOAuthHandler } from "./oauth-lock.ts";
 
@@ -171,14 +172,20 @@ export const OAUTH_REGISTRATION_RATE_LIMIT = { window: 60 * 60, max: 20 } as con
 export const CLIENT_IP_HEADER = "x-ariadshift-client-ip";
 
 /** Opens the pool with every unqualified table name resolving to `auth`. */
-export function createPool(config: AuthServiceConfig): pg.Pool {
-  return new pg.Pool({
+export function createPool(
+  config: AuthServiceConfig,
+  onIdleError: (error: Error) => void = (error) =>
+    console.error("Idle auth database connection failed:", error.message),
+): pg.Pool {
+  const pool = new pg.Pool({
     connectionString: config.databaseUrl,
     // A search_path in DATABASE_URL takes precedence over this one.
     options: `-c search_path=${AUTH_SCHEMA}`,
     max: 10,
     connectionTimeoutMillis: OAUTH_TOKEN_LIMITS.checkoutMs,
   });
+  pool.on("error", onIdleError);
+  return pool;
 }
 
 /**
@@ -207,6 +214,7 @@ function socialProviders(config: AuthServiceConfig): BetterAuthOptions["socialPr
 export function buildAuthOptions(
   config: AuthServiceConfig,
   database: NonNullable<BetterAuthOptions["database"]>,
+  cimd?: CimdFetcherOptions,
 ) {
   return {
     appName: APP_NAME,
@@ -425,6 +433,19 @@ export function buildAuthOptions(
               // Native clients (Claude Code, Cursor) often omit application_type
               // and use loopback or custom-scheme callbacks.
               clientRegistrationDefaultApplicationType: "infer",
+              // Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)
+              // let MCP clients identify themselves by an https:// metadata URL
+              // without prior dynamic registration; RFC 7591 stays enabled alongside it.
+              extensions: config.cimdEnabled
+                ? [
+                    createCimdExtension({
+                      ...cimd,
+                      allowedHosts: config.cimdAllowedHosts,
+                      deniedHosts: config.cimdDeniedHosts,
+                      registrationRateLimit: OAUTH_REGISTRATION_RATE_LIMIT,
+                    }),
+                  ]
+                : [],
               accessTokenExpiresIn: OAUTH_ACCESS_TOKEN_LIFETIME_S,
               refreshTokenReuseInterval: OAUTH_REFRESH_REUSE_INTERVAL_S,
               // Keyed by CLIENT_IP_HEADER like every other Better Auth limit; the

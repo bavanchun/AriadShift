@@ -14,7 +14,16 @@ import {
   OAUTH_TOKEN_LOCK_KEY,
   serializedOAuthHandler,
 } from "../src/oauth-lock.ts";
-import { browserFlow, config, createService, json, post, token } from "./oauth-helpers.ts";
+import {
+  authorizeUrl,
+  browserFlow,
+  config,
+  createService,
+  json,
+  pkce,
+  post,
+  token,
+} from "./oauth-helpers.ts";
 
 const databaseUrl = process.env.ARIAD_TEST_DATABASE_URL?.trim();
 if (process.env.ARIAD_TEST_REQUIRE_DATABASE === "1" && !databaseUrl) {
@@ -109,6 +118,48 @@ describe.skipIf(!databaseUrl)("PostgreSQL OAuth serialization across replicas", 
   }
 
   const waiting = (key: string) => lockPid(key, false);
+
+  it("does not hold the token lock while a metadata lookup is slow", async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const lookupStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const service = createService(first, false, {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => {
+        started();
+        await gate;
+        return { status: 404, headers: {}, body: "" };
+      },
+    });
+    const id = "https://slow.example/client.json";
+    const { challenge } = pkce();
+    const authorization = service.app.request(
+      authorizeUrl(id, { code_challenge: challenge, code_challenge_method: "S256" }),
+    );
+    try {
+      await lookupStarted;
+      const response = await Promise.race([
+        token(service.app, {
+          grant_type: "authorization_code",
+          client_id: id,
+          code: "invalid",
+          code_verifier: "a".repeat(43),
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("token waited for metadata")), 1_000),
+        ),
+      ]);
+      expect(response.status).not.toBe(503);
+    } finally {
+      release();
+      await authorization;
+    }
+  });
 
   it("returns the identical refresh response to simultaneous retries on two replicas", async () => {
     const one = createService(first);

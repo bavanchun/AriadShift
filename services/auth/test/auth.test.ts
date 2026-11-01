@@ -31,7 +31,7 @@ if (process.env.ARIAD_TEST_REQUIRE_DATABASE === "1" && !databaseUrl) {
 const BACKENDS = ["memory", ...(databaseUrl ? (["postgres"] as const) : [])] as const;
 
 // A pool connects lazily, so building options never touches a database.
-const pool = new pg.Pool({ connectionString: "postgres://nobody@127.0.0.1:1/none" });
+const pool = createPool(config({ DATABASE_URL: "postgres://nobody@127.0.0.1:1/none" }));
 afterAll(() => pool.end());
 
 function config(overrides: Record<string, string> = {}): AuthServiceConfig {
@@ -53,6 +53,18 @@ function plugin(options: ReturnType<typeof buildAuthOptions>, id: string) {
 }
 
 describe("buildAuthOptions", () => {
+  it("handles idle pool errors and closes the pool", async () => {
+    const errors: Error[] = [];
+    const db = createPool(config(), (error) => errors.push(error));
+    try {
+      const error = Object.assign(new Error("connection terminated"), { code: "57P01" });
+      db.emit("error", error);
+      expect(errors).toEqual([error]);
+    } finally {
+      await db.end();
+    }
+  });
+
   it("installs exactly the JWT, API key, passkey, two-factor and OAuth provider plugins", () => {
     const ids = buildAuthOptions(config(), pool).plugins.map((p) => p.id);
     expect(ids.sort()).toEqual(["api-key", "jwt", "oauth-provider", "passkey", "two-factor"]);
@@ -258,6 +270,11 @@ describe("buildAuthOptions", () => {
       });
     });
 
+    it("requires an explicit opt-in for client metadata discovery", () => {
+      expect(oauth().extensions).toEqual([]);
+      expect(oauth({ AUTH_CIMD_ENABLED: "true" }).extensions).toHaveLength(1);
+    });
+
     it("limits anonymous client registration per address far below Better Auth's default", () => {
       expect(OAUTH_REGISTRATION_RATE_LIMIT).toEqual({ window: 3600, max: 20 });
       expect(oauth().rateLimit).toEqual({ register: { window: 3600, max: 20 } });
@@ -325,27 +342,55 @@ describe("buildAuthOptions", () => {
 
   let adminPool: pg.Pool | undefined;
   let pgPool: pg.Pool | undefined;
+  const pgClients = new Set<pg.PoolClient>();
+  const idleErrors: Error[] = [];
+  const recordIdleError = (error: Error) => idleErrors.push(error);
   const pgDbName = `auth_unit_${randomBytes(8).toString("hex")}`;
 
   beforeAll(async () => {
     if (!databaseUrl) return;
     adminPool = new pg.Pool({ connectionString: databaseUrl });
+    adminPool.on("error", recordIdleError);
     await adminPool.query(`CREATE DATABASE "${pgDbName}"`);
     const url = new URL(databaseUrl);
     url.pathname = `/${pgDbName}`;
     const setupPool = new pg.Pool({ connectionString: url.toString() });
-    await setupPool.query("CREATE SCHEMA auth");
-    await setupPool.end();
-    pgPool = createPool({ ...config(), databaseUrl: url.toString() });
+    setupPool.on("error", recordIdleError);
+    try {
+      await setupPool.query("CREATE SCHEMA auth");
+    } finally {
+      await setupPool.end();
+    }
+    pgPool = createPool({ ...config(), databaseUrl: url.toString() }, recordIdleError);
+    pgPool.on("connect", (client) => {
+      pgClients.add(client);
+      // pg can resolve pool.end() before each socket emits its final end event.
+      client.on("error", recordIdleError);
+      client.once("end", () => {
+        pgClients.delete(client);
+        client.removeListener("error", recordIdleError);
+      });
+    });
     await migrate(pgPool, buildAuthOptions(config(), pgPool));
   }, 30_000);
 
   afterAll(async () => {
-    await pgPool?.end();
-    if (adminPool) {
-      await adminPool.query(`DROP DATABASE IF EXISTS "${pgDbName}" WITH (FORCE)`);
-      await adminPool.end();
+    try {
+      const closed = [...pgClients].map(
+        (client) => new Promise<void>((resolve) => client.once("end", resolve)),
+      );
+      await pgPool?.end();
+      await Promise.all(closed);
+    } finally {
+      if (adminPool) {
+        try {
+          await adminPool.query(`DROP DATABASE IF EXISTS "${pgDbName}"`);
+        } finally {
+          await adminPool.end();
+        }
+      }
     }
+    expect(idleErrors).toEqual([]);
   }, 30_000);
 
   describe.each(BACKENDS)("account deletion (%s)", (backend) => {

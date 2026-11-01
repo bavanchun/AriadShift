@@ -4,7 +4,8 @@ import { memoryAdapter } from "better-auth/adapters/memory";
 import { getAuthTables } from "better-auth/db";
 import { createApp } from "../src/app.ts";
 import { buildAuthOptions, createAuth, discoveryDocuments } from "../src/auth.ts";
-import { parseConfig } from "../src/config.ts";
+import type { CimdFetcherOptions } from "../src/cimd.ts";
+import { type AuthServiceConfig, parseConfig } from "../src/config.ts";
 import { pageOptions } from "../src/pages.ts";
 
 export const AUTH = "http://localhost:3001";
@@ -16,6 +17,7 @@ export const config = parseConfig({
   BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
   BETTER_AUTH_URL: AUTH,
   AUTH_ALLOW_SIGN_UP: "true",
+  AUTH_CIMD_ENABLED: "true",
   BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
   ARIAD_PUBLIC_URL: "http://localhost:8080",
 });
@@ -23,19 +25,21 @@ export const config = parseConfig({
 export function createService(
   database?: NonNullable<BetterAuthOptions["database"]>,
   rateLimit = false,
+  cimd?: CimdFetcherOptions,
+  serviceConfig: AuthServiceConfig = config,
 ) {
-  const probe = buildAuthOptions(config, memoryAdapter({}));
+  const probe = buildAuthOptions(serviceConfig, memoryAdapter({}), cimd);
   const db: Record<string, unknown[]> = Object.fromEntries(
     Object.values(getAuthTables(probe)).map((table) => [table.modelName, []]),
   );
-  const options = buildAuthOptions(config, database ?? memoryAdapter(db));
+  const options = buildAuthOptions(serviceConfig, database ?? memoryAdapter(db), cimd);
   // Rate limits are covered elsewhere; the flow makes many quick requests.
   const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: rateLimit } });
   const app = createApp({
-    config,
+    config: serviceConfig,
     handler: (request) => auth.handler(request),
     metadata: discoveryDocuments(auth),
-    pages: pageOptions(config),
+    pages: pageOptions(serviceConfig),
     peerAddress: () => "127.0.0.1",
   });
   return { app, db, auth };

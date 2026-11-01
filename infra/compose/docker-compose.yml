@@ -193,6 +193,9 @@ services:
       AUTH_TURNSTILE_SECRET: ${ARIAD_TURNSTILE_SECRET:-}
       # LAN HTTP is an explicit opt-in and always disables remote MCP OAuth.
       AUTH_ALLOW_INSECURE_HTTP: ${AUTH_ALLOW_INSECURE_HTTP:-false}
+      AUTH_CIMD_ENABLED: ${AUTH_CIMD_ENABLED:-false}
+      AUTH_CIMD_ALLOWED_HOSTS: ${AUTH_CIMD_ALLOWED_HOSTS:-}
+      AUTH_CIMD_DENIED_HOSTS: ${AUTH_CIMD_DENIED_HOSTS:-}
       # The API's public origin. OAuth access tokens for remote MCP carry
       # <ARIAD_PUBLIC_URL>/mcp as their audience, the resource the API checks.
       ARIAD_PUBLIC_URL: ${ARIAD_PUBLIC_URL:-http://localhost:8080}
