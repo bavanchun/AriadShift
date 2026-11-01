@@ -52,10 +52,18 @@ fn assert_json_snapshot(snap_name: &str, value: &impl serde::Serialize) {
     let body = serde_json::to_string_pretty(value).expect("serialize snapshot json");
     let full =
         format!("---\nsource: crates/ariad-pdf/tests/merge.rs\nexpression: report\n---\n{body}\n");
-    if std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always") || !snap_path.exists() {
+    let update = std::env::var("UPDATE_SNAPSHOTS").ok().is_some_and(|v| {
+        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("always")
+    }) || std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always");
+    if update {
         fs::create_dir_all(&snaps_dir).expect("create snapshots dir");
         fs::write(&snap_path, &full).expect("write snapshot file");
     }
+    assert!(
+        snap_path.exists(),
+        "snapshot file {} is missing; set UPDATE_SNAPSHOTS=1 to update snapshots",
+        snap_path.display()
+    );
     let expected = fs::read_to_string(&snap_path)
         .unwrap_or_else(|e| panic!("failed to read snapshot {}: {e}", snap_path.display()));
     assert_eq!(expected, full, "snapshot mismatch for {snap_name}");
@@ -220,6 +228,101 @@ fn merge_rejects_single_input_and_enforces_page_limit() {
     let limited_multi = InputDoc::with_limits("multipage-20", multi_raw, small_limits);
     let err_limit = run_merge(&[limited_multi, single], &json!({})).unwrap_err();
     assert!(matches!(err_limit, PdfError::LimitExceeded(_)));
+
+    // Total output pages across inputs exceeding MAX_OUTPUT_PAGES (10,000) must fail with TooManyPages.
+    let large = load_input("large-1000-pages.pdf");
+    let eleven_thousand: Vec<InputDoc> = (0..11).map(|_| large.clone()).collect();
+    let err_total = run_merge(&eleven_thousand, &json!({})).unwrap_err();
+    assert!(
+        matches!(
+            err_total,
+            PdfError::LimitExceeded(ariad_core::reader::pdf::ReadError::TooManyPages {
+                actual: 11_000,
+                limit: 10_000,
+            })
+        ),
+        "expected TooManyPages(11000, 10000), got {err_total:?}"
+    );
+}
+
+#[test]
+fn merge_handles_diamond_name_tree_dag_without_duplication_or_hang() {
+    use lopdf::{Document, Object, Stream, StringFormat, dictionary};
+
+    let make_doc_with_diamond_ef = || {
+        let mut doc = Document::with_version("1.5");
+        let pages_id = doc.new_object_id();
+        let content_id = doc.add_object(Stream::new(dictionary! {}, b"BT (Doc) Tj ET".to_vec()));
+        let page_id = doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => content_id,
+        });
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages",
+                "Kids" => vec![Object::Reference(page_id)],
+                "Count" => 1,
+            }),
+        );
+
+        let ef_stream_id = doc.add_object(Stream::new(dictionary! {}, b"payload".to_vec()));
+        let filespec_id = doc.add_object(dictionary! {
+            "Type" => "Filespec",
+            "F" => Object::String(b"memo.txt".to_vec(), StringFormat::Literal),
+            "EF" => dictionary! { "F" => Object::Reference(ef_stream_id) },
+        });
+
+        let mut tree_node_id = doc.add_object(dictionary! {
+            "Names" => vec![
+                Object::String(b"memo.txt".to_vec(), StringFormat::Literal),
+                Object::Reference(filespec_id),
+            ],
+        });
+        // 6-level diamond DAG where each `/Kids` repeats `tree_node_id` 4 times (4^6 = 4096 paths).
+        for _ in 0..6 {
+            tree_node_id = doc.add_object(dictionary! {
+                "Kids" => vec![
+                    Object::Reference(tree_node_id),
+                    Object::Reference(tree_node_id),
+                    Object::Reference(tree_node_id),
+                    Object::Reference(tree_node_id),
+                ],
+            });
+        }
+
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+            "Names" => dictionary! {
+                "EmbeddedFiles" => Object::Reference(tree_node_id),
+            },
+        });
+        doc.trailer.set("Root", catalog_id);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).expect("save diamond ef pdf");
+        bytes
+    };
+
+    let d1 = InputDoc::new("d1", make_doc_with_diamond_ef());
+    let d2 = load_input("annotations.pdf");
+    let out = run_merge(&[d1, d2], &json!({})).expect("merge diamond name tree");
+    let merged = open(&out.artifacts[0].bytes, &Limits::local()).expect("open merged");
+    let cat = merged.inner().catalog().expect("catalog");
+    let names = cat.get(b"Names").and_then(|o| o.as_dict()).expect("Names");
+    let ef_id = names
+        .get(b"EmbeddedFiles")
+        .and_then(|o| o.as_reference())
+        .expect("EmbeddedFiles");
+    let ef_dict = merged.inner().get_dictionary(ef_id).expect("ef dict");
+    let ef_arr = ef_dict
+        .get(b"Names")
+        .and_then(|o| o.as_array())
+        .expect("Names array");
+    // Only 1 attachment ("memo.txt") => 2 elements in Names array, not 4096 * 2.
+    assert_eq!(ef_arr.len(), 2);
 }
 
 #[test]

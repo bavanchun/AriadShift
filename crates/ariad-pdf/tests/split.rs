@@ -49,10 +49,18 @@ fn assert_json_snapshot(snap_name: &str, value: &impl serde::Serialize) {
     let body = serde_json::to_string_pretty(value).expect("serialize snapshot json");
     let full =
         format!("---\nsource: crates/ariad-pdf/tests/split.rs\nexpression: report\n---\n{body}\n");
-    if std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always") || !snap_path.exists() {
+    let update = std::env::var("UPDATE_SNAPSHOTS").ok().is_some_and(|v| {
+        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("always")
+    }) || std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always");
+    if update {
         fs::create_dir_all(&snaps_dir).expect("create snapshots dir");
         fs::write(&snap_path, &full).expect("write snapshot file");
     }
+    assert!(
+        snap_path.exists(),
+        "snapshot file {} is missing; set UPDATE_SNAPSHOTS=1 to update snapshots",
+        snap_path.display()
+    );
     let expected = fs::read_to_string(&snap_path)
         .unwrap_or_else(|e| panic!("failed to read snapshot {}: {e}", snap_path.display()));
     assert_eq!(expected, full, "snapshot mismatch for {snap_name}");
@@ -222,4 +230,31 @@ fn split_rejects_invalid_params_and_missing_bookmarks() {
     )
     .unwrap_err();
     assert!(matches!(err_bad_threshold, PdfError::InvalidParams(_)));
+}
+
+#[test]
+fn split_strips_catalog_embedded_files_and_af_from_parts() {
+    let attach = load_input("with-attachments.pdf");
+    let rotated = load_input("rotated-pages.pdf");
+    let merged = run_tool(
+        "pdf.merge",
+        &[attach, rotated],
+        &json!({}),
+        &ToolCtx::default(),
+    )
+    .expect("merge attachment pdf with rotated pages");
+    let merged_input = InputDoc::new("merged-with-attach", merged.artifacts[0].bytes.clone());
+    assert!(inspect_bytes(&merged.artifacts[0].bytes).has_attachments);
+
+    let split_out = run_split(&[merged_input], &json!({ "mode": "every", "every": 1 }))
+        .expect("split every 1 page");
+    assert_eq!(split_out.artifacts.len(), 5);
+    for part in &split_out.artifacts {
+        let rep = inspect_bytes(&part.bytes);
+        assert!(
+            !rep.has_attachments,
+            "split part {} must not duplicate catalog-level EmbeddedFiles/AF",
+            part.name
+        );
+    }
 }

@@ -53,10 +53,18 @@ fn assert_json_snapshot(snap_name: &str, value: &impl serde::Serialize) {
     let full = format!(
         "---\nsource: crates/ariad-pdf/tests/extract_pages.rs\nexpression: report\n---\n{body}\n"
     );
-    if std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always") || !snap_path.exists() {
+    let update = std::env::var("UPDATE_SNAPSHOTS").ok().is_some_and(|v| {
+        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("always")
+    }) || std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always");
+    if update {
         fs::create_dir_all(&snaps_dir).expect("create snapshots dir");
         fs::write(&snap_path, &full).expect("write snapshot file");
     }
+    assert!(
+        snap_path.exists(),
+        "snapshot file {} is missing; set UPDATE_SNAPSHOTS=1 to update snapshots",
+        snap_path.display()
+    );
     let expected = fs::read_to_string(&snap_path)
         .unwrap_or_else(|e| panic!("failed to read snapshot {}: {e}", snap_path.display()));
     assert_eq!(expected, full, "snapshot mismatch for {snap_name}");
@@ -178,4 +186,101 @@ fn extract_pages_rejects_invalid_ranges_and_input_counts() {
 
     let err_arity = run_extract(&[], "1").unwrap_err();
     assert!(matches!(err_arity, PdfError::InvalidParams(_)));
+}
+
+#[test]
+fn extract_pages_enforces_max_output_pages_and_caps_range_expansion() {
+    let input = load_input("multipage-20.pdf"); // 20 pages
+    // 501 repetitions of "all" on a 20-page PDF = 10,020 pages (> 10,000 limit).
+    let repeated_all = vec!["all"; 501].join(",");
+    let err = run_extract(&[input], &repeated_all).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            PdfError::LimitExceeded(ariad_core::reader::pdf::ReadError::TooManyPages {
+                actual: 10_020,
+                limit: 10_000,
+            })
+        ),
+        "expected TooManyPages limit error, got {err:?}"
+    );
+}
+
+#[test]
+fn extract_pages_handles_deep_indirect_chains_and_diamond_page_labels_dag() {
+    use lopdf::{Document, Object, Stream, dictionary};
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let content_id = doc.add_object(Stream::new(dictionary! {}, b"BT (Hello) Tj ET".to_vec()));
+
+    // Build a deep chain of 4,000 indirect dictionaries attached to the page dictionary.
+    let mut chain_id = doc.add_object(dictionary! { "Leaf" => 1 });
+    for i in 0..4_000 {
+        chain_id = doc.add_object(dictionary! {
+            "Step" => i,
+            "Next" => Object::Reference(chain_id),
+        });
+    }
+
+    let page_id = doc.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => content_id,
+        "PieceInfo" => Object::Reference(chain_id),
+    });
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page_id)],
+            "Count" => 1,
+        }),
+    );
+
+    // Build a 10-level diamond DAG in `/PageLabels /Kids` where each node repeats the next 4 times.
+    let mut label_node_id = doc.add_object(dictionary! {
+        "Nums" => vec![
+            0.into(),
+            Object::Dictionary(dictionary! { "S" => "r", "St" => 1 }),
+        ],
+    });
+    for _ in 0..10 {
+        label_node_id = doc.add_object(dictionary! {
+            "Kids" => vec![
+                Object::Reference(label_node_id),
+                Object::Reference(label_node_id),
+                Object::Reference(label_node_id),
+                Object::Reference(label_node_id),
+            ],
+        });
+    }
+
+    let catalog_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+        "PageLabels" => Object::Reference(label_node_id),
+    });
+    doc.trailer.set("Root", catalog_id);
+
+    let mut raw = Vec::new();
+    doc.save_to(&mut raw).expect("save synthetic pdf");
+
+    // Run on a 512 KiB stack thread and assert it completes within 200ms without stack overflow.
+    let handle = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let start = std::time::Instant::now();
+            let input = InputDoc::new("synthetic", raw);
+            let out = run_extract(&[input], "1").expect("extract deep chain + diamond labels");
+            assert_eq!(out.artifacts.len(), 1);
+            assert!(
+                start.elapsed() < std::time::Duration::from_millis(200),
+                "diamond DAG traversal took too long: {:?}",
+                start.elapsed()
+            );
+        })
+        .expect("spawn thread");
+    handle.join().expect("thread must not stack-overflow");
 }

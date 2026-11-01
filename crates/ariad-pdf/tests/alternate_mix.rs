@@ -70,6 +70,21 @@ fn inspect_bytes(pdf_bytes: &[u8]) -> PdfInfo {
 fn assert_snapshot_json(snapshot_name: &str, expression: &str, value: &impl serde::Serialize) {
     let pretty = serde_json::to_string_pretty(value).expect("serialize snapshot JSON");
     let expected_file = snapshots_dir().join(format!("{snapshot_name}.snap"));
+    let full = format!(
+        "---\nsource: crates/ariad-pdf/tests/alternate_mix.rs\nexpression: {expression}\n---\n{pretty}\n"
+    );
+    let update = std::env::var("UPDATE_SNAPSHOTS").ok().is_some_and(|v| {
+        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("always")
+    }) || std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always");
+    if update {
+        std::fs::create_dir_all(snapshots_dir()).expect("create snapshots dir");
+        std::fs::write(&expected_file, &full).expect("write snapshot file");
+    }
+    assert!(
+        expected_file.exists(),
+        "snapshot file {} is missing; set UPDATE_SNAPSHOTS=1 to update snapshots",
+        expected_file.display()
+    );
     let raw = std::fs::read_to_string(&expected_file).unwrap_or_else(|e| {
         panic!(
             "failed to read snapshot {}: {e}\nActual JSON:\n{pretty}",
@@ -215,23 +230,40 @@ fn alternate_mix_is_byte_deterministic() {
 fn alternate_mix_propagates_repaired_xref_warning_and_writes_clean_pdf() {
     let limits = Limits::local();
     let ctx = ToolCtx::default();
-    let clean = open(&read_fixture("mixed-sizes.pdf"), &limits).expect("open mixed-sizes");
-    let broken = open(&read_fixture("broken-xref.pdf"), &limits).expect("open broken-xref");
+    let clean_bytes = read_fixture("mixed-sizes.pdf");
+    let broken_bytes = read_fixture("broken-xref.pdf");
+    let clean = open(&clean_bytes, &limits).expect("open mixed-sizes");
+    let broken = open(&broken_bytes, &limits).expect("open broken-xref");
 
-    let mut outputs = alternate_mix::run(
+    let direct_outputs = alternate_mix::run(
         &[clean, broken],
         &AlternateMixParams {
             reverse_second: false,
         },
         &ctx,
     )
-    .expect("alternate_mix with broken-xref in second slot");
-    assert_eq!(outputs[0].warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
-    let rewritten = save_output(outputs.remove(0));
+    .expect("alternate_mix with broken-xref directly");
+    assert!(
+        direct_outputs[0].warnings.is_empty(),
+        "direct tool run must leave REPAIRED_XREF_WARNING to finalize_tool_output"
+    );
 
-    let reopened = open(&rewritten, &limits).expect("reopen rewritten PDF");
+    let tool_out = ariad_pdf::run_tool(
+        "pdf.alternate_mix",
+        &[
+            InputDoc::new("mixed-sizes.pdf", clean_bytes),
+            InputDoc::new("broken-xref.pdf", broken_bytes),
+        ],
+        &json!({ "reverse_second": false }),
+        &ctx,
+    )
+    .expect("run_tool pdf.alternate_mix with broken-xref");
+    assert_eq!(tool_out.warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
+    let rewritten = &tool_out.artifacts[0].bytes;
+
+    let reopened = open(rewritten, &limits).expect("reopen rewritten PDF");
     assert!(!reopened.repaired_xref());
-    let _ = pdf_reader::read(&rewritten, &limits).expect("strict read succeeds");
+    let _ = pdf_reader::read(rewritten, &limits).expect("strict read succeeds");
 }
 
 #[test]

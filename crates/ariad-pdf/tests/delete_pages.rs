@@ -50,10 +50,18 @@ fn assert_json_snapshot(snap_name: &str, value: &impl serde::Serialize) {
     let full = format!(
         "---\nsource: crates/ariad-pdf/tests/delete_pages.rs\nexpression: report\n---\n{body}\n"
     );
-    if std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always") || !snap_path.exists() {
+    let update = std::env::var("UPDATE_SNAPSHOTS").ok().is_some_and(|v| {
+        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("always")
+    }) || std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always");
+    if update {
         fs::create_dir_all(&snaps_dir).expect("create snapshots dir");
         fs::write(&snap_path, &full).expect("write snapshot file");
     }
+    assert!(
+        snap_path.exists(),
+        "snapshot file {} is missing; set UPDATE_SNAPSHOTS=1 to update snapshots",
+        snap_path.display()
+    );
     let expected = fs::read_to_string(&snap_path)
         .unwrap_or_else(|e| panic!("failed to read snapshot {}: {e}", snap_path.display()));
     assert_eq!(expected, full, "snapshot mismatch for {snap_name}");

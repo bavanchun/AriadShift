@@ -74,6 +74,21 @@ fn inspect_bytes(pdf_bytes: &[u8]) -> PdfInfo {
 fn assert_snapshot_json(snapshot_name: &str, expression: &str, value: &impl serde::Serialize) {
     let pretty = serde_json::to_string_pretty(value).expect("serialize snapshot JSON");
     let expected_file = snapshots_dir().join(format!("{snapshot_name}.snap"));
+    let full = format!(
+        "---\nsource: crates/ariad-pdf/tests/reorder.rs\nexpression: {expression}\n---\n{pretty}\n"
+    );
+    let update = std::env::var("UPDATE_SNAPSHOTS").ok().is_some_and(|v| {
+        v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("always")
+    }) || std::env::var("INSTA_UPDATE").ok().as_deref() == Some("always");
+    if update {
+        std::fs::create_dir_all(snapshots_dir()).expect("create snapshots dir");
+        std::fs::write(&expected_file, &full).expect("write snapshot file");
+    }
+    assert!(
+        expected_file.exists(),
+        "snapshot file {} is missing; set UPDATE_SNAPSHOTS=1 to update snapshots",
+        expected_file.display()
+    );
     let raw = std::fs::read_to_string(&expected_file).unwrap_or_else(|e| {
         panic!(
             "failed to read snapshot {}: {e}\nActual JSON:\n{pretty}",
@@ -283,24 +298,38 @@ fn reorder_is_byte_deterministic() {
 fn reorder_propagates_repaired_xref_warning_and_writes_clean_pdf() {
     let limits = Limits::local();
     let ctx = ToolCtx::default();
-    let broken = open(&read_fixture("broken-xref.pdf"), &limits).expect("open broken-xref");
+    let broken_bytes = read_fixture("broken-xref.pdf");
+    let broken = open(&broken_bytes, &limits).expect("open broken-xref");
     assert!(broken.repaired_xref());
 
-    let mut outputs = reorder::run(
+    // Direct `reorder::run` does not duplicate `REPAIRED_XREF_WARNING`; `run_tool` injects it centrally.
+    let direct_outputs = reorder::run(
         &[broken],
         &ReorderParams {
             order: ReorderSpec::Preset(ReorderPreset::Reverse),
         },
         &ctx,
     )
-    .expect("reorder broken-xref");
-    assert_eq!(outputs[0].warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
-    let rewritten = save_output(outputs.remove(0));
+    .expect("reorder broken-xref directly");
+    assert!(
+        direct_outputs[0].warnings.is_empty(),
+        "direct tool run must leave REPAIRED_XREF_WARNING to finalize_tool_output"
+    );
+
+    let tool_out = ariad_pdf::run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("broken-xref.pdf", broken_bytes)],
+        &json!({ "order": "reverse" }),
+        &ctx,
+    )
+    .expect("run_tool pdf.reorder on broken-xref");
+    assert_eq!(tool_out.warnings, vec![REPAIRED_XREF_WARNING.to_owned()]);
+    let rewritten = &tool_out.artifacts[0].bytes;
 
     // Rewritten bytes must parse cleanly in strict mode without triggering xref repair.
-    let reopened = open(&rewritten, &limits).expect("reopen rewritten PDF");
+    let reopened = open(rewritten, &limits).expect("reopen rewritten PDF");
     assert!(!reopened.repaired_xref());
-    let _ = pdf_reader::read(&rewritten, &limits).expect("strict read succeeds");
+    let _ = pdf_reader::read(rewritten, &limits).expect("strict read succeeds");
 }
 
 #[test]
@@ -374,5 +403,414 @@ fn reorder_rejects_invalid_arity_ranges_encryption_and_cancellation() {
     assert_eq!(
         reorder::run(&[doc], &params, &expired_ctx).expect_err("expired deadline must fail"),
         PdfError::TIMED_OUT
+    );
+}
+
+#[test]
+fn reorder_and_extract_pages_match_on_page_labels_dests_outlines_and_duplicate_widgets() {
+    use lopdf::{Object, Stream, StringFormat, dictionary};
+
+    let limits = Limits::local();
+    let ctx = ToolCtx::default();
+
+    // 1. Divergence 1: Reordering `multipage-20.pdf` with `"2,1"` preserves and remaps `/PageLabels`
+    //    identically to `pdf.extract_pages` (`pages: "2,1"`).
+    let mp_bytes = read_fixture("multipage-20.pdf");
+    let reordered_mp = ariad_pdf::run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("multipage-20.pdf", mp_bytes.clone())],
+        &json!({ "order": "2,1" }),
+        &ctx,
+    )
+    .expect("reorder 2,1");
+    let extracted_mp = ariad_pdf::run_tool(
+        "pdf.extract_pages",
+        &[InputDoc::new("multipage-20.pdf", mp_bytes)],
+        &json!({ "pages": "2,1" }),
+        &ctx,
+    )
+    .expect("extract 2,1");
+    assert_eq!(
+        reordered_mp.artifacts[0].bytes, extracted_mp.artifacts[0].bytes,
+        "reorder(2,1) and extract_pages(2,1) must produce identical bytes"
+    );
+    let reordered_doc = open(&reordered_mp.artifacts[0].bytes, &limits).expect("open reordered");
+    assert!(
+        reordered_doc
+            .inner()
+            .catalog()
+            .expect("catalog")
+            .has(b"PageLabels"),
+        "reorder must preserve and remap /PageLabels instead of deleting it"
+    );
+
+    // 2. Divergence 2 & 4: Synthetic 3-page PDF with:
+    //    - `/PageLabels` using `/Kids` number tree
+    //    - `/Catalog /Dests` with `/D1` (page 1) and `/D3` (dropped page 3)
+    //    - `/Catalog /Names /Dests` with `(ND2)` (page 2) and `(ND3)` (dropped page 3)
+    //    - `/Catalog /OpenAction` targeting dropped page 3 (`[page3_ref /Fit]`)
+    //    - `/Outlines` with 4 bookmarks:
+    //      1) named dest `/D1` (via `/Catalog /Dests`)
+    //      2) named dest `(ND2)` (via `/Catalog /Names /Dests`)
+    //      3) integer 0-based page index `[0 /Fit]` (page 1)
+    //      4) direct page ref with indirect zoom in tail `[page2_ref /XYZ 0 792 zoom_ref]`
+    let mut syn = Document::with_version("1.5");
+    let pages_id = syn.new_object_id();
+    let c1 = syn.add_object(Stream::new(dictionary! {}, b"BT (P1) Tj ET".to_vec()));
+    let c2 = syn.add_object(Stream::new(dictionary! {}, b"BT (P2) Tj ET".to_vec()));
+    let c3 = syn.add_object(Stream::new(dictionary! {}, b"BT (P3) Tj ET".to_vec()));
+    let p1 = syn.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => c1,
+    });
+    let p2 = syn.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => c2,
+    });
+    let p3 = syn.add_object(dictionary! {
+        "Type" => "Page",
+        "Parent" => pages_id,
+        "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+        "Contents" => c3,
+    });
+    syn.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(p1), Object::Reference(p2), Object::Reference(p3)],
+            "Count" => 3,
+        }),
+    );
+
+    let pl_kid = syn.add_object(dictionary! {
+        "Nums" => vec![
+            0.into(),
+            Object::Dictionary(dictionary! { "S" => "r", "St" => 1 }),
+            2.into(),
+            Object::Dictionary(dictionary! { "S" => "D", "St" => 1 }),
+        ],
+    });
+    let pl_root = syn.add_object(dictionary! {
+        "Kids" => vec![Object::Reference(pl_kid)],
+    });
+
+    let dests_dict_id = syn.add_object(dictionary! {
+        "D1" => vec![Object::Reference(p1), Object::Name(b"Fit".to_vec())],
+        "D3" => vec![Object::Reference(p3), Object::Name(b"Fit".to_vec())],
+    });
+    let names_dests_kid = syn.add_object(dictionary! {
+        "Names" => vec![
+            Object::String(b"ND2".to_vec(), StringFormat::Literal),
+            Object::Array(vec![Object::Reference(p2), Object::Name(b"Fit".to_vec())]),
+            Object::String(b"ND3".to_vec(), StringFormat::Literal),
+            Object::Array(vec![Object::Reference(p3), Object::Name(b"Fit".to_vec())]),
+        ],
+    });
+    let names_dests_root = syn.add_object(dictionary! {
+        "Kids" => vec![Object::Reference(names_dests_kid)],
+    });
+
+    let zoom_ref = syn.add_object(Object::Integer(2));
+    let outlines_id = syn.new_object_id();
+    let bm1 = syn.new_object_id();
+    let bm2 = syn.new_object_id();
+    let bm3 = syn.new_object_id();
+    let bm4 = syn.new_object_id();
+    syn.objects.insert(
+        bm1,
+        Object::Dictionary(dictionary! {
+            "Title" => Object::string_literal("BM1 Named Dests Dict"),
+            "Parent" => outlines_id,
+            "Next" => bm2,
+            "Dest" => Object::Name(b"D1".to_vec()),
+        }),
+    );
+    syn.objects.insert(
+        bm2,
+        Object::Dictionary(dictionary! {
+            "Title" => Object::string_literal("BM2 Named Tree Dests"),
+            "Parent" => outlines_id,
+            "Prev" => bm1,
+            "Next" => bm3,
+            "Dest" => Object::String(b"ND2".to_vec(), StringFormat::Literal),
+        }),
+    );
+    syn.objects.insert(
+        bm3,
+        Object::Dictionary(dictionary! {
+            "Title" => Object::string_literal("BM3 Integer Page Index"),
+            "Parent" => outlines_id,
+            "Prev" => bm2,
+            "Next" => bm4,
+            "Dest" => vec![0.into(), Object::Name(b"Fit".to_vec())],
+        }),
+    );
+    syn.objects.insert(
+        bm4,
+        Object::Dictionary(dictionary! {
+            "Title" => Object::string_literal("BM4 Indirect Tail"),
+            "Parent" => outlines_id,
+            "Prev" => bm3,
+            "Dest" => vec![
+                Object::Reference(p2),
+                Object::Name(b"XYZ".to_vec()),
+                0.into(),
+                792.into(),
+                Object::Reference(zoom_ref),
+            ],
+        }),
+    );
+    syn.objects.insert(
+        outlines_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Outlines",
+            "First" => bm1,
+            "Last" => bm4,
+            "Count" => 4,
+        }),
+    );
+
+    let cat_id = syn.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+        "PageLabels" => pl_root,
+        "Dests" => dests_dict_id,
+        "Names" => dictionary! { "Dests" => names_dests_root },
+        "OpenAction" => vec![Object::Reference(p3), Object::Name(b"Fit".to_vec())],
+        "Outlines" => outlines_id,
+    });
+    syn.trailer.set("Root", cat_id);
+    let mut syn_bytes = Vec::new();
+    syn.save_to(&mut syn_bytes).expect("save syn pdf");
+
+    let syn_reorder = ariad_pdf::run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("syn.pdf", syn_bytes.clone())],
+        &json!({ "order": "2,1" }),
+        &ctx,
+    )
+    .expect("reorder syn 2,1");
+    let syn_extract = ariad_pdf::run_tool(
+        "pdf.extract_pages",
+        &[InputDoc::new("syn.pdf", syn_bytes)],
+        &json!({ "pages": "2,1" }),
+        &ctx,
+    )
+    .expect("extract syn 2,1");
+    assert_eq!(
+        syn_reorder.artifacts[0].bytes, syn_extract.artifacts[0].bytes,
+        "reorder and extract_pages must emit identical bytes on complex PDF"
+    );
+
+    let out_info = inspect_bytes(&syn_reorder.artifacts[0].bytes);
+    assert_eq!(out_info.page_count, 2);
+    assert_eq!(
+        out_info.outline_count, 4,
+        "all 4 bookmarks (Dests dict, Names/Dests tree, integer page index, indirect tail) must survive"
+    );
+
+    let out_doc = open(&syn_reorder.artifacts[0].bytes, &limits).expect("open out_doc");
+    let raw_out = out_doc.inner();
+
+    // Dropped page 3 must NOT be retained anywhere in `raw_out.objects`.
+    let page_obj_count = raw_out
+        .objects
+        .values()
+        .filter(|obj| {
+            obj.as_dict()
+                .ok()
+                .and_then(|d| d.get(b"Type").ok())
+                .and_then(|t| t.as_name().ok())
+                == Some(b"Page")
+        })
+        .count();
+    assert_eq!(
+        page_obj_count, 2,
+        "dropped page 3 must not be retained in output objects"
+    );
+
+    // `/OpenAction` targeting dropped page 3 must be removed; `/Dests` `/D3` must be dropped (not `[null /Fit]`).
+    let out_cat = raw_out.catalog().expect("out catalog");
+    assert!(
+        !out_cat.has(b"OpenAction"),
+        "OpenAction targeting dropped page must be removed"
+    );
+    let out_dests = out_cat
+        .get(b"Dests")
+        .ok()
+        .and_then(|o| match o {
+            Object::Reference(id) => raw_out.get_dictionary(*id).ok(),
+            Object::Dictionary(d) => Some(d),
+            _ => None,
+        })
+        .expect("Dests dict present");
+    assert!(out_dests.has(b"D1"));
+    assert!(
+        !out_dests.has(b"D3"),
+        "dangling destination /D3 must be dropped instead of [null /Fit]"
+    );
+
+    // 3. Divergence 3: Duplicating a form page (`"1,1"`) on `form-acroform.pdf` must create
+    //    independent widget annotations on each page copy with `/P` pointing to that page copy,
+    //    and register all widgets in `/AcroForm`.
+    let form_bytes = read_fixture("form-acroform.pdf");
+    let dup_reorder = ariad_pdf::run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("form.pdf", form_bytes.clone())],
+        &json!({ "order": "1,1" }),
+        &ctx,
+    )
+    .expect("reorder form 1,1");
+    let dup_extract = ariad_pdf::run_tool(
+        "pdf.extract_pages",
+        &[InputDoc::new("form.pdf", form_bytes)],
+        &json!({ "pages": "1,1" }),
+        &ctx,
+    )
+    .expect("extract form 1,1");
+    assert_eq!(
+        dup_reorder.artifacts[0].bytes,
+        dup_extract.artifacts[0].bytes
+    );
+
+    let dup_doc = open(&dup_reorder.artifacts[0].bytes, &limits).expect("open dup form");
+    let dup_inner = dup_doc.inner();
+    let dup_pages = dup_inner.get_pages();
+    assert_eq!(dup_pages.len(), 2);
+    let p1_id = dup_pages[&1];
+    let p2_id = dup_pages[&2];
+    let p1_annots = dup_inner
+        .get_dictionary(p1_id)
+        .unwrap()
+        .get(b"Annots")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    let p2_annots = dup_inner
+        .get_dictionary(p2_id)
+        .unwrap()
+        .get(b"Annots")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    assert!(!p1_annots.is_empty());
+    assert_eq!(p1_annots.len(), p2_annots.len());
+    for (a1, a2) in p1_annots.iter().zip(p2_annots.iter()) {
+        let id1 = a1.as_reference().expect("annot 1 ref");
+        let id2 = a2.as_reference().expect("annot 2 ref");
+        assert_ne!(id1, id2, "duplicated page must not share widget ObjectId");
+        let d1 = dup_inner.get_dictionary(id1).unwrap();
+        let d2 = dup_inner.get_dictionary(id2).unwrap();
+        assert_eq!(d1.get(b"P").unwrap().as_reference().unwrap(), p1_id);
+        assert_eq!(d2.get(b"P").unwrap().as_reference().unwrap(), p2_id);
+    }
+
+    let acro_ref = dup_inner
+        .catalog()
+        .unwrap()
+        .get(b"AcroForm")
+        .unwrap()
+        .as_reference()
+        .unwrap();
+    let fields = dup_inner
+        .get_dictionary(acro_ref)
+        .unwrap()
+        .get(b"Fields")
+        .unwrap()
+        .as_array()
+        .unwrap();
+    let mut registered_widget_ids = Vec::new();
+    for field_entry in fields {
+        let fid = field_entry.as_reference().unwrap();
+        let fdict = dup_inner.get_dictionary(fid).unwrap();
+        if let Ok(kids) = fdict.get(b"Kids").and_then(lopdf::Object::as_array) {
+            for kid in kids {
+                registered_widget_ids.push(kid.as_reference().unwrap());
+            }
+        } else {
+            registered_widget_ids.push(fid);
+        }
+    }
+    assert_eq!(
+        registered_widget_ids.len(),
+        p1_annots.len() + p2_annots.len(),
+        "AcroForm /Fields (including /Kids) must register widgets from both copies of the duplicated page"
+    );
+}
+
+#[test]
+fn reorder_handles_diamond_acroform_field_dag_without_hang() {
+    use lopdf::{Object, Stream, dictionary};
+
+    let mut doc = Document::with_version("1.5");
+    let pages_id = doc.new_object_id();
+    let content_id = doc.add_object(Stream::new(dictionary! {}, b"BT (Form) Tj ET".to_vec()));
+    let page_id = doc.new_object_id();
+    let widget_id = doc.add_object(dictionary! {
+        "Type" => "Annot",
+        "Subtype" => "Widget",
+        "Rect" => vec![0.into(), 0.into(), 100.into(), 20.into()],
+        "P" => Object::Reference(page_id),
+    });
+    doc.objects.insert(
+        page_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), 612.into(), 792.into()],
+            "Contents" => content_id,
+            "Annots" => vec![Object::Reference(widget_id)],
+        }),
+    );
+    doc.objects.insert(
+        pages_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![Object::Reference(page_id)],
+            "Count" => 1,
+        }),
+    );
+
+    let mut field_id = widget_id;
+    for _ in 0..10 {
+        field_id = doc.add_object(dictionary! {
+            "T" => Object::string_literal("group"),
+            "Kids" => vec![
+                Object::Reference(field_id),
+                Object::Reference(field_id),
+                Object::Reference(field_id),
+                Object::Reference(field_id),
+            ],
+        });
+    }
+    let acro_id = doc.add_object(dictionary! {
+        "Fields" => vec![Object::Reference(field_id)],
+    });
+    let cat_id = doc.add_object(dictionary! {
+        "Type" => "Catalog",
+        "Pages" => pages_id,
+        "AcroForm" => acro_id,
+    });
+    doc.trailer.set("Root", cat_id);
+    let mut raw = Vec::new();
+    doc.save_to(&mut raw).expect("save diamond acroform");
+
+    let start = Instant::now();
+    let out = ariad_pdf::run_tool(
+        "pdf.reorder",
+        &[InputDoc::new("diamond-acro.pdf", raw)],
+        &json!({ "order": "reverse" }),
+        &ToolCtx::default(),
+    )
+    .expect("reorder diamond acroform");
+    assert_eq!(out.artifacts.len(), 1);
+    assert!(
+        start.elapsed() < Duration::from_millis(200),
+        "diamond AcroForm traversal took too long: {:?}",
+        start.elapsed()
     );
 }
