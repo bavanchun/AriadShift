@@ -526,6 +526,10 @@ struct PreflightBudget<'a> {
     image_bytes: u64,
     image_pixels: u64,
     page_work: usize,
+    glyph_count: usize,
+    glyph_max: usize,
+    glyph_max_pixels: u64,
+    glyph_max_bytes: u64,
     font_ids: HashSet<PdfObjectId>,
     document_work: &'a mut usize,
 }
@@ -656,6 +660,10 @@ fn preflight_page_images(
         image_bytes: 0,
         image_pixels: 0,
         page_work: 0,
+        glyph_count: 0,
+        glyph_max: 0,
+        glyph_max_pixels: 0,
+        glyph_max_bytes: 0,
         font_ids: HashSet::new(),
         document_work,
     };
@@ -663,8 +671,9 @@ fn preflight_page_images(
     let page = doc
         .get_dictionary(page_id)
         .map_err(|_| EngineFailure::limit_exceeded())?;
+    let mut page_names = Vec::new();
     if let Ok(contents) = page.get(b"Contents") {
-        preflight_content_object(
+        page_names = preflight_content_object(
             ctx,
             doc,
             contents,
@@ -675,6 +684,10 @@ fn preflight_page_images(
             &mut budget,
         )?;
     }
+    let mut execution_work = budget.page_work;
+    let mut execution_glyphs = budget.glyph_count;
+    let mut execution_pixels = budget.image_pixels;
+    let mut execution_bytes = budget.image_bytes;
     let mut node = page_id;
     let mut ancestors = HashSet::new();
     for _ in 0..=max_depth {
@@ -723,6 +736,54 @@ fn preflight_page_images(
             &mut budget,
         )?;
     }
+    for name in page_names {
+        if let Some(id) = xobjects.get(&name) {
+            let (cost, glyphs, pixels, bytes) = preflight_xobject(
+                ctx,
+                pdf_doc,
+                *id,
+                max_bytes,
+                max_depth,
+                0,
+                &mut seen,
+                &xobjects,
+                &mut budget,
+            )?;
+            execution_pixels = execution_pixels
+                .checked_add(pixels)
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            execution_bytes = execution_bytes
+                .checked_add(bytes)
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            execution_glyphs = execution_glyphs
+                .checked_add(glyphs)
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            execution_work = execution_work
+                .checked_add(cost)
+                .filter(|n| *n <= 100_000)
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+        }
+    }
+    let glyph_uses =
+        u64::try_from(execution_glyphs).map_err(|_| EngineFailure::limit_exceeded())?;
+    let pixels = glyph_uses
+        .checked_mul(budget.glyph_max_pixels)
+        .and_then(|n| n.checked_add(execution_pixels))
+        .ok_or_else(EngineFailure::limit_exceeded)?;
+    let bytes = glyph_uses
+        .checked_mul(budget.glyph_max_bytes)
+        .and_then(|n| n.checked_add(execution_bytes))
+        .ok_or_else(EngineFailure::limit_exceeded)?;
+    if pixels > ctx.max_pixels() || bytes > ctx.max_pixels().saturating_mul(4) {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    let glyph_work = execution_glyphs
+        .checked_mul(budget.glyph_max)
+        .ok_or_else(EngineFailure::limit_exceeded)?;
+    execution_work
+        .checked_add(glyph_work)
+        .filter(|n| *n <= 100_000)
+        .ok_or_else(EngineFailure::limit_exceeded)?;
     Ok(())
 }
 
@@ -736,7 +797,7 @@ fn preflight_content_object(
     depth: usize,
     active: &mut HashSet<PdfObjectId>,
     budget: &mut PreflightBudget<'_>,
-) -> Result<(), EngineFailure> {
+) -> Result<Vec<Vec<u8>>, EngineFailure> {
     charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
@@ -763,8 +824,9 @@ fn preflight_content_object(
             result
         }
         Object::Array(values) => {
+            let mut names = Vec::new();
             for value in values {
-                preflight_content_object(
+                names.extend(preflight_content_object(
                     ctx,
                     doc,
                     value,
@@ -773,16 +835,16 @@ fn preflight_content_object(
                     depth + 1,
                     active,
                     budget,
-                )?;
+                )?);
             }
-            Ok(())
+            Ok(names)
         }
         Object::Stream(stream) => {
             let bytes = preflight_stream_bytes(doc, stream, budget.remaining_content(max_bytes)?)?;
             budget.charge_content(bytes.len(), max_bytes)?;
-            preflight_content(ctx, doc, &bytes, max_bytes, budget).map(|_| ())
+            preflight_content(ctx, doc, &bytes, max_bytes, budget)
         }
-        Object::Null => Ok(()),
+        Object::Null => Ok(Vec::new()),
         _ => Err(EngineFailure::limit_exceeded()),
     }
 }
@@ -840,8 +902,17 @@ fn preflight_type3_fonts(
             .1
             .as_dict()
             .map_err(|_| EngineFailure::limit_exceeded())?;
+        let mut font_xobjects = BTreeMap::new();
+        if let Ok(resources) = font.get(b"Resources") {
+            insert_xobjects_from_resources!(doc, resources, font_xobjects);
+        }
+        let font_scope = XobjectScope::new(font_xobjects);
+        let mut proc_seen = HashMap::new();
         for (_, proc) in procs.iter() {
-            preflight_content_object(
+            let before = budget.page_work;
+            let pixels_before = budget.image_pixels;
+            let bytes_before = budget.image_bytes;
+            let names = preflight_content_object(
                 ctx,
                 doc,
                 proc,
@@ -851,6 +922,36 @@ fn preflight_type3_fonts(
                 &mut HashSet::new(),
                 budget,
             )?;
+            let mut proc_cost = budget.page_work - before;
+            let mut proc_pixels = budget.image_pixels - pixels_before;
+            let mut proc_bytes = budget.image_bytes - bytes_before;
+            for name in names {
+                if let Some(&child) = font_scope.get(&name) {
+                    let (cost, _, pixels, bytes) = preflight_xobject(
+                        ctx,
+                        pdf_doc,
+                        child,
+                        max_bytes,
+                        max_depth,
+                        depth + 1,
+                        &mut proc_seen,
+                        &font_scope,
+                        budget,
+                    )?;
+                    proc_pixels = proc_pixels
+                        .checked_add(pixels)
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    proc_bytes = proc_bytes
+                        .checked_add(bytes)
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    proc_cost = proc_cost
+                        .checked_add(cost)
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                }
+            }
+            budget.glyph_max = budget.glyph_max.max(proc_cost);
+            budget.glyph_max_pixels = budget.glyph_max_pixels.max(proc_pixels);
+            budget.glyph_max_bytes = budget.glyph_max_bytes.max(proc_bytes);
         }
         if let Ok(resources) = font.get(b"Resources") {
             validate_xobject_resources(doc, resources)?;
@@ -909,6 +1010,8 @@ fn validate_xobject_resources(
     Ok(())
 }
 
+type PreflightMemo = HashMap<(PdfObjectId, [u8; 32]), (usize, usize, u64, u64)>;
+
 #[allow(clippy::too_many_arguments)]
 fn preflight_xobject(
     ctx: &ToolContext<'_>,
@@ -917,22 +1020,25 @@ fn preflight_xobject(
     max_bytes: usize,
     max_depth: usize,
     depth: usize,
-    seen: &mut HashMap<(PdfObjectId, [u8; 32]), usize>,
+    seen: &mut PreflightMemo,
     parent_xobjects: &XobjectScope<'_>,
     budget: &mut PreflightBudget<'_>,
-) -> Result<usize, EngineFailure> {
+) -> Result<(usize, usize, u64, u64), EngineFailure> {
     charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
     let scope_key = (id, parent_xobjects.digest);
     if let Some(&cost) = seen.get(&scope_key) {
-        return (cost != 0)
+        return (cost.0 != 0)
             .then_some(cost)
             .ok_or_else(EngineFailure::limit_exceeded);
     }
-    seen.insert(scope_key, 0);
+    seen.insert(scope_key, (0, 0, 0, 0));
     let mut expansion_cost = 1usize;
+    let mut expansion_glyphs = 0usize;
+    let mut expansion_pixels = 0u64;
+    let mut expansion_bytes = 0u64;
     ctx.check()?;
     let doc = pdf_doc.inner();
     let stream = doc
@@ -1013,7 +1119,17 @@ fn preflight_xobject(
         b"Form" => {
             let bytes = preflight_stream_bytes(doc, stream, budget.remaining_content(max_bytes)?)?;
             budget.charge_content(bytes.len(), max_bytes)?;
+            let work_before = budget.page_work;
+            let glyphs_before = budget.glyph_count;
+            let pixels_before = budget.image_pixels;
+            let bytes_before = budget.image_bytes;
             let names = preflight_content(ctx, doc, &bytes, max_bytes, budget)?;
+            expansion_cost = expansion_cost
+                .checked_add(budget.page_work - work_before)
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            expansion_glyphs = budget.glyph_count - glyphs_before;
+            expansion_pixels = budget.image_pixels - pixels_before;
+            expansion_bytes = budget.image_bytes - bytes_before;
             let mut own_children = BTreeMap::new();
             if let Ok(resources) = stream.dict.get(b"Resources") {
                 validate_xobject_resources(doc, resources)?;
@@ -1033,7 +1149,7 @@ fn preflight_xobject(
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
                     invoked.insert(name);
-                    let child_cost = preflight_xobject(
+                    let (child_cost, child_glyphs, child_pixels, child_bytes) = preflight_xobject(
                         ctx,
                         pdf_doc,
                         child,
@@ -1047,6 +1163,15 @@ fn preflight_xobject(
                     expansion_cost = expansion_cost
                         .checked_add(child_cost)
                         .filter(|cost| *cost <= 100_000)
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    expansion_pixels = expansion_pixels
+                        .checked_add(child_pixels)
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    expansion_bytes = expansion_bytes
+                        .checked_add(child_bytes)
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    expansion_glyphs = expansion_glyphs
+                        .checked_add(child_glyphs)
                         .ok_or_else(EngineFailure::limit_exceeded)?;
                 }
             }
@@ -1068,8 +1193,21 @@ fn preflight_xobject(
         }
         _ => return Err(EngineFailure::limit_exceeded()),
     }
-    seen.insert(scope_key, expansion_cost);
-    Ok(expansion_cost)
+    seen.insert(
+        scope_key,
+        (
+            expansion_cost,
+            expansion_glyphs,
+            expansion_pixels,
+            expansion_bytes,
+        ),
+    );
+    Ok((
+        expansion_cost,
+        expansion_glyphs,
+        expansion_pixels,
+        expansion_bytes,
+    ))
 }
 
 fn preflight_image_dict(
@@ -1293,17 +1431,27 @@ fn preflight_content(
     let mut last_name = None;
     while let Some((start, end)) = next_content_token(bytes, &mut cursor)? {
         let token = &bytes[start..end];
+        if token
+            .first()
+            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'\'' || *b == b'"')
+        {
+            charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
+        }
         if token.first() == Some(&b'/') {
             last_name = Some(decode_pdf_name(&token[1..]));
             continue;
         }
         if token.first() == Some(&b'(') || (token.first() == Some(&b'<') && token != b"<<") {
             last_name = content_string_operand(token)?;
+            budget.glyph_count = budget
+                .glyph_count
+                .checked_add(last_name.as_ref().map_or(0, Vec::len))
+                .ok_or_else(EngineFailure::limit_exceeded)?;
             continue;
         }
         if token == b"Do" {
+            charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
             if let Some(name) = last_name.take() {
-                charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
                 invoked.push(name.clone());
             }
             continue;
@@ -1384,6 +1532,11 @@ fn preflight_content(
         }
         let decoded_len = preflight_image_dict(ctx, dict, Some(doc), None)?;
         budget.charge_image(ctx, dict, doc, decoded_len)?;
+        budget.page_work = budget
+            .page_work
+            .checked_add(decoded_len)
+            .filter(|n| *n <= 100_000)
+            .ok_or_else(EngineFailure::limit_exceeded)?;
         if cursor >= bytes.len() || !is_pdf_ws(bytes[cursor]) {
             return Err(EngineFailure::limit_exceeded());
         }
@@ -2816,6 +2969,96 @@ mod corpus_tests {
     }
 
     #[test]
+    fn page_preflight_counts_repeated_form_execution() {
+        use lopdf::{Stream, dictionary};
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "work",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        for (repeats, expected) in [(1, true), (50, false)] {
+            let mut raw = lopdf::Document::with_version("1.7");
+            let pages_id = raw.new_object_id();
+            let form = raw.add_object(Stream::new(dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => vec![0.into(), 0.into(), 10.into(), 10.into()] }, b"q ".repeat(1 << 16)));
+            let contents = raw.add_object(Stream::new(dictionary! {}, b"/X Do ".repeat(repeats)));
+            let page = raw.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id, "MediaBox" => vec![0.into(), 0.into(), 10.into(), 10.into()], "Resources" => dictionary! { "XObject" => dictionary! { "X" => form } }, "Contents" => contents });
+            raw.objects.insert(
+                pages_id,
+                dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 }.into(),
+            );
+            let catalog = raw.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+            raw.trailer.set("Root", catalog);
+            let mut bytes = Vec::new();
+            raw.save_to(&mut bytes).unwrap();
+            let doc = ariad_pdf::document::open(&bytes, &Limits::local()).unwrap();
+            let mut work = 0;
+            let result = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work);
+            if expected {
+                result.expect("single form is within budget");
+            } else {
+                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+            }
+        }
+    }
+
+    #[test]
+    fn page_preflight_charges_type3_glyph_uses() {
+        use lopdf::{Stream, dictionary};
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "glyphs",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        for (count, expected) in [(1, true), (30_000, false)] {
+            let mut raw = lopdf::Document::with_version("1.7");
+            let pages_id = raw.new_object_id();
+            let proc = raw.add_object(Stream::new(dictionary! {}, b"q Q".to_vec()));
+            let font = raw.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type3", "CharProcs" => dictionary! { "a" => proc } });
+            let mut content = b"BT /F 10 Tf (".to_vec();
+            content.extend(vec![b'a'; count]);
+            content.extend_from_slice(b") Tj ET");
+            let contents = raw.add_object(Stream::new(dictionary! {}, content));
+            let page = raw.add_object(dictionary! { "Type" => "Page", "Parent" => pages_id, "MediaBox" => vec![0.into(), 0.into(), 10.into(), 10.into()], "Resources" => dictionary! { "Font" => dictionary! { "F" => font } }, "Contents" => contents });
+            raw.objects.insert(
+                pages_id,
+                dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 }.into(),
+            );
+            let catalog = raw.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+            raw.trailer.set("Root", catalog);
+            let mut bytes = Vec::new();
+            raw.save_to(&mut bytes).unwrap();
+            let doc = ariad_pdf::document::open(&bytes, &Limits::local()).unwrap();
+            let mut work = 0;
+            let result = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work);
+            if expected {
+                result.expect("one glyph is within budget");
+            } else {
+                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+            }
+        }
+    }
+
+    #[test]
     fn resource_scopes_share_large_parent_and_preserve_overrides() {
         let entries = (0..20_000)
             .map(|n| (format!("X{n}").into_bytes(), (n, 0)))
@@ -2862,6 +3105,10 @@ mod corpus_tests {
             image_bytes: 0,
             image_pixels: 0,
             page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
             font_ids: HashSet::new(),
             document_work: &mut document,
         };

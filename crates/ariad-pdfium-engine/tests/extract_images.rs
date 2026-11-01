@@ -760,6 +760,33 @@ fn nested_form_fanout_exceeds_expansion_budget_before_page_load() {
 }
 
 #[test]
+fn repeated_large_form_exceeds_page_work_budget_before_load() {
+    let lib_dir = require_pdfium!();
+    let objects = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /XObject << /X 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", &b"/X Do ".repeat(50)),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", &b"q ".repeat(1 << 16)),
+    ];
+    let ws = TestWorkspace::from_bytes("repeated.pdf", &assemble_pdf(&objects));
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "repeated",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let start = std::time::Instant::now();
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("page expansion must be bounded");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert!(start.elapsed() < std::time::Duration::from_secs(5));
+}
+
+#[test]
 fn repeated_operators_obey_the_traversal_budget() {
     let lib_dir = require_pdfium!();
     let content = b"/Im Do ".repeat(100);
@@ -844,7 +871,7 @@ fn refuses_cumulative_inline_pixels_in_forms() {
 }
 
 #[test]
-fn accepts_repeated_form_containing_inline_image() {
+fn repeated_inline_form_charges_each_invocation() {
     let lib_dir = require_pdfium!();
     let pdf = assemble_pdf(&[
         b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
@@ -869,9 +896,9 @@ fn accepts_repeated_form_containing_inline_image() {
         min_px: 1,
         ..ExtractImagesParams::default()
     };
-    let outcome = extract_images::extract_document_images(&mut ctx, &params)
-        .expect("repeated forms are charged once");
-    assert_eq!(outcome.images.len(), 1);
+    let error = extract_images::extract_document_images(&mut ctx, &params)
+        .expect_err("repeated inline images exceed the page pixel budget");
+    assert_eq!(error.code, ErrorCode::LimitExceeded);
 }
 
 #[test]
