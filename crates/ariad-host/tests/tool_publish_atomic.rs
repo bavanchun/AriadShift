@@ -424,3 +424,215 @@ fn inprocess_pdf_info_and_normative_exit_codes() {
     assert_eq!(err_tier.exit_code(), 11);
     assert_eq!(err_tier.code(), "tier_not_allowed");
 }
+
+#[test]
+fn publish_atomic_with_overwrite_restores_replaced_originals_and_removes_new_files_on_failure_at_artifact_3_of_5()
+ {
+    let workspace = Workspace::new().expect("create workspace");
+    let staged = stage_five_artifacts(&workspace);
+    let out_tmp = TempDir::new().expect("create output tempdir");
+
+    // Pre-populate existing destination files 1 and 2 with distinct original bytes.
+    let orig_1_path = out_tmp.path().join("report.part-001.pdf");
+    let orig_2_path = out_tmp.path().join("report.part-002.pdf");
+    let orig_1_bytes = b"%PDF-1.4\n% original file 1 byte-identical payload\n";
+    let orig_2_bytes = b"%PDF-1.4\n% original file 2 byte-identical payload\n";
+    fs::write(&orig_1_path, orig_1_bytes).expect("write original 1");
+    fs::write(&orig_2_path, orig_2_bytes).expect("write original 2");
+
+    // Inject failure on artifact 3 of 5 (0-based index 2) with overwrite enabled.
+    let err = publish_atomic(
+        &workspace,
+        &staged,
+        out_tmp.path(),
+        &[],
+        None,
+        true,
+        Some(2),
+    )
+    .expect_err("publish_atomic must fail when failure is injected on artifact 3 of 5");
+    assert_eq!(err, PublishError::InjectedFailure { index: 2 });
+
+    // Originals 1 and 2 must be restored byte-identical; artifacts 3..5 must not exist.
+    assert_eq!(
+        fs::read(&orig_1_path).expect("original 1 must still exist after rollback"),
+        orig_1_bytes
+    );
+    assert_eq!(
+        fs::read(&orig_2_path).expect("original 2 must still exist after rollback"),
+        orig_2_bytes
+    );
+    assert!(!out_tmp.path().join("report.part-003.pdf").exists());
+    assert!(!out_tmp.path().join("report.part-004.pdf").exists());
+    assert!(!out_tmp.path().join("report.part-005.pdf").exists());
+
+    let mut remaining_names: Vec<String> = fs::read_dir(out_tmp.path())
+        .expect("read target dir")
+        .filter_map(|e| {
+            e.ok()
+                .and_then(|entry| entry.file_name().into_string().ok())
+        })
+        .collect();
+    remaining_names.sort();
+    assert_eq!(
+        remaining_names,
+        vec![
+            "report.part-001.pdf".to_owned(),
+            "report.part-002.pdf".to_owned()
+        ]
+    );
+    assert_eq!(
+        fs::read_dir(workspace.backup_dir())
+            .expect("read backup dir")
+            .count(),
+        0,
+        "workspace backup dir must be empty after rollback"
+    );
+
+    // Mixed case: remove pre-existing file 2 so artifact 1 overwrites an existing file and
+    // artifact 2 creates a new file before artifact 3 of 5 fails.
+    fs::remove_file(&orig_2_path).expect("remove original 2");
+    let err_mixed = publish_atomic(
+        &workspace,
+        &staged,
+        out_tmp.path(),
+        &[],
+        None,
+        true,
+        Some(2),
+    )
+    .expect_err("publish_atomic must fail on artifact 3 of 5");
+    assert_eq!(err_mixed, PublishError::InjectedFailure { index: 2 });
+    assert_eq!(
+        fs::read(&orig_1_path).expect("original 1 must be restored byte-identical"),
+        orig_1_bytes
+    );
+    assert!(
+        !orig_2_path.exists(),
+        "newly created artifact 2 must be unlinked on rollback"
+    );
+
+    // Success case with overwrite: backups are removed after all 5 artifacts publish.
+    fs::write(&orig_2_path, orig_2_bytes).expect("recreate original 2");
+    let published = publish_atomic(&workspace, &staged, out_tmp.path(), &[], None, true, None)
+        .expect("publish_atomic with overwrite should succeed when no failure is injected");
+    assert_eq!(published.len(), 5);
+    assert_eq!(
+        fs::read(&orig_1_path).expect("read replaced 1"),
+        b"%PDF-1.7\n% artifact 1\n"
+    );
+    assert_eq!(
+        fs::read(&orig_2_path).expect("read replaced 2"),
+        b"%PDF-1.7\n% artifact 2\n"
+    );
+    assert_eq!(
+        fs::read_dir(workspace.backup_dir())
+            .expect("read backup dir")
+            .count(),
+        0,
+        "workspace backup dir must be empty after successful overwrite commit"
+    );
+}
+
+#[test]
+fn publish_atomic_rejects_duplicate_target_names_before_writing_any_file() {
+    let workspace = Workspace::new().expect("create workspace");
+    let out_tmp = TempDir::new().expect("create output tempdir");
+
+    let s1 = workspace.output_dir().join("s1.pdf");
+    let s2 = workspace.output_dir().join("s2.pdf");
+    let s3 = workspace.output_dir().join("s3.pdf");
+    fs::write(&s1, b"%PDF-1.7\nfirst\n").expect("write s1");
+    fs::write(&s2, b"%PDF-1.7\nsecond\n").expect("write s2");
+    fs::write(&s3, b"%PDF-1.7\nthird\n").expect("write s3");
+
+    let staged = vec![
+        StagedArtifact::new(s1, "pdf", "first.pdf"),
+        StagedArtifact::new(s2, "pdf", "colliding.pdf"),
+        StagedArtifact::new(s3, "pdf", "colliding.pdf"),
+    ];
+
+    let err = publish_atomic(&workspace, &staged, out_tmp.path(), &[], None, true, None)
+        .expect_err("duplicate target_name in publish set must be rejected");
+    assert!(matches!(err, PublishError::InvalidStagedArtifact(_)));
+
+    // Nothing should have been written to the output directory.
+    let entries: Vec<PathBuf> = fs::read_dir(out_tmp.path())
+        .expect("read out_tmp")
+        .filter_map(|e| e.ok().map(|entry| entry.path()))
+        .collect();
+    assert!(
+        entries.is_empty(),
+        "expected no files written when duplicate target names are rejected, found {entries:?}"
+    );
+}
+
+#[test]
+fn artifact_and_output_path_extension_mismatch_is_rejected() {
+    use ariad_host::tools::publish::validate_artifact_extensions;
+
+    let workspace = Workspace::new().expect("create workspace");
+    let out_tmp = TempDir::new().expect("create output tempdir");
+
+    let pdf_staged = workspace.output_dir().join("out.pdf");
+    let cmd_staged = workspace.output_dir().join("out.command");
+    let html_staged = workspace.output_dir().join("out.html");
+    fs::write(&pdf_staged, b"%PDF-1.7\n").expect("write pdf_staged");
+    fs::write(&cmd_staged, b"#!/bin/sh\n").expect("write cmd_staged");
+    fs::write(&html_staged, b"<html></html>\n").expect("write html_staged");
+
+    // 1. Engine reported unrecognized format / `.command` extension.
+    let bad_engine_cmd = vec![StagedArtifact::new(
+        &cmd_staged,
+        "command",
+        "x.rotated.command",
+    )];
+    let err = validate_artifact_extensions("pdf", &bad_engine_cmd)
+        .expect_err("must reject .command artifact for pdf tool");
+    assert_eq!(err.exit_code(), 1);
+    assert_eq!(err.code(), "engine_failure");
+
+    // 2. Engine reported valid format ("html") that disagrees with `spec.output_format` ("pdf").
+    let bad_engine_html = vec![StagedArtifact::new(&html_staged, "html", "x.rotated.html")];
+    let err = validate_artifact_extensions("pdf", &bad_engine_html)
+        .expect_err("must reject html artifact when spec.output_format is pdf");
+    assert_eq!(err.exit_code(), 1);
+    assert_eq!(err.code(), "engine_failure");
+
+    // 3. Explicit `-o` target filename has an extension that does not match `spec.output_format`.
+    let bad_target_ext = vec![StagedArtifact::new(&pdf_staged, "pdf", "custom.html")];
+    let err = validate_artifact_extensions("pdf", &bad_target_ext)
+        .expect_err("must reject -o target filename with mismatched extension");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.code(), "usage");
+
+    // 4. `publish_atomic` also rejects mismatched extensions without writing anything.
+    let err_pub = publish_atomic(
+        &workspace,
+        &bad_target_ext,
+        out_tmp.path(),
+        &[],
+        None,
+        true,
+        None,
+    )
+    .expect_err("publish_atomic must reject target filename extension mismatch");
+    assert!(matches!(err_pub, PublishError::Confinement(_)));
+    assert!(!out_tmp.path().join("custom.html").exists());
+
+    // 5. `run_tool` with an explicit `-o <file>` whose extension does not match the tool's output format
+    // is rejected with exit code 2 (`usage`) and writes nothing to disk.
+    let input_pdf = out_tmp.path().join("sample.pdf");
+    fs::copy(sample_pdf(), &input_pdf).expect("copy sample pdf");
+    let bad_out_file = out_tmp.path().join("wrong-ext.pdf");
+    let req_bad_ext = ToolRequest::new(
+        "pdf.info",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::Path(bad_out_file.clone()),
+    );
+    let err_run = run_tool(&req_bad_ext)
+        .expect_err("pdf.info (output_format = json) must reject -o wrong-ext.pdf");
+    assert_eq!(err_run.exit_code(), 2);
+    assert_eq!(err_run.code(), "usage");
+    assert!(!bad_out_file.exists());
+}

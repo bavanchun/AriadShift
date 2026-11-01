@@ -8,11 +8,15 @@
 //! the error so partial outputs never remain on disk.
 
 use std::{
+    collections::HashSet,
     fs,
     path::{Component, Path, PathBuf},
 };
 
-use ariad_core::tools::{NamingTemplateError, validate_naming_template};
+use ariad_core::{
+    format::Format,
+    tools::{NamingTemplateError, validate_naming_template},
+};
 use cap_std::{ambient_authority, fs::Dir};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -20,8 +24,76 @@ use serde::{Deserialize, Serialize};
 use crate::{
     confine::AllowedDirs,
     convert::paths_refer_to_same_file,
+    tools::run::ToolError,
     workspace::{Workspace, WorkspaceError},
 };
+
+/// Validates that an explicit output file path's extension matches `spec_output_format`
+/// using the same extension rules as the confined conversion path.
+pub fn validate_output_path_extension(
+    output_path: &Path,
+    spec_output_format: &str,
+) -> Result<(), ToolError> {
+    let expected_fmt = Format::from_user_name(spec_output_format).ok_or_else(|| {
+        ToolError::EngineFailure(format!(
+            "unrecognized tool output format '{spec_output_format}'"
+        ))
+    })?;
+    let ext = output_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    if Format::from_extension(ext) != Some(expected_fmt) {
+        return Err(ToolError::Confinement(format!(
+            "output path '{}' extension does not match target format '{}'",
+            output_path.display(),
+            expected_fmt.user_name()
+        )));
+    }
+    Ok(())
+}
+
+/// Validates that every staged artifact's reported format, staged filename extension, and target
+/// filename extension match `spec_output_format`.
+pub fn validate_artifact_extensions(
+    spec_output_format: &str,
+    staged: &[StagedArtifact],
+) -> Result<(), ToolError> {
+    let expected_fmt = Format::from_user_name(spec_output_format).ok_or_else(|| {
+        ToolError::EngineFailure(format!(
+            "unrecognized tool output format '{spec_output_format}'"
+        ))
+    })?;
+
+    for item in staged {
+        let reported_fmt = Format::from_user_name(&item.format);
+        if reported_fmt != Some(expected_fmt) {
+            return Err(ToolError::EngineFailure(format!(
+                "artifact '{}' reported format '{}', expected '{}'",
+                item.staged_path.display(),
+                item.format,
+                expected_fmt.user_name()
+            )));
+        }
+
+        let staged_ext = item
+            .staged_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if Format::from_user_name(staged_ext) != Some(expected_fmt) {
+            return Err(ToolError::EngineFailure(format!(
+                "staged artifact '{}' extension does not match expected format '{}'",
+                item.staged_path.display(),
+                expected_fmt.user_name()
+            )));
+        }
+
+        validate_output_path_extension(Path::new(&item.target_name), spec_output_format)?;
+    }
+
+    Ok(())
+}
 
 /// A single artifact staged inside `<workspace>/out/` awaiting atomic promotion.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -359,6 +431,17 @@ pub fn publish_atomic(
         return Ok(Vec::new());
     }
 
+    // Reject duplicate final target filenames before touching the destination directory.
+    let mut seen_target_names = HashSet::with_capacity(staged.len());
+    for item in staged {
+        if !seen_target_names.insert(item.target_name.as_str()) {
+            return Err(PublishError::InvalidStagedArtifact(format!(
+                "duplicate target filename '{}' in publication batch",
+                item.target_name
+            )));
+        }
+    }
+
     let (canon_dest_dir, dest_cap_dir) = open_confined_output_dir(destination_dir, allowed_dirs)?;
     let ws_out = fs::canonicalize(workspace.output_dir())
         .unwrap_or_else(|_| workspace.output_dir().to_path_buf());
@@ -401,6 +484,36 @@ pub fn publish_atomic(
             }
         }
 
+        let item_fmt = Format::from_user_name(&item.format).ok_or_else(|| {
+            PublishError::InvalidStagedArtifact(format!(
+                "unrecognized staged artifact format '{}'",
+                item.format
+            ))
+        })?;
+        let staged_ext = item
+            .staged_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if Format::from_user_name(staged_ext) != Some(item_fmt) {
+            return Err(PublishError::InvalidStagedArtifact(format!(
+                "staged artifact '{}' extension does not match format '{}'",
+                item.staged_path.display(),
+                item_fmt.user_name()
+            )));
+        }
+        let target_ext = Path::new(&item.target_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if Format::from_extension(target_ext) != Some(item_fmt) {
+            return Err(PublishError::Confinement(format!(
+                "output path '{}' extension does not match target format '{}'",
+                item.target_name,
+                item_fmt.user_name()
+            )));
+        }
+
         // Reject symlink or directory at destination target path.
         if let Ok(dest_meta) = dest_cap_dir.symlink_metadata(&item.target_name) {
             if dest_meta.file_type().is_symlink() {
@@ -421,18 +534,33 @@ pub fn publish_atomic(
     }
 
     let mut published = Vec::with_capacity(staged.len());
-    let mut created_in_batch: Vec<String> = Vec::with_capacity(staged.len());
+    let mut batch_entries: Vec<BatchEntry> = Vec::with_capacity(staged.len());
 
     for (idx, (item, &bytes)) in staged.iter().zip(staged_sizes.iter()).enumerate() {
         if fail_at_index == Some(idx) {
-            rollback_batch(&dest_cap_dir, &created_in_batch);
+            rollback_batch(workspace, &dest_cap_dir, &batch_entries);
             return Err(PublishError::InjectedFailure { index: idx });
         }
 
         let target_rel = Path::new(&item.target_name);
+        let backup_name = if overwrite {
+            match workspace.backup_existing_into(&dest_cap_dir, target_rel) {
+                Ok(bkp) => bkp,
+                Err(err) => {
+                    rollback_batch(workspace, &dest_cap_dir, &batch_entries);
+                    return Err(map_workspace_error(err, item));
+                }
+            }
+        } else {
+            None
+        };
+
         match workspace.promote_into(&item.staged_path, &dest_cap_dir, target_rel, overwrite) {
             Ok(()) => {
-                created_in_batch.push(item.target_name.clone());
+                batch_entries.push(BatchEntry {
+                    target_name: item.target_name.clone(),
+                    backup_name,
+                });
                 published.push(PublishedArtifact {
                     path: canon_dest_dir.join(&item.target_name),
                     format: item.format.clone(),
@@ -440,30 +568,116 @@ pub fn publish_atomic(
                 });
             }
             Err(err) => {
-                rollback_batch(&dest_cap_dir, &created_in_batch);
-                return Err(match err {
-                    WorkspaceError::DestinationExists => {
-                        PublishError::DestinationExists(item.target_name.clone())
-                    }
-                    WorkspaceError::ArtifactOutsideOutput | WorkspaceError::ArtifactNotFile => {
-                        PublishError::InvalidStagedArtifact(format!(
-                            "staged artifact '{}' is outside workspace output directory or not a regular file",
-                            item.staged_path.display()
-                        ))
-                    }
-                    WorkspaceError::Io(io_err)
-                    | WorkspaceError::Cleanup(io_err)
-                    | WorkspaceError::Promotion(io_err) => PublishError::Io(io_err.to_string()),
-                });
+                if let Some(ref bkp) = backup_name {
+                    let _ = workspace.restore_backup_into(bkp, &dest_cap_dir, target_rel);
+                }
+                rollback_batch(workspace, &dest_cap_dir, &batch_entries);
+                return Err(map_workspace_error(err, item));
             }
+        }
+    }
+
+    for entry in &batch_entries {
+        if let Some(ref bkp) = entry.backup_name {
+            let _ = workspace.remove_backup(bkp);
         }
     }
 
     Ok(published)
 }
 
-fn rollback_batch(dest_cap_dir: &Dir, created_names: &[String]) {
-    for name in created_names.iter().rev() {
-        let _ = dest_cap_dir.remove_file(name);
+struct BatchEntry {
+    target_name: String,
+    backup_name: Option<String>,
+}
+
+fn map_workspace_error(err: WorkspaceError, item: &StagedArtifact) -> PublishError {
+    match err {
+        WorkspaceError::DestinationExists => {
+            PublishError::DestinationExists(item.target_name.clone())
+        }
+        WorkspaceError::ArtifactOutsideOutput | WorkspaceError::ArtifactNotFile => {
+            PublishError::InvalidStagedArtifact(format!(
+                "staged artifact '{}' is outside workspace output directory or not a regular file",
+                item.staged_path.display()
+            ))
+        }
+        WorkspaceError::Io(io_err)
+        | WorkspaceError::Cleanup(io_err)
+        | WorkspaceError::Promotion(io_err) => PublishError::Io(io_err.to_string()),
+    }
+}
+
+fn rollback_batch(workspace: &Workspace, dest_cap_dir: &Dir, entries: &[BatchEntry]) {
+    for entry in entries.iter().rev() {
+        if let Some(ref bkp) = entry.backup_name {
+            let _ = workspace.restore_backup_into(bkp, dest_cap_dir, Path::new(&entry.target_name));
+        } else {
+            let _ = dest_cap_dir.remove_file(&entry.target_name);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_artifact_extensions_accepts_matching_formats_and_extensions() {
+        let staged = vec![
+            StagedArtifact::new(PathBuf::from("/work/out/part-001.pdf"), "pdf", "a.pdf"),
+            StagedArtifact::new(PathBuf::from("/work/out/part-002.PDF"), "pdf", "b.PDF"),
+        ];
+        assert!(validate_artifact_extensions("pdf", &staged).is_ok());
+
+        let json_staged = vec![StagedArtifact::new(
+            PathBuf::from("/work/out/output.json"),
+            "json",
+            "report.info.json",
+        )];
+        assert!(validate_artifact_extensions("json", &json_staged).is_ok());
+    }
+
+    #[test]
+    fn validate_artifact_extensions_rejects_mismatched_format_and_extensions() {
+        // Engine reported unrecognized format `.command`.
+        let cmd_staged = vec![StagedArtifact::new(
+            PathBuf::from("/work/out/x.rotated.command"),
+            "command",
+            "x.rotated.command",
+        )];
+        let err = validate_artifact_extensions("pdf", &cmd_staged).unwrap_err();
+        assert_eq!(err.exit_code(), 1);
+        assert_eq!(err.code(), "engine_failure");
+
+        // Engine reported valid format ("html") that does not match `spec.output_format` ("pdf").
+        let html_staged = vec![StagedArtifact::new(
+            PathBuf::from("/work/out/x.rotated.html"),
+            "html",
+            "x.rotated.html",
+        )];
+        let err = validate_artifact_extensions("pdf", &html_staged).unwrap_err();
+        assert_eq!(err.exit_code(), 1);
+        assert_eq!(err.code(), "engine_failure");
+
+        // Staged file extension inside `<workspace>/out/` disagrees with `spec.output_format`.
+        let bad_staged_ext = vec![StagedArtifact::new(
+            PathBuf::from("/work/out/x.rotated.command"),
+            "pdf",
+            "x.rotated.pdf",
+        )];
+        let err = validate_artifact_extensions("pdf", &bad_staged_ext).unwrap_err();
+        assert_eq!(err.exit_code(), 1);
+        assert_eq!(err.code(), "engine_failure");
+
+        // Explicit `-o` target filename extension disagrees with `spec.output_format`.
+        let bad_target_ext = vec![StagedArtifact::new(
+            PathBuf::from("/work/out/x.rotated.pdf"),
+            "pdf",
+            "custom.html",
+        )];
+        let err = validate_artifact_extensions("pdf", &bad_target_ext).unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert_eq!(err.code(), "usage");
     }
 }
