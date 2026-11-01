@@ -356,6 +356,27 @@ describe("account page", () => {
     expect(auth.deleteAccount).toHaveBeenCalledWith(undefined);
   });
 
+  it("asks the user to sign in again when account deletion is refused with reauth_required", async () => {
+    const auth = fakeAuth();
+    auth.hasPassword.mockResolvedValue(false);
+    auth.deleteAccount.mockRejectedValue(
+      new AuthError("Sign in again before deleting your account.", 400, "reauth_required"),
+    );
+    renderInShell(<AccountPage />, auth);
+    const openDelete = await screen.findByRole("button", { name: "Delete account" });
+    await waitFor(() => expect(auth.hasPassword).toHaveBeenCalled());
+
+    fireEvent.click(openDelete);
+    const dialog = screen.getByRole("alertdialog", { name: "Delete your account?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
+
+    expect(
+      await within(dialog).findByText("Sign in again before deleting your account."),
+    ).toBeTruthy();
+    const reauthLink = within(dialog).getByRole("link", { name: "Sign in again" });
+    expect(reauthLink.getAttribute("href")).toBe("/sign-in?next=%2Faccount");
+  });
+
   it("lists connected OAuth apps and registered clients and revokes them after confirmation", async () => {
     const auth = fakeAuth();
     renderInShell(<AccountPage />, auth);
@@ -367,7 +388,14 @@ describe("account page", () => {
 
     fireEvent.click(within(section).getByRole("button", { name: "Revoke Claude Code" }));
     const consentDialog = screen.getByRole("alertdialog", { name: "Revoke Claude Code?" });
-    expect(document.activeElement).toBe(within(consentDialog).getByRole("button", { name: "Cancel" }));
+    expect(
+      within(consentDialog).getByText(
+        "Revoking stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire.",
+      ),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(
+      within(consentDialog).getByRole("button", { name: "Cancel" }),
+    );
     auth.listOAuthConsents.mockResolvedValue([]);
     fireEvent.click(within(consentDialog).getByRole("button", { name: "Revoke" }));
 
@@ -377,6 +405,11 @@ describe("account page", () => {
 
     fireEvent.click(within(section).getByRole("button", { name: "Revoke Cursor MCP" }));
     const clientDialog = screen.getByRole("alertdialog", { name: "Revoke Cursor MCP?" });
+    expect(
+      within(clientDialog).getByText(
+        "Deleting this registered OAuth client revokes its credentials and consents and stops new tokens and token refresh at once. Signed access tokens already issued (15-minute lifetime) keep working until they expire.",
+      ),
+    ).toBeTruthy();
     auth.listOAuthClients.mockResolvedValue([]);
     fireEvent.click(within(clientDialog).getByRole("button", { name: "Revoke" }));
 

@@ -24,6 +24,9 @@ export const BASE_PATH = "/api/auth";
 /** Lifetime of the JWTs the API accepts. */
 export const JWT_LIFETIME = "15m";
 
+/** Maximum session age (seconds) accepted by `/delete-user` before re-authentication is required. */
+export const DELETE_USER_FRESH_AGE_S = 15 * 60;
+
 /** JWT plugin options are seconds, including the post-rotation publication grace. */
 export const JWKS_ROTATION_INTERVAL_S = 30 * 24 * 60 * 60;
 export const JWKS_GRACE_PERIOD_S = 30 * 60;
@@ -259,6 +262,19 @@ export function buildAuthOptions(
               });
             }
           }
+          const createdAt =
+            session.session.createdAt instanceof Date
+              ? session.session.createdAt.getTime()
+              : Date.parse(String(session.session.createdAt));
+          if (
+            !Number.isFinite(createdAt) ||
+            Date.now() - createdAt > DELETE_USER_FRESH_AGE_S * 1_000
+          ) {
+            throw new APIError("BAD_REQUEST", {
+              code: "reauth_required",
+              message: "Sign in again before deleting your account.",
+            });
+          }
           return;
         }
         if (ctx.path === "/oauth2/delete-consent") {
@@ -283,6 +299,8 @@ export function buildAuthOptions(
           return;
         }
         if (ctx.path === "/oauth2/delete-client") {
+          // Ownership matches deleteClientEndpoint when neither clientPrivileges nor
+          // trusted clients are configured. Update this check if either is enabled.
           const session = await getSessionFromCtx(ctx);
           const clientId = (ctx.body as { client_id?: unknown } | undefined)?.client_id;
           if (!session || typeof clientId !== "string" || clientId === "") return;

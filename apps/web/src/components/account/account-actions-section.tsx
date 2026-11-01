@@ -1,11 +1,13 @@
 "use client";
 
-import { Button } from "@ariadshift/ui/components/button";
+import { Button, buttonVariants } from "@ariadshift/ui/components/button";
 import { LogOutIcon } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { useAccount } from "./account-context";
 import { AccountDialog } from "./account-dialog";
 import { errorMessage, OutcomeMessage, Section, TextField } from "./account-ui";
+import { AuthError } from "./auth-api";
+import { signInHref } from "./session-gate";
 
 export interface AccountActionsSectionProps {
   /** Navigates after signing out or deleting the account; defaults to a full page load. */
@@ -19,6 +21,7 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reauthRequired, setReauthRequired] = useState(false);
   const go = navigate ?? ((path: string) => window.location.assign(path));
 
   useEffect(() => {
@@ -55,6 +58,7 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setReauthRequired(false);
     try {
       await auth.deleteAccount(hasPassword ? password : undefined);
       setPassword("");
@@ -63,13 +67,19 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
       announce("Your account was deleted.");
       go("/");
     } catch (failure) {
+      const needsReauth =
+        failure instanceof AuthError &&
+        (failure.code === "reauth_required" || failure.code === "SESSION_EXPIRED");
+      setReauthRequired(needsReauth);
       setError(
-        errorMessage(
-          failure,
-          hasPassword
-            ? "Could not delete the account. Check your password."
-            : "Could not delete the account. Sign in again and retry.",
-        ),
+        needsReauth
+          ? errorMessage(failure, "Sign in again before deleting your account.")
+          : errorMessage(
+              failure,
+              hasPassword
+                ? "Could not delete the account. Check your password."
+                : "Could not delete the account. Sign in again and retry.",
+            ),
       );
     } finally {
       setBusy(false);
@@ -90,6 +100,7 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
           variant="destructive"
           onClick={() => {
             setError(null);
+            setReauthRequired(false);
             setPassword("");
             setDeleting(true);
           }}
@@ -144,6 +155,11 @@ export function AccountActionsSection({ navigate }: AccountActionsSectionProps) 
               >
                 Cancel
               </Button>
+              {reauthRequired ? (
+                <a href={signInHref("/account")} className={buttonVariants({ variant: "outline" })}>
+                  Sign in again
+                </a>
+              ) : null}
               <Button type="submit" variant="destructive" disabled={busy}>
                 Delete account
               </Button>

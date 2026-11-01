@@ -1,8 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { hashPassword, makeSignature } from "better-auth/crypto";
 import { getAuthTables } from "better-auth/db";
 import pg from "pg";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.ts";
 import {
   API_KEY_PREFIX,
@@ -10,6 +11,8 @@ import {
   buildAuthOptions,
   CLIENT_IP_HEADER,
   createAuth,
+  createPool,
+  DELETE_USER_FRESH_AGE_S,
   discoveryDocuments,
   JWT_LIFETIME,
   OAUTH_ACCESS_TOKEN_LIFETIME_S,
@@ -18,7 +21,14 @@ import {
   OAUTH_SIGN_IN_PATH,
 } from "../src/auth.ts";
 import { type AuthServiceConfig, parseConfig } from "../src/config.ts";
+import { migrate } from "../src/migrate.ts";
 import { pageOptions } from "../src/pages.ts";
+
+const databaseUrl = process.env.ARIAD_TEST_DATABASE_URL?.trim();
+if (process.env.ARIAD_TEST_REQUIRE_DATABASE === "1" && !databaseUrl) {
+  throw new Error("ARIAD_TEST_REQUIRE_DATABASE=1 needs ARIAD_TEST_DATABASE_URL");
+}
+const BACKENDS = ["memory", ...(databaseUrl ? (["postgres"] as const) : [])] as const;
 
 // A pool connects lazily, so building options never touches a database.
 const pool = new pg.Pool({ connectionString: "postgres://nobody@127.0.0.1:1/none" });
@@ -154,6 +164,9 @@ describe("buildAuthOptions", () => {
   it("lets users delete their own account without an emailed confirmation", () => {
     const options = buildAuthOptions(config(), pool);
     expect(options.user.deleteUser.enabled).toBe(true);
+    expect(DELETE_USER_FRESH_AGE_S).toBe(15 * 60);
+    // Keep Better Auth's default session.freshAge for passkey and unlink routes.
+    expect((options as { session?: { freshAge?: number } }).session?.freshAge).toBeUndefined();
   });
 
   it("revokes every API key of the deleted user without touching other owners", async () => {
@@ -310,7 +323,32 @@ describe("buildAuthOptions", () => {
     });
   });
 
-  describe("account deletion", () => {
+  let adminPool: pg.Pool | undefined;
+  let pgPool: pg.Pool | undefined;
+  const pgDbName = `auth_unit_${randomBytes(8).toString("hex")}`;
+
+  beforeAll(async () => {
+    if (!databaseUrl) return;
+    adminPool = new pg.Pool({ connectionString: databaseUrl });
+    await adminPool.query(`CREATE DATABASE "${pgDbName}"`);
+    const url = new URL(databaseUrl);
+    url.pathname = `/${pgDbName}`;
+    const setupPool = new pg.Pool({ connectionString: url.toString() });
+    await setupPool.query("CREATE SCHEMA auth");
+    await setupPool.end();
+    pgPool = createPool({ ...config(), databaseUrl: url.toString() });
+    await migrate(pgPool, buildAuthOptions(config(), pgPool));
+  }, 30_000);
+
+  afterAll(async () => {
+    await pgPool?.end();
+    if (adminPool) {
+      await adminPool.query(`DROP DATABASE IF EXISTS "${pgDbName}" WITH (FORCE)`);
+      await adminPool.end();
+    }
+  }, 30_000);
+
+  describe.each(BACKENDS)("account deletion (%s)", (backend) => {
     async function seededService(freshSession = true) {
       const serviceConfig = config();
       const probe = buildAuthOptions(serviceConfig, memoryAdapter({}));
@@ -318,7 +356,7 @@ describe("buildAuthOptions", () => {
         Object.values(getAuthTables(probe)).map((table) => [table.modelName, []]),
       );
       const now = new Date();
-      const stale = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      const stale = new Date(now.getTime() - (DELETE_USER_FRESH_AGE_S + 60) * 1000);
       const future = new Date(now.getTime() + 60 * 60 * 1000);
       const passwordHash = await hashPassword("correct horse battery staple");
 
@@ -396,24 +434,45 @@ describe("buildAuthOptions", () => {
           id: "sess-password",
           userId: "user-password",
           token: "tok-password",
-          createdAt: now,
+          createdAt: freshSession ? now : stale,
           updatedAt: now,
           expiresAt: future,
         },
       ];
       db.apikey = [
-        { id: "key-social", referenceId: "user-social", key: "h1", enabled: true },
-        { id: "key-other", referenceId: "user-other", key: "h2", enabled: true },
+        {
+          id: "key-social",
+          referenceId: "user-social",
+          configId: "default",
+          key: "h1",
+          enabled: true,
+          rateLimitEnabled: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "key-other",
+          referenceId: "user-other",
+          configId: "default",
+          key: "h2",
+          enabled: true,
+          rateLimitEnabled: false,
+          createdAt: now,
+          updatedAt: now,
+        },
       ];
 
-      const database = Object.assign(memoryAdapter(db), {
-        query: vi.fn(async (_sql: string, [userId]: [string]) => {
-          db.apikey = (db.apikey ?? []).filter(
-            (row) => (row as { referenceId?: string }).referenceId !== userId,
-          );
-          return { rowCount: 1 };
-        }),
-      });
+      const database =
+        backend === "postgres" && pgPool
+          ? pgPool
+          : Object.assign(memoryAdapter(db), {
+              query: vi.fn(async (_sql: string, [userId]: [string]) => {
+                db.apikey = (db.apikey ?? []).filter(
+                  (row) => (row as { referenceId?: string }).referenceId !== userId,
+                );
+                return { rowCount: 1 };
+              }),
+            });
       const options = buildAuthOptions(serviceConfig, database);
       const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: false } });
       const app = createApp({
@@ -424,13 +483,37 @@ describe("buildAuthOptions", () => {
         peerAddress: () => "127.0.0.1",
       });
 
+      if (backend === "postgres" && pgPool) {
+        const ctx = await auth.$context;
+        await pgPool.query(
+          'TRUNCATE auth."user", auth."account", auth."session", auth."apikey" CASCADE',
+        );
+        for (const model of ["user", "account", "session", "apikey"] as const) {
+          for (const row of db[model] ?? []) {
+            await ctx.adapter.create({
+              model,
+              data: row as Record<string, unknown>,
+              forceAllowId: true,
+            });
+          }
+        }
+      }
+
+      async function syncDb() {
+        if (backend !== "postgres" || !pgPool) return;
+        const ctx = await auth.$context;
+        for (const model of ["user", "account", "session", "apikey"] as const) {
+          db[model] = await ctx.adapter.findMany({ model });
+        }
+      }
+
       async function sessionCookie(tokenValue: string): Promise<string> {
         const sig = await makeSignature(tokenValue, serviceConfig.secret);
         return `ariadshift.session_token=${encodeURIComponent(`${tokenValue}.${sig}`)}`;
       }
 
       async function deleteRequest(tokenValue: string, body: Record<string, unknown> = {}) {
-        return app.request("http://localhost:3001/api/auth/delete-user", {
+        const response = await app.request("http://localhost:3001/api/auth/delete-user", {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -440,6 +523,8 @@ describe("buildAuthOptions", () => {
           },
           body: JSON.stringify(body),
         });
+        await syncDb();
+        return response;
       }
 
       return { db, deleteRequest };
@@ -451,11 +536,11 @@ describe("buildAuthOptions", () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toEqual({ success: true, message: "User deleted" });
 
-      expect((db.user as { id: string }[]).map((u) => u.id)).toEqual([
+      expect((db.user as { id: string }[]).map((u) => u.id).sort()).toEqual([
         "user-other",
         "user-password",
       ]);
-      expect((db.session as { userId: string }[]).map((s) => s.userId)).toEqual([
+      expect((db.session as { userId: string }[]).map((s) => s.userId).sort()).toEqual([
         "user-other",
         "user-password",
       ]);
@@ -464,18 +549,28 @@ describe("buildAuthOptions", () => {
       ]);
     });
 
-    it("refuses social-only account deletion when the session is stale", async () => {
+    it("refuses social-only account deletion with reauth_required when the session is older than 15 minutes", async () => {
       const { db, deleteRequest } = await seededService(false);
       const response = await deleteRequest("tok-social");
       expect(response.status).toBe(400);
       expect((await response.json()) as { code?: string }).toMatchObject({
-        code: "SESSION_EXPIRED",
+        code: "reauth_required",
       });
       expect((db.user as { id: string }[]).map((u) => u.id)).toContain("user-social");
       expect((db.session as { id: string }[]).map((s) => s.id)).toContain("sess-social");
     });
 
-    it("requires the password before deleting a password-backed account even with a fresh session", async () => {
+    it("requires the password and a fresh session before deleting a password-backed account", async () => {
+      const stale = await seededService(false);
+      const staleWithPassword = await stale.deleteRequest("tok-password", {
+        password: "correct horse battery staple",
+      });
+      expect(staleWithPassword.status).toBe(400);
+      expect((await staleWithPassword.json()) as { code?: string }).toMatchObject({
+        code: "reauth_required",
+      });
+      expect((stale.db.user as { id: string }[]).map((u) => u.id)).toContain("user-password");
+
       const { db, deleteRequest } = await seededService(true);
 
       const withoutPassword = await deleteRequest("tok-password", {});
@@ -497,7 +592,7 @@ describe("buildAuthOptions", () => {
     });
   });
 
-  describe("OAuth consents and registered clients", () => {
+  describe.each(BACKENDS)("OAuth consents and registered clients (%s)", (backend) => {
     async function seededOAuthService() {
       const serviceConfig = config();
       const probe = buildAuthOptions(serviceConfig, memoryAdapter({}));
@@ -550,6 +645,7 @@ describe("buildAuthOptions", () => {
           name: "Ada MCP Client",
           uri: "https://ada.example.com",
           userId: "user-1",
+          disabled: false,
           redirectUris: ["http://127.0.0.1:33418/callback"],
           scopes: ["openid", "offline_access"],
           grantTypes: ["authorization_code", "refresh_token"],
@@ -564,6 +660,7 @@ describe("buildAuthOptions", () => {
           name: "Grace MCP Client",
           uri: "https://grace.example.com",
           userId: "user-2",
+          disabled: false,
           redirectUris: ["http://127.0.0.1:33419/callback"],
           scopes: ["openid", "offline_access"],
           grantTypes: ["authorization_code", "refresh_token"],
@@ -571,6 +668,20 @@ describe("buildAuthOptions", () => {
           tokenEndpointAuthMethod: "none",
           createdAt: now,
           updatedAt: now,
+        },
+      ];
+      db.oauthClientResource = [
+        {
+          id: "cr-1",
+          clientId: "client-owned-1",
+          resourceId: "http://localhost:8080/mcp",
+          createdAt: now,
+        },
+        {
+          id: "cr-2",
+          clientId: "client-owned-2",
+          resourceId: "http://localhost:8080/mcp",
+          createdAt: now,
         },
       ];
       db.oauthConsent = [
@@ -587,6 +698,14 @@ describe("buildAuthOptions", () => {
           clientId: "client-owned-1",
           userId: "user-2",
           scopes: ["openid"],
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "consent-3",
+          clientId: "client-owned-2",
+          userId: "user-2",
+          scopes: ["openid", "offline_access"],
           createdAt: now,
           updatedAt: now,
         },
@@ -612,6 +731,16 @@ describe("buildAuthOptions", () => {
           createdAt: now,
           expiresAt: future,
         },
+        {
+          id: "rt-3",
+          token: "hashed-rt-3",
+          clientId: "client-owned-2",
+          userId: "user-2",
+          sessionId: "sess-2",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
       ];
       db.oauthAccessToken = [
         {
@@ -624,9 +753,22 @@ describe("buildAuthOptions", () => {
           createdAt: now,
           expiresAt: future,
         },
+        {
+          id: "at-3",
+          token: "hashed-at-3",
+          clientId: "client-owned-2",
+          userId: "user-2",
+          refreshId: "rt-3",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
       ];
 
-      const options = buildAuthOptions(serviceConfig, memoryAdapter(db));
+      const options = buildAuthOptions(
+        serviceConfig,
+        backend === "postgres" && pgPool ? pgPool : memoryAdapter(db),
+      );
       const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: false } });
       const app = createApp({
         config: serviceConfig,
@@ -636,13 +778,51 @@ describe("buildAuthOptions", () => {
         peerAddress: () => "127.0.0.1",
       });
 
+      if (backend === "postgres" && pgPool) {
+        const ctx = await auth.$context;
+        await pgPool.query(
+          'TRUNCATE auth."user", auth."session", auth."oauthClient", auth."oauthClientResource", auth."oauthConsent", auth."oauthRefreshToken", auth."oauthAccessToken" CASCADE',
+        );
+        for (const model of [
+          "user",
+          "session",
+          "oauthClient",
+          "oauthClientResource",
+          "oauthConsent",
+          "oauthRefreshToken",
+          "oauthAccessToken",
+        ] as const) {
+          for (const row of db[model] ?? []) {
+            await ctx.adapter.create({
+              model,
+              data: row as Record<string, unknown>,
+              forceAllowId: true,
+            });
+          }
+        }
+      }
+
+      async function syncDb() {
+        if (backend !== "postgres" || !pgPool) return;
+        const ctx = await auth.$context;
+        for (const model of [
+          "oauthClient",
+          "oauthClientResource",
+          "oauthConsent",
+          "oauthRefreshToken",
+          "oauthAccessToken",
+        ] as const) {
+          db[model] = await ctx.adapter.findMany({ model });
+        }
+      }
+
       async function requestAs(
         tokenValue: string,
         path: string,
         body?: Record<string, unknown>,
       ): Promise<Response> {
         const sig = await makeSignature(tokenValue, serviceConfig.secret);
-        return app.request(`http://localhost:3001/api/auth${path}`, {
+        const response = await app.request(`http://localhost:3001/api/auth${path}`, {
           method: body ? "POST" : "GET",
           headers: {
             accept: "application/json",
@@ -652,6 +832,8 @@ describe("buildAuthOptions", () => {
           },
           ...(body ? { body: JSON.stringify(body) } : {}),
         });
+        await syncDb();
+        return response;
       }
 
       return { db, requestAs };
@@ -681,7 +863,7 @@ describe("buildAuthOptions", () => {
       });
     });
 
-    it("refuses revoking another user's consent or registered client", async () => {
+    it("refuses revoking another user's consent or registered client while keeping every consent and token intact", async () => {
       const { db, requestAs } = await seededOAuthService();
 
       const revokeOtherConsent = await requestAs("tok-1", "/oauth2/delete-consent", {
@@ -698,6 +880,24 @@ describe("buildAuthOptions", () => {
       expect((db.oauthClient as { clientId: string }[]).map((c) => c.clientId)).toContain(
         "client-owned-2",
       );
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id).sort()).toEqual([
+        "consent-1",
+        "consent-2",
+        "consent-3",
+      ]);
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id).sort()).toEqual([
+        "rt-1",
+        "rt-2",
+        "rt-3",
+      ]);
+      expect((db.oauthAccessToken as { id: string }[]).map((t) => t.id).sort()).toEqual([
+        "at-1",
+        "at-3",
+      ]);
+      expect((db.oauthClientResource as { id: string }[]).map((r) => r.id).sort()).toEqual([
+        "cr-1",
+        "cr-2",
+      ]);
     });
 
     it("removes the consent and revokes active tokens when the owner revokes a consent or client", async () => {
@@ -707,9 +907,15 @@ describe("buildAuthOptions", () => {
         id: "consent-1",
       });
       expect(revokeConsent.status).toBe(200);
-      expect((db.oauthConsent as { id: string }[]).map((c) => c.id)).toEqual(["consent-2"]);
-      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id)).toEqual(["rt-2"]);
-      expect(db.oauthAccessToken).toEqual([]);
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id).sort()).toEqual([
+        "consent-2",
+        "consent-3",
+      ]);
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id).sort()).toEqual([
+        "rt-2",
+        "rt-3",
+      ]);
+      expect((db.oauthAccessToken as { id: string }[]).map((t) => t.id)).toEqual(["at-3"]);
 
       const revokeClient = await requestAs("tok-1", "/oauth2/delete-client", {
         client_id: "client-owned-1",
@@ -718,8 +924,10 @@ describe("buildAuthOptions", () => {
       expect((db.oauthClient as { clientId: string }[]).map((c) => c.clientId)).toEqual([
         "client-owned-2",
       ]);
-      expect(db.oauthConsent).toEqual([]);
-      expect(db.oauthRefreshToken).toEqual([]);
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id)).toEqual(["consent-3"]);
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id)).toEqual(["rt-3"]);
+      expect((db.oauthAccessToken as { id: string }[]).map((t) => t.id)).toEqual(["at-3"]);
+      expect((db.oauthClientResource as { id: string }[]).map((r) => r.id)).toEqual(["cr-2"]);
     });
   });
 });
