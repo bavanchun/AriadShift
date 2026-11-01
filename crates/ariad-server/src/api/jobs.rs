@@ -14,7 +14,6 @@ use crate::{
     api::dto::{CreateJobRequest, Job, JobWarning, OutputFile, Outputs, Profile, RouteStep},
     db::{self, JobRow, JobStatus, NewJob, StepRow, UploadStatus, UsageEvent},
     error::{ApiError, ApiResult, ErrorBody, ErrorDetail},
-    packs::Pack,
     queue::JobMessage,
     routing, telemetry,
 };
@@ -132,7 +131,7 @@ pub async fn create_job(
                 detail,
             )
         })?;
-    let pack = Pack::for_route(&plan.steps);
+    let pack = super::route_pack(&plan.steps)?;
     super::check_pack_memory(pack, &caller.entitlement.limits)?;
     let input_bytes = u64::try_from(upload.size_bytes).unwrap_or(0);
     if let Some(max) = caller.entitlement.limits.max_input_bytes
