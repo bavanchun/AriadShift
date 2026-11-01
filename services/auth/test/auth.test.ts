@@ -496,4 +496,230 @@ describe("buildAuthOptions", () => {
       expect((db.user as { id: string }[]).map((u) => u.id)).not.toContain("user-password");
     });
   });
+
+  describe("OAuth consents and registered clients", () => {
+    async function seededOAuthService() {
+      const serviceConfig = config();
+      const probe = buildAuthOptions(serviceConfig, memoryAdapter({}));
+      const db: Record<string, unknown[]> = Object.fromEntries(
+        Object.values(getAuthTables(probe)).map((table) => [table.modelName, []]),
+      );
+      const now = new Date("2026-10-30T10:00:00.000Z");
+      const future = new Date(Date.now() + 60 * 60 * 1000);
+
+      db.user = [
+        {
+          id: "user-1",
+          name: "Ada",
+          email: "ada@example.com",
+          emailVerified: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "user-2",
+          name: "Grace",
+          email: "grace@example.com",
+          emailVerified: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      db.session = [
+        {
+          id: "sess-1",
+          userId: "user-1",
+          token: "tok-1",
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "sess-2",
+          userId: "user-2",
+          token: "tok-2",
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: future,
+        },
+      ];
+      db.oauthClient = [
+        {
+          id: "row-client-1",
+          clientId: "client-owned-1",
+          name: "Ada MCP Client",
+          uri: "https://ada.example.com",
+          userId: "user-1",
+          redirectUris: ["http://127.0.0.1:33418/callback"],
+          scopes: ["openid", "offline_access"],
+          grantTypes: ["authorization_code", "refresh_token"],
+          responseTypes: ["code"],
+          tokenEndpointAuthMethod: "none",
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "row-client-2",
+          clientId: "client-owned-2",
+          name: "Grace MCP Client",
+          uri: "https://grace.example.com",
+          userId: "user-2",
+          redirectUris: ["http://127.0.0.1:33419/callback"],
+          scopes: ["openid", "offline_access"],
+          grantTypes: ["authorization_code", "refresh_token"],
+          responseTypes: ["code"],
+          tokenEndpointAuthMethod: "none",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      db.oauthConsent = [
+        {
+          id: "consent-1",
+          clientId: "client-owned-2",
+          userId: "user-1",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "consent-2",
+          clientId: "client-owned-1",
+          userId: "user-2",
+          scopes: ["openid"],
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      db.oauthRefreshToken = [
+        {
+          id: "rt-1",
+          token: "hashed-rt-1",
+          clientId: "client-owned-2",
+          userId: "user-1",
+          sessionId: "sess-1",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "rt-2",
+          token: "hashed-rt-2",
+          clientId: "client-owned-1",
+          userId: "user-2",
+          sessionId: "sess-2",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
+      ];
+      db.oauthAccessToken = [
+        {
+          id: "at-1",
+          token: "hashed-at-1",
+          clientId: "client-owned-2",
+          userId: "user-1",
+          refreshId: "rt-1",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
+      ];
+
+      const options = buildAuthOptions(serviceConfig, memoryAdapter(db));
+      const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: false } });
+      const app = createApp({
+        config: serviceConfig,
+        handler: (request) => auth.handler(request),
+        metadata: discoveryDocuments(auth),
+        pages: pageOptions(serviceConfig),
+        peerAddress: () => "127.0.0.1",
+      });
+
+      async function requestAs(
+        tokenValue: string,
+        path: string,
+        body?: Record<string, unknown>,
+      ): Promise<Response> {
+        const sig = await makeSignature(tokenValue, serviceConfig.secret);
+        return app.request(`http://localhost:3001/api/auth${path}`, {
+          method: body ? "POST" : "GET",
+          headers: {
+            accept: "application/json",
+            origin: "http://localhost:3001",
+            cookie: `ariadshift.session_token=${encodeURIComponent(`${tokenValue}.${sig}`)}`,
+            ...(body ? { "content-type": "application/json" } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+      }
+
+      return { db, requestAs };
+    }
+
+    it("lists only the signed-in user's consents (with client name) and registered clients", async () => {
+      const { requestAs } = await seededOAuthService();
+
+      const consentsRes = await requestAs("tok-1", "/oauth2/get-consents");
+      expect(consentsRes.status).toBe(200);
+      const consents = (await consentsRes.json()) as Record<string, unknown>[];
+      expect(consents).toHaveLength(1);
+      expect(consents[0]).toMatchObject({
+        id: "consent-1",
+        clientId: "client-owned-2",
+        clientName: "Grace MCP Client",
+        scopes: ["openid", "offline_access"],
+      });
+
+      const clientsRes = await requestAs("tok-1", "/oauth2/get-clients");
+      expect(clientsRes.status).toBe(200);
+      const clients = (await clientsRes.json()) as Record<string, unknown>[];
+      expect(clients).toHaveLength(1);
+      expect(clients[0]).toMatchObject({
+        client_id: "client-owned-1",
+        client_name: "Ada MCP Client",
+      });
+    });
+
+    it("refuses revoking another user's consent or registered client", async () => {
+      const { db, requestAs } = await seededOAuthService();
+
+      const revokeOtherConsent = await requestAs("tok-1", "/oauth2/delete-consent", {
+        id: "consent-2",
+      });
+      expect(revokeOtherConsent.status).toBe(401);
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id)).toContain("consent-2");
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id)).toContain("rt-2");
+
+      const revokeOtherClient = await requestAs("tok-1", "/oauth2/delete-client", {
+        client_id: "client-owned-2",
+      });
+      expect(revokeOtherClient.status).toBe(401);
+      expect((db.oauthClient as { clientId: string }[]).map((c) => c.clientId)).toContain(
+        "client-owned-2",
+      );
+    });
+
+    it("removes the consent and revokes active tokens when the owner revokes a consent or client", async () => {
+      const { db, requestAs } = await seededOAuthService();
+
+      const revokeConsent = await requestAs("tok-1", "/oauth2/delete-consent", {
+        id: "consent-1",
+      });
+      expect(revokeConsent.status).toBe(200);
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id)).toEqual(["consent-2"]);
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id)).toEqual(["rt-2"]);
+      expect(db.oauthAccessToken).toEqual([]);
+
+      const revokeClient = await requestAs("tok-1", "/oauth2/delete-client", {
+        client_id: "client-owned-1",
+      });
+      expect(revokeClient.status).toBe(200);
+      expect((db.oauthClient as { clientId: string }[]).map((c) => c.clientId)).toEqual([
+        "client-owned-2",
+      ]);
+      expect(db.oauthConsent).toEqual([]);
+      expect(db.oauthRefreshToken).toEqual([]);
+    });
+  });
 });

@@ -244,19 +244,95 @@ export function buildAuthOptions(
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path !== "/delete-user") return;
-        const session = await getSessionFromCtx(ctx);
-        if (!session) return;
-        const credential = await ctx.context.internalAdapter.findCredentialAccount(session.user.id);
-        if (credential?.password) {
-          const password = (ctx.body as { password?: unknown } | undefined)?.password;
-          if (typeof password !== "string" || password === "") {
-            throw new APIError("BAD_REQUEST", {
-              code: "PASSWORD_REQUIRED",
-              message: "Password is required to delete this account.",
-            });
+        if (ctx.path === "/delete-user") {
+          const session = await getSessionFromCtx(ctx);
+          if (!session) return;
+          const credential = await ctx.context.internalAdapter.findCredentialAccount(
+            session.user.id,
+          );
+          if (credential?.password) {
+            const password = (ctx.body as { password?: unknown } | undefined)?.password;
+            if (typeof password !== "string" || password === "") {
+              throw new APIError("BAD_REQUEST", {
+                code: "PASSWORD_REQUIRED",
+                message: "Password is required to delete this account.",
+              });
+            }
           }
+          return;
         }
+        if (ctx.path === "/oauth2/delete-consent") {
+          const session = await getSessionFromCtx(ctx);
+          const id = (ctx.body as { id?: unknown } | undefined)?.id;
+          if (!session || typeof id !== "string" || id === "") return;
+          const consent = await ctx.context.adapter.findOne<{
+            id: string;
+            clientId: string;
+            userId?: string;
+          }>({
+            model: "oauthConsent",
+            where: [{ field: "id", value: id }],
+          });
+          if (!consent || consent.userId !== session.user.id) return;
+          const where = [
+            { field: "clientId", value: consent.clientId },
+            { field: "userId", value: session.user.id },
+          ];
+          await ctx.context.adapter.deleteMany({ model: "oauthAccessToken", where });
+          await ctx.context.adapter.deleteMany({ model: "oauthRefreshToken", where });
+          return;
+        }
+        if (ctx.path === "/oauth2/delete-client") {
+          const session = await getSessionFromCtx(ctx);
+          const clientId = (ctx.body as { client_id?: unknown } | undefined)?.client_id;
+          if (!session || typeof clientId !== "string" || clientId === "") return;
+          const client = await ctx.context.adapter.findOne<{
+            clientId: string;
+            userId?: string;
+          }>({
+            model: "oauthClient",
+            where: [{ field: "clientId", value: clientId }],
+          });
+          if (!client || client.userId !== session.user.id) return;
+          const where = [{ field: "clientId", value: client.clientId }];
+          await ctx.context.adapter.deleteMany({ model: "oauthAccessToken", where });
+          await ctx.context.adapter.deleteMany({ model: "oauthRefreshToken", where });
+          await ctx.context.adapter.deleteMany({ model: "oauthConsent", where });
+          await ctx.context.adapter.deleteMany({ model: "oauthClientResource", where });
+        }
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/oauth2/get-consents") return;
+        const returned = ctx.context.returned;
+        if (!Array.isArray(returned) || returned.length === 0) return;
+        const clientIds = [
+          ...new Set(
+            returned
+              .map((row) => (row as { clientId?: unknown })?.clientId)
+              .filter((id): id is string => typeof id === "string" && id !== ""),
+          ),
+        ];
+        if (clientIds.length === 0) return;
+        const clients = await ctx.context.adapter.findMany<{
+          clientId: string;
+          name?: string | null;
+          uri?: string | null;
+        }>({
+          model: "oauthClient",
+          where: [{ field: "clientId", operator: "in", value: clientIds }],
+        });
+        const byId = new Map(clients.map((client) => [client.clientId, client]));
+        return ctx.json(
+          returned.map((row) => {
+            const consent = row as Record<string, unknown> & { clientId?: string };
+            const client = consent.clientId ? byId.get(consent.clientId) : undefined;
+            return {
+              ...consent,
+              clientName: client?.name ?? null,
+              clientUri: client?.uri ?? null,
+            };
+          }),
+        );
       }),
     },
     rateLimit: {

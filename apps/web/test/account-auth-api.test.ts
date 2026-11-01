@@ -134,6 +134,64 @@ describe("Better Auth adapter", () => {
     expect(deleteCall?.body).toEqual({});
   });
 
+  it("lists and revokes OAuth consents and registered clients", async () => {
+    const { calls, fetchImpl } = fakeFetch({
+      "GET /api/auth/oauth2/get-consents": () =>
+        Response.json([
+          {
+            id: "consent-1",
+            clientId: "client-1",
+            clientName: "Claude Code",
+            scopes: ["openid", "offline_access"],
+            createdAt: "2026-10-30T10:00:00.000Z",
+            updatedAt: "2026-10-30T11:00:00.000Z",
+          },
+        ]),
+      "POST /api/auth/oauth2/delete-consent": () => Response.json(null),
+      "GET /api/auth/oauth2/get-clients": () =>
+        Response.json([
+          {
+            client_id: "client-2",
+            client_name: "Cursor MCP",
+            redirect_uris: ["http://127.0.0.1:33418/callback"],
+            scope: "openid offline_access",
+            client_id_issued_at: 1_761_818_400,
+          },
+        ]),
+      "POST /api/auth/oauth2/delete-client": () => Response.json(null),
+    });
+    const auth = createBetterAuthApi(AUTH, fetchImpl);
+
+    await expect(auth.listOAuthConsents()).resolves.toEqual([
+      {
+        id: "consent-1",
+        clientId: "client-1",
+        clientName: "Claude Code",
+        scopes: ["openid", "offline_access"],
+        createdAt: "2026-10-30T10:00:00.000Z",
+        updatedAt: "2026-10-30T11:00:00.000Z",
+      },
+    ]);
+    await auth.deleteOAuthConsent("consent-1");
+    expect(
+      calls.find((call) => call.url === `${AUTH}/api/auth/oauth2/delete-consent`)?.body,
+    ).toEqual({ id: "consent-1" });
+
+    await expect(auth.listOAuthClients()).resolves.toEqual([
+      {
+        clientId: "client-2",
+        clientName: "Cursor MCP",
+        redirectUris: ["http://127.0.0.1:33418/callback"],
+        scopes: ["openid", "offline_access"],
+        createdAt: new Date(1_761_818_400 * 1000).toISOString(),
+      },
+    ]);
+    await auth.deleteOAuthClient("client-2");
+    expect(
+      calls.find((call) => call.url === `${AUTH}/api/auth/oauth2/delete-client`)?.body,
+    ).toEqual({ client_id: "client-2" });
+  });
+
   it("maps the session's user", async () => {
     const { fetchImpl } = fakeFetch({
       "GET /api/auth/get-session": () =>

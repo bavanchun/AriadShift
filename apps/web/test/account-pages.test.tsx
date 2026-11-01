@@ -72,6 +72,27 @@ function fakeAuth(user: AccountUser | null = USER): FakeAuth {
       key: "ashift_cdSECRETVALUE",
     }),
     deleteApiKey: vi.fn<AuthApi["deleteApiKey"]>().mockResolvedValue(),
+    listOAuthConsents: vi.fn<AuthApi["listOAuthConsents"]>().mockResolvedValue([
+      {
+        id: "consent-1",
+        clientId: "client-1",
+        clientName: "Claude Code",
+        scopes: ["openid", "offline_access"],
+        createdAt: "2026-10-30T10:00:00Z",
+        updatedAt: "2026-10-30T11:00:00Z",
+      },
+    ]),
+    deleteOAuthConsent: vi.fn<AuthApi["deleteOAuthConsent"]>().mockResolvedValue(),
+    listOAuthClients: vi.fn<AuthApi["listOAuthClients"]>().mockResolvedValue([
+      {
+        clientId: "client-2",
+        clientName: "Cursor MCP",
+        redirectUris: ["http://127.0.0.1:33418/callback"],
+        scopes: ["openid", "offline_access"],
+        createdAt: "2026-10-30T10:00:00Z",
+      },
+    ]),
+    deleteOAuthClient: vi.fn<AuthApi["deleteOAuthClient"]>().mockResolvedValue(),
     apiToken: vi.fn<AuthApi["apiToken"]>().mockResolvedValue("jwt"),
   };
 }
@@ -333,6 +354,37 @@ describe("account page", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete account" }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/"));
     expect(auth.deleteAccount).toHaveBeenCalledWith(undefined);
+  });
+
+  it("lists connected OAuth apps and registered clients and revokes them after confirmation", async () => {
+    const auth = fakeAuth();
+    renderInShell(<AccountPage />, auth);
+
+    const section = await screen.findByRole("region", { name: "Connected apps" });
+    expect(await within(section).findByText("Claude Code")).toBeTruthy();
+    expect(within(section).getByText(/Scopes: openid, offline_access/)).toBeTruthy();
+    expect(within(section).getByText("Cursor MCP")).toBeTruthy();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Revoke Claude Code" }));
+    const consentDialog = screen.getByRole("alertdialog", { name: "Revoke Claude Code?" });
+    expect(document.activeElement).toBe(within(consentDialog).getByRole("button", { name: "Cancel" }));
+    auth.listOAuthConsents.mockResolvedValue([]);
+    fireEvent.click(within(consentDialog).getByRole("button", { name: "Revoke" }));
+
+    expect(await within(section).findByText("Claude Code revoked.")).toBeTruthy();
+    expect(auth.deleteOAuthConsent).toHaveBeenCalledWith("consent-1");
+    expect(within(section).queryByText("Claude Code")).toBeNull();
+
+    fireEvent.click(within(section).getByRole("button", { name: "Revoke Cursor MCP" }));
+    const clientDialog = screen.getByRole("alertdialog", { name: "Revoke Cursor MCP?" });
+    auth.listOAuthClients.mockResolvedValue([]);
+    fireEvent.click(within(clientDialog).getByRole("button", { name: "Revoke" }));
+
+    expect(await within(section).findByText("Cursor MCP revoked.")).toBeTruthy();
+    expect(auth.deleteOAuthClient).toHaveBeenCalledWith("client-2");
+    expect(
+      await within(section).findByText("No connected apps or registered OAuth clients yet."),
+    ).toBeTruthy();
   });
 
   it("signs out", async () => {

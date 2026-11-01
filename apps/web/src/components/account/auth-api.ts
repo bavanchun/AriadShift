@@ -41,6 +41,23 @@ export interface TwoFactorSetup {
   backupCodes: string[];
 }
 
+export interface OAuthConsentInfo {
+  id: string;
+  clientId: string;
+  clientName: string | null;
+  scopes: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OAuthClientInfo {
+  clientId: string;
+  clientName: string | null;
+  redirectUris: string[];
+  scopes: string[];
+  createdAt: string | null;
+}
+
 export interface AuthApi {
   /** The signed-in user, or null without a session. */
   getSession(): Promise<AccountUser | null>;
@@ -71,6 +88,10 @@ export interface AuthApi {
   /** `expiresInDays` null creates a key that does not expire. */
   createApiKey(name: string, expiresInDays: number | null): Promise<CreatedApiKey>;
   deleteApiKey(id: string): Promise<void>;
+  listOAuthConsents(): Promise<OAuthConsentInfo[]>;
+  deleteOAuthConsent(id: string): Promise<void>;
+  listOAuthClients(): Promise<OAuthClientInfo[]>;
+  deleteOAuthClient(clientId: string): Promise<void>;
   /** A JWT for the API, reused until shortly before it expires; undefined without a session. */
   apiToken(): Promise<string | undefined>;
 }
@@ -129,6 +150,49 @@ function toApiKey(value: unknown): ApiKeyInfo {
   };
 }
 
+function toOAuthConsent(value: unknown): OAuthConsentInfo {
+  const consent = record(value);
+  const scopes = Array.isArray(consent.scopes)
+    ? consent.scopes.map(String)
+    : typeof consent.scope === "string"
+      ? consent.scope.split(" ").filter(Boolean)
+      : [];
+  const created = isoDate(consent.createdAt) ?? "";
+  return {
+    id: String(consent.id ?? ""),
+    clientId: String(consent.clientId ?? consent.client_id ?? ""),
+    clientName: text(consent.clientName) ?? text(consent.client_name),
+    scopes,
+    createdAt: created,
+    updatedAt: isoDate(consent.updatedAt) ?? created,
+  };
+}
+
+function toOAuthClient(value: unknown): OAuthClientInfo {
+  const client = record(value);
+  const scopes = Array.isArray(client.scopes)
+    ? client.scopes.map(String)
+    : typeof client.scope === "string"
+      ? client.scope.split(" ").filter(Boolean)
+      : [];
+  const redirectUris = Array.isArray(client.redirect_uris)
+    ? client.redirect_uris.map(String)
+    : Array.isArray(client.redirectUris)
+      ? client.redirectUris.map(String)
+      : [];
+  const issuedAt =
+    typeof client.client_id_issued_at === "number"
+      ? new Date(client.client_id_issued_at * 1000).toISOString()
+      : isoDate(client.createdAt);
+  return {
+    clientId: String(client.client_id ?? client.clientId ?? ""),
+    clientName: text(client.client_name) ?? text(client.name),
+    redirectUris,
+    scopes,
+    createdAt: issuedAt,
+  };
+}
+
 /** Lifetime of the API's JWTs is 15 minutes; refresh one minute early. */
 const TOKEN_REUSE_MS = 14 * 60 * 1000;
 
@@ -150,6 +214,41 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
   const fetchToken: typeof fetch = fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
   let cachedToken: { token: string; until: number } | undefined;
   const call = (pending: Promise<unknown>) => pending.then((result) => unwrap(result as Result));
+
+  async function authRequest(path: string, body?: Record<string, unknown>): Promise<unknown> {
+    const response = await fetchToken(`${authUrl}/api/auth${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      credentials: "include",
+      headers: {
+        accept: "application/json",
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    if (!response.ok) {
+      const err = record(payload);
+      const message =
+        typeof err.message === "string" && err.message !== ""
+          ? err.message
+          : typeof err.error_description === "string" && err.error_description !== ""
+            ? err.error_description
+            : response.statusText || "The auth service refused the request.";
+      const code =
+        typeof err.code === "string"
+          ? err.code
+          : typeof err.error === "string"
+            ? err.error
+            : undefined;
+      throw new AuthError(message, response.status, code);
+    }
+    return payload;
+  }
 
   return {
     async getSession() {
@@ -291,6 +390,38 @@ export function createBetterAuthApi(authUrl: string, fetchImpl?: typeof fetch): 
 
     async deleteApiKey(id) {
       await call(client.apiKey.delete({ keyId: id }));
+    },
+
+    async listOAuthConsents() {
+      try {
+        const data = await authRequest("/oauth2/get-consents");
+        return (Array.isArray(data) ? data : []).map(toOAuthConsent);
+      } catch (error) {
+        if (error instanceof AuthError && error.status === 404) {
+          return [];
+        }
+        throw error;
+      }
+    },
+
+    async deleteOAuthConsent(id) {
+      await authRequest("/oauth2/delete-consent", { id });
+    },
+
+    async listOAuthClients() {
+      try {
+        const data = await authRequest("/oauth2/get-clients");
+        return (Array.isArray(data) ? data : []).map(toOAuthClient);
+      } catch (error) {
+        if (error instanceof AuthError && error.status === 404) {
+          return [];
+        }
+        throw error;
+      }
+    },
+
+    async deleteOAuthClient(clientId) {
+      await authRequest("/oauth2/delete-client", { client_id: clientId });
     },
 
     async apiToken() {
