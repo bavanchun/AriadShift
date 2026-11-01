@@ -76,6 +76,6 @@ Closes #67
 
 ### Summary
 - Add `AriadClient.downloadToStream` and `DownloadIntegrityError` in `@ariadshift/sdk` to stream response bodies chunk-by-chunk, compute SHA-256 incrementally via `@noble/hashes`, and abort the destination writable before closing if byte length or SHA-256 mismatches.
-- Add `downloadAndSaveOutput` in `apps/web/src/lib/cloud/cloud-job.ts` to keep downloads below 16 MiB on the in-memory `Blob` path while streaming larger outputs through File System Access API / OPFS writables (or a bounded 64 MiB fallback when unavailable).
+- Add `downloadAndSaveOutput` in `apps/web/src/lib/cloud/cloud-job.ts` to keep downloads below 16 MiB on the in-memory `Blob` path while streaming larger outputs through File System Access API / OPFS writable streams (or a bounded 64 MiB fallback when unavailable).
 - Deduplicate `saveBlob` between `apps/web/src/lib/cloud/cloud-job.ts` and `apps/web/src/components/account/jobs-api.ts`, and wire `/jobs` downloads through `downloadAndSaveOutput`.
 ```
