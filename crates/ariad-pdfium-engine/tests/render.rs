@@ -58,6 +58,15 @@ fn golden_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
 }
 
+fn golden_path(page: u8, os: &str) -> PathBuf {
+    let suffix = if os == "linux" {
+        String::new()
+    } else {
+        format!(".{os}")
+    };
+    golden_dir().join(format!("pd-vi-qd-1922-2026.page-{page:03}{suffix}.png"))
+}
+
 fn replace_fixed_len(haystack: &[u8], needle: &[u8], replacement: &[u8]) -> Vec<u8> {
     assert_eq!(needle.len(), replacement.len());
     let mut out = haystack.to_vec();
@@ -159,9 +168,14 @@ fn assert_matches_golden(actual: &RgbaImage, golden: &RgbaImage, label: &str) {
 }
 
 #[test]
-fn golden_renders_match_multipage_20_pages_1_and_2() {
+fn golden_renders_match_embedded_font_document_pages_1_and_2() {
     let lib_dir = require_pdfium!();
-    let ws = setup_fixture_workspace("multipage-20.pdf");
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/pd-vi-qd-1922-2026.pdf");
+    let ws = setup_workspace(
+        "pd-vi-qd-1922-2026.pdf",
+        &fs::read(fixture).expect("read embedded-font fixture"),
+    );
     let mut sink = Vec::new();
     let mut ctx = ToolContext::new(
         "job-golden",
@@ -192,15 +206,16 @@ fn golden_renders_match_multipage_20_pages_1_and_2() {
     assert_eq!(artifacts.len(), 2);
 
     let golden_paths = [
-        golden_dir().join("multipage-20.page-001.png"),
-        golden_dir().join("multipage-20.page-002.png"),
+        golden_path(1, std::env::consts::OS),
+        golden_path(2, std::env::consts::OS),
     ];
 
-    if std::env::var_os("ARIAD_UPDATE_GOLDEN").is_some() {
+    if std::env::var_os("ARIAD_UPDATE_GOLDENS").is_some_and(|value| value == "1") {
         fs::create_dir_all(golden_dir()).expect("create golden dir");
         for ((actual_path, _), golden_path) in artifacts.iter().zip(golden_paths.iter()) {
             fs::copy(actual_path, golden_path).expect("write golden PNG");
         }
+        return;
     }
 
     for (idx, ((actual_path, fmt), golden_path)) in
@@ -212,14 +227,22 @@ fn golden_renders_match_multipage_20_pages_1_and_2() {
             .expect("decode rendered PNG")
             .to_rgba8();
 
-        let golden_bytes = fs::read(golden_path)
-            .unwrap_or_else(|e| panic!("read golden file {}: {e}", golden_path.display()));
+        let golden_bytes = fs::read(golden_path).unwrap_or_else(|e| {
+            panic!("missing or unreadable {} golden {}: {e}; generate it with ARIAD_UPDATE_GOLDENS=1 cargo test --locked -p ariad-pdfium-engine --test render", std::env::consts::OS, golden_path.display())
+        });
         let golden_img = image::load_from_memory_with_format(&golden_bytes, ImageFormat::Png)
             .expect("decode golden PNG")
             .to_rgba8();
 
         assert_matches_golden(&actual_img, &golden_img, &format!("page {}", idx + 1));
     }
+}
+
+#[test]
+fn golden_paths_are_specific_to_each_supported_os() {
+    assert!(golden_path(1, "linux").ends_with("pd-vi-qd-1922-2026.page-001.png"));
+    assert!(golden_path(1, "macos").ends_with("pd-vi-qd-1922-2026.page-001.macos.png"));
+    assert!(golden_path(2, "windows").ends_with("pd-vi-qd-1922-2026.page-002.windows.png"));
 }
 
 #[test]
