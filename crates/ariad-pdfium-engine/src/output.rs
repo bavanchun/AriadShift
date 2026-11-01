@@ -290,11 +290,10 @@ impl<'a> ToolContext<'a> {
             .with_max_pages(self.limits.max_pages);
         pdf_ctx.deadline = self.deadline;
 
-        // Allow opening the document up to the global local page ceiling so `PageRange` can
-        // select a smaller subset when `limits.max_pages` is tighter than the whole document;
-        // `resolve_pages` then enforces `limits.max_pages` on the resolved page count.
+        // Allow selecting a smaller subset from a larger document when a page limit is set.
+        // `resolve_pages` enforces the limit on the selected page count.
         let open_limits = Limits {
-            max_pages: self.limits.max_pages.map(|m| m.max(2_000)).or(Some(2_000)),
+            max_pages: self.limits.max_pages.map(|m| m.max(2_000)),
             ..self.limits.clone()
         };
 
@@ -789,6 +788,35 @@ mod tests {
         ctx.check_pixels(16_384, 16_384).expect("at the limit");
         assert!(ctx.check_pixels(16_385, 16_384).is_err());
         assert!(ctx.check_pixels(u64::MAX, 2).is_err());
+    }
+
+    #[test]
+    fn local_validation_accepts_more_than_two_thousand_pages() {
+        use lopdf::{Document, Object, dictionary};
+        let ws = workspace();
+        let mut doc = Document::with_version("1.7");
+        let pages_id = doc.new_object_id();
+        let mut kids = Vec::new();
+        for _ in 0..2_001 {
+            let page = doc.add_object(dictionary! {"Type" => "Page", "Parent" => pages_id, "MediaBox" => vec![0.into(), 0.into(), 10.into(), 10.into()]});
+            kids.push(Object::Reference(page));
+        }
+        doc.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {"Type" => "Pages", "Kids" => kids, "Count" => 2001}),
+        );
+        let root = doc.add_object(dictionary! {"Type" => "Catalog", "Pages" => pages_id});
+        doc.trailer.set("Root", root);
+        doc.save(&ws.paths.inputs[0]).expect("save PDF");
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "j",
+            "pdf.render",
+            ws.paths.clone(),
+            Limits::local(),
+            &mut sink,
+        );
+        ctx.load_validated_pdf_bytes().expect("unlimited pages");
     }
 
     #[test]
