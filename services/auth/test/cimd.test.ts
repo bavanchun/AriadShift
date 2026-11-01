@@ -17,11 +17,13 @@ import {
   isAllowedCimdAddress,
   isCimdClientId,
   parseCacheControlTtlMs,
+  validateCimdMetadataDocument,
 } from "../src/cimd.ts";
 import {
   AUTH,
   audiences,
   authorizeUrl,
+  config,
   createService,
   decode,
   Jar,
@@ -175,6 +177,13 @@ describe("CIMD IP address checker", () => {
       "255.255.255.255",
       "192.0.0.1",
       "198.18.0.1",
+      "192.0.2.1",
+      "198.51.100.1",
+      "203.0.113.1",
+      "192.88.99.1",
+      "2001:20::1",
+      "3fff::1",
+      "5f00::1",
       "2001:db8::1",
       "2001::1",
       "64:ff9b::127.0.0.1",
@@ -204,6 +213,41 @@ describe("CIMD IP address checker", () => {
 });
 
 describe("CIMD URL validation and fetch policy", () => {
+  it("does not persist the untrusted metadata passthrough", () => {
+    const id = "https://client.example/client.json";
+    const document = validateCimdMetadataDocument(
+      {
+        client_id: id,
+        redirect_uris: [REDIRECT_URI],
+        metadata: { arbitrary: "x".repeat(8_000) },
+      },
+      id,
+    );
+    expect(document).not.toHaveProperty("metadata");
+  });
+  it("rejects unsupported remote key sets", () => {
+    const id = "https://client.example/client.json";
+    expect(() =>
+      validateCimdMetadataDocument(
+        {
+          client_id: id,
+          redirect_uris: [REDIRECT_URI],
+          token_endpoint_auth_method: "private_key_jwt",
+          jwks_uri: "https://client.example/jwks.json",
+        },
+        id,
+      ),
+    ).toThrow(/jwks_uri is not supported/);
+  });
+  it("rejects noncanonical identifiers and nonstandard ports", () => {
+    for (const id of [
+      "https://example.com/a/%2e%2e/client.json",
+      "https://example.com/a\\..\\client.json",
+      "https://EXAMPLE.com/client.json",
+      "https://example.com:8443/client.json",
+    ])
+      expect(isCimdClientId(id), id).toBe(false);
+  });
   const host = "cimd.example";
   const tls = generateTestCertificate(host);
   let server: https.Server;
@@ -214,8 +258,8 @@ describe("CIMD URL validation and fetch policy", () => {
   beforeAll(async () => {
     server = https.createServer({ key: tls.key, cert: tls.cert }, (req, res) => {
       lastRequestHeaders = req.headers;
-      const url = new URL(req.url ?? "/", `https://${host}:${port}`);
-      const selfUrl = `https://${host}:${port}${url.pathname}`;
+      const url = new URL(req.url ?? "/", `https://${host}`);
+      const selfUrl = `https://${host}${url.pathname}`;
 
       if (url.pathname === "/valid/client.json") {
         res.writeHead(200, {
@@ -239,7 +283,7 @@ describe("CIMD URL validation and fetch policy", () => {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
-            client_id: `https://${host}:${port}/other/client.json`,
+            client_id: `https://${host}/other/client.json`,
             client_name: "Mismatched Client",
             redirect_uris: [REDIRECT_URI],
             token_endpoint_auth_method: "none",
@@ -272,7 +316,7 @@ describe("CIMD URL validation and fetch policy", () => {
 
       if (url.pathname === "/redirect/client.json") {
         res.writeHead(302, {
-          location: `https://${host}:${port}/redirect-target/client.json`,
+          location: `https://${host}/redirect-target/client.json`,
           "content-type": "application/json",
         });
         res.end();
@@ -348,7 +392,7 @@ describe("CIMD URL validation and fetch policy", () => {
       },
     });
 
-    const clientId = `https://${host}:${port}/valid/client.json`;
+    const clientId = `https://${host}/valid/client.json`;
     const result = await fetcher.fetchDocument(clientId);
     expect(resolvedHostname).toBe(host);
     expect(result.fromCache).toBe(false);
@@ -380,7 +424,7 @@ describe("CIMD URL validation and fetch policy", () => {
         https: { ca: tls.cert, connectHost: "127.0.0.1", connectPort: port },
       });
       await expect(
-        fetcher.fetchDocument(`https://${host}:${port}/valid/client.json`),
+        fetcher.fetchDocument(`https://${host}/valid/client.json`),
       ).rejects.toMatchObject({ code: "forbidden_address" } satisfies Partial<CimdError>);
     }
 
@@ -393,7 +437,7 @@ describe("CIMD URL validation and fetch policy", () => {
       https: { ca: tls.cert, connectHost: "127.0.0.1", connectPort: port },
     });
     await expect(
-      mixedFetcher.fetchDocument(`https://${host}:${port}/valid/client.json`),
+      mixedFetcher.fetchDocument(`https://${host}/valid/client.json`),
     ).rejects.toMatchObject({ code: "forbidden_address" } satisfies Partial<CimdError>);
   });
 
@@ -403,7 +447,7 @@ describe("CIMD URL validation and fetch policy", () => {
       https: { ca: tls.cert, connectHost: "127.0.0.1", connectPort: port },
     });
     await expect(
-      fetcher.fetchDocument(`https://${host}:${port}/mismatch/client.json`),
+      fetcher.fetchDocument(`https://${host}/mismatch/client.json`),
     ).rejects.toMatchObject({ code: "client_id_mismatch" } satisfies Partial<CimdError>);
   });
 
@@ -413,10 +457,10 @@ describe("CIMD URL validation and fetch policy", () => {
       https: { ca: tls.cert, connectHost: "127.0.0.1", connectPort: port },
     });
     await expect(
-      fetcher.fetchDocument(`https://${host}:${port}/oversized-header/client.json`),
+      fetcher.fetchDocument(`https://${host}/oversized-header/client.json`),
     ).rejects.toMatchObject({ code: "response_too_large" } satisfies Partial<CimdError>);
     await expect(
-      fetcher.fetchDocument(`https://${host}:${port}/oversized-stream/client.json`),
+      fetcher.fetchDocument(`https://${host}/oversized-stream/client.json`),
     ).rejects.toMatchObject({ code: "response_too_large" } satisfies Partial<CimdError>);
   });
 
@@ -427,9 +471,93 @@ describe("CIMD URL validation and fetch policy", () => {
       lookup: async () => [{ address: "93.184.216.34", family: 4 }],
       https: { ca: tls.cert, connectHost: "127.0.0.1", connectPort: port },
     });
+    await expect(fetcher.fetchDocument(`https://${host}/slow/client.json`)).rejects.toMatchObject({
+      code: "timeout",
+    } satisfies Partial<CimdError>);
+  });
+
+  it("bounds a DNS lookup that never returns", async () => {
+    const fetcher = createCimdFetcher({ timeoutMs: 30, lookup: () => new Promise(() => {}) });
     await expect(
-      fetcher.fetchDocument(`https://${host}:${port}/slow/client.json`),
-    ).rejects.toMatchObject({ code: "timeout" } satisfies Partial<CimdError>);
+      fetcher.fetchDocument("https://hanging.example/client.json"),
+    ).rejects.toMatchObject({ code: "timeout" });
+  });
+
+  it("coalesces simultaneous requests and caches failures", async () => {
+    let calls = 0;
+    const fetcher = createCimdFetcher({
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => {
+        calls++;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return { status: 503, headers: {}, body: "" };
+      },
+    });
+    const url = "https://failure.example/client.json";
+    await Promise.all([
+      expect(fetcher.fetchDocument(url)).rejects.toThrow(),
+      expect(fetcher.fetchDocument(url)).rejects.toThrow(),
+    ]);
+    await expect(fetcher.fetchDocument(url)).rejects.toThrow();
+    expect(calls).toBe(1);
+  });
+
+  it("caches no-store documents for the minimum lifetime", async () => {
+    let calls = 0;
+    let time = 0;
+    const id = "https://cache.example/client.json";
+    const fetcher = createCimdFetcher({
+      now: () => time,
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => {
+        calls++;
+        return {
+          status: 200,
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
+          body: JSON.stringify({ client_id: id, redirect_uris: [REDIRECT_URI] }),
+        };
+      },
+    });
+    await fetcher.fetchDocument(id);
+    time += 59_999;
+    await fetcher.fetchDocument(id);
+    expect(calls).toBe(1);
+    time++;
+    await fetcher.fetchDocument(id);
+    expect(calls).toBe(2);
+  });
+
+  it("caps concurrent outbound resolutions", async () => {
+    let release!: () => void;
+    let allStarted!: () => void;
+    let active = 0;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      allStarted = resolve;
+    });
+    const fetcher = createCimdFetcher({
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => {
+        active++;
+        if (active === 8) allStarted();
+        await gate;
+        return { status: 503, headers: {}, body: "" };
+      },
+    });
+    const pending = Array.from({ length: 8 }, (_, i) =>
+      fetcher.fetchDocument(`https://capacity.example/${i}`).catch(() => undefined),
+    );
+    try {
+      await started;
+      await expect(
+        fetcher.fetchDocument("https://capacity.example/overflow"),
+      ).rejects.toMatchObject({ code: "network_error" });
+    } finally {
+      release();
+      await Promise.all(pending);
+    }
   });
 
   it("refuses HTTP redirects without following them", async () => {
@@ -439,7 +567,7 @@ describe("CIMD URL validation and fetch policy", () => {
       https: { ca: tls.cert, connectHost: "127.0.0.1", connectPort: port },
     });
     await expect(
-      fetcher.fetchDocument(`https://${host}:${port}/redirect/client.json`),
+      fetcher.fetchDocument(`https://${host}/redirect/client.json`),
     ).rejects.toMatchObject({ code: "redirect_not_allowed" } satisfies Partial<CimdError>);
     expect(redirectTargetRequested).toBe(false);
   });
@@ -450,7 +578,7 @@ describe("CIMD URL validation and fetch policy", () => {
       https: { ca: tls.cert, connectHost: "127.0.0.1", connectPort: port },
     });
     await expect(
-      fetcher.fetchDocument(`https://${host}:${port}/wrong-content-type/client.json`),
+      fetcher.fetchDocument(`https://${host}/wrong-content-type/client.json`),
     ).rejects.toMatchObject({ code: "invalid_content_type" } satisfies Partial<CimdError>);
   });
 
@@ -508,8 +636,8 @@ describe("CIMD URL validation and fetch policy", () => {
     expect(third.metadata.client_name).toBe("Client v2");
     expect(transportCalls).toBe(2);
 
-    // Cached for 30 seconds, then re-fetched.
-    currentTime += 29_999;
+    // The minimum cache lifetime applies even to short max-age values.
+    currentTime += 59_999;
     expect((await fetcher.fetchDocument(clientId)).fromCache).toBe(true);
     expect(transportCalls).toBe(2);
 
@@ -616,6 +744,7 @@ describe("OAuth authorization flow with CIMD client_id", () => {
     const authorize = await app.request(
       authorizeUrl(cimdClientId, { code_challenge: challenge, code_challenge_method: "S256" }),
     );
+    const initialFetchCount = fetchCount;
     expect(authorize.status).toBe(302);
     const signInUrl = authorize.headers.get("location") ?? "";
     expect(signInUrl.startsWith(`${AUTH}/oauth/sign-in?`)).toBe(true);
@@ -676,6 +805,71 @@ describe("OAuth authorization flow with CIMD client_id", () => {
     });
     expect(refreshed.status).toBe(200);
     // The cached CIMD document served all follow-up lookups in the flow.
-    expect(fetchCount).toBe(0);
+    expect(fetchCount).toBe(initialFetchCount);
+  });
+});
+
+describe("CIMD registration budget", () => {
+  it("applies deny and allow host policies before fetching", async () => {
+    let fetches = 0;
+    const { app } = createService(
+      undefined,
+      false,
+      {
+        lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+        transport: async () => {
+          fetches++;
+          return { status: 404, headers: {}, body: "" };
+        },
+      },
+      {
+        ...config,
+        cimdAllowedHosts: ["allowed.example", "denied.example"],
+        cimdDeniedHosts: ["denied.example"],
+      },
+    );
+    const { challenge } = pkce();
+    for (const host of ["denied.example", "other.example"]) {
+      const response = await app.request(
+        authorizeUrl(`https://${host}/client.json`, {
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+        }),
+      );
+      expect(new URL(response.headers.get("location") ?? "").searchParams.get("error")).toBe(
+        "invalid_client",
+      );
+    }
+    expect(fetches).toBe(0);
+  });
+  it("shares the dynamic registration budget", async () => {
+    let fetches = 0;
+    const { app } = createService(undefined, true, {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => {
+        fetches++;
+        return { status: 404, headers: {}, body: "" };
+      },
+    });
+    for (let i = 0; i < 20; i++) {
+      const response = await post(app, "/api/auth/oauth2/register", {
+        client_name: `Client ${i}`,
+        redirect_uris: [REDIRECT_URI],
+        token_endpoint_auth_method: "none",
+      });
+      expect([200, 201]).toContain(response.status);
+    }
+    const { challenge } = pkce();
+    const response = await app.request(
+      authorizeUrl("https://budget.example/client.json", {
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      }),
+    );
+    expect(response.status).toBe(302);
+    expect(new URL(response.headers.get("location") ?? "").searchParams.get("error")).toBe(
+      "invalid_client",
+    );
+    expect(fetches).toBe(0);
   });
 });

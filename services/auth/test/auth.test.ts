@@ -258,6 +258,11 @@ describe("buildAuthOptions", () => {
       });
     });
 
+    it("requires an explicit opt-in for client metadata discovery", () => {
+      expect(oauth().extensions).toEqual([]);
+      expect(oauth({ AUTH_CIMD_ENABLED: "true" }).extensions).toHaveLength(1);
+    });
+
     it("limits anonymous client registration per address far below Better Auth's default", () => {
       expect(OAUTH_REGISTRATION_RATE_LIMIT).toEqual({ window: 3600, max: 20 });
       expect(oauth().rateLimit).toEqual({ register: { window: 3600, max: 20 } });

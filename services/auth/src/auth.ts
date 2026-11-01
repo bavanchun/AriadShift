@@ -430,7 +430,16 @@ export function buildAuthOptions(
               // Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)
               // let MCP clients identify themselves by an https:// metadata URL
               // without prior dynamic registration; RFC 7591 stays enabled alongside it.
-              extensions: [createCimdExtension(cimd)],
+              extensions: config.cimdEnabled
+                ? [
+                    createCimdExtension({
+                      ...cimd,
+                      allowedHosts: config.cimdAllowedHosts,
+                      deniedHosts: config.cimdDeniedHosts,
+                      registrationRateLimit: OAUTH_REGISTRATION_RATE_LIMIT,
+                    }),
+                  ]
+                : [],
               accessTokenExpiresIn: OAUTH_ACCESS_TOKEN_LIFETIME_S,
               refreshTokenReuseInterval: OAUTH_REFRESH_REUSE_INTERVAL_S,
               // Keyed by CLIENT_IP_HEADER like every other Better Auth limit; the

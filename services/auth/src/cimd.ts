@@ -21,11 +21,12 @@ import {
   isForbiddenCimdClientMetadataField,
   registerClientMetadataDocument,
 } from "@better-auth/oauth-provider/internal";
+import { getIP } from "better-auth/api";
 
 /** Client discovery provenance identifier stored on CIMD `oauthClient` rows. */
 export const CIMD_DISCOVERY_ID = "cimd";
 
-/** Total deadline (ms) for DNS lookup, TLS handshake, headers, and body read. */
+/** Deadline (ms) covering DNS, TLS, headers, and the response body. */
 export const CIMD_TIMEOUT_MS = 5_000;
 
 /** Maximum accepted CIMD response body size in bytes (16 KiB). */
@@ -39,6 +40,10 @@ export const CIMD_DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** Maximum number of CIMD documents retained in the in-memory cache. */
 export const CIMD_MAX_CACHE_ENTRIES = 256;
+const CIMD_MIN_CACHE_TTL_MS = 60_000;
+const CIMD_NEGATIVE_TTL_MS = 30_000;
+const CIMD_MAX_OUTBOUND = 8;
+let outboundCount = 0;
 
 const JSON_MEDIA_TYPE = /^application\/json(?:\s*;|$)/i;
 const SAFE_REDIRECT_RESERVED_SCHEMES = new Set([
@@ -52,7 +57,6 @@ const SAFE_REDIRECT_RESERVED_SCHEMES = new Set([
   "https:",
   "javascript:",
   "mailto:",
-  " tel:",
   "tel:",
   "vbscript:",
   "ws:",
@@ -141,6 +145,9 @@ export interface CimdFetcherOptions {
   defaultCacheTtlMs?: number;
   maxCacheEntries?: number;
   now?: () => number;
+  allowedHosts?: string[];
+  deniedHosts?: string[];
+  registrationRateLimit?: { window: number; max: number };
 }
 
 export interface CimdFetchResult {
@@ -179,6 +186,14 @@ function classifyIpv4Octets(a: number, b: number, c: number, _d: number): IpAddr
   if (a === 192 && b === 0 && c === 0) return "reserved";
   // 198.18.0.0/15 - Benchmarking (RFC 2544)
   if (a === 198 && (b === 18 || b === 19)) return "reserved";
+  // Documentation and deprecated 6to4 relay ranges are not public targets.
+  if (
+    (a === 192 && b === 0 && c === 2) ||
+    (a === 198 && b === 51 && c === 100) ||
+    (a === 203 && b === 0 && c === 113) ||
+    (a === 192 && b === 88 && c === 99)
+  )
+    return "reserved";
   return "public";
 }
 
@@ -262,6 +277,12 @@ export function classifyIpAddress(address: string): IpAddressClass {
 
   const w = parseIpv6Words(raw);
   if (!w) return "invalid";
+  if (
+    (w[0] === 0x2001 && (w[1] & 0xfe00) === 0) ||
+    (w[0] === 0x3fff && (w[1] & 0xf000) === 0) ||
+    w[0] === 0x5f00
+  )
+    return "reserved";
 
   // ::/128 - Unspecified (RFC 4291)
   if (w.every((word) => word === 0)) return "unspecified";
@@ -347,6 +368,17 @@ export function parseCimdClientIdUrl(clientId: string): URL {
   }
   if (url.protocol !== "https:") {
     throw new CimdError("invalid_client_id_url", "CIMD client_id must use the https: scheme");
+  }
+  if (
+    url.href !== clientId ||
+    url.port !== "" ||
+    clientId.includes("\\") ||
+    /%2e/i.test(clientId)
+  ) {
+    throw new CimdError(
+      "invalid_client_id_url",
+      "CIMD client_id must be a canonical HTTPS URL on port 443",
+    );
   }
   if (url.username !== "" || url.password !== "") {
     throw new CimdError("invalid_client_id_url", "CIMD client_id must not include credentials");
@@ -538,6 +570,7 @@ export function validateCimdMetadataDocument(raw: unknown, expectedClientId: str
   }
 
   const metadata = parsed.data;
+  if ("metadata" in metadata) delete metadata.metadata;
   if (!Array.isArray(metadata.redirect_uris) || metadata.redirect_uris.length === 0) {
     throw new CimdError(
       "invalid_redirect_uri",
@@ -549,6 +582,9 @@ export function validateCimdMetadataDocument(raw: unknown, expectedClientId: str
   }
 
   const authMethod = metadata.token_endpoint_auth_method ?? "none";
+  if (metadata.jwks_uri) {
+    throw new CimdError("invalid_metadata", "CIMD jwks_uri is not supported");
+  }
   if (authMethod !== "none" && authMethod !== "private_key_jwt") {
     throw new CimdError(
       "invalid_metadata",
@@ -585,12 +621,27 @@ export function validateCimdMetadataDocument(raw: unknown, expectedClientId: str
   };
 }
 
-const defaultDnsLookup: CimdDnsLookup = async (hostname) => {
-  const results = await dns.promises.lookup(hostname, { all: true, verbatim: true });
-  return results.map((entry) => ({
-    address: entry.address,
-    family: entry.family === 6 ? 6 : 4,
-  }));
+const defaultDnsLookup: CimdDnsLookup = async (hostname, signal) => {
+  const resolver = new dns.promises.Resolver({ timeout: CIMD_TIMEOUT_MS, tries: 1 });
+  const cancel = () => resolver.cancel();
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    const results = await Promise.allSettled([
+      resolver.resolve4(hostname),
+      resolver.resolve6(hostname),
+    ]);
+    return results.flatMap((result, index) => {
+      if (result.status === "fulfilled") {
+        return result.value.map((address) => ({ address, family: (index === 0 ? 4 : 6) as 4 | 6 }));
+      }
+      if (!["ENODATA", "ENOTFOUND"].includes((result.reason as NodeJS.ErrnoException).code ?? "")) {
+        throw result.reason;
+      }
+      return [];
+    });
+  } finally {
+    signal.removeEventListener("abort", cancel);
+  }
 };
 
 async function resolveAndVetHost(
@@ -617,7 +668,16 @@ async function resolveAndVetHost(
 
   let resolved: readonly ResolvedIpAddress[];
   try {
-    resolved = await lookup(bareHost, signal);
+    resolved = await Promise.race([
+      lookup(bareHost, signal),
+      new Promise<never>((_, reject) => {
+        if (signal.aborted) reject(new Error("DNS lookup aborted"));
+        else
+          signal.addEventListener("abort", () => reject(new Error("DNS lookup aborted")), {
+            once: true,
+          });
+      }),
+    ]);
   } catch (error) {
     if (signal.aborted) {
       throw new CimdError("timeout", "CIMD DNS lookup timed out", { cause: error });
@@ -854,6 +914,9 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
   const now = options.now ?? Date.now;
 
   const cache = new Map<string, CacheEntry>();
+  const failures = new Map<string, { error: CimdError; expiresAt: number }>();
+  const hostFailures = new Map<string, { error: CimdError; expiresAt: number }>();
+  const pending = new Map<string, Promise<CimdFetchResult>>();
 
   function getCached(clientId: string, currentTime: number): CacheEntry | undefined {
     const entry = cache.get(clientId);
@@ -889,7 +952,7 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
     cache.set(clientId, entry);
   }
 
-  async function fetchDocument(clientId: string): Promise<CimdFetchResult> {
+  async function fetchUncached(clientId: string): Promise<CimdFetchResult> {
     const url = parseCimdClientIdUrl(clientId);
     const currentTime = now();
     const cached = getCached(clientId, currentTime);
@@ -971,10 +1034,13 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
 
       const metadata = validateCimdMetadataDocument(parsedJson, clientId);
       const completedAt = now();
-      const ttlMs = parseCacheControlTtlMs(
-        getHeaderValue(response.headers, "cache-control"),
-        defaultCacheTtlMs,
-        maxCacheTtlMs,
+      const ttlMs = Math.max(
+        CIMD_MIN_CACHE_TTL_MS,
+        parseCacheControlTtlMs(
+          getHeaderValue(response.headers, "cache-control"),
+          defaultCacheTtlMs,
+          maxCacheTtlMs,
+        ),
       );
       const expiresAt = completedAt + ttlMs;
       if (ttlMs > 0) {
@@ -991,9 +1057,64 @@ export function createCimdFetcher(options: CimdFetcherOptions = {}): CimdFetcher
     }
   }
 
+  async function fetchDocument(clientId: string): Promise<CimdFetchResult> {
+    const host = parseCimdClientIdUrl(clientId).hostname;
+    const failedHost = hostFailures.get(host);
+    if (failedHost && failedHost.expiresAt > now()) throw failedHost.error;
+    if (failedHost) hostFailures.delete(host);
+    const failed = failures.get(clientId);
+    if (failed && failed.expiresAt > now()) throw failed.error;
+    if (failed) failures.delete(clientId);
+    const current = pending.get(clientId);
+    if (current) return current;
+    const cached = getCached(clientId, now());
+    if (cached)
+      return {
+        metadata: structuredClone(cached.metadata),
+        fromCache: true,
+        expiresAt: cached.expiresAt,
+      };
+    if (outboundCount >= CIMD_MAX_OUTBOUND) {
+      throw new CimdError("network_error", "CIMD outbound capacity exhausted");
+    }
+    outboundCount++;
+    const operation = fetchUncached(clientId)
+      .catch((error: unknown) => {
+        if (error instanceof CimdError && maxCacheEntries > 0) {
+          failures.delete(clientId);
+          while (failures.size >= maxCacheEntries) {
+            const oldest = failures.keys().next().value;
+            if (oldest === undefined) break;
+            failures.delete(oldest);
+          }
+          failures.set(clientId, { error, expiresAt: now() + CIMD_NEGATIVE_TTL_MS });
+          if (error.code === "dns_lookup_failed" || error.code === "forbidden_address") {
+            hostFailures.delete(host);
+            while (hostFailures.size >= maxCacheEntries) {
+              const oldest = hostFailures.keys().next().value;
+              if (oldest === undefined) break;
+              hostFailures.delete(oldest);
+            }
+            hostFailures.set(host, { error, expiresAt: now() + CIMD_NEGATIVE_TTL_MS });
+          }
+        }
+        throw error;
+      })
+      .finally(() => {
+        outboundCount--;
+        pending.delete(clientId);
+      });
+    pending.set(clientId, operation);
+    return operation;
+  }
+
   return {
     fetchDocument,
-    clearCache: () => cache.clear(),
+    clearCache: () => {
+      cache.clear();
+      failures.clear();
+      hostFailures.clear();
+    },
   };
 }
 
@@ -1012,7 +1133,81 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
     },
     matches: (clientId: string) => isCimdClientId(clientId),
     resolve: async (ctx, clientId, existing) => {
+      const host = new URL(clientId).hostname;
+      if (
+        options.deniedHosts?.includes(host) ||
+        (options.allowedHosts?.length && !options.allowedHosts.includes(host))
+      )
+        return null;
+      if (
+        !ctx.path ||
+        [
+          "/oauth2/token",
+          "/oauth2/revoke",
+          "/oauth2/delete-consent",
+          "/oauth2/delete-client",
+        ].includes(ctx.path.replace(/\/+$/, ""))
+      ) {
+        return existing ?? null;
+      }
       try {
+        if (!existing && ctx.context.options.rateLimit?.enabled !== false) {
+          const ip = getIP(ctx.headers ?? new Headers(), ctx.context.options) ?? "no-trusted-ip";
+          const adapter = ctx.context.adapter;
+          const { window, max } = options.registrationRateLimit ?? { window: 3600, max: 20 };
+          const consume = async (key: string): Promise<boolean> => {
+            const row = (
+              await adapter.findMany<{ key: string; count: number; lastRequest: number }>({
+                model: "rateLimit",
+                where: [{ field: "key", value: key }],
+              })
+            )[0];
+            const now = Date.now();
+            if (!row) {
+              try {
+                await adapter.create({
+                  model: "rateLimit",
+                  data: { key, count: 1, lastRequest: now },
+                });
+                return true;
+              } catch (error) {
+                const existingRow = await adapter.findMany({
+                  model: "rateLimit",
+                  where: [{ field: "key", value: key }],
+                });
+                if (!existingRow.length) throw error;
+                return consume(key);
+              }
+            }
+            const last = Number(row.lastRequest);
+            if (now - last >= window * 1000) {
+              const reset = await adapter.incrementOne({
+                model: "rateLimit",
+                where: [
+                  { field: "key", value: key },
+                  { field: "lastRequest", operator: "lte", value: last },
+                ],
+                increment: {},
+                set: { count: 1, lastRequest: now },
+              });
+              return reset ? true : consume(key);
+            }
+            if (row.count >= max) return false;
+            const updated = await adapter.incrementOne({
+              model: "rateLimit",
+              where: [
+                { field: "key", value: key },
+                { field: "lastRequest", operator: "gt", value: now - window * 1000 },
+                { field: "count", operator: "lt", value: max },
+              ],
+              increment: { count: 1 },
+              set: { lastRequest: now },
+            });
+            return updated ? true : consume(key);
+          };
+          if (!(await consume(`${ip}|/oauth2/register`)) || !(await consume(`cimd-host|${host}`)))
+            return null;
+        }
         const result = await fetcher.fetchDocument(clientId);
         if (
           existing &&
@@ -1020,6 +1215,8 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           result.fromCache &&
           syncedRevisionByClient.get(clientId) === result.expiresAt
         ) {
+          syncedRevisionByClient.delete(clientId);
+          syncedRevisionByClient.set(clientId, result.expiresAt);
           return existing;
         }
 
@@ -1034,10 +1231,22 @@ export function createCimdExtension(options: CimdFetcherOptions = {}): OAuthProv
           clientDiscoveryId: CIMD_DISCOVERY_ID,
           existingClient: existing ?? undefined,
         });
+        syncedRevisionByClient.delete(clientId);
+        if (syncedRevisionByClient.size >= CIMD_MAX_CACHE_ENTRIES) {
+          const oldest = syncedRevisionByClient.keys().next().value;
+          if (oldest !== undefined) syncedRevisionByClient.delete(oldest);
+        }
         syncedRevisionByClient.set(clientId, result.expiresAt);
         return registered.client as SchemaClient<Scope[]>;
-      } catch {
-        return null;
+      } catch (error) {
+        if (error instanceof CimdError) {
+          ctx.context.logger.warn(
+            `CIMD resolution failed: ${error.code} (${new URL(clientId).hostname})`,
+          );
+          return null;
+        }
+        ctx.context.logger.error("CIMD client registration failed", error);
+        throw error;
       }
     },
   };
