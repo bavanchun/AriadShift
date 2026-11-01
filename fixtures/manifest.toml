@@ -4104,3 +4104,35 @@ attribution = "AriadShift contributors"
 sha256 = "7754f715394011b37ec8e664694dc7f421d9d8df248f680cfb7f5d3a185d31c0"
 pages = 1
 tags = []
+
+[[fixture]]
+id = "indirect-jpx-filter-pdf"
+path = "fixtures/pdf/indirect-jpx-filter.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image with indirect chained filter"
+origin = "generated"
+generated_by = "fixtures/gen/image_filter_preflight.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "489151c322216e50daef7e193f3346b77905a99ddde9787c4b48131a761d31f9"
+pages = 1
+tags = []
+
+[[fixture]]
+id = "indirect-jbig2-filter-pdf"
+path = "fixtures/pdf/indirect-jbig2-filter.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image with indirect chained filter"
+origin = "generated"
+generated_by = "fixtures/gen/image_filter_preflight.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "8bc850ef0e22051b1196c7d43f48670fd7a8dc045118bbc9f2f8708d9cd3eb0d"
+pages = 1
+tags = []

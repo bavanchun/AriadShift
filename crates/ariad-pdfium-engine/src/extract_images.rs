@@ -625,13 +625,36 @@ fn preflight_xobject(
     }
     match subtype {
         b"Image" => {
-            let jpx = match stream.dict.get(b"Filter") {
-                Ok(value) => resolve(Some(doc), value)?
-                    .1
-                    .as_name()
-                    .is_ok_and(|name| name == b"JPXDecode"),
-                Err(_) => false,
-            };
+            let mut filters = Vec::new();
+            if let Ok(value) = stream.dict.get(b"Filter") {
+                let value = resolve(Some(doc), value)?.1;
+                match value {
+                    Object::Array(items) => {
+                        for item in items {
+                            filters.push(
+                                resolve(Some(doc), item)?
+                                    .1
+                                    .as_name()
+                                    .map_err(|_| EngineFailure::limit_exceeded())?,
+                            );
+                        }
+                    }
+                    _ => filters.push(
+                        value
+                            .as_name()
+                            .map_err(|_| EngineFailure::limit_exceeded())?,
+                    ),
+                }
+            }
+            if filters.iter().any(|name| *name == b"JBIG2Decode") {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            let jpx_pos = filters.iter().position(|name| *name == b"JPXDecode");
+            // The codestream header is only directly inspectable before other filters.
+            if jpx_pos.is_some_and(|pos| pos != 0) {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            let jpx = jpx_pos.is_some();
             let jpx_info = if jpx {
                 Some(jpx_dimensions(&stream.content)?)
             } else {
@@ -2364,6 +2387,46 @@ mod corpus_tests {
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
         assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+    }
+
+    #[test]
+    fn preflight_rejects_unsafe_chained_image_filters() {
+        for name in ["indirect-jpx-filter.pdf", "indirect-jbig2-filter.pdf"] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let work = dir.path().canonicalize().expect("workspace");
+            for sub in ["in", "out", "tmp"] {
+                fs::create_dir(work.join(sub)).expect("directory");
+            }
+            let input = work.join("in/doc.pdf");
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../fixtures/pdf")
+                    .join(name),
+                &input,
+            )
+            .expect("fixture");
+            let paths = RunToolPaths {
+                workspace: work.clone(),
+                inputs: vec![input],
+                output_dir: work.join("out"),
+                work_dir: work.join("tmp"),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "filter",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
+            let page = *doc.inner().get_pages().values().next().expect("page");
+            let mut work = 0;
+            assert!(
+                preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err(),
+                "{name}"
+            );
+        }
     }
 
     #[test]
