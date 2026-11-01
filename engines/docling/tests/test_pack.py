@@ -678,3 +678,15 @@ def test_archive_executables_and_target_block_emit_declared_executables(tmp_path
     parsed = tomllib.loads(build.pack_fields("0.2.0", "Apache-2.0") + block)
     assert parsed["targets"][0]["executables"] == ["runtime/bin/python3.14"]
 
+
+def test_archive_executables_preserves_hidden_path(tmp_path):
+    root = tmp_path / ".hidden"
+    root.mkdir()
+    executable = root / "helper"
+    executable.write_bytes(b"helper")
+    executable.chmod(0o755)
+    archive = tmp_path / "runtime.tar.zst"
+    with build.tarfile.open(archive, "w:zst") as tar:
+        tar.add(executable, arcname="./.hidden/helper")
+    assert build.archive_executables(archive) == [".hidden/helper"]
+

@@ -851,7 +851,7 @@ def archive_executables(archive_path: Path) -> list[str]:
         for info in tar.getmembers():
             if not info.isfile():
                 continue
-            name = info.name.lstrip("./")
+            name = info.name.removeprefix("./")
             if name in NOTICES or name.startswith("notices/"):
                 continue
             if (info.mode & 0o111) or name.lower().endswith((".exe", ".bat", ".cmd")):
