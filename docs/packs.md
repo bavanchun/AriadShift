@@ -146,6 +146,8 @@ The data directory is `ASHIFT_DATA_DIR` when set, otherwise the platform's local
 
 An install extracts into `.staging`, checks links, notices and the entrypoint, writes the receipt, then renames the directory into place and marks it active. Reinstalling an identical, intact version re-hashes its files before returning `already_installed`; a damaged one is replaced. Leftovers of interrupted installs are swept under the pack's lock. Several versions may be installed; the newest install is active, and removing the active version activates the highest remaining one.
 
+Installation refuses an executable archive member unless the signed manifest declares it as an allowed executable. Pack authors must list executable archive paths in `targets[].executables` or declare the entrypoint.
+
 `receipt.toml` (`ariad-pack-receipt/1`) holds the manifest and signature as installed, the install time, the `ashift` version, the signing key id, and the path, size and SHA-256 of every file plus every link target. `ashift engines verify` re-hashes against it and re-checks the signature with the keys of the running `ashift`.
 
 ## Resolution
