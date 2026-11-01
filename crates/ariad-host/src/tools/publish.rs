@@ -547,7 +547,7 @@ pub fn replace_staged_input_stem(staged_path: &Path, first_input: &Path) -> Opti
             .and_then(|s| s.to_str())
             .unwrap_or("document"),
     );
-    Some(format!("{stem}.{rest}"))
+    Some(format!("{stem}.{}", sanitize_stem(rest)))
 }
 
 /// Renders a recipe output naming template (`{stem}`, `{n}`, `{date}`) for a 1-based artifact index.
@@ -973,6 +973,14 @@ fn rollback_batch(workspace: &Workspace, dest_cap_dir: &Dir, entries: &[BatchEnt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staged_artifact_suffix_replaces_control_and_bidi_characters() {
+        assert_eq!(
+            replace_staged_input_stem(Path::new("input-0.page\u{202e}\n-001.png"), Path::new("report.pdf")),
+            Some("report.page__-001.png".to_owned())
+        );
+    }
 
     #[test]
     fn validate_artifact_extensions_accepts_matching_formats_and_extensions() {
