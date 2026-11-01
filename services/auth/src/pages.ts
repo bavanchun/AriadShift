@@ -18,6 +18,8 @@ export interface PageOptions {
   socialProviders: SocialProvider[];
   /** Whether passkeys work on this service's origin. */
   passkeys: boolean;
+  /** Whether account creation is enabled (`AUTH_ALLOW_SIGN_UP=true`). */
+  allowSignUp?: boolean;
   /** Cloudflare Turnstile site key for the signup bot check, when configured. */
   turnstileSiteKey?: string;
 }
@@ -33,25 +35,19 @@ const PROVIDER_LABELS: Record<SocialProvider, string> = {
  */
 export function pageOptions(
   config: Pick<AuthServiceConfig, "baseUrl" | "passkeyRpId" | "github" | "google"> &
-    Partial<Pick<AuthServiceConfig, "turnstileSecret">> & {
-      turnstileSiteKey?: string;
-    },
-  env: Record<string, string | undefined> = process.env,
+    Partial<Pick<AuthServiceConfig, "allowSignUp" | "turnstileSiteKey">>,
 ): PageOptions {
   const host = new URL(config.baseUrl).hostname;
   const rpId = config.passkeyRpId;
-  const turnstileSiteKey =
-    config.turnstileSiteKey?.trim() ||
-    env.AUTH_TURNSTILE_SITE_KEY?.trim() ||
-    env.ARIAD_TURNSTILE_SITE_KEY?.trim() ||
-    env.NEXT_PUBLIC_ARIAD_TURNSTILE_SITE_KEY?.trim() ||
-    (config.turnstileSecret ? "1x00000000000000000000AA" : undefined);
+  const allowSignUp = Boolean(config.allowSignUp);
+  const turnstileSiteKey = allowSignUp ? config.turnstileSiteKey?.trim() : undefined;
   return {
     socialProviders: [
       ...(config.github ? (["github"] as const) : []),
       ...(config.google ? (["google"] as const) : []),
     ],
     passkeys: host === rpId || host.endsWith(`.${rpId}`),
+    allowSignUp,
     ...(turnstileSiteKey ? { turnstileSiteKey } : {}),
   };
 }
@@ -71,9 +67,9 @@ export const PAGE_HEADERS: Readonly<Record<string, string>> = {
   "Cache-Control": "no-store",
 };
 
-/** Page headers, allowing Cloudflare Turnstile only when a site key is configured. */
+/** Page headers, allowing Cloudflare Turnstile only when sign-up and a site key are configured. */
 export function pageHeaders(options?: PageOptions): Readonly<Record<string, string>> {
-  if (!options?.turnstileSiteKey) return PAGE_HEADERS;
+  if (!options?.allowSignUp || !options?.turnstileSiteKey) return PAGE_HEADERS;
   return {
     ...PAGE_HEADERS,
     "Content-Security-Policy":
@@ -125,6 +121,7 @@ ${main}
 }
 
 export function signInPage(options: PageOptions): string {
+  const allowSignUp = Boolean(options.allowSignUp);
   const social = options.socialProviders
     .map(
       (provider) =>
@@ -134,11 +131,25 @@ export function signInPage(options: PageOptions): string {
   const passkey = options.passkeys
     ? `<button type="button" class="secondary" id="passkey">Sign in with a passkey</button>`
     : "";
-  const createAccount = `<button type="button" class="secondary" id="create-account">Create an account</button>`;
+  const createAccount = allowSignUp
+    ? `<button type="button" class="secondary" id="create-account">Create an account</button>`
+    : "";
   const alternativeButtons = [createAccount, passkey, social].filter(Boolean).join("\n");
-  const alternatives = `<div class="alternatives">\n${alternativeButtons}\n</div>`;
-  const attributes = options.turnstileSiteKey
-    ? ` data-turnstile-site-key="${escapeAttribute(options.turnstileSiteKey)}"`
+  const alternatives = alternativeButtons
+    ? `<div class="alternatives">\n${alternativeButtons}\n</div>`
+    : "";
+  const attributes =
+    allowSignUp && options.turnstileSiteKey
+      ? ` data-turnstile-site-key="${escapeAttribute(options.turnstileSiteKey)}"`
+      : "";
+  const signUpForm = allowSignUp
+    ? `<form id="sign-up-form" method="post" action="/oauth/sign-in" hidden>
+<label>Name <input name="name" type="text" autocomplete="name" required></label>
+<label>Email <input name="email" type="email" autocomplete="email" required></label>
+<label>Password <input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+<div id="turnstile" hidden></div>
+<button type="submit" id="sign-up-submit">Create account</button>
+</form>\n`
     : "";
   return layout(
     "Sign in",
@@ -151,20 +162,12 @@ export function signInPage(options: PageOptions): string {
 <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
 <button type="submit">Sign in</button>
 </form>
-<form id="sign-up-form" method="post" action="/oauth/sign-in" hidden>
-<label>Name <input name="name" type="text" autocomplete="name" required></label>
-<label>Email <input name="email" type="email" autocomplete="email" required></label>
-<label>Password <input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
-<div id="turnstile" hidden></div>
-<button type="submit" id="sign-up-submit">Create account</button>
-</form>
-<form id="two-factor-form" method="post" action="/oauth/sign-in" hidden>
+${signUpForm}<form id="two-factor-form" method="post" action="/oauth/sign-in" hidden>
 <p>Enter the code from your authenticator app, or one of your backup codes.</p>
 <label>Code <input name="code" autocomplete="one-time-code" required></label>
 <label class="check"><input name="backup" type="checkbox"> This is a backup code</label>
 <button type="submit">Verify</button>
-</form>
-${alternatives}`,
+</form>${alternatives ? `\n${alternatives}` : ""}`,
   );
 }
 

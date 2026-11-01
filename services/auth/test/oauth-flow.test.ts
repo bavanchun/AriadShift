@@ -11,12 +11,12 @@ import { getAuthTables } from "better-auth/db";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.ts";
 import { buildAuthOptions, createAuth, discoveryDocuments } from "../src/auth.ts";
+import { parseConfig } from "../src/config.ts";
 import { ASSETS, pageOptions } from "../src/pages.ts";
 import {
   AUTH,
   audiences,
   authorizeUrl,
-  config as baseConfig,
   createService,
   decode,
   Jar,
@@ -252,16 +252,28 @@ describe("OAuth authorization for remote MCP", () => {
 });
 
 describe("OAuth sign-up during authorization", () => {
+  const PROD_AUTH = "https://auth.example.com";
+  const PROD_WEB = "https://app.example.com";
+  const PROD_API = "https://api.example.com";
+  const PROD_RESOURCE = "https://api.example.com/mcp";
+
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  function createTurnstileOAuthService() {
-    const turnstileConfig = {
-      ...baseConfig,
-      trustedOrigins: [AUTH],
-      turnstileSecret: "turnstile-secret",
-    };
+  function createTurnstileOAuthService(envOverrides: Record<string, string | undefined> = {}) {
+    const turnstileConfig = parseConfig({
+      DATABASE_URL: "postgres://unused@127.0.0.1:1/none",
+      BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
+      BETTER_AUTH_URL: PROD_AUTH,
+      BETTER_AUTH_TRUSTED_ORIGINS: PROD_WEB,
+      ARIAD_PUBLIC_URL: PROD_API,
+      AUTH_ALLOW_SIGN_UP: "true",
+      AUTH_TURNSTILE_SECRET: "turnstile-secret",
+      AUTH_TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+      ...envOverrides,
+    });
     const probe = buildAuthOptions(turnstileConfig, memoryAdapter({}));
     const db: Record<string, unknown[]> = Object.fromEntries(
       Object.values(getAuthTables(probe)).map((table) => [table.modelName, []]),
@@ -275,16 +287,81 @@ describe("OAuth sign-up during authorization", () => {
       config: turnstileConfig,
       handler: (request) => auth.handler(request),
       metadata: discoveryDocuments(auth),
-      pages: pageOptions(turnstileConfig, {
-        AUTH_TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
-      }),
+      pages: pageOptions(turnstileConfig),
       peerAddress: () => "203.0.113.10",
     });
     return { app, db, auth };
   }
 
+  function postProd(
+    app: ReturnType<typeof createTurnstileOAuthService>["app"],
+    path: string,
+    body: unknown,
+    headers: Record<string, string> = {},
+  ) {
+    return app.request(`${PROD_AUTH}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        origin: PROD_AUTH,
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  function postProdForm(
+    app: ReturnType<typeof createTurnstileOAuthService>["app"],
+    path: string,
+    body: string,
+    headers: Record<string, string> = {},
+  ) {
+    return app.request(`${PROD_AUTH}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "application/json",
+        origin: PROD_AUTH,
+        ...headers,
+      },
+      body,
+    });
+  }
+
+  function tokenProd(
+    app: ReturnType<typeof createTurnstileOAuthService>["app"],
+    fields: Record<string, string>,
+  ) {
+    return app.request(`${PROD_AUTH}/api/auth/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields).toString(),
+    });
+  }
+
+  function prodAuthorizeUrl(
+    clientId: string,
+    extra: Record<string, string | undefined> = {},
+  ): string {
+    const url = new URL(`${PROD_AUTH}/api/auth/oauth2/authorize`);
+    const params: Record<string, string | undefined> = {
+      response_type: "code",
+      client_id: clientId,
+      redirect_uri: REDIRECT_URI,
+      scope: "openid offline_access",
+      state: "state-1",
+      resource: PROD_RESOURCE,
+      ...extra,
+    };
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) url.searchParams.set(key, value);
+    }
+    return url.toString();
+  }
+
   async function registerClient(app: ReturnType<typeof createTurnstileOAuthService>["app"]) {
-    const res = await post(app, "/api/auth/oauth2/register", {
+    const res = await postProd(app, "/api/auth/oauth2/register", {
       client_name: "Sign-up flow client",
       redirect_uris: [REDIRECT_URI],
       token_endpoint_auth_method: "none",
@@ -389,11 +466,11 @@ describe("OAuth sign-up during authorization", () => {
       FormData: StubFormData,
       fetch: (input: string, init: RequestInit = {}) => {
         const task = (async () => {
-          const res = await app.request(`${AUTH}${input}`, {
+          const res = await app.request(`${PROD_AUTH}${input}`, {
             method: init.method ?? "GET",
             headers: {
               ...(init.headers as Record<string, string>),
-              origin: AUTH,
+              origin: PROD_AUTH,
               ...jar.header(),
             },
             body: init.body as string | undefined,
@@ -415,14 +492,17 @@ describe("OAuth sign-up during authorization", () => {
       }
     };
     await flush();
-    byId("create-account").trigger("click");
-    await flush();
+    const openedSignUpAutomatically = !byId("sign-up-form").hidden;
+    if (byId("sign-up-form").hidden) {
+      byId("create-account").trigger("click");
+      await flush();
+    }
     byId("sign-up-form").trigger("submit");
     await flush();
-    return { byId, assigned };
+    return { byId, assigned, openedSignUpAutomatically };
   }
 
-  it("creates the user from the OAuth sign-in page, runs the bot check, and returns to consent with the same parameters", async () => {
+  it("creates the user on a split-host deployment, verifies Turnstile on both auth and web hostnames, and returns to consent", async () => {
     const { app, db } = createTurnstileOAuthService();
     const clientId = await registerClient(app);
     const jar = new Jar();
@@ -437,22 +517,22 @@ describe("OAuth sign-up during authorization", () => {
       return Response.json({
         success: true,
         action: "signup",
-        hostname: "localhost",
+        hostname: "auth.example.com",
       });
     });
 
     const authorize = await app.request(
-      authorizeUrl(clientId, {
+      prodAuthorizeUrl(clientId, {
         scope: requestedScopes,
         state: requestedState,
         code_challenge: challenge,
         code_challenge_method: "S256",
-        resource: RESOURCE,
+        resource: PROD_RESOURCE,
       }),
     );
     expect(authorize.status).toBe(302);
     const signInUrl = authorize.headers.get("location") ?? "";
-    expect(signInUrl.startsWith(`${AUTH}/oauth/sign-in?`)).toBe(true);
+    expect(signInUrl.startsWith(`${PROD_AUTH}/oauth/sign-in?`)).toBe(true);
 
     const signInPageRes = await app.request(signInUrl);
     expect(signInPageRes.status).toBe(200);
@@ -490,7 +570,7 @@ describe("OAuth sign-up during authorization", () => {
     expect(assigned).toHaveLength(1);
     const consentUrl = assigned[0] as string;
     const consentParsed = new URL(consentUrl);
-    expect(consentParsed.origin).toBe(AUTH);
+    expect(consentParsed.origin).toBe(PROD_AUTH);
     expect(consentParsed.pathname).toBe("/oauth/consent");
     expect(consentParsed.searchParams.get("client_id")).toBe(clientId);
     expect(consentParsed.searchParams.get("redirect_uri")).toBe(REDIRECT_URI);
@@ -498,10 +578,10 @@ describe("OAuth sign-up during authorization", () => {
     expect(consentParsed.searchParams.get("state")).toBe(requestedState);
     expect(consentParsed.searchParams.get("code_challenge")).toBe(challenge);
     expect(consentParsed.searchParams.get("code_challenge_method")).toBe("S256");
-    expect(consentParsed.searchParams.get("resource")).toBe(RESOURCE);
+    expect(consentParsed.searchParams.get("resource")).toBe(PROD_RESOURCE);
     expect(consentParsed.searchParams.get("sig")).toBeTruthy();
 
-    const consent = await post(
+    const consent = await postProd(
       app,
       "/api/auth/oauth2/consent",
       { accept: true, oauth_query: signedQuery(consentUrl) },
@@ -514,37 +594,214 @@ describe("OAuth sign-up during authorization", () => {
     const code = callback.searchParams.get("code") ?? "";
     expect(code).not.toBe("");
 
-    const issued = await token(app, {
+    const issued = await tokenProd(app, {
       grant_type: "authorization_code",
       code,
       redirect_uri: REDIRECT_URI,
       client_id: clientId,
       code_verifier: verifier,
-      resource: RESOURCE,
+      resource: PROD_RESOURCE,
     });
     expect(issued.status).toBe(200);
     const tokens = await json(issued);
     const access = decode(tokens.access_token as string);
     expect(access.payload.sub).toBe(createdUser.id);
     expect(access.payload.client_id).toBe(clientId);
-    expect(audiences(access.payload.aud)).toContain(RESOURCE);
-  });
+    expect(audiences(access.payload.aud)).toContain(PROD_RESOURCE);
 
-  it("refuses a tampered return parameter on OAuth sign-up without creating a user or open redirect", async () => {
-    const { app, db } = createTurnstileOAuthService();
-    const clientId = await registerClient(app);
-    const { challenge } = pkce();
-
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    // Web origin hostname (app.example.com) remains accepted on the same split-host service,
+    // while an untrusted hostname is still rejected.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       Response.json({
         success: true,
         action: "signup",
-        hostname: "localhost",
+        hostname: "app.example.com",
+      }),
+    );
+    const webSignup = await app.request(`${PROD_AUTH}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        origin: PROD_WEB,
+        "x-captcha-response": "turnstile-proof-web",
+      },
+      body: JSON.stringify({
+        name: "Web User",
+        email: "web-user@example.com",
+        password: "correct horse battery staple",
+      }),
+    });
+    expect(webSignup.status).toBe(200);
+    expect(db.user).toHaveLength(2);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      Response.json({
+        success: true,
+        action: "signup",
+        hostname: "evil.example.com",
+      }),
+    );
+    const evilHostSignup = await postProd(
+      app,
+      "/api/auth/sign-up/email",
+      {
+        name: "Evil Host",
+        email: "evil-host@example.com",
+        password: "correct horse battery staple",
+      },
+      { "x-captcha-response": "turnstile-proof-evil" },
+    );
+    expect(evilHostSignup.status).toBe(403);
+    expect((await json(evilHostSignup)).code).toBe("CAPTCHA_VERIFICATION_FAILED");
+    expect(db.user).toHaveLength(2);
+  });
+
+  it("supports prompt=create on /api/auth/oauth2/authorize through /oauth/sign-in and /oauth2/continue", async () => {
+    const { app, db } = createTurnstileOAuthService();
+    const clientId = await registerClient(app);
+    const jar = new Jar();
+    const { verifier, challenge } = pkce();
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        success: true,
+        action: "signup",
+        hostname: "auth.example.com",
       }),
     );
 
     const authorize = await app.request(
-      authorizeUrl(clientId, {
+      prodAuthorizeUrl(clientId, {
+        prompt: "create",
+        state: "state-prompt-create",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        resource: PROD_RESOURCE,
+      }),
+    );
+    expect(authorize.status).toBe(302);
+    const signInUrl = authorize.headers.get("location") ?? "";
+    expect(signInUrl.startsWith(`${PROD_AUTH}/oauth/sign-in?`)).toBe(true);
+    expect(new URL(signInUrl).searchParams.get("prompt")).toBe("create");
+
+    const { assigned, openedSignUpAutomatically } = await runOAuthSignUpPage(
+      app,
+      jar,
+      signInUrl,
+      {
+        name: "Prompt Create User",
+        email: "prompt-create@example.com",
+        password: "correct horse battery staple",
+      },
+      { mode: "pass", token: "turnstile-proof-prompt-create" },
+    );
+    expect(openedSignUpAutomatically).toBe(true);
+    expect(db.user).toHaveLength(1);
+    expect(assigned).toHaveLength(1);
+
+    const consentUrl = assigned[0] as string;
+    const consentParsed = new URL(consentUrl);
+    expect(consentParsed.origin).toBe(PROD_AUTH);
+    expect(consentParsed.pathname).toBe("/oauth/consent");
+    expect(consentParsed.searchParams.get("prompt")).toBeNull();
+    expect(consentParsed.searchParams.get("state")).toBe("state-prompt-create");
+
+    const consent = await postProd(
+      app,
+      "/api/auth/oauth2/consent",
+      { accept: true, oauth_query: signedQuery(consentUrl) },
+      jar.header(),
+    );
+    expect(consent.status).toBe(200);
+    const callback = new URL((await json(consent)).url as string);
+    expect(`${callback.origin}${callback.pathname}`).toBe(REDIRECT_URI);
+    expect(callback.searchParams.get("state")).toBe("state-prompt-create");
+    const code = callback.searchParams.get("code") ?? "";
+    expect(code).not.toBe("");
+
+    const issued = await tokenProd(app, {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: REDIRECT_URI,
+      client_id: clientId,
+      code_verifier: verifier,
+      resource: PROD_RESOURCE,
+    });
+    expect(issued.status).toBe(200);
+  });
+
+  it("omits sign-up controls, Turnstile site key, and Turnstile CSP when AUTH_ALLOW_SIGN_UP=false, while plain password sign-in still works", async () => {
+    const { app } = createTurnstileOAuthService();
+    const clientId = await registerClient(app);
+    const { challenge } = pkce();
+
+    // First create a user on the sign-up-enabled service, then test plain password sign-in.
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      Response.json({
+        success: true,
+        action: "signup",
+        hostname: "auth.example.com",
+      }),
+    );
+    const created = await postProd(
+      app,
+      "/api/auth/sign-up/email",
+      {
+        name: "Existing User",
+        email: "existing@example.com",
+        password: "correct horse battery staple",
+      },
+      { "x-captcha-response": "turnstile-proof-existing" },
+    );
+    expect(created.status).toBe(200);
+
+    const authorize = await app.request(
+      prodAuthorizeUrl(clientId, {
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      }),
+    );
+    expect(authorize.status).toBe(302);
+    const signInUrl = authorize.headers.get("location") ?? "";
+    const signIn = await postProd(app, "/api/auth/sign-in/email", {
+      email: "existing@example.com",
+      password: "correct horse battery staple",
+      oauth_query: signedQuery(signInUrl),
+    });
+    expect(signIn.status).toBe(200);
+    const afterSignIn = await json(signIn);
+    expect(afterSignIn.redirect).toBe(true);
+    expect((afterSignIn.url as string).startsWith(`${PROD_AUTH}/oauth/consent?`)).toBe(true);
+
+    // Now verify a deployment with AUTH_ALLOW_SIGN_UP=false.
+    const disabled = createTurnstileOAuthService({ AUTH_ALLOW_SIGN_UP: "false" });
+    const disabledPage = await disabled.app.request(`${PROD_AUTH}/oauth/sign-in`);
+    expect(disabledPage.status).toBe(200);
+    const disabledHtml = await disabledPage.text();
+    expect(disabledHtml).not.toContain('id="create-account"');
+    expect(disabledHtml).not.toContain('id="sign-up-form"');
+    expect(disabledHtml).not.toContain("data-turnstile-site-key");
+    expect(disabledPage.headers.get("content-security-policy")).not.toContain(
+      "challenges.cloudflare.com",
+    );
+  });
+
+  it("refuses tampered, expired, or form-urlencoded return parameters on OAuth sign-up without creating a user or open redirect", async () => {
+    const { app, db } = createTurnstileOAuthService();
+    const clientId = await registerClient(app);
+    const { challenge } = pkce();
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      Response.json({
+        success: true,
+        action: "signup",
+        hostname: "auth.example.com",
+      }),
+    );
+
+    const authorize = await app.request(
+      prodAuthorizeUrl(clientId, {
         code_challenge: challenge,
         code_challenge_method: "S256",
       }),
@@ -556,7 +813,7 @@ describe("OAuth sign-up during authorization", () => {
     // 1. Tampered redirect_uri inside signed oauth_query (signature mismatch).
     const tamperedRedirect = new URLSearchParams(validOAuthQuery);
     tamperedRedirect.set("redirect_uri", "https://attacker.example/callback");
-    const resTamperedRedirect = await post(
+    const resTamperedRedirect = await postProd(
       app,
       "/api/auth/sign-up/email",
       {
@@ -571,7 +828,7 @@ describe("OAuth sign-up during authorization", () => {
 
     // 2. Repeated redirect_uri appended to oauth_query (parameter pollution).
     const pollutedQuery = `${validOAuthQuery}&redirect_uri=${encodeURIComponent("https://attacker.example/callback")}`;
-    const resPolluted = await post(
+    const resPolluted = await postProd(
       app,
       "/api/auth/sign-up/email",
       {
@@ -584,7 +841,7 @@ describe("OAuth sign-up during authorization", () => {
     );
     expect(resPolluted.status).toBe(400);
 
-    // 3. Free-form return URL fields in the sign-up request body.
+    // 3. Free-form return URL fields in the JSON sign-up request body.
     for (const field of [
       "return_to",
       "returnTo",
@@ -596,7 +853,7 @@ describe("OAuth sign-up during authorization", () => {
       "continue",
       "url",
     ]) {
-      const resField = await post(
+      const resField = await postProd(
         app,
         "/api/auth/sign-up/email",
         {
@@ -611,8 +868,63 @@ describe("OAuth sign-up during authorization", () => {
       expect(resField.status, field).toBe(400);
     }
 
-    // 4. Query string return parameter on the sign-up endpoint itself.
-    const resQueryReturn = await post(
+    // 4. Hostile application/x-www-form-urlencoded bodies (M1): forbidden return fields,
+    // tampered oauth_query, and repeated oauth_query.
+    const formWithCallbackUrl = new URLSearchParams({
+      name: "Form Callback",
+      email: "form-callback@example.com",
+      password: "correct horse battery staple",
+      callbackURL: "https://attacker.example/steal",
+    }).toString();
+    const resFormCallback = await postProdForm(
+      app,
+      "/api/auth/sign-up/email",
+      formWithCallbackUrl,
+      {
+        "x-captcha-response": "turnstile-proof",
+      },
+    );
+    expect(resFormCallback.status).toBe(400);
+
+    const formWithTamperedOAuth = new URLSearchParams({
+      name: "Form Tampered",
+      email: "form-tampered@example.com",
+      password: "correct horse battery staple",
+      oauth_query: tamperedRedirect.toString(),
+    }).toString();
+    const resFormTampered = await postProdForm(
+      app,
+      "/api/auth/sign-up/email",
+      formWithTamperedOAuth,
+      { "x-captcha-response": "turnstile-proof" },
+    );
+    expect(resFormTampered.status).toBe(400);
+
+    const formRepeatedOAuth = new URLSearchParams([
+      ["name", "Form Repeated"],
+      ["email", "form-repeated@example.com"],
+      ["password", "correct horse battery staple"],
+      ["oauth_query", validOAuthQuery],
+      ["oauth_query", tamperedRedirect.toString()],
+    ]).toString();
+    const resFormRepeated = await postProdForm(app, "/api/auth/sign-up/email", formRepeatedOAuth, {
+      "x-captcha-response": "turnstile-proof",
+    });
+    expect(resFormRepeated.status).toBe(400);
+
+    const resUnsupportedMedia = await app.request(`${PROD_AUTH}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: {
+        "content-type": "text/plain",
+        origin: PROD_AUTH,
+        "x-captcha-response": "turnstile-proof",
+      },
+      body: "name=Plain&email=plain@example.com",
+    });
+    expect(resUnsupportedMedia.status).toBe(415);
+
+    // 5. Query string return parameter on the sign-up endpoint itself.
+    const resQueryReturn = await postProd(
       app,
       "/api/auth/sign-up/email?return_to=https://attacker.example/steal",
       {
@@ -625,7 +937,26 @@ describe("OAuth sign-up during authorization", () => {
     );
     expect(resQueryReturn.status).toBe(400);
 
-    // 5. Browser script with a tampered return_to query parameter in /oauth/sign-in.
+    // 6. Expired signed oauth_query (L5): advance clock past the signed `exp` timestamp.
+    const expSeconds = Number(new URLSearchParams(validOAuthQuery).get("exp"));
+    expect(Number.isSafeInteger(expSeconds)).toBe(true);
+    vi.useFakeTimers();
+    vi.setSystemTime((expSeconds + 60) * 1000);
+    const resExpiredQuery = await postProd(
+      app,
+      "/api/auth/sign-up/email",
+      {
+        name: "Expired Query",
+        email: "expired-query@example.com",
+        password: "correct horse battery staple",
+        oauth_query: validOAuthQuery,
+      },
+      { "x-captcha-response": "turnstile-proof" },
+    );
+    expect(resExpiredQuery.status).toBe(400);
+    vi.useRealTimers();
+
+    // 7. Browser script with a tampered return_to query parameter in /oauth/sign-in.
     const jar = new Jar();
     const tamperedSignInUrl = `${signInUrl}&return_to=${encodeURIComponent("https://attacker.example/steal")}`;
     const { assigned, byId } = await runOAuthSignUpPage(
@@ -651,7 +982,7 @@ describe("OAuth sign-up during authorization", () => {
     const { challenge } = pkce();
 
     const authorize = await app.request(
-      authorizeUrl(clientId, {
+      prodAuthorizeUrl(clientId, {
         code_challenge: challenge,
         code_challenge_method: "S256",
       }),
@@ -680,7 +1011,7 @@ describe("OAuth sign-up during authorization", () => {
     expect(db.user).toHaveLength(0);
 
     // 2. Server-side missing proof or failed Siteverify response blocks sign-up.
-    const missingProof = await post(app, "/api/auth/sign-up/email", {
+    const missingProof = await postProd(app, "/api/auth/sign-up/email", {
       name: "No Proof",
       email: "no-proof@example.com",
       password: "correct horse battery staple",
@@ -695,7 +1026,7 @@ describe("OAuth sign-up during authorization", () => {
         "error-codes": ["invalid-input-response"],
       }),
     );
-    const rejectedProof = await post(
+    const rejectedProof = await postProd(
       app,
       "/api/auth/sign-up/email",
       {

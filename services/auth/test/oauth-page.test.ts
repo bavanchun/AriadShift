@@ -4,7 +4,8 @@
 
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
-import { ASSETS, PAGE_HEADERS, pageHeaders, signInPage } from "../src/pages.ts";
+import { parseConfig } from "../src/config.ts";
+import { ASSETS, PAGE_HEADERS, pageHeaders, pageOptions, signInPage } from "../src/pages.ts";
 
 interface StubElement {
   textContent: string;
@@ -176,11 +177,17 @@ interface TurnstileStubOptions {
 async function renderSignIn(
   search: string,
   options: {
+    allowSignUp?: boolean;
+    turnstileSiteKey?: string;
     turnstile?: TurnstileStubOptions;
     signUpResponse?: { ok?: boolean; status?: number; body?: Record<string, unknown> };
+    continueResponse?: { ok?: boolean; status?: number; body?: Record<string, unknown> };
+    signInResponse?: { ok?: boolean; status?: number; body?: Record<string, unknown> };
     formValues?: Record<string, string>;
   } = {},
 ) {
+  const allowSignUp = options.allowSignUp ?? true;
+  const turnstileSiteKey = options.turnstileSiteKey ?? "1x00000000000000000000AA";
   const elements = new Map<string, StubElement>();
   const byId = (id: string): StubElement => {
     let element = elements.get(id);
@@ -191,9 +198,13 @@ async function renderSignIn(
     return element;
   };
   byId("password-form").hidden = false;
-  byId("sign-up-form").hidden = true;
+  if (allowSignUp) {
+    byId("sign-up-form").hidden = true;
+    byId("turnstile").hidden = true;
+    byId("create-account");
+    byId("sign-up-submit");
+  }
   byId("two-factor-form").hidden = true;
-  byId("turnstile").hidden = true;
 
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const assigned: string[] = [];
@@ -222,6 +233,19 @@ async function renderSignIn(
 
   const defaultConsentSearch = consentSearch(signed());
   const signUpReply = options.signUpResponse ?? {
+    ok: true,
+    status: 200,
+    body: { user: { id: "user-1", email: "ada@example.com" } },
+  };
+  const continueReply = options.continueResponse ?? {
+    ok: true,
+    status: 200,
+    body: {
+      redirect: true,
+      url: `http://localhost:3001/oauth/consent${defaultConsentSearch}`,
+    },
+  };
+  const signInReply = options.signInResponse ?? {
     ok: true,
     status: 200,
     body: {
@@ -258,15 +282,26 @@ async function renderSignIn(
       body: {
         dataset: {
           page: "sign-in",
-          turnstileSiteKey: "1x00000000000000000000AA",
+          ...(allowSignUp && turnstileSiteKey ? { turnstileSiteKey } : {}),
         },
         append: () => {},
       },
       head: { append: () => {} },
-      getElementById: byId,
+      getElementById: (id: string) => {
+        if (
+          !allowSignUp &&
+          (id === "sign-up-form" ||
+            id === "create-account" ||
+            id === "sign-up-submit" ||
+            id === "turnstile")
+        ) {
+          return null;
+        }
+        return byId(id);
+      },
       querySelectorAll: (selector: string) => {
         if (selector === "button") {
-          return [byId("sign-up-submit"), byId("create-account")];
+          return allowSignUp ? [byId("sign-up-submit"), byId("create-account")] : [];
         }
         return [];
       },
@@ -275,6 +310,20 @@ async function renderSignIn(
     FormData: StubFormData,
     fetch: async (input: string, init: RequestInit = {}) => {
       calls.push({ url: input, init });
+      if (input === "/api/auth/oauth2/continue") {
+        return {
+          ok: continueReply.ok ?? true,
+          status: continueReply.status ?? 200,
+          json: async () => continueReply.body ?? {},
+        };
+      }
+      if (input === "/api/auth/sign-in/email") {
+        return {
+          ok: signInReply.ok ?? true,
+          status: signInReply.status ?? 200,
+          json: async () => signInReply.body ?? {},
+        };
+      }
       return {
         ok: signUpReply.ok ?? true,
         status: signUpReply.status ?? 200,
@@ -293,10 +342,11 @@ async function renderSignIn(
 }
 
 describe("sign-in page sign-up", () => {
-  it("renders the create-account toggle, sign-up form, and Turnstile CSP when configured", () => {
+  it("renders the create-account toggle, sign-up form, and Turnstile CSP when sign-up is enabled", () => {
     const html = signInPage({
       socialProviders: [],
       passkeys: false,
+      allowSignUp: true,
       turnstileSiteKey: "1x00000000000000000000AA",
     });
     expect(html).toContain('id="create-account"');
@@ -308,13 +358,63 @@ describe("sign-in page sign-up", () => {
       pageHeaders({
         socialProviders: [],
         passkeys: false,
+        allowSignUp: true,
         turnstileSiteKey: "1x00000000000000000000AA",
       })["Content-Security-Policy"] ?? "";
     expect(csp).toContain("script-src 'self' https://challenges.cloudflare.com");
     expect(csp).toContain("frame-src https://challenges.cloudflare.com");
   });
 
-  it("creates an account with a stubbed bot-check widget and continues to consent with the same parameters", async () => {
+  it("hides Create an account, the sign-up form, and Turnstile CSP when AUTH_ALLOW_SIGN_UP=false", () => {
+    const config = parseConfig({
+      DATABASE_URL: "postgres://ariad_auth:pw@postgres:5432/ariadshift",
+      BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
+      BETTER_AUTH_URL: "https://auth.example.com",
+      BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com",
+      ARIAD_PUBLIC_URL: "https://api.example.com",
+      AUTH_ALLOW_SIGN_UP: "false",
+      AUTH_TURNSTILE_SECRET: "prod-turnstile-secret",
+      AUTH_TURNSTILE_SITE_KEY: "0x4AAAAAAABBBBBBBBBBBBBB",
+    });
+    const options = pageOptions(config);
+    expect(options.allowSignUp).toBe(false);
+    expect(options.turnstileSiteKey).toBeUndefined();
+    const html = signInPage(options);
+    expect(html).not.toContain('id="create-account"');
+    expect(html).not.toContain('id="sign-up-form"');
+    expect(html).not.toContain("data-turnstile-site-key");
+    expect(pageHeaders(options)).toEqual(PAGE_HEADERS);
+  });
+
+  it("never falls back to the Cloudflare test site key in a production config", () => {
+    const prodWithTurnstile = parseConfig({
+      DATABASE_URL: "postgres://ariad_auth:pw@postgres:5432/ariadshift",
+      BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
+      BETTER_AUTH_URL: "https://auth.example.com",
+      BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com",
+      ARIAD_PUBLIC_URL: "https://api.example.com",
+      AUTH_ALLOW_SIGN_UP: "true",
+      AUTH_TURNSTILE_SECRET: "prod-turnstile-secret",
+      AUTH_TURNSTILE_SITE_KEY: "0x4AAAAAAACCCCCCCCCCCCCC",
+    });
+    const htmlWithTurnstile = signInPage(pageOptions(prodWithTurnstile));
+    expect(htmlWithTurnstile).toContain('data-turnstile-site-key="0x4AAAAAAACCCCCCCCCCCCCC"');
+    expect(htmlWithTurnstile).not.toContain("1x00000000000000000000AA");
+
+    const prodWithoutTurnstile = parseConfig({
+      DATABASE_URL: "postgres://ariad_auth:pw@postgres:5432/ariadshift",
+      BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
+      BETTER_AUTH_URL: "https://auth.example.com",
+      BETTER_AUTH_TRUSTED_ORIGINS: "https://app.example.com",
+      ARIAD_PUBLIC_URL: "https://api.example.com",
+      AUTH_ALLOW_SIGN_UP: "true",
+    });
+    const htmlWithoutTurnstile = signInPage(pageOptions(prodWithoutTurnstile));
+    expect(htmlWithoutTurnstile).not.toContain("data-turnstile-site-key");
+    expect(htmlWithoutTurnstile).not.toContain("1x00000000000000000000AA");
+  });
+
+  it("creates an account with a stubbed bot-check widget and continues via /oauth2/continue", async () => {
     const authParams: [string, string][] = [
       ...signed(),
       ["code_challenge", "challenge-xyz"],
@@ -324,7 +424,7 @@ describe("sign-in page sign-up", () => {
     const search = consentSearch(authParams);
     const { byId, calls, assigned, renderedWidgets, flush } = await renderSignIn(search, {
       turnstile: { mode: "pass", token: "turnstile-proof-ok" },
-      signUpResponse: {
+      continueResponse: {
         ok: true,
         status: 200,
         body: {
@@ -341,12 +441,13 @@ describe("sign-in page sign-up", () => {
     expect(byId("sign-up-form").hidden).toBe(false);
     expect(renderedWidgets).toHaveLength(1);
     expect(renderedWidgets[0]?.action).toBe("signup");
+    expect(renderedWidgets[0]?.sitekey).toBe("1x00000000000000000000AA");
     expect(byId("sign-up-submit").disabled).toBe(false);
 
     byId("sign-up-form").trigger("submit");
     await flush();
 
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
     expect(calls[0]?.url).toBe("/api/auth/sign-up/email");
     const headers = calls[0]?.init.headers as Record<string, string>;
     expect(headers["x-captcha-response"]).toBe("turnstile-proof-ok");
@@ -362,7 +463,68 @@ describe("sign-in page sign-up", () => {
     expect(forwardedQuery.get("code_challenge")).toBe("challenge-xyz");
     expect(forwardedQuery.get("code_challenge_method")).toBe("S256");
     expect(forwardedQuery.getAll("resource")).toEqual(["http://localhost:8080/mcp"]);
+
+    expect(calls[1]?.url).toBe("/api/auth/oauth2/continue");
+    const continueSent = JSON.parse(String(calls[1]?.init.body));
+    expect(continueSent.created).toBe(true);
+    expect(continueSent.oauth_query).toBe(sent.oauth_query);
     expect(assigned).toEqual([`http://localhost:3001/oauth/consent${search}`]);
+  });
+
+  it("opens the sign-up form automatically on prompt=create and continues to consent", async () => {
+    const createSearch = consentSearch([...signed(), ["prompt", "create"]]);
+    const consentTarget = `http://localhost:3001/oauth/consent${consentSearch(signed())}`;
+    const { byId, calls, assigned, renderedWidgets, flush } = await renderSignIn(createSearch, {
+      turnstile: { mode: "pass", token: "turnstile-proof-create" },
+      continueResponse: {
+        ok: true,
+        status: 200,
+        body: { redirect: true, url: consentTarget },
+      },
+    });
+
+    expect(byId("password-form").hidden).toBe(true);
+    expect(byId("sign-up-form").hidden).toBe(false);
+    expect(renderedWidgets).toHaveLength(1);
+
+    byId("sign-up-form").trigger("submit");
+    await flush();
+
+    expect(calls.map((c) => c.url)).toEqual([
+      "/api/auth/sign-up/email",
+      "/api/auth/oauth2/continue",
+    ]);
+    expect(JSON.parse(String(calls[1]?.init.body)).created).toBe(true);
+    expect(assigned).toEqual([consentTarget]);
+  });
+
+  it("keeps plain password sign-in working under the stricter page checks", async () => {
+    const search = consentSearch([
+      ...signed(),
+      ["code_challenge", "challenge-xyz"],
+      ["code_challenge_method", "S256"],
+    ]);
+    const consentTarget = `http://localhost:3001/oauth/consent${search}`;
+    const { byId, calls, assigned, flush } = await renderSignIn(search, {
+      allowSignUp: false,
+      signInResponse: {
+        ok: true,
+        status: 200,
+        body: { redirect: true, url: consentTarget },
+      },
+    });
+
+    byId("password-form").trigger("submit");
+    await flush();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("/api/auth/sign-in/email");
+    const sent = JSON.parse(String(calls[0]?.init.body));
+    expect(sent.email).toBe("ada@example.com");
+    expect(sent.password).toBe("correct horse battery staple");
+    expect(new URLSearchParams(sent.oauth_query).get("client_id")).toBe("client-1");
+    expect(assigned).toEqual([consentTarget]);
+    expect(byId("status").textContent).toBe("Signed in. Continuing…");
   });
 
   it.each([
@@ -396,39 +558,23 @@ describe("sign-in page sign-up", () => {
     },
   );
 
-  it.each([
-    ["off-origin redirect", `https://evil.example/oauth/consent${consentSearch(signed())}`],
-    [
-      "altered redirect_uri in consent URL",
-      `http://localhost:3001/oauth/consent${consentSearch(signed("https://evil.example/cb"))}`,
-    ],
-    [
-      "altered state in consent URL",
-      `http://localhost:3001/oauth/consent${consentSearch([
-        ...signed().filter(([k]) => k !== "state"),
-        ["state", "different-state"],
-      ])}`,
-    ],
-  ])(
-    "refuses to follow a mismatched post-sign-up redirect (%s)",
-    async (_label, badRedirectUrl) => {
-      const search = consentSearch(signed());
-      const { byId, calls, assigned, flush } = await renderSignIn(search, {
-        signUpResponse: {
-          ok: true,
-          status: 200,
-          body: { redirect: true, url: badRedirectUrl },
-        },
-      });
-      byId("create-account").trigger("click");
-      await flush();
-      byId("sign-up-form").trigger("submit");
-      await flush();
-      expect(calls).toHaveLength(1);
-      expect(assigned).toHaveLength(0);
-      expect(byId("status").textContent).toMatch(/could not continue safely/);
-    },
-  );
+  it("reports an error when /oauth2/continue does not return a safe redirect", async () => {
+    const search = consentSearch(signed());
+    const { byId, calls, assigned, flush } = await renderSignIn(search, {
+      continueResponse: {
+        ok: true,
+        status: 200,
+        body: { redirect: false },
+      },
+    });
+    byId("create-account").trigger("click");
+    await flush();
+    byId("sign-up-form").trigger("submit");
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(assigned).toHaveLength(0);
+    expect(byId("status").textContent).toMatch(/could not continue/);
+  });
 
   it.each(["error", "expired"] as const)(
     "blocks sign-up when the stubbed bot-check widget reports %s",

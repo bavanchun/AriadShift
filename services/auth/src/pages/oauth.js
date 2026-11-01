@@ -135,49 +135,6 @@ function follow(data) {
   return true;
 }
 
-const PRESERVED_OAUTH_PARAMS = [
-  "response_type",
-  "client_id",
-  "redirect_uri",
-  "scope",
-  "state",
-  "code_challenge",
-  "code_challenge_method",
-];
-
-function sameValues(left, right) {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-/**
- * Follows the post-sign-up redirect only when it stays on this origin's
- * `/oauth/consent` page and carries the exact same signed OAuth request
- * parameters (`client_id`, `scope`, `state`, `redirect_uri`, `resource`, and
- * PKCE fields).
- */
-function followSignUpConsent(data, requestDetails) {
-  if (data?.redirect !== true || typeof data.url !== "string" || !requestDetails) {
-    return false;
-  }
-  const current = new URL(window.location.href);
-  const target = new URL(data.url, current.href);
-  if (target.origin !== current.origin || target.pathname !== "/oauth/consent") {
-    return false;
-  }
-  const targetDetails = signedDetailsFor(target.searchParams);
-  if (!targetDetails) return false;
-  for (const key of PRESERVED_OAUTH_PARAMS) {
-    if ((requestDetails.get(key) ?? null) !== (targetDetails.get(key) ?? null)) {
-      return false;
-    }
-  }
-  if (!sameValues(requestDetails.getAll("resource"), targetDetails.getAll("resource"))) {
-    return false;
-  }
-  window.location.assign(target.href);
-  return true;
-}
-
 async function run(action) {
   busy(true);
   show("");
@@ -266,7 +223,7 @@ function setUpSignIn() {
   let turnstileLoading = null;
 
   function turnstileActive() {
-    return Boolean(turnstileSiteKey || window.turnstile);
+    return Boolean(turnstileSiteKey);
   }
 
   function syncSignUpSubmit() {
@@ -334,7 +291,7 @@ function setUpSignIn() {
         return;
       }
       widgetId = api.render(turnstileContainer ?? "#turnstile", {
-        sitekey: turnstileSiteKey || "1x00000000000000000000AA",
+        sitekey: turnstileSiteKey,
         action: "signup",
         callback: (token) => {
           captchaToken = typeof token === "string" ? token.trim() : "";
@@ -398,6 +355,11 @@ function setUpSignIn() {
     setMode(!signingUp);
   });
 
+  const prompts = (signedDetails()?.get("prompt") ?? "").split(/\s+/).filter(Boolean);
+  if (createAccountButton && prompts.includes("create")) {
+    setMode(true);
+  }
+
   passwordForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const form = new FormData(passwordForm);
@@ -436,7 +398,7 @@ function setUpSignIn() {
       const token = captchaToken;
       try {
         const headers = token ? { "x-captcha-response": token } : {};
-        const data = await call(
+        await call(
           "POST",
           "/sign-up/email",
           {
@@ -446,9 +408,10 @@ function setUpSignIn() {
           },
           headers,
         );
-        if (!followSignUpConsent(data, requestDetails)) {
+        const continued = await call("POST", "/oauth2/continue", { created: true });
+        if (!follow(continued)) {
           throw new Error(
-            "Account created, but the authorization could not continue safely. Start again from your application.",
+            "Account created, but the authorization could not continue. Start again from your application.",
           );
         }
         show("Account created. Continuing…");

@@ -106,7 +106,7 @@ function isValidSignedOAuthQuery(raw: unknown): boolean {
 
 export interface AppDeps {
   config: Pick<AuthServiceConfig, "trustedOrigins" | "trustedClientIpHeader"> &
-    Partial<Pick<AuthServiceConfig, "oauthDisabledReason" | "turnstileSecret">>;
+    Partial<Pick<AuthServiceConfig, "oauthDisabledReason">>;
   handler: (request: Request) => Promise<Response>;
   /** Absent when remote MCP OAuth is disabled. */
   metadata?: (request: Request, document: DiscoveryDocument) => Promise<object>;
@@ -259,15 +259,44 @@ export function createApp({ config, handler, metadata, pages, peerAddress }: App
           400,
         );
       }
+      const mediaType = rawRequest.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
       const text = await rawRequest.text();
-      if (text.trim() !== "") {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          parsed = undefined;
+      if (mediaType === "application/x-www-form-urlencoded") {
+        const params = new URLSearchParams(text);
+        for (const key of params.keys()) {
+          if (FORBIDDEN_SIGN_UP_RETURN_FIELDS.has(key)) {
+            return c.json(
+              {
+                error: "invalid_request",
+                message: "return URL parameters are not allowed on sign-up",
+              },
+              400,
+            );
+          }
         }
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        if (params.has("oauth_query")) {
+          const oauthQueries = params.getAll("oauth_query");
+          if (oauthQueries.length !== 1 || !isValidSignedOAuthQuery(oauthQueries[0])) {
+            return c.json(
+              {
+                error: "invalid_request",
+                message: "invalid oauth_query",
+              },
+              400,
+            );
+          }
+        }
+      } else if (mediaType === "application/json") {
+        if (text.trim() !== "") {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            return c.json({ error: "invalid_request", message: "invalid JSON body" }, 400);
+          }
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return c.json({ error: "invalid_request", message: "invalid JSON body" }, 400);
+          }
           const record = parsed as Record<string, unknown>;
           for (const key of Object.keys(record)) {
             if (FORBIDDEN_SIGN_UP_RETURN_FIELDS.has(key)) {
@@ -292,6 +321,11 @@ export function createApp({ config, handler, metadata, pages, peerAddress }: App
             }
           }
         }
+      } else {
+        return c.json(
+          { error: "invalid_request", message: "unsupported content-type on sign-up" },
+          415,
+        );
       }
       rawRequest = new Request(rawRequest, { body: text });
     }
@@ -310,13 +344,7 @@ export function createApp({ config, handler, metadata, pages, peerAddress }: App
       });
     }
 
-    const signInOptions: PageOptions =
-      pages.turnstileSiteKey || !config.turnstileSecret
-        ? pages
-        : { ...pages, turnstileSiteKey: "1x00000000000000000000AA" };
-    app.get(OAUTH_SIGN_IN_PATH, (c) =>
-      c.html(signInPage(signInOptions), 200, pageHeaders(signInOptions)),
-    );
+    app.get(OAUTH_SIGN_IN_PATH, (c) => c.html(signInPage(pages), 200, pageHeaders(pages)));
     app.get(OAUTH_CONSENT_PATH, (c) => c.html(consentPage(), 200, PAGE_HEADERS));
     app.get(`${ASSET_PATH}/:name`, (c) => {
       const name = c.req.param("name");
