@@ -696,6 +696,81 @@ ashift tool pdf.info fixtures/pdf-tools/multipage-20.pdf --json
 
 # Write pdf.info output to a file
 ashift tool pdf.info report.pdf -o report.info.json
+
+# Merge PDFs with per-file bookmarks and continuous page numbering (-> rotated-pages.merged.pdf)
+ashift tool pdf.merge fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param outline=per-file --param page_labels=renumber -o out/
+
+# Split a PDF every 2 pages (-> rotated-pages.part-001.pdf, rotated-pages.part-002.pdf)
+ashift tool pdf.split fixtures/pdf-tools/rotated-pages.pdf --param mode=every --param every=2 -o out/
+
+# Extract pages 1-3 into a new PDF (-> multipage-20.extracted.pdf)
+ashift tool pdf.extract_pages fixtures/pdf-tools/multipage-20.pdf --param pages=1-3 -o out/
+
+# Delete pages 2 and 4 (-> rotated-pages.trimmed.pdf)
+ashift tool pdf.delete_pages fixtures/pdf-tools/rotated-pages.pdf --param pages=2,4 -o out/
+
+# Reverse page order (-> rotated-pages.reordered.pdf)
+ashift tool pdf.reorder fixtures/pdf-tools/rotated-pages.pdf --param order=reverse -o out/
+
+# Interleave two PDFs for duplex scanning, reversing the second document (-> rotated-pages.mixed.pdf)
+ashift tool pdf.alternate_mix fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param reverse_second=true -o out/
+
+# Insert 2 blank pages matching the preceding page size after page 1 (-> rotated-pages.inserted.pdf)
+ashift tool pdf.insert_blank fixtures/pdf-tools/rotated-pages.pdf --param after=1-1 --param count=2 --param size=same -o out/
+
+# Rotate page 1 by 90 degrees clockwise via /Rotate (-> rotated-pages.rotated.pdf)
+ashift tool pdf.rotate fixtures/pdf-tools/rotated-pages.pdf --param pages=1-1 --param angle=90 -o out/
+
+# Set /CropBox to 0.5-inch (36 pt) margins on a US Letter page (-> rotated-pages.cropped.pdf)
+ashift tool pdf.crop fixtures/pdf-tools/rotated-pages.pdf --param pages=all --param 'box={"left":36,"bottom":36,"right":576,"top":756}' --param target=crop -o out/
+
+# Scale pages to A4 while preserving aspect ratio (-> mixed-sizes.scaled.pdf)
+ashift tool pdf.scale fixtures/pdf-tools/mixed-sizes.pdf --param pages=all --param to=A4 --param fit=contain -o out/
+
+# Stitch all pages vertically into a single continuous page (-> rotated-pages.single-page.pdf)
+ashift tool pdf.single_page fixtures/pdf-tools/rotated-pages.pdf -o out/
+
+# Rotate page 1 content stream by 45 degrees and expand the page box (-> rotated-pages.rotated-content.pdf)
+ashift tool pdf.rotate_content fixtures/pdf-tools/rotated-pages.pdf --param pages=1-1 --param angle_deg=45 --param expand=true -o out/
+
+# Decompress content streams and expand PDF 1.5+ /ObjStm object streams (-> object-streams.decompressed.pdf)
+ashift tool pdf.decompress fixtures/pdf-tools/object-streams.pdf --param object_streams=expand -o out/
+
+# Impose 2 pages per A4 sheet in row order (-> rotated-pages.nup.pdf)
+ashift tool pdf.nup fixtures/pdf-tools/rotated-pages.pdf --param per_sheet=2 --param sheet=A4 --param order=row -o out/
+
+# Impose pages as a saddle-stitch booklet on A4 sheets (-> rotated-pages.booklet.pdf)
+ashift tool pdf.booklet fixtures/pdf-tools/rotated-pages.pdf --param sheet=A4 --param binding=left --param creep_pt=0 -o out/
+
+# Stamp the first page of an overlay PDF over all pages of a base PDF (-> rotated-pages.overlay.pdf)
+ashift tool pdf.overlay fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/watermark-layer.pdf --param overlay_pages=first --param position=over --param pages=all -o out/
+
+# Subdivide each page into a 2x2 grid of smaller pages (-> rotated-pages.divided.pdf)
+ashift tool pdf.divide_pages fixtures/pdf-tools/rotated-pages.pdf --param pages=all --param cols=2 --param rows=2 --param order=row -o out/
+
+# Tile a page across a 2x2 grid of A4 sheets with 10 mm overlap and crop marks (-> annotations.posterized.pdf)
+ashift tool pdf.posterize fixtures/pdf-tools/annotations.pdf --param 'tiles={"cols":2,"rows":2}' --param sheet=A4 --param overlap_mm=10 --param crop_marks=true -o out/
+
+# Update PDF Info dictionary and XMP metadata fields (-> rotated-pages.metadata.pdf)
+ashift tool pdf.metadata fixtures/pdf-tools/rotated-pages.pdf --param 'set={"title":"Golden Title","author":"AriadShift"}' -o out/
+
+# Clear the bookmark (/Outlines) tree (-> multipage-20.outline.pdf)
+ashift tool pdf.outline fixtures/pdf-tools/multipage-20.pdf --param action=clear -o out/
+
+# Embed an attachment into the PDF /EmbeddedFiles name tree (-> rotated-pages.attachments.pdf)
+ashift tool pdf.attachments fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param action=add -o out/
+
+# Configure /PageLabels numbering ranges (-> multipage-20.labeled.pdf)
+ashift tool pdf.page_labels fixtures/pdf-tools/multipage-20.pdf --param 'ranges=[{"from":1,"style":"roman-lower"},{"from":5,"style":"decimal","prefix":"p-","start":1}]' -o out/
+
+# Set /ViewerPreferences layout and window options (-> rotated-pages.prefs.pdf)
+ashift tool pdf.viewer_prefs fixtures/pdf-tools/rotated-pages.pdf --param page_layout=two-column-left --param fit_window=true -o out/
+
+# Create a PDF portfolio (/Collection) from multiple files (-> rotated-pages.portfolio.pdf)
+ashift tool pdf.portfolio fixtures/pdf-tools/rotated-pages.pdf fixtures/pdf-tools/annotations.pdf --param action=create --param view=details -o out/
+
+# Remove a named optional-content layer (/OCProperties) and its marked content (-> watermark-layer.layers.pdf)
+ashift tool pdf.layers fixtures/pdf-tools/watermark-layer.pdf --param action=remove --param 'names=["AriadShift Watermark"]' -o out/
 ```
 
 ---
