@@ -4072,6 +4072,9 @@ attribution = "AriadShift contributors"
 sha256 = "e2cd1fb90ccddf022c91e1cfe3a59a21eeb73b6f4f19a503c33d55df305c42d5"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "inline-flate-oversized-pdf"
@@ -4088,6 +4091,9 @@ attribution = "AriadShift contributors"
 sha256 = "b3ff797ba01c08497ee38823735cf1f08250a1c9e6db03dccff24c3de33d68ba"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "indirect-image-preflight-pdf"
@@ -4104,6 +4110,9 @@ attribution = "AriadShift contributors"
 sha256 = "7754f715394011b37ec8e664694dc7f421d9d8df248f680cfb7f5d3a185d31c0"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "indirect-jpx-filter-pdf"
@@ -4120,6 +4129,9 @@ attribution = "AriadShift contributors"
 sha256 = "489151c322216e50daef7e193f3346b77905a99ddde9787c4b48131a761d31f9"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "indirect-jbig2-filter-pdf"
@@ -4136,6 +4148,9 @@ attribution = "AriadShift contributors"
 sha256 = "8bc850ef0e22051b1196c7d43f48670fd7a8dc045118bbc9f2f8708d9cd3eb0d"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "ambiguous-page-tree-pdf"
@@ -4152,6 +4167,9 @@ attribution = "AriadShift contributors"
 sha256 = "3385cdb8b594bb01f67b3e8c54a6a2c080dd5be261094821cff97e2f9e3a9b7a"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "type3-inline-image-pdf"
@@ -4168,6 +4186,9 @@ attribution = "AriadShift contributors"
 sha256 = "b9398ea6ae2fb69493e5df29012b45f8f802f34feb92ff389d8018bf105531d0"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "inline-lzw-small-pdf"
@@ -4184,6 +4205,9 @@ attribution = "AriadShift contributors"
 sha256 = "5547c08bb342749018fa681bb5c1626736a6f9ae26c9efa8276c0d231a69d989"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "inline-lzw-large-pdf"
@@ -4200,6 +4224,9 @@ attribution = "AriadShift contributors"
 sha256 = "45b891fe3d0cd6b93382b36baec3a50dcd9b5447673a16d1d0f850de9a769434"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "inline-rl-small-pdf"
@@ -4216,6 +4243,9 @@ attribution = "AriadShift contributors"
 sha256 = "3cd8e4886231927ed245447bfc154cef3a5d83f2da1762edf6580ebe932fe66b"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "inline-rl-large-pdf"
@@ -4232,6 +4262,9 @@ attribution = "AriadShift contributors"
 sha256 = "afeb4d5699c6081864660c291e388699484cbfa05c9cebb9b96ea86bc1d0115e"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "form-resource-scopes-pdf"
@@ -4248,6 +4281,9 @@ attribution = "AriadShift contributors"
 sha256 = "924285c4e27ff379f7f2f50a3fae122684dcc155b004a4dc973927a9f8e2dab9"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
 
 [[fixture]]
 id = "indirect-content-filter-pdf"
@@ -4264,3 +4300,6 @@ attribution = "AriadShift contributors"
 sha256 = "e03b408215cab8906366f946f653d9d5553ff8b4f0efcc8541dc9d3ce5377808"
 pages = 1
 tags = []
+phase = "4"
+routes = []
+companions = []
