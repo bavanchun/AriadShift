@@ -589,7 +589,7 @@ impl PreflightBudget<'_> {
 }
 
 // Each scope stores only its own resource entries. The digest identifies the
-// resource chain without retaining a copy of the inherited table in memo keys.
+// effective resources without retaining a copy of the inherited table in memo keys.
 struct XobjectScope<'a> {
     objects: BTreeMap<Vec<u8>, PdfObjectId>,
     parent: Option<&'a XobjectScope<'a>>,
@@ -1144,7 +1144,7 @@ fn preflight_xobject(
                 )?;
                 insert_xobjects_from_resources!(doc, resources, own_children);
             }
-            let xobjects = parent_xobjects.child(own_children.clone());
+            let xobjects = parent_xobjects.child(own_children);
             let mut invoked = HashSet::new();
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
@@ -1175,7 +1175,7 @@ fn preflight_xobject(
                         .ok_or_else(EngineFailure::limit_exceeded)?;
                 }
             }
-            for (name, child) in &own_children {
+            for (name, child) in &xobjects.objects {
                 if !invoked.contains(name) {
                     preflight_xobject(
                         ctx,
