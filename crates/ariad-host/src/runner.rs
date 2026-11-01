@@ -642,7 +642,7 @@ fn resolve_confined_params_file(
                     "params_file must be a regular file inside work_dir",
                 ));
             }
-            canonical_work_dir.join(file_name)
+            work_dir_path.join(file_name)
         }
         None => {
             let default_candidate = work_dir_path.join("params.json");
@@ -653,7 +653,7 @@ fn resolve_confined_params_file(
                     "params_file must be a regular file inside work_dir",
                 ));
             }
-            canonical_work_dir.join("params.json")
+            default_candidate
         }
     };
     if let Ok(meta) = std::fs::symlink_metadata(&candidate)
