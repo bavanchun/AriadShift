@@ -1,12 +1,23 @@
 //! In-process tool dispatcher for `engine == "ariad-pdf"` (`docs/tools.md` §7).
 
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    task::{Context, Wake, Waker},
+    thread::{self, JoinHandle, Thread},
+    time::{Duration, Instant},
+};
 
 use ariad_core::{
     limits::Limits,
     tools::{ToolSpec, params::InfoParams},
 };
-use ariad_pdf::PdfError;
+use ariad_pdf::{PdfError, ToolCtx};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -35,6 +46,73 @@ pub struct RawToolExecution {
     pub inline_json: Option<Value>,
 }
 
+struct ThreadWaker(Thread);
+
+impl Wake for ThreadWaker {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.unpark();
+    }
+}
+
+/// Bridges a [`CancellationToken`] into the `Arc<AtomicBool>` polled by [`ariad_pdf::ToolCtx`].
+struct CancelBridge {
+    flag: Arc<AtomicBool>,
+    stop: CancellationToken,
+    worker: Option<JoinHandle<()>>,
+}
+
+impl CancelBridge {
+    fn new(cancel: &CancellationToken) -> Self {
+        let initially_cancelled = cancel.is_cancelled();
+        let flag = Arc::new(AtomicBool::new(initially_cancelled));
+        let stop = cancel.child_token();
+        let worker = if initially_cancelled {
+            None
+        } else {
+            let flag_clone = Arc::clone(&flag);
+            let cancel_clone = cancel.clone();
+            let stop_clone = stop.clone();
+            thread::Builder::new()
+                .name("ariad-pdf-cancel".to_owned())
+                .spawn(move || {
+                    let waker = Waker::from(Arc::new(ThreadWaker(thread::current())));
+                    let mut cx = Context::from_waker(&waker);
+                    let mut fut = std::pin::pin!(stop_clone.cancelled());
+                    while fut.as_mut().poll(&mut cx).is_pending() {
+                        thread::park();
+                    }
+                    if cancel_clone.is_cancelled() {
+                        flag_clone.store(true, Ordering::Release);
+                    }
+                })
+                .ok()
+        };
+        Self { flag, stop, worker }
+    }
+}
+
+impl Drop for CancelBridge {
+    fn drop(&mut self) {
+        self.stop.cancel();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+/// Builds an [`ariad_pdf::ToolCtx`] from `limits.timeout_s` and a shared cancellation flag.
+#[must_use]
+pub fn build_tool_ctx(limits: &Limits, cancel: Arc<AtomicBool>) -> ToolCtx {
+    let deadline = limits
+        .timeout_s
+        .and_then(|secs| Instant::now().checked_add(Duration::from_secs(secs)));
+    ToolCtx { deadline, cancel }
+}
+
 /// Executes an in-process `ariad-pdf` tool on the staged input files inside `workspace`.
 #[allow(clippy::too_many_arguments)]
 pub fn execute(
@@ -47,21 +125,29 @@ pub fn execute(
     cancel: &CancellationToken,
     on_event: &mut dyn FnMut(ToolEvent),
 ) -> Result<RawToolExecution, ToolError> {
-    if cancel.is_cancelled() {
-        return Err(ToolError::Interrupted);
-    }
+    let bridge = CancelBridge::new(cancel);
+    let ctx = build_tool_ctx(limits, Arc::clone(&bridge.flag));
 
     match spec.id {
-        "pdf.info" => {
-            execute_pdf_info(staged_inputs, params, workspace, limits, scrubber, on_event)
+        "pdf.info" => execute_pdf_info(
+            staged_inputs,
+            params,
+            workspace,
+            limits,
+            scrubber,
+            &ctx,
+            on_event,
+        ),
+        other => {
+            ctx.check().map_err(|err| map_pdf_error(err, scrubber))?;
+            Err(ToolError::ToolMissing {
+                engine: spec.engine.to_owned(),
+                hint: format!(
+                    "tool '{other}' is not implemented in in-process engine '{}'",
+                    spec.engine
+                ),
+            })
         }
-        other => Err(ToolError::ToolMissing {
-            engine: spec.engine.to_owned(),
-            hint: format!(
-                "tool '{other}' is not implemented in in-process engine '{}'",
-                spec.engine
-            ),
-        }),
     }
 }
 
@@ -71,6 +157,7 @@ fn execute_pdf_info(
     workspace: &Workspace,
     limits: &Limits,
     scrubber: &SecretScrubber,
+    ctx: &ToolCtx,
     on_event: &mut dyn FnMut(ToolEvent),
 ) -> Result<RawToolExecution, ToolError> {
     let _: InfoParams = serde_json::from_value(params.clone())
@@ -81,6 +168,8 @@ fn execute_pdf_info(
             "pdf.info requires exactly 1 input file".to_owned(),
         ));
     };
+
+    ctx.check().map_err(|err| map_pdf_error(err, scrubber))?;
 
     on_event(ToolEvent::Progress {
         stage: "reading".to_owned(),
@@ -93,7 +182,10 @@ fn execute_pdf_info(
         _ => ToolError::InputIo("the input file could not be read".to_owned()),
     })?;
 
-    let info = ariad_pdf::info::run(&bytes, limits).map_err(|err| map_pdf_error(err, scrubber))?;
+    let info = ariad_pdf::info::run_with_ctx(&bytes, limits, ctx)
+        .map_err(|err| map_pdf_error(err, scrubber))?;
+
+    ctx.check().map_err(|err| map_pdf_error(err, scrubber))?;
 
     let raw_value = serde_json::to_value(&info)
         .map_err(|e| ToolError::EngineFailure(scrubber.scrub(&e.to_string())))?;
@@ -129,6 +221,12 @@ fn execute_pdf_info(
 
 /// Maps an [`ariad_pdf::PdfError`] to the normative [`ToolError`] variant (`docs/tools.md` §12).
 pub fn map_pdf_error(err: PdfError, scrubber: &SecretScrubber) -> ToolError {
+    if err.is_cancelled() {
+        return ToolError::Interrupted;
+    }
+    if err.is_timed_out() {
+        return ToolError::LimitExceeded;
+    }
     match err {
         PdfError::Encrypted { needs_password } => ToolError::EncryptedInput { needs_password },
         PdfError::LimitExceeded(_) => ToolError::LimitExceeded,
@@ -140,5 +238,68 @@ pub fn map_pdf_error(err: PdfError, scrubber: &SecretScrubber) -> ToolError {
             engine: INPROCESS_PDF_ENGINE.to_owned(),
             hint: scrubber.scrub(&format!("tool '{tool}' is not implemented")),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use serde_json::Map;
+
+    use super::*;
+
+    fn sample_pdf() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf-tools/encrypted-owner-only.plaintext.pdf")
+    }
+
+    #[test]
+    fn inprocess_execute_honours_zero_timeout_and_cancelled_token() {
+        let spec = ariad_core::tools::find("pdf.info").expect("pdf.info in registry");
+        let workspace = Workspace::new().expect("create workspace");
+        let staged_in = workspace.input_dir().join("input-0.pdf");
+        fs::copy(sample_pdf(), &staged_in).expect("stage sample pdf");
+        let staged_inputs = vec![staged_in];
+        let params = Value::Object(Map::new());
+        let scrubber = SecretScrubber::default();
+
+        // 1. `timeout_s = Some(0)` expires immediately and maps to `ToolError::LimitExceeded` (exit 4).
+        let mut timeout_limits = Limits::local();
+        timeout_limits.timeout_s = Some(0);
+        let err_timeout = execute(
+            spec,
+            &staged_inputs,
+            &params,
+            &workspace,
+            &timeout_limits,
+            &scrubber,
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .expect_err("timeout_s = 0 must time out in-process");
+        assert_eq!(err_timeout, ToolError::LimitExceeded);
+        assert_eq!(err_timeout.exit_code(), 4);
+        assert_eq!(err_timeout.code(), "limit_exceeded");
+        assert!(!workspace.output_dir().join("output.json").exists());
+
+        // 2. Pre-cancelled `CancellationToken` aborts and maps to `ToolError::Interrupted` (exit 130).
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let err_cancel = execute(
+            spec,
+            &staged_inputs,
+            &params,
+            &workspace,
+            &Limits::local(),
+            &scrubber,
+            &cancelled,
+            &mut |_| {},
+        )
+        .expect_err("cancelled token must interrupt in-process execution");
+        assert_eq!(err_cancel, ToolError::Interrupted);
+        assert_eq!(err_cancel.exit_code(), 130);
+        assert_eq!(err_cancel.code(), "interrupted");
+        assert!(!workspace.output_dir().join("output.json").exists());
     }
 }

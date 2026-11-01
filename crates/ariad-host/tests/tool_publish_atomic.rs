@@ -636,3 +636,132 @@ fn artifact_and_output_path_extension_mismatch_is_rejected() {
     assert_eq!(err_run.code(), "usage");
     assert!(!bad_out_file.exists());
 }
+
+#[test]
+fn run_tool_rejects_output_path_and_staged_artifact_extension_mismatch_and_writes_nothing() {
+    let tmp = TempDir::new().expect("create tempdir");
+    let input_pdf = tmp.path().join("input.pdf");
+    fs::copy(sample_pdf(), &input_pdf).expect("copy sample pdf");
+    let out_dir = tmp.path().join("out");
+    fs::create_dir_all(&out_dir).expect("create out_dir");
+
+    // 1. Single-file `-o` whose extension does not match the tool's output format is rejected preflight
+    // with exit code 2 (`usage`) and writes nothing into `out_dir`.
+    let mismatched_out = out_dir.join("report.html");
+    let req = ToolRequest::new(
+        "pdf.info",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::Path(mismatched_out.clone()),
+    );
+    let err = run_tool(&req).expect_err("mismatched -o extension must be rejected");
+    assert_eq!(err.exit_code(), 2);
+    assert_eq!(err.code(), "usage");
+    assert!(!mismatched_out.exists());
+    assert_eq!(
+        fs::read_dir(&out_dir).expect("read out_dir").count(),
+        0,
+        "out_dir must remain empty when -o extension mismatches tool output format"
+    );
+
+    // 2. Staged artifact whose reported format/extension does not match `spec.output_format` is
+    // rejected before `publish_atomic` writes anything to disk.
+    #[cfg(unix)]
+    {
+        use ariad_host::{runner::EngineCommand, sandbox::SandboxMode};
+        use std::ffi::OsString;
+
+        let script = r#"
+read -r _
+ws_out="$(cd "$TMPDIR/../out" && pwd -P)"
+printf '<html></html>\n' > "$ws_out/spoofed.html"
+printf '{"type":"artifact","path":"%s/spoofed.html","format":"html"}\n' "$ws_out"
+printf '{"type":"result","ok":true}\n'
+"#;
+        let cmd = EngineCommand {
+            engine: "pdfium".to_owned(),
+            program: PathBuf::from("/bin/sh"),
+            args: vec![OsString::from("-c"), OsString::from(script)],
+            env: Vec::new(),
+            install_root: None,
+            launcher: None,
+            sandbox: Some(SandboxMode::Off),
+        };
+        let split_spec = ToolSpec {
+            id: "pdf.split",
+            version: "1",
+            group: ToolGroup::Organize,
+            summary: "Split PDF into parts.",
+            inputs: InputArity::One,
+            input_formats: &["pdf"],
+            output_format: "pdf",
+            tier: Tier::Free,
+            runtimes: &[ToolRuntime::Local],
+            engine: "pdfium",
+            params_schema: schema_for_params::<InfoParams>,
+            secret_params: &[],
+        };
+        let req_spoof = ToolRequest::new(
+            "pdf.split",
+            vec![InputRef::new(&input_pdf)],
+            OutputTarget::Directory(out_dir.clone()),
+        )
+        .with_spec(split_spec)
+        .with_engine_command(cmd);
+        let err_spoof =
+            run_tool(&req_spoof).expect_err("staged html artifact for pdf tool must fail");
+        assert_eq!(err_spoof.exit_code(), 1);
+        assert_eq!(err_spoof.code(), "engine_failure");
+        assert_eq!(
+            fs::read_dir(&out_dir).expect("read out_dir").count(),
+            0,
+            "out_dir must remain empty when staged artifact extension mismatches spec.output_format"
+        );
+    }
+}
+
+#[test]
+fn run_tool_inprocess_timeout_zero_and_precancelled_token_publish_nothing() {
+    use ariad_core::limits::Limits;
+    use tokio_util::sync::CancellationToken;
+
+    let tmp = TempDir::new().expect("create tempdir");
+    let input_pdf = tmp.path().join("corpus.pdf");
+    fs::copy(sample_pdf(), &input_pdf).expect("copy sample pdf");
+    let out_dir = tmp.path().join("out");
+    fs::create_dir_all(&out_dir).expect("create out_dir");
+
+    // 1. Request with `timeout_s = Some(0)` returns `ToolError::LimitExceeded` (exit 4) and publishes nothing.
+    let mut timeout_limits = Limits::local();
+    timeout_limits.timeout_s = Some(0);
+    let timeout_out = out_dir.join("timeout.info.json");
+    let req_timeout = ToolRequest::new(
+        "pdf.info",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::Path(timeout_out.clone()),
+    )
+    .with_limits(timeout_limits);
+    let err_timeout = run_tool(&req_timeout).expect_err("timeout_s = 0 must fail");
+    assert_eq!(err_timeout, ToolError::LimitExceeded);
+    assert_eq!(err_timeout.exit_code(), 4);
+    assert_eq!(err_timeout.code(), "limit_exceeded");
+    assert!(!timeout_out.exists());
+    assert_eq!(fs::read_dir(&out_dir).expect("read out_dir").count(), 0);
+
+    // 2. Request with an already-cancelled `CancellationToken` returns `ToolError::Interrupted` (exit 130)
+    // and publishes nothing.
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    let cancel_out = out_dir.join("cancelled.info.json");
+    let req_cancel = ToolRequest::new(
+        "pdf.info",
+        vec![InputRef::new(&input_pdf)],
+        OutputTarget::Path(cancel_out.clone()),
+    )
+    .with_cancel(cancel);
+    let err_cancel = run_tool(&req_cancel).expect_err("already-cancelled request must fail");
+    assert_eq!(err_cancel, ToolError::Interrupted);
+    assert_eq!(err_cancel.exit_code(), 130);
+    assert_eq!(err_cancel.code(), "interrupted");
+    assert!(!cancel_out.exists());
+    assert_eq!(fs::read_dir(&out_dir).expect("read out_dir").count(), 0);
+}
