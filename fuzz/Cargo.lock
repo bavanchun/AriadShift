@@ -234,10 +234,13 @@ dependencies = [
  "ariad-core",
  "ariad-engine-io",
  "ariad-pdf",
+ "flate2",
  "image",
+ "lopdf",
  "pdfium-render",
  "serde",
  "serde_json",
+ "sha2",
  "zip",
 ]
 
