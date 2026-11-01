@@ -110,7 +110,9 @@ class TestReferences(unittest.TestCase):
                 self.assertTrue(len(doc.text) > 0, f"{tf} canonical text should not be empty")
 
         self.assertEqual(scored_count, 41)
-        self.assertEqual(unscored_count, 1)
+        # PDF tool corpus truth files carry tool facts and are unscored by design.
+        expected_unscored = 1 + len(list(self.root.glob("fixtures/pdf-tools/*.truth.json")))
+        self.assertEqual(unscored_count, expected_unscored)
 
     def test_truth_generation_independent_of_fixtures_golden(self) -> None:
         """Verify truth.generate works completely without fixtures/golden existing."""
