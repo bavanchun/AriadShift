@@ -21,6 +21,8 @@ path = "src/main.rs"
 ariad-core.workspace = true
 ariad-engine-io.workspace = true
 ariad-pdf.workspace = true
+lopdf.workspace = true
+flate2.workspace = true
 # PDFium is loaded at run time from the pack directory; no static or bundled feature is enabled,
 # and the `image_*` features stay off so the codec set below is the only one in the tree.
 pdfium-render = { version = "=0.9.5", default-features = false, features = ["pdfium_8125", "thread_safe"] }
@@ -31,7 +33,6 @@ serde_json.workspace = true
 
 [dev-dependencies]
 jsonschema.workspace = true
-lopdf.workspace = true
 tempfile.workspace = true
 
 [package.metadata.dist]

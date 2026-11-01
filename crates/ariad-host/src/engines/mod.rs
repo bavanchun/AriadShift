@@ -271,6 +271,14 @@ mod test_pack_engine {
                 let mut metrics = BTreeMap::new();
                 metrics.insert("inputs".to_owned(), json!(inputs.len()));
                 metrics.insert("artifacts".to_owned(), json!(artifact_count));
+                #[cfg(target_os = "linux")]
+                if resolved_params.get("probe_address_limit") == Some(&json!(true)) {
+                    let (soft, hard) =
+                        nix::sys::resource::getrlimit(nix::sys::resource::Resource::RLIMIT_AS)
+                            .map_err(|_| common::EngineFailure::io())?;
+                    metrics.insert("address_limit_soft".to_owned(), json!(soft));
+                    metrics.insert("address_limit_hard".to_owned(), json!(hard));
+                }
                 #[cfg(unix)]
                 if let Some(pf) = &params_file {
                     use std::os::unix::fs::PermissionsExt;

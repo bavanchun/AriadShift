@@ -346,6 +346,7 @@ impl SandboxPolicy {
 /// A parsed `__sandbox` command line.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct LaunchSpec {
+    pub limits_only: bool,
     pub required: bool,
     pub policy: SandboxPolicy,
     pub program: PathBuf,
@@ -368,6 +369,7 @@ impl LaunchSpec {
             };
             let flag = arg.to_str().unwrap_or_default();
             match flag {
+                "--limits-only" => spec.limits_only = true,
                 "--required" => spec.required = true,
                 "--deny-net" => spec.policy.deny_network = true,
                 "--ro" | "--exec" | "--rw" | "--private-tmp" => {
@@ -390,6 +392,18 @@ impl LaunchSpec {
                     spec.policy.rlimits.push(parse_rlimit(&value)?);
                 }
                 "--" => {
+                    if spec.limits_only
+                        && (spec.required
+                            || spec.policy.deny_network
+                            || spec.policy.private_tmp.is_some()
+                            || !spec.policy.read_only.is_empty()
+                            || !spec.policy.read_write.is_empty()
+                            || !spec.policy.exec.is_empty())
+                    {
+                        return Err(
+                            "limits-only cannot be combined with sandbox restrictions".to_owned()
+                        );
+                    }
                     spec.program = args
                         .next()
                         .map(PathBuf::from)
@@ -531,6 +545,9 @@ mod tests {
         assert!(parse(&["--rlimit", "memory=1", "--", "x"]).is_err());
         assert!(parse(&["--rlimit", "core=-1", "--", "x"]).is_err());
         assert!(parse(&["--unknown", "--", "x"]).is_err());
+        assert!(parse(&["--limits-only", "--required", "--", "x"]).is_err());
+        assert!(parse(&["--limits-only", "--deny-net", "--", "x"]).is_err());
+        assert!(parse(&["--limits-only", "--rlimit", "as=1024", "--", "x"]).is_ok());
         assert!(parse(&["--"]).is_err());
         assert!(parse(&["--rlimit", "core=0", "--", "x"]).is_ok());
     }

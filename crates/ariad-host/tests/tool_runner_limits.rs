@@ -558,3 +558,45 @@ printf '%s\n' '{"type":"result","ok":true}'
     );
     assert_eq!(err_oversize.exit_code(), 4);
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn pdfium_enforces_address_limit_with_sandbox_off() {
+    let workspace = Workspace::new().expect("create workspace");
+    let command = v2_engine_command("pdfium");
+    let limits = Limits {
+        max_memory_mb: Some(256),
+        timeout_s: Some(15),
+        ..Limits::local()
+    };
+    let request = make_run_tool_request(&workspace, json!({ "probe_address_limit": true }), limits);
+    let outcome = runner::run_command_v2(&command, &request, CancellationToken::new(), |_| {})
+        .expect("run probe");
+    let metrics = outcome.metrics.expect("probe metrics");
+    assert_eq!(
+        metrics.get("address_limit_soft"),
+        Some(&json!(256_u64 * 1024 * 1024))
+    );
+    assert_eq!(
+        metrics.get("address_limit_hard"),
+        Some(&json!(256_u64 * 1024 * 1024))
+    );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn pdfium_address_limit_blocks_excess_allocation() {
+    let workspace = Workspace::new().expect("create workspace");
+    let command = v2_engine_command("pdfium");
+    let limits = Limits {
+        max_memory_mb: Some(128),
+        timeout_s: Some(15),
+        ..Limits::local()
+    };
+    let request = make_run_tool_request(&workspace, json!({ "probe_memory_mb": 256 }), limits);
+    let result = runner::run_command_v2(&command, &request, CancellationToken::new(), |_| {});
+    assert!(
+        matches!(result, Err(RunError::MemoryLimitExceeded { limit_mb: 128 })),
+        "expected allocation failure, got {result:?}"
+    );
+}

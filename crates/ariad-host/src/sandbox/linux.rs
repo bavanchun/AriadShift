@@ -75,6 +75,10 @@ pub(super) fn apply_and_exec(spec: &LaunchSpec) -> String {
     if let Err(error) = apply_rlimits(spec) {
         return error;
     }
+    if spec.limits_only {
+        let error = Command::new(&spec.program).args(&spec.args).exec();
+        return format!("could not execute the engine program: {error}");
+    }
     if let Some(workspace) = &spec.policy.private_tmp
         && let Err(error) = private_tmp::isolate(workspace, &spec.program, &spec.policy)
     {
