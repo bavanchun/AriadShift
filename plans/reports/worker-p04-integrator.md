@@ -51,7 +51,7 @@ Local slice branches `p04/s1`, `p04/s2`, `p04/s3`, `p04/s4`, and `p04/s5` were d
   - Added `SplitDetectMode` (`Content` default vs `Pixel`) to `SplitParams` in `crates/ariad-core/src/tools/params/split.rs` (`detect = "pixel"` requires `mode == "blank-separator"`).
   - `ariad-host::tools::run::run_tool` inspects `pdf.split` parameters after JSON Schema validation: when `mode == "blank-separator"` and `detect == "pixel"`, it dispatches out of process to the `pdfium` engine (`ariad-engine/2`); otherwise it runs in-process in `ariad-pdf`.
 - **`ariad-wasm` early refusal (Mac PM condition 5)**:
-  - In `crates/ariad-wasm/src/api.rs`, `run_tool` checks `pdf.split` with `detect == "pixel"` and any tool without `ToolRuntime::Wasm` (all 8 `pdfium`-engine tools), returning `tool_missing` (`exit_code = 5`) before opening or parsing input bytes.
+  - In `crates/ariad-wasm/src/api.rs`, `run_tool` checks `pdf.split` with `detect == "pixel"` and any tool without `ToolRuntime::Wasm` (all 8 `pdfium`-engine tools), returning `engine_unavailable` (`exit_code = 5`) before opening or parsing input bytes.
   - `image.to_pdf` runs in-process in `ariad-wasm` across `png`, `jpeg`, `webp`, `bmp`, and `tiff`.
 
 ### 2.3 `image.to_pdf`, Shared Blank-Page Helpers, and `ariad-pdfium-engine` Wiring (`6c1def61`)
@@ -87,7 +87,7 @@ On the macOS arm64 host (`aarch64-apple-darwin`), run:
 
 ```bash
 # 1. Build ashift + ariad-pdfium-engine and assemble/verify the local macOS arm64 pdfium pack
-#    (fetches pinned pdfium-mac-arm64.tgz sha256=3dc8ef588fd1e54ccfbbe93fe43cd1ec71cd61fbccaa62bb5b15ca32ca6d0ef7,
+#    (fetches pinned pdfium-mac-arm64.tgz sha256=4939bd935ac83ddc09a3a4f038bc43a19cea1660316a3667f26cb07a070e139d,
 #     bundles notices, and ad-hoc codesigns bin/ariad-pdfium-engine and bin/libpdfium.dylib):
 just pack-pdfium
 export ASHIFT_PACK_PDFIUM="$PWD/target/packs/pdfium"
