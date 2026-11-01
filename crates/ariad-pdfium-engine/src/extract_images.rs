@@ -435,6 +435,7 @@ struct PreflightBudget<'a> {
     image_bytes: u64,
     image_pixels: u64,
     page_work: usize,
+    font_ids: HashSet<PdfObjectId>,
     document_work: &'a mut usize,
 }
 
@@ -506,6 +507,7 @@ fn preflight_page_images(
         image_bytes: 0,
         image_pixels: 0,
         page_work: 0,
+        font_ids: HashSet::new(),
         document_work,
     };
     let doc = pdf_doc.inner();
@@ -535,6 +537,15 @@ fn preflight_page_images(
             .map_err(|_| EngineFailure::limit_exceeded())?;
         if let Ok(resources) = dict.get(b"Resources") {
             validate_xobject_resources(doc, resources)?;
+            preflight_type3_fonts(
+                ctx,
+                pdf_doc,
+                resources,
+                max_bytes,
+                max_depth,
+                0,
+                &mut budget,
+            )?;
         }
         match dict.get(b"Parent") {
             Ok(parent) => {
@@ -627,6 +638,103 @@ fn preflight_content_object(
         Object::Null => Ok(()),
         _ => Err(EngineFailure::limit_exceeded()),
     }
+}
+
+fn preflight_type3_fonts(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    resources: &Object,
+    max_bytes: usize,
+    max_depth: usize,
+    depth: usize,
+    budget: &mut PreflightBudget<'_>,
+) -> Result<(), EngineFailure> {
+    if depth > max_depth {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    let doc = pdf_doc.inner();
+    let resources = resolve(Some(doc), resources)?
+        .1
+        .as_dict()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    let Ok(fonts) = resources.get(b"Font") else {
+        return Ok(());
+    };
+    let fonts = resolve(Some(doc), fonts)?
+        .1
+        .as_dict()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
+    for (_, font) in fonts.iter() {
+        charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
+        let (id, font) = resolve(Some(doc), font)?;
+        if let Some(id) = id
+            && !budget.font_ids.insert(id)
+        {
+            continue;
+        }
+        let font = font
+            .as_dict()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let subtype = font
+            .get(b"Subtype")
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        if resolve(Some(doc), subtype)?
+            .1
+            .as_name()
+            .map_err(|_| EngineFailure::limit_exceeded())?
+            != b"Type3"
+        {
+            continue;
+        }
+        let procs = font
+            .get(b"CharProcs")
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let procs = resolve(Some(doc), procs)?
+            .1
+            .as_dict()
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        for (_, proc) in procs.iter() {
+            preflight_content_object(
+                ctx,
+                doc,
+                proc,
+                max_bytes,
+                max_depth,
+                depth + 1,
+                &mut HashSet::new(),
+                budget,
+            )?;
+        }
+        if let Ok(resources) = font.get(b"Resources") {
+            validate_xobject_resources(doc, resources)?;
+            preflight_type3_fonts(
+                ctx,
+                pdf_doc,
+                resources,
+                max_bytes,
+                max_depth,
+                depth + 1,
+                budget,
+            )?;
+            let mut xobjects = BTreeMap::new();
+            insert_xobjects_from_resources!(doc, resources, xobjects);
+            let mut seen = HashMap::new();
+            for id in xobjects.values() {
+                preflight_xobject(
+                    ctx,
+                    pdf_doc,
+                    *id,
+                    max_bytes,
+                    max_depth,
+                    depth + 1,
+                    &mut seen,
+                    &xobjects,
+                    budget,
+                )?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_xobject_resources(
@@ -765,6 +873,15 @@ fn preflight_xobject(
             let mut own_children = BTreeMap::new();
             if let Ok(resources) = stream.dict.get(b"Resources") {
                 validate_xobject_resources(doc, resources)?;
+                preflight_type3_fonts(
+                    ctx,
+                    pdf_doc,
+                    resources,
+                    max_bytes,
+                    max_depth,
+                    depth + 1,
+                    budget,
+                )?;
                 insert_xobjects_from_resources!(doc, resources, own_children);
             }
             xobjects.extend(own_children.clone());
@@ -2438,6 +2555,39 @@ mod corpus_tests {
         fs::copy(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../fixtures/pdf/indirect-image-preflight.pdf"),
+            &input,
+        )
+        .expect("fixture");
+        let paths = RunToolPaths {
+            workspace: work.clone(),
+            inputs: vec![input],
+            output_dir: work.join("out"),
+            work_dir: work.join("tmp"),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "indirect",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
+        let page = *doc.inner().get_pages().values().next().expect("page");
+        let mut work = 0;
+        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+    }
+
+    #[test]
+    fn preflight_checks_type3_glyph_streams() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let work = dir.path().canonicalize().expect("workspace");
+        for sub in ["in", "out", "tmp"] {
+            fs::create_dir(work.join(sub)).expect("directory");
+        }
+        let input = work.join("in/doc.pdf");
+        fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/type3-inline-image.pdf"),
             &input,
         )
         .expect("fixture");

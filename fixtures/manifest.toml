@@ -4152,3 +4152,19 @@ attribution = "AriadShift contributors"
 sha256 = "3385cdb8b594bb01f67b3e8c54a6a2c080dd5be261094821cff97e2f9e3a9b7a"
 pages = 1
 tags = []
+
+[[fixture]]
+id = "type3-inline-image-pdf"
+path = "fixtures/pdf/type3-inline-image.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 glyph with oversized inline image"
+origin = "generated"
+generated_by = "fixtures/gen/type3_inline_image.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "b9398ea6ae2fb69493e5df29012b45f8f802f34feb92ff389d8018bf105531d0"
+pages = 1
+tags = []
