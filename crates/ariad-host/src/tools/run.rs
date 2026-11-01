@@ -41,7 +41,8 @@ use crate::{
         publish::{
             PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
             default_single_artifact_name, ensure_no_parent_traversal, open_confined_output_dir,
-            publish_atomic, render_naming_template, validate_target_filename,
+            publish_atomic, render_naming_template, validate_artifact_extensions,
+            validate_output_path_extension, validate_target_filename,
         },
         secrets::{SecretBag, SecretScrubber},
     },
@@ -607,6 +608,7 @@ fn run_tool_inner(
         &input_paths,
         request.allowed_dirs.as_ref(),
         request.overwrite,
+        spec.output_format,
     )?;
 
     // 9. Confine, copy from the confined handle into `<ws>/in/`, size-check, and sniff format on the workspace copy.
@@ -691,7 +693,7 @@ fn run_tool_inner(
         request.overwrite,
         request.fail_publish_at_index,
     )
-    .map_err(|e| ToolError::from(e).scrubbed(scrubber))?;
+    .map_err(|e| e.scrubbed(scrubber))?;
 
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     let mut metrics = raw_exec.metrics;
@@ -955,6 +957,7 @@ fn preflight_output_target(
     inputs: &[PathBuf],
     allowed_dirs: Option<&AllowedDirs>,
     _overwrite: bool,
+    spec_output_format: &str,
 ) -> Result<(), ToolError> {
     match output {
         OutputTarget::None | OutputTarget::DefaultBesideInput => Ok(()),
@@ -998,6 +1001,7 @@ fn preflight_output_target(
                     )));
                 };
                 validate_target_filename(file_name, allowed_dirs.is_some())?;
+                validate_output_path_extension(path, spec_output_format)?;
             }
             Ok(())
         }
@@ -1015,7 +1019,7 @@ fn publish_tool_outputs(
     allowed_dirs: Option<&AllowedDirs>,
     overwrite: bool,
     fail_at_index: Option<usize>,
-) -> Result<Vec<PublishedArtifact>, PublishError> {
+) -> Result<Vec<PublishedArtifact>, ToolError> {
     if raw_artifacts.is_empty() {
         return Ok(Vec::new());
     }
@@ -1048,7 +1052,7 @@ fn publish_tool_outputs(
             if let Ok(meta) = fs::symlink_metadata(path)
                 && meta.file_type().is_symlink()
             {
-                return Err(PublishError::Confinement(format!(
+                return Err(ToolError::Confinement(format!(
                     "output path '{}' must not be a symlink",
                     path.display()
                 )));
@@ -1062,7 +1066,7 @@ fn publish_tool_outputs(
                 (path.clone(), None)
             } else {
                 if raw_artifacts.len() > 1 {
-                    return Err(PublishError::Confinement(format!(
+                    return Err(ToolError::Confinement(format!(
                         "tool '{}' produced {} artifacts and requires an output directory (-o <dir>/)",
                         spec.id,
                         raw_artifacts.len()
@@ -1076,7 +1080,7 @@ fn publish_tool_outputs(
                     .file_name()
                     .and_then(|n| n.to_str())
                     .ok_or_else(|| {
-                        PublishError::Confinement(format!(
+                        ToolError::Confinement(format!(
                             "invalid output filename '{}'",
                             path.display()
                         ))
@@ -1094,7 +1098,8 @@ fn publish_tool_outputs(
         let target_name = if let Some(ref single_name) = explicit_single_filename {
             single_name.clone()
         } else if let Some(template) = naming_template {
-            render_naming_template(template, first_stem, index_1_based)?
+            render_naming_template(template, first_stem, index_1_based)
+                .map_err(PublishError::from)?
         } else if multi {
             default_multi_artifact_name(first_input, spec.id, index_1_based, format)
         } else {
@@ -1107,7 +1112,9 @@ fn publish_tool_outputs(
         ));
     }
 
-    publish_atomic(
+    validate_artifact_extensions(spec.output_format, &staged)?;
+
+    Ok(publish_atomic(
         workspace,
         &staged,
         &dest_dir,
@@ -1115,7 +1122,7 @@ fn publish_tool_outputs(
         allowed_dirs,
         overwrite,
         fail_at_index,
-    )
+    )?)
 }
 
 static COMPILED_PARAM_SCHEMAS: LazyLock<RwLock<HashMap<String, Arc<jsonschema::Validator>>>> =
