@@ -97,7 +97,11 @@ fn pandoc_engine_stdout_conforms_and_artifacts_stay_inside_output_dir() {
         .collect::<Vec<_>>();
     assert_eq!(artifacts.len(), 1);
     let artifact = Path::new(artifacts[0]["path"].as_str().expect("artifact path"));
-    assert!(artifact.starts_with(workspace.output_dir()));
+    assert!(
+        std::fs::canonicalize(artifact)
+            .unwrap()
+            .starts_with(std::fs::canonicalize(workspace.output_dir()).unwrap())
+    );
     assert!(artifact.is_file());
 }
 
@@ -259,7 +263,11 @@ fn native_engines_conform_on_describe_conversion_and_invalid_requests() {
             .collect();
         assert_eq!(artifacts.len(), 1);
         let artifact = Path::new(artifacts[0]["path"].as_str().unwrap());
-        assert!(artifact.starts_with(workspace.output_dir()));
+        assert!(
+            std::fs::canonicalize(artifact)
+                .unwrap()
+                .starts_with(std::fs::canonicalize(workspace.output_dir()).unwrap())
+        );
         assert!(artifact.is_file());
 
         let mut unsupported = request.clone();

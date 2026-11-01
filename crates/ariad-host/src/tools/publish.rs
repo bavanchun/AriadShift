@@ -664,8 +664,11 @@ pub fn publish_atomic(
     }
 
     let (canon_dest_dir, dest_cap_dir) = open_confined_output_dir(destination_dir, allowed_dirs)?;
-    let ws_out = fs::canonicalize(workspace.output_dir())
-        .unwrap_or_else(|_| workspace.output_dir().to_path_buf());
+    let ws_out = fs::canonicalize(workspace.output_dir()).map_err(|e| {
+        PublishError::InvalidStagedArtifact(format!(
+            "workspace output directory could not be canonicalized: {e}"
+        ))
+    })?;
 
     // Pre-validate every staged artifact and destination filename before touching the target dir.
     let mut staged_sizes = Vec::with_capacity(staged.len());

@@ -314,12 +314,15 @@ fn run_golden_case_into(case: &GoldenCase, out_dir: &Path) -> Vec<PathBuf> {
             case.tool_id
         );
         let expected_path = out_dir.join(expected_name);
-        assert_eq!(printed_path, expected_path);
         assert!(
             expected_path.is_file(),
             "tool {} expected output file {} to exist",
             case.tool_id,
             expected_path.display()
+        );
+        assert_eq!(
+            fs::canonicalize(&printed_path).expect("canonicalize printed path"),
+            fs::canonicalize(&expected_path).expect("canonicalize expected path")
         );
         produced.push(expected_path);
     }
@@ -725,8 +728,11 @@ fn multi_output_pdf_split_lists_every_artifact_in_human_and_json_modes() {
 
     for (line, (expected_name, expected_pages)) in lines.iter().zip(expected_parts.iter()) {
         let part_path = human_dir.join(expected_name);
-        assert_eq!(Path::new(line), part_path);
         assert!(part_path.is_file());
+        assert_eq!(
+            fs::canonicalize(line).expect("canonicalize printed path"),
+            fs::canonicalize(&part_path).expect("canonicalize expected path")
+        );
         let info = inspect_pdf_info(&part_path);
         assert_eq!(info["page_count"], json!(*expected_pages));
         assert_eq!(info["repaired_xref"], json!(false));
@@ -754,9 +760,11 @@ fn multi_output_pdf_split_lists_every_artifact_in_human_and_json_modes() {
     assert_eq!(artifacts.len(), 3);
     for (artifact, (expected_name, _)) in artifacts.iter().zip(expected_parts.iter()) {
         let expected_path = json_dir.join(expected_name);
+        assert!(expected_path.is_file());
         assert_eq!(
-            artifact["path"].as_str(),
-            Some(expected_path.to_str().unwrap())
+            fs::canonicalize(artifact["path"].as_str().expect("artifact path"))
+                .expect("canonicalize printed path"),
+            fs::canonicalize(&expected_path).expect("canonicalize expected path")
         );
         let actual_len = fs::metadata(&expected_path).expect("stat part").len();
         assert_eq!(artifact["bytes"], json!(actual_len));
