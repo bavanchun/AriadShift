@@ -184,6 +184,8 @@ struct ManifestRecord {
     files: Vec<ReceiptFile>,
     #[serde(default)]
     links: Vec<ReceiptLink>,
+    #[serde(default)]
+    executables: Vec<String>,
 }
 
 struct Layout {
@@ -439,6 +441,18 @@ pub fn install(
     extract::check_links(&staging, &links)?;
     check_installed_paths(&staging, &manifest, &target)?;
 
+    let mut manifest_executables = manifest_allowed_executables(&target);
+    for file in &files {
+        let path = extract::join_parts(&staging, &file.path);
+        let is_exec = file.executable
+            || fs::symlink_metadata(&path)
+                .is_ok_and(|metadata| is_executable_file(&path, &metadata));
+        if is_exec {
+            manifest_executables.insert(file.path.clone());
+        }
+    }
+    let manifest_executables: Vec<String> = manifest_executables.into_iter().collect();
+
     let receipt_files: Vec<ReceiptFile> = files
         .iter()
         .map(|file| ReceiptFile {
@@ -511,6 +525,7 @@ pub fn install(
         &target.triple,
         &receipt_files,
         &receipt_links,
+        &manifest_executables,
     )?;
     write_current(&layout, &manifest.name, &manifest.version)?;
     for path in &cached {
@@ -670,6 +685,7 @@ fn sha256_bytes(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_manifest_record(
     layout: &Layout,
     name: &str,
@@ -678,6 +694,7 @@ fn write_manifest_record(
     target: &str,
     files: &[ReceiptFile],
     links: &[ReceiptLink],
+    executables: &[String],
 ) -> Result<(), PackError> {
     create_dir_all(&layout.locks())?;
     let record = ManifestRecord {
@@ -685,6 +702,7 @@ fn write_manifest_record(
         target: target.to_owned(),
         files: files.to_vec(),
         links: links.to_vec(),
+        executables: executables.to_vec(),
     };
     let text = toml::to_string(&record).map_err(|error| PackError::InvalidReceipt {
         name: name.to_owned(),
@@ -957,14 +975,19 @@ fn manifest_allowed_executables(target: &super::Target) -> BTreeSet<String> {
     allowed
 }
 
+struct VerifiedManifestEntries {
+    files: Vec<ReceiptFile>,
+    links: Vec<ReceiptLink>,
+    allowed_executables: BTreeSet<String>,
+}
+
 fn manifest_verified_entries(
     layout: &Layout,
     name: &str,
     version: &str,
     manifest_text: &str,
     target: &super::Target,
-    receipt: &Receipt,
-) -> Result<(Vec<ReceiptFile>, Vec<ReceiptLink>), PackError> {
+) -> Result<VerifiedManifestEntries, PackError> {
     let record_path = layout.manifest_record(name, version);
     let record_text = fs::read_to_string(&record_path).map_err(|_| {
         verification_failed(name, version, "manifest file digest record is missing")
@@ -983,6 +1006,16 @@ fn manifest_verified_entries(
             version,
             "manifest file digest record does not match the signed manifest",
         ));
+    }
+
+    let declared_executables = manifest_allowed_executables(target);
+    let recorded_file_paths: BTreeSet<&str> =
+        record.files.iter().map(|file| file.path.as_str()).collect();
+    let mut allowed_executables = declared_executables.clone();
+    for exec in &record.executables {
+        if recorded_file_paths.contains(exec.as_str()) {
+            allowed_executables.insert(exec.clone());
+        }
     }
 
     let mut by_path: HashMap<&str, (&str, u64)> = record
@@ -1008,6 +1041,10 @@ fn manifest_verified_entries(
                     ));
                 }
             }
+            #[cfg(unix)]
+            if !component.executable && !declared_executables.contains(&rel) {
+                allowed_executables.remove(&rel);
+            }
             by_path.remove(rel.as_str());
         }
     }
@@ -1026,15 +1063,28 @@ fn manifest_verified_entries(
         ));
     }
 
-    if receipt.files != record.files || receipt.links != record.links {
+    Ok(VerifiedManifestEntries {
+        files: record.files,
+        links: record.links,
+        allowed_executables,
+    })
+}
+
+fn check_receipt_matches_manifest_record(
+    name: &str,
+    version: &str,
+    receipt: &Receipt,
+    expected_files: &[ReceiptFile],
+    expected_links: &[ReceiptLink],
+) -> Result<(), PackError> {
+    if receipt.files != expected_files || receipt.links != expected_links {
         return Err(verification_failed(
             name,
             version,
             "unsigned receipt file table does not match the signed manifest",
         ));
     }
-
-    Ok((record.files, record.links))
+    Ok(())
 }
 
 fn any_version_directory(layout: &Layout, name: &str) -> Option<String> {
@@ -1141,7 +1191,11 @@ pub(crate) fn resolve_installed(
             )
         })?;
     let scan = scan_pack_dir(&root, name, &version)?;
-    let allowed_executables = manifest_allowed_executables(target);
+    let VerifiedManifestEntries {
+        files: expected_files,
+        links: expected_links,
+        allowed_executables,
+    } = manifest_verified_entries(&layout, name, &version, &receipt.manifest, target)?;
     for exec_path in &scan.found_executables {
         if !allowed_executables.contains(exec_path) {
             return Err(verification_failed(
@@ -1153,8 +1207,13 @@ pub(crate) fn resolve_installed(
             ));
         }
     }
-    let (expected_files, expected_links) =
-        manifest_verified_entries(&layout, name, &version, &receipt.manifest, target, &receipt)?;
+    check_receipt_matches_manifest_record(
+        name,
+        &version,
+        &receipt,
+        &expected_files,
+        &expected_links,
+    )?;
     for link in &expected_links {
         let path = extract::join_parts(&root, &link.path);
         match fs::read_link(&path) {
@@ -1352,7 +1411,17 @@ pub fn verify(
             .iter()
             .find(|target| target.triple == receipt.target)
         && let Err(error) =
-            manifest_verified_entries(&layout, name, &version, &receipt.manifest, target, &receipt)
+            manifest_verified_entries(&layout, name, &version, &receipt.manifest, target).and_then(
+                |verified| {
+                    check_receipt_matches_manifest_record(
+                        name,
+                        &version,
+                        &receipt,
+                        &verified.files,
+                        &verified.links,
+                    )
+                },
+            )
     {
         report.problems.push(error.to_string());
     }
