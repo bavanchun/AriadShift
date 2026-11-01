@@ -69,6 +69,11 @@ path = "tests/docling_pack.rs"
 required-features = ["ariad-host/test-probe"]
 
 [[test]]
+name = "engine_conformance_v2"
+path = "tests/engine_conformance_v2.rs"
+required-features = ["ariad-host/test-probe"]
+
+[[test]]
 name = "termination"
 path = "tests/termination.rs"
 

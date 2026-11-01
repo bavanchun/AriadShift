@@ -296,6 +296,9 @@ struct PackManifestArgs {
     /// Existing manifest or template: pack fields and other targets are kept.
     #[arg(long, value_name = "FILE")]
     base: Option<PathBuf>,
+    /// Wire protocol the pack's engine speaks (ariad-engine/1 or ariad-engine/2).
+    #[arg(long = "engine-protocol", value_name = "PROTOCOL")]
+    engine_protocol: Option<String>,
     /// Entrypoint argument; repeat once per argv element, the program first.
     #[arg(long = "entrypoint", value_name = "ARG", allow_hyphen_values = true)]
     entrypoint: Vec<String>,
@@ -1437,6 +1440,7 @@ fn run_pack_manifest(args: PackManifestArgs) -> ExitCode {
         version: args.version,
         target: args.target,
         base: args.base,
+        engine_protocol: args.engine_protocol,
         entrypoint: args.entrypoint,
         url_prefix: args.url_prefix,
         dests,
