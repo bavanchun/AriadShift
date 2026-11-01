@@ -2,7 +2,13 @@
 // requests carry a JWT from the auth service; anonymous jobs are read without
 // credentials, since a bearer token would look for them in the wrong workspace.
 
-import { type AriadClient, createAriadClient, errorFromBody, type Job } from "@ariadshift/sdk";
+import {
+  AriadApiError,
+  type AriadClient,
+  createAriadClient,
+  errorFromBody,
+  type Job,
+} from "@ariadshift/sdk";
 import type { AuthApi } from "./auth-api";
 
 /** Jobs requested per page of the account's job list. */
@@ -84,10 +90,54 @@ export async function listJobs(
   };
 }
 
+async function requireBearerToken(auth: AuthApi): Promise<string> {
+  let token: string | undefined;
+  try {
+    token = await auth.apiToken();
+  } catch (error) {
+    const status =
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error &&
+      typeof (error as { status?: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : undefined;
+    const code =
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      typeof (error as { code?: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : undefined;
+    if (status === 401 || code === "unauthorized" || code === "UNAUTHORIZED") {
+      throw new AriadApiError(401, "unauthorized", "Your session has ended. Sign in again.");
+    }
+    if (status === 429 || code === "rate_limited") {
+      throw new AriadApiError(429, "rate_limited", "Too many requests. Try again shortly.");
+    }
+    if (error instanceof TypeError || code === "network_error") {
+      throw new AriadApiError(
+        503,
+        "unavailable",
+        "The sign-in service cannot be reached. Check your connection and try again.",
+      );
+    }
+    throw new AriadApiError(
+      status ?? 503,
+      "unavailable",
+      "The server cannot verify your sign-in right now. Try again shortly.",
+    );
+  }
+  if (typeof token !== "string" || token === "") {
+    throw new AriadApiError(401, "unauthorized", "Your session has ended. Sign in again.");
+  }
+  return token;
+}
+
 export function createJobsApi(apiUrl: string, auth: AuthApi, signedIn: boolean): JobsApi {
   const client = createAriadClient({
     baseUrl: apiUrl,
-    ...(signedIn ? { credentials: { bearer: () => auth.apiToken() } } : {}),
+    ...(signedIn ? { credentials: { bearer: () => requireBearerToken(auth) } } : {}),
   });
   return { ...client, listJobs: (options) => listJobs(client, options) };
 }

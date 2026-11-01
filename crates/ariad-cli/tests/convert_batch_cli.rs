@@ -41,10 +41,10 @@ fn write(path: &Path, text: &str) -> PathBuf {
     path.to_path_buf()
 }
 
-fn stdout_lines(output: &Output) -> Vec<String> {
+fn stdout_lines(output: &Output) -> Vec<PathBuf> {
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .map(str::to_owned)
+        .map(|line| fs::canonicalize(line).expect("canonicalize output path"))
         .collect()
 }
 
@@ -70,7 +70,7 @@ fn several_inputs_convert_into_an_output_directory() {
         stdout_lines(&output),
         expected
             .iter()
-            .map(|path| path.display().to_string())
+            .map(|path| fs::canonicalize(path).unwrap())
             .collect::<Vec<_>>(),
         "one line per input, in input order"
     );
@@ -110,8 +110,8 @@ fn a_mix_of_successes_and_failures_exits_with_the_first_failure() {
     assert_eq!(
         stdout_lines(&output),
         vec![
-            directory.path().join("good.docx").display().to_string(),
-            directory.path().join("last.docx").display().to_string(),
+            fs::canonicalize(directory.path().join("good.docx")).unwrap(),
+            fs::canonicalize(directory.path().join("last.docx")).unwrap(),
         ],
         "later inputs still convert after a failure"
     );
@@ -147,18 +147,24 @@ fn json_reports_one_document_with_an_array_of_results() {
     let results = document["results"].as_array().expect("results array");
     assert_eq!(results.len(), 2);
 
-    assert_eq!(results[0]["input"], good.display().to_string());
+    assert_eq!(
+        fs::canonicalize(results[0]["input"].as_str().unwrap()).unwrap(),
+        fs::canonicalize(&good).unwrap()
+    );
     assert_eq!(results[0]["ok"], true);
     assert_eq!(
-        results[0]["output"],
-        directory.path().join("good.html").display().to_string()
+        fs::canonicalize(results[0]["output"].as_str().unwrap()).unwrap(),
+        fs::canonicalize(directory.path().join("good.html")).unwrap()
     );
     assert!(results[0]["route"].is_array());
     assert!(results[0]["warnings"].is_array());
     assert!(results[0]["elapsed_ms"].is_u64());
     assert!(results[0].get("error").is_none());
 
-    assert_eq!(results[1]["input"], unsupported.display().to_string());
+    assert_eq!(
+        fs::canonicalize(results[1]["input"].as_str().unwrap()).unwrap(),
+        fs::canonicalize(&unsupported).unwrap()
+    );
     assert_eq!(results[1]["ok"], false);
     assert_eq!(results[1]["error"]["code"], "unsupported_route");
     assert_eq!(results[1]["error"]["exit_code"], 3);

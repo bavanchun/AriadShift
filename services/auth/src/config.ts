@@ -40,6 +40,9 @@ export interface AuthServiceConfig {
   allowSignUp: boolean;
   /** Explicit permission for non-loopback HTTP without remote MCP OAuth. */
   allowInsecureHttp: boolean;
+  cimdEnabled: boolean;
+  cimdAllowedHosts: string[];
+  cimdDeniedHosts: string[];
   /** Why remote MCP OAuth is disabled, or undefined when it is available. */
   oauthDisabledReason: string | undefined;
   /** Optional signup challenge; absent for self-contained local deployments. */
@@ -164,6 +167,35 @@ function parseHeaderName(name: string, raw: string | undefined): string | undefi
   return raw.toLowerCase();
 }
 
+function parseCimdHosts(env: Env, name: string): string[] {
+  return [
+    ...new Set(
+      (read(env, name) ?? "")
+        .split(",")
+        .map((host) => host.trim())
+        .filter(Boolean)
+        .map((host) => {
+          let url: URL;
+          try {
+            url = new URL(`https://${host}/`);
+          } catch {
+            throw new ConfigError(`${name} must contain canonical hostnames only`);
+          }
+          if (
+            url.hostname !== host ||
+            url.port ||
+            url.username ||
+            url.password ||
+            url.pathname !== "/"
+          ) {
+            throw new ConfigError(`${name} must contain canonical hostnames only`);
+          }
+          return host;
+        }),
+    ),
+  ];
+}
+
 export function parseConfig(env: Env): AuthServiceConfig {
   const secret = secretOption(env, "BETTER_AUTH_SECRET") ?? required(env, "BETTER_AUTH_SECRET");
   if (secret.length < MIN_SECRET_LENGTH) {
@@ -223,6 +255,9 @@ export function parseConfig(env: Env): AuthServiceConfig {
     google: parseOAuth(env, "GOOGLE"),
     allowSignUp,
     allowInsecureHttp,
+    cimdEnabled: booleanOption(env, "AUTH_CIMD_ENABLED"),
+    cimdAllowedHosts: parseCimdHosts(env, "AUTH_CIMD_ALLOWED_HOSTS"),
+    cimdDeniedHosts: parseCimdHosts(env, "AUTH_CIMD_DENIED_HOSTS"),
     oauthDisabledReason,
     ...(turnstileSecret ? { turnstileSecret } : {}),
     ...(turnstileSiteKey ? { turnstileSiteKey } : {}),

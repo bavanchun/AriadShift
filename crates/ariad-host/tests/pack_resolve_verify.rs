@@ -35,7 +35,7 @@ fn install_pack(name: &str, version: &str, key: &Key, data: &Path) -> std::path:
 }
 
 #[test]
-fn resolve_pack_verifies_signature_and_caches_sha256_by_inode_mtime_size() {
+fn resolve_pack_verifies_signature_and_reuses_only_safe_cached_digests() {
     let key = Key::generate();
     let data = support::temp();
     let root = install_pack("qpdf", "1.0.0", &key, data.path());
@@ -56,14 +56,12 @@ fn resolve_pack_verifies_signature_and_caches_sha256_by_inode_mtime_size() {
         "first resolve must hash all 3 installed files in the receipt"
     );
 
-    // Resolving again without modifying any file must hit the (inode, mtime, size) cache.
     let second = resolve_pack_in(&ctx, "qpdf").expect("second resolve succeeds");
     assert_eq!(second.program, command.program);
-    assert_eq!(
-        resolve_hash_computations_for(&root),
-        first_hashes,
-        "second resolve of unchanged pack must not recompute SHA-256 digests"
-    );
+    #[cfg(unix)]
+    assert_eq!(resolve_hash_computations_for(&root), first_hashes);
+    #[cfg(not(unix))]
+    assert_eq!(resolve_hash_computations_for(&root), first_hashes * 2);
 }
 
 #[test]
@@ -81,12 +79,19 @@ fn tampered_executable_or_payload_is_rejected_on_resolve_with_tool_missing_and_r
     // if mtime/inode or content weren't checked.
     let binary = root.join("bin/engine");
     let original = fs::read(&binary).expect("read binary");
+    let original_mtime = fs::metadata(&binary).unwrap().modified().unwrap();
     let mut same_len_tampered = original.clone();
     let last = same_len_tampered.len() - 1;
     same_len_tampered[last] ^= 0x01;
-    // Write via a temporary replacement so inode / mtime updates deterministically.
+    // Replace the file with the same size and mtime as the original.
     let replacement = root.join("bin/engine.tampered");
     fs::write(&replacement, &same_len_tampered).expect("write tampered binary");
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&replacement)
+        .unwrap()
+        .set_modified(original_mtime)
+        .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -111,7 +116,7 @@ fn tampered_executable_or_payload_is_rejected_on_resolve_with_tool_missing_and_r
     );
     assert!(
         resolve_hash_computations_for(&root) > hashes_before,
-        "changed inode/mtime must invalidate the SHA-256 cache and re-hash the file"
+        "the replacement must be re-hashed even when size and mtime match"
     );
 
     // Direct `packs::resolve_in` must also fail with `PackError::VerificationFailed`.
@@ -442,7 +447,7 @@ fn replacing_file_and_restoring_mtime_invalidates_verification_cache() {
     assert_eq!(err.exit_code(), 5);
     assert!(
         resolve_hash_computations_for(&root) > hashes_before,
-        "changed ctime must invalidate the verification cache even when inode, mtime and size match"
+        "in-place changes must be re-hashed even when mtime and size match"
     );
 }
 
@@ -522,4 +527,134 @@ fn archive_pack_with_symlink_entrypoint_and_runtime_executables_resolves_cleanly
             "expected unlisted executable rejection, got: {err}"
         );
     }
+}
+
+#[test]
+fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
+    let key = Key::generate();
+    let data = support::temp();
+    let root = install_pack("qpdf", "1.0.0", &key, data.path());
+    let ctx = context(data.path(), key.trusted());
+
+    resolve_pack_in(&ctx, "qpdf").expect("initial resolve succeeds");
+
+    let record_path = data.path().join("packs/.locks/qpdf-1.0.0.manifest");
+    let original_record = fs::read_to_string(&record_path).expect("read manifest record");
+    let rogue_rel = format!("bin/rogue{}", std::env::consts::EXE_SUFFIX);
+    let tampered_record = original_record.replace(
+        "executables = [\"bin/engine\"]",
+        &format!(
+            "executables = [\"bin/engine\", \"LICENSE.txt\", \"models/weights.bin\", \"{rogue_rel}\"]"
+        ),
+    );
+    assert_ne!(original_record, tampered_record);
+    fs::write(&record_path, &tampered_record).expect("write tampered manifest record");
+
+    // Extra paths in the local manifest record are ignored when no unlisted executable is on disk.
+    resolve_pack_in(&ctx, "qpdf")
+        .expect("extra entries in local manifest record executables are ignored");
+
+    // Dropping an executable at the tampered path is still refused on every target.
+    let rogue_path = root.join(&rogue_rel);
+    fs::write(&rogue_path, b"#!/bin/sh\nexit 0\n").expect("write rogue executable");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&rogue_path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let err = resolve_pack_in(&ctx, "qpdf")
+        .expect_err("unlisted executable listed in tampered manifest record must be refused");
+    assert_eq!(err.code(), "tool_missing");
+    assert!(
+        err.to_string().contains("unlisted executable"),
+        "expected unlisted executable rejection, got: {err}"
+    );
+    fs::remove_file(&rogue_path).unwrap();
+
+    // Marking a recorded non-executable archive file +x is still refused even when added to
+    // the local manifest record's executables list.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let weights = root.join("models/weights.bin");
+        fs::set_permissions(&weights, fs::Permissions::from_mode(0o755)).unwrap();
+        let err = resolve_pack_in(&ctx, "qpdf").expect_err(
+            "non-executable archive member added to manifest record executables must be refused",
+        );
+        assert_eq!(err.code(), "tool_missing");
+        assert!(
+            err.to_string().contains("unlisted executable"),
+            "expected unlisted executable rejection, got: {err}"
+        );
+        fs::set_permissions(&weights, fs::Permissions::from_mode(0o644)).unwrap();
+    }
+
+    // Also test a pack with a non-executable Unpack::File component whose filename has an
+    // executable extension on Windows (.exe) and +x on Unix: the signed component flag
+    // (executable = false) must bound the allowed set on every target even if the local
+    // manifest record lists it in executables.
+    let file_pack_src = support::temp();
+    let program = format!("engine{}", std::env::consts::EXE_SUFFIX);
+    let mut builder = PackBuilder::new("sign", "1.0.0")
+        .component(&program, &program, b"#!/bin/sh\nexit 0\n".to_vec(), "bin")
+        .component(
+            "helper.exe",
+            "helper.exe",
+            b"#!/bin/sh\nexit 0\n".to_vec(),
+            "bin",
+        )
+        .component("LICENSE.txt", "LICENSE.txt", b"MIT\n".to_vec(), ".");
+    builder.entrypoint = vec![format!("bin/{program}")];
+    let manifest_toml = builder.write_unsigned(file_pack_src.path());
+    let mut manifest = packs::Manifest::parse(&manifest_toml).expect("parse generated manifest");
+    for component in &mut manifest.targets[0].components {
+        if component.name == "helper.exe" {
+            component.executable = false;
+        }
+    }
+    fs::write(
+        file_pack_src.path().join(packs::MANIFEST_FILE),
+        manifest.to_toml().unwrap(),
+    )
+    .unwrap();
+    support::sign_into(file_pack_src.path(), &key, "pack:sign version:1.0.0");
+
+    let sign_report = packs::install(
+        &ctx,
+        &InstallRequest {
+            name: "sign".to_owned(),
+            version: None,
+            source: InstallSource::Directory(file_pack_src.path().to_path_buf()),
+        },
+        &CancellationToken::new(),
+        &mut |_| {},
+    )
+    .expect("install sign pack");
+    let helper_exe = sign_report.root.join("bin/helper.exe");
+    assert!(helper_exe.is_file());
+
+    let sign_record_path = data.path().join("packs/.locks/sign-1.0.0.manifest");
+    let sign_record = fs::read_to_string(&sign_record_path).expect("read sign manifest record");
+    let tampered_sign_record = if sign_record.contains("bin/helper.exe") {
+        sign_record
+    } else {
+        sign_record.replace(
+            &format!("executables = [\"bin/{program}\"]"),
+            &format!("executables = [\"bin/{program}\", \"bin/helper.exe\"]"),
+        )
+    };
+    fs::write(&sign_record_path, tampered_sign_record).expect("write tampered sign record");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&helper_exe, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let sign_err = resolve_pack_in(&ctx, "sign")
+        .expect_err("non-executable file component added to record executables must be refused");
+    assert_eq!(sign_err.code(), "tool_missing");
+    assert!(
+        sign_err.to_string().contains("unlisted executable"),
+        "expected unlisted executable rejection, got: {sign_err}"
+    );
 }

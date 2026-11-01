@@ -108,6 +108,14 @@ async function renderConsent(search: string) {
 }
 
 describe("consent page", () => {
+  it("shows the signed metadata client host", async () => {
+    const values = signed().map(([key, value]): [string, string] => [
+      key,
+      key === "client_id" ? "https://client.example/metadata" : value,
+    ]);
+    const page = await renderConsent(consentSearch(values));
+    expect(page("client-host").textContent).toBe("client.example");
+  });
   it("shows an http redirect's origin and the signed scopes", async () => {
     const page = await renderConsent(consentSearch(signed()));
     expect(page("redirect").textContent).toBe("http://127.0.0.1:33418");

@@ -51,6 +51,7 @@ describe("OAuth authorization for remote MCP", () => {
     expect(metadata.authorization_endpoint).toBe(`${AUTH}/api/auth/oauth2/authorize`);
     expect(metadata.token_endpoint).toBe(`${AUTH}/api/auth/oauth2/token`);
     expect(metadata.registration_endpoint).toBe(`${AUTH}/api/auth/oauth2/register`);
+    expect(metadata.client_id_metadata_document_supported).toBe(true);
     expect(metadata.jwks_uri).toBe(`${AUTH}/api/auth/jwks`);
     expect(metadata.code_challenge_methods_supported).toEqual(["S256"]);
     expect(metadata.grant_types_supported).toEqual(["authorization_code", "refresh_token"]);
@@ -60,6 +61,8 @@ describe("OAuth authorization for remote MCP", () => {
 
     const oidc = await json(await app.request(`${AUTH}/.well-known/openid-configuration`));
     expect(oidc.issuer).toBe(AUTH);
+    expect(oidc.registration_endpoint).toBe(`${AUTH}/api/auth/oauth2/register`);
+    expect(oidc.client_id_metadata_document_supported).toBe(true);
     expect(oidc.code_challenge_methods_supported).toEqual(["S256"]);
   });
 

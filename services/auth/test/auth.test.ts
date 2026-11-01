@@ -1,11 +1,19 @@
+import { randomBytes } from "node:crypto";
 import { memoryAdapter } from "better-auth/adapters/memory";
+import { hashPassword, makeSignature } from "better-auth/crypto";
+import { getAuthTables } from "better-auth/db";
 import pg from "pg";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { createApp } from "../src/app.ts";
 import {
   API_KEY_PREFIX,
   BASE_PATH,
   buildAuthOptions,
   CLIENT_IP_HEADER,
+  createAuth,
+  createPool,
+  DELETE_USER_FRESH_AGE_S,
+  discoveryDocuments,
   JWT_LIFETIME,
   OAUTH_ACCESS_TOKEN_LIFETIME_S,
   OAUTH_CONSENT_PATH,
@@ -13,9 +21,17 @@ import {
   OAUTH_SIGN_IN_PATH,
 } from "../src/auth.ts";
 import { type AuthServiceConfig, parseConfig } from "../src/config.ts";
+import { migrate } from "../src/migrate.ts";
+import { pageOptions } from "../src/pages.ts";
+
+const databaseUrl = process.env.ARIAD_TEST_DATABASE_URL?.trim();
+if (process.env.ARIAD_TEST_REQUIRE_DATABASE === "1" && !databaseUrl) {
+  throw new Error("ARIAD_TEST_REQUIRE_DATABASE=1 needs ARIAD_TEST_DATABASE_URL");
+}
+const BACKENDS = ["memory", ...(databaseUrl ? (["postgres"] as const) : [])] as const;
 
 // A pool connects lazily, so building options never touches a database.
-const pool = new pg.Pool({ connectionString: "postgres://nobody@127.0.0.1:1/none" });
+const pool = createPool(config({ DATABASE_URL: "postgres://nobody@127.0.0.1:1/none" }));
 afterAll(() => pool.end());
 
 function config(overrides: Record<string, string> = {}): AuthServiceConfig {
@@ -37,6 +53,18 @@ function plugin(options: ReturnType<typeof buildAuthOptions>, id: string) {
 }
 
 describe("buildAuthOptions", () => {
+  it("handles idle pool errors and closes the pool", async () => {
+    const errors: Error[] = [];
+    const db = createPool(config(), (error) => errors.push(error));
+    try {
+      const error = Object.assign(new Error("connection terminated"), { code: "57P01" });
+      db.emit("error", error);
+      expect(errors).toEqual([error]);
+    } finally {
+      await db.end();
+    }
+  });
+
   it("installs exactly the JWT, API key, passkey, two-factor and OAuth provider plugins", () => {
     const ids = buildAuthOptions(config(), pool).plugins.map((p) => p.id);
     expect(ids.sort()).toEqual(["api-key", "jwt", "oauth-provider", "passkey", "two-factor"]);
@@ -148,6 +176,9 @@ describe("buildAuthOptions", () => {
   it("lets users delete their own account without an emailed confirmation", () => {
     const options = buildAuthOptions(config(), pool);
     expect(options.user.deleteUser.enabled).toBe(true);
+    expect(DELETE_USER_FRESH_AGE_S).toBe(15 * 60);
+    // Keep Better Auth's default session.freshAge for passkey and unlink routes.
+    expect((options as { session?: { freshAge?: number } }).session?.freshAge).toBeUndefined();
   });
 
   it("revokes every API key of the deleted user without touching other owners", async () => {
@@ -239,6 +270,11 @@ describe("buildAuthOptions", () => {
       });
     });
 
+    it("requires an explicit opt-in for client metadata discovery", () => {
+      expect(oauth().extensions).toEqual([]);
+      expect(oauth({ AUTH_CIMD_ENABLED: "true" }).extensions).toHaveLength(1);
+    });
+
     it("limits anonymous client registration per address far below Better Auth's default", () => {
       expect(OAUTH_REGISTRATION_RATE_LIMIT).toEqual({ window: 3600, max: 20 });
       expect(oauth().rateLimit).toEqual({ register: { window: 3600, max: 20 } });
@@ -301,6 +337,642 @@ describe("buildAuthOptions", () => {
           "oauthClientResource",
         ]),
       );
+    });
+  });
+
+  let adminPool: pg.Pool | undefined;
+  let pgPool: pg.Pool | undefined;
+  const pgClients = new Set<pg.PoolClient>();
+  const idleErrors: Error[] = [];
+  const recordIdleError = (error: Error) => idleErrors.push(error);
+  const pgDbName = `auth_unit_${randomBytes(8).toString("hex")}`;
+
+  beforeAll(async () => {
+    if (!databaseUrl) return;
+    adminPool = new pg.Pool({ connectionString: databaseUrl });
+    adminPool.on("error", recordIdleError);
+    await adminPool.query(`CREATE DATABASE "${pgDbName}"`);
+    const url = new URL(databaseUrl);
+    url.pathname = `/${pgDbName}`;
+    const setupPool = new pg.Pool({ connectionString: url.toString() });
+    setupPool.on("error", recordIdleError);
+    try {
+      await setupPool.query("CREATE SCHEMA auth");
+    } finally {
+      await setupPool.end();
+    }
+    pgPool = createPool({ ...config(), databaseUrl: url.toString() }, recordIdleError);
+    pgPool.on("connect", (client) => {
+      pgClients.add(client);
+      // pg can resolve pool.end() before each socket emits its final end event.
+      client.on("error", recordIdleError);
+      client.once("end", () => {
+        pgClients.delete(client);
+        client.removeListener("error", recordIdleError);
+      });
+    });
+    await migrate(pgPool, buildAuthOptions(config(), pgPool));
+  }, 30_000);
+
+  afterAll(async () => {
+    try {
+      const closed = [...pgClients].map(
+        (client) => new Promise<void>((resolve) => client.once("end", resolve)),
+      );
+      await pgPool?.end();
+      await Promise.all(closed);
+    } finally {
+      if (adminPool) {
+        try {
+          await adminPool.query(`DROP DATABASE IF EXISTS "${pgDbName}"`);
+        } finally {
+          await adminPool.end();
+        }
+      }
+    }
+    expect(idleErrors).toEqual([]);
+  }, 30_000);
+
+  describe.each(BACKENDS)("account deletion (%s)", (backend) => {
+    async function seededService(freshSession = true) {
+      const serviceConfig = config();
+      const probe = buildAuthOptions(serviceConfig, memoryAdapter({}));
+      const db: Record<string, unknown[]> = Object.fromEntries(
+        Object.values(getAuthTables(probe)).map((table) => [table.modelName, []]),
+      );
+      const now = new Date();
+      const stale = new Date(now.getTime() - (DELETE_USER_FRESH_AGE_S + 60) * 1000);
+      const future = new Date(now.getTime() + 60 * 60 * 1000);
+      const passwordHash = await hashPassword("correct horse battery staple");
+
+      db.user = [
+        {
+          id: "user-social",
+          name: "Social User",
+          email: "social@example.com",
+          emailVerified: true,
+          createdAt: stale,
+          updatedAt: now,
+        },
+        {
+          id: "user-other",
+          name: "Other User",
+          email: "other@example.com",
+          emailVerified: true,
+          createdAt: stale,
+          updatedAt: now,
+        },
+        {
+          id: "user-password",
+          name: "Password User",
+          email: "password@example.com",
+          emailVerified: false,
+          createdAt: stale,
+          updatedAt: now,
+        },
+      ];
+      db.account = [
+        {
+          id: "acc-social",
+          userId: "user-social",
+          providerId: "github",
+          accountId: "gh-101",
+          createdAt: stale,
+          updatedAt: now,
+        },
+        {
+          id: "acc-other",
+          userId: "user-other",
+          providerId: "google",
+          accountId: "g-202",
+          createdAt: stale,
+          updatedAt: now,
+        },
+        {
+          id: "acc-password",
+          userId: "user-password",
+          providerId: "credential",
+          accountId: "user-password",
+          password: passwordHash,
+          createdAt: stale,
+          updatedAt: now,
+        },
+      ];
+      db.session = [
+        {
+          id: "sess-social",
+          userId: "user-social",
+          token: "tok-social",
+          createdAt: freshSession ? now : stale,
+          updatedAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "sess-other",
+          userId: "user-other",
+          token: "tok-other",
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "sess-password",
+          userId: "user-password",
+          token: "tok-password",
+          createdAt: freshSession ? now : stale,
+          updatedAt: now,
+          expiresAt: future,
+        },
+      ];
+      db.apikey = [
+        {
+          id: "key-social",
+          referenceId: "user-social",
+          configId: "default",
+          key: "h1",
+          enabled: true,
+          rateLimitEnabled: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "key-other",
+          referenceId: "user-other",
+          configId: "default",
+          key: "h2",
+          enabled: true,
+          rateLimitEnabled: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+
+      const database =
+        backend === "postgres" && pgPool
+          ? pgPool
+          : Object.assign(memoryAdapter(db), {
+              query: vi.fn(async (_sql: string, [userId]: [string]) => {
+                db.apikey = (db.apikey ?? []).filter(
+                  (row) => (row as { referenceId?: string }).referenceId !== userId,
+                );
+                return { rowCount: 1 };
+              }),
+            });
+      const options = buildAuthOptions(serviceConfig, database);
+      const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: false } });
+      const app = createApp({
+        config: serviceConfig,
+        handler: (request) => auth.handler(request),
+        metadata: discoveryDocuments(auth),
+        pages: pageOptions(serviceConfig),
+        peerAddress: () => "127.0.0.1",
+      });
+
+      if (backend === "postgres" && pgPool) {
+        const ctx = await auth.$context;
+        await pgPool.query(
+          'TRUNCATE auth."user", auth."account", auth."session", auth."apikey" CASCADE',
+        );
+        for (const model of ["user", "account", "session", "apikey"] as const) {
+          for (const row of db[model] ?? []) {
+            await ctx.adapter.create({
+              model,
+              data: row as Record<string, unknown>,
+              forceAllowId: true,
+            });
+          }
+        }
+      }
+
+      async function syncDb() {
+        if (backend !== "postgres" || !pgPool) return;
+        const ctx = await auth.$context;
+        for (const model of ["user", "account", "session", "apikey"] as const) {
+          db[model] = await ctx.adapter.findMany({ model });
+        }
+      }
+
+      async function sessionCookie(tokenValue: string): Promise<string> {
+        const sig = await makeSignature(tokenValue, serviceConfig.secret);
+        return `ariadshift.session_token=${encodeURIComponent(`${tokenValue}.${sig}`)}`;
+      }
+
+      async function deleteRequest(tokenValue: string, body: Record<string, unknown> = {}) {
+        const response = await app.request("http://localhost:3001/api/auth/delete-user", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+            origin: "http://localhost:3001",
+            cookie: await sessionCookie(tokenValue),
+          },
+          body: JSON.stringify(body),
+        });
+        await syncDb();
+        return response;
+      }
+
+      return { db, deleteRequest };
+    }
+
+    it("deletes a social-only user and its sessions with a fresh session while leaving another user untouched", async () => {
+      const { db, deleteRequest } = await seededService(true);
+      const response = await deleteRequest("tok-social");
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ success: true, message: "User deleted" });
+
+      expect((db.user as { id: string }[]).map((u) => u.id).sort()).toEqual([
+        "user-other",
+        "user-password",
+      ]);
+      expect((db.session as { userId: string }[]).map((s) => s.userId).sort()).toEqual([
+        "user-other",
+        "user-password",
+      ]);
+      expect((db.apikey as { referenceId: string }[]).map((k) => k.referenceId)).toEqual([
+        "user-other",
+      ]);
+    });
+
+    it("refuses social-only account deletion with reauth_required when the session is older than 15 minutes", async () => {
+      const { db, deleteRequest } = await seededService(false);
+      const response = await deleteRequest("tok-social");
+      expect(response.status).toBe(400);
+      expect((await response.json()) as { code?: string }).toMatchObject({
+        code: "reauth_required",
+      });
+      expect((db.user as { id: string }[]).map((u) => u.id)).toContain("user-social");
+      expect((db.session as { id: string }[]).map((s) => s.id)).toContain("sess-social");
+    });
+
+    it("requires the password and a fresh session before deleting a password-backed account", async () => {
+      const stale = await seededService(false);
+      const staleWithPassword = await stale.deleteRequest("tok-password", {
+        password: "correct horse battery staple",
+      });
+      expect(staleWithPassword.status).toBe(400);
+      expect((await staleWithPassword.json()) as { code?: string }).toMatchObject({
+        code: "reauth_required",
+      });
+      expect((stale.db.user as { id: string }[]).map((u) => u.id)).toContain("user-password");
+
+      const { db, deleteRequest } = await seededService(true);
+
+      const withoutPassword = await deleteRequest("tok-password", {});
+      expect(withoutPassword.status).toBe(400);
+      expect((await withoutPassword.json()) as { code?: string }).toMatchObject({
+        code: "PASSWORD_REQUIRED",
+      });
+      expect((db.user as { id: string }[]).map((u) => u.id)).toContain("user-password");
+
+      const wrongPassword = await deleteRequest("tok-password", { password: "wrong password" });
+      expect(wrongPassword.status).toBe(400);
+      expect((db.user as { id: string }[]).map((u) => u.id)).toContain("user-password");
+
+      const withPassword = await deleteRequest("tok-password", {
+        password: "correct horse battery staple",
+      });
+      expect(withPassword.status).toBe(200);
+      expect((db.user as { id: string }[]).map((u) => u.id)).not.toContain("user-password");
+    });
+  });
+
+  describe.each(BACKENDS)("OAuth consents and registered clients (%s)", (backend) => {
+    async function seededOAuthService() {
+      const serviceConfig = config();
+      const probe = buildAuthOptions(serviceConfig, memoryAdapter({}));
+      const db: Record<string, unknown[]> = Object.fromEntries(
+        Object.values(getAuthTables(probe)).map((table) => [table.modelName, []]),
+      );
+      const now = new Date("2026-10-30T10:00:00.000Z");
+      const future = new Date(Date.now() + 60 * 60 * 1000);
+
+      db.user = [
+        {
+          id: "user-1",
+          name: "Ada",
+          email: "ada@example.com",
+          emailVerified: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "user-2",
+          name: "Grace",
+          email: "grace@example.com",
+          emailVerified: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      db.session = [
+        {
+          id: "sess-1",
+          userId: "user-1",
+          token: "tok-1",
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "sess-2",
+          userId: "user-2",
+          token: "tok-2",
+          createdAt: now,
+          updatedAt: now,
+          expiresAt: future,
+        },
+      ];
+      db.oauthClient = [
+        {
+          id: "row-client-1",
+          clientId: "client-owned-1",
+          name: "Ada MCP Client",
+          uri: "https://ada.example.com",
+          userId: "user-1",
+          disabled: false,
+          redirectUris: ["http://127.0.0.1:33418/callback"],
+          scopes: ["openid", "offline_access"],
+          grantTypes: ["authorization_code", "refresh_token"],
+          responseTypes: ["code"],
+          tokenEndpointAuthMethod: "none",
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "row-client-2",
+          clientId: "client-owned-2",
+          name: "Grace MCP Client",
+          uri: "https://grace.example.com",
+          userId: "user-2",
+          disabled: false,
+          redirectUris: ["http://127.0.0.1:33419/callback"],
+          scopes: ["openid", "offline_access"],
+          grantTypes: ["authorization_code", "refresh_token"],
+          responseTypes: ["code"],
+          tokenEndpointAuthMethod: "none",
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      db.oauthClientResource = [
+        {
+          id: "cr-1",
+          clientId: "client-owned-1",
+          resourceId: "http://localhost:8080/mcp",
+          createdAt: now,
+        },
+        {
+          id: "cr-2",
+          clientId: "client-owned-2",
+          resourceId: "http://localhost:8080/mcp",
+          createdAt: now,
+        },
+      ];
+      db.oauthConsent = [
+        {
+          id: "consent-1",
+          clientId: "client-owned-2",
+          userId: "user-1",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "consent-2",
+          clientId: "client-owned-1",
+          userId: "user-2",
+          scopes: ["openid"],
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "consent-3",
+          clientId: "client-owned-2",
+          userId: "user-2",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      db.oauthRefreshToken = [
+        {
+          id: "rt-1",
+          token: "hashed-rt-1",
+          clientId: "client-owned-2",
+          userId: "user-1",
+          sessionId: "sess-1",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "rt-2",
+          token: "hashed-rt-2",
+          clientId: "client-owned-1",
+          userId: "user-2",
+          sessionId: "sess-2",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "rt-3",
+          token: "hashed-rt-3",
+          clientId: "client-owned-2",
+          userId: "user-2",
+          sessionId: "sess-2",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
+      ];
+      db.oauthAccessToken = [
+        {
+          id: "at-1",
+          token: "hashed-at-1",
+          clientId: "client-owned-2",
+          userId: "user-1",
+          refreshId: "rt-1",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
+        {
+          id: "at-3",
+          token: "hashed-at-3",
+          clientId: "client-owned-2",
+          userId: "user-2",
+          refreshId: "rt-3",
+          scopes: ["openid", "offline_access"],
+          createdAt: now,
+          expiresAt: future,
+        },
+      ];
+
+      const options = buildAuthOptions(
+        serviceConfig,
+        backend === "postgres" && pgPool ? pgPool : memoryAdapter(db),
+      );
+      const auth = createAuth({ ...options, rateLimit: { ...options.rateLimit, enabled: false } });
+      const app = createApp({
+        config: serviceConfig,
+        handler: (request) => auth.handler(request),
+        metadata: discoveryDocuments(auth),
+        pages: pageOptions(serviceConfig),
+        peerAddress: () => "127.0.0.1",
+      });
+
+      if (backend === "postgres" && pgPool) {
+        const ctx = await auth.$context;
+        await pgPool.query(
+          'TRUNCATE auth."user", auth."session", auth."oauthClient", auth."oauthClientResource", auth."oauthConsent", auth."oauthRefreshToken", auth."oauthAccessToken" CASCADE',
+        );
+        for (const model of [
+          "user",
+          "session",
+          "oauthClient",
+          "oauthClientResource",
+          "oauthConsent",
+          "oauthRefreshToken",
+          "oauthAccessToken",
+        ] as const) {
+          for (const row of db[model] ?? []) {
+            await ctx.adapter.create({
+              model,
+              data: row as Record<string, unknown>,
+              forceAllowId: true,
+            });
+          }
+        }
+      }
+
+      async function syncDb() {
+        if (backend !== "postgres" || !pgPool) return;
+        const ctx = await auth.$context;
+        for (const model of [
+          "oauthClient",
+          "oauthClientResource",
+          "oauthConsent",
+          "oauthRefreshToken",
+          "oauthAccessToken",
+        ] as const) {
+          db[model] = await ctx.adapter.findMany({ model });
+        }
+      }
+
+      async function requestAs(
+        tokenValue: string,
+        path: string,
+        body?: Record<string, unknown>,
+      ): Promise<Response> {
+        const sig = await makeSignature(tokenValue, serviceConfig.secret);
+        const response = await app.request(`http://localhost:3001/api/auth${path}`, {
+          method: body ? "POST" : "GET",
+          headers: {
+            accept: "application/json",
+            origin: "http://localhost:3001",
+            cookie: `ariadshift.session_token=${encodeURIComponent(`${tokenValue}.${sig}`)}`,
+            ...(body ? { "content-type": "application/json" } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+        await syncDb();
+        return response;
+      }
+
+      return { db, requestAs };
+    }
+
+    it("lists only the signed-in user's consents (with client name) and registered clients", async () => {
+      const { requestAs } = await seededOAuthService();
+
+      const consentsRes = await requestAs("tok-1", "/oauth2/get-consents");
+      expect(consentsRes.status).toBe(200);
+      const consents = (await consentsRes.json()) as Record<string, unknown>[];
+      expect(consents).toHaveLength(1);
+      expect(consents[0]).toMatchObject({
+        id: "consent-1",
+        clientId: "client-owned-2",
+        clientName: "Grace MCP Client",
+        scopes: ["openid", "offline_access"],
+      });
+
+      const clientsRes = await requestAs("tok-1", "/oauth2/get-clients");
+      expect(clientsRes.status).toBe(200);
+      const clients = (await clientsRes.json()) as Record<string, unknown>[];
+      expect(clients).toHaveLength(1);
+      expect(clients[0]).toMatchObject({
+        client_id: "client-owned-1",
+        client_name: "Ada MCP Client",
+      });
+    });
+
+    it("refuses revoking another user's consent or registered client while keeping every consent and token intact", async () => {
+      const { db, requestAs } = await seededOAuthService();
+
+      const revokeOtherConsent = await requestAs("tok-1", "/oauth2/delete-consent", {
+        id: "consent-2",
+      });
+      expect(revokeOtherConsent.status).toBe(401);
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id)).toContain("consent-2");
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id)).toContain("rt-2");
+
+      const revokeOtherClient = await requestAs("tok-1", "/oauth2/delete-client", {
+        client_id: "client-owned-2",
+      });
+      expect(revokeOtherClient.status).toBe(401);
+      expect((db.oauthClient as { clientId: string }[]).map((c) => c.clientId)).toContain(
+        "client-owned-2",
+      );
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id).sort()).toEqual([
+        "consent-1",
+        "consent-2",
+        "consent-3",
+      ]);
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id).sort()).toEqual([
+        "rt-1",
+        "rt-2",
+        "rt-3",
+      ]);
+      expect((db.oauthAccessToken as { id: string }[]).map((t) => t.id).sort()).toEqual([
+        "at-1",
+        "at-3",
+      ]);
+      expect((db.oauthClientResource as { id: string }[]).map((r) => r.id).sort()).toEqual([
+        "cr-1",
+        "cr-2",
+      ]);
+    });
+
+    it("removes the consent and revokes active tokens when the owner revokes a consent or client", async () => {
+      const { db, requestAs } = await seededOAuthService();
+
+      const revokeConsent = await requestAs("tok-1", "/oauth2/delete-consent", {
+        id: "consent-1",
+      });
+      expect(revokeConsent.status).toBe(200);
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id).sort()).toEqual([
+        "consent-2",
+        "consent-3",
+      ]);
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id).sort()).toEqual([
+        "rt-2",
+        "rt-3",
+      ]);
+      expect((db.oauthAccessToken as { id: string }[]).map((t) => t.id)).toEqual(["at-3"]);
+
+      const revokeClient = await requestAs("tok-1", "/oauth2/delete-client", {
+        client_id: "client-owned-1",
+      });
+      expect(revokeClient.status).toBe(200);
+      expect((db.oauthClient as { clientId: string }[]).map((c) => c.clientId)).toEqual([
+        "client-owned-2",
+      ]);
+      expect((db.oauthConsent as { id: string }[]).map((c) => c.id)).toEqual(["consent-3"]);
+      expect((db.oauthRefreshToken as { id: string }[]).map((t) => t.id)).toEqual(["rt-3"]);
+      expect((db.oauthAccessToken as { id: string }[]).map((t) => t.id)).toEqual(["at-3"]);
+      expect((db.oauthClientResource as { id: string }[]).map((r) => r.id)).toEqual(["cr-2"]);
     });
   });
 });

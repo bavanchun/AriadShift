@@ -480,6 +480,15 @@ async function setUpConsent() {
     details.getAll("resource").join(", ") || "AriadShift";
   const redirect = details.get("redirect_uri");
   if (redirect) document.getElementById("redirect").textContent = redirectText(redirect);
+  const clientId = details.get("client_id");
+  if (clientId) {
+    try {
+      const id = new URL(clientId);
+      if (id.protocol === "https:") document.getElementById("client-host").textContent = id.host;
+    } catch {
+      // Non-URL client identifiers have no verifiable host.
+    }
+  }
 
   const answer = (accept) =>
     run(async () => {
@@ -496,7 +505,6 @@ async function setUpConsent() {
     if (session?.user?.email) {
       document.getElementById("account").textContent = `Signed in as ${session.user.email}`;
     }
-    const clientId = details.get("client_id");
     if (clientId) {
       const client = await call(
         "GET",

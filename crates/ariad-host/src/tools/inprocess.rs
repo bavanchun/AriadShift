@@ -107,11 +107,9 @@ pub fn build_tool_ctx(limits: &Limits, cancel: Arc<AtomicBool>) -> ToolCtx {
     let deadline = limits
         .timeout_s
         .and_then(|secs| Instant::now().checked_add(Duration::from_secs(secs)));
-    ToolCtx {
-        deadline,
-        cancel,
-        max_pages: limits.max_pages,
-    }
+    let mut ctx = ToolCtx::with_cancel(cancel).with_max_pages(limits.max_pages);
+    ctx.deadline = deadline;
+    ctx
 }
 
 /// Executes an in-process `ariad-pdf` tool on the staged input files inside `workspace`.

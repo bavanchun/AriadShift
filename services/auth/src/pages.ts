@@ -183,6 +183,7 @@ export function consentPage(): string {
 <ul id="scopes"></ul>
 <dl>
 <dt>Service</dt><dd id="resources"></dd>
+<dt>Application host</dt><dd id="client-host">Not provided</dd>
 <dt>Returns you to</dt><dd id="redirect"></dd>
 </dl>
 <p class="muted">Allow only applications you trust. The name above is chosen by the application itself; check where it returns you.</p>
