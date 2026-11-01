@@ -8,7 +8,11 @@ use ariad_core::{
     reader,
 };
 use ariad_pdf::{InputDoc, PdfError, PdfInfo, ToolCtx, ToolOutput, document::open, info, run_tool};
+use lopdf::Document;
 use serde_json::json;
+
+#[path = "support/page_set_hostile.rs"]
+mod hostile;
 
 fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools")
@@ -131,4 +135,36 @@ fn delete_pages_rejects_deleting_all_pages_duplicates_and_oob() {
     let single = load_input("annotations.pdf"); // 1 page
     let err_single = run_delete(&[single], "1").unwrap_err();
     assert!(matches!(err_single, PdfError::InvalidParams(_)));
+}
+
+#[test]
+fn delete_pages_survives_self_referential_destinations_on_a_small_stack() {
+    let raw = hostile::self_referential_dest_pdf();
+    let handle = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let out = run_delete(&[InputDoc::new("cyclic-dests", raw)], "2")
+                .expect("delete a page from a document with cyclic destinations");
+            assert_eq!(out.artifacts.len(), 1);
+            let doc = Document::load_mem(&out.artifacts[0].bytes).expect("reload output pdf");
+            assert_eq!(doc.get_pages().len(), 2);
+            let catalog = doc.catalog().expect("output catalog");
+            assert!(!catalog.has(b"Dests"), "cyclic destinations are dropped");
+            assert!(!catalog.has(b"OpenAction"), "cyclic open action is dropped");
+        })
+        .expect("spawn thread");
+    handle
+        .join()
+        .expect("cyclic destinations must not overflow the stack");
+}
+
+#[test]
+fn delete_pages_keeps_catalog_entries_drops_tagged_structure_and_nulls_dangling_refs() {
+    let input = InputDoc::new("rich-catalog", hostile::rich_catalog_pdf());
+    let out = run_delete(&[input], "2").expect("delete with dangling references");
+    assert_eq!(
+        out.warnings,
+        vec![hostile::TAGGED_STRUCTURE_WARNING.to_owned()]
+    );
+    hostile::assert_rich_catalog_subset(&out.artifacts[0].bytes);
 }

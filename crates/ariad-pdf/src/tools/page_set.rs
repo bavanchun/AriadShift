@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use ariad_core::{
     reader::pdf::ReadError,
-    tools::page_range::{DuplicatePolicy, PageRange},
+    tools::page_range::{DuplicatePolicy, PageRange, PageTokenKind},
 };
 use lopdf::{Dictionary, Document, Object, ObjectId, StringFormat};
 
@@ -14,10 +14,15 @@ use crate::{
     document::{PdfDoc, ToolCtx},
     error::PdfError,
     naming,
+    tools::OutputDoc,
 };
 
 /// Upper bound on total output pages produced by a single structural tool invocation.
 pub(crate) const MAX_OUTPUT_PAGES: u64 = 10_000;
+
+/// Warning attached to a page-subset output whose source carried a tagged structure, which cannot
+/// be kept consistent once pages are removed or repeated.
+pub(crate) const TAGGED_STRUCTURE_WARNING: &str = "tagged structure (StructTreeRoot) is not kept for a page subset; the output is not a tagged PDF";
 
 /// Maximum depth when walking `/Pages`, `/Outlines`, `/PageLabels`, `/Names`, or `/AcroForm` trees.
 const MAX_TREE_DEPTH: usize = 64;
@@ -73,6 +78,22 @@ pub(crate) fn doc_page_count(doc: &PdfDoc) -> u32 {
     u32::try_from(doc.inner().get_pages().len()).unwrap_or(u32::MAX)
 }
 
+/// Effective output-page cap: the fixed [`MAX_OUTPUT_PAGES`] ceiling, lowered to the run's
+/// `limits.max_pages` when that is smaller.
+#[must_use]
+pub(crate) fn output_page_cap(max_pages: Option<u32>) -> u64 {
+    max_pages.map_or(MAX_OUTPUT_PAGES, |limit| {
+        MAX_OUTPUT_PAGES.min(u64::from(limit))
+    })
+}
+
+fn too_many_pages(actual: u64, cap: u64) -> PdfError {
+    PdfError::LimitExceeded(ReadError::TooManyPages {
+        actual,
+        limit: u32::try_from(cap).unwrap_or(u32::MAX),
+    })
+}
+
 /// Expands `range` against `page_count` while enforcing [`MAX_OUTPUT_PAGES`] before allocating an
 /// unbounded page vector when `DuplicatePolicy::KeepInOrder` is used.
 pub(crate) fn expand_page_range_bounded(
@@ -80,98 +101,65 @@ pub(crate) fn expand_page_range_bounded(
     page_count: u32,
     policy: DuplicatePolicy,
 ) -> Result<Vec<u32>, PdfError> {
-    if policy == DuplicatePolicy::KeepInOrder
-        && let Some(estimated_total) = estimate_keep_in_order_len(range.as_str(), page_count)
-        && estimated_total > MAX_OUTPUT_PAGES
-    {
-        return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
-            actual: estimated_total,
-            limit: MAX_OUTPUT_PAGES as u32,
-        }));
+    expand_page_range_capped(range, page_count, policy, None)
+}
+
+/// Like [`expand_page_range_bounded`], with the cap lowered to `max_pages` (the run's
+/// `limits.max_pages`) when that is smaller than [`MAX_OUTPUT_PAGES`].
+pub(crate) fn expand_page_range_capped(
+    range: &PageRange,
+    page_count: u32,
+    policy: DuplicatePolicy,
+    max_pages: Option<u32>,
+) -> Result<Vec<u32>, PdfError> {
+    let cap = output_page_cap(max_pages);
+    if policy == DuplicatePolicy::KeepInOrder {
+        let estimated_total = estimate_keep_in_order_len(range, page_count);
+        if estimated_total > cap {
+            return Err(too_many_pages(estimated_total, cap));
+        }
     }
 
     let expanded = range
         .expand(page_count, policy)
         .map_err(|e| PdfError::InvalidParams(e.to_string()))?;
 
-    if expanded.len() as u64 > MAX_OUTPUT_PAGES {
-        return Err(PdfError::LimitExceeded(ReadError::TooManyPages {
-            actual: expanded.len() as u64,
-            limit: MAX_OUTPUT_PAGES as u32,
-        }));
+    if expanded.len() as u64 > cap {
+        return Err(too_many_pages(expanded.len() as u64, cap));
     }
     Ok(expanded)
 }
 
-/// Computes the exact expanded length of `raw` under `DuplicatePolicy::KeepInOrder` if and only if
-/// `page_count >= 1` and every comma-separated token is syntactically valid and in `1..=page_count`.
-/// Returns `None` if any token is invalid so `PageRange::expand` can produce the canonical error.
-fn estimate_keep_in_order_len(raw: &str, page_count: u32) -> Option<u64> {
+/// Upper bound on the length `range.expand(page_count, KeepInOrder)` allocates, computed from the
+/// parsed tokens without expanding them. A token that does not resolve against `page_count`
+/// contributes nothing: expansion reports it with the canonical error, and everything it would
+/// have allocated before reaching it is already counted.
+fn estimate_keep_in_order_len(range: &PageRange, page_count: u32) -> u64 {
     if page_count == 0 {
-        return None;
-    }
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
+        return 0;
     }
     let mut total = 0_u64;
-    for raw_token in trimmed.split(',') {
-        let token = raw_token.trim();
-        if token.is_empty() {
-            return None;
-        }
-        let lower = token.to_ascii_lowercase();
-        let count = match lower.as_str() {
-            "all" => u64::from(page_count),
-            "odd" => u64::from(page_count.div_ceil(2)),
-            "even" => u64::from(page_count / 2),
-            _ => {
-                if let Some((left, right)) = parse_range_split(&lower) {
-                    let a = parse_valid_endpoint(left, page_count)?;
-                    let b = parse_valid_endpoint(right, page_count)?;
-                    u64::from(a.abs_diff(b)) + 1
-                } else {
-                    let _ = parse_valid_endpoint(&lower, page_count)?;
-                    1
+    for token in range.tokens() {
+        let count = match token.kind {
+            PageTokenKind::All => u64::from(page_count),
+            PageTokenKind::Odd => u64::from(page_count.div_ceil(2)),
+            PageTokenKind::Even => u64::from(page_count / 2),
+            PageTokenKind::Single(page_ref) => {
+                u64::from(page_ref.resolve(page_count, &token.raw).is_ok())
+            }
+            PageTokenKind::Range { start, end } => {
+                match (
+                    start.resolve(page_count, &token.raw),
+                    end.resolve(page_count, &token.raw),
+                ) {
+                    (Ok(a), Ok(b)) => u64::from(a.abs_diff(b)) + 1,
+                    _ => 0,
                 }
             }
         };
         total = total.saturating_add(count);
     }
-    Some(total)
-}
-
-fn parse_range_split(token: &str) -> Option<(&str, &str)> {
-    let bytes = token.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'-' {
-            let is_end_offset = i >= 3 && &token[i - 3..i] == "end";
-            if !is_end_offset {
-                let left = token[..i].trim();
-                let right = token[i + 1..].trim();
-                if left.is_empty() || right.is_empty() {
-                    return None;
-                }
-                return Some((left, right));
-            }
-        }
-        i += 1;
-    }
-    None
-}
-
-fn parse_valid_endpoint(s: &str, page_count: u32) -> Option<u32> {
-    let s = s.trim();
-    if s == "end" {
-        return Some(page_count);
-    }
-    if let Some(rest) = s.strip_prefix("end-") {
-        let offset = rest.trim().parse::<u32>().ok()?;
-        return (offset < page_count).then(|| page_count - offset);
-    }
-    let page = s.parse::<u32>().ok()?;
-    (1..=page_count).contains(&page).then_some(page)
+    total
 }
 
 /// Builds a new [`PdfDoc`] containing the 1-based `selected_pages` from `source` in the
@@ -186,12 +174,37 @@ pub(crate) fn build_extracted_doc(
 
 /// Builds a new [`PdfDoc`] containing the 1-based `selected_pages` from `source` in the
 /// exact order given (supporting duplicate page selections and [`PageSetOptions`]).
+///
+/// Warnings raised while building are discarded; use [`build_page_set_output`] to keep them.
 pub(crate) fn build_page_set_doc(
     source: &PdfDoc,
     selected_pages: &[u32],
     options: PageSetOptions,
     ctx: &ToolCtx,
 ) -> Result<PdfDoc, PdfError> {
+    build_page_set_doc_with_warnings(source, selected_pages, options, ctx).map(|(doc, _)| doc)
+}
+
+/// Builds the page-set document like [`build_page_set_doc`] and wraps it in an [`OutputDoc`]
+/// carrying the warnings raised while building (for example [`TAGGED_STRUCTURE_WARNING`]).
+pub(crate) fn build_page_set_output(
+    source: &PdfDoc,
+    selected_pages: &[u32],
+    options: PageSetOptions,
+    ctx: &ToolCtx,
+) -> Result<OutputDoc, PdfError> {
+    let (doc, warnings) = build_page_set_doc_with_warnings(source, selected_pages, options, ctx)?;
+    let mut output = OutputDoc::unnamed_pdf(doc);
+    output.warnings = warnings;
+    Ok(output)
+}
+
+fn build_page_set_doc_with_warnings(
+    source: &PdfDoc,
+    selected_pages: &[u32],
+    options: PageSetOptions,
+    ctx: &ToolCtx,
+) -> Result<(PdfDoc, Vec<String>), PdfError> {
     ctx.check()?;
     if source.is_encrypted() {
         return Err(PdfError::Encrypted {
@@ -376,6 +389,7 @@ pub(crate) fn build_page_set_doc(
         .insert(pages_root_id, Object::Dictionary(pages_root_dict));
 
     // Build Catalog and copy document-level structures.
+    let mut warnings = Vec::new();
     let mut catalog_dict = Dictionary::new();
     catalog_dict.set(b"Type".to_vec(), Object::Name(b"Catalog".to_vec()));
     catalog_dict.set(b"Pages".to_vec(), Object::Reference(pages_root_id));
@@ -392,9 +406,10 @@ pub(crate) fn build_page_set_doc(
         for key in [
             &b"Lang"[..],
             &b"Metadata"[..],
-            &b"MarkInfo"[..],
             &b"ViewerPreferences"[..],
             &b"PageLayout"[..],
+            &b"PageMode"[..],
+            &b"OCProperties"[..],
             &b"OutputIntents"[..],
         ] {
             if let Ok(val) = src_catalog.get(key) {
@@ -403,6 +418,27 @@ pub(crate) fn build_page_set_doc(
                     catalog_dict.set(key.to_vec(), copied);
                 }
             }
+        }
+
+        // The structure tree indexes the original page set, so it is not carried over; the
+        // document stops claiming to be tagged and the caller is told.
+        let mut tagged = src_catalog.has(b"StructTreeRoot");
+        if let Ok(mark_val) = src_catalog.get(b"MarkInfo")
+            && let Some(mark_dict) = resolve_dict(src_doc, mark_val)
+        {
+            tagged |= mark_dict
+                .get(b"Marked")
+                .ok()
+                .and_then(|marked| resolve_object(src_doc, marked))
+                .is_some_and(|marked| matches!(marked, Object::Boolean(true)));
+            let mut copied_mark = copier.copy_dictionary(mark_dict, ctx)?;
+            copied_mark.remove(b"Marked");
+            if !copied_mark.is_empty() {
+                catalog_dict.set(b"MarkInfo".to_vec(), Object::Dictionary(copied_mark));
+            }
+        }
+        if tagged {
+            warnings.push(TAGGED_STRUCTURE_WARNING.to_owned());
         }
 
         if options.include_attachments
@@ -493,7 +529,7 @@ pub(crate) fn build_page_set_doc(
     if let Some(stem) = naming::doc_stem(source) {
         naming::set_doc_stem(&mut out_pdf, &stem);
     }
-    Ok(out_pdf)
+    Ok((out_pdf, warnings))
 }
 
 /// Collects all `/Pages` tree node IDs and `/Page` object IDs in `doc`.
@@ -672,7 +708,8 @@ impl<'a> SelectiveCopier<'a> {
                 if let Some(&mapped_page) = self.first_target_page_id.get(id) {
                     return Ok(Object::Reference(mapped_page));
                 }
-                if self.pages_tree_ids.contains(id) {
+                // ISO 32000 section 7.3.10: a reference to a missing object is the null object.
+                if self.pages_tree_ids.contains(id) || !self.source.objects.contains_key(id) {
                     return Ok(Object::Null);
                 }
                 let new_id = self.schedule_id(*id)?;
@@ -1092,6 +1129,10 @@ fn copy_filtered_open_action(
     }
 }
 
+/// Remaps a catalog destination (an explicit destination array, or a dictionary holding one under
+/// `/D`) onto the kept pages. A destination dictionary's `/D` must itself resolve to an array, so
+/// the walk is one level deep and a self-referential or cyclic `/D` chain ends the entry instead
+/// of recursing.
 fn remap_catalog_dest_object(
     src_doc: &Document,
     dest_obj: &Object,
@@ -1106,47 +1147,25 @@ fn remap_catalog_dest_object(
         return Ok(None);
     };
     match resolved {
-        Object::Array(arr) => {
-            let Some(first) = arr.first() else {
-                return Ok(None);
-            };
-            let target_page_id = if let Ok(src_page_id) = first.as_reference() {
-                if let Some(&page_num) = id_to_page_num.get(&src_page_id) {
-                    let Some(&mapped_id) = kept_page_num_to_id.get(&page_num) else {
-                        return Ok(None);
-                    };
-                    mapped_id
-                } else {
-                    return Ok(None);
-                }
-            } else if let Some(Object::Integer(idx)) = resolve_object(src_doc, first)
-                && *idx >= 0
-                && let Ok(idx_u32) = u32::try_from(*idx)
-                && idx_u32 < page_count
-            {
-                let page_num = idx_u32 + 1;
-                let Some(&mapped_id) = kept_page_num_to_id.get(&page_num) else {
-                    return Ok(None);
-                };
-                mapped_id
-            } else {
-                return Ok(None);
-            };
-
-            let mut new_arr = Vec::with_capacity(arr.len());
-            new_arr.push(Object::Reference(target_page_id));
-            for item in arr.iter().skip(1) {
-                new_arr.push(copier.copy_object(item, ctx)?);
-            }
-            Ok(Some(Object::Array(new_arr)))
-        }
+        Object::Array(arr) => remap_dest_array(
+            src_doc,
+            arr,
+            page_count,
+            id_to_page_num,
+            kept_page_num_to_id,
+            copier,
+            ctx,
+        ),
         Object::Dictionary(d) => {
             let Ok(d_val) = d.get(b"D") else {
                 return Ok(None);
             };
-            let Some(remapped_d) = remap_catalog_dest_object(
+            let Some(Object::Array(d_arr)) = resolve_object(src_doc, d_val) else {
+                return Ok(None);
+            };
+            let Some(remapped_d) = remap_dest_array(
                 src_doc,
-                d_val,
+                d_arr,
                 page_count,
                 id_to_page_num,
                 kept_page_num_to_id,
@@ -1171,6 +1190,49 @@ fn remap_catalog_dest_object(
         }
         _ => Ok(None),
     }
+}
+
+/// Remaps an explicit destination array (`[page /Fit ...]`) onto the kept pages, or returns
+/// `None` when its page was removed or cannot be resolved.
+fn remap_dest_array(
+    src_doc: &Document,
+    arr: &[Object],
+    page_count: u32,
+    id_to_page_num: &BTreeMap<ObjectId, u32>,
+    kept_page_num_to_id: &BTreeMap<u32, ObjectId>,
+    copier: &mut SelectiveCopier<'_>,
+    ctx: &ToolCtx,
+) -> Result<Option<Object>, PdfError> {
+    let Some(first) = arr.first() else {
+        return Ok(None);
+    };
+    let target_page_id = if let Ok(src_page_id) = first.as_reference() {
+        let Some(&page_num) = id_to_page_num.get(&src_page_id) else {
+            return Ok(None);
+        };
+        let Some(&mapped_id) = kept_page_num_to_id.get(&page_num) else {
+            return Ok(None);
+        };
+        mapped_id
+    } else if let Some(Object::Integer(idx)) = resolve_object(src_doc, first)
+        && *idx >= 0
+        && let Ok(idx_u32) = u32::try_from(*idx)
+        && idx_u32 < page_count
+    {
+        let Some(&mapped_id) = kept_page_num_to_id.get(&(idx_u32 + 1)) else {
+            return Ok(None);
+        };
+        mapped_id
+    } else {
+        return Ok(None);
+    };
+
+    let mut new_arr = Vec::with_capacity(arr.len());
+    new_arr.push(Object::Reference(target_page_id));
+    for item in arr.iter().skip(1) {
+        new_arr.push(copier.copy_object(item, ctx)?);
+    }
+    Ok(Some(Object::Array(new_arr)))
 }
 
 /// Copies `/AcroForm`, keeping all fields (including cloned widget instances on duplicated pages)
@@ -1926,5 +1988,121 @@ fn object_as_f64(obj: &Object) -> Option<f64> {
         Object::Integer(n) => Some(n as f64),
         Object::Real(n) => Some(f64::from(n)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(expr: &str) -> PageRange {
+        PageRange::parse(expr).expect("valid page range")
+    }
+
+    fn assert_too_many(err: PdfError, actual: u64, limit: u32) {
+        assert!(
+            matches!(
+                err,
+                PdfError::LimitExceeded(ReadError::TooManyPages { actual: a, limit: l })
+                    if a == actual && l == limit
+            ),
+            "expected TooManyPages {{ actual: {actual}, limit: {limit} }}, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn estimate_counts_every_grammar_form() {
+        let cases = [
+            ("all", 20),
+            ("odd", 10),
+            ("even", 10),
+            ("7", 1),
+            ("last", 1),
+            ("last-2", 1),
+            ("1-last", 20),
+            ("5-2", 4),
+            ("8-", 13),
+            ("-3", 3),
+            ("last-2-5", 14),
+            ("last-2-", 3),
+            ("-last-1", 19),
+            ("1,1-last,8-,-3", 1 + 20 + 13 + 3),
+        ];
+        for (expr, expected) in cases {
+            assert_eq!(
+                estimate_keep_in_order_len(&parse(expr), 20),
+                expected,
+                "estimate for {expr}"
+            );
+        }
+    }
+
+    #[test]
+    fn estimate_matches_real_expansion_length() {
+        for expr in [
+            "all,1-last,8-,-3,last,last-4,odd,even,9-2",
+            "last-3-last,-last-2,1,1,1",
+        ] {
+            let range = parse(expr);
+            let expanded = range
+                .expand(20, DuplicatePolicy::KeepInOrder)
+                .expect("expand");
+            assert_eq!(
+                estimate_keep_in_order_len(&range, 20),
+                expanded.len() as u64,
+                "estimate for {expr}"
+            );
+        }
+    }
+
+    #[test]
+    fn estimate_ignores_unresolvable_tokens_so_expand_reports_them() {
+        let range = parse("1-last,25,30-31");
+        assert_eq!(estimate_keep_in_order_len(&range, 20), 20);
+        let err = expand_page_range_bounded(&range, 20, DuplicatePolicy::KeepInOrder).unwrap_err();
+        assert!(matches!(err, PdfError::InvalidParams(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn bounded_expansion_rejects_huge_selections_before_allocating() {
+        // 3 billion pages x 2 tokens would need 24 GB if expanded; the estimate must stop it first.
+        let range = parse("1-last,8-");
+        let err = expand_page_range_bounded(&range, 3_000_000_000, DuplicatePolicy::KeepInOrder)
+            .unwrap_err();
+        assert_too_many(err, 3_000_000_000 + 2_999_999_993, 10_000);
+
+        let err = expand_page_range_bounded(
+            &parse("-last,last-1-"),
+            u32::MAX,
+            DuplicatePolicy::KeepInOrder,
+        )
+        .unwrap_err();
+        assert_too_many(err, u64::from(u32::MAX) + 2, 10_000);
+    }
+
+    #[test]
+    fn cap_is_the_smaller_of_the_fixed_limit_and_max_pages() {
+        assert_eq!(output_page_cap(None), 10_000);
+        assert_eq!(output_page_cap(Some(50_000)), 10_000);
+        assert_eq!(output_page_cap(Some(5_000)), 5_000);
+        assert_eq!(output_page_cap(Some(0)), 0);
+
+        let range = parse("all,all");
+        let pages = expand_page_range_capped(&range, 15, DuplicatePolicy::KeepInOrder, None)
+            .expect("30 pages fit the fixed cap");
+        assert_eq!(pages.len(), 30);
+        let err = expand_page_range_capped(&range, 15, DuplicatePolicy::KeepInOrder, Some(29))
+            .unwrap_err();
+        assert_too_many(err, 30, 29);
+        let pages = expand_page_range_capped(&range, 15, DuplicatePolicy::KeepInOrder, Some(30))
+            .expect("exactly at the cap");
+        assert_eq!(pages.len(), 30);
+    }
+
+    #[test]
+    fn max_pages_cap_also_bounds_reject_policy_results() {
+        let err = expand_page_range_capped(&parse("1-last"), 15, DuplicatePolicy::Reject, Some(10))
+            .unwrap_err();
+        assert_too_many(err, 15, 10);
     }
 }

@@ -11,7 +11,11 @@ use ariad_pdf::{
     InputDoc, PdfError, PdfInfo, REPAIRED_XREF_WARNING, ToolCtx, ToolOutput, document::open, info,
     run_tool,
 };
+use lopdf::{Document, Object, Stream, dictionary};
 use serde_json::json;
+
+#[path = "support/page_set_hostile.rs"]
+mod hostile;
 
 fn fixture_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools")
@@ -208,8 +212,6 @@ fn extract_pages_enforces_max_output_pages_and_caps_range_expansion() {
 
 #[test]
 fn extract_pages_handles_deep_indirect_chains_and_diamond_page_labels_dag() {
-    use lopdf::{Document, Object, Stream, dictionary};
-
     let mut doc = Document::with_version("1.5");
     let pages_id = doc.new_object_id();
     let content_id = doc.add_object(Stream::new(dictionary! {}, b"BT (Hello) Tj ET".to_vec()));
@@ -267,20 +269,128 @@ fn extract_pages_handles_deep_indirect_chains_and_diamond_page_labels_dag() {
     let mut raw = Vec::new();
     doc.save_to(&mut raw).expect("save synthetic pdf");
 
-    // Run on a 512 KiB stack thread and assert it completes within 200ms without stack overflow.
+    // Run on a 512 KiB stack thread so a recursive walk would overflow instead of passing.
     let handle = std::thread::Builder::new()
         .stack_size(512 * 1024)
         .spawn(move || {
-            let start = std::time::Instant::now();
             let input = InputDoc::new("synthetic", raw);
             let out = run_extract(&[input], "1").expect("extract deep chain + diamond labels");
             assert_eq!(out.artifacts.len(), 1);
-            assert!(
-                start.elapsed() < std::time::Duration::from_millis(200),
-                "diamond DAG traversal took too long: {:?}",
-                start.elapsed()
-            );
+            Document::load_mem(&out.artifacts[0].bytes).expect("reload output pdf")
         })
         .expect("spawn thread");
-    handle.join().expect("thread must not stack-overflow");
+    let output = handle.join().expect("thread must not stack-overflow");
+
+    // Every chain link is copied exactly once, and the shared label tree collapses to one rule,
+    // so the work done is linear in the input rather than in the number of paths through it.
+    let chain_links = output
+        .objects
+        .values()
+        .filter(|obj| obj.as_dict().is_ok_and(|d| d.has(b"Step")))
+        .count();
+    assert_eq!(chain_links, 4_000);
+    assert!(
+        output.objects.len() < 4_100,
+        "unexpected object count {}",
+        output.objects.len()
+    );
+    let labels = output
+        .catalog()
+        .expect("output catalog")
+        .get(b"PageLabels")
+        .expect("page labels kept");
+    let nums = output
+        .dereference(labels)
+        .expect("resolve labels")
+        .1
+        .as_dict()
+        .expect("labels dictionary")
+        .get(b"Nums")
+        .expect("Nums")
+        .as_array()
+        .expect("Nums array");
+    assert_eq!(nums.len(), 2);
+}
+
+#[test]
+fn extract_pages_survives_self_referential_destinations_on_a_small_stack() {
+    let raw = hostile::self_referential_dest_pdf();
+    let handle = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || {
+            let out = run_extract(&[InputDoc::new("cyclic-dests", raw)], "1,3")
+                .expect("extract pages with cyclic destinations");
+            assert_eq!(out.artifacts.len(), 1);
+            let doc = Document::load_mem(&out.artifacts[0].bytes).expect("reload output pdf");
+            assert_eq!(doc.get_pages().len(), 2);
+            let catalog = doc.catalog().expect("output catalog");
+            assert!(!catalog.has(b"Dests"), "cyclic destinations are dropped");
+            assert!(!catalog.has(b"OpenAction"), "cyclic open action is dropped");
+        })
+        .expect("spawn thread");
+    handle
+        .join()
+        .expect("cyclic destinations must not overflow the stack");
+}
+
+#[test]
+fn extract_pages_keeps_catalog_entries_drops_tagged_structure_and_nulls_dangling_refs() {
+    let input = InputDoc::new("rich-catalog", hostile::rich_catalog_pdf());
+    let out = run_extract(&[input], "1,3").expect("extract with dangling references");
+    assert_eq!(
+        out.warnings,
+        vec![hostile::TAGGED_STRUCTURE_WARNING.to_owned()]
+    );
+    hostile::assert_rich_catalog_subset(&out.artifacts[0].bytes);
+}
+
+#[test]
+fn extract_pages_does_not_warn_about_tagged_structure_for_untagged_documents() {
+    let out = run_extract(&[load_input("multipage-20.pdf")], "1-2").expect("extract untagged");
+    assert!(out.warnings.is_empty());
+}
+
+fn assert_too_many_pages(err: &PdfError, actual: u64) {
+    assert!(
+        matches!(
+            err,
+            PdfError::LimitExceeded(ariad_core::reader::pdf::ReadError::TooManyPages {
+                actual: got,
+                limit: 10_000,
+            }) if *got == actual
+        ),
+        "expected TooManyPages {{ actual: {actual}, limit: 10000 }}, got {err:?}"
+    );
+}
+
+#[test]
+fn extract_pages_caps_repeated_last_and_open_ended_ranges() {
+    let input = load_input("multipage-20.pdf"); // 20 pages
+    let cases = [
+        // 501 x 20 pages.
+        (vec!["1-last"; 501].join(","), 10_020),
+        // `8-` selects pages 8..=20, which is 13 pages; 770 x 13.
+        (vec!["8-"; 770].join(","), 10_010),
+        // `-3` selects pages 1..=3; 3,334 x 3.
+        (vec!["-3"; 3_334].join(","), 10_002),
+        // 9,991 x `last-1`, then a single `all` that crosses the cap by 11 pages.
+        (format!("{},all", vec!["last-1"; 9_991].join(",")), 10_011),
+    ];
+    for (pages, expected) in cases {
+        let err = run_extract(std::slice::from_ref(&input), &pages).unwrap_err();
+        assert_too_many_pages(&err, expected);
+    }
+}
+
+#[test]
+fn extract_pages_accepts_last_and_open_ended_ranges_within_the_cap() {
+    let input = load_input("multipage-20.pdf"); // 20 pages
+    let out = run_extract(&[input], "1-last,last-1,8-,-3").expect("valid mixed range");
+    let report = inspect_bytes(&out.artifacts[0].bytes);
+    // 20 + 1 + 13 + 3
+    assert_eq!(report.page_count, 37);
+
+    let small = load_input("rotated-pages.pdf"); // 4 pages
+    let out = run_extract(&[small], "1-last").expect("1-last on a small document");
+    assert_eq!(inspect_bytes(&out.artifacts[0].bytes).page_count, 4);
 }
