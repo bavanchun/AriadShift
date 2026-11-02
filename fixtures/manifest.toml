@@ -4332,3 +4332,193 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "repaired-xref-extraction-pdf"
+path = "fixtures/pdf/repaired-xref-extraction.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with damaged cross-reference entries"
+origin = "generated"
+generated_by = "fixtures/gen/repaired-xref-extraction.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2ed9921873c6757f51474b8f09624a26e1b83a59c13b982c96e94cf959f0b924"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "form-page-fallback-pdf"
+path = "fixtures/pdf/form-page-fallback.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Nested form page resource fallback"
+origin = "generated"
+generated_by = "fixtures/gen/form-page-fallback.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "1db103e1a4e716fc4ea4fcb9c703ffbe1a5d270d6f26f10bd7721764f3157856"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-indirect-key-pdf"
+path = "fixtures/pdf/inline-indirect-key.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image dictionary parser divergence"
+origin = "generated"
+generated_by = "fixtures/gen/image-dictionary-keys.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "fbf9c1eb377b6a9d2077d577d378b8f594854d11c33070fdf2241556fe2fbf82"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "xobject-abbreviated-keys-pdf"
+path = "fixtures/pdf/xobject-abbreviated-keys.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image dictionary parser divergence"
+origin = "generated"
+generated_by = "fixtures/gen/image-dictionary-keys.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "87b6b52984f471a156ea8b412de54997c9989d0663b968df16c627351990a6ea"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-png-predictor-pdf"
+path = "fixtures/pdf/inline-png-predictor.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Tall inline image with PNG predictor"
+origin = "generated"
+generated_by = "fixtures/gen/inline-png-predictor.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "fb853a38e96a0f0786b9a4bd7436fcabdf843330a4a4a39877b3edbb968e0e21"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "long-content-name-pdf"
+path = "fixtures/pdf/long-content-name.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Long content stream XObject name"
+origin = "generated"
+generated_by = "fixtures/gen/long-content-name.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "a3f67168fee081dea72f2a3110fad1bc90f6e6c60cdf3b82f36cf47f6cd97e6b"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "escaped-resource-name-pdf"
+path = "fixtures/pdf/escaped-resource-name.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Escaped resource name with a truncated spelling"
+origin = "generated"
+generated_by = "fixtures/gen/escaped-resource-name.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "57612f891f3846d3ebe830168615e551da73b1a1852895e8a67aa2a7f3a9250f"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "compressed-resource-name-pdf"
+path = "fixtures/pdf/compressed-resource-name.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Escaped resource name in a compressed object stream"
+origin = "generated"
+generated_by = "fixtures/gen/compressed-resource-name.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "d22cff29db3d01e021b08e1761304a53a66558bb4cf68017d316f571cd03d165"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "name-like-image-bytes-pdf"
+path = "fixtures/pdf/name-like-image-bytes.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image bytes resembling an overlong PDF name"
+origin = "generated"
+generated_by = "fixtures/gen/name-like-image-bytes.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7bc09c9bc3d9055620388abeecd5b603598be6da68c6e26ad3806cf7c9f29989"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "compressed-content-name-pdf"
+path = "fixtures/pdf/compressed-content-name.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Long XObject name in a compressed content stream"
+origin = "generated"
+generated_by = "fixtures/gen/compressed-content-name.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2bba47881f7195a2628152ba5988b615cc1faeaeb704d95c6b1abf1fa6536ee9"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
