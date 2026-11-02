@@ -4960,3 +4960,42 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "canonical-inf-real-pdf"
+path = "fixtures/pdf/canonical-inf-real.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic unsafe PDF token"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-unsafe-tokens.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5235b88a802bf433d6e38be4b5b4dd245af5f1701a220a0227deb2a22e0251bf"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-big-integer-pdf"
+path = "fixtures/pdf/canonical-big-integer.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic unsafe PDF token"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-unsafe-tokens.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "eafa3f704d36ca99fe86bbb52397dbfdf87061834cbde4f51630fc4963255a6d"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+

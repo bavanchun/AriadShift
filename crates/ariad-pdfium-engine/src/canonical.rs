@@ -42,6 +42,31 @@ impl Write for BoundedWriter<'_, '_> {
     }
 }
 
+fn validate_name(name: &[u8]) -> Result<(), EngineFailure> {
+    if name.is_empty() {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF contains an empty name.",
+        ));
+    }
+    let encoded = name.iter().fold(0usize, |len, &byte| {
+        len.saturating_add(
+            if b" \t\n\r\x0c()<>[]{}/%#".contains(&byte) || !(33..=126).contains(&byte) {
+                3
+            } else {
+                1
+            },
+        )
+    });
+    if encoded > 254 {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF object name exceeds the safe token length.",
+        ));
+    }
+    Ok(())
+}
+
 // Lopdf's literal-string writer can do quadratic work on unmatched parentheses.
 // Hex strings preserve the value and are written in linear time.
 fn normalize_strings(
@@ -59,18 +84,34 @@ fn normalize_strings(
     }
     match object {
         lopdf::Object::String(_, format) => *format = lopdf::StringFormat::Hexadecimal,
+        lopdf::Object::Integer(value) if i32::try_from(*value).is_err() => {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "PDF integer exceeds the safe range.",
+            ));
+        }
+        lopdf::Object::Real(value) if !value.is_finite() => {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "PDF contains a non-finite real number.",
+            ));
+        }
+        lopdf::Object::Name(name) => validate_name(name)?,
+
         lopdf::Object::Array(items) => {
             for item in items {
                 normalize_strings(ctx, item, depth + 1, max_depth)?;
             }
         }
         lopdf::Object::Dictionary(dict) => {
-            for (_, item) in dict.iter_mut() {
+            for (name, item) in dict.iter_mut() {
+                validate_name(name)?;
                 normalize_strings(ctx, item, depth + 1, max_depth)?;
             }
         }
         lopdf::Object::Stream(stream) => {
-            for (_, item) in stream.dict.iter_mut() {
+            for (name, item) in stream.dict.iter_mut() {
+                validate_name(name)?;
                 normalize_strings(ctx, item, depth + 1, max_depth)?;
             }
         }
@@ -144,6 +185,21 @@ pub(crate) fn canonicalize(
     let inner = doc
         .inner_mut()
         .map_err(|_| EngineFailure::limit_exceeded())?;
+    if !matches!(
+        inner.version.as_str(),
+        "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7" | "2.0"
+    ) {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF version cannot be serialized safely.",
+        ));
+    }
+    if inner.max_id >= i32::MAX as u32 {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF object numbers exceed the safe range.",
+        ));
+    }
     let mut last = None;
     for &(number, _) in inner.objects.keys() {
         if number == 0 || last == Some(number) {
@@ -168,7 +224,8 @@ pub(crate) fn canonicalize(
     for object in inner.objects.values_mut() {
         normalize_strings(ctx, object, 0, max_depth)?;
     }
-    for (_, value) in inner.trailer.iter_mut() {
+    for (name, value) in inner.trailer.iter_mut() {
+        validate_name(name)?;
         normalize_strings(ctx, value, 0, max_depth)?;
     }
     for object in inner.objects.values() {
@@ -190,12 +247,170 @@ pub(crate) fn canonicalize(
         limit,
         ctx,
     };
-    if inner.save_to(&mut out).is_err() {
+    if write_document(&mut out, inner).is_err() {
         ctx.check()?;
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Canonical PDF output exceeds the safe write budget.",
+        ));
     }
     ctx.check()?;
+    check_round_trip(inner, &out.bytes)?;
+    ctx.check()?;
     Ok(out.bytes)
+}
+
+// Writer for the subset of PDF syntax consumed by both parsers.
+fn write_name(out: &mut impl Write, name: &[u8]) -> io::Result<()> {
+    out.write_all(b"/")?;
+    for &byte in name {
+        if b" \t\n\r\x0c()<>[]{}/%#".contains(&byte) || !(33..=126).contains(&byte) {
+            write!(out, "#{byte:02X}")?;
+        } else {
+            out.write_all(&[byte])?;
+        }
+    }
+    Ok(())
+}
+
+fn write_object(out: &mut impl Write, object: &lopdf::Object) -> io::Result<()> {
+    use lopdf::Object;
+    match object {
+        Object::Null => out.write_all(b"null"),
+        Object::Boolean(v) => out.write_all(if *v { b"true" } else { b"false" }),
+        Object::Integer(v) => write!(out, "{v}"),
+        Object::Real(v) => {
+            let mut value = v.to_string();
+            if !value.contains('.') {
+                value.push_str(".0");
+            }
+            out.write_all(value.as_bytes())
+        }
+        Object::Name(name) => write_name(out, name),
+        Object::String(bytes, _) => {
+            out.write_all(b"<")?;
+            for byte in bytes {
+                write!(out, "{byte:02X}")?;
+            }
+            out.write_all(b">")
+        }
+        Object::Array(items) => {
+            out.write_all(b"[")?;
+            for item in items {
+                write_object(out, item)?;
+                out.write_all(b" ")?;
+            }
+            out.write_all(b"]")
+        }
+        Object::Dictionary(dict) => write_dictionary(out, dict),
+        Object::Stream(stream) => {
+            write_dictionary(out, &stream.dict)?;
+            out.write_all(b"\nstream\n")?;
+            out.write_all(&stream.content)?;
+            out.write_all(b"\nendstream")
+        }
+        Object::Reference((number, generation)) => write!(out, "{number} {generation} R"),
+    }
+}
+
+fn write_dictionary(out: &mut impl Write, dict: &lopdf::Dictionary) -> io::Result<()> {
+    out.write_all(b"<<")?;
+    for (name, value) in dict.iter() {
+        write_name(out, name)?;
+        out.write_all(b" ")?;
+        write_object(out, value)?;
+        out.write_all(b" ")?;
+    }
+    out.write_all(b">>")
+}
+
+fn same_object(a: &lopdf::Object, b: &lopdf::Object) -> bool {
+    use lopdf::Object;
+    match (a, b) {
+        (Object::Stream(a), Object::Stream(b)) => {
+            a.content == b.content && same_dict(&a.dict, &b.dict)
+        }
+        (Object::Dictionary(a), Object::Dictionary(b)) => same_dict(a, b),
+        (Object::Array(a), Object::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_object(a, b))
+        }
+        (Object::String(a, _), Object::String(b, _)) => a == b,
+        (Object::Real(a), Object::Real(b)) => a.to_bits() == b.to_bits(),
+        _ => a == b,
+    }
+}
+
+fn same_dict(a: &lopdf::Dictionary, b: &lopdf::Dictionary) -> bool {
+    a.len() == b.len()
+        && a.iter()
+            .all(|(key, value)| b.get(key).is_ok_and(|other| same_object(value, other)))
+}
+
+fn is_regenerated(object: &lopdf::Object) -> bool {
+    matches!(object.type_name(), Ok(b"ObjStm" | b"XRef" | b"Linearized"))
+}
+
+fn write_document(out: &mut BoundedWriter<'_, '_>, doc: &mut lopdf::Document) -> io::Result<()> {
+    writeln!(out, "%PDF-{}", doc.version)?;
+    out.write_all(b"%\xE2\xE3\xCF\xD3\n")?;
+    let mut offsets = Vec::new();
+    for (&(number, generation), object) in &doc.objects {
+        if is_regenerated(object) {
+            continue;
+        }
+        offsets.push((number, generation, out.bytes.len()));
+        writeln!(out, "{number} {generation} obj")?;
+        write_object(out, object)?;
+        out.write_all(b"\nendobj\n")?;
+    }
+    let start = out.bytes.len();
+    out.write_all(b"xref\n0 1\n0000000000 65535 f \n")?;
+    for (number, generation, offset) in offsets {
+        writeln!(out, "{number} 1\n{offset:010} {generation:05} n ")?;
+    }
+    doc.trailer.set("Size", i64::from(doc.max_id) + 1);
+    out.write_all(b"trailer\n")?;
+    write_dictionary(out, &doc.trailer)?;
+    write!(out, "\nstartxref\n{start}\n%%EOF")
+}
+
+fn check_round_trip(expected: &lopdf::Document, bytes: &[u8]) -> Result<(), EngineFailure> {
+    let failure = || {
+        EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Canonical PDF does not preserve the inspected object graph.",
+        )
+    };
+    let actual = lopdf::Document::load_mem_with_options(
+        bytes,
+        lopdf::LoadOptions {
+            strict: true,
+            ..Default::default()
+        },
+    )
+    .map_err(|_| failure())?;
+    if actual.xref_recovery.is_some() || !same_dict(&expected.trailer, &actual.trailer) {
+        return Err(failure());
+    }
+    let expected_count = expected
+        .objects
+        .values()
+        .filter(|object| !is_regenerated(object))
+        .count();
+    if expected_count != actual.objects.len() {
+        return Err(failure());
+    }
+    for (id, object) in &expected.objects {
+        if !is_regenerated(object)
+            && !actual
+                .objects
+                .get(id)
+                .is_some_and(|other| same_object(object, other))
+        {
+            return Err(failure());
+        }
+    }
+    Ok(())
 }
 
 // Lopdf interprets /Prev 0 as an xref at the header. PDF readers treat it as
@@ -412,6 +627,53 @@ mod tests {
     }
 
     #[test]
+    fn refuses_unsafe_scalar_fixtures() {
+        for (name, reason) in [
+            ("canonical-inf-real.pdf", "non-finite"),
+            ("canonical-big-integer.pdf", "integer"),
+        ] {
+            let input = fs::read(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../fixtures/pdf")
+                    .join(name),
+            )
+            .unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new("tokens", "pdf.render", paths, Limits::local(), &mut sink);
+            let mut doc = ariad_pdf::document::open(&input, ctx.limits()).unwrap();
+            let error = canonicalize(&ctx, &mut doc, input.len()).unwrap_err();
+            assert!(error.message.contains(reason), "{name}: {}", error.message);
+        }
+    }
+
+    #[test]
+    fn names_respect_pdfium_token_limit() {
+        assert!(validate_name(&[b'a'; 254]).is_ok());
+        assert!(validate_name(&[b'#'; 85]).is_err());
+        assert!(validate_name(&[]).is_err());
+    }
+
+    #[test]
+    fn serializes_reals_names_and_strings_losslessly() {
+        let object = lopdf::Object::Array(vec![
+            lopdf::Object::Real(1.0),
+            lopdf::Object::Real(0.00000001),
+            lopdf::Object::Name(vec![b'#', b'/', 0]),
+            lopdf::Object::String(vec![0, 255], lopdf::StringFormat::Literal),
+        ]);
+        let mut bytes = Vec::new();
+        write_object(&mut bytes, &object).unwrap();
+        assert_eq!(bytes, b"[1.0 0.00000001 /#23#2F#00 <00FF> ]");
+    }
+
+    #[test]
     fn bounded_output_rejects_growth_past_budget() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunToolPaths {
@@ -443,6 +705,8 @@ mod tests {
         };
         let mut sink = Vec::new();
         let ctx = ToolContext::new("strings", "pdf.render", paths, Limits::local(), &mut sink);
+        let mut empty_name = lopdf::Object::Name(Vec::new());
+        assert!(normalize_strings(&ctx, &mut empty_name, 0, 64).is_err());
         let mut object = lopdf::Object::String(vec![b'('; 4096], lopdf::StringFormat::Literal);
         normalize_strings(&ctx, &mut object, 0, 64).unwrap();
         assert!(matches!(
@@ -472,6 +736,10 @@ mod tests {
         assert!(output.starts_with(b"%PDF-"));
         assert_eq!(output.windows(5).filter(|w| *w == b"xref\n").count(), 2); // xref and startxref
         assert!(!output.windows(7).any(|w| w == b"/ObjStm"));
+        check_round_trip(doc.inner(), &output).unwrap();
+        let mut changed = doc.inner().clone();
+        changed.trailer.set("Root", lopdf::Object::Null);
+        assert!(check_round_trip(&changed, &output).is_err());
         let parsed = lopdf::Document::load_mem_with_options(
             &output,
             lopdf::LoadOptions {
