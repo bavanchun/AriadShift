@@ -114,7 +114,7 @@ fn corpus_size_and_similarity_against_stirling() {
         );
     }
     println!("acceptance: {wins}/10; target hit rate: {target_hits}/10; errors: {errors}");
-    // Accepted measured baseline; text-heavy parity follow-up (issue link pending).
+    // Accepted measured baseline; text-heavy parity follow-up (https://github.com/bavanchun/AriadShift/issues/187).
     assert!(
         errors == 0 && wins >= 6,
         "{errors} errors; only {wins}/10 meet size and similarity"

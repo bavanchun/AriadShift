@@ -41,7 +41,7 @@ fn ebook_matches_stirling_on_corpus() {
             wins += 1;
         }
     }
-    // Accepted measured baseline; text-heavy parity follow-up (issue link pending).
+    // Accepted measured baseline; text-heavy parity follow-up (https://github.com/bavanchun/AriadShift/issues/187).
     assert!(
         errors == 0 && wins >= 6,
         "{errors} errors and only {wins}/10 meet the Stirling size"
