@@ -175,6 +175,6 @@ object types, numeric values, names, string values and raw stream bytes.
 
 The source review's parser findings were used as the pre-fix reproduction; the
 new depth fixture test first exposed an invalid test limit of 128, which was
-corrected to 99 before it passed. The mac-arm64 pack job now runs the render
-golden explicitly with its freshly built PDFium pack; its result is pending CI.
+corrected to 99 before it passed. The mac-arm64 pack job runs the render golden explicitly with its freshly
+built PDFium pack. It passed on commit `df02bc19` in [CI run 41450206794](https://github.com/bavanchun/AriadShift/actions/runs/41450206794).
 No PR closing reference was added; the round-3 review remains outstanding.
