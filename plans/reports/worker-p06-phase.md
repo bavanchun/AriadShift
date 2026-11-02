@@ -1,11 +1,7 @@
 # Overlay and watermark implementation status
 
-Status: in progress. The phase is not ready for release or final review.
+The 15 approved tools and their shared drawing primitives are implemented. The branch integrates `origin/dev` at `5e82c117`; the slice reports cover [drawing](worker-p06-s1.md), [marks](worker-p06-s2.md), [page furniture](worker-p06-s3.md), [colour](worker-p06-s4.md) and [watermark detection and removal](worker-p06-s5.md). The registry, schemas, inline removal report, documentation, notices and fuzz wiring are included.
 
-The branch implements the 15 approved in-process overlay, colour, watermark detection and removal, and page-furniture tools. Drawing uses the bundled Libertinus fonts and shared PDF primitives. The original base was `1bdab0f5`; `origin/dev` at `ff8603f6` was merged in `a25d0732`. Slice details and focused checks are recorded in [the drawing report](worker-p06-s1.md), [the marks report](worker-p06-s2.md), [the page furniture report](worker-p06-s3.md), [the colour report](worker-p06-s4.md), and [the watermark report](worker-p06-s5.md).
+Linux checks passed after the documented retries in [the integration report](worker-p06-integrator.md). The unmaintained-status advisory for the approved font parser has a specific documented exception. Four core/PDF tests and 11 host/CLI tests were ignored for the reasons in that report and are not counted as passed.
 
-The registry and tool schemas are generated. PDF plus inline JSON is implemented across host and WASM, with CLI and MCP coverage in progress. The independent Argon review, dispatched by the PM, found bounded-work, mark-removal and resource-cleanup defects; corrections and regression tests are in progress. Its findings and the required delta review remain gate blockers. The Mac PM handles the final Sonnet review.
-
-Focused slice tests passed, including 2,000 outline entries in 38.45 seconds under a 2 GiB scope, Vietnamese text extraction, and PDFium rendering and watermark round-trip checks. A full clippy invocation passed before the security review changes. The final phase gate has not passed and must be rerun against the final head. Manual macOS Preview, Chrome, Acrobat and phone QR checks remain pending.
-
-The approved D1-D10 decisions and existing marker contract govern this work. No new progress events are introduced.
+The PM-dispatched Argon security review has been addressed in code and regression tests, but its independent delta review remains pending. The Mac PM handles Sonnet review. Manual macOS Preview, Chrome, Acrobat and phone QR checks are pending. The phase gate remains red until the required independent review is complete; CI results are separate.
