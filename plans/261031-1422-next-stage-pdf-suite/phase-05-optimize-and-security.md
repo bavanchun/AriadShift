@@ -1,7 +1,7 @@
 ---
 phase: 5
 title: "Optimize and security: compress (incl. target size), qpdf pack, encrypt/decrypt/permissions, repair, linearize, sanitize"
-status: pending
+status: completed
 priority: P1
 effort: "5 tasks, ~8 worker-days"
 dependencies: [3, 4]
@@ -10,6 +10,10 @@ milestone: B (engine breadth)
 ---
 
 # Phase 5: Optimize and security
+
+## Delivered
+
+PR [#188](https://github.com/bavanchun/AriadShift/pull/188) merged into `dev` at `ae281ec4`. The accepted compression deviation was 6/10 against Stirling level 6, tracked in [#187](https://github.com/bavanchun/AriadShift/issues/187); signature preservation is tracked in [#186](https://github.com/bavanchun/AriadShift/issues/186). The owner-pending IJG exception for libjpeg-turbo and static GNU runtime review for the Linux qpdf pack remain unchanged and block distribution only.
 
 > Deep-mode note: scout-and-detail pass by the Mac PM before dispatch.
 
