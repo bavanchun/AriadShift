@@ -59,7 +59,13 @@ fn resolve_pack_verifies_signature_and_reuses_only_safe_cached_digests() {
     let program = program.canonicalize().expect("qpdf program exists");
     assert!(program.starts_with(root.canonicalize().unwrap()));
     assert_eq!(program, expected_program);
-    assert_eq!(command.install_root.as_deref(), Some(root.as_path()));
+    assert_eq!(
+        command
+            .install_root
+            .as_deref()
+            .map(|p| p.canonicalize().unwrap()),
+        Some(root.canonicalize().unwrap())
+    );
 
     let first_hashes = resolve_hash_computations_for(&root);
     assert_eq!(
