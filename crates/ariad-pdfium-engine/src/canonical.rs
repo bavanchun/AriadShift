@@ -51,8 +51,11 @@ fn normalize_strings(
     max_depth: usize,
 ) -> Result<(), EngineFailure> {
     ctx.check()?;
-    if depth > max_depth {
-        return Err(EngineFailure::limit_exceeded());
+    if depth >= 63 || depth > max_depth {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF object nesting exceeds the safe depth.",
+        ));
     }
     match object {
         lopdf::Object::String(_, format) => *format = lopdf::StringFormat::Hexadecimal,
@@ -84,8 +87,11 @@ fn validate_references(
     max_depth: usize,
 ) -> Result<(), EngineFailure> {
     ctx.check()?;
-    if depth > max_depth {
-        return Err(EngineFailure::limit_exceeded());
+    if depth >= 63 || depth > max_depth {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF object nesting exceeds the safe depth.",
+        ));
     }
     match object {
         lopdf::Object::Reference(id) => {
@@ -371,6 +377,45 @@ mod tests {
     use ariad_core::limits::Limits;
     use ariad_engine_io::RunToolPaths;
     use std::{fs, path::Path, time::Instant};
+
+    #[test]
+    fn refuses_pdfium_parser_depth_even_with_a_larger_configured_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("depth", "pdf.render", paths, Limits::local(), &mut sink);
+        let nested =
+            |depth| (0..depth).fold(lopdf::Object::Null, |v, _| lopdf::Object::Array(vec![v]));
+        assert!(normalize_strings(&ctx, &mut nested(62), 0, 100).is_ok());
+        assert!(normalize_strings(&ctx, &mut nested(63), 0, 100).is_err());
+    }
+
+    #[test]
+    fn refuses_deeply_nested_page_fixture() {
+        let input = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/canonical-deep-64.pdf"),
+        )
+        .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let mut limits = Limits::local();
+        limits.max_nesting_depth = 99;
+        let ctx = ToolContext::new("depth-fixture", "pdf.render", paths, limits, &mut sink);
+        let mut doc = ariad_pdf::document::open(&input, ctx.limits()).unwrap();
+        let error = canonicalize(&ctx, &mut doc, input.len()).unwrap_err();
+        assert!(error.message.contains("nesting"));
+    }
 
     #[test]
     fn bounded_output_rejects_growth_past_budget() {

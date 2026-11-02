@@ -4941,3 +4941,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "canonical-deep-64-pdf"
+path = "fixtures/pdf/canonical-deep-64.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic deeply nested PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-depth.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "ae04a5458bd663b617e42709d027e3629327d7cf0e698fb3d59a5d958a34196f"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
