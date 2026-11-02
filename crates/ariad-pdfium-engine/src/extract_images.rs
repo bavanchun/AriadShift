@@ -293,68 +293,8 @@ pub fn extract_document_images(
     Ok(outcome)
 }
 
-fn check_extraction_xref(
-    ctx: &ToolContext<'_>,
-    bytes: &[u8],
-    pdf_doc: &PdfDoc,
-) -> Result<(), EngineFailure> {
-    let mismatch = pdf_doc
-        .inner()
-        .reference_table
-        .entries
-        .iter()
-        .any(|(&number, entry)| {
-            let lopdf::xref::XrefEntry::Normal { offset, generation } = entry else {
-                return false;
-            };
-            let Some(header) = bytes.get(*offset as usize..) else {
-                return true;
-            };
-            let mut cursor = 0;
-            let mut next = || {
-                let start = cursor;
-                while header.get(cursor).is_some_and(u8::is_ascii_digit) {
-                    cursor += 1;
-                }
-                let value = std::str::from_utf8(&header[start..cursor])
-                    .ok()?
-                    .parse::<u32>()
-                    .ok()?;
-                if !header.get(cursor).is_some_and(|b| is_pdf_ws(*b)) {
-                    return None;
-                }
-                while header.get(cursor).is_some_and(|b| is_pdf_ws(*b)) {
-                    cursor += 1;
-                }
-                Some(value)
-            };
-            let actual_number = next();
-            let actual_generation = next();
-            actual_number != Some(number)
-                || actual_generation != Some(u32::from(*generation))
-                || header.get(cursor..cursor.saturating_add(3)) != Some(b"obj")
-                || !header
-                    .get(cursor + 3)
-                    .is_some_and(|b| is_pdf_delimiter_or_ws(*b))
-                || !pdf_doc.inner().objects.contains_key(&(number, *generation))
-        });
-    let limit = usize::try_from(ctx.limits().max_decompressed_bytes)
-        .unwrap_or(usize::MAX / 2)
-        .min(
-            usize::try_from(ariad_core::reader::pdf::CONTENT_BUDGET_BASE)
-                .unwrap_or(usize::MAX)
-                .saturating_add(
-                    bytes.len().saturating_mul(
-                        usize::try_from(ariad_core::reader::pdf::CONTENT_BUDGET_PER_INPUT_BYTE)
-                            .unwrap_or(usize::MAX),
-                    ),
-                ),
-        );
-    let chain_valid = !pdf_doc.repaired_xref()
-        && !mismatch
-        && validate_xref_chain(ctx, bytes, pdf_doc, limit).is_some();
-    ctx.check()?;
-    if !chain_valid {
+fn check_extraction_xref(pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
+    if pdf_doc.repaired_xref() {
         return Err(EngineFailure::new(
             ErrorCode::LimitExceeded,
             "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
@@ -363,238 +303,55 @@ fn check_extraction_xref(
     Ok(())
 }
 
-// Verify each original section before lopdf merges away superseded entries.
-fn validate_xref_chain(
-    ctx: &ToolContext<'_>,
-    bytes: &[u8],
-    doc: &PdfDoc,
-    limit: usize,
-) -> Option<()> {
-    const MAX_SECTIONS: usize = 1024;
-    const MAX_ENTRIES: usize = 1_000_000;
-    let mut pending = vec![doc.inner().xref_start];
-    let mut visited = HashSet::new();
-    let mut work = 0usize;
-    let mut remaining = limit;
-    while let Some(offset) = pending.pop() {
-        ctx.check().ok()?;
-        if !visited.insert(offset) {
-            continue;
-        }
-        if visited.len() > MAX_SECTIONS {
-            return None;
-        }
-        let mut cursor = offset;
-        let first = xref_token(bytes, &mut cursor)?;
-        let dictionary = if first == b"xref" {
-            loop {
-                let token = xref_token(bytes, &mut cursor)?;
-                if token == b"trailer" {
-                    break xref_dictionary(bytes, &mut cursor)?;
-                }
-                let first_id = xref_integer(token)?;
-                let count = xref_integer(xref_token(bytes, &mut cursor)?)?;
-                work = work.checked_add(count)?;
-                if work > MAX_ENTRIES {
-                    return None;
-                }
-                for i in 0..count {
-                    if i.is_multiple_of(4096) {
-                        ctx.check().ok()?;
-                    }
-                    let object_offset = xref_integer(xref_token(bytes, &mut cursor)?)?;
-                    let generation = xref_integer(xref_token(bytes, &mut cursor)?)?;
-                    let state = xref_token(bytes, &mut cursor)?;
-                    if state == b"n" {
-                        let number = u32::try_from(first_id.checked_add(i)?).ok()?;
-                        let generation = u16::try_from(generation).ok()?;
-                        if !xref_header_matches(bytes, object_offset, number, generation) {
-                            return None;
-                        }
-                    } else if state != b"f" {
-                        return None;
-                    }
-                }
-            }
+fn check_serialized_names(
+    object: &Object,
+    depth: usize,
+    max_depth: usize,
+) -> Result<(), EngineFailure> {
+    if depth > max_depth {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    let check = |name: &[u8]| {
+        let encoded = name.iter().fold(0usize, |len, &byte| {
+            len.saturating_add(
+                if b" \t\n\r\x0c()<>[]{}/%#".contains(&byte) || !(33..=126).contains(&byte) {
+                    3
+                } else {
+                    1
+                },
+            )
+        });
+        if encoded > 254 {
+            Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "PDF object name exceeds the safe token length.",
+            ))
         } else {
-            // A cross-reference stream is an indirect stream at the section offset.
-            xref_integer(first)?;
-            xref_integer(xref_token(bytes, &mut cursor)?)?;
-            if xref_token(bytes, &mut cursor)? != b"obj" {
-                return None;
-            }
-            let dict = xref_dictionary(bytes, &mut cursor)?;
-            if !dict.has_type(b"XRef") {
-                return None;
-            }
-            let len = usize::try_from(dict.get(b"Length").ok()?.as_i64().ok()?).ok()?;
-            if len > remaining {
-                return None;
-            }
-            if xref_token(bytes, &mut cursor)? != b"stream" {
-                return None;
-            }
-            while matches!(bytes.get(cursor), Some(b' ' | b'\t')) {
-                cursor += 1;
-            }
-            cursor = match bytes.get(cursor..cursor.checked_add(2)?) {
-                Some(b"\r\n") => cursor + 2,
-                _ if matches!(bytes.get(cursor), Some(b'\r' | b'\n')) => cursor + 1,
-                _ => return None,
-            };
-            let end = cursor.checked_add(len)?;
-            let content = bytes.get(cursor..end)?;
-            let mut marker = end;
-            while bytes.get(marker).is_some_and(|byte| is_pdf_ws(*byte)) {
-                marker += 1;
-            }
-            if bytes.get(marker..marker.checked_add(9)?) != Some(b"endstream")
-                || !bytes
-                    .get(marker + 9)
-                    .is_some_and(|byte| is_pdf_delimiter_or_ws(*byte))
-            {
-                return None;
-            }
-            let stream = lopdf::Stream::new(dict, content.to_vec());
-            if stream.dict.has(b"Filter") {
-                stream.filters().ok()?;
-            }
-            let decoded = stream.get_plain_content_with_limit(remaining).ok()?;
-            remaining = remaining.checked_sub(decoded.len())?;
-            let widths = stream.dict.get(b"W").ok()?.as_array().ok()?;
-            if widths.len() != 3 {
-                return None;
-            }
-            let widths: Vec<usize> = widths
-                .iter()
-                .map(|v| usize::try_from(v.as_i64().ok()?).ok())
-                .collect::<Option<_>>()?;
-            if widths.iter().any(|&w| w > 8) {
-                return None;
-            }
-            let width = widths.iter().try_fold(0usize, |n, &w| n.checked_add(w))?;
-            if width == 0 {
-                return None;
-            }
-            let size = usize::try_from(stream.dict.get(b"Size").ok()?.as_i64().ok()?).ok()?;
-            let indexes = match stream.dict.get(b"Index") {
-                Ok(value) => value
-                    .as_array()
-                    .ok()?
-                    .iter()
-                    .map(|v| usize::try_from(v.as_i64().ok()?).ok())
-                    .collect::<Option<Vec<_>>>()?,
-                Err(_) => vec![0, size],
-            };
-            if !indexes.len().is_multiple_of(2) {
-                return None;
-            }
-            let mut position = 0usize;
-            for pair in indexes.as_chunks::<2>().0 {
-                work = work.checked_add(pair[1])?;
-                if work > MAX_ENTRIES {
-                    return None;
-                }
-                for i in 0..pair[1] {
-                    if i.is_multiple_of(4096) {
-                        ctx.check().ok()?;
-                    }
-                    let end = position.checked_add(width)?;
-                    let entry = decoded.get(position..end)?;
-                    position = end;
-                    let mut field_pos = 0usize;
-                    let mut fields = [0u64; 3];
-                    for (index, &field_width) in widths.iter().enumerate() {
-                        for &byte in entry.get(field_pos..field_pos.checked_add(field_width)?)? {
-                            fields[index] = fields[index]
-                                .checked_mul(256)?
-                                .checked_add(u64::from(byte))?;
-                        }
-                        field_pos += field_width;
-                    }
-                    if widths[0] == 0 {
-                        fields[0] = 1;
-                    }
-                    if fields[0] > 2 {
-                        return None;
-                    }
-                    if fields[0] == 1 {
-                        let number = u32::try_from(pair[0].checked_add(i)?).ok()?;
-                        let object_offset = usize::try_from(fields[1]).ok()?;
-                        let generation = u16::try_from(fields[2]).ok()?;
-                        if !xref_header_matches(bytes, object_offset, number, generation) {
-                            return None;
-                        }
-                    }
-                }
-            }
-            stream.dict
-        };
-        for key in [b"Prev".as_slice(), b"XRefStm".as_slice()] {
-            if let Ok(value) = dictionary.get(key) {
-                let offset = usize::try_from(value.as_i64().ok()?).ok()?;
-                if offset >= bytes.len() {
-                    return None;
-                }
-                pending.push(offset);
+            Ok(())
+        }
+    };
+    match object {
+        Object::Name(name) => check(name)?,
+        Object::Array(items) => {
+            for item in items {
+                check_serialized_names(item, depth + 1, max_depth)?;
             }
         }
-    }
-    Some(())
-}
-
-fn xref_token<'a>(bytes: &'a [u8], cursor: &mut usize) -> Option<&'a [u8]> {
-    let (start, end) = next_content_token(bytes, cursor).ok()??;
-    Some(&bytes[start..end])
-}
-
-fn xref_integer(token: &[u8]) -> Option<usize> {
-    if token.is_empty() || !token.iter().all(u8::is_ascii_digit) {
-        return None;
-    }
-    std::str::from_utf8(token).ok()?.parse().ok()
-}
-
-fn xref_dictionary(bytes: &[u8], cursor: &mut usize) -> Option<Dictionary> {
-    let start = *cursor;
-    if xref_token(bytes, cursor)? != b"<<" {
-        return None;
-    }
-    let mut depth = 1usize;
-    while depth > 0 {
-        match xref_token(bytes, cursor)? {
-            b"<<" => depth = depth.checked_add(1)?,
-            b">>" => depth -= 1,
-            _ => {}
+        Object::Dictionary(dict) => {
+            for (key, value) in dict.iter() {
+                check(key)?;
+                check_serialized_names(value, depth + 1, max_depth)?;
+            }
         }
-        if depth > 64 || cursor.checked_sub(start)? > 1024 * 1024 {
-            return None;
+        Object::Stream(stream) => {
+            for (key, value) in stream.dict.iter() {
+                check(key)?;
+                check_serialized_names(value, depth + 1, max_depth)?;
+            }
         }
+        _ => {}
     }
-    let mut content = bytes[start..*cursor].to_vec();
-    content.extend_from_slice(b" q");
-    let mut operations = Content::decode_strict(&content).ok()?.operations;
-    let op = operations.pop()?;
-    if op.operator != "q" || op.operands.len() != 1 || !operations.is_empty() {
-        return None;
-    }
-    op.operands.into_iter().next()?.as_dict().ok().cloned()
-}
-
-fn xref_header_matches(bytes: &[u8], offset: usize, number: u32, generation: u16) -> bool {
-    let Some(header) = bytes.get(offset..) else {
-        return false;
-    };
-    let mut cursor = 0;
-    let Some(n) = xref_token(header, &mut cursor).and_then(xref_integer) else {
-        return false;
-    };
-    let Some(g) = xref_token(header, &mut cursor).and_then(xref_integer) else {
-        return false;
-    };
-    n == number as usize
-        && g == usize::from(generation)
-        && xref_token(header, &mut cursor) == Some(b"obj")
+    Ok(())
 }
 
 fn check_name_tokens(bytes: &[u8]) -> Result<(), EngineFailure> {
@@ -724,14 +481,21 @@ fn extract_document_images_with(
         .validate()
         .map_err(|e| EngineFailure::owned(ErrorCode::InvalidRequest, e.to_string()))?;
 
-    let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
-    check_extraction_xref(ctx, &bytes, &pdf_doc)?;
-    check_document_names(ctx, &bytes, &pdf_doc)?;
+    let (bytes, mut pdf_doc) = read_and_preflight_pdf(ctx)?;
+    check_extraction_xref(&pdf_doc)?;
+    let header = bytes.windows(5).position(|w| w == b"%PDF-").unwrap_or(0);
+    check_document_names(ctx, &bytes[header..], &pdf_doc)?;
+    let canonical = crate::canonical::canonicalize(ctx, &mut pdf_doc, bytes.len())?;
+    for object in pdf_doc.inner().objects.values() {
+        ctx.check()?;
+        check_serialized_names(object, 0, usize::from(ctx.limits().max_nesting_depth))?;
+    }
+    drop(bytes);
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
     let pdfium = ctx.pdfium()?;
     let pdfium_doc = pdfium
-        .load_pdf_from_byte_slice(&bytes, None)
+        .load_pdf_from_byte_slice(&canonical, None)
         .map_err(map_pdfium_error)?;
 
     let total_pages =
@@ -757,11 +521,13 @@ fn extract_document_images_with(
     let mask_ids = collect_mask_object_ids(&pdf_doc);
     let max_depth = usize::from(ctx.limits().max_nesting_depth);
     let max_decompressed = usize::try_from(
-        ctx.limits()
-            .max_decompressed_bytes
+        pdf_doc
+            .remaining_decode_bytes()
             .min(u64::try_from(usize::MAX / 2).unwrap_or(u64::MAX)),
     )
-    .unwrap_or(64 * 1024 * 1024);
+    .unwrap_or(64 * 1024 * 1024)
+    .checked_sub(canonical.len())
+    .ok_or_else(EngineFailure::limit_exceeded)?;
 
     let mut seen_objects: HashSet<PdfObjectId> = HashSet::new();
     let mut seen_inline_hashes: HashSet<[u8; 32]> = HashSet::new();
@@ -2576,7 +2342,7 @@ fn content_string_operand(token: &[u8]) -> Result<Option<Vec<u8>>, EngineFailure
     }
 }
 
-fn next_content_token(
+pub(crate) fn next_content_token(
     bytes: &[u8],
     cursor: &mut usize,
 ) -> Result<Option<(usize, usize)>, EngineFailure> {
@@ -4163,6 +3929,13 @@ mod corpus_tests {
     }
 
     #[test]
+    fn serialized_names_respect_pdfium_token_limit() {
+        assert!(check_serialized_names(&Object::Name(vec![b'a'; 254]), 0, 64).is_ok());
+        let error = check_serialized_names(&Object::Name(vec![b'#'; 85]), 0, 64).unwrap_err();
+        assert_eq!(error.code, ErrorCode::LimitExceeded);
+    }
+
+    #[test]
     fn valid_linked_xref_streams_are_accepted() {
         for name in [
             "incremental-xref-stream-valid.pdf",
@@ -4187,8 +3960,8 @@ mod corpus_tests {
                 Limits::local(),
                 &mut sink,
             );
-            let (bytes, doc) = read_and_preflight_pdf(&ctx).unwrap();
-            check_extraction_xref(&ctx, &bytes, &doc).unwrap();
+            let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            check_extraction_xref(&doc).unwrap();
         }
     }
 
@@ -4580,13 +4353,21 @@ mod corpus_tests {
                 &mut sink,
             );
             let result = (|| {
-                let (bytes, doc) = read_and_preflight_pdf(&ctx)?;
-                check_extraction_xref(&ctx, &bytes, &doc)?;
-                check_document_names(&ctx, &bytes, &doc)?;
+                let (bytes, mut doc) = read_and_preflight_pdf(&ctx)?;
+                check_extraction_xref(&doc)?;
+                let header = bytes.windows(5).position(|w| w == b"%PDF-").unwrap_or(0);
+                check_document_names(&ctx, &bytes[header..], &doc)?;
+                let canonical = crate::canonical::canonicalize(&ctx, &mut doc, bytes.len())?;
+                for object in doc.inner().objects.values() {
+                    ctx.check()?;
+                    check_serialized_names(object, 0, usize::from(ctx.limits().max_nesting_depth))?;
+                }
                 let mut work = 0;
                 let max_depth = usize::from(ctx.limits().max_nesting_depth);
-                let max_bytes =
-                    usize::try_from(ctx.limits().max_decompressed_bytes).unwrap_or(usize::MAX / 2);
+                let max_bytes = usize::try_from(doc.remaining_decode_bytes())
+                    .unwrap_or(usize::MAX / 2)
+                    .checked_sub(canonical.len())
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
                 for page in doc.inner().get_pages().values() {
                     preflight_page_images(&ctx, &doc, *page, max_bytes, max_depth, &mut work)?;
                 }
@@ -4635,30 +4416,6 @@ mod corpus_tests {
             (
                 "invalid-name-escape.pdf",
                 "Page form execution work exceeds the limit.",
-            ),
-            (
-                "incremental-xref-stream-shadow.pdf",
-                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
-            ),
-            (
-                "nested-xref-chain-shadow.pdf",
-                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
-            ),
-            (
-                "overlapping-xref-stream-shadow.pdf",
-                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
-            ),
-            (
-                "hybrid-xref-stream-shadow.pdf",
-                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
-            ),
-            (
-                "incremental-xref-shadow.pdf",
-                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
-            ),
-            (
-                "mismatched-xref-header.pdf",
-                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
             ),
             (
                 "broken-xref.pdf",

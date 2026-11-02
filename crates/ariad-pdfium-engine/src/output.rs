@@ -281,8 +281,9 @@ impl<'a> ToolContext<'a> {
             return Err(EngineFailure::limit_exceeded());
         }
 
-        let bytes = std::fs::read(&input_path).map_err(|_| EngineFailure::io())?;
+        let mut bytes = std::fs::read(&input_path).map_err(|_| EngineFailure::io())?;
         self.check()?;
+        crate::canonical::normalize_zero_prev(self, &mut bytes)?;
 
         let mut pdf_ctx = PdfToolCtx::with_cancel(Arc::clone(&self.cancel.0))
             .with_max_pages(self.limits.max_pages);
@@ -298,17 +299,7 @@ impl<'a> ToolContext<'a> {
         let mut doc = pdf_document::open_with_ctx(&bytes, &open_limits, &pdf_ctx)
             .map_err(map_pdf_open_error)?;
 
-        if doc.repaired_xref() {
-            self.warn(
-                "repaired_xref",
-                "cross-reference table was malformed and reconstructed from object offsets",
-            )?;
-            if let Ok(repaired) = doc.save_bytes() {
-                return Ok(repaired);
-            }
-        }
-
-        Ok(bytes)
+        crate::canonical::canonicalize(self, &mut doc, bytes.len())
     }
 
     /// Resolves `range` against `total_pages` with [`DuplicatePolicy::Reject`] and enforces

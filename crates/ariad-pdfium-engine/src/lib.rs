@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod blank;
+mod canonical;
 pub mod crop_whitespace;
 pub mod detect_scanned;
 pub mod dispatch;

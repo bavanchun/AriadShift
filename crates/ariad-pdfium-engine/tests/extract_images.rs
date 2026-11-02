@@ -1159,15 +1159,8 @@ fn refuses_truncated_xobject_names_before_pdfium_page_load() {
 
 #[test]
 fn refuses_repaired_cross_reference_before_loading_pdfium() {
-    for fixture in [
-        "repaired-xref-extraction.pdf",
-        "mismatched-xref-header.pdf",
-        "incremental-xref-shadow.pdf",
-        "incremental-xref-stream-shadow.pdf",
-        "hybrid-xref-stream-shadow.pdf",
-        "overlapping-xref-stream-shadow.pdf",
-        "nested-xref-chain-shadow.pdf",
-    ] {
+    {
+        let fixture = "repaired-xref-extraction.pdf";
         let ws = TestWorkspace::from_fixture(&format!("fixtures/pdf/{fixture}"));
         let mut sink = Vec::new();
         let mut ctx = ToolContext::new(
@@ -1237,7 +1230,18 @@ fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
         }
     }
     let lib_dir = require_pdfium!();
-    let jpeg = make_test_jpeg(24, 24);
+    let side = 128u32;
+    let rgb = RgbImage::from_fn(side, side, |x, y| {
+        image::Rgb([
+            (x.wrapping_mul(71) ^ y.wrapping_mul(31)) as u8,
+            (x.wrapping_mul(19) ^ y.wrapping_mul(97)) as u8,
+            (x.wrapping_mul(43) ^ y.wrapping_mul(59)) as u8,
+        ])
+    });
+    let mut jpeg = Vec::new();
+    JpegEncoder::new_with_quality(&mut jpeg, 15)
+        .encode_image(&rgb)
+        .unwrap();
     let mut objects = vec![
         b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
         format!(
@@ -1252,16 +1256,17 @@ fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
     for i in 0..8 {
         let page = 3 + i * 3;
         objects.push(format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im {} 0 R >> >> /Contents {} 0 R >>", page + 1, page + 2).into_bytes());
-        objects.push(stream_object("/Type /XObject /Subtype /Image /Width 24 /Height 24 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode", &jpeg));
-        objects.push(stream_object("", b"q 24 0 0 24 0 0 cm /Im Do Q"));
+        objects.push(stream_object("/Type /XObject /Subtype /Image /Width 128 /Height 128 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode", &jpeg));
+        objects.push(stream_object("", b"q 128 0 0 128 0 0 cm /Im Do Q"));
     }
-    let ws = TestWorkspace::from_bytes("stream.pdf", &assemble_pdf(&objects));
+    let pdf = assemble_pdf(&objects);
+    let ws = TestWorkspace::from_bytes("stream.pdf", &pdf);
     let mut sink = Observe {
         dir: ws.paths.work_dir.clone(),
         counts: Vec::new(),
         events: Vec::new(),
     };
-    let limit = (jpeg.len().max(24 * 24 * 3) * 2) as u64;
+    let limit = (pdf.len() * 2 + 128 * 128 * 4 + 128 * 128 * 3) as u64;
     let limits = Limits {
         max_decompressed_bytes: limit,
         ..Limits::local()
@@ -1274,8 +1279,11 @@ fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
         &mut sink,
     )
     .with_library_dir(lib_dir);
-    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
-        .expect_err("cumulative output must be bounded");
+    let params = ExtractImagesParams {
+        format: ExtractFormat::Png,
+        ..ExtractImagesParams::default()
+    };
+    let err = extract_images::run(&mut ctx, params).expect_err("cumulative output must be bounded");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
     assert!(
         !sink.counts.is_empty() && sink.counts[0] == 1,
@@ -1288,4 +1296,116 @@ fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
             .any(|w| w == b"\"type\":\"artifact\"")
     );
     assert_eq!(fs::read_dir(ws.paths.output_dir).unwrap().count(), 0);
+}
+
+#[test]
+fn canonical_output_matches_preflight_for_ambiguous_xrefs() {
+    let lib_dir = require_pdfium!();
+    let render = |fixture: &str| -> Result<Vec<u8>, ariad_engine_io::EngineFailure> {
+        let ws = TestWorkspace::from_fixture(&format!("fixtures/pdf/{fixture}"));
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "canonical",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())?;
+        let bytes = ctx.load_validated_pdf_bytes()?;
+        let pdfium = ctx.pdfium()?;
+        let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).unwrap();
+        let page = doc.pages().get(0).unwrap();
+        let bitmap = page
+            .render_with_config(&PdfRenderConfig::new().set_target_size(100, 100))
+            .unwrap();
+        Ok(bitmap.as_rgba_bytes())
+    };
+    let control = render("canonical-control.pdf").expect("control");
+    let mut accepted = 0;
+    for fixture in [
+        "canonical-prev-cycle.pdf",
+        "canonical-short-entries.pdf",
+        "canonical-gen-precedence.pdf",
+        "canonical-hybrid-root.pdf",
+        "canonical-objstm-index.pdf",
+    ] {
+        match render(fixture) {
+            Ok(pixels) => {
+                accepted += 1;
+                assert_eq!(pixels, control, "{fixture}");
+            }
+            Err(err) => assert!(
+                matches!(
+                    err.code,
+                    ErrorCode::LimitExceeded | ErrorCode::EngineFailure | ErrorCode::InvalidRequest
+                ),
+                "{fixture}: {err:?}"
+            ),
+        }
+    }
+    assert!(
+        accepted > 0,
+        "at least one ambiguous input must reach PDFium"
+    );
+}
+
+#[test]
+fn accepts_prefix_and_zero_previous_xref() {
+    let lib_dir = require_pdfium!();
+    let control = fs::read(repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();
+    let text = String::from_utf8_lossy(&control);
+    let input = text.replace("/Root 2 0 R >>", "/Root 2 0 R /Prev 0 >>");
+    assert_ne!(input.as_bytes(), control);
+    // Preserve the binary header while modifying the ASCII trailer.
+    let tail = &input.as_bytes()[input.find("xref\n").unwrap()..];
+    let original_xref = control.windows(5).position(|v| v == b"xref\n").unwrap();
+    let mut bytes = b" \r\n".to_vec();
+    bytes.extend_from_slice(&control[..original_xref]);
+    bytes.extend_from_slice(tail);
+    let ws = TestWorkspace::from_bytes("prefix.pdf", &bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "prefix",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+        .expect("valid prefix and zero Prev");
+}
+
+#[test]
+fn accepts_whitespace_before_object_header_at_xref_offset() {
+    let lib_dir = require_pdfium!();
+    let mut bytes = fs::read(repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();
+    let xref = bytes.windows(5).position(|w| w == b"xref\n").unwrap();
+    let marker = b"5 1\n";
+    let start = xref
+        + bytes[xref..]
+            .windows(marker.len())
+            .position(|w| w == marker)
+            .unwrap()
+        + marker.len();
+    let offset: usize = std::str::from_utf8(&bytes[start..start + 10])
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(bytes[offset - 1].is_ascii_whitespace());
+    bytes[start..start + 10].copy_from_slice(format!("{:010}", offset - 1).as_bytes());
+    let ws = TestWorkspace::from_bytes("whitespace-offset.pdf", &bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "whitespace-offset",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+        .expect("whitespace at object offset");
 }
