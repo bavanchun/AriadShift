@@ -62,8 +62,9 @@ jobs:
         include:
           - {slug: linux-x64, triple: x86_64-unknown-linux-gnu, os: ubuntu-26.04}
           - {slug: linux-arm64, triple: aarch64-unknown-linux-gnu, os: ubuntu-26.04-arm}
-          - {slug: linux-musl-x64, triple: x86_64-unknown-linux-musl, os: ubuntu-26.04, musl: true}
-          - {slug: linux-musl-arm64, triple: aarch64-unknown-linux-musl, os: ubuntu-26.04-arm, musl: true}
+          # The musl targets stay out of the matrix until the engine's unwinder
+          # symbols resolve on Alpine: https://github.com/bavanchun/AriadShift/issues/132
+          # Re-add {slug: linux-musl-x64|linux-musl-arm64, ..., musl: true} with the fix.
           - {slug: mac-arm64, triple: aarch64-apple-darwin, os: macos-26}
           # Cross-built on the arm64 runner; the smoke test needs Rosetta and is skipped without it.
           - {slug: mac-x64, triple: x86_64-apple-darwin, os: macos-26}
