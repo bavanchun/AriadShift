@@ -57,6 +57,25 @@ routes = ["pdf->md"]
 companions = []
 
 [[fixture]]
+id = "mismatched-page-count-pdf"
+path = "fixtures/pdf/mismatched-page-count.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic PDF with an incorrect page tree count"
+origin = "generated"
+generated_by = "fixtures/gen/mismatched-page-count.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5dac1fc598006ac0e0f48815b64f79a54ab43f4f7a7756d0e30068a51e724b19"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
 id = "canonical-large-object-number-pdf"
 path = "fixtures/pdf/canonical-large-object-number.pdf"
 format = "pdf"

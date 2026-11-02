@@ -496,10 +496,19 @@ pub(crate) fn preflight_page_tree(
     let root_id = resolve(Some(doc), pages)?
         .0
         .ok_or_else(EngineFailure::limit_exceeded)?;
-    let mut stack = vec![(root_id, 0usize)];
+    let mut stack = vec![(root_id, 0usize, None)];
     let mut visited = HashSet::new();
     let mut leaves = Vec::new();
-    while let Some((id, depth)) = stack.pop() {
+    while let Some((id, depth, completion)) = stack.pop() {
+        if let Some((start, count)) = completion {
+            if leaves.len() - start != count {
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page tree Count does not match its leaves.",
+                ));
+            }
+            continue;
+        }
         if depth > max_depth || visited.len() >= 100_000 || !visited.insert(id) {
             return Err(EngineFailure::limit_exceeded());
         }
@@ -523,6 +532,24 @@ pub(crate) fn preflight_page_tree(
                     "Page tree node with Kids is not a Pages node.",
                 ));
             }
+            let count = dict.get(b"Count").map_err(|_| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page tree Count is missing or invalid.",
+                )
+            })?;
+            let count = resolve(Some(doc), count)?
+                .1
+                .as_i64()
+                .ok()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Page tree Count is missing or invalid.",
+                    )
+                })?;
+            stack.push((id, depth, Some((leaves.len(), count))));
             let kids = resolve(Some(doc), kids)?
                 .1
                 .as_array()
@@ -531,10 +558,10 @@ pub(crate) fn preflight_page_tree(
                 let id = resolve(Some(doc), child)?
                     .0
                     .ok_or_else(EngineFailure::limit_exceeded)?;
-                stack.push((id, depth + 1));
+                stack.push((id, depth + 1, None));
             }
         } else {
-            if kind != b"Page" {
+            if id == root_id || kind != b"Page" {
                 return Err(EngineFailure::new(
                     ErrorCode::LimitExceeded,
                     "Page tree leaf is not a Page node.",
@@ -4219,6 +4246,31 @@ mod corpus_tests {
     use ariad_engine_io::RunToolPaths;
     use std::path::{Path, PathBuf};
 
+    #[test]
+    fn page_tree_requires_matching_subtree_counts() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/mismatched-page-count.pdf");
+        let mut doc = lopdf::Document::load(path).expect("fixture");
+        let err = preflight_page_tree(&doc, 32).expect_err("incorrect intermediate count");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Page tree Count does not match its leaves.");
+        doc.get_object_mut((3, 0))
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set("Count", 1);
+        assert_eq!(preflight_page_tree(&doc, 32).unwrap(), vec![(4, 0)]);
+        doc.get_object_mut((2, 0))
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set("Count", 2);
+        assert!(
+            preflight_page_tree(&doc, 32).is_err(),
+            "incorrect root count"
+        );
+    }
+
     fn collect_pdfs(dir: &Path, paths: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(dir).expect("read fixture directory") {
             let path = entry.expect("fixture entry").path();
@@ -5531,6 +5583,10 @@ mod corpus_tests {
             (
                 "ambiguous-page-tree.pdf",
                 "Page tree node with Kids is not a Pages node.",
+            ),
+            (
+                "mismatched-page-count.pdf",
+                "Page tree Count does not match its leaves.",
             ),
             (
                 "canonical-deep-64.pdf",
