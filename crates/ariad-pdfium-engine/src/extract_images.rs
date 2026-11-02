@@ -629,7 +629,10 @@ fn preflight_page_tree(
             .map_err(|_| EngineFailure::limit_exceeded())?;
         if let Ok(kids) = dict.get(b"Kids") {
             if kind != b"Pages" {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page tree node with Kids is not a Pages node.",
+                ));
             }
             let kids = resolve(Some(doc), kids)?
                 .1
@@ -643,7 +646,10 @@ fn preflight_page_tree(
             }
         } else {
             if kind != b"Page" {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page tree leaf is not a Page node.",
+                ));
             }
             leaves.push(id);
         }
@@ -704,7 +710,12 @@ impl PreflightBudget<'_> {
             .image_pixels
             .checked_add(pixels)
             .filter(|n| *n <= ctx.max_pixels())
-            .ok_or_else(EngineFailure::limit_exceeded)?;
+            .ok_or_else(|| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page inline image pixels exceed the limit.",
+                )
+            })?;
         let byte_cap = ctx
             .max_pixels()
             .checked_mul(4)
@@ -913,7 +924,12 @@ fn preflight_page_images(
             execution_work = execution_work
                 .checked_add(cost)
                 .filter(|n| *n <= 100_000)
-                .ok_or_else(EngineFailure::limit_exceeded)?;
+                .ok_or_else(|| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Page form execution work exceeds the limit.",
+                    )
+                })?;
         }
     }
     let glyph_uses =
@@ -927,7 +943,10 @@ fn preflight_page_images(
         .and_then(|n| n.checked_add(execution_bytes))
         .ok_or_else(EngineFailure::limit_exceeded)?;
     if pixels > ctx.max_pixels() || bytes > ctx.max_pixels().saturating_mul(4) {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Page inline image totals exceed the limit.",
+        ));
     }
     let glyph_work = execution_glyphs
         .checked_mul(budget.glyph_max)
@@ -935,7 +954,12 @@ fn preflight_page_images(
     execution_work
         .checked_add(glyph_work)
         .filter(|n| *n <= 100_000)
-        .ok_or_else(EngineFailure::limit_exceeded)?;
+        .ok_or_else(|| {
+            EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Page glyph execution work exceeds the limit.",
+            )
+        })?;
     Ok(())
 }
 
@@ -997,7 +1021,10 @@ fn preflight_content_object(
             preflight_content(ctx, doc, &bytes, max_bytes, budget)
         }
         Object::Null => Ok(Vec::new()),
-        _ => Err(EngineFailure::limit_exceeded()),
+        _ => Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Page content entry is not a stream or array.",
+        )),
     }
 }
 
@@ -1249,7 +1276,12 @@ fn preflight_xobject(
                 None
             };
             if let Some((width, height, _, _)) = jpx_info {
-                ctx.check_pixels(width, height)?;
+                ctx.check_pixels(width, height).map_err(|_| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "JPX dimensions exceed the pixel limit.",
+                    )
+                })?;
             }
             preflight_image_dict(ctx, &stream.dict, Some(doc), jpx_info)?;
             if stream.content.len() > max_bytes {
@@ -1316,7 +1348,12 @@ fn preflight_xobject(
                     expansion_cost = expansion_cost
                         .checked_add(child_cost)
                         .filter(|cost| *cost <= 100_000)
-                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                        .ok_or_else(|| {
+                            EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "Form expansion work exceeds the limit.",
+                            )
+                        })?;
                     expansion_pixels = expansion_pixels
                         .checked_add(child_pixels)
                         .ok_or_else(EngineFailure::limit_exceeded)?;
@@ -1702,7 +1739,10 @@ fn preflight_content(
             if let (Ok(full), Ok(abbreviated)) = (dict.get(long), dict.get(short))
                 && resolve(Some(doc), full)?.1 != resolve(Some(doc), abbreviated)?.1
             {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Inline image dictionary has conflicting keys.",
+                ));
             }
         }
         let mask = dict
@@ -1710,8 +1750,14 @@ fn preflight_content(
             .or_else(|_| dict.get(b"IM"))
             .ok()
             .map(|v| {
-                resolve(Some(doc), v)
-                    .and_then(|(_, v)| v.as_bool().map_err(|_| EngineFailure::limit_exceeded()))
+                resolve(Some(doc), v).and_then(|(_, v)| {
+                    v.as_bool().map_err(|_| {
+                        EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image mask flag is not boolean.",
+                        )
+                    })
+                })
             })
             .transpose()?
             .unwrap_or(false);
@@ -1725,16 +1771,27 @@ fn preflight_content(
             })
             .transpose()?;
         if !matches!(bpc, Some(1 | 2 | 4 | 8 | 16)) && !(mask && bpc.is_none()) {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Inline image has an invalid bits per component value.",
+            ));
         }
         if mask && bpc.is_some_and(|v| v != 1) {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Inline image mask must use one bit per component.",
+            ));
         }
         if !mask {
             let colorspace = dict
                 .get(b"ColorSpace")
                 .or_else(|_| dict.get(b"CS"))
-                .map_err(|_| EngineFailure::limit_exceeded())?;
+                .map_err(|_| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Inline image is missing its color space.",
+                    )
+                })?;
             color_components(colorspace, Some(doc), 0)?;
         }
         let decoded_len = preflight_image_dict(ctx, dict, None, None)?;
@@ -1827,7 +1884,10 @@ fn preflight_content(
             )
             .any(|v| matches!(*v, b"CCITTFaxDecode" | b"DCTDecode"))
         {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Inline image codec cannot precede another filter.",
+            ));
         }
         let decoded_cap = if filters.len() > 1 || terminal.is_some() {
             data_cap
@@ -1916,7 +1976,12 @@ fn preflight_content(
                     output_len = output_len
                         .checked_add(count)
                         .filter(|n| *n <= decoded_cap)
-                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                        .ok_or_else(|| {
+                            EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "Decoded inline image data exceeds the limit.",
+                            )
+                        })?;
                     if decoder.total_in() > u64::try_from(data_cap).unwrap_or(u64::MAX) {
                         return Err(EngineFailure::limit_exceeded());
                     }
@@ -1980,7 +2045,10 @@ fn preflight_content(
             _ => return Err(EngineFailure::limit_exceeded()),
         }
         if cursor - data_start > data_cap {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Encoded inline image data exceeds the limit.",
+            ));
         }
         if !filters.is_empty() {
             let lossless_count = filters.len() - usize::from(terminal.is_some());
@@ -2046,7 +2114,10 @@ fn preflight_content(
                 if i64::from(width) > declared(b"Width", b"W")
                     || i64::from(height) > declared(b"Height", b"H")
                 {
-                    return Err(EngineFailure::limit_exceeded());
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Inline JPEG dimensions exceed the image dictionary.",
+                    ));
                 }
             }
         }
@@ -2085,7 +2156,12 @@ fn inline_run_length_len(
         output = output
             .checked_add(decoded)
             .filter(|n| *n <= cap)
-            .ok_or_else(EngineFailure::limit_exceeded)?;
+            .ok_or_else(|| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Decoded inline image data exceeds the limit.",
+                )
+            })?;
         pos = pos
             .checked_add(input)
             .filter(|n| *n <= data.len())
@@ -2139,7 +2215,12 @@ fn inline_lzw_len(
         output = output
             .checked_add(len)
             .filter(|n| *n <= cap)
-            .ok_or_else(EngineFailure::limit_exceeded)?;
+            .ok_or_else(|| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Decoded inline image data exceeds the limit.",
+                )
+            })?;
         if let Some(prev) = previous
             && next < 4096
         {
@@ -2496,7 +2577,10 @@ fn charge_traversal(
     *page = page.saturating_add(1);
     *document = document.saturating_add(1);
     if *page > 100_000 || *document > 1_000_000 || *document > ctx.limits().max_blocks as usize {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Page or document traversal work exceeds the limit.",
+        ));
     }
     Ok(())
 }
@@ -3361,7 +3445,9 @@ mod corpus_tests {
             if expected {
                 result.expect("single form is within budget");
             } else {
-                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+                let e = result.unwrap_err();
+                assert_eq!(e.code, ErrorCode::LimitExceeded);
+                assert_eq!(e.message, "Page form execution work exceeds the limit.");
             }
         }
     }
@@ -3408,7 +3494,9 @@ mod corpus_tests {
             if expected {
                 result.expect("one glyph is within budget");
             } else {
-                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+                let e = result.unwrap_err();
+                assert_eq!(e.code, ErrorCode::LimitExceeded);
+                assert_eq!(e.message, "Page glyph execution work exceeds the limit.");
             }
         }
     }
@@ -3534,7 +3622,7 @@ mod corpus_tests {
                 false,
             ),
         ];
-        for (content, accepted) in samples {
+        for (index, (content, accepted)) in samples.into_iter().enumerate() {
             let mut document_work = 0;
             let mut budget = PreflightBudget {
                 scanned: 0,
@@ -3558,7 +3646,16 @@ mod corpus_tests {
             if accepted {
                 result.expect("supported inline image");
             } else {
-                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+                let e = result.unwrap_err();
+                assert_eq!(e.code, ErrorCode::LimitExceeded);
+                assert_eq!(
+                    e.message,
+                    if index == 6 {
+                        "Inline JPEG dimensions exceed the image dictionary."
+                    } else {
+                        "Inline image codec cannot precede another filter."
+                    }
+                );
             }
         }
     }
@@ -3892,11 +3989,17 @@ mod corpus_tests {
             let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
             let page = *doc.inner().get_pages().values().next().expect("page");
             let mut work = 0;
-            assert_eq!(
-                preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_ok(),
-                name.contains("small") || name == "inline-png-predictor.pdf",
-                "{name}"
-            );
+            let result = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work);
+            if name.contains("small") || name == "inline-png-predictor.pdf" {
+                result.expect("safe image");
+            } else {
+                let err = result.expect_err("expanded inline image");
+                assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}");
+                assert_eq!(
+                    err.message, "Decoded inline image data exceeds the limit.",
+                    "{name}"
+                );
+            }
         }
     }
 
@@ -3945,7 +4048,7 @@ mod corpus_tests {
             })();
             if let Err(err) = result {
                 eprintln!("REFUSED {}: {}", path.display(), err.message);
-                refusals.push(path.clone());
+                refusals.push((path.clone(), err.message.into_owned()));
             }
         }
         eprintln!("CORPUS {} PDFs, {} refused", paths.len(), refusals.len());
@@ -4043,7 +4146,7 @@ mod corpus_tests {
         assert_eq!(legitimate_refusals, 0);
         assert_eq!(
             actual, expected,
-            "all adversarial fixtures should be refused"
+            "refusals must have their expected reasons"
         );
     }
 }
