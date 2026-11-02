@@ -123,6 +123,12 @@ check(approved, True, 'both reviews complete')
 check(approved + '\nunknown_key = true\n', False, 'unknown key')
 check(approved.replace('pending_owner_approval = false', 'pending_owner_approval = "false"'), False, 'string flag')
 for key, value in tomllib.loads(approved).items():
+    if isinstance(value, bool):
+        literal = 'true' if value else 'false'
+        for invalid in ('0', '1', '"true"', '"false"'):
+            check(approved.replace(f'{key} = {literal}', f'{key} = {invalid}'), False,
+                  f'non-boolean {key} = {invalid}')
+for key, value in tomllib.loads(approved).items():
     lines = approved.splitlines(keepends=True)
     replacement = 'true' if value is False else 'false' if value is True else '"mismatch"'
     changed = ''.join(f'{key} = {replacement}\n' if line.startswith(f'{key} = ') else line for line in lines)

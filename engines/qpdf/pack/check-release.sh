@@ -15,6 +15,9 @@ try:
         'pending_owner_approval': False,
         'runtime_review_complete': True,
     }
+    if any(isinstance(value, bool) and not isinstance(review.get(key), bool)
+           for key, value in expected.items()):
+        raise ValueError('review flags must be booleans')
     if review != expected:
         raise ValueError('review is pending or does not match the approved component')
     import hashlib
