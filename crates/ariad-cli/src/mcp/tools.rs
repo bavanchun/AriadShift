@@ -770,6 +770,27 @@ impl McpServer {
             Err(err) => return Ok(tool_run_error(&err)),
         };
 
+        let handles: Vec<String> = mcp_spec(&args.tool)
+            .into_iter()
+            .flat_map(|spec| spec.secret_params.iter())
+            .filter_map(|key| {
+                params
+                    .get(key)
+                    .and_then(|value| match SecretRef::from_json_value(key, value) {
+                        Ok(SecretRef::Handle(id)) => Some(id),
+                        _ => None,
+                    })
+            })
+            .collect();
+        let secrets = match self.secrets.take(&handles) {
+            Ok(bag) => bag,
+            Err(()) => {
+                return Ok(tool_run_error(&ToolError::InvalidParams(
+                    "secret handle is unavailable".to_owned(),
+                )));
+            }
+        };
+
         if args.output.is_some() && args.output_dir.is_some() {
             return Ok(tool_run_error(&ToolError::Usage(
                 "specify at most one of 'output' or 'output_dir'".to_owned(),
@@ -817,27 +838,8 @@ impl McpServer {
             (confined_refs, allowed.clone())
         };
 
+        #[cfg(feature = "test-probe")]
         let spec = mcp_spec(&args.tool).expect("tool checked above");
-        let handles: Vec<String> = spec
-            .secret_params
-            .iter()
-            .filter_map(|key| {
-                params
-                    .get(key)
-                    .and_then(|value| match SecretRef::from_json_value(key, value) {
-                        Ok(SecretRef::Handle(id)) => Some(id),
-                        _ => None,
-                    })
-            })
-            .collect();
-        let secrets = match self.secrets.take(&handles) {
-            Ok(bag) => bag,
-            Err(()) => {
-                return Ok(tool_run_error(&ToolError::InvalidParams(
-                    "secret handle is unavailable".to_owned(),
-                )));
-            }
-        };
         let scrubber = secrets.scrubber();
         let request = ToolRequest::new(args.tool, input_refs, output_target)
             .with_params(params)

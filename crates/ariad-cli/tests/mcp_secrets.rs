@@ -196,6 +196,27 @@ print(json.dumps({"type":"result", "ok":True, "metrics":{"params_keys":len(param
         let escaped = serde_json::to_string(value).unwrap();
         assert!(!serialized.contains(&escaped[1..escaped.len() - 1]));
     }
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":"one-use"}}}),
+    );
+    let extra = read(&mut stdout, &mut stdin, 30);
+    let one_use = extra["result"]["structuredContent"]["handle"]
+        .as_str()
+        .unwrap();
+    let failed = json!({"tool":"pdf.encrypt","inputs":[dir.path().join("missing.pdf")],"params":{"owner_password":{"$secret":one_use}}});
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"run_doc_tool","arguments":failed}}),
+    );
+    assert_eq!(read(&mut stdout, &mut stdin, 31)["result"]["isError"], true);
+    let reuse = json!({"tool":"pdf.encrypt","inputs":[input],"params":{"owner_password":{"$secret":one_use}}});
+    send(
+        &mut stdin,
+        json!({"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":"run_doc_tool","arguments":reuse}}),
+    );
+    let result = read(&mut stdout, &mut stdin, 32);
+    assert_eq!(result["result"]["structuredContent"]["exit_code"], 9);
     let args = json!({"tool":"pdf.encrypt","inputs":[input],"output_dir":dir.path(),"params":{"user_password":{"$secret":handle},"owner_password":{"$secret":handle}}});
     send(
         &mut stdin,
