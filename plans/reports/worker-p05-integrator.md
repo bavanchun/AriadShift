@@ -47,6 +47,8 @@ percent; see `plans/reports/compress-measurement-p05.md`. The seven-file joint
 threshold therefore remains unmet on that evidence. No Stirling output PDF was
 committed.
 
+The pre-encoder host gate also ran 195 host unit tests successfully before its corpus test failed at 6/10 after 393.89 seconds. Its later test binaries did not run, and it is not evidence for the post-encoder tree.
+
 ## Subsequent focused verification
 
 - `cargo test -p ariad-pdf --lib detects_signed_acroform_fields_with_inherited_type`: passed, one test.
@@ -69,6 +71,6 @@ These results precede the integration of s2b and are not a final gate.
 
 ## Mac decisions and work
 
-The Mac PM approved the encoder follow-up and source-built macOS qpdf. The merged encoder follow-up still reports 6/10 for the joint size and SSIM criterion, so the unchanged acceptance bar is not met and requires a further decision. IJG and GNU runtime items remain owner-pending and block distribution, not the phase merge. Run and
+The Mac PM approved the encoder follow-up and source-built macOS qpdf. The merged encoder follow-up reports 6/10 for the joint size and SSIM criterion. Decision 37 keeps the bar unchanged and dispatches a lossless optimization follow-up; that work is in progress. IJG and GNU runtime items remain owner-pending and block distribution, not the phase merge. Run and
 record macOS qpdf build, signing, Seatbelt child confinement, bindings and native
 tests on the Mac. No macOS verification was run here.
