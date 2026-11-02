@@ -136,7 +136,7 @@ pub fn run(
     Ok(vec![OutputDoc::unnamed_pdf(out_doc)])
 }
 
-fn shift_page_labels(
+pub(crate) fn shift_page_labels(
     doc: &mut Document,
     orig_to_new_idx: &[usize],
     ctx: &ToolCtx,

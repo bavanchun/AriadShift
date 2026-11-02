@@ -13,6 +13,8 @@ pub mod add_text;
 pub mod adjust_colors;
 pub mod alternate_mix;
 pub mod attachments;
+pub mod background;
+pub mod bates;
 pub mod booklet;
 #[cfg(feature = "codecs")]
 pub mod compress;
@@ -21,9 +23,12 @@ pub mod decompress;
 pub mod delete_pages;
 pub mod divide_pages;
 pub mod extract_pages;
+mod furniture_common;
 #[cfg(feature = "codecs")]
 pub mod grayscale;
+pub mod header_footer;
 pub mod insert_blank;
+pub mod invert_colors;
 pub mod layers;
 mod mark_image;
 mod marks_common;
@@ -33,6 +38,7 @@ pub mod nup;
 pub mod outline;
 pub mod overlay;
 pub mod page_labels;
+pub mod page_numbers;
 pub(crate) mod page_set;
 pub mod portfolio;
 pub mod posterize;
@@ -46,6 +52,7 @@ pub mod scale;
 pub mod single_page;
 pub mod split;
 pub mod stamp;
+pub mod toc_page;
 pub mod unlock_forms;
 pub mod viewer_prefs;
 pub mod watermark;
@@ -335,6 +342,46 @@ pub fn run_tool(
     }
 
     match tool_id {
+        "pdf.page_numbers" => {
+            dispatch_structural::<ariad_core::tools::params::PageNumbersParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                |docs, params, ctx| page_numbers::run(docs, params, &inputs[0].limits, ctx),
+            )
+        }
+        "pdf.header_footer" => dispatch_structural_inputs::<
+            ariad_core::tools::params::HeaderFooterParams,
+            _,
+        >(tool_id, inputs, params, ctx, header_footer::run_inputs),
+        "pdf.bates" => dispatch_structural::<ariad_core::tools::params::BatesParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| bates::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        "pdf.toc_page" => dispatch_structural::<ariad_core::tools::params::TocPageParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| toc_page::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        "pdf.background" => dispatch_structural::<ariad_core::tools::params::BackgroundParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| background::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        "pdf.invert_colors" => dispatch_structural::<
+            ariad_core::tools::params::InvertColorsParams,
+            _,
+        >(tool_id, inputs, params, ctx, |docs, params, ctx| {
+            invert_colors::run(docs, params, &inputs[0].limits, ctx)
+        }),
         "pdf.watermark" => dispatch_structural_inputs::<
             ariad_core::tools::params::WatermarkParams,
             _,

@@ -226,3 +226,60 @@ pub fn draw_transformed(
         .map_err(|_| PdfError::Malformed)?;
     layer::append(pdf, page, resources, &body, marking, position, ctx)
 }
+
+/// Add a white Difference-blend fill over the visible page.
+pub fn draw_difference_inversion(
+    pdf: &mut PdfDoc,
+    page: lopdf::ObjectId,
+    geometry: &PageGeometry,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    ctx.check()?;
+    let mut resources = layer::page_resources(pdf.inner(), page);
+    let gs = pdf
+        .inner_mut()?
+        .add_object(dictionary! {"Type"=>"ExtGState","BM"=>"Difference","ca"=>1.0,"CA"=>1.0});
+    layer::require_transparency(pdf.inner_mut()?);
+    let name = layer::insert_resource(
+        pdf.inner(),
+        &mut resources,
+        b"ExtGState",
+        "gs",
+        Object::Reference(gs),
+    )?;
+    let operations = vec![
+        Operation::new(
+            "cm",
+            geometry
+                .visual_to_user
+                .0
+                .into_iter()
+                .map(num)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Operation::new("gs", vec![Object::Name(name)]),
+        Operation::new("rg", vec![1.into(), 1.into(), 1.into()]),
+        Operation::new(
+            "re",
+            vec![
+                0.into(),
+                0.into(),
+                num(geometry.width_pt)?,
+                num(geometry.height_pt)?,
+            ],
+        ),
+        Operation::new("f", vec![]),
+    ];
+    let body = Content { operations }
+        .encode()
+        .map_err(|_| PdfError::Malformed)?;
+    layer::append(
+        pdf,
+        page,
+        resources,
+        &body,
+        Marking::ColorFilter,
+        LayerPosition::Over,
+        ctx,
+    )
+}
