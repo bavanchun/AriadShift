@@ -36,6 +36,8 @@ pub struct SaveOptions {
     /// Optional explicit Unix timestamp in seconds (UTC), overriding the `SOURCE_DATE_EPOCH`
     /// environment variable when `Some`.
     pub epoch_override: Option<i64>,
+    /// Save eligible objects and the cross-reference table as PDF 1.5 streams.
+    pub object_streams: bool,
 }
 
 /// Saves `doc` deterministically to PDF bytes using default [`SaveOptions`].
@@ -128,7 +130,19 @@ pub fn save_document_with_options(
 
     ctx.check()?;
     let mut out = Vec::new();
-    doc.save_to(&mut out).map_err(|_| PdfError::Malformed)?;
+    if options.object_streams {
+        doc.save_with_options(
+            &mut out,
+            lopdf::SaveOptions {
+                use_object_streams: true,
+                use_xref_streams: true,
+                ..lopdf::SaveOptions::default()
+            },
+        )
+        .map_err(|_| PdfError::Malformed)?;
+    } else {
+        doc.save_to(&mut out).map_err(|_| PdfError::Malformed)?;
+    }
     Ok(out)
 }
 
@@ -735,6 +749,27 @@ mod tests {
 
         assert_eq!(format_pdf_date_utc(0), b"D:19700101000000Z");
         assert_eq!(format_pdf_date_utc(1_700_000_000), b"D:20231114221320Z");
+    }
+
+    #[test]
+    fn object_stream_output_is_deterministic_and_readable() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/multipage-20.pdf");
+        let input = std::fs::read(path).expect("read fixture");
+        let options = SaveOptions {
+            epoch_override: Some(1_700_000_000),
+            object_streams: true,
+            ..SaveOptions::default()
+        };
+        let make_output = || {
+            let mut doc = open(&input, &Limits::local()).expect("open fixture");
+            save_with_options(&mut doc, &ToolCtx::default(), &options).expect("save")
+        };
+        let first = make_output();
+        assert_eq!(first, make_output());
+        let reloaded = open(&first, &Limits::local()).expect("open object stream output");
+        assert_eq!(reloaded.inner().get_pages().len(), 20);
+        assert!(first.windows(7).any(|bytes| bytes == b"/ObjStm"));
     }
 
     #[test]
