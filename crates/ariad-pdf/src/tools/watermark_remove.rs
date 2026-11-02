@@ -120,8 +120,9 @@ impl Safety {
 }
 // A marked block must begin outside a text object with no pending path. Its own state changes,
 // paths, and text objects must be fully enclosed by q/Q, with nothing left pending afterwards.
-fn safe_marked(ops: &[Operation]) -> bool {
-    let mut depth = 0_i32;
+fn safe_marked(ops: &[Operation], outer_scope: bool) -> bool {
+    let baseline = i32::from(outer_scope);
+    let mut depth = baseline;
     let mut marked = 0_i32;
     let mut text = false;
     let mut path = false;
@@ -136,11 +137,11 @@ fn safe_marked(ops: &[Operation]) -> bool {
             }
             "q" => depth += 1,
             "Q" => {
-                if depth == 1 && text {
+                if depth == baseline + 1 && text {
                     return false;
                 }
                 depth -= 1;
-                if depth < 0 {
+                if depth < baseline {
                     return false;
                 }
             }
@@ -163,7 +164,7 @@ fn safe_marked(ops: &[Operation]) -> bool {
             _ => {}
         }
     }
-    depth == 0 && marked == 0 && !text && !path
+    depth == baseline && marked == 0 && !text && !path
 }
 fn safe_text(content: &Content, index: usize, state: &Safety) -> bool {
     if !state.in_text
@@ -201,11 +202,17 @@ fn rewrite_stream(
             limit: limits.max_nesting_depth.min(64),
         }));
     }
-    let mut stream = doc
+    let source = doc
         .get_object(id)
         .and_then(Object::as_stream)
-        .map_err(|_| PdfError::Malformed)?
-        .clone();
+        .map_err(|_| PdfError::Malformed)?;
+    let size = crate::color::targeted_document::dictionary_size(
+        &source.dict,
+        0,
+        limits.max_nesting_depth,
+    )?;
+    budget.charge(source.content.len().saturating_add(size.saturating_mul(8)))?;
+    let mut stream = source.clone();
     let data = decoded(budget, &stream)?;
     let mut content = Content::decode(&data).map_err(|_| PdfError::Malformed)?;
     let mut spans = edits.spans.clone();
@@ -246,7 +253,15 @@ fn rewrite_stream(
                 "ocg" | "artifact"
                     if state.in_text
                         || state.path_open
-                        || !safe_marked(&content.operations[index..end]) =>
+                        || !safe_marked(
+                            &content.operations[index..end],
+                            index > 0
+                                && content.operations[index - 1].operator == "q"
+                                && content
+                                    .operations
+                                    .get(end)
+                                    .is_some_and(|op| op.operator == "Q"),
+                        ) =>
                 {
                     return Err(invalid(
                         "watermark block has state changes that cannot be removed safely",
@@ -338,24 +353,48 @@ fn rewrite_stream(
     Ok(doc.add_object(stream))
 }
 
-fn contents(doc: &Document, page: ObjectId, depth: u16) -> Result<Vec<ObjectId>, PdfError> {
+pub(super) fn contents(
+    doc: &Document,
+    page: ObjectId,
+    depth: u16,
+) -> Result<Vec<ObjectId>, PdfError> {
+    fn follow<'a>(
+        doc: &'a Document,
+        value: &'a Object,
+        limit: u16,
+    ) -> Result<(Option<ObjectId>, &'a Object), PdfError> {
+        let mut current = value;
+        let mut last = None;
+        let mut seen = HashSet::new();
+        while let Object::Reference(id) = current {
+            if seen.len() >= usize::from(limit) || !seen.insert(*id) {
+                return Err(PdfError::Malformed);
+            }
+            last = Some(*id);
+            current = doc.objects.get(id).ok_or(PdfError::Malformed)?;
+        }
+        Ok((last, current))
+    }
     let page = doc.get_dictionary(page).map_err(|_| PdfError::Malformed)?;
     let Ok(value) = page.get(b"Contents") else {
         return Ok(Vec::new());
     };
-    match resolve(doc, value, depth).ok_or(PdfError::Malformed)? {
-        Object::Stream(_) => Ok(vec![value.as_reference().map_err(|_| PdfError::Malformed)?]),
+    let (id, resolved) = follow(doc, value, depth)?;
+    match resolved {
+        Object::Stream(_) => Ok(vec![id.ok_or(PdfError::Malformed)?]),
         Object::Array(items) => {
             let mut result = Vec::with_capacity(items.len());
             for item in items {
-                let id = item.as_reference().map_err(|_| PdfError::Malformed)?;
-                doc.get_object(id)
-                    .and_then(Object::as_stream)
-                    .map_err(|_| PdfError::Malformed)?;
-                result.push(id);
+                let (id, value) = follow(doc, item, depth)?;
+                match value {
+                    Object::Null => {}
+                    Object::Stream(_) => result.push(id.ok_or(PdfError::Malformed)?),
+                    _ => return Err(PdfError::Malformed),
+                }
             }
             Ok(result)
         }
+        Object::Null => Ok(Vec::new()),
         _ => Err(PdfError::Malformed),
     }
 }
@@ -397,7 +436,7 @@ fn remove_own_streams(
             || ops[ops.len() - 3].operator != "EMC"
             || ops[ops.len() - 2].operator != "EMC"
             || ops[ops.len() - 1].operator != "Q"
-            || !safe_marked(ops)
+            || !safe_marked(ops, false)
         {
             return Err(invalid(
                 "watermark marker stream does not have an isolated structure",
@@ -543,7 +582,7 @@ pub fn run_inputs(
                 {
                     return Err(invalid("selected watermark occurrences overlap"));
                 }
-            } else if candidate.origin == "ariadshift" && occurrence.own_stream {
+            } else if occurrence.own_stream {
                 if occurrence.start != 1
                     || own
                         .entry(occurrence.page)
@@ -633,19 +672,6 @@ pub fn run_inputs(
         } else {
             HashSet::new()
         };
-        if !removed_names.is_empty() || !removed_properties.is_empty() {
-            remove_unused_resources(
-                doc,
-                page,
-                &mut resources,
-                &streams,
-                &removed_names,
-                &removed_properties,
-                &mut budget,
-                &inputs[0].limits,
-                ctx,
-            )?;
-        }
         let mut annots = if let Some(selected) = annotations.get(&page_number) {
             let object = doc
                 .get_dictionary(page)
@@ -666,6 +692,29 @@ pub fn run_inputs(
         } else {
             None
         };
+        if let Some(values) = annots.take() {
+            let page_dict = doc
+                .get_dictionary_mut(page)
+                .map_err(|_| PdfError::Malformed)?;
+            if values.is_empty() {
+                page_dict.remove(b"Annots");
+            } else {
+                page_dict.set("Annots", Object::Array(values));
+            }
+        }
+        if !removed_names.is_empty() || !removed_properties.is_empty() {
+            remove_unused_resources(
+                doc,
+                page,
+                &mut resources,
+                &streams,
+                &removed_names,
+                &removed_properties,
+                &mut budget,
+                &inputs[0].limits,
+                ctx,
+            )?;
+        }
         let page_dict = doc
             .get_dictionary_mut(page)
             .map_err(|_| PdfError::Malformed)?;
@@ -674,9 +723,6 @@ pub fn run_inputs(
             "Contents",
             Object::Array(streams.into_iter().map(Object::Reference).collect()),
         );
-        if let Some(values) = annots.take() {
-            page_dict.set("Annots", Object::Array(values));
-        }
     }
     for id in selected_groups {
         prune_own_ocg(doc, id, &page_ids, &mut budget, &inputs[0].limits, ctx)?;
@@ -809,8 +855,25 @@ fn collect_resource_uses(
                     return Ok(false);
                 }
             } else if subtype == Some(b"Image") {
-                if object.dict.has(b"SMask") || object.dict.has(b"Mask") {
-                    return Ok(false);
+                for key in [b"SMask".as_slice(), b"Mask"] {
+                    if let Ok(mask) = object.dict.get(key) {
+                        let Some(mask) = resolve(doc, mask, limits.max_nesting_depth) else {
+                            return Ok(false);
+                        };
+                        if let Object::Stream(mask) = mask {
+                            if mask.dict.has(b"SMask") || mask.dict.has(b"Mask") {
+                                return Ok(false);
+                            }
+                            if let Ok(space) = mask.dict.get(b"ColorSpace") {
+                                let synthetic = Operation::new("", vec![space.clone()]);
+                                if !collect_names(&[synthetic], names)? {
+                                    return Ok(false);
+                                }
+                            }
+                        } else if !matches!(mask, Object::Array(_) | Object::Name(_)) {
+                            return Ok(false);
+                        }
+                    }
                 }
                 if let Ok(space) = object.dict.get(b"ColorSpace") {
                     let synthetic = Operation::new("", vec![space.clone()]);
@@ -827,6 +890,103 @@ fn collect_resource_uses(
     Ok(true)
 }
 #[allow(clippy::too_many_arguments)]
+fn annotation_resource_uses(
+    doc: &Document,
+    page: ObjectId,
+    resources: &Dictionary,
+    names: &mut HashSet<Vec<u8>>,
+    budget: &mut DecodeBudget,
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<bool, PdfError> {
+    let page = doc.get_dictionary(page).map_err(|_| PdfError::Malformed)?;
+    let Some(annotations) = page.get(b"Annots").ok() else {
+        return Ok(true);
+    };
+    let Some(annotations) =
+        resolve(doc, annotations, limits.max_nesting_depth).and_then(|v| v.as_array().ok())
+    else {
+        return Ok(false);
+    };
+    let mut roots = Vec::new();
+    for annotation in annotations {
+        let Some(annotation) =
+            resolve(doc, annotation, limits.max_nesting_depth).and_then(|v| v.as_dict().ok())
+        else {
+            return Ok(false);
+        };
+        if let Ok(appearance) = annotation.get(b"AP") {
+            roots.push((appearance, 0_u16));
+        }
+    }
+    let mut seen = HashSet::new();
+    let mut streams = Vec::new();
+    while let Some((value, depth)) = roots.pop() {
+        ctx.check()?;
+        if depth > limits.max_nesting_depth.min(64) {
+            return Ok(false);
+        }
+        match value {
+            Object::Reference(id) => {
+                if !seen.insert(*id) {
+                    continue;
+                }
+                if seen.len() > 100_000 {
+                    return Ok(false);
+                }
+                let Ok(value) = doc.get_object(*id) else {
+                    return Ok(false);
+                };
+                if matches!(value, Object::Stream(_)) {
+                    streams.push(*id);
+                } else {
+                    roots.push((value, depth + 1));
+                }
+            }
+            Object::Dictionary(dict) => {
+                budget.charge(crate::color::targeted_document::dictionary_size(
+                    dict,
+                    0,
+                    limits.max_nesting_depth,
+                )?)?;
+                roots.extend(dict.iter().map(|(_, value)| (value, depth + 1)));
+            }
+            Object::Name(_) | Object::Null => {}
+            _ => return Ok(false),
+        }
+    }
+    for id in streams {
+        let stream = doc
+            .get_object(id)
+            .and_then(Object::as_stream)
+            .map_err(|_| PdfError::Malformed)?;
+        let appearance_resources = match stream.dict.get(b"Resources") {
+            Ok(value) => {
+                match resolve(doc, value, limits.max_nesting_depth).and_then(|v| v.as_dict().ok()) {
+                    Some(dict) => dict,
+                    None => return Ok(false),
+                }
+            }
+            Err(_) => resources,
+        };
+        if !collect_resource_uses(
+            doc,
+            appearance_resources,
+            &[id],
+            names,
+            budget,
+            limits,
+            ctx,
+            &mut HashSet::new(),
+            &mut 0,
+            0,
+        )? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn remove_unused_resources(
     doc: &Document,
     page: ObjectId,
@@ -838,11 +998,16 @@ fn remove_unused_resources(
     limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
-    let page_dict = doc.get_dictionary(page).map_err(|_| PdfError::Malformed)?;
-    if page_dict.has(b"Annots") || !simple_resources(doc, resources, limits)? {
+    if !simple_resources(doc, resources, limits)? {
         return Ok(());
     }
     let mut used = HashSet::new();
+    if !annotation_resource_uses(doc, page, resources, &mut used, budget, limits, ctx)? {
+        return Ok(());
+    }
+    if !soft_mask_resource_uses(doc, resources, &mut used, budget, limits, ctx)? {
+        return Ok(());
+    }
     if !collect_resource_uses(
         doc,
         resources,
@@ -911,31 +1076,97 @@ fn simple_resources(
             Some(_) => {}
         }
     }
+    Ok(true)
+}
+
+fn soft_mask_resource_uses(
+    doc: &Document,
+    resources: &Dictionary,
+    names: &mut HashSet<Vec<u8>>,
+    budget: &mut DecodeBudget,
+    limits: &Limits,
+    ctx: &ToolCtx,
+) -> Result<bool, PdfError> {
     for (_, gs) in resource_dict(doc, resources, b"ExtGState", limits.max_nesting_depth)?.iter() {
         let Some(gs) = resolve(doc, gs, limits.max_nesting_depth).and_then(|v| v.as_dict().ok())
         else {
             return Ok(false);
         };
-        if gs.has(b"SMask") {
+        let Ok(mask) = gs.get(b"SMask") else {
+            continue;
+        };
+        let Some(mask) = resolve(doc, mask, limits.max_nesting_depth) else {
+            return Ok(false);
+        };
+        if mask.as_name().ok() == Some(b"None") {
+            continue;
+        }
+        let Some(group) = mask
+            .as_dict()
+            .ok()
+            .and_then(|dict| dict.get(b"G").ok())
+            .and_then(|v| v.as_reference().ok())
+        else {
+            return Ok(false);
+        };
+        let stream = doc
+            .get_object(group)
+            .and_then(Object::as_stream)
+            .map_err(|_| PdfError::Malformed)?;
+        let group_resources = match stream.dict.get(b"Resources") {
+            Ok(value) => {
+                match resolve(doc, value, limits.max_nesting_depth).and_then(|v| v.as_dict().ok()) {
+                    Some(dict) => dict,
+                    None => return Ok(false),
+                }
+            }
+            Err(_) => resources,
+        };
+        if !collect_resource_uses(
+            doc,
+            group_resources,
+            &[group],
+            names,
+            budget,
+            limits,
+            ctx,
+            &mut HashSet::new(),
+            &mut 0,
+            0,
+        )? {
             return Ok(false);
         }
     }
     Ok(true)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn filter_group_array(
-    doc: &Document,
+    doc: &mut Document,
     object: &Object,
     target: ObjectId,
     depth: u16,
     limit: u16,
     count: &mut usize,
     ctx: &ToolCtx,
+    budget: &mut DecodeBudget,
+    memo: &mut BTreeMap<ObjectId, ObjectId>,
+    active: &mut HashSet<ObjectId>,
 ) -> Result<Object, PdfError> {
     if depth > limit.min(64) {
         return Err(PdfError::LimitExceeded(ReadError::NestingTooDeep {
             limit: limit.min(64),
         }));
+    }
+    let reference = object.as_reference().ok();
+    if let Some(id) = reference {
+        if active.contains(&id) {
+            return Err(PdfError::Malformed);
+        }
+        if let Some(new_id) = memo.get(&id) {
+            return Ok(Object::Reference(*new_id));
+        }
+        active.insert(id);
     }
     let values = resolve(doc, object, limit)
         .and_then(|v| v.as_array().ok())
@@ -945,8 +1176,15 @@ fn filter_group_array(
             limit: 100_000,
         }));
     }
-    let mut out = Vec::with_capacity(values.len());
+    budget.charge(values.len().saturating_mul(std::mem::size_of::<Object>()))?;
     for item in values {
+        budget.charge(crate::color::targeted_document::resource_size(
+            item, 0, limit,
+        )?)?;
+    }
+    let values = values.clone();
+    let mut out = Vec::with_capacity(values.len());
+    for item in &values {
         *count = count.saturating_add(1);
         if *count > 4_000_000 {
             return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
@@ -968,29 +1206,56 @@ fn filter_group_array(
                 limit,
                 count,
                 ctx,
+                budget,
+                memo,
+                active,
             )?);
         } else {
             out.push(item.clone());
         }
     }
-    Ok(Object::Array(out))
+    if let Some(id) = reference {
+        active.remove(&id);
+        let new_id = doc.add_object(Object::Array(out));
+        memo.insert(id, new_id);
+        Ok(Object::Reference(new_id))
+    } else {
+        Ok(Object::Array(out))
+    }
 }
 fn properties_without_group(
-    doc: &Document,
+    doc: &mut Document,
     object: &Object,
     target: ObjectId,
     limit: u16,
     ctx: &ToolCtx,
+    budget: &mut DecodeBudget,
 ) -> Result<Dictionary, PdfError> {
     let mut count = 0;
-    let mut props = resolve(doc, object, limit)
+    let mut memo = BTreeMap::new();
+    let mut active = HashSet::new();
+    let props_ref = resolve(doc, object, limit)
         .and_then(|v| v.as_dict().ok())
-        .cloned()
         .ok_or(PdfError::Malformed)?;
-    if let Ok(groups) = props.get(b"OCGs") {
+    budget.charge(
+        crate::color::targeted_document::dictionary_size(props_ref, 0, limit)?.saturating_mul(2),
+    )?;
+    let mut props = props_ref.clone();
+    if let Ok(groups) = props.get(b"OCGs").cloned() {
         props.set(
             "OCGs",
-            filter_group_array(doc, groups, target, 0, limit, &mut count, ctx)?,
+            filter_group_array(
+                doc,
+                &groups,
+                target,
+                0,
+                limit,
+                &mut count,
+                ctx,
+                budget,
+                &mut memo,
+                &mut active,
+            )?,
         );
     }
     if let Ok(defaults) = props.get(b"D") {
@@ -999,10 +1264,21 @@ fn properties_without_group(
             .cloned()
             .ok_or(PdfError::Malformed)?;
         for key in [b"Order".as_slice(), b"ON", b"OFF", b"Locked", b"RBGroups"] {
-            if let Ok(value) = defaults.get(key) {
+            if let Ok(value) = defaults.get(key).cloned() {
                 defaults.set(
                     key.to_vec(),
-                    filter_group_array(doc, value, target, 0, limit, &mut count, ctx)?,
+                    filter_group_array(
+                        doc,
+                        &value,
+                        target,
+                        0,
+                        limit,
+                        &mut count,
+                        ctx,
+                        budget,
+                        &mut memo,
+                        &mut active,
+                    )?,
                 );
             }
         }
@@ -1126,14 +1402,21 @@ fn prune_own_ocg(
     let mut visits = 0;
     for page in pages {
         ctx.check()?;
-        if doc
-            .get_dictionary(*page)
-            .map_err(|_| PdfError::Malformed)?
-            .has(b"Annots")
-        {
+        let resources = page_resources(doc, *page, limits)?;
+        if !annotation_resource_uses(
+            doc,
+            *page,
+            &resources,
+            &mut HashSet::new(),
+            budget,
+            limits,
+            ctx,
+        )? {
             return Ok(());
         }
-        let resources = page_resources(doc, *page, limits)?;
+        if !soft_mask_resource_uses(doc, &resources, &mut HashSet::new(), budget, limits, ctx)? {
+            return Ok(());
+        }
         let streams = contents(doc, *page, limits.max_nesting_depth)?;
         if !collect_resource_uses(
             doc,
@@ -1159,12 +1442,24 @@ fn prune_own_ocg(
     else {
         return Ok(());
     };
-    let updated = match properties_without_group(doc, object, target, limits.max_nesting_depth, ctx)
-    {
-        Ok(updated) => updated,
-        Err(PdfError::Malformed) => return Ok(()),
-        Err(error) => return Err(error),
-    };
+    budget.charge(crate::color::targeted_document::resource_size(
+        object,
+        0,
+        limits.max_nesting_depth,
+    )?)?;
+    let object = object.clone();
+    let updated =
+        match properties_without_group(doc, &object, target, limits.max_nesting_depth, ctx, budget)
+        {
+            Ok(updated) => updated,
+            Err(PdfError::Malformed) => return Ok(()),
+            Err(error) => return Err(error),
+        };
+    budget.charge(crate::color::targeted_document::dictionary_size(
+        &updated,
+        0,
+        limits.max_nesting_depth,
+    )?)?;
     if !references_group(
         doc,
         catalog,
@@ -1173,9 +1468,21 @@ fn prune_own_ocg(
         ctx,
         limits.max_nesting_depth,
     )? {
-        doc.get_dictionary_mut(catalog)
-            .map_err(|_| PdfError::Malformed)?
-            .set("OCProperties", updated);
+        let empty = updated
+            .get(b"OCGs")
+            .ok()
+            .and_then(|v| resolve(doc, v, limits.max_nesting_depth))
+            .and_then(|v| v.as_array().ok())
+            .is_some_and(Vec::is_empty)
+            && !updated.has(b"Configs");
+        let catalog_dict = doc
+            .get_dictionary_mut(catalog)
+            .map_err(|_| PdfError::Malformed)?;
+        if empty {
+            catalog_dict.remove(b"OCProperties");
+        } else {
+            catalog_dict.set("OCProperties", updated);
+        }
     }
     Ok(())
 }
@@ -1205,4 +1512,57 @@ fn invalid_selection(
     Ok(PdfError::InvalidParams(format!(
         "watermark candidates must be unique explicit identifiers; valid ids: {valid}"
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lopdf::dictionary;
+
+    #[test]
+    fn shared_optional_content_arrays_do_not_expand() {
+        let mut doc = Document::with_version("1.5");
+        let target = doc.add_object(dictionary! {"Type" => "OCG", "Name" => "Draft"});
+        let mut id = doc.add_object(Object::Array(vec![Object::Reference(target)]));
+        for _ in 0..21 {
+            id = doc.add_object(Object::Array(vec![
+                Object::Reference(id),
+                Object::Reference(id),
+            ]));
+        }
+        let props = Object::Dictionary(
+            dictionary! {"OCGs" => vec![Object::Reference(target)], "D" => dictionary! {"Order" => id, "ON" => id}},
+        );
+        let before = doc.objects.len();
+        let mut budget = DecodeBudget::from_limits(4096, &Limits::local());
+        let updated =
+            properties_without_group(&mut doc, &props, target, 64, &ToolCtx::new(), &mut budget)
+                .unwrap();
+        assert!(doc.objects.len() - before <= 22);
+        let order = updated
+            .get(b"D")
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .get(b"Order")
+            .unwrap()
+            .as_reference()
+            .unwrap();
+        let root = doc.get_object(order).unwrap().as_array().unwrap();
+        assert_eq!(root[0], root[1]);
+    }
+
+    #[test]
+    fn content_stream_resolution_handles_nulls_and_reference_chains() {
+        let mut doc = Document::with_version("1.5");
+        let stream = doc.add_object(lopdf::Stream::new(dictionary! {}, b"q Q".to_vec()));
+        let stream_ref = doc.add_object(Object::Reference(stream));
+        let array = doc.add_object(Object::Array(vec![
+            Object::Null,
+            Object::Reference(stream_ref),
+        ]));
+        let outer = doc.add_object(Object::Reference(array));
+        let page = doc.add_object(dictionary! {"Type" => "Page", "Contents" => outer});
+        assert_eq!(contents(&doc, page, 64).unwrap(), vec![stream]);
+    }
 }

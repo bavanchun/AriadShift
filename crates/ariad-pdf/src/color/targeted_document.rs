@@ -31,7 +31,7 @@ struct CachedForm {
     result: ObjectId,
 }
 
-fn resource_size(value: &Object, depth: u16, limit: u16) -> Result<usize, PdfError> {
+pub(crate) fn resource_size(value: &Object, depth: u16, limit: u16) -> Result<usize, PdfError> {
     if depth > limit {
         return Err(PdfError::LimitExceeded(ReadError::NestingTooDeep { limit }));
     }

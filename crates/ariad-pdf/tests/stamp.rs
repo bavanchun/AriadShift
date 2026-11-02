@@ -118,6 +118,53 @@ fn stamp_border_and_text_are_removed_together() {
 }
 
 #[test]
+fn stamped_pages_remain_removable_after_one_page_is_rewritten() {
+    let original = marks::fixture("multipage-20.pdf");
+    let stamped = run_tool(
+        "pdf.stamp",
+        &[InputDoc::new("a.pdf", original)],
+        &json!({"preset":"approved","pages":"1-2"}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let recolored = run_tool(
+        "pdf.replace_color",
+        &[InputDoc::new(
+            "stamped.pdf",
+            stamped.artifacts[0].bytes.clone(),
+        )],
+        &json!({"to":"#0000FF","pages":"1"}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let input = InputDoc::new("recolored.pdf", recolored.artifacts[0].bytes.clone());
+    let detected = run_tool(
+        "pdf.watermark_detect",
+        std::slice::from_ref(&input),
+        &json!({}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let candidates: Vec<_> = detected.json.unwrap()["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|candidate| candidate["kind"] == "ocg")
+        .map(|candidate| candidate["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(!candidates.is_empty());
+    let removed = run_tool(
+        "pdf.watermark_remove",
+        &[input],
+        &json!({"candidates":candidates}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let text = marks::extracted(&removed.artifacts[0].bytes);
+    assert!(!text.contains("APPROVED"));
+}
+
+#[test]
 fn escaped_date_token_does_not_suppress_requested_date() {
     let output = run_tool(
         "pdf.stamp",

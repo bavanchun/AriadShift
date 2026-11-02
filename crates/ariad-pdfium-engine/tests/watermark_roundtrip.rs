@@ -67,3 +67,75 @@ fn own_watermark_round_trip_restores_original_pixels() {
     };
     assert_eq!(render(&original), render(&output.artifacts[0].bytes));
 }
+
+#[test]
+fn stamp_removal_after_partial_rewrite_restores_pixels() {
+    let Some(directory) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        eprintln!("skipping: ARIAD_TEST_PDFIUM_DIR is not set");
+        return;
+    };
+    let pdfium = ariad_pdfium_engine::library::bind_in(Path::new(&directory)).unwrap();
+    let original = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/multipage-20.pdf"),
+    )
+    .unwrap();
+    let color = json!({"to":"#0000FF", "pages":"1"});
+    let recolor = |bytes: Vec<u8>| {
+        run_tool(
+            "pdf.replace_color",
+            &[InputDoc::new("a.pdf", bytes)],
+            &color,
+            &ToolCtx::new(),
+        )
+        .unwrap()
+        .artifacts[0]
+            .bytes
+            .clone()
+    };
+    let expected = recolor(original.clone());
+    let stamp = run_tool(
+        "pdf.stamp",
+        &[InputDoc::new("a.pdf", original)],
+        &json!({"preset":"approved","pages":"1-2"}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let input = InputDoc::new("stamp.pdf", recolor(stamp.artifacts[0].bytes.clone()));
+    let detected = run_tool(
+        "pdf.watermark_detect",
+        std::slice::from_ref(&input),
+        &json!({}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let ids: Vec<_> = detected.json.unwrap()["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["kind"] == "ocg")
+        .map(|item| item["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(!ids.is_empty());
+    let removed = run_tool(
+        "pdf.watermark_remove",
+        &[input],
+        &json!({"candidates":ids}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let render = |bytes: &[u8], page_index| {
+        let doc = pdfium.load_pdf_from_byte_slice(bytes, None).unwrap();
+        doc.pages()
+            .get(page_index)
+            .unwrap()
+            .render_with_config(&PdfRenderConfig::new().set_target_width(800))
+            .unwrap()
+            .as_rgba_bytes()
+    };
+    for page in [0, 1] {
+        assert_eq!(
+            render(&expected, page),
+            render(&removed.artifacts[0].bytes, page)
+        );
+    }
+}

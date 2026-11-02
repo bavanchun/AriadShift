@@ -4,7 +4,7 @@ use ariad_core::tools::params::WatermarkDetectParams;
 
 use crate::{
     PdfDoc, PdfError, ToolCtx, naming,
-    tools::{InputDoc, InputSource, OutputDoc, watermark_scan},
+    tools::{InputDoc, InputSource, OutputDoc, ToolWarning, watermark_scan},
     writer::sha256_chunks,
 };
 
@@ -33,7 +33,15 @@ pub fn run_inputs(
     let (input_hash, input_len) = source_identity(&inputs[0])?;
     let detection =
         watermark_scan::scan(&pdf, &input_hash, input_len, params, &inputs[0].limits, ctx)?;
+    let unsupported = detection.unsupported_images;
     let value = serde_json::to_value(detection).map_err(|_| PdfError::Malformed)?;
     let name = naming::single_output_name(&inputs[0].clean_stem(), "watermarks", "json");
-    Ok((vec![pdf], vec![OutputDoc::from_json(name, value)?]))
+    let mut output = OutputDoc::from_json(name, value)?;
+    if unsupported > 0 {
+        output.coded_warnings.push(ToolWarning {
+            code: "unsupported_watermark_image".into(),
+            message: format!("{unsupported} image objects could not be inspected for watermarks"),
+        });
+    }
+    Ok((vec![pdf], vec![output]))
 }

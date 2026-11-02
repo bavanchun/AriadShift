@@ -1,6 +1,6 @@
 //! Bounded content interpretation shared by watermark detection and removal.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use ariad_core::{
     limits::Limits,
@@ -19,7 +19,7 @@ use crate::{
     color::{page_ids, page_resources, resolve},
     document::DecodeBudget,
     tools::{outline::decode_pdf_object_string, watermark_identity::candidate_id},
-    writer::sha256_chunks,
+    writer::{canonical_dictionary_hash, canonical_object_hash, sha256_chunks},
 };
 
 const MAX_FORM_VISITS: usize = 100_000;
@@ -114,6 +114,17 @@ fn matrix(values: &[Object]) -> Option<Matrix> {
 fn dict<'a>(doc: &'a Document, object: &'a Object, depth: u16) -> Option<&'a Dictionary> {
     resolve(doc, object, depth)?.as_dict().ok()
 }
+fn resource<'a>(
+    doc: &'a Document,
+    resources: &'a Dictionary,
+    category: &[u8],
+    name: &[u8],
+    depth: u16,
+) -> Option<&'a Object> {
+    dict(doc, resources.get(category).ok()?, depth)?
+        .get(name)
+        .ok()
+}
 fn rectangle(doc: &Document, object: &Object, depth: u16) -> Option<[f64; 4]> {
     let a = resolve(doc, object, depth)?.as_array().ok()?;
     if a.len() != 4 {
@@ -185,6 +196,11 @@ pub(super) struct Preview {
 pub(super) struct Detection {
     pub page_count: u32,
     pub candidates: Vec<Candidate>,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub unsupported_images: usize,
+}
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 // A Form without nested XObjects only depends on resource entries named by its own operators.
@@ -197,7 +213,7 @@ fn used_form_resources(
 ) -> Dictionary {
     let mut names = HashSet::new();
     for op in &content.operations {
-        if matches!(op.operator.as_str(), "Do" | "BI" | "ID" | "EI") {
+        if matches!(op.operator.as_str(), "BI" | "ID" | "EI") {
             return resources.clone();
         }
         let mut stack: Vec<(&Object, usize)> = op.operands.iter().map(|value| (value, 0)).collect();
@@ -422,8 +438,87 @@ struct Scanner<'a> {
     active_forms: HashSet<ObjectId>,
     form_visits: usize,
     drawables: Vec<Drawable>,
+    image_cache: HashMap<ObjectId, Option<Vec<u8>>>,
+    unsupported_images: usize,
 }
 impl<'a> Scanner<'a> {
+    fn nested_context(
+        &mut self,
+        content: &Content,
+        resources: &Dictionary,
+        depth: u16,
+        active: &mut HashSet<ObjectId>,
+    ) -> Result<[u8; 32], PdfError> {
+        if depth > self.limits.max_nesting_depth.min(64) {
+            return Err(PdfError::LimitExceeded(ReadError::NestingTooDeep {
+                limit: self.limits.max_nesting_depth.min(64),
+            }));
+        }
+        let estimate = crate::color::targeted_document::dictionary_size(
+            resources,
+            0,
+            self.limits.max_nesting_depth,
+        )?;
+        self.budget.charge(estimate.saturating_mul(8))?;
+        let referenced =
+            used_form_resources(self.doc, resources, content, self.limits.max_nesting_depth);
+        let mut parts = vec![canonical_dictionary_hash(&referenced)];
+        for op in &content.operations {
+            if op.operator != "Do" {
+                continue;
+            }
+            self.ctx.check()?;
+            let Some(name) = op.operands.first().and_then(|v| v.as_name().ok()) else {
+                return Err(PdfError::Malformed);
+            };
+            let Some(id) = resource(
+                self.doc,
+                resources,
+                b"XObject",
+                name,
+                self.limits.max_nesting_depth,
+            )
+            .and_then(|v| v.as_reference().ok()) else {
+                return Err(PdfError::Malformed);
+            };
+            let stream = self
+                .doc
+                .get_object(id)
+                .and_then(Object::as_stream)
+                .map_err(|_| PdfError::Malformed)?;
+            if stream.dict.get(b"Subtype").and_then(Object::as_name).ok() != Some(b"Form") {
+                continue;
+            }
+            if !active.insert(id) {
+                return Err(PdfError::Malformed);
+            }
+            let estimate = crate::color::targeted_document::dictionary_size(
+                &stream.dict,
+                0,
+                self.limits.max_nesting_depth,
+            )?;
+            self.budget.charge(
+                stream
+                    .content
+                    .len()
+                    .saturating_add(estimate.saturating_mul(8)),
+            )?;
+            let stream = stream.clone();
+            let bytes = self.decode(&stream)?;
+            let nested = Content::decode(&bytes).map_err(|_| PdfError::Malformed)?;
+            let nested_resources = match stream.dict.get(b"Resources") {
+                Ok(value) => dict(self.doc, value, self.limits.max_nesting_depth)
+                    .cloned()
+                    .ok_or(PdfError::Malformed)?,
+                Err(_) => resources.clone(),
+            };
+            parts.push(self.nested_context(&nested, &nested_resources, depth + 1, active)?);
+            active.remove(&id);
+        }
+        let chunks: Vec<&[u8]> = parts.iter().map(|part| part.as_slice()).collect();
+        Ok(sha256_chunks(&chunks))
+    }
+
     fn decode(&mut self, stream: &Stream) -> Result<Vec<u8>, PdfError> {
         self.ctx.check()?;
         if stream.dict.has(b"Filter") {
@@ -462,16 +557,6 @@ impl<'a> Scanner<'a> {
         self.budget.charge(bytes)?;
         self.drawables.push(drawable);
         Ok(())
-    }
-    fn resource(&self, resources: &Dictionary, category: &[u8], name: &[u8]) -> Option<Object> {
-        dict(
-            self.doc,
-            resources.get(category).ok()?,
-            self.limits.max_nesting_depth,
-        )?
-        .get(name)
-        .ok()
-        .cloned()
     }
     fn text(
         &mut self,
@@ -566,8 +651,14 @@ impl<'a> Scanner<'a> {
                 }
                 "gs" => {
                     if let Some(name) = op.operands.first().and_then(|v| v.as_name().ok())
-                        && let Some(gs) = self.resource(resources, b"ExtGState", name)
-                        && let Some(gs) = dict(self.doc, &gs, self.limits.max_nesting_depth)
+                        && let Some(gs) = resource(
+                            self.doc,
+                            resources,
+                            b"ExtGState",
+                            name,
+                            self.limits.max_nesting_depth,
+                        )
+                        && let Some(gs) = dict(self.doc, gs, self.limits.max_nesting_depth)
                         && let Some(alpha) = gs.get(b"ca").ok().and_then(number)
                     {
                         state.alpha = alpha.clamp(0.0, 1.0);
@@ -582,9 +673,24 @@ impl<'a> Scanner<'a> {
                         op.operands.first().and_then(|v| v.as_name().ok()),
                         op.operands.get(1).and_then(number),
                     ) {
-                        state.font = self
-                            .resource(resources, b"Font", name)
-                            .map(std::rc::Rc::new);
+                        let font = resource(
+                            self.doc,
+                            resources,
+                            b"Font",
+                            name,
+                            self.limits.max_nesting_depth,
+                        );
+                        if let Some(font) = font {
+                            self.budget
+                                .charge(crate::color::targeted_document::resource_size(
+                                    font,
+                                    0,
+                                    self.limits.max_nesting_depth,
+                                )?)?;
+                            state.font = Some(std::rc::Rc::new(font.clone()));
+                        } else {
+                            state.font = None;
+                        }
                         state.size = size;
                     }
                 }
@@ -741,7 +847,13 @@ impl<'a> Scanner<'a> {
                 }
                 "Do" => {
                     if let Some(name) = op.operands.first().and_then(|v| v.as_name().ok())
-                        && let Some(object) = self.resource(resources, b"XObject", name)
+                        && let Some(object) = resource(
+                            self.doc,
+                            resources,
+                            b"XObject",
+                            name,
+                            self.limits.max_nesting_depth,
+                        )
                         && let Ok(id) = object.as_reference()
                     {
                         let Some(source) = self
@@ -752,8 +864,31 @@ impl<'a> Scanner<'a> {
                         else {
                             continue;
                         };
-                        self.budget.charge(source.content.len())?;
-                        let stream = source.clone();
+                        let is_cached_image = source
+                            .dict
+                            .get(b"Subtype")
+                            .ok()
+                            .and_then(|v| v.as_name().ok())
+                            == Some(b"Image")
+                            && self.image_cache.contains_key(&id);
+                        let dict_size = crate::color::targeted_document::dictionary_size(
+                            &source.dict,
+                            0,
+                            self.limits.max_nesting_depth,
+                        )?;
+                        self.budget.charge(
+                            (if is_cached_image {
+                                0
+                            } else {
+                                source.content.len()
+                            })
+                            .saturating_add(dict_size.saturating_mul(8)),
+                        )?;
+                        let stream = if is_cached_image {
+                            Stream::new(source.dict.clone(), Vec::new())
+                        } else {
+                            source.clone()
+                        };
                         let subtype = stream
                             .dict
                             .get(b"Subtype")
@@ -791,6 +926,12 @@ impl<'a> Scanner<'a> {
                                 return Err(PdfError::Malformed);
                             }
                             let data = self.decode(&stream)?;
+                            let inherited_size = crate::color::targeted_document::dictionary_size(
+                                resources,
+                                0,
+                                self.limits.max_nesting_depth,
+                            )?;
+                            self.budget.charge(inherited_size.saturating_mul(8))?;
                             let form_resources = stream
                                 .dict
                                 .get(b"Resources")
@@ -800,17 +941,12 @@ impl<'a> Scanner<'a> {
                                 .unwrap_or_else(|| resources.clone());
                             let form_content =
                                 Content::decode(&data).map_err(|_| PdfError::Malformed)?;
-                            let referenced = if stream.dict.has(b"Group") || stream.dict.has(b"OC")
-                            {
-                                form_resources.clone()
-                            } else {
-                                used_form_resources(
-                                    self.doc,
-                                    &form_resources,
-                                    &form_content,
-                                    self.limits.max_nesting_depth,
-                                )
-                            };
+                            let referenced = used_form_resources(
+                                self.doc,
+                                &form_resources,
+                                &form_content,
+                                self.limits.max_nesting_depth,
+                            );
                             let estimate = crate::color::targeted_document::dictionary_size(
                                 &referenced,
                                 0,
@@ -819,7 +955,9 @@ impl<'a> Scanner<'a> {
                             self.budget.charge(estimate.saturating_mul(8))?;
                             let mut font_set = false;
                             let mut font_may_restore = false;
-                            let mut uses_inherited_font = false;
+                            // A nested Form may use the font selected by its caller without a Tf.
+                            let mut uses_inherited_font =
+                                form_content.operations.iter().any(|op| op.operator == "Do");
                             for op in &form_content.operations {
                                 match op.operator.as_str() {
                                     "q" | "Q" => font_may_restore = true,
@@ -830,20 +968,42 @@ impl<'a> Scanner<'a> {
                                     _ => {}
                                 }
                             }
-                            let context = format!(
-                                "{:?}{:?}{:?}{:?}{:?}{:?}",
-                                referenced,
-                                if uses_inherited_font {
-                                    state.font.as_ref()
+                            let mut hashes = vec![canonical_dictionary_hash(&referenced)];
+                            if form_content.operations.iter().any(|op| op.operator == "Do") {
+                                hashes.push(self.nested_context(
+                                    &form_content,
+                                    &form_resources,
+                                    0,
+                                    &mut HashSet::from([id]),
+                                )?);
+                            }
+                            let font = if uses_inherited_font {
+                                state.font.as_deref()
+                            } else {
+                                None
+                            };
+                            for object in [
+                                font,
+                                stream.dict.get(b"BBox").ok(),
+                                stream.dict.get(b"Matrix").ok(),
+                                stream.dict.get(b"Group").ok(),
+                                stream.dict.get(b"OC").ok(),
+                            ] {
+                                if let Some(object) = object {
+                                    let size = crate::color::targeted_document::resource_size(
+                                        object,
+                                        0,
+                                        self.limits.max_nesting_depth,
+                                    )?;
+                                    self.budget.charge(size.saturating_mul(8))?;
+                                    hashes.push(canonical_object_hash(object));
                                 } else {
-                                    None
-                                },
-                                stream.dict.get(b"BBox"),
-                                stream.dict.get(b"Matrix"),
-                                stream.dict.get(b"Group"),
-                                stream.dict.get(b"OC")
-                            );
-                            let context = sha256_chunks(&[context.as_bytes()]);
+                                    hashes.push(sha256_chunks(&[b"missing"]));
+                                }
+                            }
+                            let chunks: Vec<&[u8]> =
+                                hashes.iter().map(|hash| hash.as_slice()).collect();
+                            let context = sha256_chunks(&chunks);
                             let parent_index = self.drawables.len();
                             if !marked_outer {
                                 self.emit(Drawable {
@@ -897,71 +1057,100 @@ impl<'a> Scanner<'a> {
                             }
                             if !marked_outer {
                                 let nested = &self.drawables[parent_index + 1..];
-                                let alpha =
-                                    nested.iter().map(|v| v.alpha).fold(state.alpha, f64::min);
                                 let size = nested.iter().map(|v| v.size).fold(0.0, f64::max);
-                                let label = nested
+                                let alpha = (!nested.is_empty()
+                                    && nested.iter().all(|v| v.alpha < 0.99))
+                                .then(|| {
+                                    nested.iter().map(|v| v.alpha).fold(state.alpha, f64::min)
+                                });
+                                let labels: Vec<_> = nested
                                     .iter()
                                     .filter_map(|v| v.label.as_ref())
-                                    .find(|v| name_matches(v))
-                                    .cloned();
-                                self.drawables[parent_index].alpha = alpha;
-                                self.drawables[parent_index].size = size;
+                                    .filter(|v| name_matches(v))
+                                    .collect();
+                                let label = (!labels.is_empty() && labels.len() * 2 > nested.len())
+                                    .then(|| labels[0].clone());
+                                if let Some(alpha) = alpha {
+                                    self.drawables[parent_index].alpha = alpha;
+                                }
                                 self.drawables[parent_index].label = label;
+                                self.drawables[parent_index].size = size;
                             }
                         } else if subtype == b"Image" && !marked_outer {
-                            match crate::images::decode_with_budget(
-                                self.pdf,
-                                id,
-                                self.ctx,
-                                &mut self.budget,
-                                self.limits.max_nesting_depth,
-                                false,
-                                false,
-                            ) {
-                                Ok(image) => {
-                                    // Masks and dimensions are part of identity so distinct visible images
-                                    // cannot collapse into one candidate merely because pixels match.
-                                    let mask = format!(
-                                        "{:?}{:?}",
-                                        stream.dict.get(b"SMask").ok(),
-                                        stream.dict.get(b"Mask").ok()
-                                    );
-                                    let space = format!("{:?}", image.color_space);
-                                    let key = sha256_chunks(&[
-                                        subtype,
-                                        &image.width.to_be_bytes(),
-                                        &image.height.to_be_bytes(),
-                                        &[image.bits_per_component],
-                                        space.as_bytes(),
-                                        mask.as_bytes(),
-                                        &image.pixels,
-                                    ])
-                                    .to_vec();
-                                    self.emit(Drawable {
-                                        kind: "repeated_xobject",
-                                        key,
-                                        context: [0; 32],
-                                        occurrence: Occurrence {
-                                            page,
-                                            stream: root,
-                                            slot,
-                                            path: path.to_vec(),
-                                            start: index,
-                                            end: index + 1,
-                                            annotation: None,
-                                            own_stream: false,
-                                            ambiguous: false,
-                                        },
-                                        bbox,
-                                        ctm: transformed,
-                                        alpha: state.alpha,
-                                        size: 0.0,
-                                        label: None,
-                                    })?;
+                            let key = if let Some(cached) = self.image_cache.get(&id) {
+                                cached.clone()
+                            } else {
+                                match crate::images::decode_with_budget(
+                                    self.pdf,
+                                    id,
+                                    self.ctx,
+                                    &mut self.budget,
+                                    self.limits.max_nesting_depth,
+                                    false,
+                                    false,
+                                ) {
+                                    Ok(image) => {
+                                        // Masks and dimensions are part of identity so distinct visible images
+                                        // cannot collapse into one candidate merely because pixels match.
+                                        let mask = stream
+                                            .dict
+                                            .get(b"SMask")
+                                            .ok()
+                                            .map(canonical_object_hash)
+                                            .unwrap_or([0; 32]);
+                                        let explicit_mask = stream
+                                            .dict
+                                            .get(b"Mask")
+                                            .ok()
+                                            .map(canonical_object_hash)
+                                            .unwrap_or([0; 32]);
+                                        let space = format!("{:?}", image.color_space);
+                                        let key = sha256_chunks(&[
+                                            subtype,
+                                            &image.width.to_be_bytes(),
+                                            &image.height.to_be_bytes(),
+                                            &[image.bits_per_component],
+                                            space.as_bytes(),
+                                            &mask,
+                                            &explicit_mask,
+                                            &image.pixels,
+                                        ])
+                                        .to_vec();
+                                        self.image_cache.insert(id, Some(key.clone()));
+                                        Some(key)
+                                    }
+                                    Err(crate::images::ImageError::Pdf(error)) => {
+                                        return Err(error);
+                                    }
+                                    Err(_) => {
+                                        self.image_cache.insert(id, None);
+                                        self.unsupported_images += 1;
+                                        None
+                                    }
                                 }
-                                Err(crate::images::ImageError::Pdf(error)) => return Err(error),
-                                Err(_) => {}
+                            };
+                            if let Some(key) = key {
+                                self.emit(Drawable {
+                                    kind: "repeated_xobject",
+                                    key,
+                                    context: [0; 32],
+                                    occurrence: Occurrence {
+                                        page,
+                                        stream: root,
+                                        slot,
+                                        path: path.to_vec(),
+                                        start: index,
+                                        end: index + 1,
+                                        annotation: None,
+                                        own_stream: false,
+                                        ambiguous: false,
+                                    },
+                                    bbox,
+                                    ctm: transformed,
+                                    alpha: state.alpha,
+                                    size: 0.0,
+                                    label: None,
+                                })?;
                             }
                         }
                     }
@@ -1182,6 +1371,8 @@ pub(super) fn scan(
         active_forms: HashSet::new(),
         form_visits: 0,
         drawables: Vec::new(),
+        image_cache: HashMap::new(),
+        unsupported_images: 0,
     };
     let mut pages = BTreeMap::new();
     for number in &selected {
@@ -1202,7 +1393,7 @@ pub(super) fn scan(
         let mut saved = Vec::new();
         let mut marked = Vec::new();
         let mut page_ops = 0;
-        let streams = doc.get_page_contents(id);
+        let streams = super::watermark_remove::contents(doc, id, limits.max_nesting_depth)?;
         if streams.len() > MAX_DRAWABLES {
             return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
                 limit: MAX_DRAWABLES,
@@ -1306,7 +1497,7 @@ pub(super) fn scan(
                 .push(drawable),
         }
     }
-    let xobject_groups = repeated_groups(xobjects, selected.len(), params.min_page_ratio, ctx)?;
+    let mut xobject_groups = repeated_groups(xobjects, selected.len(), params.min_page_ratio, ctx)?;
     let parent_paths: HashSet<_> = xobject_groups
         .iter()
         .flatten()
@@ -1320,8 +1511,8 @@ pub(super) fn scan(
             )
         })
         .collect();
-    text.retain(|item| {
-        !(0..item.occurrence.path.len()).any(|index| {
+    let is_nested = |item: &Drawable| {
+        (0..item.occurrence.path.len()).any(|index| {
             parent_paths.contains(&(
                 item.occurrence.page,
                 item.occurrence.stream,
@@ -1330,7 +1521,16 @@ pub(super) fn scan(
                 item.occurrence.path[index],
             ))
         })
-    });
+    };
+    text.retain(|item| !is_nested(item));
+    for group in &mut xobject_groups {
+        group.retain(|item| !is_nested(item));
+    }
+    xobject_groups.retain(|group| !group.is_empty());
+    for group in explicit.values_mut() {
+        group.retain(|item| !is_nested(item));
+    }
+    explicit.retain(|_, group| !group.is_empty());
     let mut groups: Vec<Vec<Drawable>> = explicit.into_values().collect();
     groups.extend(xobject_groups);
     groups.extend(repeated_groups(
@@ -1370,6 +1570,7 @@ pub(super) fn scan(
     Ok(Detection {
         page_count: page_ids.len() as u32,
         candidates,
+        unsupported_images: scanner.unsupported_images,
     })
 }
 

@@ -232,3 +232,127 @@ fn identical_form_programs_with_different_resources_are_not_conflated() {
             .any(|c| c["kind"] == "repeated_xobject")
     );
 }
+
+#[test]
+fn repeated_large_form_dictionaries_respect_decode_budget() {
+    use ariad_core::limits::Limits;
+    use ariad_pdf::PdfError;
+    use lopdf::{Document, Object, Stream, StringFormat, dictionary};
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/multipage-20.pdf");
+    let mut doc = Document::load_mem(&std::fs::read(path).unwrap()).unwrap();
+    let form = doc.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Form", "BBox"=>vec![0.into(),0.into(),20.into(),20.into()], "Group"=>dictionary! {"Payload"=>Object::String(vec![b'x';100_000], StringFormat::Literal)}}, b"q Q".to_vec()));
+    let page = doc.get_pages()[&1];
+    let mut resources = ariad_pdf::draw::layer::page_resources(&doc, page);
+    resources.set("XObject", dictionary! {"Large"=>form});
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Resources", resources);
+    doc.add_page_contents(page, b"/Large Do ".repeat(100))
+        .unwrap();
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let limits = Limits {
+        max_decompressed_bytes: 4 * 1024 * 1024,
+        ..Limits::local()
+    };
+    assert!(matches!(
+        run_tool(
+            "pdf.watermark_detect",
+            &[InputDoc::with_limits("large.pdf", bytes, limits)],
+            &json!({"pages":"1"}),
+            &ToolCtx::new()
+        ),
+        Err(PdfError::LimitExceeded(_))
+    ));
+}
+
+#[test]
+fn shared_images_are_decoded_once_and_unsupported_masks_are_reported() {
+    use ariad_core::limits::Limits;
+    use lopdf::{Document, Stream, dictionary};
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/multipage-20.pdf");
+    let mut doc = Document::load_mem(&std::fs::read(path).unwrap()).unwrap();
+    let image = doc.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Image", "Width"=>700, "Height"=>700, "BitsPerComponent"=>8, "ColorSpace"=>"DeviceGray"}, vec![0x55; 700*700]));
+    let mask = doc.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Image", "Width"=>8, "Height"=>8, "BitsPerComponent"=>1, "ImageMask"=>true}, vec![0xff; 8]));
+    for page in doc.get_pages().values().copied().take(10) {
+        let mut resources = ariad_pdf::draw::layer::page_resources(&doc, page);
+        resources.set("XObject", dictionary! {"Img"=>image, "Mask"=>mask});
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Resources", resources);
+        doc.add_page_contents(
+            page,
+            b"q 200 0 0 200 100 200 cm /Img Do /Mask Do Q".to_vec(),
+        )
+        .unwrap();
+    }
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let limits = Limits {
+        max_decompressed_bytes: 3 * 1024 * 1024,
+        ..Limits::local()
+    };
+    let output = run_tool(
+        "pdf.watermark_detect",
+        &[InputDoc::with_limits("images.pdf", bytes, limits)],
+        &json!({"pages":"1-10"}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    assert!(
+        output.json.unwrap()["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|candidate| candidate["kind"] == "repeated_xobject")
+    );
+    assert!(
+        output
+            .coded_warnings
+            .iter()
+            .any(|warning| warning.code == "unsupported_watermark_image")
+    );
+}
+
+#[test]
+fn nested_transparency_group_ignores_unrelated_page_resources_and_deduplicates_children() {
+    use lopdf::{Document, Stream, dictionary};
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/multipage-20.pdf");
+    let mut doc = Document::load_mem(&std::fs::read(path).unwrap()).unwrap();
+    let child = doc.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Form", "BBox"=>vec![0.into(),0.into(),40.into(),40.into()]}, b"q 0 0 30 30 re f Q".to_vec()));
+    let parent = doc.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Form", "BBox"=>vec![0.into(),0.into(),40.into(),40.into()], "Group"=>dictionary! {"S"=>"Transparency"}}, b"q /Inner Do Q".to_vec()));
+    for (index, page) in doc.get_pages().values().copied().take(3).enumerate() {
+        let unrelated = doc.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Image", "Width"=>1, "Height"=>1, "BitsPerComponent"=>8, "ColorSpace"=>"DeviceGray"}, vec![index as u8]));
+        let mut resources = ariad_pdf::draw::layer::page_resources(&doc, page);
+        resources.set(
+            "XObject",
+            dictionary! {"Mark"=>parent, "Inner"=>child, "Unrelated"=>unrelated},
+        );
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Resources", resources);
+        doc.add_page_contents(page, b"q 1 0 0 1 200 300 cm /Mark Do Q".to_vec())
+            .unwrap();
+    }
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let output = run_tool(
+        "pdf.watermark_detect",
+        &[InputDoc::new("nested.pdf", bytes)],
+        &json!({"pages":"1-3"}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let candidates = output.json.unwrap();
+    let groups: Vec<_> = candidates["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["kind"] == "repeated_xobject")
+        .collect();
+    assert_eq!(groups.len(), 1, "{candidates}");
+    assert_eq!(groups[0]["pages"], json!([1, 2, 3]));
+}

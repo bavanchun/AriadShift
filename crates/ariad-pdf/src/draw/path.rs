@@ -180,15 +180,18 @@ pub fn draw_transformed(
         return Err(PdfError::InvalidParams("invalid path style".into()));
     }
     let mut resources = layer::page_resources(pdf.inner(), page);
-    let mut ops = vec![Operation::new(
-        "cm",
-        transform
-            .then(geometry.visual_to_user)
-            .0
-            .into_iter()
-            .map(num)
-            .collect::<Result<_, _>>()?,
-    )];
+    let mut ops = vec![
+        Operation::new("q", vec![]),
+        Operation::new(
+            "cm",
+            transform
+                .then(geometry.visual_to_user)
+                .0
+                .into_iter()
+                .map(num)
+                .collect::<Result<_, _>>()?,
+        ),
+    ];
     if style.opacity.value() < 1.0 {
         let opacity = num(style.opacity.value())?;
         let id = pdf.inner_mut()?.add_object(
@@ -221,6 +224,7 @@ pub fn draw_transformed(
         },
         vec![],
     ));
+    ops.push(Operation::new("Q", vec![]));
     let body = Content { operations: ops }
         .encode()
         .map_err(|_| PdfError::Malformed)?;

@@ -493,6 +493,18 @@ fn hash_stream(stream: &Stream) -> [u8; 32] {
     hasher.finalize()
 }
 
+pub(crate) fn canonical_object_hash(object: &Object) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_object_canonical(object, &mut hasher);
+    hasher.finalize()
+}
+
+pub(crate) fn canonical_dictionary_hash(dict: &Dictionary) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hash_dictionary_canonical(dict, None, &mut hasher);
+    hasher.finalize()
+}
+
 fn compute_document_hash(doc: &Document, ctx: &ToolCtx) -> Result<[u8; 32], PdfError> {
     let mut hasher = Sha256::new();
     hasher.update(b"pdf-version:");

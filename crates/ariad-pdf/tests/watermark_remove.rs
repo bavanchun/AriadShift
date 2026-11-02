@@ -423,10 +423,120 @@ fn annotation_watermark_is_removed_without_touching_the_page_content() {
             .get_dictionary(after.get_pages()[&1])
             .unwrap()
             .get(b"Annots")
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .is_empty()
+            .is_err()
+    );
+}
+
+#[test]
+fn own_watermark_cleanup_preserves_links_and_transparent_images() {
+    use lopdf::{Document, Object, Stream, dictionary};
+    let root =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/rotated-pages.pdf");
+    let mut doc = Document::load_mem(&std::fs::read(root).unwrap()).unwrap();
+    let page = doc.get_pages()[&1];
+    let link = doc.add_object(dictionary! {"Type"=>"Annot", "Subtype"=>"Link", "Rect"=>vec![0.into(),0.into(),30.into(),30.into()]});
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Annots", vec![Object::Reference(link)]);
+    let mask = doc.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Image", "Width"=>1, "Height"=>1, "BitsPerComponent"=>8, "ColorSpace"=>"DeviceGray"}, vec![128]));
+    let image = doc.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Image", "Width"=>1, "Height"=>1, "BitsPerComponent"=>8, "ColorSpace"=>"DeviceRGB", "SMask"=>mask}, vec![0,0,255]));
+    let mut resources = ariad_pdf::draw::layer::page_resources(&doc, page);
+    resources.set("XObject", dictionary! {"Image"=>image});
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Resources", resources);
+    doc.add_page_contents(page, b"q 10 0 0 10 0 0 cm /Image Do Q".to_vec())
+        .unwrap();
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let marked = run_tool(
+        "pdf.watermark",
+        &[InputDoc::new("a.pdf", bytes)],
+        &json!({"text":"DRAFT","pages":"1"}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let input = InputDoc::new("marked.pdf", marked.artifacts[0].bytes.clone());
+    let detected = run_tool(
+        "pdf.watermark_detect",
+        std::slice::from_ref(&input),
+        &json!({}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let id = detected.json.unwrap()["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["origin"] == "ariadshift")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let removed = run_tool(
+        "pdf.watermark_remove",
+        &[input],
+        &json!({"candidates":[id]}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let result = Document::load_mem(&removed.artifacts[0].bytes).unwrap();
+    assert!(result.catalog().unwrap().get(b"OCProperties").is_err());
+    let page = result.get_dictionary(result.get_pages()[&1]).unwrap();
+    assert_eq!(page.get(b"Annots").unwrap().as_array().unwrap().len(), 1);
+    assert!(
+        result
+            .objects
+            .values()
+            .filter_map(|v| v.as_stream().ok())
+            .any(|v| v.dict.has(b"SMask"))
+    );
+}
+
+#[test]
+fn marked_block_with_outer_graphics_scope_is_removable() {
+    use lopdf::Document;
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/rotated-pages.pdf");
+    let mut doc = Document::load_mem(&std::fs::read(path).unwrap()).unwrap();
+    let page = doc.get_pages()[&1];
+    doc.add_page_contents(
+        page,
+        b"q /Artifact << /Subtype /Watermark >> BDC 1 0 0 1 30 30 cm 0 0 50 50 re f EMC Q".to_vec(),
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let input = InputDoc::new("outer-scope.pdf", bytes);
+    let detected = run_tool(
+        "pdf.watermark_detect",
+        std::slice::from_ref(&input),
+        &json!({}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let id = detected.json.unwrap()["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["kind"] == "artifact")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let result = run_tool(
+        "pdf.watermark_remove",
+        &[input],
+        &json!({"candidates":[id]}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let output = Document::load_mem(&result.artifacts[0].bytes).unwrap();
+    let bytes = output.get_page_content(output.get_pages()[&1]);
+    assert!(
+        !bytes
+            .windows(b"Watermark".len())
+            .any(|part| part == b"Watermark")
     );
 }
 
