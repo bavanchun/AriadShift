@@ -3,12 +3,16 @@ use image::GrayImage;
 use std::collections::VecDeque;
 
 /// Inclusive-exclusive region in raster pixels.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Region {
     pub x0: u32,
     pub y0: u32,
     pub x1: u32,
     pub y1: u32,
+    /// Estimated counter-clockwise angle of the region's long edge.
+    pub angle_deg: f32,
+    /// Elongation-based confidence in the angle, between zero and one.
+    pub angle_confidence: f32,
 }
 
 /// Locate regions whose luminance differs from the median border luminance.
@@ -78,7 +82,16 @@ pub fn detect(image: &GrayImage, min_area_ratio: f32, padding: u32) -> Vec<Regio
             grid[index] = false;
             queue.push_back((gx, gy));
             let (mut left, mut top, mut right, mut bottom) = (gx, gy, gx, gy);
+            let (mut n, mut sx, mut sy, mut sxx, mut syy, mut sxy) =
+                (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
             while let Some((x, y)) = queue.pop_front() {
+                let (xf, yf) = (f64::from(x), f64::from(y));
+                n += 1.0;
+                sx += xf;
+                sy += yf;
+                sxx += xf * xf;
+                syy += yf * yf;
+                sxy += xf * yf;
                 left = left.min(x);
                 top = top.min(y);
                 right = right.max(x);
@@ -102,11 +115,23 @@ pub fn detect(image: &GrayImage, min_area_ratio: f32, padding: u32) -> Vec<Regio
             let ratio =
                 f64::from(x1 - x0) * f64::from(y1 - y0) / (f64::from(width) * f64::from(height));
             if ratio >= f64::from(min_area_ratio) {
+                let xx = sxx / n - (sx / n).powi(2);
+                let yy = syy / n - (sy / n).powi(2);
+                let xy = sxy / n - (sx / n) * (sy / n);
+                let anisotropy = (xx - yy).hypot(2.0 * xy) / (xx + yy).max(f64::EPSILON);
+                let axis = 0.5 * (2.0 * xy).atan2(xx - yy).to_degrees();
+                let angle = if anisotropy < 0.1 {
+                    0.0
+                } else {
+                    (-axis + 45.0).rem_euclid(90.0) - 45.0
+                };
                 regions.push(Region {
                     x0: x0.saturating_sub(padding),
                     y0: y0.saturating_sub(padding),
                     x1: x1.saturating_add(padding).min(width),
                     y1: y1.saturating_add(padding).min(height),
+                    angle_deg: angle as f32,
+                    angle_confidence: anisotropy.clamp(0.0, 1.0) as f32,
                 });
             }
         }

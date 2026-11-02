@@ -91,26 +91,33 @@ fn detects_the_three_scan_bed_regions() {
     let truth_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/pdf-tools/scan-photos-3.truth.json");
     let truth: serde_json::Value = serde_json::from_slice(&fs::read(truth_path).unwrap()).unwrap();
-    let mut expected: Vec<Vec<f64>> = truth["regions"]
+    let mut expected: Vec<(Vec<f64>, f64)> = truth["regions"]
         .as_array()
         .unwrap()
         .iter()
         .map(|region| {
-            region["bbox_pt"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| v.as_f64().unwrap() * 150.0 / 72.0)
-                .collect()
+            (
+                region["bbox_pt"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_f64().unwrap() * 150.0 / 72.0)
+                    .collect(),
+                region["angle_deg"].as_f64().unwrap(),
+            )
         })
         .collect();
-    expected.sort_by(|a, b| a[1].total_cmp(&b[1]).then(a[0].total_cmp(&b[0])));
-    for (region, bbox) in regions.iter().zip(expected) {
+    expected.sort_by(|a, b| a.0[1].total_cmp(&b.0[1]).then(a.0[0].total_cmp(&b.0[0])));
+    for (region, (bbox, angle)) in regions.iter().zip(expected) {
         for (actual, expected) in [region.x0, region.y0, region.x1, region.y1]
             .into_iter()
             .zip(bbox)
         {
             assert!((f64::from(actual) - expected).abs() <= 12.0, "{region:?}");
         }
+        assert!(
+            (f64::from(region.angle_deg) - angle).abs() < 1.5,
+            "{region:?}, expected {angle}"
+        );
     }
 }
