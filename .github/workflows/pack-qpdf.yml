@@ -72,6 +72,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/qpdf-output/receipt"
           printf '%s\n' "$IMAGE" > "$RUNNER_TEMP/qpdf-output/receipt/image.txt"
           cp engines/qpdf/pack/runtime-sources.txt "$RUNNER_TEMP/qpdf-output/receipt/runtime-sources.txt"
+          docker pull "$IMAGE"
+          docker image inspect --format '{{.Id}}' "$IMAGE" > "$RUNNER_TEMP/qpdf-output/receipt/image-id.txt"
           if [ '${{ matrix.kind }}' = musl ]; then
             docker run --rm -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/qpdf-input:/input:ro" -v "$RUNNER_TEMP/qpdf-output:/output" "$IMAGE" \
               sh -c 'mkdir -p /output/receipt/apks && apk add --cache-dir /output/receipt/apks --cache-packages bash build-base cmake pkgconf binutils libgcc-static && apk fix --reinstall --cache-dir /output/receipt/apks --cache-packages $(apk info) && bash /work/engines/qpdf/pack/record-inputs.sh /output/receipt && bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output'

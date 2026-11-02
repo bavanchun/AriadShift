@@ -2,7 +2,7 @@
 # Fail closed unless the exact component review explicitly records approval.
 set -euo pipefail
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-python3 - "$here/licence-review.toml" <<'PY'
+python3 - "$here/licence-review.toml" "$here/runtime-sources.txt" "${1:-}" "${2:-}" <<'PY'
 import pathlib, sys, tomllib
 p = pathlib.Path(sys.argv[1])
 try:
@@ -17,6 +17,38 @@ try:
     }
     if review != expected:
         raise ValueError('review is pending or does not match the approved component')
+    import hashlib
+    source_manifest = pathlib.Path(sys.argv[2]).read_bytes()
+    receipts, sources = pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4])
+    if not sys.argv[3] or not sys.argv[4]:
+        raise ValueError('receipt and source directories are required')
+    entries = [line.split() for line in source_manifest.decode().splitlines()]
+    if len(entries) != 5 or any(len(entry) != 3 for entry in entries):
+        raise ValueError('invalid source manifest')
+    for digest, name, _ in entries:
+        if pathlib.Path(name).name != name or hashlib.sha256((sources / name).read_bytes()).hexdigest() != digest:
+            raise ValueError(f'source hash mismatch: {name}')
+    platforms = {
+        'linux-x64': ('f6adcfd450f0927a05c66ded9b4c3bb538fbab625b1ca3f35d71ac093b24b57f', '14.2.1', '308fa896e2bdae71da3b8dc67fc577d3951c74e8bc7a6e6c96e9da7ee1911784', '99358806eb985f6202a57b56ea2f105d1e4c987729421cc136b4b7c0678a3b9a'),
+        'linux-arm64': ('54b271d9562a3686298880df05367909e949ed317e7b1b79b59c696d75f78676', '14.2.1', 'd8dcea39c8507d21c2274e9353b1ee720f172b303dcb5e1bf4d4cfbe38f72f2c', '69c8b51af4a99672127fffc2fe892d0d57329e2b4058bcd925edc44fada8c213'),
+        'linux-musl-x64': ('be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a', '15.2.0', '3c5a681959e644f7274b39a9efb4dbb56533a57306a456ce3580bd94f31520a5', 'aeae756b465a790521bc47a999d0c935c3efad7df06e1b89d334f52d371918e2'),
+        'linux-musl-arm64': ('be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a', '15.2.0', 'b2b03b70be60cd0ae15cdca348fb002313786d229391a6b064c747528de68936', '13418fd4e14bf4cd601f3d41addbec08617533454cc6fef2a0ce92ecbf83118f'),
+    }
+    for platform, (image, gcc, stdcpp, libgcc) in platforms.items():
+        receipt = receipts / f'qpdf-input-receipts-{platform}'
+        if (receipt / 'runtime-sources.txt').read_bytes() != source_manifest:
+            raise ValueError(f'source receipt mismatch: {platform}')
+        if not (receipt / 'image.txt').read_text().strip().endswith('@sha256:' + image):
+            raise ValueError(f'image mismatch: {platform}')
+        if not (receipt / 'image-id.txt').read_text().strip().startswith('sha256:'):
+            raise ValueError(f'image ID missing: {platform}')
+        if gcc not in (receipt / 'gcc-version.txt').read_text():
+            raise ValueError(f'compiler mismatch: {platform}')
+        if not (receipt / 'packages.txt').read_text().strip() or not (receipt / 'package-sha256.txt').read_text().strip():
+            raise ValueError(f'package receipt missing: {platform}')
+        runtime = (receipt / 'runtime-sha256.txt').read_text().splitlines()
+        if len(runtime) != 2 or runtime[0].split()[0] != libgcc or runtime[1].split()[0] != stdcpp:
+            raise ValueError(f'runtime hash mismatch: {platform}')
 except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
     sys.exit(f'qpdf release refused: {exc}')
 PY

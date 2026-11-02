@@ -4,6 +4,7 @@ set -euo pipefail
 out=$1
 mkdir -p "$out"
 gcc --version > "$out/gcc-version.txt"
+sha256sum "$(gcc -print-file-name=libgcc.a)" "$(g++ -print-file-name=libstdc++.a)" > "$out/runtime-sha256.txt"
 if command -v rpm >/dev/null; then
     rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | LC_ALL=C sort > "$out/packages.txt"
     while IFS= read -r package; do
