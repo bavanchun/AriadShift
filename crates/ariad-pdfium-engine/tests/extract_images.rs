@@ -1641,6 +1641,51 @@ fn page_content_resources_are_removed_from_canonical_output() {
 }
 
 #[test]
+fn type3_glyph_resource_dependencies_require_an_explicit_scope() {
+    let cases: &[&[u8]] = &[
+        b"0 0 d0 /X Do",
+        b"0 0 d0 /S sh",
+        b"0 0 d0 /G gs",
+        b"0 0 d0 /P scn",
+        b"0 0 d0 /P SCN",
+        b"0 0 d0 BT /F 1 Tf ET",
+        b"0 0 d0 BI /W 1 /H 1 /BPC 8 /CS /G ID x EI",
+    ];
+    for content in cases {
+        for (font_resources, proc_resources, refuse) in [
+            ("", "", true),
+            ("/Resources << >>", "", false),
+            ("", "/Resources << >>", false),
+        ] {
+            let font = format!(
+                "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << /A 5 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1] {font_resources} >>"
+            );
+            let input = assemble_pdf(&[
+                b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+                b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /Font << /T 4 0 R >> >> /Contents 6 0 R >>".to_vec(),
+                font.into_bytes(), stream_object(proc_resources, content), stream_object("", b"q Q"),
+            ]);
+            let ws = TestWorkspace::from_bytes("input.pdf", &input);
+            let mut sink = Vec::new();
+            let mut ctx =
+                ToolContext::new("type3", "pdf.render", ws.paths, Limits::local(), &mut sink);
+            let result = ctx.load_validated_pdf_bytes();
+            if refuse {
+                let err = result.expect_err("ambiguous glyph");
+                assert_eq!(err.code, ErrorCode::LimitExceeded);
+                assert_eq!(
+                    err.message,
+                    "Type3 glyph procedure depends on ambiguous page resources"
+                );
+            } else {
+                result.expect("explicit glyph scope");
+            }
+        }
+    }
+}
+
+#[test]
 fn type3_resource_scopes_charge_executed_glyphs() {
     for name in [
         "type3-charproc-resource-budget.pdf",

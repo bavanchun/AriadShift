@@ -1037,6 +1037,64 @@ pub(crate) fn canonical_content_streams(
         out.insert(id, Object::Stream(stream));
         facts.insert(id, stream_facts);
     }
+    fn check_type3_resources(
+        doc: &lopdf::Document,
+        value: &Object,
+        facts: &BTreeMap<PdfObjectId, crate::execution_budget::Facts>,
+        depth: usize,
+    ) -> Result<(), EngineFailure> {
+        if depth >= 63 {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let dict = match value {
+            Object::Dictionary(dict) => dict,
+            Object::Stream(stream) => &stream.dict,
+            Object::Array(items) => {
+                for item in items {
+                    check_type3_resources(doc, item, facts, depth + 1)?;
+                }
+                return Ok(());
+            }
+            _ => return Ok(()),
+        };
+        let subtype = dict
+            .get(b"Subtype")
+            .ok()
+            .and_then(|v| resolve(Some(doc), v).ok())
+            .and_then(|(_, v)| v.as_name().ok());
+        if subtype == Some(b"Type3") && !dict.has(b"Resources") {
+            let procs = dict
+                .get(b"CharProcs")
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            let procs = resolve(Some(doc), procs)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, proc) in procs.iter() {
+                let (id, proc) = resolve(Some(doc), proc)?;
+                let stream = proc
+                    .as_stream()
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                if !stream.dict.has(b"Resources")
+                    && facts
+                        .get(&id.ok_or_else(EngineFailure::limit_exceeded)?)
+                        .is_some_and(|facts| !facts.calls.is_empty())
+                {
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Type3 glyph procedure depends on ambiguous page resources",
+                    ));
+                }
+            }
+        }
+        for (_, child) in dict.iter() {
+            check_type3_resources(doc, child, facts, depth + 1)?;
+        }
+        Ok(())
+    }
+    for value in doc.objects.values() {
+        check_type3_resources(doc, value, &facts, 0)?;
+    }
     crate::execution_budget::check(ctx, doc, &facts, pages)?;
     Ok(out)
 }
@@ -2058,6 +2116,14 @@ fn preflight_content_inner(
                     }
                     _ => {}
                 }
+                if token == b"Tf"
+                    && let Some(calls) = calls.as_deref_mut()
+                {
+                    calls.push(crate::execution_budget::Call {
+                        op: token.to_vec(),
+                        name: Vec::new(),
+                    });
+                }
                 if let Some(calls) = calls.as_deref_mut()
                     && matches!(token, b"Do" | b"gs" | b"sh" | b"scn" | b"SCN")
                     && let Some(value) = last
@@ -2165,6 +2231,15 @@ fn preflight_content_inner(
                     expect_key = false;
                     key = &bytes[s..e];
                     continue;
+                }
+                if matches!(key, b"/CS" | b"/ColorSpace")
+                    && bytes[s] == b'/'
+                    && let Some(calls) = calls.as_deref_mut()
+                {
+                    calls.push(crate::execution_budget::Call {
+                        op: b"BI".to_vec(),
+                        name: Vec::new(),
+                    });
                 }
                 if matches!(key, b"/CS" | b"/ColorSpace" | b"/F" | b"/Filter") {
                     if &bytes[s..e] == b"[" {
