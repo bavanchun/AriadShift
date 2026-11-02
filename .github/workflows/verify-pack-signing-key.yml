@@ -1,5 +1,7 @@
 name: Verify pack signing key
 
+# Dispatch cannot run until the release environment permits the selected ref.
+
 on:
   workflow_dispatch:
 

@@ -282,6 +282,9 @@ jobs:
           bash scripts/pack/sign-pack.sh --name "$PACK_NAME" --version "$PACK_VERSION" \
             --manifest "$DIST/pack.toml" --public-key "$PUBLIC_KEY"
 
+      - name: Verify the signed manifest
+        run: minisign -V -p "$PUBLIC_KEY" -m "$DIST/pack.toml" -x "$DIST/pack.toml.minisig"
+
       - name: Publish the release
         run: |
           gh release create "$TAG" --verify-tag --title "$TAG" \
