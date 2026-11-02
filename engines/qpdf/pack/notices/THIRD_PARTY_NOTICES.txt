@@ -1,0 +1,8 @@
+qpdf pack third-party notices
+
+This software is based in part on the work of the Independent JPEG Group.
+
+qpdf: qpdf-LICENSE.txt and qpdf-NOTICE.txt
+libjpeg-turbo: libjpeg-turbo-LICENSE.txt and libjpeg-turbo-README.ijg.txt
+zlib: zlib-README.txt
+GNU runtime: gcc-GPL-3.txt and gcc-runtime-exception.txt
