@@ -26,7 +26,7 @@ milestone: B (engine breadth)
 |---|---|
 | `pdf.compress` | `{level: 1..9 \| preset: "screen" \| "ebook" \| "print" \| "lossless", target_bytes?: u64, grayscale?: bool, max_dpi?: u32, jpeg_quality?: u8}`. Pipeline: dedupe streams → recompress Flate → downsample/re-encode images (in-process) → subset/unembed unused fonts → in-process object streams + unreferenced-resource removal. `target_bytes`: at most eight quality and DPI candidates, selecting the highest-quality output at or below the target or the smallest candidate with a warning; reports achieved size and PDFium SSIM for first, middle and last pages; warns below 0.98 or if measurement is unavailable. `level` and `preset` are exclusive; the default is ebook. Never return output larger than the input. |
 | `pdf.grayscale` | convert images and colour operators to gray |
-| `pdf.encrypt` | `{user_password?, owner_password, algorithm: "aes-256" = default \| "aes-128", permissions: {print, modify, copy, annotate, fill_forms, extract_accessibility, assemble, print_high}}` via qpdf; passwords only via params, never logged; params redacted in logs/reports |
+| `pdf.encrypt` | `{user_password?, owner_password, algorithm: "aes-256" = default \| "aes-128", permissions: {print, modify, copy, annotate, fill_forms, extract_accessibility, assemble, print_high}}` via qpdf; passwords only via secret channels, never logged; values redacted in logs/reports |
 | `pdf.decrypt` | `{password?}` via qpdf; absent means the empty user password |
 | `pdf.permissions` | change permissions (needs owner password) |
 | `pdf.repair` | qpdf rewrite with object streams preserved; report repairs |
