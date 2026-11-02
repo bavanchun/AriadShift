@@ -72,6 +72,19 @@ pub fn serve_builtin(
     }
 }
 
+/// Runs the protocol probe for a pack engine in test-probe builds.
+#[cfg(feature = "test-probe")]
+pub fn serve_pack_probe(
+    engine: &str,
+    input: impl std::io::BufRead,
+    output: impl std::io::Write,
+) -> std::process::ExitCode {
+    match pack_spec(engine).filter(|spec| spec.protocol == Protocol::V2) {
+        Some(spec) => test_pack_engine::serve(spec, input, output),
+        None => std::process::ExitCode::from(2),
+    }
+}
+
 /// Stand-in for a pack engine, compiled only into `test-probe` builds. It answers `describe`
 /// and fakes `run_tool` so the host runner, limits and sandbox can be tested without a pack.
 #[cfg(feature = "test-probe")]

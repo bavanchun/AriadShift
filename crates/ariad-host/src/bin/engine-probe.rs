@@ -19,6 +19,11 @@ fn main() -> ExitCode {
     };
 
     match operation.as_str() {
+        "__pack_probe" => ariad_host::engines::serve_pack_probe(
+            &args.next().unwrap(),
+            io::stdin().lock(),
+            io::stdout().lock(),
+        ),
         "__engine" => ariad_host::engines::serve_builtin(
             &args.next().unwrap(),
             io::stdin().lock(),
