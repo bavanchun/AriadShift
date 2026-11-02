@@ -51,7 +51,7 @@ case ${1:-} in
             license="$license AND LicenseRef-Development-Dependencies"
             extras+=(--extra "$dir/lib=lib")
         fi
-        for notice in THIRD_PARTY_NOTICES.txt qpdf-LICENSE.txt qpdf-NOTICE.txt libjpeg-turbo-LICENSE.txt libjpeg-turbo-README.ijg.txt zlib-README.txt gcc-GPL-3.txt gcc-runtime-exception.txt; do
+        for notice in THIRD_PARTY_NOTICES.txt qpdf-LICENSE.txt qpdf-NOTICE.txt libjpeg-turbo-LICENSE.txt libjpeg-turbo-README.ijg.txt zlib-README.txt gcc-GPL-3.txt gcc-runtime-exception.txt gnu-LGPL-2.1.txt gnu-runtime-source-offer.txt gnu-runtime-source-pointers.txt; do
             [ -s "$here/notices/$notice" ] || die "notice $notice is missing"
         done
         read -r _ triple _ _ < <(awk -v target="$host" '$1 == target { print; exit }' "$here/targets.txt")
@@ -99,7 +99,7 @@ data = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
 if not data.get('targets') or any(t.get('entrypoint') != ['bin/qpdf'] for t in data['targets']):
     sys.exit('qpdf-pack: invalid entrypoint')
 PY
-        for notice in THIRD_PARTY_NOTICES.txt qpdf-LICENSE.txt qpdf-NOTICE.txt libjpeg-turbo-LICENSE.txt libjpeg-turbo-README.ijg.txt zlib-README.txt gcc-GPL-3.txt gcc-runtime-exception.txt; do
+        for notice in THIRD_PARTY_NOTICES.txt qpdf-LICENSE.txt qpdf-NOTICE.txt libjpeg-turbo-LICENSE.txt libjpeg-turbo-README.ijg.txt zlib-README.txt gcc-GPL-3.txt gcc-runtime-exception.txt gnu-LGPL-2.1.txt gnu-runtime-source-offer.txt gnu-runtime-source-pointers.txt; do
             [ -s "$root/notices/$notice" ] || die "notice $notice is missing"
             grep -q "notices/$notice" "$root/pack.toml" || die "notice $notice is absent from the manifest"
         done

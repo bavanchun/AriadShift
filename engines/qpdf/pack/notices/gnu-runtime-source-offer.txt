@@ -1,0 +1,20 @@
+GNU runtime corresponding-source offer
+
+For the libstdc++ and libgcc object code redistributed in an AriadShift qpdf
+engine pack, AriadShift offers to provide the complete corresponding source
+code to anyone who possesses that object code. This offer is valid for at least
+three years after the last distribution of the pack.
+
+The source includes the preferred form for modification, provider or local
+changes, and the scripts and instructions needed to build and install the
+corresponding runtime objects. It is supplied under the applicable GNU General
+Public License or GNU Lesser General Public License, including the GCC Runtime
+Library Exception where applicable. There is no charge for electronic delivery;
+a physical copy is available for no more than the reasonable cost of physically
+performing source distribution.
+
+To request source, contact the AriadShift release maintainers through:
+https://github.com/bavanchun/AriadShift/issues
+Identify the pack release, platform, and SHA-256 of bin/qpdf so that the exact
+object code can be matched. This offer is made by AriadShift independently of
+the toolchain providers.
