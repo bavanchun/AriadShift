@@ -1,48 +1,57 @@
 # qpdf pack handoff
 
-Status: incomplete. The PM selected unmodified libjpeg-turbo 3.2.1 with a
-named exception pending owner approval. The source-build stop rule was met:
-the local qpdf build succeeded with native crypto but loaded system libz and
-libm, outside the requested dynamic dependency allowlist. The initial CMake
-cache had selected system zlib; the new clean-build script has not been run.
-No upstream Linux fallback was selected. The experimental source-build CI job
-is retained separately; it does not publish.
+Status: incomplete pending macOS and non-x64 CI validation, owner approval,
+and a complete review of statically linked GNU runtime notices and provenance.
+The release gate refuses publication until both reviews are complete.
 
-## Delivered and checked
+## Implementation
 
-`engines/qpdf/pack/licence-review.toml` names only libjpeg-turbo 3.2.1 and
-keeps `pending_owner_approval = true`. Its release gate rejects pending,
-malformed or mismatched reviews. The tag workflow invokes it in the protected
-release environment and then unconditionally refuses release because the pack
-is unfinished. The local test covers pending refusal, approved review parsing,
-wrong-component refusal, and hash mismatch. It does not test a real signature
-or publish operation. The workflow and pack assembler are scaffolding, not a
-completed six-target pack. `make.sh dev` rejects prepared directories with
-shared libraries, including the manager's GnuTLS development cache, because
-its component notice inventory has not been reviewed. No `just pack-qpdf`
-recipe or final manifest has been delivered.
+All six targets now build qpdf 12.4.2, libjpeg-turbo 3.2.1 and zlib 1.3.2
+from verified source archives. The source build selects native crypto and
+static zlib and libjpeg. Linux statically links GNU C++ and GCC runtimes; its
+`readelf` check allows only glibc/musl runtime dependencies. macOS uses system
+libc++/libSystem and rejects dynamic zlib, jpeg, and OpenSSL. The upstream
+macOS binaries are not used. The shared builder ad-hoc codesigns macOS unless
+an Apple signing identity is supplied. The pack entrypoint is `bin/qpdf` and
+the manifest declares `ariad-engine/2` with host version `>=0.3.0, <2.0.0`.
 
-`bash scripts/test-pack-qpdf.sh` passed with both real macOS ZIPs;
-`bash scripts/test-ci-scope.sh` passed 90 checks. ShellCheck 0.11.0 and
-actionlint passed using their explicit installed binary paths. The first
-ShellCheck/actionlint invocation failed because the system ShellCheck shim had
-no selected version; both passed on rerun with the installed binary.
+The workflow has six native-runner targets, digest-pinned Linux containers,
+manifest merge and a tag-only signing job in the protected release environment.
+The signing job requires stable-branch ancestry and the release gate. The
+source build step has a ten-minute limit. Linux arm64, musl and macOS are CI
+only and have not been verified locally. A macOS toolchain failure needs to be
+reported after the PM's ten-minute investigation limit; do not debug toolchains.
 
-## macOS binary inventory
+The qpdf-specific IJG exception is restricted to unmodified libjpeg-turbo 3.2.1
+and remains `pending_owner_approval = true`. The GNU static runtime review has
+its own `runtime_review_complete = false` gate: the manylinux x64 static build
+uses GCC 14.2.1 from source RPM
+`gcc-toolset-14-gcc-14.2.1-11.el8_10.src.rpm`. GPL-3 and GCC runtime exception
+texts are included, but the exact toolchain source, complete notices and source
+offer for all target images still need review. No signed release or index entry
+exists. The owner item is in the main checkout's coordination file.
 
-Both ZIPs were downloaded and matched the signed hashes below. Each contains
-`bin/qpdf`, `bin/fix-qdf`, `bin/zlib-flate`, one
-`lib/libqpdf.30.4.2.dylib`, and relative symlink `libqpdf.30.dylib` to it.
-Neither ZIP contains licence files. `llvm-objdump --macho --dylibs-used` shows
-qpdf depends on libqpdf, libc++, and libSystem; libqpdf depends on system
-libz, libc++, and libSystem. Both libqpdf binaries embed the string
-`libjpeg-turbo version 3.2.0 (build 20260630)`. Defined OpenSSL symbols such as
-`_OPENSSL_init_crypto` and `_EVP_*` are present in libqpdf, with no dynamic
-OpenSSL dependency. Its exact OpenSSL version and source/notice have not been
-verified. Thus the PM's 3.2.1-only review does not establish coverage of the
-3.2.0 binary, and OpenSSL is an additional bundled component. These archives
-are not used by the scaffold. The finding was recorded in result.md and the
-owner-pending coordination file before any use.
+`just pack-qpdf <qpdf_dir>` assembles an unsigned host pack at
+`target/packs/qpdf`; `just pack-qpdf-verify` checks it. The manager's GnuTLS
+binary cache is allowed only for local development, and its manifest marks its
+additional shared dependencies unreviewed; CI release components disallow them.
+Set `ASHIFT_PACK_QPDF` to the absolute pack directory. The host adapter is
+being implemented separately.
+
+## Validation
+
+A clean Linux x64 source build in the pinned manylinux container passed:
+`qpdf --show-crypto` printed `native`, and `readelf -d` listed only
+`libm.so.6`, `libc.so.6` and `ld-linux-x86-64.so.2`. The output was qpdf
+12.4.2. The earlier stale-cache build dynamically linked system zlib; it was
+superseded by this clean build. The build-locked `just pack-qpdf` with the manager's prepared Linux cache
+passed, as did a separate assembly from the clean source-built binary.
+`QPDF_TEST_PACK` checks passed on both packs, including missing-notice refusal;
+release guard and archive hash rejection tests passed. `ashift engines`
+recognized the cache pack as a development override but reported its engine
+description missing because the separate qpdf adapter is not in this base.
+The CI scope suite passed 93 checks; ShellCheck and actionlint passed. macOS,
+Linux arm64 and musl builds have not run locally.
 
 ## Verified upstream inputs
 
@@ -70,23 +79,44 @@ Notices copied from those pinned sources are qpdf LICENSE.txt and NOTICE.md,
 libjpeg-turbo LICENSE.md and README.ijg, and zlib README. OpenSSL notices and
 macOS libjpeg 3.2.0 notices are not yet inventoried.
 
-## Outstanding work
+## Observed Linux development manifest
 
-Resolve the source-build dependency check, then validate the clean script and
-all four Linux targets under the stop rule. Determine the correct old-glibc and
-Alpine container digests for every architecture. Obtain the macOS decision
-and exact OpenSSL provenance, then implement safe ZIP extraction, relative
-symlink preservation, macOS signing, cross-architecture verification and the
-six-target pack workflow. Complete `just` recipes, manifest merge, signing,
-publishing, integration tests and the target index entry after the first signed
-release. The planned manifest is `ariad-pack/1`, name `qpdf`, protocol
-`ariad-engine/2`, entrypoint `bin/qpdf`, and a minimum host version containing
-the adapter; final component hashes and URLs do not yet exist. Linux arm64 and
-both musl builds remain unverified locally.
+This is the exact unsigned manifest from the local source-built x64 component,
+not a signed release manifest. Its component hash and size are build-specific.
 
-## Decision needed
+```toml
+schema = "ariad-pack/1"
+name = "qpdf"
+version = "0.1.0"
+description = "qpdf document engine"
+license = "Apache-2.0 AND IJG AND BSD-3-Clause AND Zlib AND GPL-3.0-or-later WITH GCC-exception-3.1"
+requires_ashift = ">=0.3.0, <2.0.0"
+engine_protocol = "ariad-engine/2"
+notices = ["notices/gcc-GPL-3.txt", "notices/gcc-runtime-exception.txt", "notices/libjpeg-turbo-LICENSE.txt", "notices/libjpeg-turbo-README.ijg.txt", "notices/qpdf-LICENSE.txt", "notices/qpdf-NOTICE.txt", "notices/zlib-README.txt"]
 
-The owner must approve the narrowly scoped 3.2.1 exception before distribution.
-The PM must decide separately whether the upstream macOS libjpeg-turbo 3.2.0
-and statically linked OpenSSL may be included and how their exact notices and
-provenance will be established.
+[[targets]]
+triple = "x86_64-unknown-linux-gnu"
+entrypoint = ["bin/qpdf"]
+executables = ["bin/qpdf"]
+
+[[targets.components]]
+name = "engine"
+url = "qpdf-0.1.0-x86_64-unknown-linux-gnu-engine.tar.zst"
+sha256 = "acc251c7e44827e307ad09a616ec807c136cffc7b036565c3598ce0a7ea97f2f"
+size = 1722429
+unpack = "tar.zst"
+dest = "."
+unpacked_size = 6238892
+entries = 10
+```
+
+## Remaining work
+
+Run the six-target workflow and validate macOS and the three Linux targets not
+available locally. Finish the static GNU runtime licence review, notices,
+provenance and corresponding-source offer for every relevant target. Obtain
+owner approval of the qpdf IJG exception before enabling publication. Once a
+signed release exists, the integrator must add the actual URL, manifest hash
+and signing key to `crates/ariad-host/data/packs.toml`; those values do not yet
+exist and must not be invented. The final six-target manifest depends on the
+actual artifacts and cannot be printed before the workflow completes.
