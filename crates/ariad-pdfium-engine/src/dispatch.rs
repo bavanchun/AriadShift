@@ -11,7 +11,7 @@ use ariad_core::{
     tools::{
         params::{
             CropWhitespaceParams, DetectScannedParams, ExtractImagesParams, RemoveBlankParams,
-            RenderParams, TextLayoutParams, ThumbnailsParams, ToImagesParams,
+            RenderParams, ScanRenderParams, TextLayoutParams, ThumbnailsParams, ToImagesParams,
         },
         specs::pdfium::specs,
     },
@@ -38,6 +38,7 @@ pub const TOOL_IDS: &[&str] = &[
     "pdf.crop_whitespace",
     "pdf.detect_scanned",
     "pdf.split",
+    "scan.render",
 ];
 
 /// Contract version reported for `pdf.split`, whose spec lives with the structural PDF tools.
@@ -144,6 +145,7 @@ pub fn handle_with<W: Write>(
 pub fn run_tool(ctx: &mut ToolContext<'_>, params: Value) -> ToolResult {
     ctx.check()?;
     match ctx.tool().to_owned().as_str() {
+        "scan.render" => crate::scan::render::run(ctx, parse::<ScanRenderParams>(params)?),
         "pdf.render" => {
             let params: RenderParams = parse(params)?;
             params.validate().map_err(invalid)?;
@@ -271,6 +273,7 @@ mod tests {
                 "pdf.crop_whitespace",
                 "pdf.detect_scanned",
                 "pdf.split",
+                "scan.render",
             ]
         );
         assert_eq!(events[1], json!({"type":"result","ok":true}));
@@ -296,6 +299,7 @@ mod tests {
             ("pdf.remove_blank", json!({})),
             ("pdf.crop_whitespace", json!({})),
             ("pdf.detect_scanned", json!({})),
+            ("scan.render", json!({})),
             (
                 "pdf.split",
                 json!({"mode": "blank-separator", "detect": "pixel"}),
@@ -336,6 +340,7 @@ mod tests {
             ("pdf.thumbnails", json!({"max_px": 1})),
             ("pdf.remove_blank", json!({"threshold": 2})),
             ("pdf.detect_scanned", json!({"pages": "all"})),
+            ("scan.render", json!({"dpi": 601})),
         ] {
             let (events, _) = run_request(&run_tool_request(ws.path(), tool, params));
             let last = events.last().expect("a result event");

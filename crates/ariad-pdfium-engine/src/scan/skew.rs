@@ -36,7 +36,7 @@ pub fn estimate(image: &GrayImage, max_angle_deg: f32) -> Option<SkewEstimate> {
             ))
         })
         .collect();
-    if points.len() < 20 {
+    if points.len() < 20 || points.len() * 100 > (width as usize * height as usize) * 35 {
         return None;
     }
     let bins = ((width as f32).hypot(height as f32).ceil() as usize) + 3;

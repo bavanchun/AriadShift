@@ -214,6 +214,7 @@ pub fn output_formats(tool_id: &str) -> Option<&'static [&'static str]> {
         "pdf.remove_blank" => REMOVE_BLANK_OUTPUT_FORMATS,
         "pdf.crop_whitespace" => CROP_WHITESPACE_OUTPUT_FORMATS,
         "pdf.detect_scanned" => DETECT_SCANNED_OUTPUT_FORMATS,
+        "scan.render" => &["png", "json"],
         _ => return None,
     })
 }
