@@ -206,6 +206,7 @@ Input order is preserved end-to-end across CLI arguments, MCP `inputs` arrays, W
 3. Structural tools never save an unencrypted copy of an encrypted input.
 
 Rewriting a PDF invalidates existing signatures; incremental-update output is tracked in [issue #186](https://github.com/bavanchun/AriadShift/issues/186).
+WASM tool results expose structured warning codes and tool metrics alongside their artifacts.
 
 ---
 

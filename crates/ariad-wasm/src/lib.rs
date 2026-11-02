@@ -186,6 +186,7 @@ export interface ToolRunResult {
   artifacts: ToolArtifactResult[];
   data: Record<string, unknown> | null;
   warnings: Notice[];
+  metrics: Record<string, unknown>;
   [field: string]: unknown;
 }
 
@@ -370,7 +371,7 @@ pub fn list_tools() -> Result<JsValue, JsValue> {
 /// - `bytes` (`Uint8Array` of the primary artifact),
 /// - `artifacts` (`ToolArtifactResult[]` in deterministic order, each with `{ name, format, media_type, extension, bytes }`),
 /// - `data` (structured JSON object for JSON tools such as `pdf.info`, or `null` for PDF/ZIP/Markdown artifact tools), and
-/// - `warnings` (`Notice[]`).
+/// - `warnings` (`Notice[]`) and `metrics` (tool-specific measurements).
 #[wasm_bindgen(js_name = runTool, unchecked_return_type = "ToolRunResult")]
 pub fn run_tool(
     #[wasm_bindgen(unchecked_param_type = "Uint8Array[]")] inputs: Vec<js_sys::Uint8Array>,
@@ -427,6 +428,7 @@ fn tool_run_to_js(run: &api::ToolRun) -> Result<JsValue, JsValue> {
         define_hidden_prop(&result, "artifacts", &artifacts.into())?;
         define_hidden_prop(&result, "data", &data_clone)?;
         define_hidden_prop(&result, "warnings", &warnings)?;
+        define_hidden_prop(&result, "metrics", &to_js(&run.metrics)?)?;
         Ok(result)
     } else {
         let result = to_js(run)?;
