@@ -1,0 +1,6 @@
+GNU runtime source pointers
+
+Upstream GCC source archive index: https://ftp.gnu.org/gnu/gcc/
+The corresponding-source offer accompanies this notice. Source provenance must
+be verified for each platform and build before distribution; the upstream
+archive index alone does not identify the source of a particular binary.
