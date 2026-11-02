@@ -286,6 +286,9 @@ fn map_run_error(
             let scrubbed = scrubber.scrub(&message);
             match code {
                 ErrorCode::LimitExceeded => ToolError::LimitExceeded,
+                ErrorCode::InvalidRequest if effective_engine == "qpdf" => {
+                    ToolError::InvalidParams(scrubbed)
+                }
                 ErrorCode::EncryptedInput => ToolError::EncryptedInput {
                     needs_password: true,
                 },

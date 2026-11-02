@@ -248,6 +248,49 @@ fn command_from_installed_pack(
     let launcher = launcher_override
         .map(Path::to_path_buf)
         .or_else(default_launcher);
+    if let Some(variable) = super::pack_spec(engine_id).and_then(|spec| spec.pack_program_env) {
+        let launcher = launcher.ok_or_else(|| ResolveError::VerificationFailed {
+            engine: engine_id.to_owned(),
+            reason: "adapter launcher is unavailable".to_owned(),
+            hint: reinstall_hint(engine_id),
+        })?;
+        let root =
+            std::fs::canonicalize(&pack.root).map_err(|_| ResolveError::VerificationFailed {
+                engine: engine_id.to_owned(),
+                reason: "pack root is unreadable".to_owned(),
+                hint: reinstall_hint(engine_id),
+            })?;
+        let program =
+            std::fs::canonicalize(&pack.program).map_err(|_| ResolveError::VerificationFailed {
+                engine: engine_id.to_owned(),
+                reason: "pack entrypoint is unreadable".to_owned(),
+                hint: reinstall_hint(engine_id),
+            })?;
+        program
+            .strip_prefix(&root)
+            .map_err(|_| ResolveError::VerificationFailed {
+                engine: engine_id.to_owned(),
+                reason: "pack entrypoint is outside the pack".to_owned(),
+                hint: reinstall_hint(engine_id),
+            })?;
+        let packs::InstalledPack {
+            env: mut variables,
+            options,
+            program: declared_program,
+            ..
+        } = pack;
+        variables.push((variable.into(), declared_program.into_os_string()));
+        variables.push((
+            "ASHIFT_ADAPTER_PACK_ROOT".into(),
+            root.clone().into_os_string(),
+        ));
+        let command = EngineCommand {
+            env: variables,
+            install_root: Some(root),
+            ..EngineCommand::builtin(&launcher, engine_id)
+        };
+        return Ok((command, options.into_iter().collect()));
+    }
     let options: BTreeMap<String, Value> = pack.options.into_iter().collect();
     let command = EngineCommand {
         engine: engine_id.to_owned(),
