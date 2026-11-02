@@ -215,3 +215,31 @@ Validation used the shared build lock and a 2 GiB systemd scope for tests:
 Assumption: the speed instruction supersedes the earlier request to rerun the
 unrelated `ariad-pdf` host-side suite; CI covers remaining checks. The macOS
 render golden and independent round-4 review remain external to this run.
+
+## Round 5 — incomplete investigation
+
+The requested canonical content re-emission, inline image changes,
+document-wide classification, regression fixtures and verification remain
+unfinished. The canonical writer currently writes stream bytes before calling
+content preflight (`crates/ariad-pdfium-engine/src/canonical.rs:265`), so the
+round-4 findings remain open. No parser fix or corpus result is claimed.
+
+The following is a source inspection of the host tool execution path, not a
+runtime verification on each OS. PDFium tool requests receive default timeout
+and memory values when none are provided (`crates/ariad-host/src/tools/engine.rs:78`,
+`:165`); those defaults are 600 seconds and 4096 MiB
+(`crates/ariad-core/src/limits.rs:80`). The timeout is checked during request
+writing and event processing (`crates/ariad-host/src/runner.rs:1162`, `:1338`,
+`:1370`), and failed one-shot jobs are reaped (`:842`, `:1489`).
+
+| OS | Memory limit | Wall-clock timeout |
+| --- | --- | --- |
+| Linux | PDFium receives `RLIMIT_AS` (`crates/ariad-host/src/runner.rs:823`, `:1109`; `crates/ariad-host/src/sandbox/linux.rs:109`). | Host deadline as above. |
+| macOS | No PDFium memory rlimit is configured (`crates/ariad-host/src/runner.rs:1109`). The host samples process-tree RSS every 100 ms (`crates/ariad-host/src/watchdog.rs:1`, `:11`, `:49`); short spikes can be missed. | Host deadline as above. |
+| Windows | No PDFium memory rlimit is configured (`crates/ariad-host/src/runner.rs:1115`). The host samples process-tree RSS every 250 ms (`crates/ariad-host/src/watchdog.rs:1`, `:13`, `:49`); short spikes can be missed. The process uses a job object (`crates/ariad-host/src/runner.rs:1246`). | Host deadline as above. |
+
+Assumption: the relevant route is host-dispatched PDFium `run_tool`, rather
+than directly invoking the engine outside the host. The manager should track
+the missing hard memory limits on macOS and Windows. No code or sandbox changes
+were made. The required build, tests, corpus, PoC and render-golden checks have
+not been run in this round.
