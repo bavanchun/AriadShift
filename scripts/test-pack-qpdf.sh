@@ -11,6 +11,10 @@ fi
 if bash "$script" verify-archive invalid "$tmp/bad" >/dev/null 2>&1; then
     echo 'unknown target was accepted' >&2; exit 1
 fi
+# The PR completing the GNU runtime review must flip or remove this assertion.
+if bash "$repo/engines/qpdf/pack/check-release.sh" >/dev/null 2>&1; then
+    echo 'committed incomplete runtime review was accepted' >&2; exit 1
+fi
 cp "$repo/engines/qpdf/pack/check-release.sh" "$tmp/check-release.sh"
 python3 - "$repo/engines/qpdf/pack/licence-review.toml" "$tmp" <<'PYTEST'
 import pathlib, subprocess, sys, tomllib
