@@ -689,4 +689,3 @@ def test_archive_executables_preserves_hidden_path(tmp_path):
     with build.tarfile.open(archive, "w:zst") as tar:
         tar.add(executable, arcname="./.hidden/helper")
     assert build.archive_executables(archive) == [".hidden/helper"]
-

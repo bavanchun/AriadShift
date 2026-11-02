@@ -46,7 +46,7 @@ jobs:
           sudo apt-get install --yes --no-install-recommends zstd
 
       - name: Lint the pack scripts
-        run: shellcheck scripts/pack/*.sh engines/pdfium/pack/make.sh
+        run: shellcheck -x scripts/pack/*.sh engines/pdfium/pack/make.sh
 
       - name: Test the builder, the wrapper and the signing guard
         run: bash scripts/pack/test-pack-tooling.sh
