@@ -1012,6 +1012,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 
 | Topic | Chosen | Rejected | Rationale |
 |---|---|---|---|
+| Lossy compression JPEG | Pure-Rust `oxiarc-jpeg` 4:2:0, Apache-2.0, behind `codecs` | `image` JPEG for lossy presets | Its 4:4:4 output is approximately 50% larger; lossless paths remain unchanged. |
 | Engine password errors | Add `encrypted_input` only to `ariad-engine/2`; preserve the frozen `/1` and pack schemas | Extending `/1` | Password-protected tool input needs an actionable exit without changing the released protocol. |
 | Local MCP secrets | Resolve single-use, expiring handles atomically in each stdio server; omit the store from remote MCP | Persisting credentials or exposing a remote handle store | Keeps secrets out of requests and storage while limiting their lifetime. |
 | qpdf adapter execution | The host validates the pack and passes its declared entrypoint to a sandboxed adapter; qpdf inherits the sandbox | PATH lookup or adapter-side pack trust | Preserves signed executable authority and prevents fallback to an unverified program. |

@@ -12,12 +12,13 @@ categories = ["text-processing", "parser-implementations"]
 publish = true
 
 [features]
-codecs = ["dep:flate2", "dep:subsetter", "dep:zune-core", "dep:zune-jpeg"]
+codecs = ["dep:flate2", "dep:oxiarc-jpeg", "dep:subsetter", "dep:zune-core", "dep:zune-jpeg"]
 
 [dependencies]
 ariad-core = { workspace = true, features = ["pdf"] }
 flate2 = { workspace = true, optional = true }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff"] }
+oxiarc-jpeg = { version = "=0.4.2", default-features = false, optional = true }
 lopdf.workspace = true
 schemars.workspace = true
 serde.workspace = true
