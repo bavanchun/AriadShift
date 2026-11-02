@@ -17,7 +17,7 @@ Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium renderi
 
 ### Added
 
-- **25 structural PDF tools**, plus the `pdf.info` inspection tool, all in the free tier and runnable on the CLI and the local MCP server. They need no rendering and no engine pack. The full contract is in [tools.md](tools.md) and one runnable example per tool is in [cli.md](cli.md#ashift-tool):
+- **25 structural PDF tools**, plus the `pdf.info` inspection tool, all in the free tier and runnable on the CLI and the local MCP server. They need no rendering or engine pack, except pixel-based blank-page detection in `pdf.split`, which needs PDFium. The full contract is in [tools.md](tools.md) and one runnable example per tool is in [cli.md](cli.md#ashift-tool):
   - Page sets: `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.alternate_mix`, `pdf.insert_blank`.
   - Page geometry: `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.scale`, `pdf.single_page`, `pdf.decompress`.
   - Imposition and layout: `pdf.nup`, `pdf.booklet`, `pdf.overlay`, `pdf.divide_pages`, `pdf.posterize`.
@@ -28,8 +28,7 @@ Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium renderi
 - **Repaired-input warning.** A PDF with a damaged cross-reference table is inspected and processed after reconstruction, the tool prints `warning[repaired_xref]`, and the saved file is a fully rewritten valid PDF.
 - **`ariad-engine/2` and the tool contracts.** A second engine protocol version carries `op = "run_tool"` for out-of-process tool engines, next to the frozen `ariad-engine/1`. The machine-readable contracts are [`schemas/tools.v1.json`](../schemas/tools.v1.json), [`schemas/recipe.v1.json`](../schemas/recipe.v1.json) and [`schemas/engine-protocol.v2.json`](../schemas/engine-protocol.v2.json).
 - **Browser bindings.** `ariad-wasm` exposes `listTools` and `runTool` for the same in-process tools. No page in the web app uses them yet.
-
-- **PDFium engine pack.** Render PDF pages as images, make thumbnails, extract images, crop whitespace, remove blank pages, detect scanned pages and inspect text layout. Image-to-PDF runs in-process. PDFium tools run locally out of process. (#177, #178, #185)
+- **PDFium engine pack.** Render PDF pages as images, make thumbnails, extract images, crop whitespace, remove blank pages, detect scanned pages and inspect text layout. Image-to-PDF runs in-process. PDFium tools run locally out of process; install the pack with `ashift engines install pdfium`. (#177, #178, #185)
 - **Optimize and security tools.** In-process `pdf.compress` and `pdf.grayscale`, plus `pdf.sanitize` and `pdf.unlock_forms`; compression supports levels, presets and a target size. Local MCP supports single-use secret handles. Repair, linearization, encryption, decryption and permissions require the qpdf pack. (#188)
 
 ### Changed
@@ -41,7 +40,7 @@ Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium renderi
 
 ### Security
 
-- **PDFium image pre-flight.** A bounded, strictly loaded object graph is serialized before PDFium reads it; ambiguous or repaired cross-references are rejected, and nested Type3 resources are accounted for. (#185)
+- **PDFium image pre-flight.** A bounded, strictly loaded object graph is serialized before PDFium reads it; ambiguous cross-references are rejected, and nested Type3 resources are accounted for. Image extraction also refuses repaired cross-references; other PDFium tools warn and continue. (#185)
 - **Yanked dependency removed.** The workspace no longer resolves the yanked `async-executor` version. (#195, #197)
 - **Bounded PDF work.** One per-document budget caps stream decompression across object streams, page content, form XObjects and XMP metadata. The trailer scan is linear, and page loops honour the deadline and cancellation of the running tool.
 - **Confined tool artifacts.** Engine-reported output files are checked with symlink-safe handles, confined to the job's output directory and size-capped before they are read. Inputs staged for MCP tools are never reopened by path after confinement.
@@ -56,6 +55,7 @@ Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium renderi
 - **Compression.** Six of ten corpus files met or beat Stirling level 6 with the specified similarity criterion, below the original seven-of-ten target. Text-heavy parity remains open. (#187)
 - **Engine memory limits.** macOS and Windows use the process-tree watchdog but lack a hard engine memory ceiling. (#189)
 - **PDFium follow-ups.** Real-world canonicalization benchmarking, resource-named inline image colour spaces and unified pre-flight cost models remain open. (#192, #193, #194)
+- **CI follow-up.** Two CLI tests have shown intermittent Windows runner timeouts. (#201)
 - **Pack notices.** Making installed engine pack notices accessible through the CLI and apps remains open. (#196)
 - **Additional tools.** OCR, annotations, form editing, redaction and signing are planned for later previews.
 - **No desktop or web screens for the tools.** The desktop app and the web app keep their conversion-only interfaces in this release.
