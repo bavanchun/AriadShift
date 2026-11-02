@@ -9,8 +9,8 @@ use ariad_core::{
     limits::Limits,
     planner::Profile,
     tools::{
-        InputArity, KNOWN_SECRET_FIELD_NAMES, SecretSource, Tier, ToolGroup, ToolRuntime, ToolSpec,
-        validate_secret_fields, validate_secret_params,
+        InputArity, KNOWN_SECRET_FIELD_NAMES, SecretRef, SecretSource, Tier, ToolGroup,
+        ToolRuntime, ToolSpec, validate_secret_fields, validate_secret_params,
     },
 };
 use ariad_host::{
@@ -132,7 +132,7 @@ pub struct McpToolDescriptor {
 }
 
 /// Arguments for `run_doc_tool` tool.
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Deserialize, JsonSchema)]
 pub struct RunDocToolArgs {
     /// Canonical tool identifier (for example `pdf.info`, `pdf.merge`, `pdf.split`).
     pub tool: String,
@@ -142,15 +142,32 @@ pub struct RunDocToolArgs {
     pub output_dir: Option<String>,
     /// Optional explicit output file or directory path inside `--allow-dir`.
     pub output: Option<String>,
-    /// Optional JSON object matching the tool's `params_schema`. Secret fields are rejected over MCP in this phase (`exit_code: 9`).
+    /// Optional JSON object matching the tool schema; secret fields accept handles from `secret_put`.
     pub params: Option<serde_json::Value>,
     /// Allow overwriting existing destination files (only honoured if server has `--allow-overwrite`).
     pub overwrite: Option<bool>,
 }
 
+/// Arguments for creating a short-lived local secret handle.
+#[derive(Deserialize, JsonSchema)]
+pub struct SecretPutArgs {
+    /// Secret value, between 1 and 4096 UTF-8 bytes.
+    pub value: String,
+}
+
+/// Handle returned for a stored secret.
+#[derive(Serialize, JsonSchema)]
+pub struct SecretPutResult {
+    /// Opaque single-use handle.
+    pub handle: String,
+    /// Lifetime in seconds.
+    pub expires_in_s: u64,
+}
+
 /// The core MCP server state and tool router.
 #[derive(Clone)]
 pub struct McpServer {
+    pub(super) secrets: Arc<super::secrets::SecretStore>,
     pub allow_overwrite: bool,
     pub allowed_dirs: Arc<RwLock<AllowedDirs>>,
     pub(super) explicit_allowed_dirs: AllowedDirs,
@@ -211,6 +228,32 @@ fn tool_run_error(err: &ToolError) -> CallToolResult {
     res
 }
 
+fn mcp_spec(tool_id: &str) -> Option<&'static ToolSpec> {
+    #[cfg(feature = "test-probe")]
+    if std::env::var_os("ARIAD_MCP_TEST_PROBE").is_some() {
+        static SPECS: std::sync::OnceLock<Vec<ToolSpec>> = std::sync::OnceLock::new();
+        if let Some(spec) = SPECS
+            .get_or_init(ariad_core::tools::specs::security::specs)
+            .iter()
+            .find(|spec| spec.id == tool_id)
+        {
+            return Some(spec);
+        }
+    }
+    ariad_core::tools::find(tool_id)
+}
+
+fn contains_secret_ref(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.keys().any(|key| key.eq_ignore_ascii_case("$secret"))
+                || map.values().any(contains_secret_ref)
+        }
+        serde_json::Value::Array(items) => items.iter().any(contains_secret_ref),
+        _ => false,
+    }
+}
+
 fn validate_mcp_tool_params(
     tool_id: &str,
     params: Option<&serde_json::Value>,
@@ -227,35 +270,32 @@ fn validate_mcp_tool_params(
         ));
     };
 
-    let spec = ariad_core::tools::find(tool_id);
+    let spec = mcp_spec(tool_id);
     if let Some(spec) = spec {
-        validate_secret_params(spec, raw, SecretSource::Mcp).map_err(|err| {
-            ToolError::InvalidParams(format!(
-                "{err}; secret fields over MCP are rejected in this phase because secret_put handles are not implemented yet"
-            ))
-        })?;
+        validate_secret_params(spec, raw, SecretSource::Mcp)
+            .map_err(|err| ToolError::InvalidParams(err.to_string()))?;
     }
-    validate_secret_fields(KNOWN_SECRET_FIELD_NAMES, raw, SecretSource::Mcp).map_err(|err| {
-        ToolError::InvalidParams(format!(
-            "{err}; secret fields over MCP are rejected in this phase because secret_put handles are not implemented yet"
-        ))
-    })?;
-
+    validate_secret_fields(KNOWN_SECRET_FIELD_NAMES, raw, SecretSource::Mcp)
+        .map_err(|err| ToolError::InvalidParams(err.to_string()))?;
     for (key, value) in map {
         if value.is_null() {
             continue;
         }
-        let is_secret_key = spec.is_some_and(|s| s.secret_params.contains(&key.as_str()))
-            || KNOWN_SECRET_FIELD_NAMES
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case(key));
-        let has_secret_ref = value
-            .as_object()
-            .is_some_and(|obj| obj.contains_key("$secret"));
-        if is_secret_key || has_secret_ref {
-            return Err(ToolError::InvalidParams(format!(
-                "parameter '{key}' is marked x-ariad-secret; secret fields over MCP are rejected in this phase because secret_put handles are not implemented yet"
-            )));
+        let secret = spec.is_some_and(|s| s.secret_params.contains(&key.as_str()));
+        let has_ref = contains_secret_ref(value);
+        if secret {
+            if !matches!(
+                SecretRef::from_json_value(key, value),
+                Ok(SecretRef::Handle(_))
+            ) {
+                return Err(ToolError::InvalidParams(
+                    "a valid secret handle is required".to_owned(),
+                ));
+            }
+        } else if has_ref {
+            return Err(ToolError::InvalidParams(
+                "secret handles are allowed only in secret fields".to_owned(),
+            ));
         }
     }
 
@@ -304,7 +344,7 @@ impl McpServer {
             job(cancel)
         })
         .await
-        .map_err(|e| ErrorData::internal_error(format!("blocking task failed: {e}"), None))
+        .map_err(|_| ErrorData::internal_error("blocking task failed", None))
     }
 }
 
@@ -325,6 +365,31 @@ fn tool_success<T: serde::Serialize>(
 
 #[tool_router(vis = "pub")]
 impl McpServer {
+    /// Store a secret temporarily for one document tool call.
+    #[tool(
+        description = "Store a secret for one local document tool call (expires after 300 seconds)",
+        output_schema = rmcp::handler::server::tool::schema_for_output::<SecretPutResult>()
+    )]
+    pub async fn secret_put(
+        &self,
+        Parameters(args): Parameters<SecretPutArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        match self.secrets.put(args.value) {
+            Ok(handle) => tool_success(
+                &SecretPutResult {
+                    handle,
+                    expires_in_s: 300,
+                },
+                vec![],
+            ),
+            Err(()) => Ok(tool_error(
+                "invalid_params",
+                9,
+                "secret is empty, too large, or the handle store is full",
+            )),
+        }
+    }
+
     /// List available transformation engines, licenses, statuses, and supported routes.
     #[tool(
         description = "List available transformation engines, licenses, statuses, and supported routes",
@@ -345,7 +410,7 @@ impl McpServer {
         let engine_prog = self.engine_program.clone();
         let rows = tokio::task::spawn_blocking(move || engines::engines(&engine_prog, &caps, ct))
             .await
-            .map_err(|e| ErrorData::internal_error(format!("blocking task failed: {e}"), None))?;
+            .map_err(|_| ErrorData::internal_error("blocking task failed", None))?;
 
         match rows {
             Ok(engine_rows) => tool_success(&engine_rows, vec![]),
@@ -606,7 +671,7 @@ impl McpServer {
 
     /// List registered document manipulation tools, parameter schemas, and engine availability.
     #[tool(
-        description = "List registered document manipulation tools, parameter schemas, and engine availability",
+        description = "List document tools, schemas, and availability. For secret fields use a handle from secret_put.",
         output_schema = rmcp::handler::server::tool::schema_for_output::<Vec<McpToolDescriptor>>()
     )]
     pub async fn list_doc_tools(
@@ -692,7 +757,7 @@ impl McpServer {
 
     /// Execute a registered document manipulation tool inside configured allowed directories.
     #[tool(
-        description = "Execute a registered document manipulation tool inside configured allowed directories",
+        description = "Execute a document tool inside allowed directories; use secret_put handles for secret fields.",
         output_schema = rmcp::handler::server::tool::schema_for_output::<ToolOutcome>()
     )]
     pub async fn run_doc_tool(
@@ -705,15 +770,34 @@ impl McpServer {
             Err(err) => return Ok(tool_run_error(&err)),
         };
 
+        let handles: Vec<String> = mcp_spec(&args.tool)
+            .into_iter()
+            .flat_map(|spec| spec.secret_params.iter())
+            .filter_map(|key| {
+                params
+                    .get(key)
+                    .and_then(|value| match SecretRef::from_json_value(key, value) {
+                        Ok(SecretRef::Handle(id)) => Some(id),
+                        _ => None,
+                    })
+            })
+            .collect();
+        let secrets = match self.secrets.take(&handles) {
+            Ok(bag) => bag,
+            Err(()) => {
+                return Ok(tool_run_error(&ToolError::InvalidParams(
+                    "secret handle is unavailable".to_owned(),
+                )));
+            }
+        };
+
         if args.output.is_some() && args.output_dir.is_some() {
             return Ok(tool_run_error(&ToolError::Usage(
                 "specify at most one of 'output' or 'output_dir'".to_owned(),
             )));
         }
 
-        if !ariad_core::tools::ToolId::is_valid(&args.tool)
-            || ariad_core::tools::find(&args.tool).is_none()
-        {
+        if !ariad_core::tools::ToolId::is_valid(&args.tool) || mcp_spec(&args.tool).is_none() {
             return Ok(tool_run_error(&ToolError::UnknownTool(args.tool)));
         }
 
@@ -754,13 +838,32 @@ impl McpServer {
             (confined_refs, allowed.clone())
         };
 
+        #[cfg(feature = "test-probe")]
+        let spec = mcp_spec(&args.tool).expect("tool checked above");
+        let scrubber = secrets.scrubber();
         let request = ToolRequest::new(args.tool, input_refs, output_target)
             .with_params(params)
+            .with_secrets(secrets)
             .with_secret_source(SecretSource::Mcp)
             .with_overwrite(args.overwrite.unwrap_or(false))
             .with_allow_overwrite(self.allow_overwrite)
             .with_allowed_dirs(allowed)
             .with_engine_program(self.engine_program.clone());
+
+        #[cfg(feature = "test-probe")]
+        let request = if std::env::var_os("ARIAD_MCP_TEST_PROBE").is_some() {
+            let mut command =
+                ariad_host::runner::EngineCommand::builtin(&self.engine_program, spec.engine);
+            if let Some(program) = std::env::var_os("ARIAD_MCP_TEST_PROBE_PROGRAM") {
+                command.program = program.into();
+                command.args.clear();
+                command.launcher = None;
+            }
+            command.sandbox = Some(ariad_host::sandbox::SandboxMode::Off);
+            request.with_spec(*spec).with_engine_command(command)
+        } else {
+            request
+        };
 
         let res = self
             .blocking_job(ct, move |cancel| {
@@ -771,7 +874,15 @@ impl McpServer {
 
         let outcome = match res {
             Ok(outcome) => outcome,
-            Err(err) => return Ok(tool_run_error(&err)),
+            Err(err) => {
+                let result = tool_run_error(&err);
+                let value =
+                    scrubber.scrub_value(&serde_json::to_value(result).map_err(|_| {
+                        ErrorData::internal_error("result serialization failed", None)
+                    })?);
+                return serde_json::from_value(value)
+                    .map_err(|_| ErrorData::internal_error("result serialization failed", None));
+            }
         };
 
         let mut extra_blocks = Vec::new();
@@ -802,7 +913,13 @@ impl McpServer {
             extra_blocks.push(ContentBlock::text(inline_str));
         }
 
-        tool_success(&outcome, extra_blocks)
+        let result = tool_success(&outcome, extra_blocks)?;
+        let value = scrubber.scrub_value(
+            &serde_json::to_value(result)
+                .map_err(|_| ErrorData::internal_error("result serialization failed", None))?,
+        );
+        serde_json::from_value(value)
+            .map_err(|_| ErrorData::internal_error("result serialization failed", None))
     }
 }
 

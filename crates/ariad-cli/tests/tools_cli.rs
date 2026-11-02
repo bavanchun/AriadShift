@@ -372,9 +372,23 @@ fn tools_command_lists_registry_json_and_human() {
     assert!(optimize_out.status.success());
     let optimize_json: Value =
         serde_json::from_slice(&optimize_out.stdout).expect("parse optimize JSON");
-    assert_eq!(optimize_json.as_array().unwrap().len(), 1);
-    assert_eq!(optimize_json[0]["id"], "pdf.decompress");
-    assert_eq!(tools_json.as_array().unwrap().len(), 35);
+    let optimize_ids: Vec<&str> = optimize_json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        optimize_ids,
+        [
+            "pdf.decompress",
+            "pdf.compress",
+            "pdf.grayscale",
+            "pdf.repair",
+            "pdf.linearize"
+        ]
+    );
+    assert_eq!(tools_json.as_array().unwrap().len(), 44);
 
     let empty_group = ashift_cmd()
         .args(["tools", "--group", "security", "--json"])
@@ -383,7 +397,22 @@ fn tools_command_lists_registry_json_and_human() {
     assert!(empty_group.status.success());
     let empty_json: Value =
         serde_json::from_slice(&empty_group.stdout).expect("parse empty group JSON");
-    assert_eq!(empty_json, json!([]));
+    let security_ids: Vec<&str> = empty_json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        security_ids,
+        [
+            "pdf.encrypt",
+            "pdf.decrypt",
+            "pdf.permissions",
+            "pdf.sanitize",
+            "pdf.unlock_forms"
+        ]
+    );
 
     let human_out = ashift_cmd()
         .arg("tools")

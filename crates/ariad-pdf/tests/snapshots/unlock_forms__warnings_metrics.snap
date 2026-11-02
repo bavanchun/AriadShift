@@ -1,0 +1,5 @@
+{
+  "codes": ["signature_field_kept"],
+  "metrics": {"unlocked_fields": 0, "read_only_parents_kept": 0},
+  "warnings": []
+}

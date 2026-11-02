@@ -342,7 +342,8 @@ pub fn doctor(
     checks.extend(docling_checks(engine_program, cancel.clone()));
 
     // 6. The pdfium engine pack. It is optional.
-    checks.push(pdfium_check(engine_program, cancel));
+    checks.push(pdfium_check(engine_program, cancel.clone()));
+    checks.push(qpdf_check(engine_program, cancel));
 
     Ok(DoctorReport {
         checks,
@@ -352,6 +353,51 @@ pub fn doctor(
         data_dir,
         failure_error,
     })
+}
+
+fn qpdf_check(engine_program: &Path, cancel: CancellationToken) -> DoctorCheck {
+    let spec = &engines::QPDF;
+    let make = |ok: bool, message: String, hint: String| DoctorCheck {
+        id: "qpdf_engine".to_owned(),
+        ok,
+        required: false,
+        message,
+        hint,
+    };
+    let command = match engines::resolve_pack_with_options(spec.id, Some(engine_program)) {
+        Ok((command, _)) => command,
+        Err(error) => {
+            return make(
+                false,
+                format!("qpdf engine cannot be used: {error}"),
+                error.hint().unwrap_or(spec.install_hint).to_owned(),
+            );
+        }
+    };
+    match runner::describe_command_v2(&command, runner::DESCRIBE_TIMEOUT, cancel) {
+        Ok(EventV2::Capabilities { protocol, tool, .. })
+            if protocol == spec.protocol.as_str() && tool.status == ToolAvailability::Found =>
+        {
+            make(
+                true,
+                format!(
+                    "qpdf {} passes describe round trip; protocol {protocol}",
+                    tool.version.unwrap_or_else(|| "unknown".to_owned())
+                ),
+                String::new(),
+            )
+        }
+        Ok(_) => make(
+            false,
+            "qpdf engine is not ready or reports an incompatible protocol".to_owned(),
+            spec.install_hint.to_owned(),
+        ),
+        Err(error) => make(
+            false,
+            format!("qpdf engine describe round trip failed: {error}"),
+            spec.install_hint.to_owned(),
+        ),
+    }
 }
 
 fn optional_check(id: String, ok: bool, message: String, hint: &str) -> DoctorCheck {

@@ -4,7 +4,7 @@
 #![cfg_attr(target_os = "macos", allow(linker_messages))]
 
 use std::{
-    io::{self, IsTerminal, Write},
+    io::{self, BufRead, IsTerminal, Read, Write},
     path::PathBuf,
     process::ExitCode,
 };
@@ -872,6 +872,71 @@ fn trim_single_trailing_newline(mut value: String) -> String {
     value
 }
 
+const MAX_SECRET_BYTES: usize = 4096;
+
+fn prompt_secret(field: &str) -> Result<String, ToolError> {
+    let terminal = console::Term::stderr();
+    write!(io::stderr(), "secret for {field}: ")
+        .and_then(|()| io::stderr().flush())
+        .map_err(|err| ToolError::InputIo(err.to_string()))?;
+    let mut value = String::new();
+    loop {
+        match terminal
+            .read_key()
+            .map_err(|err| ToolError::InputIo(err.to_string()))?
+        {
+            console::Key::Enter => {
+                eprintln!();
+                return Ok(value);
+            }
+            console::Key::Backspace => {
+                value.pop();
+            }
+            console::Key::CtrlC | console::Key::Escape => {
+                return Err(ToolError::InputIo("secret input cancelled".into()));
+            }
+            console::Key::Char(ch) if !ch.is_control() => {
+                if value.len() + ch.len_utf8() > MAX_SECRET_BYTES {
+                    return Err(ToolError::InvalidParams("secret exceeds 4096 bytes".into()));
+                }
+                value.push(ch);
+            }
+            console::Key::Char(_) => {
+                return Err(ToolError::InvalidParams(
+                    "secret contains a control character".into(),
+                ));
+            }
+            _ => {}
+        }
+    }
+}
+
+fn bounded_secret(mut reader: impl Read) -> Result<String, ToolError> {
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take((MAX_SECRET_BYTES + 2) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|err| ToolError::InputIo(err.to_string()))?;
+    let value = String::from_utf8(bytes)
+        .map_err(|_| ToolError::InvalidParams("secret must be UTF-8".into()))?;
+    Ok(trim_single_trailing_newline(value))
+}
+
+fn bounded_secret_line(reader: impl BufRead) -> Result<String, ToolError> {
+    let mut bytes = Vec::new();
+    reader
+        .take((MAX_SECRET_BYTES + 2) as u64)
+        .read_until(b'\n', &mut bytes)
+        .map_err(|err| ToolError::InputIo(err.to_string()))?;
+    if bytes.is_empty() {
+        return Err(ToolError::InvalidParams("missing secret".into()));
+    }
+    let value = String::from_utf8(bytes)
+        .map_err(|_| ToolError::InvalidParams("secret must be UTF-8".into()))?;
+    Ok(trim_single_trailing_newline(value))
+}
+
 fn parse_tool_params_and_secrets(
     tool_id: &str,
     params_json_arg: Option<&str>,
@@ -962,27 +1027,24 @@ fn parse_tool_params_and_secrets(
             )));
         }
         let secret_value = if target == "-" {
-            let stdin_str = io::read_to_string(io::stdin())
-                .map_err(|err| ToolError::InputIo(err.to_string()))?;
-            trim_single_trailing_newline(stdin_str)
+            bounded_secret(io::stdin())?
         } else if let Some(file_path) = target.strip_prefix('@') {
             if file_path.is_empty() {
                 return Err(ToolError::InvalidParams(format!(
                     "empty file path in --secret {name}=@"
                 )));
             }
-            let file_str = std::fs::read_to_string(file_path).map_err(|err| {
-                ToolError::InvalidParams(format!(
-                    "cannot read secret file {file_path:?} for parameter '{name}': {err}"
-                ))
-            })?;
-            trim_single_trailing_newline(file_str)
+            let file = std::fs::File::open(file_path)
+                .map_err(|err| ToolError::InputIo(err.to_string()))?;
+            bounded_secret(file)?
         } else {
             return Err(ToolError::InvalidParams(format!(
                 "parameter '{name}' is marked x-ariad-secret and cannot be passed as an inline literal; use --secret {name}=@<file> or --secret {name}=-"
             )));
         };
-        secrets.insert(name.to_owned(), secret_value);
+        secrets
+            .insert(name.to_owned(), secret_value)
+            .map_err(|err| ToolError::InvalidParams(err.into()))?;
     }
 
     Ok((params_value, secrets))
@@ -1133,6 +1195,53 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
         false
     };
 
+    if let Err(err) = recipe.validate(ariad_core::tools::RecipeOrigin::Imported) {
+        return report_error("recipe", &ToolError::InvalidParams(err.to_string()));
+    }
+    if !confirmed {
+        return report_error(
+            "recipe",
+            &ToolError::InvalidParams(
+                "imported recipe requires explicit confirmation (--yes)".to_owned(),
+            ),
+        );
+    }
+    let mut prompt_fields = std::collections::BTreeSet::new();
+    for step in &recipe.steps {
+        if let ariad_core::tools::Step::Tool { tool, params } = step
+            && let Some(spec) = ariad_core::tools::registry::find(tool.as_str())
+        {
+            for &field in spec.secret_params {
+                if params.as_object().is_some_and(|map| {
+                    map.iter().any(|(key, value)| {
+                        key.eq_ignore_ascii_case(field)
+                            && matches!(
+                                ariad_core::tools::SecretRef::from_json_value(field, value),
+                                Ok(ariad_core::tools::SecretRef::Prompt)
+                            )
+                    })
+                }) {
+                    prompt_fields.insert(field);
+                }
+            }
+        }
+    }
+    let mut secrets = SecretBag::new();
+    for field in prompt_fields {
+        let value = if io::stdin().is_terminal() {
+            prompt_secret(field)
+        } else {
+            bounded_secret_line(io::stdin().lock())
+        };
+        let value = match value {
+            Ok(value) => value,
+            Err(err) => return report_error("recipe", &err),
+        };
+        if let Err(err) = secrets.insert(field, value) {
+            return report_error("recipe", &ToolError::InvalidParams(err.into()));
+        }
+    }
+
     let engine_program = match std::env::current_exe() {
         Ok(path) => path,
         Err(err) => return report_error("recipe", &ToolError::InputIo(err.to_string())),
@@ -1143,6 +1252,7 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
 
     let request = RecipeRequest::new(recipe, inputs, args.output)
         .with_origin(ariad_core::tools::RecipeOrigin::Imported, confirmed)
+        .with_secrets(secrets)
         .with_overwrite(args.overwrite)
         .with_engine_program(engine_program);
 

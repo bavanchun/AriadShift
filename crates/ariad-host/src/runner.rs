@@ -1117,6 +1117,14 @@ fn prepare_launch_with_limit(
     if let Some(root) = &command.install_root {
         policy.exec.push(root.clone());
     }
+    // An adapter can need both its pack and the AppImage containing its launcher.
+    #[cfg(target_os = "linux")]
+    if let Some(root) =
+        appimage_install_root(&command.program, std::env::var_os("APPDIR").as_deref())
+        && !policy.exec.contains(&root)
+    {
+        policy.exec.push(root);
+    }
     for path in read_only {
         if !policy.read_only.contains(path) {
             policy.read_only.push(path.clone());
@@ -1388,7 +1396,7 @@ impl EngineProcess {
                                 )?,
                             };
                             if let EventV2::Result { ok, metrics, error } = &event {
-                                result = Some((*ok, metrics.clone(), error.clone()));
+                                result = Some((*ok, metrics.clone(), error.clone().map(Into::into)));
                             }
                             sink(event);
                         }
@@ -1786,6 +1794,13 @@ mod tests {
     };
 
     use super::{EngineCommand, writable_paths};
+
+    #[test]
+    fn encrypted_input_is_rejected_for_v1_and_accepted_for_v2() {
+        let line = br#"{"type":"result","ok":false,"error":{"code":"encrypted_input","message":"password required"}}"#;
+        assert!(super::parse_event(line, None, &mut Vec::new()).is_err());
+        assert!(super::parse_event_v2(line, None, &mut Vec::new()).is_ok());
+    }
 
     #[cfg(windows)]
     #[test]

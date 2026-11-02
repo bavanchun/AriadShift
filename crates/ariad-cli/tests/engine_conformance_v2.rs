@@ -148,7 +148,9 @@ fn v2_run_tool_multi_input_multi_artifact_and_warning_events_conform_to_schema()
         limits: Limits::local(),
     };
 
-    let events = validate_v2_stdout(&run_v2_engine("qpdf", &request));
+    // The test-probe tesseract engine supports synthetic multi-artifact requests;
+    // qpdf now dispatches to the real adapter instead of the protocol probe.
+    let events = validate_v2_stdout(&run_v2_engine("tesseract", &request));
     assert_eq!(events.last().unwrap()["ok"], true);
     assert_eq!(events.last().unwrap()["metrics"]["inputs"], 2);
     assert_eq!(events.last().unwrap()["metrics"]["artifacts"], 2);
@@ -203,7 +205,7 @@ fn v2_run_tool_loads_params_from_params_file_inside_work_dir() {
         limits: Limits::local(),
     };
 
-    let events = validate_v2_stdout(&run_v2_engine("qpdf", &request));
+    let events = validate_v2_stdout(&run_v2_engine("tesseract", &request));
     let last = events.last().unwrap();
     assert_eq!(last["ok"], true);
     assert_eq!(last["metrics"]["artifacts"], 3);

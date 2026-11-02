@@ -1,7 +1,7 @@
 [default]
 locale = "en"
 # Abbreviated Git commit hash referenced in review reports.
-extend-ignore-re = ["\\bc234afe\\b"]
+extend-ignore-re = ["\\bc234afe\\b", 'b"ND"']
 
 [default.extend-words]
 # Correct names and acronyms in the public planning and research files.
@@ -21,6 +21,11 @@ flate = "flate"
 tha = "tha"
 # XML Formatting Objects namespace used by OpenDocument styles.
 fo = "fo"
+# PNG predictor name and the French proper name in qpdf's upstream notice.
+paeth = "paeth"
+Projet = "Projet"
+# TrueType glyph location table.
+loca = "loca"
 
 [default.extend-identifiers]
 # Plural of PNG; without this the case split reads it as "PN" + "Gs".

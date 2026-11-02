@@ -147,7 +147,27 @@ where
     F: FnOnce(RequestV2, &mut W) -> Result<(), EngineFailure>,
 {
     let result = read_request_v2(&mut input).and_then(|request| handle(request, &mut output));
-    finish_serve(result, &mut output)
+    finish_serve_v2(result, &mut output)
+}
+
+fn finish_serve_v2<W: Write>(result: Result<(), EngineFailure>, output: &mut W) -> ExitCode {
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(failure) => {
+            let _ = emit_v2(
+                output,
+                EventV2::Result {
+                    ok: false,
+                    metrics: None,
+                    error: Some(ariad_core::protocol::v2::EngineErrorV2 {
+                        code: failure.code.into(),
+                        message: failure.message.into_owned(),
+                    }),
+                },
+            );
+            ExitCode::from(1)
+        }
+    }
 }
 
 fn finish_serve<W: Write>(result: Result<(), EngineFailure>, output: &mut W) -> ExitCode {
@@ -541,6 +561,31 @@ pub fn emit_capabilities_v2(
 #[cfg(test)]
 mod tests {
     use std::{fs, io::Cursor, path::Path, process::ExitCode};
+
+    #[test]
+    fn v2_failure_emits_encrypted_input_without_extending_v1() {
+        let mut output = Vec::new();
+        let exit = super::finish_serve_v2(
+            Err(super::EngineFailure::new(
+                ariad_core::protocol::ErrorCode::EncryptedInput,
+                "password required",
+            )),
+            &mut output,
+        );
+        assert_eq!(exit, std::process::ExitCode::from(1));
+        let event: ariad_core::protocol::v2::EventV2 = serde_json::from_slice(&output).unwrap();
+        assert!(matches!(
+            event,
+            ariad_core::protocol::v2::EventV2::Result {
+                error: Some(ariad_core::protocol::v2::EngineErrorV2 {
+                    code: ariad_core::protocol::v2::ErrorCodeV2::EncryptedInput,
+                    ..
+                }),
+                ..
+            }
+        ));
+        assert!(serde_json::from_slice::<ariad_core::protocol::Event>(&output).is_err());
+    }
 
     use ariad_core::{
         limits::Limits,

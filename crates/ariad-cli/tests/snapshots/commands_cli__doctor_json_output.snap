@@ -74,6 +74,13 @@ expression: normalize_doctor_json_stdout(&output)
       "required": false,
       "message": "pdfium engine is not installed; PDF rendering, thumbnails and image tools need it",
       "hint": "run 'ashift engines install pdfium' to install the pdfium engine pack"
+    },
+    {
+      "id": "qpdf_engine",
+      "ok": false,
+      "required": false,
+      "message": "qpdf engine cannot be used: tool_missing: engine pack 'qpdf' is not installed; run 'ashift engines install qpdf' to install the qpdf engine pack",
+      "hint": "run 'ashift engines install qpdf' to install the qpdf engine pack"
     }
   ],
   "stale_workspaces": 0

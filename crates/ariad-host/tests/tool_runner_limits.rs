@@ -29,7 +29,7 @@ fn v2_engine_command(engine_id: &str) -> EngineCommand {
     EngineCommand {
         engine: engine_id.to_owned(),
         program: probe(),
-        args: vec![OsString::from("__engine"), OsString::from(engine_id)],
+        args: vec![OsString::from("__pack_probe"), OsString::from(engine_id)],
         env: Vec::new(),
         install_root: None,
         launcher: Some(probe()),
