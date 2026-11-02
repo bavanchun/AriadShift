@@ -136,6 +136,12 @@ fn validate_references(
     }
     match object {
         lopdf::Object::Reference(id) => {
+            if id.0 == 0 {
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "PDF refers to object zero.",
+                ));
+            }
             let other_generation = doc.objects.range((id.0, 0)..=(id.0, u16::MAX)).next();
             if other_generation.is_some_and(|(actual, object)| {
                 actual != id
@@ -631,6 +637,7 @@ mod tests {
         for (name, reason) in [
             ("canonical-inf-real.pdf", "non-finite"),
             ("canonical-big-integer.pdf", "integer"),
+            ("canonical-zero-ref.pdf", "object zero"),
         ] {
             let input = fs::read(
                 Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -4999,3 +4999,21 @@ phase = "4"
 routes = []
 companions = []
 
+[[fixture]]
+id = "canonical-zero-ref-pdf"
+path = "fixtures/pdf/canonical-zero-ref.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic unsafe PDF token"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-unsafe-tokens.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "19ab2f2534629315cf74560c1d5a67053c0e1a22394db52e4f4e9dba038c7a97"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

@@ -1352,6 +1352,73 @@ fn canonical_output_matches_preflight_for_ambiguous_xrefs() {
 }
 
 #[test]
+#[ignore = "requires the external adversarial PDF corpus"]
+fn adversarial_canonical_graphs_are_refused_or_render_the_control() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    let render = |path: &std::path::Path| -> Result<Vec<u8>, ariad_engine_io::EngineFailure> {
+        let input = fs::read(path).unwrap();
+        let ws = TestWorkspace::from_bytes("input.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "poc",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())?;
+        let bytes = ctx.load_validated_pdf_bytes()?;
+        let pdfium = ctx.pdfium()?;
+        let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).unwrap();
+        let page = doc.pages().get(0).unwrap();
+        Ok(page
+            .render_with_config(&PdfRenderConfig::new().set_target_size(100, 100))
+            .unwrap()
+            .as_rgba_bytes())
+    };
+    let control = render(&repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();
+    for name in [
+        "prev-cycle.pdf",
+        "short-entries.pdf",
+        "gen-precedence.pdf",
+        "hybrid-root.pdf",
+        "objstm-index.pdf",
+        "deep-64.pdf",
+        "deep-65.pdf",
+        "inf-real.pdf",
+        "neg-inf-real.pdf",
+        "zero-ref.pdf",
+        "bignum-only.pdf",
+    ] {
+        match render(&std::path::Path::new(&dir).join(name)) {
+            Ok(pixels) => {
+                assert!(
+                    !matches!(
+                        name,
+                        "deep-64.pdf"
+                            | "deep-65.pdf"
+                            | "inf-real.pdf"
+                            | "neg-inf-real.pdf"
+                            | "zero-ref.pdf"
+                    ),
+                    "{name} must be refused"
+                );
+                assert_eq!(pixels, control, "{name}");
+            }
+            Err(err) => assert!(
+                matches!(
+                    err.code,
+                    ErrorCode::LimitExceeded | ErrorCode::EngineFailure | ErrorCode::InvalidRequest
+                ),
+                "{name}: {err:?}"
+            ),
+        }
+    }
+}
+
+#[test]
 fn accepts_prefix_and_zero_previous_xref() {
     let lib_dir = require_pdfium!();
     let control = fs::read(repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();

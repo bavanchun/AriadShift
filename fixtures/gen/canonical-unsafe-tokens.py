@@ -18,3 +18,4 @@ def build(extra):
     return out
 (out_dir / 'canonical-inf-real.pdf').write_bytes(build(b'/Foo [' + BIG + b' /Resources << /XObject << /F 7 0 R >> >>]'))
 (out_dir / 'canonical-big-integer.pdf').write_bytes(build(b'/Foo 2147483648'))
+(out_dir / 'canonical-zero-ref.pdf').write_bytes(build(b'/Foo [0 0 R /Resources << /XObject << /F 7 0 R >> >>]'))
