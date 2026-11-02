@@ -9,6 +9,7 @@
 
 pub mod color;
 pub mod document;
+pub mod draw;
 pub mod error;
 pub mod flatten;
 #[cfg(feature = "codecs")]

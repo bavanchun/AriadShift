@@ -466,6 +466,12 @@ For every in-process tool in `ariad-pdf` (and deterministic native writers), run
 
 Golden tests and CI determinism checks run every in-process tool twice under a fixed `SOURCE_DATE_EPOCH` and assert `sha256(run_1) == sha256(run_2)`.
 
+The PDF drawing API resolves a `{date}` token from an explicit ISO date first,
+then `SOURCE_DATE_EPOCH` in UTC, then the optional `ToolCtx` clock in its supplied
+local offset. If none is available, it reports an invalid-parameter error. Native
+and browser tool hosts supply the clock; the PDF library itself does not read the
+wall clock. An invalid explicit date or epoch is an error rather than a fallback.
+
 ---
 
 ## 9. Recipes (`ariad-recipe/1`) and Untrusted Recipe Rules

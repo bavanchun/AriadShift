@@ -328,6 +328,7 @@ dependencies = [
  "serde_json",
  "subsetter",
  "thiserror 2.0.21",
+ "ttf-parser",
  "unicode-normalization",
  "zune-core",
  "zune-jpeg",

@@ -14,7 +14,7 @@ use std::{
 };
 
 use ariad_core::{limits::Limits, tools::ToolSpec};
-use ariad_pdf::{InputDoc, PdfError, ToolCtx};
+use ariad_pdf::{InputDoc, PdfError, ToolClock, ToolCtx};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -109,7 +109,12 @@ pub fn build_tool_ctx(limits: &Limits, cancel: Arc<AtomicBool>) -> ToolCtx {
         .and_then(|secs| Instant::now().checked_add(Duration::from_secs(secs)));
     let mut ctx = ToolCtx::with_cancel(cancel).with_max_pages(limits.max_pages);
     ctx.deadline = deadline;
-    ctx
+    let now = jiff::Timestamp::now();
+    let local = now.to_zoned(jiff::tz::TimeZone::system());
+    ctx.with_clock(ToolClock {
+        epoch_secs: now.as_second(),
+        utc_offset_secs: local.offset().seconds(),
+    })
 }
 
 /// Executes an in-process `ariad-pdf` tool on the staged input files inside `workspace`.

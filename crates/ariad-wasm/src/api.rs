@@ -19,6 +19,28 @@ use ariad_pdf::{InputDoc, PdfError, ToolCtx};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+fn tool_context() -> ToolCtx {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let date = js_sys::Date::new_0();
+        let seconds = (date.get_time() / 1000.0).floor();
+        let offset = -date.get_timezone_offset() * 60.0;
+        if seconds.is_finite()
+            && offset.is_finite()
+            && seconds >= i64::MIN as f64
+            && seconds < i64::MAX as f64
+            && offset >= i32::MIN as f64
+            && offset <= i32::MAX as f64
+        {
+            return ToolCtx::new().with_clock(ariad_pdf::ToolClock {
+                epoch_secs: seconds as i64,
+                utc_offset_secs: offset as i32,
+            });
+        }
+    }
+    ToolCtx::new()
+}
+
 /// The edges of the embedded capabilities that can run in the browser.
 pub fn browser_capabilities() -> &'static Capabilities {
     static BROWSER: OnceLock<Capabilities> = OnceLock::new();
@@ -675,7 +697,7 @@ where
         .collect();
 
     let tool_output =
-        ariad_pdf::tools::run_tool(spec.id, &input_docs, &params_value, &ToolCtx::default())
+        ariad_pdf::tools::run_tool(spec.id, &input_docs, &params_value, &tool_context())
             .map_err(|err| map_pdf_error(spec.id, err))?;
 
     let check_artifact_formats = !tool_action_extracts_attachments(spec.id, &params_value)
