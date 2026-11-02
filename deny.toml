@@ -11,8 +11,8 @@ yanked = "deny"
 unmaintained = "workspace"
 ignore = [
     # The approved font subsetting implementation uses ttf-parser 0.25.1 on
-    # bundled Libertinus fonts selected by FontFace, never input font bytes.
-    # Typst also parses its bundled fonts, including Source Code Pro. This
+    # bundled, hash-pinned fonts only, never input or system font bytes.
+    # Typst also parses bundled fonts, including Source Code Pro. This
     # advisory records maintenance status, not a reported vulnerability.
     # Track replacement in https://github.com/bavanchun/AriadShift/issues/205.
     { id = "RUSTSEC-2026-0192", reason = "approved bundled-font parser is unmaintained; track replacement in the Typst dependency chain" },
