@@ -1,5 +1,6 @@
 //! Per-file tool specification lists concatenated into the global tool registry.
 
+pub mod ocr_scan;
 pub mod optimize;
 pub mod organize_document;
 pub mod organize_geometry;
