@@ -40,7 +40,7 @@ pub fn run(ctx: &mut ToolContext<'_>, params: ThumbnailsParams) -> ToolResult {
         .validate()
         .map_err(|err| EngineFailure::owned(ErrorCode::InvalidRequest, err.to_string()))?;
 
-    let pdf_bytes = ctx.load_validated_pdf_bytes()?;
+    let pdf_bytes = ctx.load_validated_pdf_bytes_for_pages(Some(&params.pages))?;
     let pdfium = ctx.pdfium()?;
     let doc = pdfium
         .load_pdf_from_byte_slice(&pdf_bytes, None)

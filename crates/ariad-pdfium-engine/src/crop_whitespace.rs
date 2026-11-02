@@ -38,9 +38,18 @@ pub fn run(ctx: &mut ToolContext<'_>, params: CropWhitespaceParams) -> ToolResul
         .map_err(|err| EngineFailure::owned(ErrorCode::InvalidRequest, err.to_string()))?;
 
     let bytes = read_bounded_input(ctx)?;
-    let pdf_doc = open_structural_pdf(ctx, &bytes)?;
+    let mut pdf_doc = open_structural_pdf(ctx, &bytes)?;
+    ctx.warn_repaired_xref(&pdf_doc)?;
     let pdf_info = info::from_doc(&pdf_doc).map_err(map_pdf_error)?;
     let page_count = pdf_info.page_count;
+    let canonical = crate::canonical::canonicalize_selected(
+        ctx,
+        &mut pdf_doc,
+        bytes.len(),
+        Some(&params.pages),
+    )?;
+    drop(bytes);
+    drop(pdf_doc);
 
     let selected = params
         .pages
@@ -49,12 +58,14 @@ pub fn run(ctx: &mut ToolContext<'_>, params: CropWhitespaceParams) -> ToolResul
     let selected_set: BTreeSet<u32> = selected.into_iter().collect();
 
     let pdfium = ctx.pdfium()?;
-    let render_doc = pdfium.load_pdf_from_byte_slice(&bytes, None).map_err(|_| {
-        EngineFailure::new(
-            ErrorCode::InvalidRequest,
-            "The input PDF could not be opened.",
-        )
-    })?;
+    let render_doc = pdfium
+        .load_pdf_from_byte_slice(&canonical, None)
+        .map_err(|_| {
+            EngineFailure::new(
+                ErrorCode::InvalidRequest,
+                "The input PDF could not be opened.",
+            )
+        })?;
 
     let scale = (ANALYSIS_DPI as f32) / 72.0;
     let total_selected = selected_set.len() as u64;

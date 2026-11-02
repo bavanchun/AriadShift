@@ -280,6 +280,12 @@ impl PdfDoc {
         self.decode_budget
     }
 
+    /// Bytes still available in the document's shared decoded-data budget.
+    #[must_use]
+    pub const fn remaining_decode_bytes(&self) -> u64 {
+        self.decode_budget.remaining()
+    }
+
     /// Serializes the document to PDF bytes.
     ///
     /// Refuses to serialize any document that was opened from an encrypted source without an

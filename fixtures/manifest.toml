@@ -57,6 +57,44 @@ routes = ["pdf->md"]
 companions = []
 
 [[fixture]]
+id = "mismatched-page-count-pdf"
+path = "fixtures/pdf/mismatched-page-count.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic PDF with an incorrect page tree count"
+origin = "generated"
+generated_by = "fixtures/gen/mismatched-page-count.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5dac1fc598006ac0e0f48815b64f79a54ab43f4f7a7756d0e30068a51e724b19"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-large-object-number-pdf"
+path = "fixtures/pdf/canonical-large-object-number.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic PDF with a large object number"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-large-object-number.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "609bee8796e62ccfd18232338c6f051ec9d586120fc79d70a8b46f5a989bf7a5"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
 id = "pd-vi-decree-39-2022"
 path = "fixtures/pdf/pd-vi-decree-39-2022.pdf"
 format = "pdf"
@@ -4517,6 +4555,729 @@ license = "Apache-2.0"
 license_basis = "Original synthetic PDF generated for AriadShift."
 attribution = "AriadShift contributors"
 sha256 = "2bba47881f7195a2628152ba5988b615cc1faeaeb704d95c6b1abf1fa6536ee9"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "invalid-name-escape-pdf"
+path = "fixtures/pdf/invalid-name-escape.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with invalid escaped form names"
+origin = "generated"
+generated_by = "fixtures/gen/invalid-name-escape.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "1bfe5a97d8138e32f8a8b596f29d374e49d97bb256d2665c0d3f26a4492164cb"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+
+[[fixture]]
+id = "boolean-form-operand-pdf"
+path = "fixtures/pdf/boolean-form-operand.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with boolean form operands"
+origin = "generated"
+generated_by = "fixtures/gen/boolean-form-operand.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "717f79d490bd5b13f97f333c11256359f20e3d1db6f4cab74640fa59663a1e39"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "mismatched-xref-header-pdf"
+path = "fixtures/pdf/mismatched-xref-header.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with mismatched cross-reference header"
+origin = "generated"
+generated_by = "fixtures/gen/mismatched-xref-header.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2d625b750fad838e85351f19a32a4901d4240d614a735849b9ba206ca6d55396"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-page-resource-pdf"
+path = "fixtures/pdf/type3-page-resource.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 glyph with page resources"
+origin = "generated"
+generated_by = "fixtures/gen/type3-resource-fallback.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "243daed0629db13b5c264297571fc220f8828f7eca97dea99be25fffe46301c3"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-font-resource-pdf"
+path = "fixtures/pdf/type3-font-resource.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 glyph with font resources"
+origin = "generated"
+generated_by = "fixtures/gen/type3-resource-fallback.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5c845ddb217b2724306fce814b5f6658c52bc43ab969da88b41c11889d154c95"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-glyph-resource-pdf"
+path = "fixtures/pdf/type3-glyph-resource.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 glyph with glyph resources"
+origin = "generated"
+generated_by = "fixtures/gen/type3-resource-fallback.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7160a208390400a74240ef8f93238be0be3cc3286d0354b6e4db6c2c868f7188"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "form-fallback-budget-pdf"
+path = "fixtures/pdf/form-fallback-budget.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with repeated page resource fallback"
+origin = "generated"
+generated_by = "fixtures/gen/form-fallback-budget.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "b8385e011db3462c67748da2e86aeece70ba9daa200a37d1a6fdf1cc7a11463a"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "long-string-form-operand-pdf"
+path = "fixtures/pdf/long-string-form-operand.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with overlong string form operand"
+origin = "generated"
+generated_by = "fixtures/gen/long-string-form-operand.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "59db55a4f0f8d23d391e97b2e8426683e5a9d2902ed4d26cf00f892ce473ec3a"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "incremental-xref-shadow-pdf"
+path = "fixtures/pdf/incremental-xref-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Incremental PDF hiding an invalid older xref entry"
+origin = "generated"
+generated_by = "fixtures/gen/incremental-xref-shadow.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e259a1e95f5ec3a510de83a1f59b963668b514605a7e11a2fd39232d0343d2a1"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "incremental-xref-stream-shadow-pdf"
+path = "fixtures/pdf/incremental-xref-stream-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with hidden xref stream entry"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "8a0ec47e5ba329a54e38132ba783fa1b3d3f7d39968e84fc88c76551fb657295"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "hybrid-xref-stream-shadow-pdf"
+path = "fixtures/pdf/hybrid-xref-stream-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with hidden xref stream entry"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e749f75e0dcde031d4e70d1b6baec0774f281d37d234662b22a690ac9d86d0d2"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "incremental-xref-stream-valid-pdf"
+path = "fixtures/pdf/incremental-xref-stream-valid.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with valid linked xref stream"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "012fa16b2ee00bb6705d7a8a735caab984e0f6679cede2f6aa879dfebe44157e"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "hybrid-xref-stream-valid-pdf"
+path = "fixtures/pdf/hybrid-xref-stream-valid.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with valid linked xref stream"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e7cba764e8506531d5a96bce21d63f9cb82a93928a07b8c073e5d86092a36ee1"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "overlapping-xref-stream-shadow-pdf"
+path = "fixtures/pdf/overlapping-xref-stream-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with overlapping xref stream ranges"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2c447e793b2fd13f49f6444b40ae80778ebc294f7b0aac9b82ad995fcb1c7aa4"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "nested-xref-chain-shadow-pdf"
+path = "fixtures/pdf/nested-xref-chain-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with a nested hybrid xref chain"
+origin = "generated"
+generated_by = "fixtures/gen/nested-xref-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "17a919de6277e54a27d3916c37b536febce0a600253fb8069167047d92c9b783"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "nested-xref-chain-valid-pdf"
+path = "fixtures/pdf/nested-xref-chain-valid.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with a nested hybrid xref chain"
+origin = "generated"
+generated_by = "fixtures/gen/nested-xref-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "6b970502872ab815eb275fa8a522c65596c78e3933a375386a4d182848ccffdf"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-control-pdf"
+path = "fixtures/pdf/canonical-control.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical control PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "3013e1b5f66c62473259b4a18928fdf6da4d74f2fb100084f2e85ebefc4436e0"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-gen-precedence-pdf"
+path = "fixtures/pdf/canonical-gen-precedence.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical gen precedence PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "b6753c20606aa794625c53725a393318cc62543a52dfd0172e519772317d863a"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-hybrid-root-pdf"
+path = "fixtures/pdf/canonical-hybrid-root.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical hybrid root PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "f1ed7bd1d10b5ae1c85bdb6aa86f942a2eac60e96ffec2737358c6e02a379c08"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-objstm-index-pdf"
+path = "fixtures/pdf/canonical-objstm-index.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical objstm index PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "c1de64a46e5f4faa9ebc045610564a848c9ad8ef26a0d088cf865973f328d6df"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-prev-cycle-pdf"
+path = "fixtures/pdf/canonical-prev-cycle.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical prev cycle PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "29543d694340948a80e5110342793f22049fe6d57161b9fc381fa77acc8e5edc"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-short-entries-pdf"
+path = "fixtures/pdf/canonical-short-entries.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical short entries PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "0cedab1b2aa3eb1d87d30a3eac40203c28ef7fcb493829c2217db1700165d1a6"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-deep-64-pdf"
+path = "fixtures/pdf/canonical-deep-64.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic deeply nested PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-depth.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "ae04a5458bd663b617e42709d027e3629327d7cf0e698fb3d59a5d958a34196f"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-inf-real-pdf"
+path = "fixtures/pdf/canonical-inf-real.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic unsafe PDF token"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-unsafe-tokens.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5235b88a802bf433d6e38be4b5b4dd245af5f1701a220a0227deb2a22e0251bf"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-big-integer-pdf"
+path = "fixtures/pdf/canonical-big-integer.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic unsafe PDF token"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-unsafe-tokens.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "eafa3f704d36ca99fe86bbb52397dbfdf87061834cbde4f51630fc4963255a6d"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-zero-ref-pdf"
+path = "fixtures/pdf/canonical-zero-ref.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic unsafe PDF token"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-unsafe-tokens.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "19ab2f2534629315cf74560c1d5a67053c0e1a22394db52e4f4e9dba038c7a97"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-hex-key-render-pdf"
+path = "fixtures/pdf/inline-hex-key-render.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic inline image with escaped keys"
+origin = "generated"
+generated_by = "fixtures/gen/inline_preflight_cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "f4ae537ff4c95d211010f6219e8b2fd0d9d10ae914767549a78d942e106c4131"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-hex-key-bomb-pdf"
+path = "fixtures/pdf/inline-hex-key-bomb.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic inline image with escaped keys"
+origin = "generated"
+generated_by = "fixtures/gen/inline_preflight_cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "af1a71691f02995efb70777e76673be979b34638dc0b04e7569c15519780a357"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "resource-string-cr-do-pdf"
+path = "fixtures/pdf/resource-string-cr-do.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream token regression"
+origin = "generated"
+generated_by = "fixtures/gen/content-resource-tokens.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "11dbd01ff151257645b88e70a102cdf41069c3264a0629ee9aaaa384f8eadb5d"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-crlf-count-pdf"
+path = "fixtures/pdf/type3-crlf-count.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream token regression"
+origin = "generated"
+generated_by = "fixtures/gen/content-resource-tokens.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "0ad84fa5f5c89cbccd968fffe042cc559897a959519910c6bcc6ddcf93a0ef87"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "content-non-ascii-pdf"
+path = "fixtures/pdf/content-non-ascii.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream validation"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "29e60bddcbfa63865884c3a3136e5d037d86819c6ca0b485cf68ddf3e02df463"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "content-nested-operands-pdf"
+path = "fixtures/pdf/content-nested-operands.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream validation"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "a5f32658b74520b212acc60a6d67456ad9f550b24e104b458351fccf3bbaa433"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-string-filter-pdf"
+path = "fixtures/pdf/inline-string-filter.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream validation"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "25a2bdea1e95c46c2b18f92d43c090b6071de1d722e13fffce896b605372f0f4"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "content-executable-containers-pdf"
+path = "fixtures/pdf/content-executable-containers.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream validation"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "d5ccfdb72d0d69804c0659d6d6761d9f01e06570dcbf3b9b8ee544ce3cb436bd"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "property-array-pdf"
+path = "fixtures/pdf/property-array.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic marked-content property dictionary"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7f5fe743d1e8ec72e66c2e2913aebac233d8c39127685269b0cf0951e69543b9"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "property-deep-array-pdf"
+path = "fixtures/pdf/property-deep-array.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic marked-content property dictionary"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "1d7aa639408cb7f0d91451012b366018e72fcd0b2a7860e44a5e6f4cdcd80a86"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-charproc-resource-budget-pdf"
+path = "fixtures/pdf/type3-charproc-resource-budget.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic Type3 resource scope execution budget"
+origin = "generated"
+generated_by = "fixtures/gen/type3-scope-budget.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "3c41a8f6700372fa5b6e5d507e85f924d1e808ea37458980c4ec532a14c7f8a4"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-inherited-font-budget-pdf"
+path = "fixtures/pdf/type3-inherited-font-budget.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic Type3 resource scope execution budget"
+origin = "generated"
+generated_by = "fixtures/gen/type3-scope-budget.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "308694b0d9df4d5aede005f0b1b427a9d9c69009d4822217bd81e8897bd89a9c"
 pages = 1
 tags = []
 phase = "4"
