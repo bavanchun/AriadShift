@@ -13,7 +13,10 @@
 //! 7. Always writes a complete, valid PDF from scratch (no incremental `/Prev` updates), even when
 //!    the input document was opened with a repaired cross-reference table.
 
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    io::{self, Write},
+};
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 
@@ -129,21 +132,69 @@ pub fn save_document_with_options(
     sort_dictionary_in_place(&mut doc.trailer);
 
     ctx.check()?;
-    let mut out = Vec::new();
     if options.object_streams {
+        let mut out = BoundedOutput::new(ctx, u32::MAX as usize);
         doc.save_with_options(
             &mut out,
             lopdf::SaveOptions {
                 use_object_streams: true,
                 use_xref_streams: true,
+                object_stream_config: lopdf::ObjectStreamConfig {
+                    max_objects_per_stream: 500,
+                    compression_level: 9,
+                },
                 ..lopdf::SaveOptions::default()
             },
         )
-        .map_err(|_| PdfError::Malformed)?;
+        .map_err(|_| out.failure.unwrap_or(PdfError::Malformed))?;
+        Ok(out.bytes)
     } else {
+        let mut out = Vec::new();
         doc.save_to(&mut out).map_err(|_| PdfError::Malformed)?;
+        Ok(out)
     }
-    Ok(out)
+}
+
+// lopdf's cross-reference stream uses 32-bit offsets. Refuse output that cannot be represented.
+struct BoundedOutput<'a> {
+    bytes: Vec<u8>,
+    limit: usize,
+    ctx: &'a ToolCtx,
+    failure: Option<PdfError>,
+}
+
+impl<'a> BoundedOutput<'a> {
+    fn new(ctx: &'a ToolCtx, limit: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            limit,
+            ctx,
+            failure: None,
+        }
+    }
+}
+
+impl Write for BoundedOutput<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if let Err(error) = self.ctx.check() {
+            self.failure = Some(error);
+            return Err(io::Error::other("PDF serialization interrupted"));
+        }
+        if bytes.len() > self.limit.saturating_sub(self.bytes.len()) {
+            self.failure = Some(PdfError::LimitExceeded(
+                ariad_core::reader::pdf::ReadError::DecompressedTooLarge {
+                    limit: self.limit as u64,
+                },
+            ));
+            return Err(io::Error::other("PDF serialization exceeded offset limit"));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Deduplicates identical streams in `doc` by SHA-256 hash of their canonical dictionary
@@ -770,6 +821,23 @@ mod tests {
         let reloaded = open(&first, &Limits::local()).expect("open object stream output");
         assert_eq!(reloaded.inner().get_pages().len(), 20);
         assert!(first.windows(7).any(|bytes| bytes == b"/ObjStm"));
+    }
+
+    #[test]
+    fn object_stream_output_enforces_offsets_and_cancellation() {
+        let ctx = ToolCtx::default();
+        let mut out = BoundedOutput::new(&ctx, 4);
+        out.write_all(b"1234").expect("within limit");
+        assert!(out.write_all(b"5").is_err());
+        assert!(matches!(out.failure, Some(PdfError::LimitExceeded(_))));
+
+        let cancelled = ToolCtx::default();
+        cancelled
+            .cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let mut out = BoundedOutput::new(&cancelled, 4);
+        assert!(out.write_all(b"1").is_err());
+        assert!(out.failure.is_some_and(|error| error.is_cancelled()));
     }
 
     #[test]

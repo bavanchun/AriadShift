@@ -61,6 +61,8 @@ pub(crate) fn convert(
         })
         .collect();
     let mut updates = Vec::new();
+    let memory_limit = crate::optimize::image_memory_limit(limits);
+    let mut retained_bytes = 0_u64;
     let mut session = DecodeSession::new(pdf, limits);
     for id in ids {
         ctx.check()?;
@@ -69,6 +71,12 @@ pub(crate) fn convert(
             .get_object(id)
             .and_then(Object::as_stream)
             .map_err(|_| PdfError::Malformed)?;
+        if matches!(
+            stream.dict.get(b"ColorSpace").and_then(Object::as_name),
+            Ok(b"DeviceGray" | b"G")
+        ) {
+            continue;
+        }
         let filters = stream.filters().unwrap_or_default();
         let jpeg = filters.len() == 1 && filters[0] == b"DCTDecode";
         if !(filters.is_empty() || jpeg || (filters.len() == 1 && filters[0] == b"FlateDecode"))
@@ -77,6 +85,7 @@ pub(crate) fn convert(
             warnings.push(format!("image {} {}", id.0, id.1));
             continue;
         }
+        crate::optimize::preflight_image_memory(stream, retained_bytes, memory_limit)?;
         let image = match session.decode(id, ctx) {
             Ok(image) => image,
             Err(ImageError::Pdf(error)) => return Err(error),
@@ -95,6 +104,7 @@ pub(crate) fn convert(
             let (bytes, params) = images::encode_flate(&gray, 9).map_err(image_error)?;
             (bytes, Some(params))
         };
+        retained_bytes = retained_bytes.saturating_add(bytes.len() as u64);
         updates.push((id, bytes, params, jpeg, gray.bits_per_component));
     }
     for (id, bytes, params, jpeg, bits) in updates {
