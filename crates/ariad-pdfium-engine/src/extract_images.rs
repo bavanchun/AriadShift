@@ -1413,6 +1413,18 @@ fn preflight_type3_fonts(
                 validate_xobject_resources(doc, resources)?;
             }
             let proc_scope = font_scope.form(doc, proc_stream.dict.get(b"Resources").ok());
+            if let Ok(resources) = proc_stream.dict.get(b"Resources") {
+                preflight_type3_fonts(
+                    ctx,
+                    pdf_doc,
+                    resources,
+                    &proc_scope,
+                    max_bytes,
+                    max_depth,
+                    depth + 1,
+                    budget,
+                )?;
+            }
             let mut proc_cost = budget.page_work - before;
             let mut proc_pixels = budget.image_pixels - pixels_before;
             let mut proc_bytes = budget.image_bytes - bytes_before;
@@ -3818,6 +3830,52 @@ mod corpus_tests {
                 assert_eq!(e.message, "Page glyph execution work exceeds the limit.");
             }
         }
+    }
+
+    #[test]
+    fn glyph_resources_visit_nested_type3_fonts() {
+        use lopdf::{Stream, dictionary};
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "glyph-resources",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut raw = lopdf::Document::with_version("1.7");
+        let pages = raw.new_object_id();
+        let inner_proc = raw.add_object(Stream::new(
+            dictionary! {},
+            b"BI /W 100000 /H 100000 /BPC 8 /CS /G ID x EI".to_vec(),
+        ));
+        let inner_font = raw.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type3", "CharProcs" => dictionary! { "a" => inner_proc } });
+        let outer_proc = raw.add_object(Stream::new(dictionary! { "Resources" => dictionary! { "Font" => dictionary! { "N" => inner_font } } }, b"BT /N 1 Tf (a) Tj ET".to_vec()));
+        let outer_font = raw.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type3", "CharProcs" => dictionary! { "a" => outer_proc } });
+        let contents = raw.add_object(Stream::new(
+            dictionary! {},
+            b"BT /F 1 Tf (a) Tj ET".to_vec(),
+        ));
+        let page = raw.add_object(dictionary! { "Type" => "Page", "Parent" => pages, "MediaBox" => vec![0.into(), 0.into(), 10.into(), 10.into()], "Resources" => dictionary! { "Font" => dictionary! { "F" => outer_font } }, "Contents" => contents });
+        raw.objects.insert(
+            pages,
+            dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 }.into(),
+        );
+        let catalog = raw.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        raw.trailer.set("Root", catalog);
+        let mut bytes = Vec::new();
+        raw.save_to(&mut bytes).unwrap();
+        let doc = ariad_pdf::document::open(&bytes, &Limits::local()).unwrap();
+        let error = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(error.code, ErrorCode::LimitExceeded);
+        assert_eq!(error.message, "Image dimensions exceed the pixel limit.");
     }
 
     #[test]
