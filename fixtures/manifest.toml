@@ -4436,3 +4436,79 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "escaped-resource-name-pdf"
+path = "fixtures/pdf/escaped-resource-name.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Escaped resource name with a truncated spelling"
+origin = "generated"
+generated_by = "fixtures/gen/escaped-resource-name.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "57612f891f3846d3ebe830168615e551da73b1a1852895e8a67aa2a7f3a9250f"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "compressed-resource-name-pdf"
+path = "fixtures/pdf/compressed-resource-name.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Escaped resource name in a compressed object stream"
+origin = "generated"
+generated_by = "fixtures/gen/compressed-resource-name.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "d22cff29db3d01e021b08e1761304a53a66558bb4cf68017d316f571cd03d165"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "name-like-image-bytes-pdf"
+path = "fixtures/pdf/name-like-image-bytes.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image bytes resembling an overlong PDF name"
+origin = "generated"
+generated_by = "fixtures/gen/name-like-image-bytes.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7bc09c9bc3d9055620388abeecd5b603598be6da68c6e26ad3806cf7c9f29989"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "compressed-content-name-pdf"
+path = "fixtures/pdf/compressed-content-name.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Long XObject name in a compressed content stream"
+origin = "generated"
+generated_by = "fixtures/gen/compressed-content-name.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2bba47881f7195a2628152ba5988b615cc1faeaeb704d95c6b1abf1fa6536ee9"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

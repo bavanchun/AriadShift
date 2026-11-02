@@ -20,6 +20,7 @@ use ariad_pdfium_engine::{
     output::ToolContext,
 };
 use image::{ColorType, ImageEncoder, ImageFormat, RgbImage, codecs::jpeg::JpegEncoder};
+use pdfium_render::prelude::*;
 use serde_json::Value;
 
 fn pdfium_dir() -> Option<PathBuf> {
@@ -1051,6 +1052,108 @@ fn refuses_inconsistent_page_tree_before_page_load() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("inconsistent page tree must be rejected");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Image dimensions exceed the pixel limit.");
+}
+
+#[test]
+fn nested_form_uses_page_resources_when_category_is_missing() {
+    fn image_data(iter: PdfPageObjectsIterator<'_>, out: &mut Vec<Vec<u8>>) {
+        for object in iter {
+            match object {
+                PdfPageObject::Image(image) => out.push(image.get_raw_image_data().unwrap()),
+                PdfPageObject::XObjectForm(form) => image_data(form.iter(), out),
+                _ => {}
+            }
+        }
+    }
+    let lib_dir = require_pdfium!();
+    let bytes = fs::read(repo_root().join("fixtures/pdf/form-page-fallback.pdf")).unwrap();
+    let ws = TestWorkspace::from_bytes("form-page-fallback.pdf", &bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "form-fallback",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let pdfium = ctx.pdfium().unwrap();
+    let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).unwrap();
+    let page = doc.pages().get(0).unwrap();
+    let mut images = Vec::new();
+    image_data(page.objects().iter(), &mut images);
+    assert_eq!(images, vec![b"B".to_vec()]);
+    let params = ExtractImagesParams {
+        min_px: 1,
+        ..ExtractImagesParams::default()
+    };
+    let extracted = extract_images::extract_document_images(&mut ctx, &params).unwrap();
+    assert_eq!(extracted.images.first().unwrap().object_id, Some((7, 0)));
+}
+
+#[test]
+fn accepts_name_like_bytes_inside_image_stream() {
+    let lib_dir = require_pdfium!();
+    let ws = TestWorkspace::from_fixture("fixtures/pdf/name-like-image-bytes.pdf");
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "image-bytes",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let params = ExtractImagesParams {
+        min_px: 1,
+        ..ExtractImagesParams::default()
+    };
+    let result = extract_images::extract_document_images(&mut ctx, &params)
+        .expect("image bytes are not names");
+    assert_eq!(result.images.len(), 1);
+}
+
+#[test]
+fn refuses_truncated_xobject_names_before_pdfium_page_load() {
+    let lib_dir = require_pdfium!();
+    for fixture in [
+        "long-content-name.pdf",
+        "escaped-resource-name.pdf",
+        "compressed-resource-name.pdf",
+        "compressed-content-name.pdf",
+    ] {
+        let path = repo_root().join("fixtures/pdf").join(fixture);
+        let bytes = fs::read(path).unwrap();
+        let ws = TestWorkspace::from_bytes(fixture, &bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "long-name",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let pdfium = ctx.pdfium().expect("PDFium");
+        let document = pdfium
+            .load_pdf_from_byte_slice(&bytes, None)
+            .expect("PDFium loads document");
+        let page = document.pages().get(0).expect("PDFium parses page");
+        assert_eq!(
+            page.objects().len(),
+            if fixture == "compressed-resource-name.pdf" {
+                0
+            } else {
+                1
+            },
+            "PDFium parses {fixture}"
+        );
+        let error = extract_images::run(&mut ctx, ExtractImagesParams::default())
+            .expect_err("ambiguous name is rejected");
+        assert_eq!(error.code, ErrorCode::LimitExceeded);
+        assert_eq!(error.message, "PDF name exceeds the safe token length.");
+    }
 }
 
 #[test]

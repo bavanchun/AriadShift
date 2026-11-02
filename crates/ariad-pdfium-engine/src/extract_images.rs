@@ -303,6 +303,124 @@ fn check_extraction_xref(pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
     Ok(())
 }
 
+fn check_name_tokens(bytes: &[u8]) -> Result<(), EngineFailure> {
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if bytes[cursor] != b'/' {
+            cursor += 1;
+            continue;
+        }
+        cursor += 1;
+        let start = cursor;
+        while cursor < bytes.len() && !is_pdf_delimiter_or_ws(bytes[cursor]) {
+            cursor += 1;
+        }
+        // The content parser retains 255 bytes including '/'. Reject raw
+        // spellings that could truncate before name escape decoding.
+        if cursor - start > 254 {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "PDF name exceeds the safe token length.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn check_document_names(
+    ctx: &ToolContext<'_>,
+    bytes: &[u8],
+    doc: &PdfDoc,
+) -> Result<(), EngineFailure> {
+    let cap = usize::try_from(ctx.limits().max_decompressed_bytes).unwrap_or(usize::MAX / 2);
+    let mut streams = Vec::new();
+    let xref = &doc.inner().reference_table.entries;
+    let mut offsets: Vec<_> = xref
+        .values()
+        .filter_map(|entry| match entry {
+            lopdf::xref::XrefEntry::Normal { offset, .. } => Some(*offset as usize),
+            _ => None,
+        })
+        .collect();
+    offsets.sort_unstable();
+    offsets.dedup();
+    for (id, object) in &doc.inner().objects {
+        ctx.check()?;
+        if let Object::Stream(stream) = object {
+            if let Some(lopdf::xref::XrefEntry::Normal { offset, generation }) = xref.get(&id.0)
+                && *generation == id.1
+            {
+                let start = *offset as usize;
+                let bound = offsets
+                    .get(offsets.partition_point(|n| *n <= start))
+                    .copied()
+                    .unwrap_or(bytes.len())
+                    .min(bytes.len());
+                if start < bound {
+                    let object_bytes = &bytes[start..bound];
+                    let mut candidates = Vec::new();
+                    let mut compared = 0usize;
+                    for (pos, token) in object_bytes.windows(6).enumerate() {
+                        if token != b"stream"
+                            || (pos > 0 && !is_pdf_delimiter_or_ws(object_bytes[pos - 1]))
+                        {
+                            continue;
+                        }
+                        let after = pos + 6;
+                        let body = if object_bytes.get(after..after + 2) == Some(b"\r\n") {
+                            after + 2
+                        } else if matches!(object_bytes.get(after), Some(b'\r' | b'\n')) {
+                            after + 1
+                        } else {
+                            continue;
+                        };
+                        let Some(end) = body.checked_add(stream.content.len()) else {
+                            continue;
+                        };
+                        if end > object_bytes.len() {
+                            continue;
+                        }
+                        compared = compared.saturating_add(stream.content.len());
+                        if compared > object_bytes.len().saturating_mul(2) {
+                            return Err(EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "PDF stream location search exceeds the work limit.",
+                            ));
+                        }
+                        if object_bytes.get(body..end) != Some(stream.content.as_slice()) {
+                            continue;
+                        }
+                        let mut marker = end;
+                        while object_bytes.get(marker).is_some_and(|b| is_pdf_ws(*b)) {
+                            marker += 1;
+                        }
+                        if object_bytes.get(marker..marker + 9) == Some(b"endstream") {
+                            candidates.push((start + body, start + end));
+                        }
+                    }
+                    if candidates.len() == 1 {
+                        streams.push(candidates[0]);
+                    }
+                }
+            }
+            if stream.dict.has_type(b"ObjStm") {
+                let decoded = preflight_stream_bytes(doc.inner(), stream, cap)?;
+                check_name_tokens(&decoded)?;
+            }
+        }
+    }
+    streams.sort_unstable();
+    let mut cursor = 0;
+    for (start, end) in streams {
+        if start > cursor {
+            check_name_tokens(&bytes[cursor..start])?;
+        }
+        cursor = cursor.max(end);
+    }
+    check_name_tokens(&bytes[cursor..])?;
+    Ok(())
+}
+
 fn extract_document_images_with(
     ctx: &mut ToolContext<'_>,
     params: &ExtractImagesParams,
@@ -314,6 +432,7 @@ fn extract_document_images_with(
 
     let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
     check_extraction_xref(&pdf_doc)?;
+    check_document_names(ctx, &bytes, &pdf_doc)?;
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
     let pdfium = ctx.pdfium()?;
@@ -1487,6 +1606,12 @@ fn preflight_content(
             charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
         }
         if token.first() == Some(&b'/') {
+            if token.len() > 255 {
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "PDF name exceeds the safe token length.",
+                ));
+            }
             last_name = Some(decode_pdf_name(&token[1..]));
             continue;
         }
@@ -1501,6 +1626,12 @@ fn preflight_content(
         if token == b"Do" {
             charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
             if let Some(name) = last_name.take() {
+                if name.len() > 254 {
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "PDF name exceeds the safe token length.",
+                    ));
+                }
                 invoked.push(name.clone());
             }
             continue;
@@ -1514,6 +1645,12 @@ fn preflight_content(
         let dict_end = loop {
             let (s, e) = next_content_token(bytes, &mut cursor)?
                 .ok_or_else(EngineFailure::limit_exceeded)?;
+            if bytes[s] == b'/' && e - s > 255 {
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "PDF name exceeds the safe token length.",
+                ));
+            }
             match &bytes[s..e] {
                 b"[" | b"<<" => nesting += 1,
                 b"]" | b">>" => {
@@ -3794,8 +3931,9 @@ mod corpus_tests {
                 &mut sink,
             );
             let result = (|| {
-                let (_, doc) = read_and_preflight_pdf(&ctx)?;
+                let (bytes, doc) = read_and_preflight_pdf(&ctx)?;
                 check_extraction_xref(&doc)?;
+                check_document_names(&ctx, &bytes, &doc)?;
                 let mut work = 0;
                 let max_depth = usize::from(ctx.limits().max_nesting_depth);
                 let max_bytes =
@@ -3811,35 +3949,96 @@ mod corpus_tests {
             }
         }
         eprintln!("CORPUS {} PDFs, {} refused", paths.len(), refusals.len());
-        let actual: HashSet<_> = refusals
+        let actual: BTreeMap<_, _> = refusals
             .iter()
-            .map(|path| {
-                path.file_name()
-                    .expect("fixture name")
-                    .to_string_lossy()
-                    .into_owned()
+            .map(|(path, reason)| {
+                (
+                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    reason.clone(),
+                )
             })
             .collect();
-        let expected: HashSet<_> = [
-            "broken-xref.pdf",
-            "indirect-image-preflight.pdf",
-            "indirect-content-filter.pdf",
-            "indirect-jbig2-filter.pdf",
-            "indirect-jpx-filter.pdf",
-            "inline-conflicting-keys.pdf",
-            "inline-flate-oversized.pdf",
-            "inline-image-bomb.pdf",
-            "inline-indirect-key.pdf",
-            "inline-lzw-large.pdf",
-            "inline-rl-large.pdf",
-            "repaired-xref-extraction.pdf",
-            "type3-inline-image.pdf",
-            "xobject-abbreviated-keys.pdf",
+        let expected: BTreeMap<_, _> = [
+            (
+                "broken-xref.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            ),
+            (
+                "compressed-content-name.pdf",
+                "PDF name exceeds the safe token length.",
+            ),
+            (
+                "compressed-resource-name.pdf",
+                "PDF name exceeds the safe token length.",
+            ),
+            (
+                "escaped-resource-name.pdf",
+                "PDF name exceeds the safe token length.",
+            ),
+            (
+                "long-content-name.pdf",
+                "PDF name exceeds the safe token length.",
+            ),
+            (
+                "indirect-image-preflight.pdf",
+                "Image dimensions exceed the pixel limit.",
+            ),
+            (
+                "indirect-content-filter.pdf",
+                "Image dimensions exceed the pixel limit.",
+            ),
+            (
+                "indirect-jbig2-filter.pdf",
+                "Image codec cannot be inspected after another filter.",
+            ),
+            (
+                "indirect-jpx-filter.pdf",
+                "Image codec cannot be inspected after another filter.",
+            ),
+            (
+                "inline-conflicting-keys.pdf",
+                "Inline image dictionary has conflicting keys.",
+            ),
+            (
+                "inline-flate-oversized.pdf",
+                "Decoded inline image data exceeds the limit.",
+            ),
+            (
+                "inline-image-bomb.pdf",
+                "Image dimensions exceed the pixel limit.",
+            ),
+            (
+                "inline-indirect-key.pdf",
+                "Inline image dictionaries cannot contain indirect references.",
+            ),
+            (
+                "inline-lzw-large.pdf",
+                "Decoded inline image data exceeds the limit.",
+            ),
+            (
+                "inline-rl-large.pdf",
+                "Decoded inline image data exceeds the limit.",
+            ),
+            (
+                "repaired-xref-extraction.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            ),
+            (
+                "type3-inline-image.pdf",
+                "Image dimensions exceed the pixel limit.",
+            ),
+            (
+                "xobject-abbreviated-keys.pdf",
+                "Image dictionary is missing a valid required number.",
+            ),
         ]
         .into_iter()
-        .map(str::to_owned)
+        .map(|(name, reason)| (name.to_owned(), reason.to_owned()))
         .collect();
-        let legitimate_refusals = actual.difference(&expected).count();
+        let legitimate_refusals = actual
+            .keys()
+            .filter(|name| !expected.contains_key(*name))
+            .count();
         eprintln!("CORPUS legitimate refusals: {legitimate_refusals}");
         assert_eq!(legitimate_refusals, 0);
         assert_eq!(
