@@ -10,6 +10,11 @@ targets = [
 yanked = "deny"
 unmaintained = "workspace"
 ignore = [
+    # The approved font subsetting implementation uses ttf-parser 0.25.1 on
+    # bundled fonts. This advisory records maintenance status, not a reported
+    # vulnerability; Typst also depends on it. Reassess when its dependency
+    # chain offers a maintained replacement.
+    { id = "RUSTSEC-2026-0192", reason = "approved bundled-font parser is unmaintained; track replacement in the Typst dependency chain" },
     # The Marvin attack is a timing side channel in RSA private-key
     # operations. rsa reaches the build only through jsonwebtoken's verifier
     # in ariad-server, which checks signatures with public keys and never
