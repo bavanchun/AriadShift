@@ -225,6 +225,7 @@ struct Calculator<'a, 'b> {
     facts: &'a BTreeMap<ObjectId, Facts>,
     memo: HashMap<MemoKey, usize>,
     glyph_memo: HashMap<GlyphKey, usize>,
+    page_contents: HashSet<ObjectId>,
 }
 
 impl Calculator<'_, '_> {
@@ -245,6 +246,7 @@ impl Calculator<'_, '_> {
         active: &mut HashSet<ObjectId>,
         page_contents: bool,
     ) -> Result<usize, EngineFailure> {
+        let page_contents = page_contents || self.page_contents.contains(&id);
         self.ctx.check()?;
         if depth > 8 || !active.insert(id) {
             return Err(EngineFailure::limit_exceeded());
@@ -477,6 +479,7 @@ pub(crate) fn check(
     doc: &lopdf::Document,
     facts: &BTreeMap<ObjectId, Facts>,
     pages: Option<&ariad_core::tools::PageRange>,
+    page_contents: &HashSet<ObjectId>,
 ) -> Result<(), EngineFailure> {
     let mut calc = Calculator {
         ctx,
@@ -484,6 +487,7 @@ pub(crate) fn check(
         facts,
         memo: HashMap::new(),
         glyph_memo: HashMap::new(),
+        page_contents: page_contents.clone(),
     };
     let mut total = 0usize;
     let all_pages = preflight_page_tree(doc, usize::from(ctx.limits().max_nesting_depth))?;
@@ -599,6 +603,7 @@ mod tests {
             facts: &facts,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
+            page_contents: HashSet::new(),
         };
         assert_eq!(
             calc.stream_inner(root, &scope, 0, &mut HashSet::new(), true)
@@ -608,6 +613,11 @@ mod tests {
         assert_eq!(
             calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
             1
+        );
+        calc.page_contents.insert(root);
+        assert_eq!(
+            calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
+            18
         );
     }
     #[test]
@@ -670,6 +680,7 @@ mod tests {
             facts: &facts,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
+            page_contents: HashSet::new(),
         };
         assert_eq!(
             calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
@@ -714,6 +725,7 @@ mod tests {
             facts: &facts,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
+            page_contents: HashSet::new(),
         };
         assert_eq!(
             calc.mask(Some(&gs), &scope, 0, &mut HashSet::new())
@@ -764,6 +776,7 @@ mod tests {
             facts: &all,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
+            page_contents: HashSet::new(),
         };
         let start = std::time::Instant::now();
         let err = calc
@@ -794,7 +807,7 @@ mod tests {
             .add_object(dictionary! { "Type" => "Catalog", "Pages" => Object::Reference(pages) });
         doc.trailer.set("Root", Object::Reference(catalog));
         let all = BTreeMap::from([(content, facts(1, &[])), (appearance, facts(60_000, &[]))]);
-        let error = check(&ctx, &doc, &all, None).unwrap_err();
+        let error = check(&ctx, &doc, &all, None, &HashSet::new()).unwrap_err();
         assert!(error.message.contains("120001"));
     }
 
@@ -819,6 +832,7 @@ mod tests {
             facts: &all,
             memo: HashMap::new(),
             glyph_memo: HashMap::new(),
+            page_contents: HashSet::new(),
         };
         assert!(
             calc.stream(child, &Scope::default(), 0, &mut HashSet::new())

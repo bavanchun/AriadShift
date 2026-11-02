@@ -1002,6 +1002,33 @@ fn inherited_form_resources_are_checked_before_page_load() {
 }
 
 #[test]
+fn shared_form_resources_are_checked_at_each_depth() {
+    let lib_dir = require_pdfium!();
+    let pdf = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << /XObject << /A 6 0 R /B 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/B Do"),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"/A Do"),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"BI /W 4 /H 4 /BPC 8 /CS /G /F /AHx ID 00> EI"),
+    ]);
+    let ws = TestWorkspace::from_bytes("inherited-inline.pdf", &pdf);
+    let mut limits = Limits::local();
+    limits.max_asset_bytes = Some(100);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "inherited-inline",
+        "pdf.extract_images",
+        ws.paths,
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect("a form reached by multiple paths is charged once");
+}
+
+#[test]
 fn refuses_ambiguous_inline_keys_and_excess_flate_output() {
     let lib_dir = require_pdfium!();
     for (fixture, reason) in [
@@ -1641,6 +1668,62 @@ fn page_content_resources_are_removed_from_canonical_output() {
 }
 
 #[test]
+fn page_content_resource_overrides_do_not_hide_resource_work() {
+    for variant in 0..4 {
+        let pattern = "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 1 1] /XStep 1 /YStep 1 /Resources << >>";
+        let form = "/Type /XObject /Subtype /Form /BBox [0 0 10 10]";
+        let mut work = b"q Q ".repeat(600);
+        if variant == 1 {
+            work.extend_from_slice(b"BI /W 1 /H 1 /BPC 8 /CS /G ID x EI ");
+        }
+        let repeats = match variant {
+            2 => b"/S gs ".repeat(101),
+            3 => b"/F Do ".to_vec(),
+            _ => b"/P scn ".repeat(101),
+        };
+        let resources = match variant {
+            2 => "<< /ExtGState << /S << /SMask << /G 5 0 R >> >> >> >>",
+            3 => "<< /XObject << /F 5 0 R >> /Pattern << /P 6 0 R >> >>",
+            _ => "<< /Pattern << /P 5 0 R >> >>",
+        };
+        let override_resources = match variant {
+            2 => "/Resources << /ExtGState << >> >>",
+            3 => "/Resources << /XObject << >> >>",
+            _ => "/Resources << /Pattern << >> >>",
+        };
+        let object5 = match variant {
+            2 => stream_object(form, &work),
+            3 => stream_object(form, &b"/P scn ".repeat(101)),
+            _ => stream_object(pattern, &work),
+        };
+        let page = format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources {resources} /Contents 4 0 R >>"
+        );
+        let mut objects = vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            page.into_bytes(),
+            stream_object(override_resources, &repeats),
+            object5,
+        ];
+        if variant == 3 {
+            objects.push(stream_object(pattern, &work));
+        }
+        let ws = TestWorkspace::from_bytes("input.pdf", &assemble_pdf(&objects));
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("page", "pdf.render", ws.paths, Limits::local(), &mut sink);
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("resource work exceeds limit");
+        assert_eq!(err.code, ErrorCode::LimitExceeded, "variant {variant}");
+        assert!(
+            err.message.contains("Content execution cost"),
+            "variant {variant}: {err:?}"
+        );
+    }
+}
+
+#[test]
 fn type3_glyph_resource_dependencies_require_an_explicit_scope() {
     let cases: &[&[u8]] = &[
         b"0 0 d0 /X Do",
@@ -1682,6 +1765,44 @@ fn type3_glyph_resource_dependencies_require_an_explicit_scope() {
                 result.expect("explicit glyph scope");
             }
         }
+    }
+}
+
+#[test]
+fn type3_glyph_rebinding_in_a_child_form_is_refused() {
+    for (proc, child_resources) in [
+        (
+            b"0 0 d0 /P scn".as_slice(),
+            "/Font << /T 4 0 R >> /Pattern << >>",
+        ),
+        (
+            b"0 0 d0 /P scn".as_slice(),
+            "/Font << /T 4 0 R >> /Pattern << /P 8 0 R >>",
+        ),
+        (b"0 0 d0 /X Do".as_slice(), "/XObject << /X 8 0 R >>"),
+    ] {
+        let input = assemble_pdf(&[
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /Font << /T 4 0 R >> /XObject << /F 7 0 R >> >> /Contents 6 0 R >>".to_vec(),
+            b"<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << /A 5 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1] >>".to_vec(),
+            stream_object("", proc), stream_object("", b"BT /T 1 Tf /F Do (A) Tj ET"),
+            stream_object(&format!("/Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << {child_resources} >>"), b"BT /T 1 Tf ET"),
+            if child_resources.contains("/Pattern << /P") {
+                stream_object("/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 1 1] /XStep 1 /YStep 1", b"q Q")
+            } else { stream_object("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", b"q Q") },
+        ]);
+        let ws = TestWorkspace::from_bytes("input.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("glyph", "pdf.render", ws.paths, Limits::local(), &mut sink);
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("ambiguous glyph scope");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "Type3 glyph procedure depends on ambiguous page resources"
+        );
     }
 }
 
@@ -1734,6 +1855,43 @@ fn resource_scope_corpus_is_refused() {
         }
     }
     assert_eq!(count, 8);
+}
+
+#[test]
+#[ignore = "requires the external resource-scope corpus"]
+fn page_and_glyph_resource_corpus_is_refused() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    let mut paths: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "pdf"))
+        .collect();
+    paths.sort();
+    assert_eq!(paths.len(), 14);
+    for path in paths {
+        let bytes = fs::read(&path).unwrap();
+        for extraction in [false, true] {
+            let ws = TestWorkspace::from_bytes("input.pdf", &bytes);
+            let mut sink = Vec::new();
+            let mut ctx =
+                ToolContext::new("scope", "pdf.render", ws.paths, Limits::local(), &mut sink)
+                    .with_library_dir(&lib_dir);
+            let result = if extraction {
+                extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+                    .map(|_| ())
+            } else {
+                ctx.load_validated_pdf_bytes().map(|_| ())
+            };
+            let err = result.expect_err(&path.display().to_string());
+            assert_eq!(
+                err.code,
+                ErrorCode::LimitExceeded,
+                "{}: {err:?}",
+                path.display()
+            );
+        }
+    }
 }
 
 fn pdf_with_content(content: &[u8]) -> Vec<u8> {

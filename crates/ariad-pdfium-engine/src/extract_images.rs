@@ -2,7 +2,7 @@
 //! `min_px` filtering, `MAX_IMAGE_PIXELS` bounds, and original JPEG/JPX stream preservation.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs,
     io::{Cursor, Read},
 };
@@ -920,7 +920,7 @@ pub(crate) fn canonical_content_streams(
         document_work: &mut image_work,
     };
     let empty_scope = XobjectScope::new(BTreeMap::new());
-    let mut seen_images = HashMap::new();
+    let mut seen_images = PreflightMemo::new();
     let max_bytes = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
     for (&id, value) in &doc.objects {
         ctx.check()?;
@@ -972,7 +972,7 @@ pub(crate) fn canonical_content_streams(
     }
     let mut out = BTreeMap::new();
     let mut remaining = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
-    let mut memo = HashMap::new();
+    let mut memo = PreflightMemo::new();
     let mut facts = BTreeMap::new();
     for id in ids {
         let mut document_work = 0;
@@ -1041,6 +1041,7 @@ pub(crate) fn canonical_content_streams(
         doc: &lopdf::Document,
         value: &Object,
         facts: &BTreeMap<PdfObjectId, crate::execution_budget::Facts>,
+        page_contents: &HashSet<PdfObjectId>,
         depth: usize,
     ) -> Result<(), EngineFailure> {
         if depth >= 63 {
@@ -1051,7 +1052,7 @@ pub(crate) fn canonical_content_streams(
             Object::Stream(stream) => &stream.dict,
             Object::Array(items) => {
                 for item in items {
-                    check_type3_resources(doc, item, facts, depth + 1)?;
+                    check_type3_resources(doc, item, facts, page_contents, depth + 1)?;
                 }
                 return Ok(());
             }
@@ -1075,10 +1076,9 @@ pub(crate) fn canonical_content_streams(
                 let stream = proc
                     .as_stream()
                     .map_err(|_| EngineFailure::limit_exceeded())?;
-                if !stream.dict.has(b"Resources")
-                    && facts
-                        .get(&id.ok_or_else(EngineFailure::limit_exceeded)?)
-                        .is_some_and(|facts| !facts.calls.is_empty())
+                let id = id.ok_or_else(EngineFailure::limit_exceeded)?;
+                if (!stream.dict.has(b"Resources") || page_contents.contains(&id))
+                    && facts.get(&id).is_some_and(|facts| !facts.calls.is_empty())
                 {
                     return Err(EngineFailure::new(
                         ErrorCode::LimitExceeded,
@@ -1088,14 +1088,14 @@ pub(crate) fn canonical_content_streams(
             }
         }
         for (_, child) in dict.iter() {
-            check_type3_resources(doc, child, facts, depth + 1)?;
+            check_type3_resources(doc, child, facts, page_contents, depth + 1)?;
         }
         Ok(())
     }
     for value in doc.objects.values() {
-        check_type3_resources(doc, value, &facts, 0)?;
+        check_type3_resources(doc, value, &facts, &page_contents, 0)?;
     }
-    crate::execution_budget::check(ctx, doc, &facts, pages)?;
+    crate::execution_budget::check(ctx, doc, &facts, pages, &page_contents)?;
     Ok(out)
 }
 
@@ -1195,7 +1195,7 @@ fn preflight_page_images_inner(
     if ancestors.len() > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    let mut seen = HashMap::new();
+    let mut seen = PreflightMemo::new();
     for id in xobjects.objects.values() {
         preflight_xobject(
             ctx,
@@ -1419,7 +1419,7 @@ fn preflight_type3_fonts(
                 budget,
             )?;
         }
-        let mut proc_seen = HashMap::new();
+        let mut proc_seen = PreflightMemo::new();
         for (_, proc) in procs.iter() {
             let before = budget.page_work;
             let pixels_before = budget.image_pixels;
@@ -1500,7 +1500,7 @@ fn preflight_type3_fonts(
             let mut xobjects = BTreeMap::new();
             insert_xobjects_from_resources!(doc, resources, xobjects);
             let xobjects = XobjectScope::new(xobjects);
-            let mut seen = HashMap::new();
+            let mut seen = PreflightMemo::new();
             for id in xobjects.objects.values() {
                 preflight_xobject(
                     ctx,
@@ -1543,7 +1543,7 @@ fn validate_xobject_resources(
     Ok(())
 }
 
-type PreflightMemo = HashMap<(PdfObjectId, [u8; 32], [u8; 32], usize), (usize, usize, u64, u64)>;
+type PreflightMemo = BTreeMap<(PdfObjectId, [u8; 32], [u8; 32], usize), (usize, usize, u64, u64)>;
 
 fn preflight_memo_key(
     id: PdfObjectId,
@@ -1565,6 +1565,60 @@ fn preflight_xobject(
     parent_xobjects: &XobjectScope<'_>,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<(usize, usize, u64, u64), EngineFailure> {
+    let key = preflight_memo_key(id, parent_xobjects, depth);
+    let first = (id, key.1, key.2, 0);
+    let already_charged = seen.range(first..key).any(|(_, cost)| cost.0 != 0);
+    if already_charged && !seen.contains_key(&key) {
+        // Recheck the stricter depth without charging the same resources twice.
+        let mut replay = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut *budget.document_work,
+        };
+        return preflight_xobject_inner(
+            ctx,
+            pdf_doc,
+            id,
+            max_bytes,
+            max_depth,
+            depth,
+            seen,
+            parent_xobjects,
+            &mut replay,
+        );
+    }
+    preflight_xobject_inner(
+        ctx,
+        pdf_doc,
+        id,
+        max_bytes,
+        max_depth,
+        depth,
+        seen,
+        parent_xobjects,
+        budget,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn preflight_xobject_inner(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    id: PdfObjectId,
+    max_bytes: usize,
+    max_depth: usize,
+    depth: usize,
+    seen: &mut PreflightMemo,
+    parent_xobjects: &XobjectScope<'_>,
+    budget: &mut PreflightBudget<'_>,
+) -> Result<(usize, usize, u64, u64), EngineFailure> {
     charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
@@ -1574,6 +1628,21 @@ fn preflight_xobject(
         return (cost.0 != 0)
             .then_some(cost)
             .ok_or_else(EngineFailure::limit_exceeded);
+    }
+    // A completed traversal at a greater depth has already checked the stricter
+    // nesting bound for this same scope. Reuse it without charging the same
+    // resource a second time when it is also reached from a shallower root.
+    let strictest = (id, scope_key.1, scope_key.2, usize::MAX);
+    if let Some((_, &cost)) = seen
+        .range((
+            std::ops::Bound::Excluded(scope_key),
+            std::ops::Bound::Included(strictest),
+        ))
+        .rev()
+        .find(|(_, cost)| cost.0 != 0)
+    {
+        seen.insert(scope_key, cost);
+        return Ok(cost);
     }
     seen.insert(scope_key, (0, 0, 0, 0));
     let mut expansion_cost = 1usize;
