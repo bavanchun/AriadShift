@@ -293,8 +293,48 @@ pub fn extract_document_images(
     Ok(outcome)
 }
 
-fn check_extraction_xref(pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
-    if pdf_doc.repaired_xref() {
+fn check_extraction_xref(bytes: &[u8], pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
+    let mismatch = pdf_doc
+        .inner()
+        .reference_table
+        .entries
+        .iter()
+        .any(|(&number, entry)| {
+            let lopdf::xref::XrefEntry::Normal { offset, generation } = entry else {
+                return false;
+            };
+            let Some(header) = bytes.get(*offset as usize..) else {
+                return true;
+            };
+            let mut cursor = 0;
+            let mut next = || {
+                let start = cursor;
+                while header.get(cursor).is_some_and(u8::is_ascii_digit) {
+                    cursor += 1;
+                }
+                let value = std::str::from_utf8(&header[start..cursor])
+                    .ok()?
+                    .parse::<u32>()
+                    .ok()?;
+                if !header.get(cursor).is_some_and(|b| is_pdf_ws(*b)) {
+                    return None;
+                }
+                while header.get(cursor).is_some_and(|b| is_pdf_ws(*b)) {
+                    cursor += 1;
+                }
+                Some(value)
+            };
+            let actual_number = next();
+            let actual_generation = next();
+            actual_number != Some(number)
+                || actual_generation != Some(u32::from(*generation))
+                || header.get(cursor..cursor.saturating_add(3)) != Some(b"obj")
+                || !header
+                    .get(cursor + 3)
+                    .is_some_and(|b| is_pdf_delimiter_or_ws(*b))
+                || !pdf_doc.inner().objects.contains_key(&(number, *generation))
+        });
+    if pdf_doc.repaired_xref() || mismatch {
         return Err(EngineFailure::new(
             ErrorCode::LimitExceeded,
             "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
@@ -431,7 +471,7 @@ fn extract_document_images_with(
         .map_err(|e| EngineFailure::owned(ErrorCode::InvalidRequest, e.to_string()))?;
 
     let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
-    check_extraction_xref(&pdf_doc)?;
+    check_extraction_xref(&bytes, &pdf_doc)?;
     check_document_names(ctx, &bytes, &pdf_doc)?;
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
@@ -4094,7 +4134,7 @@ mod corpus_tests {
             );
             let result = (|| {
                 let (bytes, doc) = read_and_preflight_pdf(&ctx)?;
-                check_extraction_xref(&doc)?;
+                check_extraction_xref(&bytes, &doc)?;
                 check_document_names(&ctx, &bytes, &doc)?;
                 let mut work = 0;
                 let max_depth = usize::from(ctx.limits().max_nesting_depth);
@@ -4128,6 +4168,10 @@ mod corpus_tests {
             (
                 "invalid-name-escape.pdf",
                 "Page form execution work exceeds the limit.",
+            ),
+            (
+                "mismatched-xref-header.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
             ),
             (
                 "broken-xref.pdf",

@@ -4561,3 +4561,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "mismatched-xref-header-pdf"
+path = "fixtures/pdf/mismatched-xref-header.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with mismatched cross-reference header"
+origin = "generated"
+generated_by = "fixtures/gen/mismatched-xref-header.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2d625b750fad838e85351f19a32a4901d4240d614a735849b9ba206ca6d55396"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
