@@ -1117,6 +1117,14 @@ fn prepare_launch_with_limit(
     if let Some(root) = &command.install_root {
         policy.exec.push(root.clone());
     }
+    // An adapter can need both its pack and the AppImage containing its launcher.
+    #[cfg(target_os = "linux")]
+    if let Some(root) =
+        appimage_install_root(&command.program, std::env::var_os("APPDIR").as_deref())
+        && !policy.exec.contains(&root)
+    {
+        policy.exec.push(root);
+    }
     for path in read_only {
         if !policy.read_only.contains(path) {
             policy.read_only.push(path.clone());

@@ -3,6 +3,7 @@ pub mod docling;
 pub mod libreoffice;
 pub mod pandoc;
 pub mod pdf;
+pub mod qpdf;
 pub mod resolve;
 pub mod sandbox;
 pub mod typst;
@@ -57,6 +58,7 @@ pub fn serve_builtin(
         "pdf" => pdf::serve(input, output),
         "typst" => typst::serve(input, output),
         "libreoffice" => libreoffice::serve(input, output),
+        "qpdf" => qpdf::serve(input, output),
         _ => {
             // A pack engine is served by the pack's own executable. Only test-probe builds
             // answer for one, with a stand-in that never runs real tool code.
@@ -375,6 +377,8 @@ pub struct EngineSpec {
     /// Whether the engine must refuse to launch in `best-effort` mode when OS sandbox
     /// isolation is unavailable.
     pub sandbox_required: bool,
+    /// Environment variable receiving the verified pack entrypoint for an adapter.
+    pub pack_program_env: Option<&'static str>,
 }
 
 /// Pandoc reads DOCX and EPUB and writes DOCX and EPUB.
@@ -393,6 +397,7 @@ pub const PANDOC: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V1,
     sandbox_required: false,
+    pack_program_env: None,
 };
 
 /// The built-in PDF text-layer reader.
@@ -406,6 +411,7 @@ pub const PDF: EngineSpec = EngineSpec {
     builtin: true,
     protocol: Protocol::V1,
     sandbox_required: false,
+    pack_program_env: None,
 };
 
 /// The built-in Typst PDF writer.
@@ -419,6 +425,7 @@ pub const TYPST: EngineSpec = EngineSpec {
     builtin: true,
     protocol: Protocol::V1,
     sandbox_required: false,
+    pack_program_env: None,
 };
 
 /// The system LibreOffice, used for legacy Office, ODF and Office-to-PDF routes.
@@ -450,6 +457,7 @@ pub const LIBREOFFICE: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V1,
     sandbox_required: false,
+    pack_program_env: None,
 };
 
 /// Optional layout and OCR extraction through the Docling pack.
@@ -472,6 +480,7 @@ pub const DOCLING: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V1,
     sandbox_required: false,
+    pack_program_env: None,
 };
 
 /// PDFium rendering, text extraction and redaction pack (`ariad-engine/2`).
@@ -485,6 +494,7 @@ pub const PDFIUM: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
+    pack_program_env: None,
 };
 
 /// QPDF linearization, encryption and stream repair pack (`ariad-engine/2`).
@@ -493,11 +503,12 @@ pub const QPDF: EngineSpec = EngineSpec {
     license: "Apache-2.0",
     routes: &[],
     install_hint: "run 'ashift engines install qpdf' to install the qpdf engine pack",
-    supported: None,
+    supported: Some(">=12.4, <13"),
     required: false,
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
+    pack_program_env: Some("ASHIFT_QPDF_PROGRAM"),
 };
 
 /// Tesseract 5 OCR pack (`ariad-engine/2`).
@@ -511,6 +522,7 @@ pub const TESSERACT: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
+    pack_program_env: None,
 };
 
 /// PAdES digital signing and verification pack (`ariad-engine/2`).
@@ -524,6 +536,7 @@ pub const SIGN: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
+    pack_program_env: None,
 };
 
 /// veraPDF PDF/A validation pack (`ariad-engine/2`).
@@ -537,6 +550,7 @@ pub const VERAPDF: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
+    pack_program_env: None,
 };
 
 /// Local AI inference pack (`ariad-engine/2`).
@@ -550,6 +564,7 @@ pub const AI: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
+    pack_program_env: None,
 };
 
 /// Image watermark inpainting pack (`ariad-engine/2`).
@@ -563,6 +578,7 @@ pub const INPAINT: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
+    pack_program_env: None,
 };
 
 /// Every out-of-process conversion engine, in display order.
@@ -868,8 +884,11 @@ mod tests {
 mod dispatch_tests {
     #[cfg(not(feature = "test-probe"))]
     #[test]
-    fn production_builds_never_answer_for_a_pack_engine() {
-        for spec in super::PACK_ENGINES {
+    fn production_builds_never_answer_for_a_direct_pack_engine() {
+        for spec in super::PACK_ENGINES
+            .iter()
+            .filter(|spec| spec.pack_program_env.is_none())
+        {
             let mut output = Vec::new();
             assert_eq!(
                 super::serve_builtin(spec.id, std::io::Cursor::new([]), &mut output),

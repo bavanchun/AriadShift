@@ -181,7 +181,7 @@ pub fn engines(
 const LISTED_PACK: &str = "docling";
 
 /// Pack names always listed, installed or not.
-const LISTED_PACKS: &[&str] = &[LISTED_PACK, engines::PDFIUM.id];
+const LISTED_PACKS: &[&str] = &[LISTED_PACK, engines::PDFIUM.id, engines::QPDF.id];
 
 /// License shown for a pack row that has no registry edge and no running engine to ask.
 fn placeholder_license(name: &str) -> String {
@@ -333,13 +333,21 @@ fn describe_pack(
         routes,
         pack: Some(info),
     };
+    let command =
+        if engines::pack_spec(&pack.name).is_some_and(|spec| spec.pack_program_env.is_some()) {
+            engines::resolve_pack_with_options(&pack.name, Some(engine_program))
+                .map(|(command, _)| command)
+                .ok()
+        } else {
+            Some(runner::EngineCommand::from_pack(engine_program, pack))
+        };
+    let Some(command) = command else {
+        row.note = Some("pack is unusable; run 'ashift doctor'".to_owned());
+        return Ok(row);
+    };
     apply_describe(
         &mut row,
-        runner::describe_command(
-            &runner::EngineCommand::from_pack(engine_program, pack),
-            runner::DESCRIBE_TIMEOUT,
-            cancel.clone(),
-        ),
+        runner::describe_command(&command, runner::DESCRIBE_TIMEOUT, cancel.clone()),
         license.is_some(),
     )?;
     if row.status == EngineStatus::Ready
@@ -367,6 +375,11 @@ fn apply_describe(
             routes: engine_routes,
             ..
         }) => {
+            if row.id == engines::QPDF.id
+                && let Some(ref version) = tool.version
+            {
+                row.version.clone_from(version);
+            }
             // Docling converts digital documents without Tesseract; the program only enables
             // OCR, so a missing one is a note, not a missing engine.
             let tool_optional = row.id == LISTED_PACK;

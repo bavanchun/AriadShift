@@ -55,6 +55,7 @@ rustls-native-certs.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+lopdf.workspace = true
 minisign.workspace = true
 rcgen.workspace = true
 
