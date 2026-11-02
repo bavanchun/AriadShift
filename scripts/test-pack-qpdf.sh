@@ -11,33 +11,31 @@ fi
 if bash "$script" verify-archive invalid "$tmp/bad" >/dev/null 2>&1; then
     echo 'unknown target was accepted' >&2; exit 1
 fi
-if bash "$repo/engines/qpdf/pack/check-release.sh" >/dev/null 2>&1; then
-    echo 'pending approval was accepted' >&2; exit 1
-fi
 cp "$repo/engines/qpdf/pack/check-release.sh" "$tmp/check-release.sh"
-cp "$repo/engines/qpdf/pack/licence-review.toml" "$tmp/licence-review.toml"
-python3 - "$tmp/licence-review.toml" <<'PY'
-import pathlib, sys
-p = pathlib.Path(sys.argv[1])
-p.write_text(p.read_text().replace('pending_owner_approval = true', 'pending_owner_approval = false'))
-PY
-if bash "$tmp/check-release.sh" >/dev/null 2>&1; then
-    echo 'incomplete runtime review was accepted' >&2; exit 1
-fi
-python3 - "$tmp/licence-review.toml" <<'PY'
-import pathlib, sys
-p = pathlib.Path(sys.argv[1])
-p.write_text(p.read_text().replace('runtime_review_complete = false', 'runtime_review_complete = true'))
-PY
-bash "$tmp/check-release.sh"
-python3 - "$tmp/licence-review.toml" <<'PY'
-import pathlib, sys
-p = pathlib.Path(sys.argv[1])
-p.write_text(p.read_text().replace('version = "3.2.1"', 'version = "3.2.0"'))
-PY
-if bash "$tmp/check-release.sh" >/dev/null 2>&1; then
-    echo 'mismatched component review was accepted' >&2; exit 1
-fi
+python3 - "$repo/engines/qpdf/pack/licence-review.toml" "$tmp" <<'PYTEST'
+import pathlib, subprocess, sys, tomllib
+
+source, directory = map(pathlib.Path, sys.argv[1:])
+review_path = directory / 'licence-review.toml'
+original = source.read_text()
+
+def check(text, accepted, label):
+    review_path.write_text(text)
+    result = subprocess.run(['bash', str(directory / 'check-release.sh')], capture_output=True)
+    if (result.returncode == 0) != accepted:
+        sys.exit(f'{label}: unexpected release gate result')
+
+approved = original.replace('pending_owner_approval = true', 'pending_owner_approval = false')
+approved = approved.replace('runtime_review_complete = false', 'runtime_review_complete = true')
+check(approved.replace('runtime_review_complete = true', 'runtime_review_complete = false'), False, 'runtime pending')
+check(approved.replace('pending_owner_approval = false', 'pending_owner_approval = true'), False, 'owner approval pending')
+check(approved, True, 'both reviews complete')
+for key, value in tomllib.loads(approved).items():
+    lines = approved.splitlines(keepends=True)
+    replacement = 'true' if value is False else 'false' if value is True else '"mismatch"'
+    changed = ''.join(f'{key} = {replacement}\n' if line.startswith(f'{key} = ') else line for line in lines)
+    check(changed, False, f'mismatched {key}')
+PYTEST
 if [ -n "${QPDF_SOURCE_ARCHIVE:-}" ]; then bash "$script" verify-archive mac-arm64 "$QPDF_SOURCE_ARCHIVE"; fi
 if [ -n "${QPDF_TEST_PACK:-}" ]; then
     bash "$script" verify "$QPDF_TEST_PACK"
