@@ -48,12 +48,13 @@ fn resolve_pack_verifies_signature_and_reuses_only_safe_cached_digests() {
     assert_eq!(command.protocol(), Protocol::V2);
     assert!(command.sandbox_required());
     assert!(command.args.iter().any(|arg| arg == "__engine"));
+    let expected_program = root.join("bin").join("engine").canonicalize().unwrap();
     let ariad_host::runner::EngineCommand { env: variables, .. } = &command;
     assert!(
         variables
             .iter()
             .any(|(key, value)| key == "ASHIFT_QPDF_PROGRAM"
-                && value == root.join("bin").join("engine").as_os_str())
+                && value == expected_program.as_os_str())
     );
     assert_eq!(command.install_root.as_deref(), Some(root.as_path()));
 
