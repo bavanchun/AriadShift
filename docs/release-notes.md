@@ -50,6 +50,7 @@ Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium renderi
 
 ### Known limitations
 
+- **Docling pack.** The Docling engine pack is not yet published; `ashift engines install docling` cannot resolve it until a later release. (#204)
 - **qpdf pack does not ship in 0.3.0.** Its release gate refuses distribution until the GNU runtime review is complete. qpdf-dependent tools require a separately available compatible pack. (#188)
 - **Signed PDFs.** Rewriting a signed PDF raises a warning and does not preserve existing signatures; incremental-update support remains open. (#186)
 - **Compression.** Six of ten corpus files met or beat Stirling level 6 with the specified similarity criterion, below the original seven-of-ten target. Text-heavy parity remains open. (#187)

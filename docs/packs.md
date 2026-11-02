@@ -260,6 +260,8 @@ installation is unavailable until a release and index entry exist.
 
 ## Signing and publishing
 
+The PDFium and qpdf release workflows read `PACK_MINISIGN_KEY` and the optional `PACK_MINISIGN_KEY_PASSWORD` from the `release` environment, and select the committed public key using `PACK_SIGNING_KEY_ID`. Both require the tag commit to be an ancestor of `origin/main`. The manually dispatched `verify-pack-signing-key.yml` verifies that the configured key signs against the committed public key without publishing a pack; the `release` environment must permit its dispatch ref. Docling signing and release publication are not automated yet ([#204](https://github.com/bavanchun/AriadShift/issues/204)).
+
 1. Create the signing key once with `minisign -G -p ariadshift-packs.pub -s ariadshift-packs.key`. The secret key and its password live only in the `release` environment secrets and an offline backup; never in the repository. Commit the public key as `crates/ariad-host/data/pack-keys/<key-id>.pub` and release an `ashift` that contains it before the first pack signed with it.
 2. Build every target and merge the manifests with `ashift __pack manifest --base`.
 3. Sign: `minisign -S -s ariadshift-packs.key -m pack.toml -t "pack:docling version:0.2.0"`. Signing keys exist only in the `release` environment; the `pdfium` pack is signed only by its pack workflow on a `pack-pdfium-v*` tag, never on a developer machine.
