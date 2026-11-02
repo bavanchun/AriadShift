@@ -341,3 +341,20 @@ fn frozen_ir_schema_requires_the_current_version_and_retains_the_legacy_schema()
     document.as_object_mut().unwrap().remove("version");
     assert!(!validator.is_valid(&document));
 }
+
+#[test]
+fn frozen_engine_v1_and_pack_schema_match_committed_bytes() {
+    use sha2::{Digest, Sha256};
+    for (bytes, digest) in [
+        (
+            include_bytes!("../../../schemas/engine-protocol.v1.json").as_slice(),
+            "16ff4281449ffb5a5be298b965a4fd9d44014ad5694309d2e8cdb699d568c654",
+        ),
+        (
+            include_bytes!("../../../schemas/pack.v1.json").as_slice(),
+            "b1d4e5068ad56784b6ad2845ee12076ba05fc093b95727932105a1c579458fac",
+        ),
+    ] {
+        assert_eq!(hex::encode(Sha256::digest(bytes)), digest);
+    }
+}

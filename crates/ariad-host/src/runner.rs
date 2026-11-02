@@ -1388,7 +1388,7 @@ impl EngineProcess {
                                 )?,
                             };
                             if let EventV2::Result { ok, metrics, error } = &event {
-                                result = Some((*ok, metrics.clone(), error.clone()));
+                                result = Some((*ok, metrics.clone(), error.clone().map(Into::into)));
                             }
                             sink(event);
                         }
@@ -1786,6 +1786,13 @@ mod tests {
     };
 
     use super::{EngineCommand, writable_paths};
+
+    #[test]
+    fn encrypted_input_is_rejected_for_v1_and_accepted_for_v2() {
+        let line = br#"{"type":"result","ok":false,"error":{"code":"encrypted_input","message":"password required"}}"#;
+        assert!(super::parse_event(line, None, &mut Vec::new()).is_err());
+        assert!(super::parse_event_v2(line, None, &mut Vec::new()).is_ok());
+    }
 
     #[cfg(windows)]
     #[test]

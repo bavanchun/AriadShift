@@ -13,13 +13,16 @@
   ],
   "x-status": "draft",
   "$defs": {
-    "EngineError": {
+    "EngineErrorV2": {
+      "description": "A v2 engine error.",
       "type": "object",
       "properties": {
         "code": {
-          "$ref": "#/$defs/ErrorCode"
+          "description": "Machine-readable error code.",
+          "$ref": "#/$defs/ErrorCodeV2"
         },
         "message": {
+          "description": "Human-readable diagnostic.",
           "type": "string"
         }
       },
@@ -28,16 +31,49 @@
         "message"
       ]
     },
-    "ErrorCode": {
-      "type": "string",
-      "enum": [
-        "invalid_request",
-        "unsupported_route",
-        "limit_exceeded",
-        "engine_failure",
-        "tool_missing",
-        "tool_version",
-        "io"
+    "ErrorCodeV2": {
+      "description": "Error codes available to v2 engines.",
+      "oneOf": [
+        {
+          "description": "The request is invalid.",
+          "type": "string",
+          "const": "invalid_request"
+        },
+        {
+          "description": "The requested operation is unsupported.",
+          "type": "string",
+          "const": "unsupported_route"
+        },
+        {
+          "description": "A resource limit was exceeded.",
+          "type": "string",
+          "const": "limit_exceeded"
+        },
+        {
+          "description": "The engine failed.",
+          "type": "string",
+          "const": "engine_failure"
+        },
+        {
+          "description": "A required tool is missing.",
+          "type": "string",
+          "const": "tool_missing"
+        },
+        {
+          "description": "A required tool has an unsupported version.",
+          "type": "string",
+          "const": "tool_version"
+        },
+        {
+          "description": "An input or output operation failed.",
+          "type": "string",
+          "const": "io"
+        },
+        {
+          "description": "The input needs a password or the supplied password is wrong.",
+          "type": "string",
+          "const": "encrypted_input"
+        }
       ]
     },
     "EventV2": {
@@ -187,7 +223,7 @@
             "error": {
               "anyOf": [
                 {
-                  "$ref": "#/$defs/EngineError"
+                  "$ref": "#/$defs/EngineErrorV2"
                 },
                 {
                   "type": "null"
