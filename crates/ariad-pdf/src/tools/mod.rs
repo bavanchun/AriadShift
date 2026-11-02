@@ -48,6 +48,7 @@ use ariad_core::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 use crate::{
     document::{self, PdfDoc, ToolCtx},
@@ -182,6 +183,10 @@ pub struct OutputDoc {
     pub payload: OutputPayload,
     /// Tool-specific warnings for this output.
     pub warnings: Vec<String>,
+    /// Structured diagnostics with stable codes.
+    pub coded_warnings: Vec<ToolWarning>,
+    /// Tool-specific metrics.
+    pub metrics: BTreeMap<String, Value>,
     /// Optional structured JSON value when `format == "json"`.
     pub json: Option<Value>,
     /// Deterministic writer options when `payload` is [`OutputPayload::Pdf`].
@@ -197,6 +202,8 @@ impl OutputDoc {
             format: "pdf".to_owned(),
             payload: OutputPayload::Pdf(Box::new(doc)),
             warnings: Vec::new(),
+            coded_warnings: Vec::new(),
+            metrics: BTreeMap::new(),
             json: None,
             save_options: SaveOptions::default(),
         }
@@ -218,6 +225,8 @@ impl OutputDoc {
             format: "json".to_owned(),
             payload: OutputPayload::Bytes(bytes),
             warnings: Vec::new(),
+            coded_warnings: Vec::new(),
+            metrics: BTreeMap::new(),
             json: Some(value),
             save_options: SaveOptions::default(),
         })
@@ -231,6 +240,8 @@ impl OutputDoc {
             format: format.into(),
             payload: OutputPayload::Bytes(bytes),
             warnings: Vec::new(),
+            coded_warnings: Vec::new(),
+            metrics: BTreeMap::new(),
             json: None,
             save_options: SaveOptions::default(),
         }
@@ -249,6 +260,15 @@ impl OutputDoc {
         self.save_options = save_options;
         self
     }
+}
+
+/// A diagnostic with a stable machine-readable code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolWarning {
+    /// Stable warning code.
+    pub code: String,
+    /// Human-readable explanation.
+    pub message: String,
 }
 
 /// A serialized output artifact produced by [`run_tool`].
@@ -270,6 +290,10 @@ pub struct ToolOutput {
     /// Non-fatal diagnostic warnings (including [`REPAIRED_XREF_WARNING`] when any input had a
     /// repaired cross-reference table).
     pub warnings: Vec<String>,
+    /// Structured tool-specific diagnostics.
+    pub coded_warnings: Vec<ToolWarning>,
+    /// Tool-specific metrics.
+    pub metrics: BTreeMap<String, Value>,
     /// Optional structured JSON payload for JSON-emitting tools (`pdf.info`, `pdf.outline` export, etc.).
     pub json: Option<Value>,
 }
@@ -454,6 +478,8 @@ fn run_pdf_info(
             bytes: json_bytes,
         }],
         warnings,
+        coded_warnings: Vec::new(),
+        metrics: BTreeMap::new(),
         json: Some(json_val),
     })
 }
@@ -517,6 +543,8 @@ fn run_image_to_pdf(
             bytes: pdf_bytes,
         }],
         warnings: Vec::new(),
+        coded_warnings: Vec::new(),
+        metrics: BTreeMap::new(),
         json: None,
     })
 }
@@ -617,6 +645,8 @@ pub fn finalize_tool_output(
     ctx.check()?;
 
     let mut warnings = Vec::new();
+    let mut coded_warnings = Vec::new();
+    let mut metrics = BTreeMap::new();
     if opened_inputs.iter().any(PdfDoc::repaired_xref) {
         warnings.push(REPAIRED_XREF_WARNING.to_owned());
     }
@@ -628,6 +658,12 @@ pub fn finalize_tool_output(
 
     for (idx, mut out_doc) in output_docs.into_iter().enumerate() {
         ctx.check()?;
+        for warning in out_doc.coded_warnings {
+            if !coded_warnings.contains(&warning) {
+                coded_warnings.push(warning);
+            }
+        }
+        metrics.extend(out_doc.metrics);
         for w in out_doc.warnings {
             if !warnings.contains(&w) {
                 warnings.push(w);
@@ -664,6 +700,8 @@ pub fn finalize_tool_output(
     Ok(ToolOutput {
         artifacts,
         warnings,
+        coded_warnings,
+        metrics,
         json: json_payload,
     })
 }
