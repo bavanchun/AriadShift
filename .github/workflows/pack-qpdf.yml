@@ -1,0 +1,66 @@
+name: qpdf pack (development)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - engines/qpdf/**
+      - scripts/pack/**
+      - scripts/test-pack-qpdf.sh
+      - .github/workflows/pack-qpdf.yml
+  push:
+    tags: ['pack-qpdf-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  tooling:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: shellcheck engines/qpdf/pack/*.sh scripts/test-pack-qpdf.sh
+      - run: bash scripts/test-pack-qpdf.sh
+
+  source-build:
+    name: Linux source build (experimental)
+    needs: tooling
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download pinned inputs
+        run: |
+          mkdir -p "$RUNNER_TEMP/qpdf-input"
+          curl -fsSL --retry 3 --max-time 180 https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2.tar.gz -o "$RUNNER_TEMP/qpdf-input/qpdf.tar.gz"
+          curl -fsSL --retry 3 --max-time 180 https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz -o "$RUNNER_TEMP/qpdf-input/jpeg.tar.gz"
+          curl -fsSL --retry 3 --max-time 180 https://zlib.net/zlib-1.3.2.tar.gz -o "$RUNNER_TEMP/qpdf-input/zlib.tar.gz"
+      - name: Compile and inspect Linux x64
+        run: |
+          docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" \
+            -v "$RUNNER_TEMP/qpdf-input:/input:ro" -v "$RUNNER_TEMP:/output" \
+            quay.io/pypa/manylinux_2_28_x86_64@sha256:f6adcfd450f0927a05c66ded9b4c3bb538fbab625b1ca3f35d71ac093b24b57f \
+            bash /work/engines/qpdf/pack/compile-linux.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output/qpdf
+
+  release:
+    name: Release approval gate
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/pack-qpdf-v')
+    runs-on: ubuntu-26.04
+    environment: release
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require owner approval
+        run: bash engines/qpdf/pack/check-release.sh
+      - name: Refuse unfinished release
+        run: |
+          echo 'qpdf pack and target verification are not complete' >&2
+          exit 1
