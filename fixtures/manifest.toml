@@ -4360,3 +4360,41 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "inline-indirect-key-pdf"
+path = "fixtures/pdf/inline-indirect-key.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image dictionary parser divergence"
+origin = "generated"
+generated_by = "fixtures/gen/image-dictionary-keys.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "fbf9c1eb377b6a9d2077d577d378b8f594854d11c33070fdf2241556fe2fbf82"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "xobject-abbreviated-keys-pdf"
+path = "fixtures/pdf/xobject-abbreviated-keys.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image dictionary parser divergence"
+origin = "generated"
+generated_by = "fixtures/gen/image-dictionary-keys.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "87b6b52984f471a156ea8b412de54997c9989d0663b968df16c627351990a6ea"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

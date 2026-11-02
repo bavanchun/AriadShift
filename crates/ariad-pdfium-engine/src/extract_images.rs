@@ -1243,7 +1243,12 @@ fn preflight_image_dict(
     jpx_info: Option<(u64, u64, u64, u64)>,
 ) -> Result<usize, EngineFailure> {
     let get = |long: &[u8], short: &[u8]| -> Result<Option<&Object>, EngineFailure> {
-        match dict.get(long).or_else(|_| dict.get(short)) {
+        let value = if doc.is_none() {
+            dict.get(long).or_else(|_| dict.get(short))
+        } else {
+            dict.get(long)
+        };
+        match value {
             Ok(value) => Ok(Some(resolve(doc, value)?.1)),
             Err(_) => Ok(None),
         }
@@ -1253,7 +1258,12 @@ fn preflight_image_dict(
             .and_then(|v| v.as_i64().ok())
             .and_then(|v| u64::try_from(v).ok())
             .filter(|v| *v > 0)
-            .ok_or_else(EngineFailure::limit_exceeded)
+            .ok_or_else(|| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Image dictionary is missing a valid required number.",
+                )
+            })
     };
     let width = number(b"Width", b"W")?;
     let height = number(b"Height", b"H")?;
@@ -1512,6 +1522,20 @@ fn preflight_content(
             .and_then(|op| op.operands.first())
             .and_then(|o| o.as_dict().ok())
             .ok_or_else(EngineFailure::limit_exceeded)?;
+        fn has_reference(value: &Object) -> bool {
+            match value {
+                Object::Reference(_) => true,
+                Object::Array(values) => values.iter().any(has_reference),
+                Object::Dictionary(values) => values.iter().any(|(_, v)| has_reference(v)),
+                _ => false,
+            }
+        }
+        if dict.iter().any(|(_, value)| has_reference(value)) {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Inline image dictionaries cannot contain indirect references.",
+            ));
+        }
         // PDFium expands abbreviated keys over their long forms. Reject conflicting
         // values so every subsequent check sees the same dictionary it will parse.
         for (long, short) in [
@@ -1563,7 +1587,7 @@ fn preflight_content(
                 .map_err(|_| EngineFailure::limit_exceeded())?;
             color_components(colorspace, Some(doc), 0)?;
         }
-        let decoded_len = preflight_image_dict(ctx, dict, Some(doc), None)?;
+        let decoded_len = preflight_image_dict(ctx, dict, None, None)?;
         budget.charge_image(ctx, dict, doc, decoded_len)?;
         budget.page_work = budget
             .page_work
@@ -3441,9 +3465,56 @@ mod corpus_tests {
     }
 
     #[test]
+    fn refuses_image_dictionary_parser_divergences() {
+        for (name, reason) in [
+            (
+                "inline-indirect-key.pdf",
+                "Inline image dictionaries cannot contain indirect references.",
+            ),
+            (
+                "xobject-abbreviated-keys.pdf",
+                "Image dictionary is missing a valid required number.",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let work = dir.path().canonicalize().unwrap();
+            for sub in ["in", "out", "tmp"] {
+                fs::create_dir(work.join(sub)).unwrap();
+            }
+            let input = work.join("in/doc.pdf");
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../fixtures/pdf")
+                    .join(name),
+                &input,
+            )
+            .unwrap();
+            let paths = RunToolPaths {
+                workspace: work.clone(),
+                inputs: vec![input],
+                output_dir: work.join("out"),
+                work_dir: work.join("tmp"),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "dictionary",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            let page = *doc.inner().get_pages().values().next().unwrap();
+            let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}");
+            assert_eq!(err.message, reason, "{name}");
+        }
+    }
+
+    #[test]
     fn form_resources_fall_back_to_page_category() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/pdf/form-page-fallback.pdf");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/form-page-fallback.pdf");
         let doc = lopdf::Document::load(path).expect("fixture");
         let page = XobjectScope::new(BTreeMap::from([(b"X".to_vec(), (7, 0))]));
         let outer = doc.get_object((4, 0)).unwrap().as_stream().unwrap();
@@ -3693,9 +3764,11 @@ mod corpus_tests {
             "inline-conflicting-keys.pdf",
             "inline-flate-oversized.pdf",
             "inline-image-bomb.pdf",
+            "inline-indirect-key.pdf",
             "inline-lzw-large.pdf",
             "inline-rl-large.pdf",
             "type3-inline-image.pdf",
+            "xobject-abbreviated-keys.pdf",
         ]
         .into_iter()
         .map(str::to_owned)
