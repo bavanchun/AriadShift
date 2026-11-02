@@ -158,9 +158,9 @@ was deliberately not changed.
 ## Closing steps
 
 The pack workflow records Linux package inventories, image references, compiler
-versions and runtime hashes. Alpine receipts include hashes of the APKs used
-for a full package reinstall; RPM receipts hash the installed files per
-package. The release job checks and retains the reviewed source archives and
+versions and runtime hashes. Alpine receipts hash cached APKs used for a full
+package reinstall and the separately downloaded matching `build-base`
+metapackage; RPM receipts hash the installed files per package. The release job checks and retains the reviewed source archives and
 receipts as release assets. The release gate remains closed until a release-tag
 run is reviewed and the Mac PM explicitly authorizes the flag change. Review
 the release-tag artifacts, notices and provenance against the requirements
