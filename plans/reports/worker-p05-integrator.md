@@ -128,3 +128,37 @@ measurement after compilation; their logs are retained. The first two licence
 checks failed because the mise pnpm shim lacked a selected version; the final
 check passed with `MISE_PNPM_VERSION=12.9.1`. Detailed logs and results are in
 `/tmp/agent-herdr/runs/p05int/` on the integration machine.
+
+## Review fixes and CI portability
+
+The seven review fixes are `483426e0` (additional actions), `1b93848a`
+(inline-image memory), `10c63df4` (single-use handles), `be0ee1f1`
+(argv prompts), `add8736c` (recipe prompts), `8213d838` (secret input
+bounds), and `fa42a36c` (signature warnings). Their regression coverage was
+inspected against the requested cases. The MCP control-byte assertions were
+moved to an empty store because a full store could reject them for capacity.
+
+The qpdf build allowlist accepts the musl libc soname in `6237f60c`; other
+unlisted libraries remain rejected. The host pack test canonicalizes its
+expected executable path in `43182419`, preserving the actual resolver check.
+Shellcheck 0.11.0, shell syntax and positive/negative dependency allowlist
+cases passed. A Linux run passed the pack resolution test; macOS, Windows and
+musl source builds remain for PR CI to verify.
+
+Using the shared build lock, the affected PDF `sanitize`, `color_rewrite` and
+`compress` tests, core `tools_registry`, CLI `mcp_secrets` and
+`secrets_surfaces`, and host secret-bag regression passed. The schema generator
+in `tools_registry` was ignored as designed. Clippy passed for core, PDF, host
+and CLI with codecs and the host test probe. An initial CLI unit-test filter
+matched zero tests; it is not counted as validation.
+
+The added regression `rejects_control_bytes_in_an_empty_store` passed in
+`bd75e6fd`. The final `cargo fmt --all --check` passed. The focused commands
+were `cargo test --locked -p ariad-pdf --features codecs --test sanitize --test
+color_rewrite --test compress`, `cargo test --locked -p ariad-core --test
+tools_registry`, `cargo test --locked -p ariad-cli --features
+ariad-host/test-probe --test mcp_secrets --test secrets_surfaces`, the named
+host pack and secret-bag tests, and the named CLI unit test. Clippy used
+`cargo clippy --locked -p ariad-core -p ariad-pdf -p ariad-host -p ariad-cli
+--all-targets --features ariad-pdf/codecs,ariad-host/test-probe -- -D warnings`.
+All Cargo commands used the shared lock wrapper.
