@@ -474,7 +474,7 @@ where
                     image,
                     resources,
                     mapper,
-                    limits.max_decompressed_bytes,
+                    crate::document::image_memory_limit(limits),
                     limits.max_nesting_depth,
                     context.budget,
                 ) {
@@ -482,7 +482,7 @@ where
                     Err(inline::InlineError::Limit) => {
                         return Err(PdfError::LimitExceeded(
                             ariad_core::reader::pdf::ReadError::DecompressedTooLarge {
-                                limit: limits.max_decompressed_bytes,
+                                limit: crate::document::image_memory_limit(limits),
                             },
                         ));
                     }

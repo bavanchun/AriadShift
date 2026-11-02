@@ -1,5 +1,7 @@
 //! Bounded PDF compression primitives.
 
+pub(crate) use crate::document::image_memory_limit;
+
 pub mod presets;
 mod protected;
 pub mod prune;
@@ -261,16 +263,6 @@ pub fn images(
     Ok(result)
 }
 
-pub(crate) fn image_memory_limit(limits: &Limits) -> u64 {
-    limits
-        .max_memory_mb
-        .map_or(limits.max_decompressed_bytes, |mb| {
-            limits
-                .max_decompressed_bytes
-                .min(u64::from(mb) * 1024 * 1024)
-        })
-}
-
 pub(crate) fn preflight_image_memory(
     stream: &lopdf::Stream,
     retained_bytes: u64,
@@ -290,19 +282,7 @@ pub(crate) fn preflight_image_memory(
         .ok()
         .and_then(|value| u64::try_from(value).ok())
         .unwrap_or(0);
-    // The image decoder may hold a decoded surface plus intermediate codec buffers.
-    let estimate = width
-        .saturating_mul(height)
-        .saturating_mul(72)
-        .saturating_add(65536);
-    if retained_bytes.saturating_add(estimate) > memory_limit {
-        return Err(PdfError::LimitExceeded(
-            ariad_core::reader::pdf::ReadError::DecompressedTooLarge {
-                limit: memory_limit,
-            },
-        ));
-    }
-    Ok(())
+    crate::document::preflight_image_dimensions(width, height, retained_bytes, memory_limit)
 }
 
 fn decode_cached(

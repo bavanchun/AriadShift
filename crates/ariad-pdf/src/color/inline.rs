@@ -38,6 +38,8 @@ where
     };
     let width = dimension(b"Width", b"W")?;
     let height = dimension(b"Height", b"H")?;
+    crate::document::preflight_image_dimensions(u64::from(width), u64::from(height), 0, max_bytes)
+        .map_err(|_| InlineError::Limit)?;
     let bpc = get(b"BitsPerComponent", b"BPC")
         .and_then(|v| v.as_i64().ok())
         .ok_or(InlineError::Unsupported)? as usize;

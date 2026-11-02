@@ -480,3 +480,34 @@ const fn is_pdf_delimiter_or_ws(byte: u8) -> bool {
             | b'%'
     )
 }
+
+pub(crate) fn image_memory_limit(limits: &Limits) -> u64 {
+    limits
+        .max_memory_mb
+        .map_or(limits.max_decompressed_bytes, |mb| {
+            limits
+                .max_decompressed_bytes
+                .min(u64::from(mb) * 1024 * 1024)
+        })
+}
+
+pub(crate) fn preflight_image_dimensions(
+    width: u64,
+    height: u64,
+    retained_bytes: u64,
+    memory_limit: u64,
+) -> Result<(), PdfError> {
+    // The image decoder may hold a decoded surface plus intermediate codec buffers.
+    let estimate = width
+        .saturating_mul(height)
+        .saturating_mul(72)
+        .saturating_add(65536);
+    if retained_bytes.saturating_add(estimate) > memory_limit {
+        return Err(PdfError::LimitExceeded(
+            ariad_core::reader::pdf::ReadError::DecompressedTooLarge {
+                limit: memory_limit,
+            },
+        ));
+    }
+    Ok(())
+}

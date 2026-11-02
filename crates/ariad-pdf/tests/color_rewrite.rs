@@ -413,3 +413,31 @@ fn inline_images_share_the_content_decode_budget() {
         Err(ariad_pdf::PdfError::LimitExceeded(_))
     ));
 }
+
+#[test]
+fn inline_rgb_image_respects_memory_cap_before_decode() {
+    let doc = lopdf::Document::with_version("1.5");
+    let stream = lopdf::Stream::new(
+        dictionary! {"W"=>8000,"H"=>8000,"BPC"=>8,"CS"=>"RGB","F"=>"DCT"},
+        vec![0],
+    );
+    let mut content = Content {
+        operations: vec![lopdf::content::Operation::new(
+            "BI",
+            vec![lopdf::Object::Stream(stream)],
+        )],
+    };
+    let limits = ariad_core::limits::Limits {
+        max_memory_mb: Some(64),
+        ..Default::default()
+    };
+    let result = rewrite_content(
+        &doc,
+        &mut content,
+        &mut dictionary! {},
+        &to_gray_mapper(),
+        &limits,
+        &Default::default(),
+    );
+    assert!(matches!(result, Err(ariad_pdf::PdfError::LimitExceeded(_))));
+}
