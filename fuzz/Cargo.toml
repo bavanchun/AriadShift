@@ -15,7 +15,7 @@ ariad-host = { path = "../crates/ariad-host", default-features = false }
 ariad-pdf = { path = "../crates/ariad-pdf", optional = true }
 ariad-pdfium-engine = { path = "../crates/ariad-pdfium-engine" }
 libfuzzer-sys = "0.4.13"
-saphyr-parser = "0.2.2"
+saphyr-parser = "0.3.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["unbounded_depth", "float_roundtrip"] }
 tempfile = "3.27.0"
