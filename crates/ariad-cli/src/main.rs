@@ -1150,12 +1150,15 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
             && let Some(spec) = ariad_core::tools::registry::find(tool.as_str())
         {
             for &field in spec.secret_params {
-                if params
-                    .get(field)
-                    .and_then(|v| v.get("$secret"))
-                    .and_then(|v| v.as_str())
-                    == Some("prompt")
-                {
+                if params.as_object().is_some_and(|map| {
+                    map.iter().any(|(key, value)| {
+                        key.eq_ignore_ascii_case(field)
+                            && matches!(
+                                ariad_core::tools::SecretRef::from_json_value(field, value),
+                                Ok(ariad_core::tools::SecretRef::Prompt)
+                            )
+                    })
+                }) {
                     prompt_fields.insert(field);
                 }
             }

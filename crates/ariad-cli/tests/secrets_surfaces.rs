@@ -163,32 +163,46 @@ fn registered_password_tools_and_recipe_use_secret_channels() {
     assert!(!String::from_utf8_lossy(&wrong.stdout).contains("incorrect-value"));
     assert!(!String::from_utf8_lossy(&wrong.stderr).contains("incorrect-value"));
 
-    let recipe_path = dir.path().join("recipe.json");
-    fs::write(&recipe_path, json!({"version":"ariad-recipe/1","steps":[{"tool":"pdf.decrypt","params":{"password":{"$secret":"prompt"}}}]}).to_string()).unwrap();
-    let output_dir = dir.path().join("output");
-    fs::create_dir(&output_dir).unwrap();
-    let mut recipe = Command::new(env!("CARGO_BIN_EXE_ashift"))
-        .args(["recipe", "run"])
-        .arg(&recipe_path)
-        .arg(&encrypted)
-        .arg("-o")
-        .arg(&output_dir)
-        .args(["--yes", "--json"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+    for (index, params) in [
+        json!({"password":{"$secret":"prompt"}}),
+        json!({"password":{"$SECRET":"prompt"}}),
+        json!({"PASSWORD":{"$secret":"prompt"}}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let recipe_path = dir.path().join("recipe.json");
+        fs::write(
+            &recipe_path,
+            json!({"version":"ariad-recipe/1","steps":[{"tool":"pdf.decrypt","params":params}]})
+                .to_string(),
+        )
         .unwrap();
-    writeln!(recipe.stdin.take().unwrap(), "{secret}").unwrap();
-    let result = recipe.wait_with_output().unwrap();
-    assert!(
-        result.status.success(),
-        "recipe failed with {:?}",
-        result.status.code()
-    );
-    assert!(!String::from_utf8_lossy(&result.stdout).contains(secret));
-    assert!(!String::from_utf8_lossy(&result.stderr).contains(secret));
-    assert!(fs::read_dir(output_dir).unwrap().next().is_some());
+        let output_dir = dir.path().join(format!("output-{index}"));
+        fs::create_dir(&output_dir).unwrap();
+        let mut recipe = Command::new(env!("CARGO_BIN_EXE_ashift"))
+            .args(["recipe", "run"])
+            .arg(&recipe_path)
+            .arg(&encrypted)
+            .arg("-o")
+            .arg(&output_dir)
+            .args(["--yes", "--json"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        writeln!(recipe.stdin.take().unwrap(), "{secret}").unwrap();
+        let result = recipe.wait_with_output().unwrap();
+        assert!(
+            result.status.success(),
+            "recipe failed with {:?}",
+            result.status.code()
+        );
+        assert!(!String::from_utf8_lossy(&result.stdout).contains(secret));
+        assert!(!String::from_utf8_lossy(&result.stderr).contains(secret));
+        assert!(fs::read_dir(output_dir).unwrap().next().is_some());
+    }
 }
 
 #[test]
