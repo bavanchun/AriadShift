@@ -323,7 +323,7 @@ fn validate_page_graphics_state(
     ctx: &crate::ToolCtx,
     budget: &mut crate::document::DecodeBudget,
 ) -> Result<(), PdfError> {
-    use lopdf::{Object, content::Content};
+    use lopdf::Object;
     let doc = pdf.inner();
     let page = doc
         .get_object(page_id)
@@ -354,7 +354,7 @@ fn validate_page_graphics_state(
         bytes.extend_from_slice(&decoded);
         bytes.push(b'\n');
     }
-    let content = Content::decode(&bytes).map_err(|_| PdfError::Malformed)?;
+    let content = crate::scan_text::decode_checked(&bytes, ctx)?;
     let mut depth = 0usize;
     let mut marked_depth = 0usize;
     let mut compatibility_depth = 0usize;

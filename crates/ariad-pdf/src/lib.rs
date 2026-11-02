@@ -24,6 +24,7 @@ pub mod ocr_layer;
 pub mod optimize;
 pub mod paper;
 pub mod scan_pages;
+pub mod scan_text;
 pub mod tools;
 pub mod writer;
 pub mod xobject;
