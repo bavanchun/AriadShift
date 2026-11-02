@@ -237,6 +237,18 @@ Install it once a release exists with `ashift engines install pdfium`. Until the
 
 Without the pack, every PDFium tool fails with exit code 5 (`tool_missing`) and the hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. `ashift doctor` lists a `pdfium_engine` check and `ashift engines` a `pdfium` row either way: not installed (with that hint), or installed with the pack version and the protocol `ariad-engine/2`.
 
+## The qpdf pack
+
+The qpdf pack is under development and is not available for installation or
+release. Its planned Linux source build uses qpdf 12.4.2, zlib 1.3.2 and
+unmodified libjpeg-turbo 3.2.1. The named qpdf-only IJG review, its exact source
+hash and the pending owner approval state are recorded in
+[`licence-review.toml`](../engines/qpdf/pack/licence-review.toml); the complete
+libjpeg-turbo notice and IJG README are in the adjacent `notices/` directory.
+The release gate refuses publication while approval is pending. The upstream
+macOS binaries contain libjpeg-turbo 3.2.0 and OpenSSL, which require separate
+review before those binaries can be included.
+
 ## Signing and publishing
 
 1. Create the signing key once with `minisign -G -p ariadshift-packs.pub -s ariadshift-packs.key`. The secret key and its password live only in the `release` environment secrets and an offline backup; never in the repository. Commit the public key as `crates/ariad-host/data/pack-keys/<key-id>.pub` and release an `ashift` that contains it before the first pack signed with it.
