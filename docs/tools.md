@@ -149,7 +149,7 @@ Before opening each selected page, `pdf.extract_images` checks image dimensions 
 
 Extraction refuses PDFs whose cross-reference tables required repair, because the preflight and PDFium could otherwise read different revisions. Embedded font programs, ICC profiles, Indexed color lookups and function streams decoded while PDFium parses a page are not covered by image preflight budgets; their resource use relies on the engine process ceiling.
 
-Extraction also refuses PDF name tokens longer than 255 bytes including the leading slash, before escape decoding, to prevent truncated resource names from resolving differently in PDFium. This conservative check includes names in content and object streams; non-name image data is excluded when its stream boundaries can be identified.
+Extraction also refuses PDF name tokens longer than 255 bytes including the leading slash, before escape decoding, to prevent truncated resource names from resolving differently in PDFium. This conservative check includes names in content and object streams; it can also reject name-like text in non-stream strings or comments. Non-name image data is excluded when its stream boundaries can be identified.
 
 Both `ariad-host` and `ariad-wasm` enforce `ToolSpec::allowed_output_formats()` (`output_formats` when non-empty, otherwise `[output_format]`):
 1. When the caller selects a target format via `params.format` or an explicit `-o <FILE>` extension, the requested format must be in `allowed_output_formats()`.
