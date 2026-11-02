@@ -1,0 +1,16 @@
+Fonts for PDF drawing
+=====================
+
+These unmodified fonts are licensed under SIL Open Font License 1.1 (OFL-1.1).
+See OFL-Libertinus.txt for the full licence.
+
+Libertinus 7.051
+Release: https://github.com/alerque/libertinus/releases/tag/v7.051
+Archive: https://github.com/alerque/libertinus/releases/download/v7.051/Libertinus-7.051.zip
+Archive SHA-256: 4d9be29b5cb380c35af8ba967abcc752ad1e07be1f738a9789c33e0dd7478c92
+
+File                            SHA-256
+LibertinusSerif-Regular.otf     fcf06307a77367394fcb0ccb241e59eea70dba3d732be309647611224679c733
+LibertinusSerif-Bold.otf        0264914210ed51b3231ebc92ce529e9f2e166ba9eebf0cd4a579558690a27b64
+
+Both files are byte-identical to the copies in crates/ariad-typst/fonts.
