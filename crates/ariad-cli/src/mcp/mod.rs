@@ -1,6 +1,7 @@
 //! MCP stdio server module for AriadShift.
 
 pub mod resources;
+mod secrets;
 pub mod tools;
 
 use std::{
@@ -154,7 +155,7 @@ impl ServerHandler for McpServer {
         )
         .with_server_info(Implementation::new("ashift", env!("CARGO_PKG_VERSION")))
         .with_instructions(
-            "AriadShift document conversion server. Exposes tools: list_engines, inspect, plan, convert, list_doc_tools, run_doc_tool. \
+            "AriadShift document conversion server. Exposes tools: list_engines, inspect, plan, convert, list_doc_tools, run_doc_tool, secret_put. \
              Path confinement: all file operations require explicit path authorization via --allow-dir or client roots."
         )
     }
@@ -202,8 +203,14 @@ async fn cleanup_staging(staging: Arc<ProcessStagingDirectory>) {
     .await;
 }
 
+// Panic payloads can contain engine parameters; never print them from an MCP process.
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|_| eprintln!("ashift: internal error")));
+}
+
 /// Runs the MCP stdio server.
 pub async fn run_mcp(args: McpArgs) -> ExitCode {
+    install_panic_hook();
     // 1. Startup stale workspace sweep (older than 24h)
     let _ = ariad_host::workspace::sweep_stale(Duration::from_secs(24 * 3600));
 
@@ -256,6 +263,7 @@ pub async fn run_mcp(args: McpArgs) -> ExitCode {
         allowed_dirs: Arc::new(RwLock::new(initial_allowed.clone())),
         explicit_allowed_dirs: initial_allowed,
         roots_refresh: Arc::new(Mutex::new(RootsRefresh::default())),
+        secrets: Arc::new(secrets::SecretStore::default()),
         resources: SessionResources::new(),
         engine_program,
         cancel_token: server_cancel.clone(),
@@ -358,6 +366,7 @@ mod tests {
         .join();
         let server = McpServer {
             roots_refresh: Arc::new(Mutex::new(RootsRefresh::default())),
+            secrets: Arc::new(secrets::SecretStore::default()),
             allowed_dirs,
             explicit_allowed_dirs: explicit_allowed_dirs.clone(),
             allow_overwrite: false,

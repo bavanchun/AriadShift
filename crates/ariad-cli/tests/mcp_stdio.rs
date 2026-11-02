@@ -458,8 +458,9 @@ fn test_server_info_and_tools_list() {
     assert!(tool_names.contains(&"convert"));
     assert!(tool_names.contains(&"list_doc_tools"));
     assert!(tool_names.contains(&"run_doc_tool"));
+    assert!(tool_names.contains(&"secret_put"));
 
-    // Verify outputSchema is declared for all 6 tools (H5)
+    // Verify outputSchema is declared for all tools (H5)
     for tool in tools {
         let name = tool["name"].as_str().unwrap();
         assert!(
@@ -473,7 +474,7 @@ fn test_server_info_and_tools_list() {
         );
         match name {
             "list_engines" | "list_doc_tools" => assert_eq!(output_schema["type"], "array"),
-            "inspect" | "plan" | "convert" | "run_doc_tool" => {
+            "inspect" | "plan" | "convert" | "run_doc_tool" | "secret_put" => {
                 assert_eq!(output_schema["type"], "object")
             }
             _ => panic!("unexpected tool: {name}"),

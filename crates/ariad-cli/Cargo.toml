@@ -24,6 +24,7 @@ serde_json.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "signal"] }
 tokio-util = { workspace = true, features = ["rt"] }
+uuid = { workspace = true, features = ["v4"] }
 
 [features]
 default = ["pdf", "typst"]
