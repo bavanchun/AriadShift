@@ -178,3 +178,31 @@ new depth fixture test first exposed an invalid test limit of 128, which was
 corrected to 99 before it passed. The mac-arm64 pack job runs the render golden explicitly with its freshly
 built PDFium pack. It passed on commit `df02bc19` in [CI run 41450206794](https://github.com/bavanchun/AriadShift/actions/runs/41450206794).
 No PR closing reference was added; the round-3 review remains outstanding.
+
+## Round 4 — partial follow-up
+
+Status: incomplete. The inline-image header and resource-operand parser
+differentials from the round-3 review remain unresolved. Do not treat this
+branch as ready for review or merge.
+
+The canonicalizer now rejects object numbers above 1,000,000, checking both
+the recorded maximum and every object-table key. The generated
+`canonical-large-object-number.pdf` reproduces the large object number; the
+`refuses_excessive_object_numbers` test also exercises a stale maximum. The
+test initially failed before the limit was added because a different unsafe
+token was reported instead; it passed afterward and was then switched to the
+generated large-object fixture. The crop tool
+obtains page information before canonicalization and releases both input bytes
+and the structural graph immediately afterward. Its three integration tests
+passed with the supplied PDFium pack.
+
+The 90-file corpus passed with 30 expected refusals and no legitimate-file
+refusals. The only new refusal is `canonical-large-object-number.pdf`, the
+new synthetic fixture, under the object-number limit. No rule-2 conclusion is
+possible because that rule has not been implemented. The full PDFium test
+suite, including Linux render goldens, passed before the final fixture and
+corpus-expectation changes; the focused object-number test and corpus passed
+after the fixture was added. Formatting, clippy, the 25 ariad-pdf library tests,
+and the existing adversarial corpus test passed. The remaining work
+includes both content-stream fixes, their fixtures and regression tests, and
+repeating all required verification including the round-3 PoCs.
