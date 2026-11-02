@@ -293,6 +293,134 @@ pub fn extract_document_images(
     Ok(outcome)
 }
 
+fn check_extraction_xref(pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
+    if pdf_doc.repaired_xref() {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+        ));
+    }
+    Ok(())
+}
+
+fn check_name_tokens(bytes: &[u8]) -> Result<(), EngineFailure> {
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if bytes[cursor] != b'/' {
+            cursor += 1;
+            continue;
+        }
+        cursor += 1;
+        let start = cursor;
+        while cursor < bytes.len() && !is_pdf_delimiter_or_ws(bytes[cursor]) {
+            cursor += 1;
+        }
+        // The content parser retains 255 bytes including '/'. Reject raw
+        // spellings that could truncate before name escape decoding.
+        if cursor - start > 254 {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "PDF name exceeds the safe token length.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn check_document_names(
+    ctx: &ToolContext<'_>,
+    bytes: &[u8],
+    doc: &PdfDoc,
+) -> Result<(), EngineFailure> {
+    let cap = usize::try_from(ctx.limits().max_decompressed_bytes).unwrap_or(usize::MAX / 2);
+    let mut streams = Vec::new();
+    let xref = &doc.inner().reference_table.entries;
+    let mut offsets: Vec<_> = xref
+        .values()
+        .filter_map(|entry| match entry {
+            lopdf::xref::XrefEntry::Normal { offset, .. } => Some(*offset as usize),
+            _ => None,
+        })
+        .collect();
+    offsets.sort_unstable();
+    offsets.dedup();
+    for (id, object) in &doc.inner().objects {
+        ctx.check()?;
+        if let Object::Stream(stream) = object {
+            if let Some(lopdf::xref::XrefEntry::Normal { offset, generation }) = xref.get(&id.0)
+                && *generation == id.1
+            {
+                let start = *offset as usize;
+                let bound = offsets
+                    .get(offsets.partition_point(|n| *n <= start))
+                    .copied()
+                    .unwrap_or(bytes.len())
+                    .min(bytes.len());
+                if start < bound {
+                    let object_bytes = &bytes[start..bound];
+                    let mut candidates = Vec::new();
+                    let mut compared = 0usize;
+                    for (pos, token) in object_bytes.windows(6).enumerate() {
+                        if token != b"stream"
+                            || (pos > 0 && !is_pdf_delimiter_or_ws(object_bytes[pos - 1]))
+                        {
+                            continue;
+                        }
+                        let after = pos + 6;
+                        let body = if object_bytes.get(after..after + 2) == Some(b"\r\n") {
+                            after + 2
+                        } else if matches!(object_bytes.get(after), Some(b'\r' | b'\n')) {
+                            after + 1
+                        } else {
+                            continue;
+                        };
+                        let Some(end) = body.checked_add(stream.content.len()) else {
+                            continue;
+                        };
+                        if end > object_bytes.len() {
+                            continue;
+                        }
+                        compared = compared.saturating_add(stream.content.len());
+                        if compared > object_bytes.len().saturating_mul(2) {
+                            return Err(EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "PDF stream location search exceeds the work limit.",
+                            ));
+                        }
+                        if object_bytes.get(body..end) != Some(stream.content.as_slice()) {
+                            continue;
+                        }
+                        let mut marker = end;
+                        while object_bytes.get(marker).is_some_and(|b| is_pdf_ws(*b)) {
+                            marker += 1;
+                        }
+                        if object_bytes.get(marker..marker + 9) == Some(b"endstream") {
+                            candidates.push((start + body, start + end));
+                        }
+                    }
+                    if candidates.len() == 1 {
+                        streams.push(candidates[0]);
+                    }
+                }
+            }
+            if stream.dict.has_type(b"ObjStm") {
+                let decoded = preflight_stream_bytes(doc.inner(), stream, cap)?;
+                check_name_tokens(&decoded)?;
+            }
+        }
+    }
+    streams.sort_unstable();
+    let mut cursor = 0;
+    for (start, end) in streams {
+        if start > cursor {
+            check_name_tokens(&bytes[cursor..start])?;
+        }
+        cursor = cursor.max(end);
+    }
+    check_name_tokens(&bytes[cursor..])?;
+    Ok(())
+}
+
 fn extract_document_images_with(
     ctx: &mut ToolContext<'_>,
     params: &ExtractImagesParams,
@@ -303,6 +431,8 @@ fn extract_document_images_with(
         .map_err(|e| EngineFailure::owned(ErrorCode::InvalidRequest, e.to_string()))?;
 
     let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
+    check_extraction_xref(&pdf_doc)?;
+    check_document_names(ctx, &bytes, &pdf_doc)?;
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
     let pdfium = ctx.pdfium()?;
@@ -499,7 +629,10 @@ fn preflight_page_tree(
             .map_err(|_| EngineFailure::limit_exceeded())?;
         if let Ok(kids) = dict.get(b"Kids") {
             if kind != b"Pages" {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page tree node with Kids is not a Pages node.",
+                ));
             }
             let kids = resolve(Some(doc), kids)?
                 .1
@@ -513,7 +646,10 @@ fn preflight_page_tree(
             }
         } else {
             if kind != b"Page" {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page tree leaf is not a Page node.",
+                ));
             }
             leaves.push(id);
         }
@@ -574,7 +710,12 @@ impl PreflightBudget<'_> {
             .image_pixels
             .checked_add(pixels)
             .filter(|n| *n <= ctx.max_pixels())
-            .ok_or_else(EngineFailure::limit_exceeded)?;
+            .ok_or_else(|| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page inline image pixels exceed the limit.",
+                )
+            })?;
         let byte_cap = ctx
             .max_pixels()
             .checked_mul(4)
@@ -593,6 +734,7 @@ impl PreflightBudget<'_> {
 struct XobjectScope<'a> {
     objects: BTreeMap<Vec<u8>, PdfObjectId>,
     parent: Option<&'a XobjectScope<'a>>,
+    page: Option<&'a XobjectScope<'a>>,
     digest: [u8; 32],
 }
 
@@ -620,6 +762,7 @@ impl<'a> XobjectScope<'a> {
         Self {
             objects,
             parent: None,
+            page: None,
             digest,
         }
     }
@@ -635,8 +778,28 @@ impl<'a> XobjectScope<'a> {
         Self {
             objects,
             parent: Some(self),
+            page: self.page.or(Some(self)),
             digest,
         }
+    }
+
+    fn form(&'a self, doc: &lopdf::Document, resources: Option<&Object>) -> Self {
+        let Some(resources) = resources else {
+            return self.child(BTreeMap::new());
+        };
+        let page = self.page.unwrap_or(self);
+        let has_xobjects = resolve(Some(doc), resources)
+            .ok()
+            .and_then(|(_, value)| value.as_dict().ok())
+            .is_some_and(|dict| dict.has(b"XObject"));
+        if !has_xobjects {
+            return page.child(BTreeMap::new());
+        }
+        let mut objects = BTreeMap::new();
+        insert_xobjects_from_resources!(doc, resources, objects);
+        let mut scope = Self::new(objects);
+        scope.page = Some(page);
+        scope
     }
 
     fn get(&self, name: &[u8]) -> Option<&PdfObjectId> {
@@ -761,7 +924,12 @@ fn preflight_page_images(
             execution_work = execution_work
                 .checked_add(cost)
                 .filter(|n| *n <= 100_000)
-                .ok_or_else(EngineFailure::limit_exceeded)?;
+                .ok_or_else(|| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Page form execution work exceeds the limit.",
+                    )
+                })?;
         }
     }
     let glyph_uses =
@@ -775,7 +943,10 @@ fn preflight_page_images(
         .and_then(|n| n.checked_add(execution_bytes))
         .ok_or_else(EngineFailure::limit_exceeded)?;
     if pixels > ctx.max_pixels() || bytes > ctx.max_pixels().saturating_mul(4) {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Page inline image totals exceed the limit.",
+        ));
     }
     let glyph_work = execution_glyphs
         .checked_mul(budget.glyph_max)
@@ -783,7 +954,12 @@ fn preflight_page_images(
     execution_work
         .checked_add(glyph_work)
         .filter(|n| *n <= 100_000)
-        .ok_or_else(EngineFailure::limit_exceeded)?;
+        .ok_or_else(|| {
+            EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Page glyph execution work exceeds the limit.",
+            )
+        })?;
     Ok(())
 }
 
@@ -845,7 +1021,10 @@ fn preflight_content_object(
             preflight_content(ctx, doc, &bytes, max_bytes, budget)
         }
         Object::Null => Ok(Vec::new()),
-        _ => Err(EngineFailure::limit_exceeded()),
+        _ => Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Page content entry is not a stream or array.",
+        )),
     }
 }
 
@@ -1085,7 +1264,10 @@ fn preflight_xobject(
             let jbig2_pos = filters.iter().position(|name| *name == b"JBIG2Decode");
             // Special image codecs behind another filter cannot be inspected directly.
             if jpx_pos.is_some_and(|pos| pos != 0) || jbig2_pos.is_some_and(|pos| pos != 0) {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Image codec cannot be inspected after another filter.",
+                ));
             }
             let jpx = jpx_pos.is_some();
             let jpx_info = if jpx {
@@ -1094,7 +1276,12 @@ fn preflight_xobject(
                 None
             };
             if let Some((width, height, _, _)) = jpx_info {
-                ctx.check_pixels(width, height)?;
+                ctx.check_pixels(width, height).map_err(|_| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "JPX dimensions exceed the pixel limit.",
+                    )
+                })?;
             }
             preflight_image_dict(ctx, &stream.dict, Some(doc), jpx_info)?;
             if stream.content.len() > max_bytes {
@@ -1130,7 +1317,6 @@ fn preflight_xobject(
             expansion_glyphs = budget.glyph_count - glyphs_before;
             expansion_pixels = budget.image_pixels - pixels_before;
             expansion_bytes = budget.image_bytes - bytes_before;
-            let mut own_children = BTreeMap::new();
             if let Ok(resources) = stream.dict.get(b"Resources") {
                 validate_xobject_resources(doc, resources)?;
                 preflight_type3_fonts(
@@ -1142,9 +1328,8 @@ fn preflight_xobject(
                     depth + 1,
                     budget,
                 )?;
-                insert_xobjects_from_resources!(doc, resources, own_children);
             }
-            let xobjects = parent_xobjects.child(own_children);
+            let xobjects = parent_xobjects.form(doc, stream.dict.get(b"Resources").ok());
             let mut invoked = HashSet::new();
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
@@ -1163,7 +1348,12 @@ fn preflight_xobject(
                     expansion_cost = expansion_cost
                         .checked_add(child_cost)
                         .filter(|cost| *cost <= 100_000)
-                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                        .ok_or_else(|| {
+                            EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "Form expansion work exceeds the limit.",
+                            )
+                        })?;
                     expansion_pixels = expansion_pixels
                         .checked_add(child_pixels)
                         .ok_or_else(EngineFailure::limit_exceeded)?;
@@ -1217,7 +1407,12 @@ fn preflight_image_dict(
     jpx_info: Option<(u64, u64, u64, u64)>,
 ) -> Result<usize, EngineFailure> {
     let get = |long: &[u8], short: &[u8]| -> Result<Option<&Object>, EngineFailure> {
-        match dict.get(long).or_else(|_| dict.get(short)) {
+        let value = if doc.is_none() {
+            dict.get(long).or_else(|_| dict.get(short))
+        } else {
+            dict.get(long)
+        };
+        match value {
             Ok(value) => Ok(Some(resolve(doc, value)?.1)),
             Err(_) => Ok(None),
         }
@@ -1227,11 +1422,21 @@ fn preflight_image_dict(
             .and_then(|v| v.as_i64().ok())
             .and_then(|v| u64::try_from(v).ok())
             .filter(|v| *v > 0)
-            .ok_or_else(EngineFailure::limit_exceeded)
+            .ok_or_else(|| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Image dictionary is missing a valid required number.",
+                )
+            })
     };
     let width = number(b"Width", b"W")?;
     let height = number(b"Height", b"H")?;
-    ctx.check_pixels(width, height)?;
+    ctx.check_pixels(width, height).map_err(|_| {
+        EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Image dimensions exceed the pixel limit.",
+        )
+    })?;
     let mask = get(b"ImageMask", b"IM")?
         .map(|v| v.as_bool().map_err(|_| EngineFailure::limit_exceeded()))
         .transpose()?
@@ -1438,6 +1643,12 @@ fn preflight_content(
             charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
         }
         if token.first() == Some(&b'/') {
+            if token.len() > 255 {
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "PDF name exceeds the safe token length.",
+                ));
+            }
             last_name = Some(decode_pdf_name(&token[1..]));
             continue;
         }
@@ -1452,6 +1663,12 @@ fn preflight_content(
         if token == b"Do" {
             charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
             if let Some(name) = last_name.take() {
+                if name.len() > 254 {
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "PDF name exceeds the safe token length.",
+                    ));
+                }
                 invoked.push(name.clone());
             }
             continue;
@@ -1465,6 +1682,12 @@ fn preflight_content(
         let dict_end = loop {
             let (s, e) = next_content_token(bytes, &mut cursor)?
                 .ok_or_else(EngineFailure::limit_exceeded)?;
+            if bytes[s] == b'/' && e - s > 255 {
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "PDF name exceeds the safe token length.",
+                ));
+            }
             match &bytes[s..e] {
                 b"[" | b"<<" => nesting += 1,
                 b"]" | b">>" => {
@@ -1486,6 +1709,20 @@ fn preflight_content(
             .and_then(|op| op.operands.first())
             .and_then(|o| o.as_dict().ok())
             .ok_or_else(EngineFailure::limit_exceeded)?;
+        fn has_reference(value: &Object) -> bool {
+            match value {
+                Object::Reference(_) => true,
+                Object::Array(values) => values.iter().any(has_reference),
+                Object::Dictionary(values) => values.iter().any(|(_, v)| has_reference(v)),
+                _ => false,
+            }
+        }
+        if dict.iter().any(|(_, value)| has_reference(value)) {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Inline image dictionaries cannot contain indirect references.",
+            ));
+        }
         // PDFium expands abbreviated keys over their long forms. Reject conflicting
         // values so every subsequent check sees the same dictionary it will parse.
         for (long, short) in [
@@ -1502,7 +1739,10 @@ fn preflight_content(
             if let (Ok(full), Ok(abbreviated)) = (dict.get(long), dict.get(short))
                 && resolve(Some(doc), full)?.1 != resolve(Some(doc), abbreviated)?.1
             {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Inline image dictionary has conflicting keys.",
+                ));
             }
         }
         let mask = dict
@@ -1510,8 +1750,14 @@ fn preflight_content(
             .or_else(|_| dict.get(b"IM"))
             .ok()
             .map(|v| {
-                resolve(Some(doc), v)
-                    .and_then(|(_, v)| v.as_bool().map_err(|_| EngineFailure::limit_exceeded()))
+                resolve(Some(doc), v).and_then(|(_, v)| {
+                    v.as_bool().map_err(|_| {
+                        EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image mask flag is not boolean.",
+                        )
+                    })
+                })
             })
             .transpose()?
             .unwrap_or(false);
@@ -1525,19 +1771,30 @@ fn preflight_content(
             })
             .transpose()?;
         if !matches!(bpc, Some(1 | 2 | 4 | 8 | 16)) && !(mask && bpc.is_none()) {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Inline image has an invalid bits per component value.",
+            ));
         }
         if mask && bpc.is_some_and(|v| v != 1) {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Inline image mask must use one bit per component.",
+            ));
         }
         if !mask {
             let colorspace = dict
                 .get(b"ColorSpace")
                 .or_else(|_| dict.get(b"CS"))
-                .map_err(|_| EngineFailure::limit_exceeded())?;
+                .map_err(|_| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Inline image is missing its color space.",
+                    )
+                })?;
             color_components(colorspace, Some(doc), 0)?;
         }
-        let decoded_len = preflight_image_dict(ctx, dict, Some(doc), None)?;
+        let decoded_len = preflight_image_dict(ctx, dict, None, None)?;
         budget.charge_image(ctx, dict, doc, decoded_len)?;
         budget.page_work = budget
             .page_work
@@ -1560,9 +1817,34 @@ fn preflight_content(
             data_cap =
                 data_cap.min(usize::try_from(u64::from(mb) * 1024 * 1024).unwrap_or(usize::MAX));
         }
-        // Allow a small amount of predictor overhead, but never inflate a tiny
-        // declared image up to the global multi-gigabyte content limit.
-        let final_cap = decoded_len.saturating_add(1024).min(data_cap);
+        let predictor_rows = dict
+            .get(b"DP")
+            .or_else(|_| dict.get(b"DecodeParms"))
+            .ok()
+            .into_iter()
+            .flat_map(|value| match value {
+                Object::Array(items) => items.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .any(|value| {
+                value
+                    .as_dict()
+                    .ok()
+                    .and_then(|d| d.get(b"Predictor").ok())
+                    .and_then(|v| v.as_i64().ok())
+                    .is_some_and(|n| n >= 10)
+            });
+        let height = dict
+            .get(b"Height")
+            .or_else(|_| dict.get(b"H"))
+            .ok()
+            .and_then(|v| v.as_i64().ok())
+            .and_then(|n| usize::try_from(n).ok())
+            .unwrap_or(0);
+        let final_cap = decoded_len
+            .saturating_add(1024)
+            .saturating_add(if predictor_rows { height } else { 0 })
+            .min(data_cap);
         let mut filters = Vec::new();
         if let Ok(value) = dict.get(b"F").or_else(|_| dict.get(b"Filter")) {
             let resolved = resolve(Some(doc), value)?.1;
@@ -1602,7 +1884,10 @@ fn preflight_content(
             )
             .any(|v| matches!(*v, b"CCITTFaxDecode" | b"DCTDecode"))
         {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Inline image codec cannot precede another filter.",
+            ));
         }
         let decoded_cap = if filters.len() > 1 || terminal.is_some() {
             data_cap
@@ -1691,7 +1976,12 @@ fn preflight_content(
                     output_len = output_len
                         .checked_add(count)
                         .filter(|n| *n <= decoded_cap)
-                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                        .ok_or_else(|| {
+                            EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "Decoded inline image data exceeds the limit.",
+                            )
+                        })?;
                     if decoder.total_in() > u64::try_from(data_cap).unwrap_or(u64::MAX) {
                         return Err(EngineFailure::limit_exceeded());
                     }
@@ -1755,7 +2045,10 @@ fn preflight_content(
             _ => return Err(EngineFailure::limit_exceeded()),
         }
         if cursor - data_start > data_cap {
-            return Err(EngineFailure::limit_exceeded());
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "Encoded inline image data exceeds the limit.",
+            ));
         }
         if !filters.is_empty() {
             let lossless_count = filters.len() - usize::from(terminal.is_some());
@@ -1821,7 +2114,10 @@ fn preflight_content(
                 if i64::from(width) > declared(b"Width", b"W")
                     || i64::from(height) > declared(b"Height", b"H")
                 {
-                    return Err(EngineFailure::limit_exceeded());
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Inline JPEG dimensions exceed the image dictionary.",
+                    ));
                 }
             }
         }
@@ -1860,7 +2156,12 @@ fn inline_run_length_len(
         output = output
             .checked_add(decoded)
             .filter(|n| *n <= cap)
-            .ok_or_else(EngineFailure::limit_exceeded)?;
+            .ok_or_else(|| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Decoded inline image data exceeds the limit.",
+                )
+            })?;
         pos = pos
             .checked_add(input)
             .filter(|n| *n <= data.len())
@@ -1914,7 +2215,12 @@ fn inline_lzw_len(
         output = output
             .checked_add(len)
             .filter(|n| *n <= cap)
-            .ok_or_else(EngineFailure::limit_exceeded)?;
+            .ok_or_else(|| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Decoded inline image data exceeds the limit.",
+                )
+            })?;
         if let Some(prev) = previous
             && next < 4096
         {
@@ -2188,11 +2494,7 @@ fn visit_xobject_target(
         if !expanded_forms.insert((target_id, parent_xobjects.digest)) {
             return Ok(());
         }
-        let mut form_xobjects = BTreeMap::new();
-        if let Ok(res_obj) = stream.dict.get(b"Resources") {
-            insert_xobjects_from_resources!(doc, res_obj, form_xobjects);
-        }
-        let form_xobjects = parent_xobjects.child(form_xobjects);
+        let form_xobjects = parent_xobjects.form(doc, stream.dict.get(b"Resources").ok());
         let form_content = preflight_stream_bytes(doc, stream, max_decompressed)?;
         collect_from_content_and_xobject_map(
             ctx,
@@ -2275,7 +2577,10 @@ fn charge_traversal(
     *page = page.saturating_add(1);
     *document = document.saturating_add(1);
     if *page > 100_000 || *document > 1_000_000 || *document > ctx.limits().max_blocks as usize {
-        return Err(EngineFailure::limit_exceeded());
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Page or document traversal work exceeds the limit.",
+        ));
     }
     Ok(())
 }
@@ -2382,6 +2687,9 @@ const fn is_pdf_delimiter_or_ws(b: u8) -> bool {
 }
 
 fn decode_pdf_name(raw: &[u8]) -> Vec<u8> {
+    // PDFium's content parser retains 255 bytes including the leading slash,
+    // before applying PDF name escape decoding.
+    let raw = &raw[..raw.len().min(254)];
     let mut out = Vec::with_capacity(raw.len());
     let mut i = 0;
     while i < raw.len() {
@@ -2414,14 +2722,12 @@ fn xobject_dimensions(pdf_doc: &PdfDoc, obj_id: PdfObjectId) -> Option<(u32, u32
     let w = stream
         .dict
         .get(b"Width")
-        .or_else(|_| stream.dict.get(b"W"))
         .ok()
         .and_then(|o| resolve(Some(doc), o).ok())
         .and_then(|(_, o)| o.as_i64().ok())?;
     let h = stream
         .dict
         .get(b"Height")
-        .or_else(|_| stream.dict.get(b"H"))
         .ok()
         .and_then(|o| resolve(Some(doc), o).ok())
         .and_then(|(_, o)| o.as_i64().ok())?;
@@ -2435,11 +2741,7 @@ fn xobject_filters(pdf_doc: &PdfDoc, obj_id: PdfObjectId) -> Vec<String> {
     let Ok(stream) = doc.get_object(obj_id).and_then(|o| o.as_stream()) else {
         return Vec::new();
     };
-    let Ok(filter_obj) = stream
-        .dict
-        .get(b"Filter")
-        .or_else(|_| stream.dict.get(b"F"))
-    else {
+    let Ok(filter_obj) = stream.dict.get(b"Filter") else {
         return Vec::new();
     };
     let resolved = if let Ok(id) = filter_obj.as_reference() {
@@ -2748,7 +3050,6 @@ fn decode_lopdf_raster_stream(
     let bpc = stream
         .dict
         .get(b"BitsPerComponent")
-        .or_else(|_| stream.dict.get(b"BPC"))
         .ok()
         .and_then(|o| o.as_i64().ok())
         .unwrap_or(8);
@@ -2837,11 +3138,7 @@ fn decode_lopdf_raster_stream(
 fn resolve_color_space_name(pdf_doc: &PdfDoc, obj_id: PdfObjectId) -> Option<String> {
     let doc = pdf_doc.inner();
     let stream = doc.get_object(obj_id).and_then(|o| o.as_stream()).ok()?;
-    let cs_obj = stream
-        .dict
-        .get(b"ColorSpace")
-        .or_else(|_| stream.dict.get(b"CS"))
-        .ok()?;
+    let cs_obj = stream.dict.get(b"ColorSpace").ok()?;
     let resolved = if let Ok(id) = cs_obj.as_reference() {
         doc.get_object(id).ok()?
     } else {
@@ -3148,7 +3445,9 @@ mod corpus_tests {
             if expected {
                 result.expect("single form is within budget");
             } else {
-                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+                let e = result.unwrap_err();
+                assert_eq!(e.code, ErrorCode::LimitExceeded);
+                assert_eq!(e.message, "Page form execution work exceeds the limit.");
             }
         }
     }
@@ -3195,7 +3494,9 @@ mod corpus_tests {
             if expected {
                 result.expect("one glyph is within budget");
             } else {
-                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+                let e = result.unwrap_err();
+                assert_eq!(e.code, ErrorCode::LimitExceeded);
+                assert_eq!(e.message, "Page glyph execution work exceeds the limit.");
             }
         }
     }
@@ -3321,7 +3622,7 @@ mod corpus_tests {
                 false,
             ),
         ];
-        for (content, accepted) in samples {
+        for (index, (content, accepted)) in samples.into_iter().enumerate() {
             let mut document_work = 0;
             let mut budget = PreflightBudget {
                 scanned: 0,
@@ -3345,7 +3646,16 @@ mod corpus_tests {
             if accepted {
                 result.expect("supported inline image");
             } else {
-                assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+                let e = result.unwrap_err();
+                assert_eq!(e.code, ErrorCode::LimitExceeded);
+                assert_eq!(
+                    e.message,
+                    if index == 6 {
+                        "Inline JPEG dimensions exceed the image dictionary."
+                    } else {
+                        "Inline image codec cannot precede another filter."
+                    }
+                );
             }
         }
     }
@@ -3381,7 +3691,12 @@ mod corpus_tests {
         let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
-        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+        assert_eq!(
+            preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work)
+                .unwrap_err()
+                .message,
+            "Image dimensions exceed the pixel limit."
+        );
     }
 
     #[test]
@@ -3415,7 +3730,89 @@ mod corpus_tests {
         let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
-        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+        assert_eq!(
+            preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work)
+                .unwrap_err()
+                .message,
+            "Image dimensions exceed the pixel limit."
+        );
+    }
+
+    #[test]
+    fn refuses_image_dictionary_parser_divergences() {
+        for (name, reason) in [
+            (
+                "inline-indirect-key.pdf",
+                "Inline image dictionaries cannot contain indirect references.",
+            ),
+            (
+                "xobject-abbreviated-keys.pdf",
+                "Image dictionary is missing a valid required number.",
+            ),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let work = dir.path().canonicalize().unwrap();
+            for sub in ["in", "out", "tmp"] {
+                fs::create_dir(work.join(sub)).unwrap();
+            }
+            let input = work.join("in/doc.pdf");
+            fs::copy(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../fixtures/pdf")
+                    .join(name),
+                &input,
+            )
+            .unwrap();
+            let paths = RunToolPaths {
+                workspace: work.clone(),
+                inputs: vec![input],
+                output_dir: work.join("out"),
+                work_dir: work.join("tmp"),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "dictionary",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            let page = *doc.inner().get_pages().values().next().unwrap();
+            let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}");
+            assert_eq!(err.message, reason, "{name}");
+        }
+    }
+
+    #[test]
+    fn content_names_truncate_before_escape_decoding() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/long-content-name.pdf");
+        let doc = lopdf::Document::load(path).unwrap();
+        let content = &doc.get_object((4, 0)).unwrap().as_stream().unwrap().content;
+        assert_eq!(
+            decode_pdf_name(&content[1..content.len() - 3]),
+            vec![b'A'; 254]
+        );
+        let escaped = [vec![b'A'; 253], b"#41tail".to_vec()].concat();
+        assert_eq!(decode_pdf_name(&escaped).len(), 254);
+    }
+
+    #[test]
+    fn form_resources_fall_back_to_page_category() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/form-page-fallback.pdf");
+        let doc = lopdf::Document::load(path).expect("fixture");
+        let page = XobjectScope::new(BTreeMap::from([(b"X".to_vec(), (7, 0))]));
+        let outer = doc.get_object((4, 0)).unwrap().as_stream().unwrap();
+        let parent = page.form(&doc, outer.dict.get(b"Resources").ok());
+        assert_eq!(parent.get(b"X"), Some(&(6, 0)));
+        let inner = doc.get_object((5, 0)).unwrap().as_stream().unwrap();
+        let child = parent.form(&doc, inner.dict.get(b"Resources").ok());
+        assert_eq!(child.get(b"X"), Some(&(7, 0)));
+        assert_eq!(parent.form(&doc, None).get(b"X"), Some(&(6, 0)));
+        assert!(parent.get(b"missing").is_none());
     }
 
     #[test]
@@ -3502,7 +3899,12 @@ mod corpus_tests {
         let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
-        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+        assert_eq!(
+            preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work)
+                .unwrap_err()
+                .message,
+            "Image dimensions exceed the pixel limit."
+        );
     }
 
     #[test]
@@ -3538,8 +3940,11 @@ mod corpus_tests {
             let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
             let page = *doc.inner().get_pages().values().next().expect("page");
             let mut work = 0;
-            assert!(
-                preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err(),
+            assert_eq!(
+                preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work)
+                    .unwrap_err()
+                    .message,
+                "Image codec cannot be inspected after another filter.",
                 "{name}"
             );
         }
@@ -3552,6 +3957,7 @@ mod corpus_tests {
             "inline-lzw-large.pdf",
             "inline-rl-small.pdf",
             "inline-rl-large.pdf",
+            "inline-png-predictor.pdf",
         ] {
             let dir = tempfile::tempdir().expect("tempdir");
             let work = dir.path().canonicalize().expect("workspace");
@@ -3583,11 +3989,17 @@ mod corpus_tests {
             let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
             let page = *doc.inner().get_pages().values().next().expect("page");
             let mut work = 0;
-            assert_eq!(
-                preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_ok(),
-                name.contains("small"),
-                "{name}"
-            );
+            let result = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work);
+            if name.contains("small") || name == "inline-png-predictor.pdf" {
+                result.expect("safe image");
+            } else {
+                let err = result.expect_err("expanded inline image");
+                assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}");
+                assert_eq!(
+                    err.message, "Decoded inline image data exceeds the limit.",
+                    "{name}"
+                );
+            }
         }
     }
 
@@ -3622,7 +4034,9 @@ mod corpus_tests {
                 &mut sink,
             );
             let result = (|| {
-                let (_, doc) = read_and_preflight_pdf(&ctx)?;
+                let (bytes, doc) = read_and_preflight_pdf(&ctx)?;
+                check_extraction_xref(&doc)?;
+                check_document_names(&ctx, &bytes, &doc)?;
                 let mut work = 0;
                 let max_depth = usize::from(ctx.limits().max_nesting_depth);
                 let max_bytes =
@@ -3634,40 +4048,105 @@ mod corpus_tests {
             })();
             if let Err(err) = result {
                 eprintln!("REFUSED {}: {}", path.display(), err.message);
-                refusals.push(path.clone());
+                refusals.push((path.clone(), err.message.into_owned()));
             }
         }
         eprintln!("CORPUS {} PDFs, {} refused", paths.len(), refusals.len());
-        let actual: HashSet<_> = refusals
+        let actual: BTreeMap<_, _> = refusals
             .iter()
-            .map(|path| {
-                path.file_name()
-                    .expect("fixture name")
-                    .to_string_lossy()
-                    .into_owned()
+            .map(|(path, reason)| {
+                (
+                    path.file_name().unwrap().to_string_lossy().into_owned(),
+                    reason.clone(),
+                )
             })
             .collect();
-        let expected: HashSet<_> = [
-            "indirect-image-preflight.pdf",
-            "indirect-content-filter.pdf",
-            "indirect-jbig2-filter.pdf",
-            "indirect-jpx-filter.pdf",
-            "inline-conflicting-keys.pdf",
-            "inline-flate-oversized.pdf",
-            "inline-image-bomb.pdf",
-            "inline-lzw-large.pdf",
-            "inline-rl-large.pdf",
-            "type3-inline-image.pdf",
+        let expected: BTreeMap<_, _> = [
+            (
+                "broken-xref.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            ),
+            (
+                "compressed-content-name.pdf",
+                "PDF name exceeds the safe token length.",
+            ),
+            (
+                "compressed-resource-name.pdf",
+                "PDF name exceeds the safe token length.",
+            ),
+            (
+                "escaped-resource-name.pdf",
+                "PDF name exceeds the safe token length.",
+            ),
+            (
+                "long-content-name.pdf",
+                "PDF name exceeds the safe token length.",
+            ),
+            (
+                "indirect-image-preflight.pdf",
+                "Image dimensions exceed the pixel limit.",
+            ),
+            (
+                "indirect-content-filter.pdf",
+                "Image dimensions exceed the pixel limit.",
+            ),
+            (
+                "indirect-jbig2-filter.pdf",
+                "Image codec cannot be inspected after another filter.",
+            ),
+            (
+                "indirect-jpx-filter.pdf",
+                "Image codec cannot be inspected after another filter.",
+            ),
+            (
+                "inline-conflicting-keys.pdf",
+                "Inline image dictionary has conflicting keys.",
+            ),
+            (
+                "inline-flate-oversized.pdf",
+                "Decoded inline image data exceeds the limit.",
+            ),
+            (
+                "inline-image-bomb.pdf",
+                "Image dimensions exceed the pixel limit.",
+            ),
+            (
+                "inline-indirect-key.pdf",
+                "Inline image dictionaries cannot contain indirect references.",
+            ),
+            (
+                "inline-lzw-large.pdf",
+                "Decoded inline image data exceeds the limit.",
+            ),
+            (
+                "inline-rl-large.pdf",
+                "Decoded inline image data exceeds the limit.",
+            ),
+            (
+                "repaired-xref-extraction.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            ),
+            (
+                "type3-inline-image.pdf",
+                "Image dimensions exceed the pixel limit.",
+            ),
+            (
+                "xobject-abbreviated-keys.pdf",
+                "Image dictionary is missing a valid required number.",
+            ),
         ]
         .into_iter()
-        .map(str::to_owned)
+        .map(|(name, reason)| (name.to_owned(), reason.to_owned()))
         .collect();
-        let legitimate_refusals = actual.difference(&expected).count();
+        let legitimate_refusals = actual
+            .keys()
+            .filter(|name| !expected.contains_key(*name))
+            .count();
         eprintln!("CORPUS legitimate refusals: {legitimate_refusals}");
         assert_eq!(legitimate_refusals, 0);
         assert_eq!(
             actual, expected,
-            "all adversarial fixtures should be refused"
+            "refusals must have their expected reasons"
         );
     }
 }

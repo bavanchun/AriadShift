@@ -1,4 +1,4 @@
-use saphyr_parser::{Event, EventReceiver, Parser};
+use saphyr_parser::{Event, Parser, ScalarStyle, Span, SpannedEventReceiver};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
@@ -34,11 +34,11 @@ enum ParseFailure {
     AnchorOrAlias,
 }
 
-struct EventCollector<'input>(Vec<Event<'input>>);
+struct EventCollector<'input>(Vec<(Event<'input>, Span)>);
 
-impl<'input> EventReceiver<'input> for EventCollector<'input> {
-    fn on_event(&mut self, event: Event<'input>) {
-        self.0.push(event);
+impl<'input> SpannedEventReceiver<'input> for EventCollector<'input> {
+    fn on_event(&mut self, event: Event<'input>, span: Span) {
+        self.0.push((event, span));
     }
 }
 
@@ -111,14 +111,32 @@ fn parse_yaml_events(yaml: &str) -> Result<YamlNode, ParseFailure> {
     let mut root = None;
     let mut document_count = 0;
 
-    for event in collector.0 {
+    let last_scalar = collector
+        .0
+        .iter()
+        .rposition(|(event, _)| matches!(event, Event::Scalar(..)));
+    for (index, (event, span)) in collector.0.into_iter().enumerate() {
         match event {
             Event::DocumentStart(_) => document_count += 1,
-            Event::Scalar(value, _, anchor, _) => {
+            Event::Scalar(value, style, anchor, _) => {
                 if anchor != 0 {
                     return Err(ParseFailure::AnchorOrAlias);
                 }
-                attach_node(&mut stack, &mut root, YamlNode::Scalar(value.into_owned()))?;
+                let mut value = value.into_owned();
+                // Preserve the previous parser's handling of an empty terminal block.
+                if Some(index) == last_scalar
+                    && value.is_empty()
+                    && matches!(style, ScalarStyle::Literal | ScalarStyle::Folded)
+                {
+                    let suffix: String = yaml.chars().skip(span.start.index()).collect();
+                    if let Some((header, rest)) = suffix.split_once('\n') {
+                        let indicator = header.split('#').next().unwrap_or(header);
+                        if !indicator.contains('-') && rest.trim().is_empty() {
+                            value.push('\n');
+                        }
+                    }
+                }
+                attach_node(&mut stack, &mut root, YamlNode::Scalar(value))?;
             }
             Event::SequenceStart(anchor, _) => {
                 if anchor != 0 {
@@ -220,6 +238,22 @@ fn invalid_output(message: &str) -> FrontMatterOutput {
 mod tests {
     use super::parse_front_matter;
     use crate::warning::WarningCode;
+
+    #[test]
+    fn preserves_empty_terminal_block_scalar_values() {
+        for yaml in ["title: |\n", "title: >\n", "title: |+\n", "title: |\n\n"] {
+            assert_eq!(
+                parse_front_matter(yaml, 1024).metadata.title.as_deref(),
+                Some("\n")
+            );
+        }
+        for yaml in ["title: |", "title: |-\n", "title: ''\n"] {
+            assert_eq!(
+                parse_front_matter(yaml, 1024).metadata.title.as_deref(),
+                Some("")
+            );
+        }
+    }
 
     #[test]
     fn maps_known_fields_and_normalizes_metadata() {

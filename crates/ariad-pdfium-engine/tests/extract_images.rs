@@ -20,6 +20,7 @@ use ariad_pdfium_engine::{
     output::ToolContext,
 };
 use image::{ColorType, ImageEncoder, ImageFormat, RgbImage, codecs::jpeg::JpegEncoder};
+use pdfium_render::prelude::*;
 use serde_json::Value;
 
 fn pdfium_dir() -> Option<PathBuf> {
@@ -377,6 +378,7 @@ fn refuses_image_exceeding_max_image_pixels_and_encrypted_pdfs() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("image exceeding MAX_IMAGE_PIXELS must be refused");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Image dimensions exceed the pixel limit.");
 
     // 2. Encrypted PDF is refused with message pointing at pdf.decrypt.
     let enc_objects: Vec<Vec<u8>> = vec![
@@ -439,6 +441,7 @@ fn inline_images_check_dimensions_before_decoding() {
         .expect_err("oversized inline images must be rejected before decoding");
     assert!(start.elapsed() < std::time::Duration::from_secs(5));
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Image dimensions exceed the pixel limit.");
 }
 
 #[test]
@@ -542,6 +545,7 @@ fn refuses_inline_image_data_over_asset_limit() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("inline data must be bounded");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Encoded inline image data exceeds the limit.");
 }
 
 #[test]
@@ -609,6 +613,7 @@ fn refuses_oversized_mask_before_opening_page() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("oversized mask must be refused");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Image dimensions exceed the pixel limit.");
     assert!(start.elapsed() < std::time::Duration::from_secs(5));
 }
 
@@ -641,6 +646,7 @@ fn refuses_jpx_header_larger_than_image_dictionary() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("oversized JPX header must be refused");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "JPX dimensions exceed the pixel limit.");
 }
 
 #[test]
@@ -674,6 +680,7 @@ fn refuses_inline_flate_expansion_over_asset_limit() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("expanded inline data must be bounded");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Decoded inline image data exceeds the limit.");
 }
 
 #[test]
@@ -698,6 +705,7 @@ fn refuses_uninspectable_page_content_entry() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("uninspectable content must be refused");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Page content entry is not a stream or array.");
 }
 
 #[test]
@@ -772,6 +780,7 @@ fn nested_form_fanout_exceeds_expansion_budget_before_page_load() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("nested expansion must be bounded");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Form expansion work exceeds the limit.");
     assert!(start.elapsed() < std::time::Duration::from_secs(5));
 }
 
@@ -799,6 +808,7 @@ fn repeated_large_form_exceeds_page_work_budget_before_load() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("page expansion must be bounded");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Page form execution work exceeds the limit.");
     assert!(start.elapsed() < std::time::Duration::from_secs(5));
 }
 
@@ -828,6 +838,10 @@ fn repeated_operators_obey_the_traversal_budget() {
     let err = extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
         .expect_err("operator budget must be enforced");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(
+        err.message,
+        "Page or document traversal work exceeds the limit."
+    );
 }
 
 #[test]
@@ -855,6 +869,7 @@ fn refuses_cumulative_inline_pixels_on_page() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("page total must be bounded");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Page inline image pixels exceed the limit.");
 }
 
 #[test]
@@ -884,6 +899,7 @@ fn refuses_cumulative_inline_pixels_in_forms() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("form images must count toward page total");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Page inline image pixels exceed the limit.");
 }
 
 #[test]
@@ -915,15 +931,25 @@ fn repeated_inline_form_charges_each_invocation() {
     let error = extract_images::extract_document_images(&mut ctx, &params)
         .expect_err("repeated inline images exceed the page pixel budget");
     assert_eq!(error.code, ErrorCode::LimitExceeded);
+    assert_eq!(error.message, "Page inline image totals exceed the limit.");
 }
 
 #[test]
 fn refuses_inline_images_with_missing_or_invalid_dictionary_values() {
     let lib_dir = require_pdfium!();
-    for content in [
-        b"BI /W 1 /H 1 /BPC 8 /F /AHx ID 00> EI".as_slice(),
-        b"BI /W 1 /H 1 /BPC 3 /CS /G /F /AHx ID 00> EI".as_slice(),
-        b"BI /W 1 /H 1 /BPC 8 /CS /G /IM /bad /F /AHx ID 00> EI".as_slice(),
+    for (content, reason) in [
+        (
+            b"BI /W 1 /H 1 /BPC 8 /F /AHx ID 00> EI".as_slice(),
+            "Inline image is missing its color space.",
+        ),
+        (
+            b"BI /W 1 /H 1 /BPC 3 /CS /G /F /AHx ID 00> EI".as_slice(),
+            "Inline image has an invalid bits per component value.",
+        ),
+        (
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /IM /bad /F /AHx ID 00> EI".as_slice(),
+            "Inline image mask flag is not boolean.",
+        ),
     ] {
         let pdf = assemble_pdf(&[
             b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
@@ -944,6 +970,7 @@ fn refuses_inline_images_with_missing_or_invalid_dictionary_values() {
         let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
             .expect_err("invalid inline image must be refused");
         assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, reason);
     }
 }
 
@@ -977,9 +1004,15 @@ fn inherited_form_resources_are_checked_before_page_load() {
 #[test]
 fn refuses_ambiguous_inline_keys_and_excess_flate_output() {
     let lib_dir = require_pdfium!();
-    for fixture in [
-        "fixtures/pdf/inline-conflicting-keys.pdf",
-        "fixtures/pdf/inline-flate-oversized.pdf",
+    for (fixture, reason) in [
+        (
+            "fixtures/pdf/inline-conflicting-keys.pdf",
+            "Inline image dictionary has conflicting keys.",
+        ),
+        (
+            "fixtures/pdf/inline-flate-oversized.pdf",
+            "Decoded inline image data exceeds the limit.",
+        ),
     ] {
         let ws = TestWorkspace::from_fixture(fixture);
         let mut sink = Vec::new();
@@ -994,6 +1027,7 @@ fn refuses_ambiguous_inline_keys_and_excess_flate_output() {
         let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
             .expect_err("unsafe inline image must be refused");
         assert_eq!(err.code, ErrorCode::LimitExceeded, "{fixture}");
+        assert_eq!(err.message, reason, "{fixture}");
     }
 }
 
@@ -1013,6 +1047,128 @@ fn refuses_oversized_inline_image_in_indirect_subtype_form() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("indirect form subtype must be preflighted");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Image dimensions exceed the pixel limit.");
+}
+
+#[test]
+fn nested_form_uses_page_resources_when_category_is_missing() {
+    fn image_data(iter: PdfPageObjectsIterator<'_>, out: &mut Vec<Vec<u8>>) {
+        for object in iter {
+            match object {
+                PdfPageObject::Image(image) => out.push(image.get_raw_image_data().unwrap()),
+                PdfPageObject::XObjectForm(form) => image_data(form.iter(), out),
+                _ => {}
+            }
+        }
+    }
+    let lib_dir = require_pdfium!();
+    let bytes = fs::read(repo_root().join("fixtures/pdf/form-page-fallback.pdf")).unwrap();
+    let ws = TestWorkspace::from_bytes("form-page-fallback.pdf", &bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "form-fallback",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let pdfium = ctx.pdfium().unwrap();
+    let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).unwrap();
+    let page = doc.pages().get(0).unwrap();
+    let mut images = Vec::new();
+    image_data(page.objects().iter(), &mut images);
+    assert_eq!(images, vec![b"B".to_vec()]);
+    let params = ExtractImagesParams {
+        min_px: 1,
+        ..ExtractImagesParams::default()
+    };
+    let extracted = extract_images::extract_document_images(&mut ctx, &params).unwrap();
+    assert_eq!(extracted.images.first().unwrap().object_id, Some((7, 0)));
+}
+
+#[test]
+fn accepts_name_like_bytes_inside_image_stream() {
+    let lib_dir = require_pdfium!();
+    let ws = TestWorkspace::from_fixture("fixtures/pdf/name-like-image-bytes.pdf");
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "image-bytes",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    let params = ExtractImagesParams {
+        min_px: 1,
+        ..ExtractImagesParams::default()
+    };
+    let result = extract_images::extract_document_images(&mut ctx, &params)
+        .expect("image bytes are not names");
+    assert_eq!(result.images.len(), 1);
+}
+
+#[test]
+fn refuses_truncated_xobject_names_before_pdfium_page_load() {
+    let lib_dir = require_pdfium!();
+    for fixture in [
+        "long-content-name.pdf",
+        "escaped-resource-name.pdf",
+        "compressed-resource-name.pdf",
+        "compressed-content-name.pdf",
+    ] {
+        let path = repo_root().join("fixtures/pdf").join(fixture);
+        let bytes = fs::read(path).unwrap();
+        let ws = TestWorkspace::from_bytes(fixture, &bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "long-name",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        let pdfium = ctx.pdfium().expect("PDFium");
+        let document = pdfium
+            .load_pdf_from_byte_slice(&bytes, None)
+            .expect("PDFium loads document");
+        let page = document.pages().get(0).expect("PDFium parses page");
+        assert_eq!(
+            page.objects().len(),
+            if fixture == "compressed-resource-name.pdf" {
+                0
+            } else {
+                1
+            },
+            "PDFium parses {fixture}"
+        );
+        let error = extract_images::run(&mut ctx, ExtractImagesParams::default())
+            .expect_err("ambiguous name is rejected");
+        assert_eq!(error.code, ErrorCode::LimitExceeded);
+        assert_eq!(error.message, "PDF name exceeds the safe token length.");
+    }
+}
+
+#[test]
+fn refuses_repaired_cross_reference_before_loading_pdfium() {
+    let ws = TestWorkspace::from_fixture("fixtures/pdf/repaired-xref-extraction.pdf");
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "repaired-xref",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    );
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("repaired cross-reference must be refused");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(
+        err.message,
+        "Image extraction cannot inspect a PDF with a repaired cross-reference table."
+    );
 }
 
 #[test]
@@ -1031,6 +1187,7 @@ fn refuses_inconsistent_page_tree_before_page_load() {
     let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
         .expect_err("inconsistent page tree must be rejected");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(err.message, "Page tree node with Kids is not a Pages node.");
 }
 
 #[test]
