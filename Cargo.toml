@@ -53,7 +53,7 @@ process-wrap = { version = "10.0.1", features = ["tokio1", "process-group", "job
 quick-xml = "0.42.0"
 rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 reqwest = { version = "0.13.5", default-features = false }
-rmcp = { version = "3.5.1", default-features = false }
+rmcp = { version = "3.8.0", default-features = false }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8.5"
 ruzstd = "0.9.1"
@@ -71,7 +71,7 @@ sysinfo = { version = "0.39.6", default-features = false }
 ts-rs = { version = "12.0.1", default-features = false, features = ["serde-compat"] }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
-tokio = { version = "~1.53" }
+tokio = { version = "~1.54" }
 tokio-stream = { version = "0.1.19", default-features = false }
 tokio-util = "0.7.19"
 toml = "1.1.6"
@@ -90,7 +90,7 @@ utoipa-axum = "0.3.0"
 uuid = "1"
 wasm-bindgen = "0.2.129"
 windows-sys = "0.61.2"
-zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
+zip = { version = "9.2.1", default-features = false, features = ["deflate"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
