@@ -3,7 +3,13 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::tools::page_range::PageRange;
+use crate::tools::{
+    page_range::PageRange,
+    params::{
+        ParamsError, check_range,
+        render::{MAX_DPI, MIN_DPI},
+    },
+};
 
 /// Splitting strategy for `pdf.split`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
@@ -18,9 +24,20 @@ pub enum SplitMode {
     Bookmarks,
     /// Split so each output chunk stays at or below `max_bytes`.
     Size,
-    /// Split on content-empty separator pages (pages with no drawing operators or only whitespace).
+    /// Split on blank separator pages.
     #[serde(alias = "blank_separator")]
     BlankSeparator,
+}
+
+/// Blank-separator detection strategy for `pdf.split` when `mode == "blank-separator"`.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum SplitDetectMode {
+    /// In-process structural content-stream inspection (`ariad-pdf`).
+    #[default]
+    Content,
+    /// Out-of-process grayscale raster white-ratio detection (`pdfium` engine).
+    Pixel,
 }
 
 /// Parameters for `pdf.split`.
@@ -65,6 +82,43 @@ pub struct SplitParams {
     )]
     #[schemars(range(min = 0.0, max = 1.0))]
     pub blank_threshold: Option<f32>,
+    /// Blank-separator detection strategy (`"content"` in-process or `"pixel"` via `pdfium`).
+    #[serde(default)]
+    pub detect: SplitDetectMode,
+    /// Optional white-pixel ratio threshold in `(0.0, 1.0]` when `detect == "pixel"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 0.0, max = 1.0))]
+    pub threshold: Option<f64>,
+    /// Optional raster DPI (`36..=600`) when `detect == "pixel"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = MIN_DPI, max = MAX_DPI))]
+    pub dpi: Option<u32>,
+}
+
+impl SplitParams {
+    /// Validates cross-field and numeric range invariants on `SplitParams`.
+    pub fn validate(&self) -> Result<(), ParamsError> {
+        if self.detect == SplitDetectMode::Pixel && self.mode != SplitMode::BlankSeparator {
+            return Err(ParamsError::new(
+                "detect",
+                "detect = \"pixel\" is only supported with mode = \"blank-separator\"",
+            ));
+        }
+        if let Some(bt) = self.blank_threshold
+            && (!bt.is_finite() || !(0.0..=1.0).contains(&bt))
+        {
+            return Err(ParamsError::new("blank_threshold", "must be in [0.0, 1.0]"));
+        }
+        if let Some(t) = self.threshold
+            && (!t.is_finite() || t <= 0.0 || t > 1.0)
+        {
+            return Err(ParamsError::new("threshold", "must be in (0.0, 1.0]"));
+        }
+        if let Some(dpi) = self.dpi {
+            check_range("dpi", dpi, MIN_DPI, MAX_DPI)?;
+        }
+        Ok(())
+    }
 }
 
 fn deserialize_optional_nonzero_u32<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>

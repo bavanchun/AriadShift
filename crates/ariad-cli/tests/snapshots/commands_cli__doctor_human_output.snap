@@ -1,5 +1,6 @@
 ---
 source: crates/ariad-cli/tests/commands_cli.rs
+assertion_line: 714
 expression: normalize_doctor_human_stdout(&output)
 ---
 ✓ Pandoc [VERSION] found in >= 3.12, < 4 at [PANDOC_PATH]
@@ -13,3 +14,5 @@ expression: normalize_doctor_human_stdout(&output)
 ✓ engine pack signing keys: D87B0E33F55EA02B
 ✗ docling engine is not installed; OCR, layout extraction and image routes need it
   hint: run 'ashift engines install docling', or set ASHIFT_DOCLING_ENGINE to a development engine
+✗ pdfium engine is not installed; PDF rendering, thumbnails and image tools need it
+  hint: run 'ashift engines install pdfium' to install the pdfium engine pack

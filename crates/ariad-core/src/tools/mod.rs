@@ -27,7 +27,7 @@ pub use recipe::{
 pub use registry::{
     InputArity, RegistryError, TOOL_ID_PATTERN, TOOLS_SCHEMA_ID, Tier, ToolDescriptor, ToolGroup,
     ToolGroupParseError, ToolId, ToolIdError, ToolRuntime, ToolSpec, all, by_group, find,
-    generated_tools_schema, validate_specs,
+    generated_tools_schema, normalize_tool_format, validate_specs,
 };
 pub use secret::{
     KNOWN_SECRET_FIELD_NAMES, SECRET_HANDLE_PREFIX, SECRET_SCHEMA_EXTENSION, SecretRef,

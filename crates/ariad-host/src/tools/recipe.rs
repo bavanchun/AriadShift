@@ -613,6 +613,7 @@ fn map_convert_error(err: ConvertError) -> ToolError {
         ConvertError::OutputIo => ToolError::OutputIo("could not write output file".to_owned()),
         ConvertError::UnsupportedIrVersion
         | ConvertError::InvalidCapabilities(_)
+        | ConvertError::FailedWithMemoryHint { .. }
         | ConvertError::Failed => ToolError::EngineFailure(err.to_string()),
     }
 }

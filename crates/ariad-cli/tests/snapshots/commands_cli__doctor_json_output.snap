@@ -1,5 +1,6 @@
 ---
 source: crates/ariad-cli/tests/commands_cli.rs
+assertion_line: 730
 expression: normalize_doctor_json_stdout(&output)
 ---
 {
@@ -66,6 +67,13 @@ expression: normalize_doctor_json_stdout(&output)
       "required": false,
       "message": "docling engine is not installed; OCR, layout extraction and image routes need it",
       "hint": "run 'ashift engines install docling', or set ASHIFT_DOCLING_ENGINE to a development engine"
+    },
+    {
+      "id": "pdfium_engine",
+      "ok": false,
+      "required": false,
+      "message": "pdfium engine is not installed; PDF rendering, thumbnails and image tools need it",
+      "hint": "run 'ashift engines install pdfium' to install the pdfium engine pack"
     }
   ],
   "stale_workspaces": 0

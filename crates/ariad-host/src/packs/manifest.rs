@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::PackError;
+use crate::engines::{self, Protocol};
 
 /// Manifest schema identifier.
 pub const MANIFEST_SCHEMA: &str = "ariad-pack/1";
@@ -70,6 +71,11 @@ pub struct Manifest {
     pub license: String,
     /// SemVer requirement on the `ashift` version that may install and run this pack.
     pub requires_ashift: String,
+    /// Wire protocol the pack's engine speaks (`"ariad-engine/1"` or `"ariad-engine/2"`).
+    /// Absent means `"ariad-engine/1"`. Install and resolve refuse a pack whose value differs
+    /// from the protocol the host registers for the engine of the same name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_protocol: Option<String>,
     /// Licence and notice files inside the install root, as relative paths.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<String>,
@@ -86,6 +92,11 @@ pub struct Target {
     /// Engine argv. The first element is a path relative to the install root; later elements
     /// may contain `{root}`.
     pub entrypoint: Vec<String>,
+    /// Executable paths inside archive components, relative to the install root.
+    /// When absent or empty, resolve allows only `entrypoint[0]` and `unpack = "file"`
+    /// components with `executable = true`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub executables: Vec<String>,
     /// Allow-listed engine environment variables; values may contain `{root}`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
@@ -236,6 +247,7 @@ impl Manifest {
                 self.requires_ashift
             )
         })?;
+        self.check_engine_protocol()?;
         for notice in &self.notices {
             relative_path(notice).map_err(|reason| format!("notice '{notice}': {reason}"))?;
         }
@@ -252,6 +264,43 @@ impl Manifest {
                 .map_err(|reason| format!("target '{}': {reason}", target.triple))?;
         }
         Ok(())
+    }
+
+    /// The protocol the pack declares; an absent `engine_protocol` means `ariad-engine/1`.
+    fn declared_protocol(&self) -> Result<Protocol, String> {
+        match self.engine_protocol.as_deref() {
+            None => Ok(Protocol::V1),
+            Some(value) if value == Protocol::V1.as_str() => Ok(Protocol::V1),
+            Some(value) if value == Protocol::V2.as_str() => Ok(Protocol::V2),
+            Some(value) => Err(format!(
+                "engine_protocol '{value}' is not supported; use '{}' or '{}'",
+                Protocol::V1.as_str(),
+                Protocol::V2.as_str()
+            )),
+        }
+    }
+
+    /// Refuses a pack whose declared protocol differs from the one the host registers for the
+    /// engine it provides (`pack name == engine id`). Packs for unregistered names are not
+    /// checked.
+    fn check_engine_protocol(&self) -> Result<(), String> {
+        let declared = self.declared_protocol()?;
+        match engines::pack_spec(&self.name) {
+            Some(spec) if spec.protocol != declared => Err(format!(
+                "engine_protocol is '{}'{} but the '{}' engine speaks '{}'; rebuild the pack \
+                 with engine_protocol = \"{}\"",
+                declared.as_str(),
+                if self.engine_protocol.is_none() {
+                    " (the default when the field is absent)"
+                } else {
+                    ""
+                },
+                spec.id,
+                spec.protocol.as_str(),
+                spec.protocol.as_str()
+            )),
+            _ => Ok(()),
+        }
     }
 
     /// Returns the build for the first matching triple in `preferred`.
@@ -316,6 +365,9 @@ impl Target {
             return Err("entrypoint must name a program".to_owned());
         };
         relative_path(program).map_err(|reason| format!("entrypoint '{program}': {reason}"))?;
+        for exec in &self.executables {
+            relative_path(exec).map_err(|reason| format!("executable '{exec}': {reason}"))?;
+        }
         for name in self.env.keys() {
             if !ALLOWED_ENV.contains(&name.as_str()) {
                 return Err(format!(
@@ -561,6 +613,84 @@ entries = 4
         let newer = SAMPLE.replace("ariad-pack/1", "ariad-pack/2");
         let error = Manifest::parse(&newer).unwrap_err().to_string();
         assert!(error.contains("ariad-pack/2"), "{error}");
+    }
+
+    fn named(name: &str, engine_protocol: Option<&str>) -> String {
+        let text = SAMPLE.replace("name = \"sample\"", &format!("name = \"{name}\""));
+        match engine_protocol {
+            Some(value) => text.replace(
+                "requires_ashift = \">=0.1.0\"",
+                &format!("requires_ashift = \">=0.1.0\"\nengine_protocol = \"{value}\""),
+            ),
+            None => text,
+        }
+    }
+
+    #[test]
+    fn engine_protocol_is_optional_and_round_trips() {
+        let absent = Manifest::parse(SAMPLE).expect("manifest without the field");
+        assert_eq!(absent.engine_protocol, None);
+        assert!(!absent.to_toml().unwrap().contains("engine_protocol"));
+        for value in ["ariad-engine/1", "ariad-engine/2"] {
+            let manifest = Manifest::parse(&named("sample", Some(value))).expect(value);
+            assert_eq!(manifest.engine_protocol.as_deref(), Some(value));
+            let text = manifest.to_toml().expect("serialize");
+            assert!(
+                text.contains(&format!("engine_protocol = \"{value}\"")),
+                "{text}"
+            );
+            assert_eq!(Manifest::parse(&text).expect("reparse"), manifest);
+        }
+    }
+
+    #[test]
+    fn unknown_engine_protocol_values_are_refused() {
+        for value in [
+            "ariad-engine/3",
+            "ariad-engine/0",
+            "",
+            "2",
+            "ARIAD-ENGINE/2",
+        ] {
+            let error = Manifest::parse(&named("sample", Some(value)))
+                .expect_err(value)
+                .to_string();
+            assert!(error.contains("engine_protocol"), "{value}: {error}");
+        }
+    }
+
+    #[test]
+    fn engine_protocol_must_match_the_registered_engine() {
+        // pdfium is registered as ariad-engine/2: the field is mandatory and must say so.
+        assert!(Manifest::parse(&named("pdfium", Some("ariad-engine/2"))).is_ok());
+        for declared in [None, Some("ariad-engine/1")] {
+            let error = Manifest::parse(&named("pdfium", declared))
+                .expect_err("a v2 engine needs engine_protocol = ariad-engine/2")
+                .to_string();
+            assert!(
+                error.contains("'pdfium' engine speaks 'ariad-engine/2'"),
+                "{error}"
+            );
+        }
+        // docling is registered as ariad-engine/1: existing manifests without the field stay valid.
+        assert!(Manifest::parse(&named("docling", None)).is_ok());
+        assert!(Manifest::parse(&named("docling", Some("ariad-engine/1"))).is_ok());
+        let error = Manifest::parse(&named("docling", Some("ariad-engine/2")))
+            .expect_err("a v1 engine must not claim v2")
+            .to_string();
+        assert!(
+            error.contains("'docling' engine speaks 'ariad-engine/1'"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn pack_libraries_cannot_widen_the_engine_environment() {
+        for name in ["LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "PDFIUM_PATH"] {
+            let text = named("pdfium", Some("ariad-engine/2")).replace("HF_HUB_OFFLINE", name);
+            let error = Manifest::parse(&text).expect_err(name).to_string();
+            assert!(error.contains(name), "{error}");
+        }
     }
 
     #[test]

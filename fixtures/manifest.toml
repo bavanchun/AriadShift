@@ -4026,3 +4026,309 @@ source = "Hand-authored minimal PDF seed with repeated trailer keywords before s
 license = "Apache-2.0"
 license_basis = "Project-authored synthetic PDF operators and sample text; no external document or font program is embedded."
 attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdfium-engine-request-describe-jsonl"
+target = "pdfium_engine_request"
+path = "fuzz/seeds/pdfium_engine_request/describe.jsonl"
+sha256 = "0bbb8e8180f5571ee61f1648e818a8b78de8aa8103016d8b060135efb6e4a4ed"
+source = "Hand-authored ariad-engine/2 describe request JSONL seed."
+license = "Apache-2.0"
+license_basis = "Original JSONL test vector authored for AriadShift."
+attribution = "AriadShift contributors"
+
+[[fuzz_seed]]
+id = "fuzz-pdfium-engine-request-run-tool-render-jsonl"
+target = "pdfium_engine_request"
+path = "fuzz/seeds/pdfium_engine_request/run-tool-render.jsonl"
+sha256 = "9085341f9d6fd99898a7ccaa2e4f32dccc643f7c62328136ed81e458111ecd6b"
+source = "Hand-authored ariad-engine/2 pdf.to_image run_tool request JSONL seed."
+license = "Apache-2.0"
+license_basis = "Original JSONL test vector authored for AriadShift."
+attribution = "AriadShift contributors"
+
+
+[[fixture]]
+id = "inline-image-bomb-pdf"
+path = "fixtures/pdf/inline-image-bomb.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Oversized inline image declarations"
+origin = "generated"
+generated_by = "fixtures/gen/inline_image_bomb.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5686f196d1bfe604fdac9168800c03408537730d48210883030e4cc9385820ce"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-conflicting-keys-pdf"
+path = "fixtures/pdf/inline-conflicting-keys.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline image with conflicting abbreviated keys"
+origin = "generated"
+generated_by = "fixtures/gen/inline_preflight_cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e2cd1fb90ccddf022c91e1cfe3a59a21eeb73b6f4f19a503c33d55df305c42d5"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-flate-oversized-pdf"
+path = "fixtures/pdf/inline-flate-oversized.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline image with oversized Flate output"
+origin = "generated"
+generated_by = "fixtures/gen/inline_preflight_cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "b3ff797ba01c08497ee38823735cf1f08250a1c9e6db03dccff24c3de33d68ba"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "indirect-image-preflight-pdf"
+path = "fixtures/pdf/indirect-image-preflight.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Form with indirect subtype and oversized inline image"
+origin = "generated"
+generated_by = "fixtures/gen/indirect_image_preflight.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7754f715394011b37ec8e664694dc7f421d9d8df248f680cfb7f5d3a185d31c0"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "indirect-jpx-filter-pdf"
+path = "fixtures/pdf/indirect-jpx-filter.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image with indirect chained filter"
+origin = "generated"
+generated_by = "fixtures/gen/image_filter_preflight.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "489151c322216e50daef7e193f3346b77905a99ddde9787c4b48131a761d31f9"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "indirect-jbig2-filter-pdf"
+path = "fixtures/pdf/indirect-jbig2-filter.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Image with indirect chained filter"
+origin = "generated"
+generated_by = "fixtures/gen/image_filter_preflight.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "8bc850ef0e22051b1196c7d43f48670fd7a8dc045118bbc9f2f8708d9cd3eb0d"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "ambiguous-page-tree-pdf"
+path = "fixtures/pdf/ambiguous-page-tree.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inconsistent page tree classifications"
+origin = "generated"
+generated_by = "fixtures/gen/ambiguous_page_tree.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "3385cdb8b594bb01f67b3e8c54a6a2c080dd5be261094821cff97e2f9e3a9b7a"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-inline-image-pdf"
+path = "fixtures/pdf/type3-inline-image.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 glyph with oversized inline image"
+origin = "generated"
+generated_by = "fixtures/gen/type3_inline_image.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "b9398ea6ae2fb69493e5df29012b45f8f802f34feb92ff389d8018bf105531d0"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-lzw-small-pdf"
+path = "fixtures/pdf/inline-lzw-small.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline lossless filter preflight"
+origin = "generated"
+generated_by = "fixtures/gen/inline_lossless_filters.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5547c08bb342749018fa681bb5c1626736a6f9ae26c9efa8276c0d231a69d989"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-lzw-large-pdf"
+path = "fixtures/pdf/inline-lzw-large.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline lossless filter preflight"
+origin = "generated"
+generated_by = "fixtures/gen/inline_lossless_filters.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "45b891fe3d0cd6b93382b36baec3a50dcd9b5447673a16d1d0f850de9a769434"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-rl-small-pdf"
+path = "fixtures/pdf/inline-rl-small.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline lossless filter preflight"
+origin = "generated"
+generated_by = "fixtures/gen/inline_lossless_filters.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "3cd8e4886231927ed245447bfc154cef3a5d83f2da1762edf6580ebe932fe66b"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-rl-large-pdf"
+path = "fixtures/pdf/inline-rl-large.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Inline lossless filter preflight"
+origin = "generated"
+generated_by = "fixtures/gen/inline_lossless_filters.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "afeb4d5699c6081864660c291e388699484cbfa05c9cebb9b96ea86bc1d0115e"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "form-resource-scopes-pdf"
+path = "fixtures/pdf/form-resource-scopes.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Shared form with distinct inherited resources"
+origin = "generated"
+generated_by = "fixtures/gen/form_resource_scopes.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "924285c4e27ff379f7f2f50a3fae122684dcc155b004a4dc973927a9f8e2dab9"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "indirect-content-filter-pdf"
+path = "fixtures/pdf/indirect-content-filter.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Compressed page with indirect content filter"
+origin = "generated"
+generated_by = "fixtures/gen/indirect_content_filter.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e03b408215cab8906366f946f653d9d5553ff8b4f0efcc8541dc9d3ce5377808"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-bitmap-font-pdf"
+path = "fixtures/pdf/type3-bitmap-font.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 bitmap font with CCITT inline image mask"
+origin = "generated"
+generated_by = "fixtures/gen/type3-bitmap-font.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7d1d1bd7035c8a81f4de760b4c1024da0a06c0952798ea016bae04fd9f83407f"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

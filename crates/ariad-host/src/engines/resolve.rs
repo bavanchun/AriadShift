@@ -184,7 +184,7 @@ pub fn resolve_pack_in(
             return Err(map_pack_error(engine_id, error));
         }
     };
-    Ok(command_from_installed_pack(engine_id, pack, None).0)
+    Ok(command_from_installed_pack(engine_id, pack, None)?.0)
 }
 
 /// Resolves a registered pack-backed engine and returns both its [`EngineCommand`] and any
@@ -234,18 +234,17 @@ pub fn resolve_pack_with_options(
             return Err(map_pack_error(engine_id, error));
         }
     };
-    Ok(command_from_installed_pack(
-        engine_id,
-        pack,
-        launcher_override,
-    ))
+    command_from_installed_pack(engine_id, pack, launcher_override)
 }
 
 fn command_from_installed_pack(
     engine_id: &str,
     pack: packs::InstalledPack,
     launcher_override: Option<&Path>,
-) -> (EngineCommand, BTreeMap<String, Value>) {
+) -> Result<(EngineCommand, BTreeMap<String, Value>), ResolveError> {
+    if super::pack_spec(engine_id).is_some_and(|spec| spec.sandbox_required) {
+        confine_entrypoint(engine_id, &pack)?;
+    }
     let launcher = launcher_override
         .map(Path::to_path_buf)
         .or_else(default_launcher);
@@ -259,7 +258,26 @@ fn command_from_installed_pack(
         launcher,
         sandbox: None,
     };
-    (command, options)
+    Ok((command, options))
+}
+
+/// Refuses a sandboxed pack whose entrypoint, after following links, leaves the pack root. The
+/// sandbox grants the engine its install root only, so a program elsewhere would run outside
+/// the files the signed manifest vouches for.
+fn confine_entrypoint(engine_id: &str, pack: &packs::InstalledPack) -> Result<(), ResolveError> {
+    let refuse = |reason: &str| ResolveError::VerificationFailed {
+        engine: engine_id.to_owned(),
+        reason: reason.to_owned(),
+        hint: reinstall_hint(engine_id),
+    };
+    let root = std::fs::canonicalize(&pack.root).map_err(|_| refuse("pack root is unreadable"))?;
+    let program = std::fs::canonicalize(&pack.program)
+        .map_err(|_| refuse("entrypoint is missing from the pack"))?;
+    if program.starts_with(&root) {
+        Ok(())
+    } else {
+        Err(refuse("entrypoint resolves outside the pack root"))
+    }
 }
 
 fn map_pack_error(engine_id: &str, error: PackError) -> ResolveError {

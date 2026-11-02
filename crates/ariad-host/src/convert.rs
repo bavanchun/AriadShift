@@ -259,6 +259,10 @@ pub enum ConvertError {
     Interrupted,
     UnsupportedIrVersion,
     InvalidCapabilities(String),
+    /// A generic engine failure while a memory ceiling was active.
+    FailedWithMemoryHint {
+        limit_mb: u32,
+    },
     Failed,
 }
 
@@ -306,6 +310,10 @@ impl std::fmt::Display for ConvertError {
             Self::Interrupted => write!(f, "conversion was interrupted"),
             Self::UnsupportedIrVersion => write!(f, "unsupported IR version"),
             Self::InvalidCapabilities(err) => write!(f, "invalid capabilities: {err}"),
+            Self::FailedWithMemoryHint { limit_mb } => write!(
+                f,
+                "conversion failed. The engine may have hit its memory limit ({limit_mb} MiB)."
+            ),
             Self::Failed => write!(f, "conversion failed"),
         }
     }
@@ -346,6 +354,7 @@ impl ConvertError {
             | Self::OutputIo
             | Self::UnsupportedIrVersion
             | Self::InvalidCapabilities(_)
+            | Self::FailedWithMemoryHint { .. }
             | Self::Failed => 1,
         }
     }
@@ -368,7 +377,7 @@ impl ConvertError {
             Self::OutputIo => "output_io",
             Self::UnsupportedIrVersion => "unsupported_ir_version",
             Self::InvalidCapabilities(_) => "invalid_capabilities",
-            Self::Failed => "failed",
+            Self::Failed | Self::FailedWithMemoryHint { .. } => "failed",
         }
     }
 
@@ -1872,6 +1881,10 @@ fn map_engine_error(engine: &str, error: RunError) -> ConvertError {
             code: ErrorCode::LimitExceeded,
             ..
         } => ConvertError::LimitExceeded,
+        RunError::Crash {
+            memory_limit_mb: Some(limit_mb),
+            ..
+        } => ConvertError::FailedWithMemoryHint { limit_mb },
         _ => ConvertError::Failed,
     }
 }
@@ -1943,6 +1956,25 @@ mod tests {
         limits::Limits,
         warning::{Warning, WarningCode},
     };
+
+    #[test]
+    fn generic_engine_failure_keeps_conversion_code_with_memory_hint() {
+        let error = super::map_engine_error(
+            "pandoc",
+            crate::runner::RunError::Crash {
+                exit: Some(9),
+                stderr_tail: String::new(),
+                memory_limit_mb: Some(256),
+            },
+        );
+        assert_eq!(error.code(), "failed");
+        assert_eq!(error.exit_code(), 1);
+        assert!(
+            error
+                .to_string()
+                .contains("may have hit its memory limit (256 MiB)")
+        );
+    }
 
     #[cfg(unix)]
     #[test]

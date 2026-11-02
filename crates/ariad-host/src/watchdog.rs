@@ -8,6 +8,9 @@
 use std::time::Duration;
 
 /// How often the watchdog samples the engine process tree.
+#[cfg(target_os = "macos")]
+pub const SAMPLE_INTERVAL: Duration = Duration::from_millis(100);
+#[cfg(not(target_os = "macos"))]
 pub const SAMPLE_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Samples the resident memory of one engine process tree against a limit.

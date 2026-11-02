@@ -177,15 +177,26 @@ pub fn engines(
     Ok(rows)
 }
 
-/// Pack name always listed, installed or not.
+/// Docling pack: its Tesseract is optional and it has a development override.
 const LISTED_PACK: &str = "docling";
+
+/// Pack names always listed, installed or not.
+const LISTED_PACKS: &[&str] = &[LISTED_PACK, engines::PDFIUM.id];
 
 /// License shown for a pack row that has no registry edge and no running engine to ask.
 fn placeholder_license(name: &str) -> String {
     if name == LISTED_PACK {
         "Apache-2.0".to_owned()
     } else {
-        "-".to_owned()
+        engines::pack_spec(name).map_or_else(|| "-".to_owned(), |spec| spec.license.to_owned())
+    }
+}
+
+/// Note of a listed pack that is not installed.
+fn not_installed_note(name: &str) -> String {
+    match engines::pack_spec(name) {
+        Some(spec) if name != LISTED_PACK => spec.install_hint.to_owned(),
+        _ => "available in v0.2".to_owned(),
     }
 }
 
@@ -200,9 +211,15 @@ fn pack_rows(
         .unwrap_or_default();
     let mut names: BTreeSet<String> = installed.iter().map(|v| v.name.clone()).collect();
     names.extend(packs::override_names());
-    names.remove(LISTED_PACK);
+    for listed in LISTED_PACKS {
+        names.remove(*listed);
+    }
     let mut rows = Vec::new();
-    for name in std::iter::once(LISTED_PACK.to_owned()).chain(names) {
+    for name in LISTED_PACKS
+        .iter()
+        .map(|listed| (*listed).to_owned())
+        .chain(names)
+    {
         if cancel.is_cancelled() {
             return Err(ConvertError::Interrupted);
         }
@@ -228,10 +245,10 @@ fn pack_rows(
             )?),
             Ok(None) => rows.push(EngineRow {
                 license: license.unwrap_or_else(|| placeholder_license(&name)),
+                note: Some(not_installed_note(&name)),
                 id: name,
                 version: "-".to_owned(),
                 status: EngineStatus::NotInstalled,
-                note: Some("available in v0.2".to_owned()),
                 routes,
                 pack: None,
             }),
@@ -325,6 +342,13 @@ fn describe_pack(
         ),
         license.is_some(),
     )?;
+    if row.status == EngineStatus::Ready
+        && row.note.is_none()
+        && let Some(spec) =
+            engines::pack_spec(&pack.name).filter(|spec| spec.protocol == engines::Protocol::V2)
+    {
+        row.note = Some(format!("protocol {}", spec.protocol.as_str()));
+    }
     Ok(row)
 }
 
