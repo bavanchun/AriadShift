@@ -54,6 +54,8 @@ approved = approved.replace('runtime_review_complete = false', 'runtime_review_c
 check(approved.replace('runtime_review_complete = true', 'runtime_review_complete = false'), False, 'runtime pending')
 check(approved.replace('pending_owner_approval = false', 'pending_owner_approval = true'), False, 'owner approval pending')
 check(approved, True, 'both reviews complete')
+check(approved + '\nunknown_key = true\n', False, 'unknown key')
+check(approved.replace('pending_owner_approval = false', 'pending_owner_approval = "false"'), False, 'string flag')
 for key, value in tomllib.loads(approved).items():
     lines = approved.splitlines(keepends=True)
     replacement = 'true' if value is False else 'false' if value is True else '"mismatch"'
