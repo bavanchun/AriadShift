@@ -327,7 +327,7 @@ pack-pdfium-verify out="target/packs/pdfium":
 # Assemble and check an unsigned qpdf development pack for this host.
 pack-qpdf qpdf_dir out="target/packs/qpdf":
     cargo build -p ariad-cli --bin ashift
-    bash engines/qpdf/pack/make.sh dev "{{qpdf_dir}}" "{{justfile_directory()}}/target/debug/ashift" "{{out}}"
+    bash engines/qpdf/pack/make.sh dev "{{qpdf_dir}}" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"
     bash engines/qpdf/pack/make.sh verify "{{out}}"
 
 pack-qpdf-verify out="target/packs/qpdf":
