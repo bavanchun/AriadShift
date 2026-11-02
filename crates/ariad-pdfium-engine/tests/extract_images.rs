@@ -1006,6 +1006,14 @@ fn refuses_ambiguous_inline_keys_and_excess_flate_output() {
     let lib_dir = require_pdfium!();
     for (fixture, reason) in [
         (
+            "fixtures/pdf/inline-hex-key-render.pdf",
+            "Inline image contains an unsafe name token.",
+        ),
+        (
+            "fixtures/pdf/inline-hex-key-bomb.pdf",
+            "Inline image contains an unsafe name token.",
+        ),
+        (
             "fixtures/pdf/inline-conflicting-keys.pdf",
             "Inline image dictionary has conflicting keys.",
         ),

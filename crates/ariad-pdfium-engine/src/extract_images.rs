@@ -1600,23 +1600,45 @@ fn preflight_content(
         }
         let dict_start = end;
         let mut nesting = 0usize;
+        let mut expect_key = true;
+        let mut keys = HashSet::new();
         let dict_end = loop {
             let (s, e) = next_content_token(bytes, &mut cursor)?
                 .ok_or_else(EngineFailure::limit_exceeded)?;
-            if bytes[s] == b'/' && e - s > 255 {
+            if bytes[s] == b'/' && (e - s > 255 || bytes[s..e].contains(&b'#')) {
                 return Err(EngineFailure::new(
                     ErrorCode::LimitExceeded,
-                    "PDF content name exceeds the safe token length.",
+                    "Inline image contains an unsafe name token.",
                 ));
             }
+            if nesting == 0 {
+                if &bytes[s..e] == b"ID" && expect_key {
+                    break s;
+                }
+                if expect_key {
+                    if bytes[s] != b'/' || !keys.insert(&bytes[s..e]) {
+                        return Err(EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image has invalid or duplicate keys.",
+                        ));
+                    }
+                    expect_key = false;
+                    continue;
+                }
+                expect_key = true;
+            }
             match &bytes[s..e] {
-                b"[" | b"<<" => nesting += 1,
+                b"[" | b"<<" => {
+                    nesting += 1;
+                    if nesting >= 63 {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
+                }
                 b"]" | b">>" => {
                     nesting = nesting
                         .checked_sub(1)
                         .ok_or_else(EngineFailure::limit_exceeded)?
                 }
-                b"ID" if nesting == 0 => break s,
                 _ => {}
             }
         };
@@ -1624,6 +1646,18 @@ fn preflight_content(
         dictionary.extend_from_slice(&bytes[dict_start..dict_end]);
         dictionary.extend_from_slice(b" >> q");
         let content = Content::decode(&dictionary).map_err(|_| EngineFailure::limit_exceeded())?;
+        let mut checked = content
+            .operations
+            .first()
+            .and_then(|op| op.operands.first())
+            .cloned()
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        crate::canonical::normalize_strings(
+            ctx,
+            &mut checked,
+            0,
+            usize::from(ctx.limits().max_nesting_depth),
+        )?;
         let dict = content
             .operations
             .first()
@@ -3530,6 +3564,59 @@ mod corpus_tests {
     }
 
     #[test]
+    fn inline_header_rejects_ambiguous_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline-header",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let long_name = format!("/{}", "a".repeat(255));
+        let deep = format!("{}0{}", "[".repeat(63), "]".repeat(63));
+        for extra in [
+            "/W 1".to_string(),
+            "/X /A#42".to_string(),
+            format!("/X {long_name}"),
+            "/X 2147483648".to_string(),
+            "/X 999999999999999999999999999999999999999999999999.0".to_string(),
+            format!("/X {deep}"),
+        ] {
+            let content = format!("BI /W 1 /H 1 /BPC 8 /CS /G {extra} ID x EI");
+            let mut document_work = 0;
+            let mut budget = PreflightBudget {
+                scanned: 0,
+                image_bytes: 0,
+                image_pixels: 0,
+                page_work: 0,
+                glyph_count: 0,
+                glyph_max: 0,
+                glyph_max_pixels: 0,
+                glyph_max_bytes: 0,
+                font_ids: HashSet::new(),
+                document_work: &mut document_work,
+            };
+            let err = preflight_content(
+                &ctx,
+                &lopdf::Document::new(),
+                content.as_bytes(),
+                1024 * 1024,
+                &mut budget,
+            )
+            .unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{extra}");
+        }
+    }
+
+    #[test]
     fn inline_masks_and_supported_filter_chains_are_checked() {
         use std::io::Write;
         let dir = tempfile::tempdir().unwrap();
@@ -4235,6 +4322,14 @@ mod corpus_tests {
                 "PDF integer exceeds the safe range.",
             ),
             ("canonical-zero-ref.pdf", "PDF refers to object zero."),
+            (
+                "inline-hex-key-render.pdf",
+                "Inline image contains an unsafe name token.",
+            ),
+            (
+                "inline-hex-key-bomb.pdf",
+                "Inline image contains an unsafe name token.",
+            ),
             (
                 "canonical-large-object-number.pdf",
                 "PDF object numbers exceed the safe range.",

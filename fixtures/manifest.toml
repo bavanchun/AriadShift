@@ -5036,3 +5036,41 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "inline-hex-key-render-pdf"
+path = "fixtures/pdf/inline-hex-key-render.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic inline image with escaped keys"
+origin = "generated"
+generated_by = "fixtures/gen/inline_preflight_cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "f4ae537ff4c95d211010f6219e8b2fd0d9d10ae914767549a78d942e106c4131"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-hex-key-bomb-pdf"
+path = "fixtures/pdf/inline-hex-key-bomb.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic inline image with escaped keys"
+origin = "generated"
+generated_by = "fixtures/gen/inline_preflight_cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "af1a71691f02995efb70777e76673be979b34638dc0b04e7569c15519780a357"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

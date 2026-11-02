@@ -69,7 +69,7 @@ fn validate_name(name: &[u8]) -> Result<(), EngineFailure> {
 
 // Lopdf's literal-string writer can do quadratic work on unmatched parentheses.
 // Hex strings preserve the value and are written in linear time.
-fn normalize_strings(
+pub(crate) fn normalize_strings(
     ctx: &ToolContext<'_>,
     object: &mut lopdf::Object,
     depth: usize,
