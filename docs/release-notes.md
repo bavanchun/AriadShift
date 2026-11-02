@@ -4,7 +4,7 @@ Changes in each AriadShift release, newest first. Installation commands and down
 
 ## 0.3.0 (unreleased)
 
-Preview of the PDF suite. `ashift` gains typed document tools: 25 structural PDF tools that merge, split, reorder, rotate, crop, scale and impose pages and edit document structure and metadata without rendering anything. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. Conversions, `ariad-engine/1` and `ariad-ir/1` are unchanged. Installers, desktop apps and the web app do not offer the tools yet; this release ships the CLI, the MCP server and the crates.
+Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium rendering and image tools, and optimize and security operations. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. Conversions, `ariad-engine/1` and `ariad-ir/1` are unchanged. The desktop and web interfaces do not yet offer tool screens; the CLI and local MCP server expose the tools.
 
 ### Upgrade notes
 
@@ -13,7 +13,7 @@ Preview of the PDF suite. `ashift` gains typed document tools: 25 structural PDF
 - **Two new crates are published.** `ariad-pdf` (pure-Rust PDF manipulation) and `ariad-engine-io` (shared engine protocol helpers) join `ariad-core`, `ariad-typst`, `ariad-host` and `ariad-cli` on crates.io. `ariad-host` now depends on both, so a source build or `cargo install ariad-cli` pulls them in.
 - **New exit codes `8` to `12`.** Tool commands report an unknown tool (8), invalid parameters (9), wrong input count or format (10), a tool not allowed by the caller's tier (11) and encrypted input (12). Codes `0` to `6` and `130` keep their meaning. See [cli.md](cli.md#exit-codes) and [tools.md](tools.md#tool-error-exit-codes).
 - **Tools never overwrite silently.** A destination that already exists fails with exit 6 unless `--overwrite` is passed. With `--overwrite`, the previous file is moved aside first and restored byte-identical if publication fails, so a multi-file result is published completely or not at all.
-- **Encrypted PDFs are refused, never stripped.** Every structural tool exits with code 12 on an encrypted input and points to `pdf.decrypt`, which a later release adds.
+- **Encrypted PDFs are refused, never stripped.** Structural tools exit with code 12 on encrypted input. `pdf.decrypt` requires the qpdf pack, which is not shipped in 0.3.0.
 
 ### Added
 
@@ -29,6 +29,9 @@ Preview of the PDF suite. `ashift` gains typed document tools: 25 structural PDF
 - **`ariad-engine/2` and the tool contracts.** A second engine protocol version carries `op = "run_tool"` for out-of-process tool engines, next to the frozen `ariad-engine/1`. The machine-readable contracts are [`schemas/tools.v1.json`](../schemas/tools.v1.json), [`schemas/recipe.v1.json`](../schemas/recipe.v1.json) and [`schemas/engine-protocol.v2.json`](../schemas/engine-protocol.v2.json).
 - **Browser bindings.** `ariad-wasm` exposes `listTools` and `runTool` for the same in-process tools. No page in the web app uses them yet.
 
+- **PDFium engine pack.** Render PDF pages as images, make thumbnails, extract images, crop whitespace, remove blank pages, detect scanned pages and inspect text layout. Image-to-PDF runs in-process. PDFium tools run locally out of process. (#177, #178, #185)
+- **Optimize and security tools.** In-process `pdf.compress` and `pdf.grayscale`, plus `pdf.sanitize` and `pdf.unlock_forms`; compression supports levels, presets and a target size. Local MCP supports single-use secret handles. Repair, linearization, encryption, decryption and permissions require the qpdf pack. (#188)
+
 ### Changed
 
 - **`ariad_pdf::ToolCtx` construction.** Create contexts with `ToolCtx::new`,
@@ -38,6 +41,8 @@ Preview of the PDF suite. `ashift` gains typed document tools: 25 structural PDF
 
 ### Security
 
+- **PDFium image pre-flight.** A bounded, strictly loaded object graph is serialized before PDFium reads it; ambiguous or repaired cross-references are rejected, and nested Type3 resources are accounted for. (#185)
+- **Yanked dependency removed.** The workspace no longer resolves the yanked `async-executor` version. (#195, #197)
 - **Bounded PDF work.** One per-document budget caps stream decompression across object streams, page content, form XObjects and XMP metadata. The trailer scan is linear, and page loops honour the deadline and cancellation of the running tool.
 - **Confined tool artifacts.** Engine-reported output files are checked with symlink-safe handles, confined to the job's output directory and size-capped before they are read. Inputs staged for MCP tools are never reopened by path after confinement.
 - **Secrets stay out of messages.** Secret parameters are matched case-insensitively and recursively, scrubbed from errors and debug output, and scoped per recipe step. `params_file` must live inside the job directory.
@@ -46,9 +51,13 @@ Preview of the PDF suite. `ashift` gains typed document tools: 25 structural PDF
 
 ### Known limitations
 
-- **Structural tools only.** Rendering-dependent operations arrive in later previews: automatic whitespace cropping (`pdf.crop` accepts only explicit boxes), blank-page detection by appearance (`pdf.split --param mode=blank-separator` finds only pages with no text or drawing content), compression, OCR, annotations, forms, redaction and signatures.
-- **No encryption support yet.** `pdf.encrypt` and `pdf.decrypt` are not in this release, so encrypted inputs stop with exit 12.
-- **Secret parameters are not available over MCP.** `run_doc_tool` rejects secret-typed parameters until secret handles exist; use the CLI for those.
+- **qpdf pack does not ship in 0.3.0.** Its release gate refuses distribution until the GNU runtime review is complete. qpdf-dependent tools require a separately available compatible pack. (#188)
+- **Signed PDFs.** Rewriting a signed PDF raises a warning and does not preserve existing signatures; incremental-update support remains open. (#186)
+- **Compression.** Six of ten corpus files met or beat Stirling level 6 with the specified similarity criterion, below the original seven-of-ten target. Text-heavy parity remains open. (#187)
+- **Engine memory limits.** macOS and Windows use the process-tree watchdog but lack a hard engine memory ceiling. (#189)
+- **PDFium follow-ups.** Real-world canonicalization benchmarking, resource-named inline image colour spaces and unified pre-flight cost models remain open. (#192, #193, #194)
+- **Pack notices.** Making installed engine pack notices accessible through the CLI and apps remains open. (#196)
+- **Additional tools.** OCR, annotations, form editing, redaction and signing are planned for later previews.
 - **No desktop or web screens for the tools.** The desktop app and the web app keep their conversion-only interfaces in this release.
 
 ## 0.2.0 (2026-10-31)
