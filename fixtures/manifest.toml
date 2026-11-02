@@ -4417,3 +4417,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "long-content-name-pdf"
+path = "fixtures/pdf/long-content-name.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Long content stream XObject name"
+origin = "generated"
+generated_by = "fixtures/gen/long-content-name.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "a3f67168fee081dea72f2a3110fad1bc90f6e6c60cdf3b82f36cf47f6cd97e6b"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

@@ -2453,6 +2453,9 @@ const fn is_pdf_delimiter_or_ws(b: u8) -> bool {
 }
 
 fn decode_pdf_name(raw: &[u8]) -> Vec<u8> {
+    // PDFium's content parser retains 255 bytes including the leading slash,
+    // before applying PDF name escape decoding.
+    let raw = &raw[..raw.len().min(254)];
     let mut out = Vec::with_capacity(raw.len());
     let mut i = 0;
     while i < raw.len() {
@@ -3534,6 +3537,20 @@ mod corpus_tests {
             assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}");
             assert_eq!(err.message, reason, "{name}");
         }
+    }
+
+    #[test]
+    fn content_names_truncate_before_escape_decoding() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/long-content-name.pdf");
+        let doc = lopdf::Document::load(path).unwrap();
+        let content = &doc.get_object((4, 0)).unwrap().as_stream().unwrap().content;
+        assert_eq!(
+            decode_pdf_name(&content[1..content.len() - 3]),
+            vec![b'A'; 254]
+        );
+        let escaped = [vec![b'A'; 253], b"#41tail".to_vec()].concat();
+        assert_eq!(decode_pdf_name(&escaped).len(), 254);
     }
 
     #[test]
