@@ -241,12 +241,14 @@ Without the pack, every PDFium tool fails with exit code 5 (`tool_missing`) and 
 
 The qpdf pack is under development and is not available for installation or
 release. Its source build uses qpdf 12.4.2, zlib 1.3.2 and
-unmodified libjpeg-turbo 3.2.1. The named qpdf-only IJG review, its exact source
-hash and the pending owner approval state are recorded in
+unmodified libjpeg-turbo 3.2.1. The approved, named qpdf-only IJG exception,
+its exact source URL and SHA-256 are recorded in
 [`licence-review.toml`](../engines/qpdf/pack/licence-review.toml); the complete
-libjpeg-turbo notice and IJG README are in the adjacent `notices/` directory.
-The release gate refuses publication while approval or the separate GNU static
-runtime notice and provenance review is pending. All six Linux and macOS
+libjpeg-turbo LICENSE.md notice (IJG, BSD-3-Clause and zlib) and IJG README
+are in the adjacent `notices/` directory. This software is based in part on the
+work of the Independent JPEG Group.
+The release gate refuses publication until the separate GNU static runtime
+notice and provenance review is complete. All six Linux and macOS
 targets build from source; upstream macOS binaries are not used.
 macOS, Linux arm64 and both musl targets require CI verification.
 
