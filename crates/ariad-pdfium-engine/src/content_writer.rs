@@ -37,7 +37,7 @@ fn write_operand(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), EngineFailure> {
     crate::canonical::write_object(out, object).map_err(|_| EngineFailure::limit_exceeded())
 }
 
-fn validate_object(object: &Object, depth: usize) -> Result<(), EngineFailure> {
+pub(crate) fn validate_object(object: &Object, depth: usize) -> Result<(), EngineFailure> {
     match object {
         Object::Name(name) if safe_name(&[b"/".as_slice(), name].concat()) => Ok(()),
         Object::String(_, _) | Object::Null | Object::Boolean(_) => Ok(()),
@@ -114,7 +114,7 @@ pub(crate) fn emit_token(
     Ok(())
 }
 
-fn validate_token(token: &[u8]) -> Result<(), EngineFailure> {
+pub(crate) fn validate_token(token: &[u8]) -> Result<(), EngineFailure> {
     if token.starts_with(b"/") && !safe_name(token) {
         return Err(EngineFailure::limit_exceeded());
     }

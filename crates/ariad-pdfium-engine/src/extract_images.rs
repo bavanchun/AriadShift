@@ -1844,8 +1844,11 @@ fn preflight_content_inner(
         let mut filter_array = false;
         let mut color_array = false;
         let dict_end = loop {
+            let before = cursor;
             let (s, e) = next_content_token(bytes, &mut cursor)?
                 .ok_or_else(EngineFailure::limit_exceeded)?;
+            crate::content_writer::validate_gap(&bytes[before..s])?;
+            crate::content_writer::validate_token(&bytes[s..e])?;
             if bytes[s] == b'/' && (e - s > 255 || bytes[s..e].contains(&b'#')) {
                 return Err(EngineFailure::new(
                     ErrorCode::LimitExceeded,
@@ -1872,6 +1875,9 @@ fn preflight_content_inner(
                         filter_array = matches!(key, b"/F" | b"/Filter");
                         color_array = !filter_array;
                     } else {
+                        if bytes[s] != b'/' {
+                            return Err(EngineFailure::limit_exceeded());
+                        }
                         resource_name(&bytes[s..e])?;
                     }
                 }
@@ -1879,6 +1885,9 @@ fn preflight_content_inner(
             } else if (nesting == 1 && filter_array && &bytes[s..e] != b"]")
                 || (color_array && bytes[s] == b'(')
             {
+                if filter_array && bytes[s] != b'/' {
+                    return Err(EngineFailure::limit_exceeded());
+                }
                 resource_name(&bytes[s..e])?;
             }
             match &bytes[s..e] {
@@ -1923,26 +1932,6 @@ fn preflight_content_inner(
             .and_then(|op| op.operands.first_mut())
             .and_then(|o| o.as_dict_mut().ok())
             .ok_or_else(EngineFailure::limit_exceeded)?;
-        fn normalize_resource(value: &mut Object) {
-            if let Object::String(bytes, _) = value {
-                *value = Object::Name(std::mem::take(bytes));
-            }
-        }
-        for key in [b"CS".as_slice(), b"ColorSpace", b"F", b"Filter"] {
-            if let Ok(value) = dict.get_mut(key) {
-                if let Object::Array(items) = value {
-                    if matches!(key, b"F" | b"Filter") {
-                        for item in items {
-                            normalize_resource(item);
-                        }
-                    } else if let Some(first) = items.first_mut() {
-                        normalize_resource(first);
-                    }
-                } else {
-                    normalize_resource(value);
-                }
-            }
-        }
         fn has_reference(value: &Object) -> bool {
             match value {
                 Object::Reference(_) => true,
@@ -2026,6 +2015,11 @@ fn preflight_content_inner(
                         "Inline image is missing its color space.",
                     )
                 })?;
+            match colorspace {
+                Object::Name(_) => (),
+                Object::Array(items) if matches!(items.first(), Some(Object::Name(_))) => (),
+                _ => return Err(EngineFailure::limit_exceeded()),
+            }
             color_components(colorspace, Some(doc), 0)?;
         }
         let decoded_len = preflight_image_dict(ctx, dict, None, None)?;
@@ -2076,7 +2070,6 @@ fn preflight_content_inner(
             .and_then(|n| usize::try_from(n).ok())
             .unwrap_or(0);
         let final_cap = decoded_len
-            .saturating_add(1024)
             .saturating_add(if predictor_rows { height } else { 0 })
             .min(data_cap);
         let mut filters = Vec::new();
@@ -2104,6 +2097,9 @@ fn preflight_content_inner(
                 };
                 filters.push(canonical);
             }
+        }
+        if filters.len() > 1 {
+            return Err(EngineFailure::limit_exceeded());
         }
         let terminal = filters
             .last()
@@ -2263,18 +2259,7 @@ fn preflight_content_inner(
                 cursor += inline_lzw_len(ctx, &bytes[cursor..], decoded_cap, early as usize)?;
             }
             Some(Object::Name(name)) if name == b"CCITTFaxDecode" || name == b"DCTDecode" => {
-                let tail = &bytes[cursor..];
-                let pos = tail
-                    .windows(3)
-                    .enumerate()
-                    .find(|(pos, w)| {
-                        is_pdf_ws(w[0])
-                            && &w[1..] == b"EI"
-                            && tail.get(pos + 3).is_none_or(|b| is_pdf_delimiter_or_ws(*b))
-                    })
-                    .map(|(pos, _)| pos)
-                    .ok_or_else(EngineFailure::limit_exceeded)?;
-                cursor += pos;
+                return Err(EngineFailure::limit_exceeded());
             }
             _ => return Err(EngineFailure::limit_exceeded()),
         }
@@ -2355,14 +2340,69 @@ fn preflight_content_inner(
                 }
             }
         }
+        let data_end = cursor;
         let (s, e) =
             next_content_token(bytes, &mut cursor)?.ok_or_else(EngineFailure::limit_exceeded)?;
         if &bytes[s..e] != b"EI" {
             return Err(EngineFailure::limit_exceeded());
         }
-        if output.is_some() {
-            // Inline content is handled separately after the payload is decoded.
-            return Err(EngineFailure::limit_exceeded());
+        if let Some(out) = output.as_deref_mut() {
+            out.extend_from_slice(b"BI ");
+            for (key, value) in dict.iter() {
+                let full = match key.as_slice() {
+                    b"W" => b"Width".as_slice(),
+                    b"H" => b"Height",
+                    b"BPC" => b"BitsPerComponent",
+                    b"CS" => b"ColorSpace",
+                    b"F" => b"Filter",
+                    b"DP" => b"DecodeParms",
+                    b"D" => b"Decode",
+                    b"IM" => b"ImageMask",
+                    b"I" => b"Interpolate",
+                    other => other,
+                };
+                // Equal aliases have already been checked; emit each key once.
+                if full != key.as_slice() && dict.has(full) {
+                    continue;
+                }
+                let mut normalized = value.clone();
+                if full == b"Filter" {
+                    normalized = Object::Name(
+                        filters
+                            .first()
+                            .ok_or_else(EngineFailure::limit_exceeded)?
+                            .to_vec(),
+                    );
+                } else if full == b"ColorSpace" {
+                    let first = match &mut normalized {
+                        Object::Array(items) => items
+                            .first_mut()
+                            .ok_or_else(EngineFailure::limit_exceeded)?,
+                        other => other,
+                    };
+                    let Object::Name(name) = first else {
+                        return Err(EngineFailure::limit_exceeded());
+                    };
+                    *name = match name.as_slice() {
+                        b"G" => b"DeviceGray".to_vec(),
+                        b"RGB" => b"DeviceRGB".to_vec(),
+                        b"CMYK" => b"DeviceCMYK".to_vec(),
+                        b"I" => b"Indexed".to_vec(),
+                        _ => name.clone(),
+                    };
+                }
+                crate::content_writer::validate_object(&Object::Name(full.to_vec()), 0)?;
+                crate::content_writer::validate_object(&normalized, 0)?;
+                out.push(b'/');
+                out.extend_from_slice(full);
+                out.push(b' ');
+                crate::canonical::write_object(out, &normalized)
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                out.push(b' ');
+            }
+            out.extend_from_slice(b"ID ");
+            out.extend_from_slice(&bytes[data_start..data_end]);
+            out.extend_from_slice(b" EI ");
         }
         previous = e;
     }
@@ -4115,21 +4155,21 @@ mod corpus_tests {
             c
         };
         let samples = vec![
-            (make(b"/W 1 /H 1 /BPC 8 /CS (G) /F (AHx)", b"00>"), true),
+            (make(b"/W 1 /H 1 /BPC 8 /CS (G) /F (AHx)", b"00>"), false),
             (make(b"/W 8 /H 1 /IM true", &[0]), true),
-            (make(b"/W 8 /H 8 /IM true /F /CCF", &[0xff]), true),
+            (make(b"/W 8 /H 8 /IM true /F /CCF", &[0xff]), false),
             (
                 make(b"/W 8 /H 8 /IM true /F [/AHx /CCF]", &hex(&[0xff])),
-                true,
+                false,
             ),
             (
                 make(b"/W 1 /H 1 /BPC 8 /CS /G /F [/AHx /Fl]", &hex(&z)),
-                true,
+                false,
             ),
-            (make(b"/W 2 /H 2 /BPC 8 /CS /RGB /F /DCT", &jpeg), true),
+            (make(b"/W 2 /H 2 /BPC 8 /CS /RGB /F /DCT", &jpeg), false),
             (
                 make(b"/W 2 /H 2 /BPC 8 /CS /RGB /F [/AHx /DCT]", &hex(&jpeg)),
-                true,
+                false,
             ),
             (make(b"/W 1 /H 1 /BPC 8 /CS /RGB /F /DCT", &jpeg), false),
             (
@@ -4137,7 +4177,7 @@ mod corpus_tests {
                 false,
             ),
         ];
-        for (index, (content, accepted)) in samples.into_iter().enumerate() {
+        for (content, accepted) in samples {
             let mut document_work = 0;
             let mut budget = PreflightBudget {
                 scanned: 0,
@@ -4163,16 +4203,49 @@ mod corpus_tests {
             } else {
                 let e = result.unwrap_err();
                 assert_eq!(e.code, ErrorCode::LimitExceeded);
-                assert_eq!(
-                    e.message,
-                    if index == 7 {
-                        "Inline JPEG dimensions exceed the image dictionary."
-                    } else {
-                        "Inline image codec cannot precede another filter."
-                    }
-                );
             }
         }
+    }
+
+    #[test]
+    fn reemits_inline_names_and_rejects_string_filters() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let doc = lopdf::Document::new();
+        let output = rewrite_preflighted_content(
+            &ctx,
+            &doc,
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /F /AHx ID 00> EI",
+            4096,
+        )
+        .unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("/Width 1 "));
+        assert!(text.contains("/ColorSpace /DeviceGray "));
+        assert!(text.contains("/Filter /ASCIIHexDecode "));
+        assert!(text.ends_with("ID 00> EI "));
+        assert!(
+            rewrite_preflighted_content(
+                &ctx,
+                &doc,
+                b"BI /W 1 /H 1 /BPC 8 /CS /G /F (AHx) ID 00> EI",
+                4096
+            )
+            .is_err()
+        );
     }
 
     #[test]
