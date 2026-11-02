@@ -246,8 +246,8 @@ its exact source URL and SHA-256 are recorded in
 [`licence-review.toml`](../engines/qpdf/pack/licence-review.toml); the complete
 libjpeg-turbo LICENSE.md notice (IJG, BSD-3-Clause and zlib) and IJG README
 are in the adjacent `notices/` directory.
-The release gate refuses publication while approval or the separate GNU static
-runtime notice and provenance review is pending. All six Linux and macOS
+The release gate refuses publication until the separate GNU static runtime
+notice and provenance review is complete. All six Linux and macOS
 targets build from source; upstream macOS binaries are not used.
 macOS, Linux arm64 and both musl targets require CI verification.
 
