@@ -667,7 +667,15 @@ where
         .unwrap_or_else(|| "document".to_owned());
 
     let (opened_docs, output_docs) = runner(inputs, &typed_params, &local_ctx)?;
-    finalize_tool_output(tool_id, &opened_docs, &first_stem, output_docs, &local_ctx)
+    let original_bytes_available = matches!(inputs[0].source, InputSource::Bytes(_));
+    finalize_tool_output_impl(
+        tool_id,
+        &opened_docs,
+        &first_stem,
+        output_docs,
+        &local_ctx,
+        original_bytes_available,
+    )
 }
 
 /// Serializes [`OutputDoc`]s into [`OutputArtifact`]s via [`writer::save_with_options`] and
@@ -680,12 +688,32 @@ pub fn finalize_tool_output(
     output_docs: Vec<OutputDoc>,
     ctx: &ToolCtx,
 ) -> Result<ToolOutput, PdfError> {
+    finalize_tool_output_impl(tool_id, opened_inputs, first_stem, output_docs, ctx, false)
+}
+
+fn finalize_tool_output_impl(
+    tool_id: &str,
+    opened_inputs: &[PdfDoc],
+    first_stem: &str,
+    output_docs: Vec<OutputDoc>,
+    ctx: &ToolCtx,
+    original_bytes_available: bool,
+) -> Result<ToolOutput, PdfError> {
     ctx.check()?;
 
     let mut warnings = Vec::new();
     let mut coded_warnings = Vec::new();
     let mut metrics = BTreeMap::new();
-    if output_docs.iter().any(|output| output.format == "pdf") {
+    let rewritten_pdf = output_docs.iter().any(|output| {
+        output.format == "pdf"
+            && !(original_bytes_available
+                && tool_id == "pdf.compress"
+                && output
+                    .coded_warnings
+                    .iter()
+                    .any(|warning| warning.code == "no_size_gain"))
+    });
+    if rewritten_pdf {
         for input in opened_inputs {
             if has_signed_field(input.inner(), ctx)? {
                 coded_warnings.push(ToolWarning {

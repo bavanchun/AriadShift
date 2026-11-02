@@ -1,7 +1,6 @@
 //! PDF compression with bounded image decoding and deterministic serialization.
 
 use ariad_core::tools::params::CompressParams;
-use lopdf::Object;
 
 use crate::{
     PdfDoc, PdfError, ToolCtx,
@@ -36,12 +35,6 @@ pub fn run_inputs(
     let mut working = original.clone();
     let mut warnings: Vec<ToolWarning> = Vec::new();
     let input_bytes = source.len();
-    if signed(&working, ctx)? {
-        warnings.push(warning(
-            "signature_invalidated",
-            "saving invalidates the signature".into(),
-        ));
-    }
     optimize::structural(&mut working, &input.limits, ctx)?;
     if params.grayscale {
         let skipped = super::grayscale::convert(&mut working, &input.limits, ctx)?;
@@ -140,55 +133,6 @@ pub fn run_inputs(
         .metrics
         .insert("chosen_quality".into(), serde_json::json!(chosen.quality));
     Ok((vec![original], vec![output]))
-}
-
-fn signed(pdf: &PdfDoc, ctx: &ToolCtx) -> Result<bool, PdfError> {
-    let doc = pdf.inner();
-    for object in doc.objects.values() {
-        ctx.check()?;
-        if contains_signature(doc, object, 0) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn contains_signature(doc: &lopdf::Document, object: &Object, depth: usize) -> bool {
-    if depth > 100 {
-        return false;
-    }
-    let dict = match object {
-        Object::Array(values) => {
-            return values
-                .iter()
-                .any(|value| contains_signature(doc, value, depth + 1));
-        }
-        Object::Dictionary(dict) => dict,
-        Object::Stream(stream) => &stream.dict,
-        _ => return false,
-    };
-    let is_signature = dict.get(b"Type").and_then(Object::as_name).ok() == Some(b"Sig")
-        || dict.get(b"FT").and_then(Object::as_name).ok() == Some(b"Sig");
-    if is_signature {
-        if dict.has(b"ByteRange") {
-            return true;
-        }
-        let mut value = dict.get(b"V").ok();
-        for _ in 0..100 {
-            value = match value {
-                Some(Object::Reference(id)) => doc.get_object(*id).ok(),
-                Some(Object::Dictionary(signature)) => {
-                    if signature.has(b"ByteRange") {
-                        return true;
-                    }
-                    break;
-                }
-                _ => break,
-            };
-        }
-    }
-    dict.iter()
-        .any(|(_, value)| contains_signature(doc, value, depth + 1))
 }
 
 fn warning(code: &str, message: String) -> ToolWarning {

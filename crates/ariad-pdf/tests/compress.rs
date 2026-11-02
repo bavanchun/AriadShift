@@ -236,7 +236,7 @@ fn flate_recompression_preserves_predictor_parameters() {
 }
 
 #[test]
-fn warns_about_a_signed_field() {
+fn signed_compression_warns_only_when_bytes_change() {
     use lopdf::{Object, dictionary};
     let mut doc = lopdf::Document::load_mem(&input()).unwrap();
     let signature = doc.add_object(
@@ -247,21 +247,48 @@ fn warns_about_a_signed_field() {
     doc.catalog_mut().unwrap().set("AcroForm", form);
     let mut bytes = Vec::new();
     doc.save_to(&mut bytes).unwrap();
-    let (_, docs) = compress::run_inputs(
-        &[InputDoc::new("signed", bytes)],
-        &CompressParams {
-            level: Some(1),
-            ..Default::default()
-        },
-        &ToolCtx::default(),
-    )
-    .unwrap();
-    assert!(
-        docs[0]
+    bytes.extend(std::iter::repeat_n(b' ', 100_000));
+    let run = |bytes| {
+        ariad_pdf::tools::run_tool(
+            "pdf.compress",
+            &[InputDoc::new("signed", bytes)],
+            &serde_json::json!({"preset":"lossless"}),
+            &ToolCtx::default(),
+        )
+        .unwrap()
+    };
+    let output = run(bytes);
+    assert_eq!(
+        output
             .coded_warnings
             .iter()
-            .any(|warning| warning.code == "signature_invalidated")
+            .filter(|w| w.code == "signed_input_rewritten")
+            .count(),
+        1
     );
+    assert!(
+        !output
+            .coded_warnings
+            .iter()
+            .any(|w| w.code == "signature_invalidated")
+    );
+    let mut bytes = output.artifacts[0].bytes.clone();
+    let mut unchanged = false;
+    for _ in 0..6 {
+        let next = run(bytes.clone());
+        if next.coded_warnings.iter().any(|w| w.code == "no_size_gain") {
+            assert_eq!(next.artifacts[0].bytes, bytes);
+            assert!(
+                !next.coded_warnings.iter().any(
+                    |w| w.code == "signed_input_rewritten" || w.code == "signature_invalidated"
+                )
+            );
+            unchanged = true;
+            break;
+        }
+        bytes = next.artifacts[0].bytes.clone();
+    }
+    assert!(unchanged, "compression should converge to unchanged output");
 }
 
 #[test]
