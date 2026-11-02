@@ -163,6 +163,44 @@ fn indexed_samples_above_high_value_use_last_palette_entry() {
     );
 }
 
+#[test]
+fn placement_counts_repeated_forms_and_annotation_appearances() {
+    use ariad_pdf::images::placements;
+    use lopdf::{Dictionary, Document, Object, Stream, dictionary};
+    let mut pdf = Document::with_version("1.5");
+    let pages = pdf.new_object_id();
+    let img = pdf.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Image", "Width"=>100, "Height"=>100, "ColorSpace"=>"DeviceGray", "BitsPerComponent"=>8},vec![0;10000]));
+    let appearance_img = pdf.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Image", "Width"=>100, "Height"=>100, "ColorSpace"=>"DeviceGray", "BitsPerComponent"=>8},vec![1;10000]));
+    let form_resources = dictionary! {"XObject" => dictionary! {"I" => img}};
+    let form = pdf.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Form", "BBox"=>vec![0.into(),0.into(),1.into(),1.into()], "Resources"=>form_resources},b"q 10 0 0 10 0 0 cm /I Do Q".to_vec()));
+    let resources = dictionary! {"XObject"=>dictionary! {"F"=>form}};
+    let content = pdf.add_object(Stream::new(
+        Dictionary::new(),
+        b"q 2 0 0 2 0 0 cm /F Do Q q 4 0 0 4 0 0 cm /F Do Q".to_vec(),
+    ));
+    let ap = pdf.add_object(Stream::new(dictionary! {"Type"=>"XObject", "Subtype"=>"Form", "BBox"=>vec![0.into(),0.into(),10.into(),10.into()], "Resources"=>dictionary! {"XObject"=>dictionary! {"I"=>appearance_img}}},b"q 10 0 0 10 0 0 cm /I Do Q".to_vec()));
+    let annot = pdf.add_object(dictionary! {"Type"=>"Annot", "Subtype"=>"Stamp", "Rect"=>vec![0.into(),0.into(),100.into(),100.into()], "AP"=>dictionary! {"N"=>ap}});
+    let page = pdf.add_object(dictionary! {"Type"=>"Page", "Parent"=>pages, "MediaBox"=>vec![0.into(),0.into(),100.into(),100.into()], "Contents"=>content, "Resources"=>resources, "Annots"=>vec![Object::Reference(annot)]});
+    pdf.objects.insert(
+        pages,
+        Object::Dictionary(
+            dictionary! {"Type"=>"Pages", "Kids"=>vec![Object::Reference(page)], "Count"=>1},
+        ),
+    );
+    let catalog = pdf.add_object(dictionary! {"Type"=>"Catalog", "Pages"=>pages});
+    pdf.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    pdf.save_to(&mut bytes).unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let pdf = ariad_pdf::document::open(&bytes, &limits).unwrap();
+    let result = placements(&pdf, &Default::default(), &limits).unwrap();
+    let use_ = result.get(&img).unwrap();
+    assert_eq!(use_.uses, 2);
+    assert!((use_.max_dpi_x - 360.0).abs() < 1e-6);
+    assert!((use_.max_dpi_y - 360.0).abs() < 1e-6);
+    assert_eq!(result[&appearance_img].uses, 1);
+    assert!((result[&appearance_img].max_dpi_x - 72.0).abs() < 1e-6);
+}
 
 #[test]
 fn decompression_bomb_is_stopped_by_document_budget() {
@@ -217,6 +255,39 @@ fn predictor_fifteen_accepts_different_filters_for_each_row() {
     );
 }
 
+#[test]
+fn highest_image_resolution_across_pages_is_preserved() {
+    use ariad_pdf::images::placements;
+    use lopdf::{Document, Object, Stream, dictionary};
+    let mut doc = Document::with_version("1.5");
+    let pages = doc.new_object_id();
+    let img = doc.add_object(Stream::new(
+        dictionary! {"Subtype"=>"Image","Width"=>100,"Height"=>200},
+        vec![],
+    ));
+    let resources = dictionary! {"XObject"=>dictionary! {"I"=>img}};
+    let mut kids = Vec::new();
+    for size in [100, 50] {
+        let text = format!("q {size} 0 0 {size} 0 0 cm /I Do Q");
+        let content = doc.add_object(Stream::new(dictionary! {}, text.into_bytes()));
+        let page=doc.add_object(dictionary! {"Type"=>"Page","Parent"=>pages,"MediaBox"=>vec![0.into(),0.into(),100.into(),100.into()],"Resources"=>resources.clone(),"Contents"=>content});
+        kids.push(Object::Reference(page));
+    }
+    doc.objects.insert(
+        pages,
+        Object::Dictionary(dictionary! {"Type"=>"Pages","Kids"=>kids,"Count"=>2}),
+    );
+    let root = doc.add_object(dictionary! {"Type"=>"Catalog","Pages"=>pages});
+    doc.trailer.set("Root", root);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let pdf = ariad_pdf::document::open(&bytes, &limits).unwrap();
+    let uses = placements(&pdf, &Default::default(), &limits).unwrap();
+    assert_eq!(uses[&img].uses, 2);
+    assert_eq!(uses[&img].max_dpi_x, 144.0);
+    assert_eq!(uses[&img].max_dpi_y, 288.0);
+}
 
 #[test]
 fn icc_profile_with_four_components_decodes_as_cmyk() {
@@ -607,6 +678,37 @@ fn progressive_grayscale_jpeg_is_decoded() {
     assert!(image.pixels.iter().all(|v| (*v as i16 - 191).abs() <= 3));
 }
 
+#[test]
+fn nested_form_traversal_obeys_the_depth_limit() {
+    use ariad_pdf::images::{ImageError, placements};
+    use lopdf::{Document, Object, Stream, dictionary};
+    let mut pdf = Document::with_version("1.5");
+    let pages = pdf.new_object_id();
+    let inner = pdf.add_object(Stream::new(
+        dictionary! {"Subtype"=>"Form","BBox"=>vec![0.into(),0.into(),1.into(),1.into()]},
+        vec![],
+    ));
+    let outer=pdf.add_object(Stream::new(dictionary! {"Subtype"=>"Form","BBox"=>vec![0.into(),0.into(),1.into(),1.into()],"Resources"=>dictionary! {"XObject"=>dictionary! {"I"=>inner}}},b"/I Do".to_vec()));
+    let content = pdf.add_object(Stream::new(dictionary! {}, b"/O Do".to_vec()));
+    let page=pdf.add_object(dictionary! {"Type"=>"Page","Parent"=>pages,"MediaBox"=>vec![0.into(),0.into(),100.into(),100.into()],"Resources"=>dictionary! {"XObject"=>dictionary! {"O"=>outer}},"Contents"=>content});
+    pdf.objects.insert(
+        pages,
+        Object::Dictionary(
+            dictionary! {"Type"=>"Pages","Kids"=>vec![Object::Reference(page)],"Count"=>1},
+        ),
+    );
+    let root = pdf.add_object(dictionary! {"Type"=>"Catalog","Pages"=>pages});
+    pdf.trailer.set("Root", root);
+    let mut bytes = Vec::new();
+    pdf.save_to(&mut bytes).unwrap();
+    let mut limits = ariad_core::limits::Limits::local();
+    let pdf = ariad_pdf::document::open(&bytes, &limits).unwrap();
+    limits.max_nesting_depth = 1;
+    assert!(matches!(
+        placements(&pdf, &Default::default(), &limits),
+        Err(ImageError::Pdf(ariad_pdf::PdfError::LimitExceeded(_)))
+    ));
+}
 
 #[test]
 fn cancelled_context_aborts_before_decoding() {
@@ -623,6 +725,25 @@ fn cancelled_context_aborts_before_decoding() {
     );
 }
 
+#[test]
+fn duplicate_page_tree_nodes_are_rejected_without_omitting_uses() {
+    use ariad_pdf::images::{ImageError, placements};
+    use lopdf::{Document, Object, dictionary};
+    let mut doc = Document::with_version("1.5");
+    let pages = doc.new_object_id();
+    let page=doc.add_object(dictionary! {"Type"=>"Page","Parent"=>pages,"MediaBox"=>vec![0.into(),0.into(),100.into(),100.into()]});
+    doc.objects.insert(pages,Object::Dictionary(dictionary! {"Type"=>"Pages","Kids"=>vec![Object::Reference(page),Object::Reference(page)],"Count"=>2}));
+    let root = doc.add_object(dictionary! {"Type"=>"Catalog","Pages"=>pages});
+    doc.trailer.set("Root", root);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let pdf = ariad_pdf::document::open(&bytes, &limits).unwrap();
+    assert!(matches!(
+        placements(&pdf, &Default::default(), &limits),
+        Err(ImageError::Pdf(ariad_pdf::PdfError::Malformed))
+    ));
+}
 
 #[test]
 fn explicit_jpeg_colour_transform_controls_component_conversion() {
@@ -648,6 +769,38 @@ fn explicit_jpeg_colour_transform_controls_component_conversion() {
     assert_ne!(&raw.pixels[..3], &converted.pixels[..3]);
 }
 
+#[test]
+fn image_in_tiling_pattern_uses_pattern_and_page_matrices() {
+    use ariad_pdf::images::placements;
+    use lopdf::{Document, Object, Stream, dictionary};
+    let mut doc = Document::with_version("1.5");
+    let pages = doc.new_object_id();
+    let image = doc.add_object(Stream::new(
+        dictionary! {"Subtype"=>"Image","Width"=>100,"Height"=>100},
+        vec![],
+    ));
+    let pattern=doc.add_object(Stream::new(dictionary! {"PatternType"=>1,"BBox"=>vec![0.into(),0.into(),1.into(),1.into()],"Matrix"=>vec![2.into(),0.into(),0.into(),2.into(),0.into(),0.into()],"Resources"=>dictionary! {"XObject"=>dictionary! {"I"=>image}}},b"/I Do".to_vec()));
+    let content = doc.add_object(Stream::new(
+        dictionary! {},
+        b"10 0 0 10 0 0 cm /Pattern cs /P scn 0 0 1 1 re f".to_vec(),
+    ));
+    let page=doc.add_object(dictionary! {"Type"=>"Page","Parent"=>pages,"MediaBox"=>vec![0.into(),0.into(),100.into(),100.into()],"Contents"=>content,"Resources"=>dictionary! {"Pattern"=>dictionary! {"P"=>pattern}}});
+    doc.objects.insert(
+        pages,
+        Object::Dictionary(
+            dictionary! {"Type"=>"Pages","Kids"=>vec![Object::Reference(page)],"Count"=>1},
+        ),
+    );
+    let root = doc.add_object(dictionary! {"Type"=>"Catalog","Pages"=>pages});
+    doc.trailer.set("Root", root);
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let limits = ariad_core::limits::Limits::local();
+    let pdf = ariad_pdf::document::open(&bytes, &limits).unwrap();
+    let uses = placements(&pdf, &Default::default(), &limits).unwrap();
+    assert_eq!(uses[&image].max_dpi_x, 360.0);
+    assert_eq!(uses[&image].uses, 1);
+}
 
 #[test]
 fn sixteen_bit_rgb_grayscale_and_resize_keep_sample_depth() {
