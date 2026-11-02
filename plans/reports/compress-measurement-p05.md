@@ -2,30 +2,30 @@
 
 The Stirling-PDF 3.2.2 level-6 reference is `crates/ariad-pdf/tests/data/stirling-level6.tsv`, identical to the supplied baseline. Grayscale, linearization, and normalization were disabled. The qpdf 12.4.2 reference used `--object-streams=generate --recompress-flate --compression-level=9`; qpdf is development-only.
 
-The ebook preset uses 96 dpi and JPEG quality 60 with `oxiarc-jpeg` 0.4.2 and 4:2:0 chroma sampling. The host rendered first, middle, and last pages at 96 dpi using PDFium. Both SSIM columns compare with the input. A pass requires output no larger than Stirling and SSIM at least 0.98. The current-branch rerun passed six files; the required seven were not reached. Times are host elapsed milliseconds and the ratio is output divided by input.
+The ebook preset uses 96 dpi and JPEG quality 60 with `oxiarc-jpeg` 0.4.2 and 4:2:0 chroma sampling. The host rendered first, middle, and last pages at 96 dpi using PDFium. Both SSIM columns compare with the input. A pass requires output no larger than Stirling and SSIM at least 0.98. The rerun after font subsetting passed six files; the required seven were not reached. Times are host elapsed milliseconds and the ratio is output divided by input.
 
 | Input | Input bytes | Stirling bytes | Ours bytes | Size gap bytes | Ratio | Ours SSIM | Stirling SSIM | Pass | ms | qpdf bytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |
-| arxiv-multilingual-open-text-2201-05609-v2.pdf | 405642 | 136838 | 166344 | +29506 | 0.4101 | 1.0000 | 0.9976 | no | 26263 | 349808 |
-| arxiv-tableformer-2203-01017-v1.pdf | 745181 | 206587 | 452618 | +246031 | 0.6074 | 0.9996 | 0.9986 | no | 17519 | 670876 |
-| pd-vi-decree-39-2022.pdf | 2094488 | 2005188 | 2011177 | +5989 | 0.9602 | 0.9998 | 0.9996 | no | 8320 | 2072649 |
-| pd-vi-ip-law-155-2025.pdf | 1836969 | 1329700 | 1186194 | -143506 | 0.6457 | 0.9915 | 0.9745 | yes | 26400 | 1746420 |
-| pd-vi-qd-1922-2026.pdf | 285024 | 230264 | 187531 | -42733 | 0.6579 | 0.9999 | 0.9985 | yes | 3461 | 275853 |
-| pd-en-gao-08-35-highlights.pdf | 67775 | 40911 | 50759 | +9848 | 0.7489 | 1.0000 | 0.9999 | no | 2221 | 53492 |
-| vi-garden-image-only.pdf | 201163 | 54116 | 24822 | -29294 | 0.1234 | 0.9976 | 0.9879 | yes | 9992 | 201177 |
-| en-map-scan.pdf | 467832 | 148454 | 43271 | -105183 | 0.0925 | 0.9927 | 0.9943 | yes | 6024 | 467886 |
-| vi-garden-scan.pdf | 446222 | 137490 | 40616 | -96874 | 0.0910 | 0.9929 | 0.9944 | yes | 5879 | 446276 |
-| scanned-skewed-vi.pdf | 292305 | 83801 | 20966 | -62835 | 0.0717 | 0.9944 | 0.9944 | yes | 5607 | 292175 |
+| arxiv-multilingual-open-text-2201-05609-v2.pdf | 405642 | 136838 | 166344 | +29506 | 0.4101 | 1.0000 | 0.9976 | no | 24406 | 349808 |
+| arxiv-tableformer-2203-01017-v1.pdf | 745181 | 206587 | 452180 | +245593 | 0.6068 | 0.9996 | 0.9986 | no | 17591 | 670876 |
+| pd-vi-decree-39-2022.pdf | 2094488 | 2005188 | 2011177 | +5989 | 0.9602 | 0.9998 | 0.9996 | no | 8728 | 2072649 |
+| pd-vi-ip-law-155-2025.pdf | 1836969 | 1329700 | 1169330 | -160370 | 0.6366 | 0.9915 | 0.9745 | yes | 26977 | 1746420 |
+| pd-vi-qd-1922-2026.pdf | 285024 | 230264 | 178616 | -51648 | 0.6267 | 0.9999 | 0.9985 | yes | 3588 | 275853 |
+| pd-en-gao-08-35-highlights.pdf | 67775 | 40911 | 50759 | +9848 | 0.7489 | 1.0000 | 0.9999 | no | 2163 | 53492 |
+| vi-garden-image-only.pdf | 201163 | 54116 | 24822 | -29294 | 0.1234 | 0.9976 | 0.9879 | yes | 9943 | 201177 |
+| en-map-scan.pdf | 467832 | 148454 | 43271 | -105183 | 0.0925 | 0.9927 | 0.9943 | yes | 5557 | 467886 |
+| vi-garden-scan.pdf | 446222 | 137490 | 40616 | -96874 | 0.0910 | 0.9929 | 0.9944 | yes | 5775 | 446276 |
+| scanned-skewed-vi.pdf | 292305 | 83801 | 20966 | -62835 | 0.0717 | 0.9944 | 0.9944 | yes | 5522 | 292175 |
 
 For the 50% target runs, no output landed within 5% of the target. Gap is output minus target, so negative values are undershoots. The ladder selects the highest-quality evaluated rung at or below target, or the smallest evaluated result with `target_not_reached`; a miss within 5% is not itself a D9 failure. The IP-law target emitted `similarity_below_floor`. The eight-rung cap is already fully allocated, and the approved instruction for a 6/10 result is to stop without tuning presets.
 
 | Input | Target bytes | Output bytes | Gap bytes | Gap % | SSIM |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | arxiv-multilingual-open-text-2201-05609-v2.pdf | 202821 | 183043 | -19778 | -9.75% | 1.0000 |
-| arxiv-tableformer-2203-01017-v1.pdf | 372590 | 435787 | +63197 | +16.96% | 0.9869 |
+| arxiv-tableformer-2203-01017-v1.pdf | 372590 | 435350 | +62760 | +16.84% | 0.9869 |
 | pd-vi-decree-39-2022.pdf | 1047244 | 2010336 | +963092 | +91.96% | 0.9988 |
-| pd-vi-ip-law-155-2025.pdf | 918484 | 1061810 | +143326 | +15.60% | 0.7649 |
-| pd-vi-qd-1922-2026.pdf | 142512 | 175116 | +32604 | +22.88% | 0.9912 |
+| pd-vi-ip-law-155-2025.pdf | 918484 | 1044947 | +126463 | +13.77% | 0.7649 |
+| pd-vi-qd-1922-2026.pdf | 142512 | 166207 | +23695 | +16.63% | 0.9912 |
 | pd-en-gao-08-35-highlights.pdf | 33887 | 50759 | +16872 | +49.79% | 1.0000 |
 | vi-garden-image-only.pdf | 100581 | 56545 | -44036 | -43.78% | 0.9979 |
 | en-map-scan.pdf | 233916 | 204064 | -29852 | -12.76% | 0.9945 |
@@ -45,8 +45,8 @@ No Stirling or qpdf output PDF is committed. The new encoder is pure Rust, Apach
 
 ## Stream inventory investigation
 
-A local ebook run using an `ashift` built from the current branch produced a
-452,618-byte TableFormer output, three bytes larger than the earlier 452,615-byte run.
+Before these font changes, an ebook run produced a 452,618-byte TableFormer
+output, three bytes larger than the earlier 452,615-byte run.
 This single-file inventory is not a new corpus acceptance measurement. `qpdf --json` was
 used to classify stream `/Length` values by their references and dictionaries.
 Categories are mutually exclusive; page content takes precedence over other
