@@ -243,3 +243,65 @@ than directly invoking the engine outside the host. The manager should track
 the missing hard memory limits on macOS and Windows. No code or sandbox changes
 were made. The required build, tests, corpus, PoC and render-golden checks have
 not been run in this round.
+
+### Round 5 implementation and remaining gaps
+
+Status: **incomplete; do not merge**. Canonical output now replaces classified
+content streams with token-derived bytes while leaving the structural document
+intact for structural tools. Content names use a restricted ASCII alphabet,
+strings are hexadecimal, operands are bounded to one compound level, and
+non-ASCII bytes outside strings and inline data are refused. Inline headers are
+rewritten with full names, string resource values and multiple filters are
+refused, and lossless decoded output is bounded by the declared image size.
+Group 4 CCITT is accepted only for the exactly decodable all-white subset used
+by the bitmap-font fixture; unsupported CCITT and inline JPEG are refused
+rather than located by searching for `EI`.
+
+Classification now includes page contents, Form and tiling Pattern streams,
+Type3 CharProcs, annotation appearances including state dictionaries, and
+soft-mask Forms; every image stream is checked even when unreferenced. The
+existing per-page execution cost is summed across the document, and direct
+Form invocations in classified streams are charged. This does **not** yet prove
+a conservative execution bound for repeated Pattern paints, appearances and
+soft masks, including their indirect nested invocations. The document-wide
+budget requirement therefore remains open.
+
+The strict one-level operand grammar conflicts with the zero-new-refusal corpus
+requirement for `fixtures/pdf/pd-vi-ip-law-155-2025.pdf`: its marked-content
+operand includes `<< /Attached [/Top] /Type /Pagination /Subtype /Header >>`.
+The array is a dictionary value and cannot be emitted under the specified
+one-compound-level grammar. The implementation preserves the grammar and
+refuses this file; it does not remove or alter the marked-content properties.
+An earlier attempt to refuse all CCITT inline data also rejected
+`type3-bitmap-font.pdf`; the bounded Group 4 decoder above restored that case.
+The only new refusal among the original 94 files is the named Vietnamese PDF.
+
+Verification, using the shared build lock and 2 GiB scopes for tests:
+
+- The four generated regression PDFs are reproducible and their manifest hashes
+  match. `canonical_content_regression_fixtures_are_refused`,
+  `rejects_unreferenced_oversized_image`, and
+  `reemits_inline_names_and_rejects_string_filters` passed. The container test
+  checks Pattern, soft-mask and appearance streams individually.
+- `cargo fmt --all --check`, the requested clippy command, and the full
+  `cargo test --locked -p ariad-pdfium-engine` passed; the latter included the
+  Linux render goldens. The final corpus scan failed: 98 files including four
+  new synthetic fixtures, 40 refusals, and one unexpected real-document refusal
+  named above. The test was not weakened to hide that result.
+- All four round-3 samples and the nine named round-4 samples were refused
+  with the configured 25-million-pixel limit, on validation and extraction.
+  With local defaults, which have a higher pixel cap, the three round-4 image
+  samples were accepted; this is a different limit configuration.
+- The older `pdfs/` directory was scanned. Its harness accepts canonicalized
+  control cases as well as refusals: `bigstr-20000000.pdf`, `control.pdf`,
+  `gen-precedence.pdf`, `hybrid-root.pdf`, `objstm-index.pdf`, `prev-cycle.pdf`,
+  `short-entries.pdf`, and `ws-amplify.pdf` were accepted. The existing graph
+  test passed by comparing its accepted cases with the rendered control. Thus
+  the literal requirement that every file in that directory be refused is not
+  met; no claim to that effect is made.
+- Each implementation commit passed `committed`; `git diff --check` passed.
+
+Assumptions: the round-5 grammar takes precedence over compatibility when the
+two cannot both be met without changing the specified serialization. No
+macOS or Windows runtime verification was performed; the earlier OS table is
+source inspection only.
