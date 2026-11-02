@@ -192,22 +192,27 @@ pub fn embed_image(
         .min(limits.max_decompressed_bytes);
     let mut decoded = 0;
     let prepared = prepare_image(bytes, limit, &mut decoded, ctx)?;
+    let orientation = jpeg_orientation(bytes, ctx)?;
     let mut image = embed_prepared(doc, prepared)?;
-    image.orientation = jpeg_orientation(bytes);
+    image.orientation = orientation;
     Ok(image)
 }
 
-fn jpeg_orientation(bytes: &[u8]) -> u8 {
+fn jpeg_orientation(bytes: &[u8], ctx: &ToolCtx) -> Result<u8, PdfError> {
     if !bytes.starts_with(b"\xff\xd8") {
-        return 1;
+        return Ok(1);
     }
     let mut offset = 2usize;
     while offset + 4 <= bytes.len() {
+        ctx.check()?;
         if bytes[offset] != 0xff {
             break;
         }
         while bytes.get(offset) == Some(&0xff) {
             offset += 1;
+            if offset.is_multiple_of(65_536) {
+                ctx.check()?;
+            }
         }
         let Some(&marker) = bytes.get(offset) else {
             break;
@@ -236,11 +241,11 @@ fn jpeg_orientation(bytes: &[u8]) -> u8 {
             && body.starts_with(b"Exif\0\0")
             && let Some(orientation) = image::metadata::Orientation::from_exif_chunk(&body[6..])
         {
-            return orientation.to_exif();
+            return Ok(orientation.to_exif());
         }
         offset = end;
     }
-    1
+    Ok(1)
 }
 
 fn embed_prepared(doc: &mut Document, prepared: PreparedImage) -> Result<ImageXObject, PdfError> {
@@ -1210,7 +1215,10 @@ fn fmt_pt(v: f64) -> String {
     }
 }
 
-fn build_flate_stream(mut dict: lopdf::Dictionary, raw: Vec<u8>) -> Result<Stream, PdfError> {
+pub(crate) fn build_flate_stream(
+    mut dict: lopdf::Dictionary,
+    raw: Vec<u8>,
+) -> Result<Stream, PdfError> {
     let mut stream = Stream::new(dict.clone(), raw.clone());
     stream.compress().map_err(|_| PdfError::Malformed)?;
     if stream.dict.has(b"Filter") {

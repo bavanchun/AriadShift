@@ -1,6 +1,6 @@
 //! Append isolated, marked streams without modifying original page content.
 
-use lopdf::{Dictionary, Document, Object, ObjectId, Stream, content::Content, dictionary};
+use lopdf::{Dictionary, Document, Object, ObjectId, content::Content, dictionary};
 
 use crate::{
     PdfDoc, PdfError, ToolCtx,
@@ -149,8 +149,16 @@ fn checked_balance(
         bytes.push(b'\n');
     }
     let content = Content::decode(&bytes).map_err(|_| PdfError::Malformed)?;
+    validate_balance(&content.operations)
+}
+
+fn validate_balance(operations: &[lopdf::content::Operation]) -> Result<(), PdfError> {
     let mut depth = 0usize;
-    for op in content.operations {
+    let mut marked_depth = 0usize;
+    let mut text_open = false;
+    let mut path_open = false;
+    let mut clip_pending = false;
+    for op in operations {
         match op.operator.as_str() {
             "q" => {
                 depth = depth.checked_add(1).ok_or(PdfError::Malformed)?;
@@ -163,10 +171,34 @@ fn checked_balance(
                     PdfError::InvalidParams("cannot isolate unbalanced page content".into())
                 })?;
             }
+            "BT" if !text_open => text_open = true,
+            "ET" if text_open => text_open = false,
+            "BT" | "ET" => {
+                return Err(PdfError::InvalidParams(
+                    "cannot isolate unbalanced page text".into(),
+                ));
+            }
+            "BMC" | "BDC" => {
+                marked_depth = marked_depth.checked_add(1).ok_or(PdfError::Malformed)?;
+                if marked_depth > 100_000 {
+                    return Err(PdfError::Malformed);
+                }
+            }
+            "EMC" => {
+                marked_depth = marked_depth.checked_sub(1).ok_or_else(|| {
+                    PdfError::InvalidParams("cannot isolate unbalanced marked content".into())
+                })?
+            }
+            "m" | "l" | "c" | "v" | "y" | "h" | "re" => path_open = true,
+            "W" | "W*" => clip_pending = true,
+            "S" | "s" | "f" | "F" | "f*" | "B" | "B*" | "b" | "b*" | "n" => {
+                path_open = false;
+                clip_pending = false;
+            }
             _ => {}
         }
     }
-    if depth != 0 {
+    if depth != 0 || marked_depth != 0 || text_open || path_open || clip_pending {
         return Err(PdfError::InvalidParams(
             "cannot isolate unbalanced page content".into(),
         ));
@@ -230,16 +262,16 @@ fn check_wrapped(
             if depth != 0 {
                 return Err(PdfError::Malformed);
             }
+            validate_balance(&ops)?;
         }
     }
     checked_balance(doc, &items[begin + 1..end], budget, ctx)
 }
-fn stream(doc: &mut Document, kind: &[u8], bytes: Vec<u8>) -> Object {
+fn stream(doc: &mut Document, kind: &[u8], bytes: Vec<u8>) -> Result<Object, PdfError> {
     let mut dict = Dictionary::new();
     dict.set(MARKER_KEY.to_vec(), Object::Name(kind.to_vec()));
-    let mut stream = Stream::new(dict, bytes);
-    let _ = stream.compress();
-    Object::Reference(doc.add_object(Object::Stream(stream)))
+    let stream = crate::image_to_pdf::build_flate_stream(dict, bytes)?;
+    Ok(Object::Reference(doc.add_object(Object::Stream(stream))))
 }
 
 fn watermark_group(doc: &mut Document) -> Result<ObjectId, PdfError> {
@@ -297,6 +329,12 @@ fn watermark_group(doc: &mut Document) -> Result<ObjectId, PdfError> {
     };
     order.push(Object::Reference(id));
     defaults.set("Order", Object::Array(order));
+    let mut on = match defaults.get(b"ON") {
+        Ok(v) => array_clone(doc, v)?,
+        Err(_) => Vec::new(),
+    };
+    on.push(Object::Reference(id));
+    defaults.set("ON", Object::Array(on));
     props.set("D", Object::Dictionary(defaults));
     doc.get_dictionary_mut(catalog_id)
         .map_err(|_| PdfError::Malformed)?
@@ -318,6 +356,8 @@ pub fn append(
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     ctx.check()?;
+    let drawing = Content::decode(body).map_err(|_| PdfError::Malformed)?;
+    validate_balance(&drawing.operations)?;
     let mut budget = pdf.decode_budget();
     let doc = pdf.inner_mut()?;
     let mut items = contents(doc, page)?;
@@ -334,8 +374,8 @@ pub fn append(
             .collect();
         if begins.is_empty() && ends.is_empty() {
             checked_balance(doc, &items, &mut budget, ctx)?;
-            let begin = stream(doc, MARKER_WRAP_BEGIN, b"q\n".to_vec());
-            let end = stream(doc, MARKER_WRAP_END, b"Q\n".to_vec());
+            let begin = stream(doc, MARKER_WRAP_BEGIN, b"q\n".to_vec())?;
+            let end = stream(doc, MARKER_WRAP_END, b"Q\n".to_vec())?;
             items.insert(0, begin);
             items.push(end);
         } else if begins.len() != 1 || ends.len() != 1 || begins[0] >= ends[0] {
@@ -380,7 +420,7 @@ pub fn append(
         _ => bytes.extend_from_slice(b"EMC\n"),
     }
     bytes.extend_from_slice(b"Q\n");
-    let added = stream(doc, marking.marker(), bytes);
+    let added = stream(doc, marking.marker(), bytes)?;
     match position {
         LayerPosition::Under => items.insert(0, added),
         LayerPosition::Over => items.push(added),

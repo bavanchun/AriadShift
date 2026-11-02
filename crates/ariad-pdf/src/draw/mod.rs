@@ -32,3 +32,18 @@ pub fn check_page_count(
     }
     ctx.check()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn page_count_obeys_context_and_limits() {
+        let limits = ariad_core::limits::Limits::local();
+        let ctx = crate::ToolCtx::new().with_max_pages(Some(2));
+        assert!(check_page_count(2, &limits, &ctx).is_ok());
+        assert!(matches!(
+            check_page_count(3, &limits, &ctx),
+            Err(crate::PdfError::LimitExceeded(_))
+        ));
+    }
+}

@@ -411,6 +411,16 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn tool_context_supplies_a_local_clock() {
+        let before = jiff::Timestamp::now().as_second();
+        let context = build_tool_ctx(&Limits::local(), Arc::new(AtomicBool::new(false)));
+        let after = jiff::Timestamp::now().as_second();
+        let clock = context.clock().expect("host supplies a clock");
+        assert!((before..=after).contains(&clock.epoch_secs));
+        assert!((-86_400..=86_400).contains(&clock.utc_offset_secs));
+    }
+
     fn sample_pdf() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf-tools/encrypted-owner-only.plaintext.pdf")

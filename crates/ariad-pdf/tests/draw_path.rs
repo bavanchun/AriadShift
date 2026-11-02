@@ -32,12 +32,13 @@ fn rounded_borders_and_batched_rectangles_use_one_stream() {
         stroke_width_pt: 1.0,
         opacity: serde_json::from_value(json!(0.5)).unwrap(),
     };
-    path::draw(
+    path::draw_transformed(
         &mut pdf,
         page,
         &geometry,
         &path,
         &style,
+        ariad_pdf::xobject::Matrix::translate(7.0, 11.0),
         Marking::Content,
         LayerPosition::Over,
         &ToolCtx::new(),
@@ -60,6 +61,9 @@ fn rounded_borders_and_batched_rectangles_use_one_stream() {
         .decompressed_content()
         .unwrap_or_else(|_| stream.content.clone());
     let ops = Content::decode(&bytes).unwrap().operations;
+    let matrix = ops.iter().find(|op| op.operator == "cm").unwrap();
+    assert_eq!(matrix.operands[4].as_float().unwrap(), 7.0);
+    assert_eq!(matrix.operands[5].as_float().unwrap(), 11.0);
     assert_eq!(ops.iter().filter(|op| op.operator == "re").count(), 2);
     assert_eq!(ops.iter().filter(|op| op.operator == "c").count(), 4);
     assert!(ops.iter().any(|op| op.operator == "B"));

@@ -302,6 +302,7 @@ mod tests {
         }
         assert!(PageGeometry::new(media, crop, 45, 1.0).is_err());
         assert!(PageGeometry::new(media, crop, 0, 0.0).is_err());
+        assert!(PageGeometry::new(media, crop, 0, f64::MIN_POSITIVE / 16.0).is_err());
         assert!(PageGeometry::new(media, PdfRect::new(300.0, 0.0, 400.0, 10.0), 0, 1.0).is_err());
     }
     #[test]

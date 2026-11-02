@@ -146,6 +146,32 @@ pub fn draw(
     position: LayerPosition,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
+    draw_transformed(
+        pdf,
+        page,
+        geometry,
+        path,
+        style,
+        crate::xobject::Matrix::identity(),
+        marking,
+        position,
+        ctx,
+    )
+}
+
+/// Paint a path after a transform in visual page space.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_transformed(
+    pdf: &mut PdfDoc,
+    page: lopdf::ObjectId,
+    geometry: &PageGeometry,
+    path: &Path,
+    style: &PathStyle,
+    transform: crate::xobject::Matrix,
+    marking: Marking,
+    position: LayerPosition,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
     if path.operations.is_empty()
         || (style.fill.is_none() && style.stroke.is_none())
         || !style.stroke_width_pt.is_finite()
@@ -156,8 +182,8 @@ pub fn draw(
     let mut resources = layer::page_resources(pdf.inner(), page);
     let mut ops = vec![Operation::new(
         "cm",
-        geometry
-            .visual_to_user
+        transform
+            .then(geometry.visual_to_user)
             .0
             .into_iter()
             .map(num)
