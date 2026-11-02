@@ -480,6 +480,8 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.info" => "info".to_owned(),
         "pdf.decrypt" => "decrypted".to_owned(),
         "pdf.encrypt" => "encrypted".to_owned(),
+        "pdf.permissions" => "permissions".to_owned(),
+        "pdf.unlock_forms" => "unlocked".to_owned(),
         "pdf.linearize" => "linearized".to_owned(),
         "pdf.repair" => "repaired".to_owned(),
         "pdf.flatten" => "flattened".to_owned(),

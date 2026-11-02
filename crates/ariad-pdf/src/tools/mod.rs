@@ -685,6 +685,17 @@ pub fn finalize_tool_output(
     let mut warnings = Vec::new();
     let mut coded_warnings = Vec::new();
     let mut metrics = BTreeMap::new();
+    if output_docs.iter().any(|output| output.format == "pdf") {
+        for input in opened_inputs {
+            if has_signed_field(input.inner(), ctx)? {
+                coded_warnings.push(ToolWarning {
+                    code: "signed_input_rewritten".to_owned(),
+                    message: "Rewriting this document invalidates existing signatures.".to_owned(),
+                });
+                break;
+            }
+        }
+    }
     if opened_inputs.iter().any(PdfDoc::repaired_xref) {
         warnings.push(REPAIRED_XREF_WARNING.to_owned());
     }
@@ -744,9 +755,81 @@ pub fn finalize_tool_output(
     })
 }
 
+fn has_signed_field(doc: &lopdf::Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
+    use lopdf::Object;
+    use std::collections::HashSet;
+
+    let Ok(form) = doc.catalog().and_then(|catalog| catalog.get(b"AcroForm")) else {
+        return Ok(false);
+    };
+    let (_, form) = doc.dereference(form).map_err(|_| PdfError::Malformed)?;
+    let Ok(fields) = form.as_dict().and_then(|form| form.get(b"Fields")) else {
+        return Ok(false);
+    };
+    let mut pending = vec![(fields, false, 0usize)];
+    let mut visited = HashSet::new();
+    let mut count = 0usize;
+    while let Some((item, inherited_sig, depth)) = pending.pop() {
+        ctx.check()?;
+        count += 1;
+        if count > 100_000 || depth > 100 {
+            return Err(PdfError::Malformed);
+        }
+        match item {
+            Object::Reference(id) => {
+                if !visited.insert((*id, inherited_sig)) {
+                    continue;
+                }
+                pending.push((
+                    doc.get_object(*id).map_err(|_| PdfError::Malformed)?,
+                    inherited_sig,
+                    depth + 1,
+                ));
+            }
+            Object::Array(items) => {
+                pending.extend(items.iter().map(|item| (item, inherited_sig, depth + 1)));
+            }
+            Object::Dictionary(field) => {
+                let signature = match field.get(b"FT") {
+                    Ok(value) => {
+                        doc.dereference(value)
+                            .ok()
+                            .and_then(|(_, value)| value.as_name().ok())
+                            == Some(b"Sig")
+                    }
+                    Err(_) => inherited_sig,
+                };
+                if signature && field.has(b"V") {
+                    return Ok(true);
+                }
+                if let Ok(kids) = field.get(b"Kids") {
+                    pending.push((kids, signature, depth + 1));
+                }
+            }
+            _ => return Err(PdfError::Malformed),
+        }
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    #[test]
+    fn detects_signed_acroform_fields_with_inherited_type() {
+        use lopdf::{Document, Object, dictionary};
+        let mut doc = Document::with_version("1.7");
+        let child = doc.add_object(dictionary! { "V" => Object::Null });
+        let parent =
+            doc.add_object(dictionary! { "FT" => "Sig", "Kids" => vec![Object::Reference(child)] });
+        let form = doc.add_object(dictionary! { "Fields" => vec![Object::Reference(parent)] });
+        let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "AcroForm" => form });
+        doc.trailer.set("Root", catalog);
+        assert!(super::has_signed_field(&doc, &super::ToolCtx::new()).unwrap());
+        doc.get_dictionary_mut(child).unwrap().remove(b"V");
+        assert!(!super::has_signed_field(&doc, &super::ToolCtx::new()).unwrap());
+    }
 
     use ariad_core::reader::pdf as core_pdf;
     use serde_json::json;
