@@ -1,14 +1,14 @@
 # qpdf pack development
 
-This is an incomplete, unsigned Linux development pack implementation. The
-source compilation job remains experimental; a local probe linked system zlib
-and libm and did not satisfy the dependency check. The upstream Linux binary
-contains additional libraries and is rejected by the development assembler.
-macOS archives remain blocked pending review of their OpenSSL and
-libjpeg-turbo 3.2.0 contents. No signing or publishing implementation exists.
+The pack is built from qpdf 12.4.2, libjpeg-turbo 3.2.1 and zlib 1.3.2 on
+every target. The upstream macOS binaries are not used. Linux arm64, both musl
+targets and macOS require CI verification. `just pack-qpdf <qpdf_dir>` creates
+an unsigned host pack; the upstream Linux development cache is permitted only
+for local use and its additional dependencies are marked as unreviewed.
 
 `licence-review.toml` records the narrowly scoped libjpeg-turbo 3.2.1 review.
-`check-release.sh` fails closed while the owner's approval is pending; the
-workflow also refuses release until the pack and target checks are complete.
+`check-release.sh` fails closed while the owner's approval or the GNU static
+runtime review is pending; the workflow also requires all six target jobs to
+succeed before signing.
 The declared `ariad-engine/2` entrypoint requires the host qpdf adapter, which
 is being implemented separately.

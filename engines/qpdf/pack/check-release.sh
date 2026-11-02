@@ -13,6 +13,7 @@ try:
         'source': 'https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.1/libjpeg-turbo-3.2.1.tar.gz',
         'sha256': 'c27ad72a68da151177929aa969ae773a2da5ac2af9ce946079314fdac8cece7f',
         'pending_owner_approval': False,
+        'runtime_review_complete': True,
     }
     if review != expected:
         raise ValueError('review is pending or does not match the approved component')
