@@ -148,9 +148,6 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
       PUBLIC_KEY: crates/ariad-host/data/pack-keys/${{ vars.PACK_SIGNING_KEY_ID }}.pub
-      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-      MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -199,6 +196,10 @@ jobs:
             tar -czf "pack-dist/$(basename "$dir").tar.gz" -C "$dir" .
           done
       - name: Sign and publish
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           bash scripts/pack/sign-pack.sh --name qpdf --version 0.1.0 --manifest pack-dist/pack.toml --public-key "$PUBLIC_KEY"
           gh release create "$TAG" --verify-tag --title "$TAG" --notes 'Signed qpdf engine pack.' pack-dist/pack.toml pack-dist/pack.toml.minisig pack-dist/*.tar.zst pack-dist/qpdf-input-receipts-*.tar.gz sources/*
