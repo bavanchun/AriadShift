@@ -108,3 +108,23 @@ and deleted; smoke artifacts and the development pack remain in coordination
 storage for review. The local `.tools/bin/committed` points to the existing
 pinned 1.1.11 tool in the main checkout. No process started by this integration
 is left running.
+
+## Merge of updated dev
+
+Merged `origin/dev` at `da078685ffe8c2f4e665b69e7cdb3a5a2fb7f2ca` as
+`94a15dfaf487ac3e64923a0db85ca12baf654635`. The sole conflict was in
+`THIRD_PARTY_LICENSES`; Cargo resolved both lockfiles with zip 9.2.1, and
+`just licenses` regenerated Rust, desktop and web notices. The web and desktop
+outputs had no tracked changes. The updated lockfiles also contain Cargo's
+resolved Windows dependency edges.
+
+Using the shared build lock and both real qpdf and PDFium packs, fmt, the
+five-package clippy command, core/PDF/engine-io tests, the complete host suite,
+the CLI suite, `just licenses-check`, `just deny` and the commit check passed.
+The host suite was run in two complementary parts: all tests except
+`corpus_size_and_similarity_against_stirling`, then that exact test separately.
+Two initial whole-suite runs hit the ten-minute execution limit during corpus
+measurement after compilation; their logs are retained. The first two licence
+checks failed because the mise pnpm shim lacked a selected version; the final
+check passed with `MISE_PNPM_VERSION=12.9.1`. Detailed logs and results are in
+`/tmp/agent-herdr/runs/p05int/` on the integration machine.
