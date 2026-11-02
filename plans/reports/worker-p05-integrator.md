@@ -21,12 +21,7 @@ the main checkout; D6 is v2-only and the frozen v1 schemas must stay unchanged.
 The Mac PM approved the encoder follow-up in `.run/coord/from-mac/34-compress-acceptance.md`; the 7/10 bar remains unchanged.
 No release or licence exception is approved by this handoff.
 
-Uncommitted integration work registers the nine tools, reconciles shared
-warning/metric support with the already merged implementation, adds module,
-dispatch, naming and similarity-hook changes, updates the lockfile and generates
-`schemas/tools.v1.json`. It also corrects `just pack-qpdf` to find the freshly
-built CLI when `CARGO_TARGET_DIR` is set. This work is incomplete and must not
-be treated as ready for review or release.
+Committed integration work registers the nine tools, reconciles shared warning and metric support, adds module, dispatch, naming and similarity-hook changes, updates the lockfile and generates `schemas/tools.v1.json`. The pack recipe finds the freshly built CLI when `CARGO_TARGET_DIR` is set. The shared signed-input warning, CLI recipe secret prompts, real CLI and MCP secret tests, WASM diagnostics and fuzz target coverage have also been committed. The gate and overall phase remain incomplete.
 
 ## Linux gate evidence
 
@@ -52,16 +47,21 @@ percent; see `plans/reports/compress-measurement-p05.md`. The seven-file joint
 threshold therefore remains unmet on that evidence. No Stirling output PDF was
 committed.
 
+## Subsequent focused verification
+
+- `cargo test -p ariad-pdf --lib detects_signed_acroform_fields_with_inherited_type`: passed, one test.
+- With `ASHIFT_PACK_QPDF` pointing to the freshly assembled development pack, `cargo test --locked -p ariad-cli --features test-probe --test secrets_surfaces --test mcp_secrets`: passed, nine tests, including actual qpdf, recipe prompts and handle reuse.
+- `cargo test --locked -p ariad-wasm pdf_tool_exposes_coded_warnings_and_metrics`: passed, one test.
+- In `fuzz/`, `cargo check --features pdf-reader` and `cargo fmt --all --check`: passed; this enables and builds the phase-5 structural cases.
+- Frozen v1 protocol and pack schemas match `origin/dev` byte for byte.
+
+These results precede the integration of s2b and are not a final gate.
+
 ## Remaining integration work
 
-- Implement and test `signed_input_rewritten` for every rewriting ariad-pdf
-  tool, preserve the s5 signature dictionary tests, and document invalidation.
-- Implement CLI recipe prompt secret resolution and real registered-tool CLI,
-  MCP and recipe coverage including non-disclosure and error paths.
 - Verify and, where necessary, enforce the signed executable allowlist for qpdf;
   exercise Linux child confinement, hostile inputs and pack resolution.
-- Complete naming, snapshots, fuzz, documentation, phase-file corrections,
-  browser diagnostics review and all unrun gate commands. Re-run the joint
+- Complete snapshots, documentation, licence notice regeneration and all unrun gate commands. Re-run the joint
   10-file size/SSIM comparison and target ladder against the final code.
 - Inspect and commit the integration and generated files only after validating
   them. No worker worktree or branch was deleted; cleanup protocol was not
@@ -69,6 +69,6 @@ committed.
 
 ## Mac decisions and work
 
-The Mac PM approved the encoder follow-up and source-built macOS qpdf. IJG and GNU runtime items remain owner-pending and block distribution, not the phase merge. Run and
+The Mac PM approved the encoder follow-up and source-built macOS qpdf. The merged encoder follow-up still reports 6/10 for the joint size and SSIM criterion, so the unchanged acceptance bar is not met and requires a further decision. IJG and GNU runtime items remain owner-pending and block distribution, not the phase merge. Run and
 record macOS qpdf build, signing, Seatbelt child confinement, bindings and native
 tests on the Mac. No macOS verification was run here.
