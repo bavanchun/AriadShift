@@ -293,6 +293,16 @@ pub fn extract_document_images(
     Ok(outcome)
 }
 
+fn check_extraction_xref(pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
+    if pdf_doc.repaired_xref() {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+        ));
+    }
+    Ok(())
+}
+
 fn extract_document_images_with(
     ctx: &mut ToolContext<'_>,
     params: &ExtractImagesParams,
@@ -303,12 +313,7 @@ fn extract_document_images_with(
         .map_err(|e| EngineFailure::owned(ErrorCode::InvalidRequest, e.to_string()))?;
 
     let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
-    if pdf_doc.repaired_xref() {
-        return Err(EngineFailure::new(
-            ErrorCode::LimitExceeded,
-            "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
-        ));
-    }
+    check_extraction_xref(&pdf_doc)?;
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
     let pdfium = ctx.pdfium()?;
@@ -3775,6 +3780,7 @@ mod corpus_tests {
             );
             let result = (|| {
                 let (_, doc) = read_and_preflight_pdf(&ctx)?;
+                check_extraction_xref(&doc)?;
                 let mut work = 0;
                 let max_depth = usize::from(ctx.limits().max_nesting_depth);
                 let max_bytes =
@@ -3800,6 +3806,7 @@ mod corpus_tests {
             })
             .collect();
         let expected: HashSet<_> = [
+            "broken-xref.pdf",
             "indirect-image-preflight.pdf",
             "indirect-content-filter.pdf",
             "indirect-jbig2-filter.pdf",
@@ -3810,6 +3817,7 @@ mod corpus_tests {
             "inline-indirect-key.pdf",
             "inline-lzw-large.pdf",
             "inline-rl-large.pdf",
+            "repaired-xref-extraction.pdf",
             "type3-inline-image.pdf",
             "xobject-abbreviated-keys.pdf",
         ]
