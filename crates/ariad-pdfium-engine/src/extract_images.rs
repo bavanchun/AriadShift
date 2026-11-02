@@ -961,6 +961,15 @@ pub(crate) fn canonical_content_streams(
             }
         }
     }
+    let mut page_contents = HashSet::new();
+    for page_id in preflight_page_tree(doc, usize::from(ctx.limits().max_nesting_depth))? {
+        let page = doc
+            .get_dictionary(page_id)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        if let Ok(contents) = page.get(b"Contents") {
+            content_ids(doc, contents, &mut page_contents, 0, false)?;
+        }
+    }
     let mut out = BTreeMap::new();
     let mut remaining = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
     let mut memo = HashMap::new();
@@ -1018,6 +1027,9 @@ pub(crate) fn canonical_content_streams(
         stream.content = content;
         stream.dict.remove(b"Filter");
         stream.dict.remove(b"DecodeParms");
+        if page_contents.contains(&id) {
+            stream.dict.remove(b"Resources");
+        }
         stream.dict.set(
             "Length",
             i64::try_from(stream.content.len()).map_err(|_| EngineFailure::limit_exceeded())?,

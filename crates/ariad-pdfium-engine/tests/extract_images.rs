@@ -1616,6 +1616,31 @@ fn content_container_corpus_is_refused_with_pixel_cap() {
 }
 
 #[test]
+fn page_content_resources_are_removed_from_canonical_output() {
+    let input = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << >> /Contents 4 0 R >>"
+            .to_vec(),
+        stream_object("/Resources << /Pattern << >> >>", b"q Q"),
+    ]);
+    let ws = TestWorkspace::from_bytes("input.pdf", &input);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new("page", "pdf.render", ws.paths, Limits::local(), &mut sink);
+    let output = ctx.load_validated_pdf_bytes().unwrap();
+    let doc = lopdf::Document::load_mem(&output).unwrap();
+    assert!(
+        doc.get_object((4, 0))
+            .unwrap()
+            .as_stream()
+            .unwrap()
+            .dict
+            .get(b"Resources")
+            .is_err()
+    );
+}
+
+#[test]
 fn type3_resource_scopes_charge_executed_glyphs() {
     for name in [
         "type3-charproc-resource-budget.pdf",

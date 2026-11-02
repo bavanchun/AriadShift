@@ -216,7 +216,7 @@ fn limit(cost: usize, max: usize) -> Result<usize, EngineFailure> {
     Ok(cost)
 }
 
-type MemoKey = (ObjectId, [u8; 32], usize, Vec<ObjectId>);
+type MemoKey = (ObjectId, [u8; 32], usize, Vec<ObjectId>, bool);
 type GlyphKey = ([u8; 32], usize, Vec<ObjectId>);
 
 struct Calculator<'a, 'b> {
@@ -235,13 +235,23 @@ impl Calculator<'_, '_> {
         depth: usize,
         active: &mut HashSet<ObjectId>,
     ) -> Result<usize, EngineFailure> {
+        self.stream_inner(id, scope, depth, active, false)
+    }
+    fn stream_inner(
+        &mut self,
+        id: ObjectId,
+        scope: &Scope,
+        depth: usize,
+        active: &mut HashSet<ObjectId>,
+        page_contents: bool,
+    ) -> Result<usize, EngineFailure> {
         self.ctx.check()?;
         if depth > 8 || !active.insert(id) {
             return Err(EngineFailure::limit_exceeded());
         }
         let mut ancestors: Vec<_> = active.iter().copied().collect();
         ancestors.sort_unstable();
-        let key = (id, scope.digest(), depth, ancestors);
+        let key = (id, scope.digest(), depth, ancestors, page_contents);
         if let Some(&cost) = self.memo.get(&key) {
             active.remove(&id);
             return Ok(cost);
@@ -255,7 +265,14 @@ impl Calculator<'_, '_> {
             .get_object(id)
             .and_then(Object::as_stream)
             .map_err(|_| EngineFailure::limit_exceeded())?;
-        let scope = scope.child(self.doc, stream.dict.get(b"Resources").ok())?;
+        let scope = scope.child(
+            self.doc,
+            if page_contents {
+                None
+            } else {
+                stream.dict.get(b"Resources").ok()
+            },
+        )?;
         let mut cost = facts.ops;
         for call in &facts.calls {
             let extra = match call.op.as_slice() {
@@ -484,6 +501,7 @@ pub(crate) fn check(
         if let Ok(contents) = page.get(b"Contents") {
             stream_ids(doc, contents, false, 0, &mut roots)?;
         }
+        let contents_count = roots.len();
         if let Ok(annotations) = page.get(b"Annots") {
             let annotations = resolve(Some(doc), annotations)?
                 .1
@@ -500,10 +518,16 @@ pub(crate) fn check(
             }
         }
         let mut page_cost = 0usize;
-        for id in roots {
+        for (index, id) in roots.into_iter().enumerate() {
             page_cost = limit(
                 page_cost
-                    .checked_add(calc.stream(id, &scope, 0, &mut HashSet::new())?)
+                    .checked_add(calc.stream_inner(
+                        id,
+                        &scope,
+                        0,
+                        &mut HashSet::new(),
+                        index < contents_count,
+                    )?)
                     .ok_or_else(EngineFailure::limit_exceeded)?,
                 100_000,
             )?;
@@ -549,6 +573,42 @@ mod tests {
     }
     fn form(doc: &mut lopdf::Document, dict: Dictionary) -> ObjectId {
         doc.add_object(lopdf::Stream::new(dict, b"q Q".to_vec()))
+    }
+    #[test]
+    fn page_content_uses_page_resources() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = Vec::new();
+        let ctx = context(dir.path(), &mut sink);
+        let mut doc = lopdf::Document::new();
+        let pattern = form(&mut doc, dictionary! { "PatternType" => 1 });
+        let root = form(
+            &mut doc,
+            dictionary! { "Resources" => dictionary! { "Pattern" => dictionary! {} } },
+        );
+        let resources = Object::Dictionary(
+            dictionary! { "Pattern" => dictionary! { "P" => Object::Reference(pattern) } },
+        );
+        let scope = Scope::from_page(&doc, Some(&resources)).unwrap();
+        let facts = BTreeMap::from([
+            (root, facts(1, &[(b"scn", b"P")])),
+            (pattern, facts(17, &[])),
+        ]);
+        let mut calc = Calculator {
+            ctx: &ctx,
+            doc: &doc,
+            facts: &facts,
+            memo: HashMap::new(),
+            glyph_memo: HashMap::new(),
+        };
+        assert_eq!(
+            calc.stream_inner(root, &scope, 0, &mut HashSet::new(), true)
+                .unwrap(),
+            18
+        );
+        assert_eq!(
+            calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
+            1
+        );
     }
     #[test]
     fn inherited_font_keeps_its_selection_resources() {
