@@ -24,7 +24,7 @@ typst = { version = "0.15.1", optional = true }
 zip = { version = "9.0.5", default-features = false }
 
 [features]
-pdf-reader = ["ariad-core/pdf", "dep:ariad-pdf"]
+pdf-reader = ["ariad-core/pdf", "dep:ariad-pdf", "ariad-pdf/codecs"]
 typst-writer = ["ariad-host/typst", "dep:typst"]
 
 [lib]

@@ -218,13 +218,17 @@ name = "ariad-pdf"
 version = "0.2.0"
 dependencies = [
  "ariad-core",
+ "flate2",
  "image",
  "lopdf",
  "schemars",
  "serde",
  "serde_json",
+ "subsetter",
  "thiserror",
  "unicode-normalization",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
