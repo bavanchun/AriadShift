@@ -90,7 +90,7 @@ def main():
                             "--to", "docx", "--output", str(docx)], check=True)
             for input_path in (source, docx):
                 if input_path == docx:
-                    click("//button[normalize-space()='Convert']")
+                    click("//nav[@aria-label='Main navigation']//button[span[normalize-space()='Convert']]")
                 click("//summary[normalize-space()='Add a local file by path']")
                 type_path(input_path)
                 click("//button[normalize-space()='Add file']")
