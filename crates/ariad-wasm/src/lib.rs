@@ -417,7 +417,9 @@ fn tool_run_to_js(run: &api::ToolRun) -> Result<JsValue, JsValue> {
     let bytes = js_sys::Uint8Array::from(run.bytes.as_slice());
     let warnings = to_js(&run.warnings)?;
 
-    if let Some(ref data) = run.data {
+    if run.format == "json"
+        && let Some(ref data) = run.data
+    {
         let result = to_js(data)?;
         let data_clone = to_js(data)?;
         define_hidden_prop(&result, "tool", &JsValue::from_str(run.tool))?;
@@ -434,7 +436,11 @@ fn tool_run_to_js(run: &api::ToolRun) -> Result<JsValue, JsValue> {
         let result = to_js(run)?;
         js_sys::Reflect::set(&result, &JsValue::from_str("bytes"), &bytes)?;
         js_sys::Reflect::set(&result, &JsValue::from_str("artifacts"), &artifacts)?;
-        js_sys::Reflect::set(&result, &JsValue::from_str("data"), &JsValue::NULL)?;
+        let data = match &run.data {
+            Some(data) => to_js(data)?,
+            None => JsValue::NULL,
+        };
+        js_sys::Reflect::set(&result, &JsValue::from_str("data"), &data)?;
         Ok(result)
     }
 }

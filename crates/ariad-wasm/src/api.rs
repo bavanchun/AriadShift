@@ -354,7 +354,7 @@ pub struct ToolRun {
     pub bytes: Vec<u8>,
     /// Produced artifacts in deterministic order.
     pub artifacts: Vec<ToolArtifact>,
-    /// Structured JSON payload when `format == "json"`.
+    /// Structured JSON payload, including reports accompanying binary artifacts.
     pub data: Option<Value>,
     /// Non-fatal warnings emitted during execution.
     pub warnings: Vec<Notice>,
@@ -363,7 +363,7 @@ pub struct ToolRun {
 }
 
 impl ToolRun {
-    /// Returns the structured JSON payload when the tool output format is `"json"`.
+    /// Returns the structured JSON payload, if present.
     #[must_use]
     pub fn json(&self) -> Option<&Value> {
         self.data.as_ref()
@@ -375,17 +375,20 @@ impl Serialize for ToolRun {
     where
         S: serde::Serializer,
     {
-        if let Some(ref data) = self.data {
+        if self.format == "json"
+            && let Some(ref data) = self.data
+        {
             data.serialize(serializer)
         } else {
             use serde::ser::SerializeMap;
-            let mut map = serializer.serialize_map(Some(6))?;
+            let mut map = serializer.serialize_map(Some(7))?;
             map.serialize_entry("tool", &self.tool)?;
             map.serialize_entry("format", &self.format)?;
             map.serialize_entry("media_type", &self.media_type)?;
             map.serialize_entry("extension", &self.extension)?;
             map.serialize_entry("warnings", &self.warnings)?;
             map.serialize_entry("metrics", &self.metrics)?;
+            map.serialize_entry("data", &self.data)?;
             map.end()
         }
     }
@@ -489,8 +492,7 @@ pub fn check_browser_access(
 /// - `artifacts`: every [`ToolArtifact`] (`{ name, format, media_type, extension, bytes }`)
 ///   produced by the tool in deterministic order,
 /// - `bytes`: the primary artifact's bytes (or empty when no artifact was emitted),
-/// - `data`: `Some(Value)` for JSON-emitting tools such as `pdf.info`, or `None` for binary
-///   artifact tools (`pdf.*` structural tools), and
+/// - `data`: `Some(Value)` for structured output or a report accompanying a binary artifact, and
 /// - `warnings`: non-fatal [`Notice`] findings emitted during execution, and
 /// - `metrics`: tool-specific measurements.
 pub fn run_tool<I, B, N, S>(
@@ -1228,6 +1230,42 @@ mod tests {
         assert_eq!(pdf_info.tier, Tier::Free);
         assert_eq!(pdf_info.output_format, "json");
         assert_eq!(pdf_info.engine, "ariad-pdf");
+    }
+
+    #[test]
+    fn watermark_removal_returns_pdf_and_structured_report() {
+        let bytes = std::fs::read(pdf_fixtures_dir().join("watermark-layer.pdf")).unwrap();
+        let inputs = [bytes];
+        let names = ["watermark.pdf"];
+        let detected = run_tool(
+            &inputs,
+            names,
+            "pdf.watermark_detect",
+            "{}",
+            64 * 1024 * 1024,
+            false,
+        )
+        .unwrap();
+        let id = detected.data.unwrap()["candidates"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let params = serde_json::json!({"candidates": [id]}).to_string();
+        let result = run_tool(
+            &inputs,
+            names,
+            "pdf.watermark_remove",
+            &params,
+            64 * 1024 * 1024,
+            false,
+        )
+        .unwrap();
+        assert_eq!(result.format, "pdf");
+        assert!(result.bytes.starts_with(b"%PDF-"));
+        assert_eq!(result.data.as_ref().unwrap()["removed"][0]["id"], id);
+        let serialized = serde_json::to_value(&result).unwrap();
+        assert_eq!(serialized["format"], "pdf");
+        assert_eq!(serialized["data"]["removed"][0]["id"], id);
     }
 
     #[test]

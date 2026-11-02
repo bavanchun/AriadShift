@@ -388,7 +388,7 @@ fn tools_command_lists_registry_json_and_human() {
             "pdf.linearize"
         ]
     );
-    assert_eq!(tools_json.as_array().unwrap().len(), 44);
+    assert_eq!(tools_json.as_array().unwrap().len(), 59);
 
     let empty_group = ashift_cmd()
         .args(["tools", "--group", "security", "--json"])

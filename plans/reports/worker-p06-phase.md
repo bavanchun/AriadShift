@@ -1,34 +1,11 @@
 # Overlay and watermark implementation status
 
-Status: incomplete. The phase is not ready for integration or release.
+Status: in progress. The phase is not ready for release or final review.
 
-The approved phase starts from `1bdab0f511d3d3fbd2ee994241dbb03c042d4317`.
-The branch contains the following preparatory changes:
+The branch implements the 15 approved in-process overlay, colour, watermark detection and removal, and page-furniture tools. Drawing uses the bundled Libertinus fonts and shared PDF primitives. The original base was `1bdab0f5`; `origin/dev` at `ff8603f6` was merged in `a25d0732`. Slice details and focused checks are recorded in [the drawing report](worker-p06-s1.md), [the marks report](worker-p06-s2.md), [the page furniture report](worker-p06-s3.md), [the colour report](worker-p06-s4.md), and [the watermark report](worker-p06-s5.md).
 
-- `3bc4fb91` adds an optional caller-supplied `ToolClock` to `ToolCtx` and tests
-  that the value survives cloning and builder use. The host and WASM do not yet
-  supply a clock; date resolution is not implemented.
-- `f4acbe7a` adds shared anchor, font, date format, RGB colour and opacity
-  parameter types with deserialization and schema checks.
-- `23483e6a` copies regular and bold Libertinus 7.051 with its OFL notice and
-  source receipts. The font hashes match the existing Typst font receipts.
-  Nothing embeds or renders the fonts yet.
+The registry and tool schemas are generated. PDF plus inline JSON is implemented across host and WASM, with CLI and MCP coverage in progress. The independent Argon review, dispatched by the PM, found bounded-work, mark-removal and resource-cleanup defects; corrections and regression tests are in progress. Its findings and the required delta review remain gate blockers. The Mac PM handles the final Sonnet review.
 
-The drawing layer, date tokens, font subsetting, image builder, all 15 tools,
-registration, output contract, schemas, integration, documentation and fuzzing
-remain unimplemented. None of the visual, Unicode, platform, security or
-independent review acceptance checks has been performed. In particular, no
-watermark removal behavior should be inferred from these preparatory commits.
+Focused slice tests passed, including 2,000 outline entries in 38.45 seconds under a 2 GiB scope, Vietnamese text extraction, and PDFium rendering and watermark round-trip checks. A full clippy invocation passed before the security review changes. The final phase gate has not passed and must be rerun against the final head. Manual macOS Preview, Chrome, Acrobat and phone QR checks remain pending.
 
-Checks completed:
-
-- `build-lock.sh cargo test --locked -p ariad-pdf --lib clock_is_explicit_and_preserved_when_cloned`: PASS, one test.
-- `build-lock.sh cargo test --locked -p ariad-core --lib overlay_common`: PASS, one test.
-- `build-lock.sh cargo fmt --all --check`: PASS before the later common types;
-  `cargo fmt --all` formatted those types.
-- `committed --config committed.toml HEAD`: PASS after each implementation commit.
-- SHA-256 of both font files matches `crates/ariad-typst/fonts/SOURCES.txt`.
-
-The full gate has not been run and must not be treated as passed. Assumptions:
-use the approved D1–D10 decisions and the marker contract from the slice map;
-retain the existing single-worker branch and continue from its current head.
+The approved D1-D10 decisions and existing marker contract govern this work. No new progress events are introduced.

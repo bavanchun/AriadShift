@@ -758,7 +758,7 @@ fn run_tool_inner(
         &spec,
         &resolved_secrets.schema_params,
         is_out_of_process,
-        emits_json || raw_exec.inline_json.is_some(),
+        emits_json,
         extracts_attachments,
         &raw_exec.artifacts,
         &input_paths,

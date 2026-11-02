@@ -245,6 +245,10 @@ pub fn execute_with_names(
         .collect();
     let mut inline_json = None;
     let mut used_names = HashSet::new();
+    let has_binary_artifacts = tool_output
+        .artifacts
+        .iter()
+        .any(|artifact| !artifact.format.trim().eq_ignore_ascii_case("json"));
 
     if let Some(ref raw_value) = tool_output.json {
         let scrubbed_value = scrubber.scrub_value(raw_value);
@@ -255,23 +259,26 @@ pub fn execute_with_names(
             return Err(ToolError::LimitExceeded);
         }
 
-        let raw_name = tool_output
-            .artifacts
-            .first()
-            .map(|out| out.name.as_str())
-            .filter(|name| !name.is_empty())
-            .unwrap_or("output.json");
-        let out_format = tool_output
-            .artifacts
-            .first()
-            .map(|out| out.format.trim())
-            .filter(|fmt| !fmt.is_empty())
-            .unwrap_or("json");
-        let staged_name = sanitize_staged_artifact_name(raw_name, 1, out_format, &mut used_names);
-        let staged_out = workspace.output_dir().join(staged_name);
-        fs::write(&staged_out, &json_bytes)
-            .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
-        artifacts.push((staged_out, out_format.to_owned()));
+        if !has_binary_artifacts {
+            let raw_name = tool_output
+                .artifacts
+                .first()
+                .map(|out| out.name.as_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or("output.json");
+            let out_format = tool_output
+                .artifacts
+                .first()
+                .map(|out| out.format.trim())
+                .filter(|fmt| !fmt.is_empty())
+                .unwrap_or("json");
+            let staged_name =
+                sanitize_staged_artifact_name(raw_name, 1, out_format, &mut used_names);
+            let staged_out = workspace.output_dir().join(staged_name);
+            fs::write(&staged_out, &json_bytes)
+                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            artifacts.push((staged_out, out_format.to_owned()));
+        }
 
         if let Some(pages) = scrubbed_value.get("page_count") {
             metrics.insert("pages".to_owned(), pages.clone());
@@ -280,7 +287,8 @@ pub fn execute_with_names(
             metrics.insert("encrypted".to_owned(), encrypted.clone());
         }
         inline_json = Some(scrubbed_value);
-    } else {
+    }
+    if tool_output.json.is_none() || has_binary_artifacts {
         let mut total_out_bytes = 0_u64;
         for (idx, artifact) in tool_output.artifacts.iter().enumerate() {
             total_out_bytes = total_out_bytes.saturating_add(artifact.bytes.len() as u64);
@@ -424,6 +432,48 @@ mod tests {
     fn sample_pdf() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf-tools/encrypted-owner-only.plaintext.pdf")
+    }
+
+    #[test]
+    fn watermark_removal_stages_pdf_and_preserves_inline_report() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf-tools/watermark-layer.pdf");
+        let bytes = fs::read(&fixture).unwrap();
+        let input = InputDoc::new("watermark.pdf", bytes.clone());
+        let detected = ariad_pdf::tools::run_tool(
+            "pdf.watermark_detect",
+            &[input],
+            &json!({}),
+            &ToolCtx::new(),
+        )
+        .unwrap();
+        let id = detected.json.unwrap()["candidates"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let workspace = Workspace::new().unwrap();
+        let staged = workspace.input_dir().join("input.pdf");
+        fs::write(&staged, bytes).unwrap();
+        let spec = ariad_core::tools::find("pdf.watermark_remove").unwrap();
+        let result = execute(
+            spec,
+            &[staged],
+            &json!({"candidates":[id]}),
+            &workspace,
+            &Limits::local(),
+            &SecretScrubber::default(),
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(result.artifacts.len(), 1);
+        assert_eq!(result.artifacts[0].1, "pdf");
+        assert!(
+            fs::read(&result.artifacts[0].0)
+                .unwrap()
+                .starts_with(b"%PDF-")
+        );
+        assert_eq!(result.inline_json.unwrap()["removed"][0]["id"], id);
     }
 
     #[test]
