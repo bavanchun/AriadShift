@@ -14,7 +14,7 @@ use std::collections::HashSet;
 use unicode_normalization::char::is_combining_mark;
 
 use super::{
-    interpreter::{CHUNK_START, FontStyle, Glyph, PageContent, SPACE, STROKED},
+    interpreter::{CHUNK_START, FontStyle, Glyph, INVISIBLE, PageContent, SPACE, STROKED},
     lists,
 };
 
@@ -94,7 +94,26 @@ pub(super) fn layout_page(
             // The same text painted again at the same spot, as producers do to fake bold.
             continue;
         }
-        groups[usize::from(orientation)].push(CGlyph::new(glyph, index, text, orientation));
+        let mut canonical = CGlyph::new(glyph, index, text, orientation);
+        // Invisible OCR text may stretch a word to fit its recognized box. Keep a wide
+        // advance only within a continuous invisible text-show operation; retain the
+        // ordinary width cap for visible text and for uncorroborated advances.
+        if let Some(next) = content.glyphs.get(index + 1)
+            && glyph.flags & INVISIBLE != 0
+            && next.flags & INVISIBLE != 0
+            && next.flags & CHUNK_START == 0
+            && self::orientation(next) == orientation
+        {
+            let (next_x, next_base) = to_canonical(orientation, next.x, next.y);
+            let advance = next_x - canonical.x0;
+            if (next_base - canonical.base).abs() <= 0.1 * glyph.size
+                && (advance - glyph.width).abs() <= 0.1 * glyph.size
+                && advance > 0.0
+            {
+                canonical.x1 = canonical.x0 + glyph.width;
+            }
+        }
+        groups[usize::from(orientation)].push(canonical);
     }
 
     let mut blocks = Vec::new();
