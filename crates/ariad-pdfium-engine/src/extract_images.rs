@@ -599,6 +599,7 @@ impl PreflightBudget<'_> {
 struct XobjectScope<'a> {
     objects: BTreeMap<Vec<u8>, PdfObjectId>,
     parent: Option<&'a XobjectScope<'a>>,
+    page: Option<&'a XobjectScope<'a>>,
     digest: [u8; 32],
 }
 
@@ -626,6 +627,7 @@ impl<'a> XobjectScope<'a> {
         Self {
             objects,
             parent: None,
+            page: None,
             digest,
         }
     }
@@ -641,8 +643,28 @@ impl<'a> XobjectScope<'a> {
         Self {
             objects,
             parent: Some(self),
+            page: self.page.or(Some(self)),
             digest,
         }
+    }
+
+    fn form(&'a self, doc: &lopdf::Document, resources: Option<&Object>) -> Self {
+        let Some(resources) = resources else {
+            return self.child(BTreeMap::new());
+        };
+        let page = self.page.unwrap_or(self);
+        let has_xobjects = resolve(Some(doc), resources)
+            .ok()
+            .and_then(|(_, value)| value.as_dict().ok())
+            .is_some_and(|dict| dict.has(b"XObject"));
+        if !has_xobjects {
+            return page.child(BTreeMap::new());
+        }
+        let mut objects = BTreeMap::new();
+        insert_xobjects_from_resources!(doc, resources, objects);
+        let mut scope = Self::new(objects);
+        scope.page = Some(page);
+        scope
     }
 
     fn get(&self, name: &[u8]) -> Option<&PdfObjectId> {
@@ -1136,7 +1158,6 @@ fn preflight_xobject(
             expansion_glyphs = budget.glyph_count - glyphs_before;
             expansion_pixels = budget.image_pixels - pixels_before;
             expansion_bytes = budget.image_bytes - bytes_before;
-            let mut own_children = BTreeMap::new();
             if let Ok(resources) = stream.dict.get(b"Resources") {
                 validate_xobject_resources(doc, resources)?;
                 preflight_type3_fonts(
@@ -1148,9 +1169,8 @@ fn preflight_xobject(
                     depth + 1,
                     budget,
                 )?;
-                insert_xobjects_from_resources!(doc, resources, own_children);
             }
-            let xobjects = parent_xobjects.child(own_children);
+            let xobjects = parent_xobjects.form(doc, stream.dict.get(b"Resources").ok());
             let mut invoked = HashSet::new();
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
@@ -2194,11 +2214,7 @@ fn visit_xobject_target(
         if !expanded_forms.insert((target_id, parent_xobjects.digest)) {
             return Ok(());
         }
-        let mut form_xobjects = BTreeMap::new();
-        if let Ok(res_obj) = stream.dict.get(b"Resources") {
-            insert_xobjects_from_resources!(doc, res_obj, form_xobjects);
-        }
-        let form_xobjects = parent_xobjects.child(form_xobjects);
+        let form_xobjects = parent_xobjects.form(doc, stream.dict.get(b"Resources").ok());
         let form_content = preflight_stream_bytes(doc, stream, max_decompressed)?;
         collect_from_content_and_xobject_map(
             ctx,
@@ -3422,6 +3438,22 @@ mod corpus_tests {
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
         assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+    }
+
+    #[test]
+    fn form_resources_fall_back_to_page_category() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/form-page-fallback.pdf");
+        let doc = lopdf::Document::load(path).expect("fixture");
+        let page = XobjectScope::new(BTreeMap::from([(b"X".to_vec(), (7, 0))]));
+        let outer = doc.get_object((4, 0)).unwrap().as_stream().unwrap();
+        let parent = page.form(&doc, outer.dict.get(b"Resources").ok());
+        assert_eq!(parent.get(b"X"), Some(&(6, 0)));
+        let inner = doc.get_object((5, 0)).unwrap().as_stream().unwrap();
+        let child = parent.form(&doc, inner.dict.get(b"Resources").ok());
+        assert_eq!(child.get(b"X"), Some(&(7, 0)));
+        assert_eq!(parent.form(&doc, None).get(b"X"), Some(&(6, 0)));
+        assert!(parent.get(b"missing").is_none());
     }
 
     #[test]

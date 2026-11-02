@@ -4341,3 +4341,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "form-page-fallback-pdf"
+path = "fixtures/pdf/form-page-fallback.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Nested form page resource fallback"
+origin = "generated"
+generated_by = "fixtures/gen/form-page-fallback.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "1db103e1a4e716fc4ea4fcb9c703ffbe1a5d270d6f26f10bd7721764f3157856"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
