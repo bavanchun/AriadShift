@@ -71,6 +71,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/qpdf-output/receipt"
           printf '%s\n' "$IMAGE" > "$RUNNER_TEMP/qpdf-output/receipt/image.txt"
+          cp engines/qpdf/pack/runtime-sources.txt "$RUNNER_TEMP/qpdf-output/receipt/runtime-sources.txt"
           if [ '${{ matrix.kind }}' = musl ]; then
             docker run --rm -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/qpdf-input:/input:ro" -v "$RUNNER_TEMP/qpdf-output:/output" "$IMAGE" \
               sh -c 'mkdir -p /output/receipt/apks && apk add --cache-dir /output/receipt/apks --cache-packages bash build-base cmake pkgconf binutils libgcc-static && apk fix --reinstall --cache-dir /output/receipt/apks --cache-packages $(apk info) && bash /work/engines/qpdf/pack/record-inputs.sh /output/receipt && bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output'
@@ -154,7 +155,6 @@ jobs:
           persist-credentials: false
       - name: Require approval and stable branch ancestry
         run: |
-          bash engines/qpdf/pack/check-release.sh
           git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -166,7 +166,26 @@ jobs:
         with:
           name: qpdf-manifest
           path: pack-dist
+      - name: Download Linux input receipts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: qpdf-input-receipts-*
+          path: receipts
+      - name: Download corresponding sources
+        run: |
+          mkdir -p sources
+          while read -r digest name url; do
+            curl -fsSL --retry 3 --max-time 900 "$url" -o "sources/$name"
+            printf '%s  %s\n' "$digest" "sources/$name" | sha256sum --check
+          done < engines/qpdf/pack/runtime-sources.txt
+      - name: Verify release evidence
+        run: bash engines/qpdf/pack/check-release.sh receipts sources
+      - name: Archive receipts
+        run: |
+          for dir in receipts/qpdf-input-receipts-*; do
+            tar -czf "pack-dist/$(basename "$dir").tar.gz" -C "$dir" .
+          done
       - name: Sign and publish
         run: |
           bash scripts/pack/sign-pack.sh --name qpdf --version 0.1.0 --manifest pack-dist/pack.toml --public-key "$PUBLIC_KEY"
-          gh release create "$TAG" --verify-tag --title "$TAG" --notes 'Signed qpdf engine pack.' pack-dist/pack.toml pack-dist/pack.toml.minisig pack-dist/*.tar.zst
+          gh release create "$TAG" --verify-tag --title "$TAG" --notes 'Signed qpdf engine pack.' pack-dist/pack.toml pack-dist/pack.toml.minisig pack-dist/*.tar.zst pack-dist/qpdf-input-receipts-*.tar.gz sources/*
