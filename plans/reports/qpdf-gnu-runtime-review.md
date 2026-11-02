@@ -154,3 +154,14 @@ of byte-identical CI inputs, and a mirror plan is not a published mirror.
 Validation: the four artifacts were downloaded with `gh run download` and
 inspected as above; `bash scripts/test-pack-qpdf.sh` passed. The release gate
 was deliberately not changed.
+
+## Closing steps
+
+The pack workflow records Linux package inventories, image references, compiler
+versions and runtime hashes. Alpine receipts include hashes of the APKs used
+for a full package reinstall; RPM receipts hash the installed files per
+package. The release job checks and retains the reviewed source archives and
+receipts as release assets. The release gate remains closed until a release-tag
+run is reviewed and the Mac PM explicitly authorizes the flag change. Review
+the release-tag artifacts, notices and provenance against the requirements
+above before that decision; no release is authorized by this change.
