@@ -1610,9 +1610,34 @@ fn preflight_content(
             data_cap =
                 data_cap.min(usize::try_from(u64::from(mb) * 1024 * 1024).unwrap_or(usize::MAX));
         }
-        // Allow a small amount of predictor overhead, but never inflate a tiny
-        // declared image up to the global multi-gigabyte content limit.
-        let final_cap = decoded_len.saturating_add(1024).min(data_cap);
+        let predictor_rows = dict
+            .get(b"DP")
+            .or_else(|_| dict.get(b"DecodeParms"))
+            .ok()
+            .into_iter()
+            .flat_map(|value| match value {
+                Object::Array(items) => items.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .any(|value| {
+                value
+                    .as_dict()
+                    .ok()
+                    .and_then(|d| d.get(b"Predictor").ok())
+                    .and_then(|v| v.as_i64().ok())
+                    .is_some_and(|n| n >= 10)
+            });
+        let height = dict
+            .get(b"Height")
+            .or_else(|_| dict.get(b"H"))
+            .ok()
+            .and_then(|v| v.as_i64().ok())
+            .and_then(|n| usize::try_from(n).ok())
+            .unwrap_or(0);
+        let final_cap = decoded_len
+            .saturating_add(1024)
+            .saturating_add(if predictor_rows { height } else { 0 })
+            .min(data_cap);
         let mut filters = Vec::new();
         if let Ok(value) = dict.get(b"F").or_else(|_| dict.get(b"Filter")) {
             let resolved = resolve(Some(doc), value)?.1;
@@ -3661,6 +3686,7 @@ mod corpus_tests {
             "inline-lzw-large.pdf",
             "inline-rl-small.pdf",
             "inline-rl-large.pdf",
+            "inline-png-predictor.pdf",
         ] {
             let dir = tempfile::tempdir().expect("tempdir");
             let work = dir.path().canonicalize().expect("workspace");
@@ -3694,7 +3720,7 @@ mod corpus_tests {
             let mut work = 0;
             assert_eq!(
                 preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_ok(),
-                name.contains("small"),
+                name.contains("small") || name == "inline-png-predictor.pdf",
                 "{name}"
             );
         }

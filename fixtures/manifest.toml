@@ -4398,3 +4398,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "inline-png-predictor-pdf"
+path = "fixtures/pdf/inline-png-predictor.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Tall inline image with PNG predictor"
+origin = "generated"
+generated_by = "fixtures/gen/inline-png-predictor.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "fb853a38e96a0f0786b9a4bd7436fcabdf843330a4a4a39877b3edbb968e0e21"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
