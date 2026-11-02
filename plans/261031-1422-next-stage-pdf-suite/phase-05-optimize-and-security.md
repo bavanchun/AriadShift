@@ -48,6 +48,20 @@ milestone: B (engine breadth)
 
 - [ ] `pdf.compress` beats or matches Stirling's level 6 output size on ≥ 7 of 10 corpus files with visual similarity ≥ 0.98 (report table).
   The delegated PM accepted the measured 6/10 as a phase deviation; the seven-file target remains unmet. The [per-file measurements and reasons](../reports/compress-measurement-p05.md) record the four misses. Text-heavy parity follow-up: [issue #187](https://github.com/bavanchun/AriadShift/issues/187).
+
+| Input | Stirling bytes | AriadShift bytes | SSIM | Result / explanation |
+| --- | ---: | ---: | ---: | --- |
+| arxiv-multilingual-open-text-2201-05609-v2.pdf | 136838 | 166344 | 1.0000 | Miss: output larger; embedded Type 1 fonts and Flate images are major streams. |
+| arxiv-tableformer-2203-01017-v1.pdf | 206587 | 452180 | 0.9996 | Miss: output larger; embedded fonts and images are major streams. |
+| pd-vi-decree-39-2022.pdf | 2005188 | 2011177 | 0.9998 | Miss: output larger; CCITT is preserved and the signature field retained, unlike the reference. Their individual effect on the gap is unmeasured. |
+| pd-vi-ip-law-155-2025.pdf | 1329700 | 1169330 | 0.9915 | Pass |
+| pd-vi-qd-1922-2026.pdf | 230264 | 178616 | 0.9999 | Pass |
+| pd-en-gao-08-35-highlights.pdf | 40911 | 50759 | 1.0000 | Miss: output larger; Type 1C font and other streams are present. |
+| vi-garden-image-only.pdf | 54116 | 24822 | 0.9976 | Pass |
+| en-map-scan.pdf | 148454 | 43271 | 0.9927 | Pass |
+| vi-garden-scan.pdf | 137490 | 40616 | 0.9929 | Pass |
+| scanned-skewed-vi.pdf | 83801 | 20966 | 0.9944 | Pass |
+
 - [ ] `target_bytes` selects the highest-quality candidate at or below the target, or reports the smallest candidate and warns when the target is not reached; report the gap and similarity for each corpus input.
 - [ ] Passwords never appear in logs, reports, MCP outputs, or panic messages (test greps captured stderr).
 - [ ] Sanitized `javascript-action.pdf` has no `/JS`, `/JavaScript`, `/OpenAction` JS.
