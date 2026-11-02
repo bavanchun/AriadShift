@@ -64,7 +64,9 @@ fn encrypt_decrypt_and_wrong_password() {
             json!({"algorithm": algorithm}),
             SecretBag::new()
                 .with("user_password", password)
-                .with("owner_password", "owner value"),
+                .unwrap()
+                .with("owner_password", "owner value")
+                .unwrap(),
         )
         .unwrap();
         let input = &encrypted.artifacts[0].path;
@@ -74,7 +76,7 @@ fn encrypt_decrypt_and_wrong_password() {
                 input,
                 &dir,
                 json!({}),
-                SecretBag::new().with("password", "wrong value")
+                SecretBag::new().with("password", "wrong value").unwrap()
             )
             .unwrap_err()
             .exit_code(),
@@ -86,7 +88,9 @@ fn encrypt_decrypt_and_wrong_password() {
                 input,
                 &dir,
                 json!({}),
-                SecretBag::new().with("owner_password", "new owner")
+                SecretBag::new()
+                    .with("owner_password", "new owner")
+                    .unwrap()
             )
             .unwrap_err()
             .exit_code(),
@@ -99,7 +103,7 @@ fn encrypt_decrypt_and_wrong_password() {
             input,
             &dest,
             json!({}),
-            SecretBag::new().with("password", password),
+            SecretBag::new().with("password", password).unwrap(),
         )
         .unwrap();
         let source = lopdf::Document::load(fixture("encrypted-aes256.plaintext.pdf")).unwrap();
@@ -224,7 +228,9 @@ fn permissions_and_owner_only_operations() {
         &input,
         temp.path(),
         json!({"permissions":{"print":false,"print_high":false,"copy":false}}),
-        SecretBag::new().with("owner_password", "owner-pass"),
+        SecretBag::new()
+            .with("owner_password", "owner-pass")
+            .unwrap(),
     )
     .unwrap();
     let path = &encrypted.artifacts[0].path;
@@ -241,7 +247,9 @@ fn permissions_and_owner_only_operations() {
         path,
         &updated_dir,
         json!({"permissions":{"print":true,"print_high":true}}),
-        SecretBag::new().with("owner_password", "owner-pass"),
+        SecretBag::new()
+            .with("owner_password", "owner-pass")
+            .unwrap(),
     )
     .unwrap();
     let linear_dir = temp.path().join("linear");
@@ -280,7 +288,9 @@ fn user_password_is_required_when_rewriting_permissions() {
         json!({}),
         SecretBag::new()
             .with("user_password", "user")
-            .with("owner_password", "owner"),
+            .unwrap()
+            .with("owner_password", "owner")
+            .unwrap(),
     )
     .unwrap();
     let path = &encrypted.artifacts[0].path;
@@ -292,7 +302,7 @@ fn user_password_is_required_when_rewriting_permissions() {
             path,
             &output,
             json!({}),
-            SecretBag::new().with("owner_password", "owner")
+            SecretBag::new().with("owner_password", "owner").unwrap()
         )
         .unwrap_err()
         .exit_code(),
@@ -305,7 +315,9 @@ fn user_password_is_required_when_rewriting_permissions() {
         json!({}),
         SecretBag::new()
             .with("owner_password", "owner")
-            .with("user_password", "user"),
+            .unwrap()
+            .with("user_password", "user")
+            .unwrap(),
     )
     .unwrap();
 }
@@ -337,7 +349,9 @@ fn legacy_rc4_is_upgraded_on_permission_change() {
         json!({}),
         SecretBag::new()
             .with("owner_password", "legacy-owner")
-            .with("user_password", "legacy-user"),
+            .unwrap()
+            .with("user_password", "legacy-user")
+            .unwrap(),
     )
     .unwrap();
     assert!(
@@ -353,7 +367,7 @@ fn legacy_rc4_is_upgraded_on_permission_change() {
         &outcome.artifacts[0].path,
         &decoded,
         json!({}),
-        SecretBag::new().with("password", "legacy-user"),
+        SecretBag::new().with("password", "legacy-user").unwrap(),
     )
     .unwrap();
 }

@@ -79,7 +79,7 @@ fn engine_failure_and_escaped_forms_are_scrubbed() {
     .with_engine_command(command)
     .with_secret_source(SecretSource::Mcp)
     .with_params(json!({"password":{"$secret":"sec_test"}}))
-    .with_secrets(SecretBag::new().with("sec_test", secret));
+    .with_secrets(SecretBag::new().with("sec_test", secret).unwrap());
     let error = run_tool(&request).unwrap_err();
     assert!(!error.to_string().contains(secret));
     assert!(error.to_string().contains("[REDACTED]"));
@@ -89,7 +89,8 @@ fn engine_failure_and_escaped_forms_are_scrubbed() {
 #[test]
 fn scrubber_removes_json_and_url_encoded_forms() {
     let secret = "quote\"slash\\line\n Việt";
-    let scrubber = SecretBag::new().with("password", secret).scrubber();
+    let mut scrubber = ariad_host::tools::SecretScrubber::new();
+    scrubber.register(secret);
     let quoted = serde_json::to_string(secret).unwrap();
     let escaped = &quoted[1..quoted.len() - 1];
     let encoded: String = secret
@@ -217,4 +218,33 @@ fn registered_password_tool_reports_missing_qpdf_pack() {
         .output()
         .unwrap();
     assert_eq!(result.status.code(), Some(5));
+}
+
+#[cfg(unix)]
+#[test]
+fn secret_input_is_bounded_and_rejects_control_bytes() {
+    for bytes in [
+        vec![b'x'; 4097],
+        b"one\ntwo".to_vec(),
+        b"one\rtwo".to_vec(),
+        b"one\0two".to_vec(),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secret");
+        std::fs::write(&path, bytes).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
+            .args(["tool", "pdf.info"])
+            .arg(fixture())
+            .args(["--secret", &format!("password=@{}", path.display())])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(9));
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["tool", "pdf.info"])
+        .arg(fixture())
+        .args(["--secret", "password=@/dev/zero"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(9));
 }

@@ -33,7 +33,10 @@ impl SecretStore {
         }
     }
     pub(super) fn put(&self, value: String) -> Result<String, ()> {
-        if value.is_empty() || value.len() > MAX_BYTES {
+        if value.is_empty()
+            || value.len() > MAX_BYTES
+            || value.bytes().any(|b| matches!(b, b'\r' | b'\n' | 0))
+        {
             return Err(());
         }
         let mut entries = self.entries.lock().map_err(|_| ())?;
@@ -82,7 +85,7 @@ impl SecretStore {
         let mut bag = SecretBag::new();
         for index in indices {
             let entry = entries.swap_remove(index);
-            bag.insert(entry.handle, entry.value);
+            bag.insert(entry.handle, entry.value).map_err(|_| ())?;
         }
         Ok(bag)
     }
@@ -124,6 +127,9 @@ mod tests {
         assert!(store.put("x".into()).is_err());
         assert!(store.put("".into()).is_err());
         assert!(store.put("x".repeat(MAX_BYTES + 1)).is_err());
+        for value in ["a\nb", "a\rb", "a\0b"] {
+            assert!(store.put(value.into()).is_err());
+        }
     }
 }
 
@@ -135,7 +141,7 @@ mod concurrency_tests {
     fn one_concurrent_caller_wins() {
         let store = Arc::new(SecretStore::default());
         let id = store
-            .put("quotes \" slash \\ newline\n tiếng Việt".into())
+            .put("quotes \" slash \\ newline tiếng Việt".into())
             .unwrap();
         let barrier = Arc::new(Barrier::new(3));
         let threads: Vec<_> = (0..2)

@@ -30,7 +30,9 @@ fn secrets_are_absent_from_outcomes_and_invalid_passwords_fail() {
         .with_secrets(
             SecretBag::new()
                 .with("owner_password", owner)
-                .with("user_password", secret),
+                .unwrap()
+                .with("user_password", secret)
+                .unwrap(),
         )
         .with_engine_program(env!("CARGO_BIN_EXE_engine-probe"))
     };
@@ -111,7 +113,7 @@ fn qpdf_errors_scrub_raw_json_and_url_forms() {
             OutputTarget::Directory(temp.path().into()),
         )
         .with_spec(spec)
-        .with_secrets(SecretBag::new().with("password", "probe\"token"))
+        .with_secrets(SecretBag::new().with("password", "probe\"token").unwrap())
         .with_engine_program(env!("CARGO_BIN_EXE_engine-probe")),
     )
     .unwrap_err();
@@ -190,7 +192,7 @@ fn cancellation_kills_the_qpdf_child() {
             OutputTarget::Directory(temp.path().into()),
         )
         .with_spec(spec)
-        .with_secrets(SecretBag::new().with("password", "test-password"))
+        .with_secrets(SecretBag::new().with("password", "test-password").unwrap())
         .with_engine_program(env!("CARGO_BIN_EXE_engine-probe"))
         .with_cancel(token),
     )
@@ -256,7 +258,7 @@ fn parameter_file_is_removed_after_qpdf_failure() {
             OutputTarget::Directory(temp.path().into()),
         )
         .with_spec(spec)
-        .with_secrets(SecretBag::new().with("password", "test-password"))
+        .with_secrets(SecretBag::new().with("password", "test-password").unwrap())
         .with_engine_program(env!("CARGO_BIN_EXE_engine-probe")),
     )
     .unwrap_err();

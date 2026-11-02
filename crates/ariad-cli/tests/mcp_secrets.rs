@@ -46,7 +46,7 @@ fn secret_put_enforces_capacity_and_never_echoes_values() {
         &mut stdin,
         json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
     );
-    let secret = "quote \" slash \\ newline\n tiếng Việt";
+    let secret = "quote \" slash \\ newline tiếng Việt";
     for (id, value) in [(40, String::new()), (41, "x".repeat(4097))] {
         send(
             &mut stdin,
@@ -164,7 +164,7 @@ print(json.dumps({"type":"result", "ok":True, "metrics":{"params_keys":len(param
         &mut stdin,
         json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
     );
-    let value = "sensitive-\"\\\n-tiếng Việt";
+    let value = "sensitive-\"\\-tiếng Việt";
     send(
         &mut stdin,
         json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":value}}}),
