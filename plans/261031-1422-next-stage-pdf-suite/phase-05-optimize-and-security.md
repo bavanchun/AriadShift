@@ -47,6 +47,6 @@ milestone: B (engine breadth)
 ## Acceptance
 
 - [ ] `pdf.compress` beats or matches Stirling's level 6 output size on ≥ 7 of 10 corpus files with visual similarity ≥ 0.98 (report table).
-- [ ] `target_bytes` hits within 5 % or reports the closest achievable with similarity.
+- [ ] `target_bytes` selects the highest-quality candidate at or below the target, or reports the smallest candidate and warns when the target is not reached; report the gap and similarity for each corpus input.
 - [ ] Passwords never appear in logs, reports, MCP outputs, or panic messages (test greps captured stderr).
 - [ ] Sanitized `javascript-action.pdf` has no `/JS`, `/JavaScript`, `/OpenAction` JS.
