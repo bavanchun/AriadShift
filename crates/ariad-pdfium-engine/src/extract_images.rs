@@ -2493,14 +2493,12 @@ fn xobject_dimensions(pdf_doc: &PdfDoc, obj_id: PdfObjectId) -> Option<(u32, u32
     let w = stream
         .dict
         .get(b"Width")
-        .or_else(|_| stream.dict.get(b"W"))
         .ok()
         .and_then(|o| resolve(Some(doc), o).ok())
         .and_then(|(_, o)| o.as_i64().ok())?;
     let h = stream
         .dict
         .get(b"Height")
-        .or_else(|_| stream.dict.get(b"H"))
         .ok()
         .and_then(|o| resolve(Some(doc), o).ok())
         .and_then(|(_, o)| o.as_i64().ok())?;
@@ -2514,11 +2512,7 @@ fn xobject_filters(pdf_doc: &PdfDoc, obj_id: PdfObjectId) -> Vec<String> {
     let Ok(stream) = doc.get_object(obj_id).and_then(|o| o.as_stream()) else {
         return Vec::new();
     };
-    let Ok(filter_obj) = stream
-        .dict
-        .get(b"Filter")
-        .or_else(|_| stream.dict.get(b"F"))
-    else {
+    let Ok(filter_obj) = stream.dict.get(b"Filter") else {
         return Vec::new();
     };
     let resolved = if let Ok(id) = filter_obj.as_reference() {
@@ -2827,7 +2821,6 @@ fn decode_lopdf_raster_stream(
     let bpc = stream
         .dict
         .get(b"BitsPerComponent")
-        .or_else(|_| stream.dict.get(b"BPC"))
         .ok()
         .and_then(|o| o.as_i64().ok())
         .unwrap_or(8);
@@ -2916,11 +2909,7 @@ fn decode_lopdf_raster_stream(
 fn resolve_color_space_name(pdf_doc: &PdfDoc, obj_id: PdfObjectId) -> Option<String> {
     let doc = pdf_doc.inner();
     let stream = doc.get_object(obj_id).and_then(|o| o.as_stream()).ok()?;
-    let cs_obj = stream
-        .dict
-        .get(b"ColorSpace")
-        .or_else(|_| stream.dict.get(b"CS"))
-        .ok()?;
+    let cs_obj = stream.dict.get(b"ColorSpace").ok()?;
     let resolved = if let Ok(id) = cs_obj.as_reference() {
         doc.get_object(id).ok()?
     } else {
