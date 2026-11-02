@@ -4522,3 +4522,23 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "invalid-name-escape-pdf"
+path = "fixtures/pdf/invalid-name-escape.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with invalid escaped form names"
+origin = "generated"
+generated_by = "fixtures/gen/invalid-name-escape.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "1bfe5a97d8138e32f8a8b596f29d374e49d97bb256d2665c0d3f26a4492164cb"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+

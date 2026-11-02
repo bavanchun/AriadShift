@@ -2693,10 +2693,9 @@ fn decode_pdf_name(raw: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(raw.len());
     let mut i = 0;
     while i < raw.len() {
-        if raw[i] == b'#'
-            && i + 2 < raw.len()
-            && let (Some(hi), Some(lo)) = (hex_val(raw[i + 1]), hex_val(raw[i + 2]))
-        {
+        if raw[i] == b'#' && i + 2 < raw.len() {
+            let hi = hex_val(raw[i + 1]).unwrap_or(0);
+            let lo = hex_val(raw[i + 2]).unwrap_or(0);
             out.push((hi << 4) | lo);
             i += 3;
             continue;
@@ -3786,6 +3785,32 @@ mod corpus_tests {
     }
 
     #[test]
+    fn invalid_escaped_form_name_is_charged() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/invalid-name-escape.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "escape",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        let page = *doc.inner().get_pages().values().next().unwrap();
+        let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Page form execution work exceeds the limit.");
+    }
+
+    #[test]
     fn content_names_truncate_before_escape_decoding() {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/long-content-name.pdf");
@@ -3795,6 +3820,8 @@ mod corpus_tests {
             decode_pdf_name(&content[1..content.len() - 3]),
             vec![b'A'; 254]
         );
+        assert_eq!(decode_pdf_name(b"Im#ZZ"), b"Im\0");
+        assert_eq!(decode_pdf_name(b"Im#4G"), b"Im@");
         let escaped = [vec![b'A'; 253], b"#41tail".to_vec()].concat();
         assert_eq!(decode_pdf_name(&escaped).len(), 254);
     }
@@ -4062,6 +4089,10 @@ mod corpus_tests {
             })
             .collect();
         let expected: BTreeMap<_, _> = [
+            (
+                "invalid-name-escape.pdf",
+                "Page form execution work exceeds the limit.",
+            ),
             (
                 "broken-xref.pdf",
                 "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
