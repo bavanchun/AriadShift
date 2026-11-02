@@ -37,7 +37,8 @@ space. No build cleanup was performed.
 | Format | `cargo fmt --all --check` passed. |
 | Schema | `cargo test --locked -p ariad-core --test tools_registry regenerate_tools_schema -- --ignored` passed, one test; generated tools schema is uncommitted. |
 | Core/PDF | FAIL: `cargo test --locked -p ariad-core -p ariad-pdf -p ariad-engine-io --features ariad-pdf/codecs` exited 101 at `ebook_matches_stirling_on_corpus`: 0 processing errors, 6/10 met the size threshold; the corpus test took 76.49 s. Earlier test binaries in this command passed, but later binaries did not run. This test does not measure SSIM. |
-| Clippy, WASM, pack tooling, host, surfaces, measurement, real smoke, policy, fuzz, commit check | Not completed. They are not passes. |
+| Clippy, pack tooling | Passed in subsequent pre-final checks below. |
+| WASM, full host, surfaces, measurement, real smoke, policy, fuzz gate, commit check | Final gate not completed. They are not passes. |
 
 The core/PDF command used `ASHIFT_PANDOC=/home/vchun/Codes/01-AriadShift/.tools/pandoc/bin/pandoc`, `ARIAD_TEST_PDFIUM_DIR=/home/vchun/Codes/01-AriadShift/.run/coord/pdfium-pack/bin`, `ASHIFT_PACK_PDFIUM=/home/vchun/Codes/01-AriadShift/.run/coord/pdfium-pack`, and `ARIAD_TEST_QPDF_DIR=/home/vchun/Codes/01-AriadShift/.run/coord/qpdf/12.4.2/linux-x64`. The harness captured the command output; no separate complete log was saved.
 
