@@ -149,6 +149,15 @@ mod contract_tests {
             )
             .is_err()
         );
+        for algorithm in ["aes-256", "aes-128"] {
+            let params: EncryptParams =
+                serde_json::from_value(json!({"owner_password":"owner", "algorithm":algorithm}))
+                    .unwrap();
+            assert_eq!(
+                serde_json::to_value(params).unwrap()["algorithm"],
+                algorithm
+            );
+        }
         let encrypt: EncryptParams = serde_json::from_value(json!({"owner_password":""})).unwrap();
         assert!(encrypt.validate().is_err());
         let sanitize: SanitizeParams = serde_json::from_value(json!({})).unwrap();

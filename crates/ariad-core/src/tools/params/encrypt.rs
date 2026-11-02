@@ -9,8 +9,10 @@ use serde::{Deserialize, Serialize};
 pub enum EncryptionAlgorithm {
     /// AES with a 256-bit key.
     #[default]
+    #[serde(rename = "aes-256")]
     Aes256,
     /// AES with a 128-bit key.
+    #[serde(rename = "aes-128")]
     Aes128,
 }
 /// Parameters for `pdf.encrypt`.
