@@ -55,6 +55,8 @@ pub enum ImageError {
     Image(#[from] image::ImageError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Jpeg(#[from] oxiarc_jpeg::JpegError),
 }
 
 fn resolve<'a>(
@@ -874,6 +876,19 @@ pub fn resample(img: &DecodedImage, width: u32, height: u32) -> Result<DecodedIm
 
 /// Encode pixels to JPEG, reducing 16-bit samples and converting CMYK to RGB.
 pub fn encode_jpeg(img: &DecodedImage, quality: u8) -> Result<Vec<u8>, ImageError> {
+    encode_jpeg_with_sampling(img, quality, false)
+}
+
+/// Encode a lossy optimization image using 4:2:0 chroma subsampling.
+pub fn encode_jpeg_420(img: &DecodedImage, quality: u8) -> Result<Vec<u8>, ImageError> {
+    encode_jpeg_with_sampling(img, quality, true)
+}
+
+fn encode_jpeg_with_sampling(
+    img: &DecodedImage,
+    quality: u8,
+    subsample: bool,
+) -> Result<Vec<u8>, ImageError> {
     validate(img)?;
     if !(1..=100).contains(&quality) {
         return Err(ImageError::Malformed("JPEG quality"));
@@ -906,12 +921,24 @@ pub fn encode_jpeg(img: &DecodedImage, quality: u8) -> Result<Vec<u8>, ImageErro
         }
     };
     let mut bytes = Vec::new();
-    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, quality).write_image(
-        pixels,
-        img.width,
-        img.height,
-        color.into(),
-    )?;
+    if subsample {
+        let width =
+            u16::try_from(img.width).map_err(|_| ImageError::Malformed("JPEG dimensions"))?;
+        let height =
+            u16::try_from(img.height).map_err(|_| ImageError::Malformed("JPEG dimensions"))?;
+        let color = match color {
+            ColorType::L8 => oxiarc_jpeg::InputColor::Luma,
+            _ => oxiarc_jpeg::InputColor::Rgb,
+        };
+        bytes = oxiarc_jpeg::encode_to_vec(pixels, width, height, color, quality)?;
+    } else {
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, quality).write_image(
+            pixels,
+            img.width,
+            img.height,
+            color.into(),
+        )?;
+    }
     Ok(bytes)
 }
 
