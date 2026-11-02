@@ -40,8 +40,8 @@ wasm-bindgen-tool:
 # Builds the browser module into packages/ariad-wasm/pkg (not committed).
 wasm-build: wasm-bindgen-tool
     cargo build -p ariad-wasm -p ariad-typst --target wasm32-unknown-unknown --profile wasm-release
-    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm
-    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg target/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm
+    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm"
+    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm"
 
 test:
     cargo nextest run --workspace --features ariad-host/test-probe
