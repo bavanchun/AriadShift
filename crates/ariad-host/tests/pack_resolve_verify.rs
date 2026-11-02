@@ -50,12 +50,15 @@ fn resolve_pack_verifies_signature_and_reuses_only_safe_cached_digests() {
     assert!(command.args.iter().any(|arg| arg == "__engine"));
     let expected_program = root.join("bin").join("engine").canonicalize().unwrap();
     let ariad_host::runner::EngineCommand { env: variables, .. } = &command;
-    assert!(
-        variables
-            .iter()
-            .any(|(key, value)| key == "ASHIFT_QPDF_PROGRAM"
-                && value == expected_program.as_os_str())
-    );
+    let program = variables
+        .iter()
+        .find(|(key, _)| key == "ASHIFT_QPDF_PROGRAM")
+        .map(|(_, value)| Path::new(value))
+        .expect("qpdf program environment variable is present");
+    assert!(program.is_absolute());
+    let program = program.canonicalize().expect("qpdf program exists");
+    assert!(program.starts_with(root.canonicalize().unwrap()));
+    assert_eq!(program, expected_program);
     assert_eq!(command.install_root.as_deref(), Some(root.as_path()));
 
     let first_hashes = resolve_hash_computations_for(&root);
