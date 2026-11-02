@@ -282,6 +282,7 @@ dependencies = [
  "jsonschema",
  "landlock",
  "libc",
+ "lopdf",
  "minisign",
  "minisign-verify",
  "nix",
@@ -317,13 +318,17 @@ name = "ariad-pdf"
 version = "0.2.0"
 dependencies = [
  "ariad-core",
+ "flate2",
  "image",
  "lopdf",
  "schemars 1.2.3",
  "serde",
  "serde_json",
+ "subsetter",
  "thiserror 2.0.21",
  "unicode-normalization",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

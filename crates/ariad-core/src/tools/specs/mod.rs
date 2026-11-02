@@ -23,5 +23,7 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(organize_layout::specs());
     list.extend(organize_document::specs());
     list.extend(pdfium::specs());
+    list.extend(optimize::specs());
+    list.extend(security::specs());
     list
 }

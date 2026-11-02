@@ -474,6 +474,7 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.layers" => "layers".to_owned(),
         "pdf.decompress" => "decompressed".to_owned(),
         "pdf.compress" => "compressed".to_owned(),
+        "pdf.grayscale" => "grayscale".to_owned(),
         "pdf.ocr" => "ocr".to_owned(),
         "pdf.redact" => "redacted".to_owned(),
         "pdf.info" => "info".to_owned(),

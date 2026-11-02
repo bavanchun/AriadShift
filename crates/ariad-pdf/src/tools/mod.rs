@@ -11,11 +11,15 @@
 pub mod alternate_mix;
 pub mod attachments;
 pub mod booklet;
+#[cfg(feature = "codecs")]
+pub mod compress;
 pub mod crop;
 pub mod decompress;
 pub mod delete_pages;
 pub mod divide_pages;
 pub mod extract_pages;
+#[cfg(feature = "codecs")]
+pub mod grayscale;
 pub mod insert_blank;
 pub mod layers;
 pub mod merge;
@@ -30,9 +34,11 @@ pub mod posterize;
 pub mod reorder;
 pub mod rotate;
 pub mod rotate_content;
+pub mod sanitize;
 pub mod scale;
 pub mod single_page;
 pub mod split;
+pub mod unlock_forms;
 pub mod viewer_prefs;
 
 use ariad_core::{
@@ -42,8 +48,8 @@ use ariad_core::{
         DeletePagesParams, DividePagesParams, ExtractPagesParams, ImageToPdfParams, InfoParams,
         InsertBlankParams, LayersParams, MergeParams, MetadataParams, NupParams, OutlineParams,
         OverlayParams, PageLabelsParams, PortfolioParams, PosterizeParams, ReorderParams,
-        RotateContentParams, RotateParams, ScaleParams, SinglePageParams, SplitParams,
-        ViewerPrefsParams,
+        RotateContentParams, RotateParams, SanitizeParams, ScaleParams, SinglePageParams,
+        SplitParams, UnlockFormsParams, ViewerPrefsParams,
     },
 };
 use serde::de::DeserializeOwned;
@@ -316,6 +322,24 @@ pub fn run_tool(
     }
 
     match tool_id {
+        #[cfg(feature = "codecs")]
+        "pdf.compress" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::CompressParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                compress::run_inputs,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.grayscale" => dispatch_structural::<ariad_core::tools::params::GrayscaleParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| grayscale::run(docs, params, &inputs[0].limits, ctx),
+        ),
         "pdf.merge" => {
             dispatch_structural::<MergeParams, _>(tool_id, inputs, params, ctx, merge::run)
         }
@@ -439,6 +463,20 @@ pub fn run_tool(
         "pdf.layers" => {
             dispatch_structural::<LayersParams, _>(tool_id, inputs, params, ctx, layers::run)
         }
+        "pdf.unlock_forms" => dispatch_structural_inputs::<UnlockFormsParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            unlock_forms::run_inputs,
+        ),
+        "pdf.sanitize" => dispatch_structural_inputs::<SanitizeParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            sanitize::run_inputs,
+        ),
         other => Err(PdfError::InvalidParams(format!("unknown tool `{other}`"))),
     }
 }
