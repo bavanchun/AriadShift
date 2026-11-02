@@ -39,7 +39,7 @@ AriadShift today converts documents (36 routes, shared IR, CLI/MCP/web/desktop/c
 | 2 | [Tool framework + `ariad-engine/2` (pdf.info skeleton)](./phase-02-tool-framework-and-engine-protocol-v2.md) | A | 1 | Completed |
 | 3 | [Structural PDF tools (25 tools, wasm)](./phase-03-structural-pdf-tools.md) | A → 0.3.0 | 2 | Completed |
 | 4 | [PDFium engine: render, images, text](./phase-04-pdfium-engine-render-and-images.md) | B | 2 | Completed |
-| 5 | [Optimize and security (compress, qpdf, sanitize)](./phase-05-optimize-and-security.md) | B | 3, 4 | Pending |
+| 5 | [Optimize and security (compress, qpdf, sanitize)](./phase-05-optimize-and-security.md) | B | 3, 4 | Completed |
 | 6 | [Overlays and watermarks (add + remove L1)](./phase-06-overlays-and-watermarks.md) | B | 3, 4 | Pending |
 | 7 | [OCR and scan tools](./phase-07-ocr-and-scan-tools.md) | B | 4 | Pending |
 | 8 | [Annotations and forms](./phase-08-annotations-and-forms.md) | B | 4 | Pending |
