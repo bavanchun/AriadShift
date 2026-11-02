@@ -2,7 +2,7 @@
 
 The phase implements the 15 approved in-process overlay, colour, watermark and page-furniture tools. The branch merges `origin/dev` at `5e82c117`. The generated registry and schema expose the tools across their supported runtimes. The host publishes the PDF from watermark removal and preserves its inline report; CLI, MCP and WASM expose the same result. The `pdf_draw_params` target is wired into CI, nightly fuzzing and the just recipe. Existing `pdf_tools_structural` nightly and local wiring remains intact; its pre-existing absence from the CI fuzz list remains unchanged.
 
-The PM-dispatched Argon review found H1-H3, M1-M3 and L1-L2. The branch addresses bounded Form copies and canonical hashing, shared indirect optional-content arrays, mark isolation, image caching and unsupported-image reporting, nested Form identity and overlapping candidates, resource cleanup, consistent content resolution, and the host suffix compilation error. Focused watermark checks passed (26 integration tests and two internal regressions). PDFium confirmed pixel-exact restoration for a watermark and for a stamp after partial colour rewriting. The PM arranges the required independent delta review; it remains pending.
+The PM-dispatched Argon review found H1-H3, M1-M3 and L1-L2. The branch addresses bounded Form copies and canonical hashing, shared indirect optional-content arrays, mark isolation, image caching and unsupported-image reporting, nested Form identity and overlapping candidates, resource cleanup, consistent content resolution, and the host suffix compilation error. Focused watermark checks passed (26 integration tests and two internal regressions). PDFium confirmed pixel-exact restoration for a watermark and for a stamp after partial colour rewriting. The independent Argon delta review returned MERGE at `f368c6ad`, confirming all eight fixes and re-running the original scenarios. Later commits add the requested font boundary test, comment and reporting; the focused test passed.
 
 Linux verification on the branch through `b3fdad90`:
 
@@ -16,4 +16,4 @@ Linux verification on the branch through `b3fdad90`:
 
 Per-check logs are in `/tmp/p06-gate-*.log`, `/tmp/p06-gate-core-pdf-final.log`, `/tmp/p06-gate-host-cli-retry2.log`, `/tmp/p06-gate-clippy-retry.log`, `/tmp/p06-gate-deny-retry.log`, and `/tmp/p06-gate-licenses-final.log`. Lock wait time is included in wrapper wall times. CI results are separate and have not been observed here.
 
-Manual macOS Preview, Chrome and Acrobat review and phone QR scanning remain pending. The Argon delta and Mac Sonnet reviews are pending. No per-page progress events were added.
+Manual macOS Preview, Chrome and Acrobat review and phone QR scanning remain pending. Mac Sonnet review is pending. No per-page progress events were added.
