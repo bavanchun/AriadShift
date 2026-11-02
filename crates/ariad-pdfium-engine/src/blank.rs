@@ -39,6 +39,7 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RemoveBlankParams) -> ToolResult {
     let mut structural_doc = open_structural_pdf(ctx, &bytes)?;
     ctx.warn_repaired_xref(&structural_doc)?;
     let canonical = crate::canonical::canonicalize(ctx, &mut structural_doc, bytes.len())?;
+    drop(bytes);
     let (blank_pages, white_ratios) =
         detect_blank_pages_in_bytes(ctx, &canonical, params.dpi, params.threshold)?;
 
@@ -136,6 +137,7 @@ pub fn split_pixel(ctx: &mut ToolContext<'_>, params: &Value) -> ToolResult {
     let mut structural_doc = open_structural_pdf(ctx, &bytes)?;
     ctx.warn_repaired_xref(&structural_doc)?;
     let canonical = crate::canonical::canonicalize(ctx, &mut structural_doc, bytes.len())?;
+    drop(bytes);
     let (blank_pages, white_ratios) =
         detect_blank_pages_in_bytes(ctx, &canonical, split_params.dpi, split_params.threshold)?;
 
@@ -181,6 +183,8 @@ pub fn page_white_ratios(ctx: &mut ToolContext<'_>, dpi: u32) -> Result<Vec<f64>
     let mut doc = open_structural_pdf(ctx, &bytes)?;
     ctx.warn_repaired_xref(&doc)?;
     let canonical = crate::canonical::canonicalize(ctx, &mut doc, bytes.len())?;
+    drop(bytes);
+    drop(doc);
     let (_, ratios) = detect_blank_pages_in_bytes(ctx, &canonical, dpi, DEFAULT_THRESHOLD)?;
     Ok(ratios)
 }
@@ -199,6 +203,8 @@ pub fn detect_blank_pages(
     let mut doc = open_structural_pdf(ctx, &bytes)?;
     ctx.warn_repaired_xref(&doc)?;
     let canonical = crate::canonical::canonicalize(ctx, &mut doc, bytes.len())?;
+    drop(bytes);
+    drop(doc);
     detect_blank_pages_in_bytes(ctx, &canonical, dpi, threshold)
 }
 
