@@ -1,6 +1,7 @@
 //! Bound execution of content resources before PDFium opens a document.
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::rc::Rc;
 
 use ariad_core::protocol::ErrorCode;
@@ -28,9 +29,19 @@ pub(crate) struct Facts {
 
 type Categories = BTreeMap<Vec<u8>, Rc<BTreeMap<Vec<u8>, Object>>>;
 
+struct ScopeHasher(Sha256);
+
+impl std::fmt::Write for ScopeHasher {
+    fn write_str(&mut self, value: &str) -> std::fmt::Result {
+        self.0.update(value.as_bytes());
+        Ok(())
+    }
+}
+
 #[derive(Clone, Default)]
 struct Scope {
     page: Rc<Categories>,
+    physical_page: Rc<Categories>,
     current: Rc<Categories>,
     inherited_fonts: Vec<(Object, Rc<Categories>)>,
     digest: OnceCell<[u8; 32]>,
@@ -41,6 +52,7 @@ impl Scope {
         let current = Rc::new(categories(doc, resources)?);
         Ok(Self {
             page: current.clone(),
+            physical_page: current.clone(),
             current,
             inherited_fonts: Vec::new(),
             digest: OnceCell::new(),
@@ -67,6 +79,7 @@ impl Scope {
         }
         Ok(Self {
             page: self.page.clone(),
+            physical_page: self.physical_page.clone(),
             current: Rc::new(current),
             inherited_fonts,
             digest: OnceCell::new(),
@@ -74,14 +87,14 @@ impl Scope {
     }
     fn digest(&self) -> [u8; 32] {
         *self.digest.get_or_init(|| {
-            Sha256::digest(
-                format!(
-                    "{:?}|{:?}|{:?}",
-                    self.page, self.current, self.inherited_fonts
-                )
-                .as_bytes(),
+            let mut hash = ScopeHasher(Sha256::new());
+            write!(
+                hash,
+                "{:?}|{:?}|{:?}|{:?}",
+                self.page, self.physical_page, self.current, self.inherited_fonts
             )
-            .into()
+            .expect("hash writer cannot fail");
+            hash.0.finalize().into()
         })
     }
     fn get(&self, category: &[u8], name: &[u8]) -> Option<&Object> {
@@ -302,6 +315,7 @@ impl Calculator<'_, '_> {
                         .map_err(|_| EngineFailure::limit_exceeded())?;
                     let selected_scope = Scope {
                         page: selected_resources.clone(),
+                        physical_page: scope.physical_page.clone(),
                         current: selected_resources.clone(),
                         inherited_fonts: scope.inherited_fonts.clone(),
                         digest: OnceCell::new(),
@@ -431,8 +445,9 @@ impl Calculator<'_, '_> {
             .get(b"G")
             .map_err(|_| EngineFailure::limit_exceeded())?;
         let mask_scope = Scope {
-            page: scope.page.clone(),
-            current: scope.page.clone(),
+            page: scope.physical_page.clone(),
+            physical_page: scope.physical_page.clone(),
+            current: scope.physical_page.clone(),
             inherited_fonts: Vec::new(),
             digest: OnceCell::new(),
         };
@@ -580,6 +595,7 @@ mod tests {
             )])),
         );
         scope.page = scope.current.clone();
+        scope.physical_page = scope.page.clone();
         let facts = BTreeMap::from([
             (
                 root,
@@ -624,6 +640,9 @@ mod tests {
             b"XObject".to_vec(),
             Rc::new(BTreeMap::from([(b"F".to_vec(), Object::Reference(cheap))])),
         );
+        scope.physical_page = scope.page.clone();
+        // A glyph may replace its fallback without changing the actual page.
+        scope.page = scope.current.clone();
         let facts = BTreeMap::from([
             (expensive, facts(500, &[])),
             (cheap, facts(1, &[])),
