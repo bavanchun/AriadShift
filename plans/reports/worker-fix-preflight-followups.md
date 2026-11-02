@@ -179,30 +179,39 @@ corrected to 99 before it passed. The mac-arm64 pack job runs the render golden 
 built PDFium pack. It passed on commit `df02bc19` in [CI run 41450206794](https://github.com/bavanchun/AriadShift/actions/runs/41450206794).
 No PR closing reference was added; the round-3 review remains outstanding.
 
-## Round 4 — partial follow-up
+## Round 4 — completed follow-up
 
-Status: incomplete. The inline-image header and resource-operand parser
-differentials from the round-3 review remain unresolved. Do not treat this
-branch as ready for review or merge.
+Inline image headers now reject escaped or overlong names and duplicate keys,
+with canonical scalar and nesting checks. Resource lookups reject ambiguous
+name and string operands; raw token lengths bound Type 3 glyph work. Document
+content is preflighted before every PDFium tool opens it. The canonicalizer
+also rejects object numbers above 1,000,000, including stale `max_id` cases,
+and crop releases the original bytes and parsed graph after canonicalization.
+The generated fixtures have reproducible hashes recorded in the manifest.
 
-The canonicalizer now rejects object numbers above 1,000,000, checking both
-the recorded maximum and every object-table key. The generated
-`canonical-large-object-number.pdf` reproduces the large object number; the
-`refuses_excessive_object_numbers` test also exercises a stale maximum. The
-test initially failed before the limit was added because a different unsafe
-token was reported instead; it passed afterward and was then switched to the
-generated large-object fixture. The crop tool
-obtains page information before canonicalization and releases both input bytes
-and the structural graph immediately afterward. Its three integration tests
-passed with the supplied PDFium pack.
+Validation used the shared build lock and a 2 GiB systemd scope for tests:
 
-The 90-file corpus passed with 30 expected refusals and no legitimate-file
-refusals. The only new refusal is `canonical-large-object-number.pdf`, the
-new synthetic fixture, under the object-number limit. No rule-2 conclusion is
-possible because that rule has not been implemented. The full PDFium test
-suite, including Linux render goldens, passed before the final fixture and
-corpus-expectation changes; the focused object-number test and corpus passed
-after the fixture was added. Formatting, clippy, the 25 ariad-pdf library tests,
-and the existing adversarial corpus test passed. The remaining work
-includes both content-stream fixes, their fixtures and regression tests, and
-repeating all required verification including the round-3 PoCs.
+- `cargo fmt --all --check` and `cargo clippy --locked -p ariad-pdfium-engine
+  --all-targets -- -D warnings` passed.
+- `cargo test --locked -p ariad-pdfium-engine` passed with the supplied PDFium
+  pack, including Linux render goldens and resource-token regression tests.
+- `preflight_fixture_corpus -- --ignored --nocapture` passed: 94 PDFs, 35
+  expected refusals, and zero real-world file refusals. New refusals since the
+  preceding 90-file run are the synthetic `inline-hex-key-bomb.pdf` and
+  `inline-hex-key-render.pdf` (unsafe inline name),
+  `resource-string-cr-do.pdf` (ambiguous resource operand),
+  `type3-crlf-count.pdf` (glyph work limit), and the existing synthetic
+  `ambiguous-page-tree.pdf` (invalid page tree, now preflighted for all tools).
+  No real-world files were newly refused.
+- All four round-3 PoCs were refused before PDFium for both validation and
+  extraction. The older adversarial graph/control and corpus checks passed;
+  accepted graph cases rendered the control as required. A combined invocation
+  initially exited 101 because it pointed the round-3 test at the older PoC
+  directory; the round-3 test passed separately with its correct directory.
+- The previous session's reported exit 101 was not reproducible in the full
+  test run. No test was weakened. Fixture regeneration and `git diff --check`
+  passed; commit messages passed `committed`.
+
+Assumption: the speed instruction supersedes the earlier request to rerun the
+unrelated `ariad-pdf` host-side suite; CI covers remaining checks. The macOS
+render golden and independent round-4 review remain external to this run.
