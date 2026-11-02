@@ -38,7 +38,7 @@ if [ "$(uname -s)" = Darwin ]; then
 else
     deps=$(readelf -d "$bin")
     if ! printf '%s\n' "$deps" | awk '
-     /\(NEEDED\)/ && $0 !~ /\[(libc\.so(\.6)?|libm\.so(\.6)?|libpthread\.so(\.0)?|ld-linux[^]]*|ld-musl[^]]*)\]/ { exit 1 }
+     /\(NEEDED\)/ && $0 !~ /\[(libc\.so(\.6)?|libc\.musl-[^]]*|libm\.so(\.6)?|libpthread\.so(\.0)?|ld-linux[^]]*|ld-musl[^]]*)\]/ { exit 1 }
     '; then echo "unexpected dynamic dependencies: $deps" >&2; exit 1; fi
 fi
 mkdir -p "$out/bin"
