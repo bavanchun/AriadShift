@@ -15,7 +15,7 @@ build = "build.rs"
 [dependencies]
 ariad-core.workspace = true
 ariad-engine-io.workspace = true
-ariad-pdf.workspace = true
+ariad-pdf = { workspace = true, features = ["codecs"] }
 base64.workspace = true
 cap-std.workspace = true
 directories.workspace = true
@@ -55,6 +55,7 @@ rustls-native-certs.workspace = true
 ureq.workspace = true
 
 [dev-dependencies]
+lopdf.workspace = true
 minisign.workspace = true
 rcgen.workspace = true
 

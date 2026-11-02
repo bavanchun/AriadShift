@@ -16,6 +16,80 @@ use super::{
     ToolStatus,
 };
 
+/// Error codes available to v2 engines.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorCodeV2 {
+    /// The request is invalid.
+    InvalidRequest,
+    /// The requested operation is unsupported.
+    UnsupportedRoute,
+    /// A resource limit was exceeded.
+    LimitExceeded,
+    /// The engine failed.
+    EngineFailure,
+    /// A required tool is missing.
+    ToolMissing,
+    /// A required tool has an unsupported version.
+    ToolVersion,
+    /// An input or output operation failed.
+    Io,
+    /// The input needs a password or the supplied password is wrong.
+    EncryptedInput,
+}
+/// A v2 engine error.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EngineErrorV2 {
+    /// Machine-readable error code.
+    pub code: ErrorCodeV2,
+    /// Human-readable diagnostic.
+    pub message: String,
+}
+impl From<super::ErrorCode> for ErrorCodeV2 {
+    fn from(code: super::ErrorCode) -> Self {
+        match code {
+            super::ErrorCode::InvalidRequest => Self::InvalidRequest,
+            super::ErrorCode::UnsupportedRoute => Self::UnsupportedRoute,
+            super::ErrorCode::LimitExceeded => Self::LimitExceeded,
+            super::ErrorCode::EngineFailure => Self::EngineFailure,
+            super::ErrorCode::ToolMissing => Self::ToolMissing,
+            super::ErrorCode::ToolVersion => Self::ToolVersion,
+            super::ErrorCode::Io => Self::Io,
+            super::ErrorCode::EncryptedInput => Self::EncryptedInput,
+        }
+    }
+}
+impl From<ErrorCodeV2> for super::ErrorCode {
+    fn from(code: ErrorCodeV2) -> Self {
+        match code {
+            ErrorCodeV2::InvalidRequest => Self::InvalidRequest,
+            ErrorCodeV2::UnsupportedRoute => Self::UnsupportedRoute,
+            ErrorCodeV2::LimitExceeded => Self::LimitExceeded,
+            ErrorCodeV2::EngineFailure => Self::EngineFailure,
+            ErrorCodeV2::ToolMissing => Self::ToolMissing,
+            ErrorCodeV2::ToolVersion => Self::ToolVersion,
+            ErrorCodeV2::Io => Self::Io,
+            ErrorCodeV2::EncryptedInput => Self::EncryptedInput,
+        }
+    }
+}
+impl From<EngineError> for EngineErrorV2 {
+    fn from(error: EngineError) -> Self {
+        Self {
+            code: error.code.into(),
+            message: error.message,
+        }
+    }
+}
+impl From<EngineErrorV2> for EngineError {
+    fn from(error: EngineErrorV2) -> Self {
+        Self {
+            code: error.code.into(),
+            message: error.message,
+        }
+    }
+}
+
 /// The protocol version string for `ariad-engine/2`.
 pub const PROTOCOL: &str = "ariad-engine/2";
 
@@ -276,7 +350,7 @@ pub enum EventV2 {
         #[serde(skip_serializing_if = "Option::is_none")]
         metrics: Option<BTreeMap<String, Value>>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        error: Option<EngineError>,
+        error: Option<EngineErrorV2>,
     },
 }
 
@@ -307,7 +381,11 @@ impl From<Event> for EventV2 {
             Event::Progress { stage, done, total } => Self::Progress { stage, done, total },
             Event::Warning { code, message } => Self::Warning { code, message },
             Event::Artifact { path, format } => Self::Artifact { path, format },
-            Event::Result { ok, metrics, error } => Self::Result { ok, metrics, error },
+            Event::Result { ok, metrics, error } => Self::Result {
+                ok,
+                metrics,
+                error: error.map(Into::into),
+            },
         }
     }
 }
@@ -338,7 +416,11 @@ impl From<EventV2> for Event {
             EventV2::Progress { stage, done, total } => Self::Progress { stage, done, total },
             EventV2::Warning { code, message } => Self::Warning { code, message },
             EventV2::Artifact { path, format } => Self::Artifact { path, format },
-            EventV2::Result { ok, metrics, error } => Self::Result { ok, metrics, error },
+            EventV2::Result { ok, metrics, error } => Self::Result {
+                ok,
+                metrics,
+                error: error.map(Into::into),
+            },
         }
     }
 }
@@ -365,6 +447,14 @@ mod tests {
         limits::Limits,
         protocol::{Input, PROTOCOL as PROTOCOL_V1, ToolAvailability, ToolStatus},
     };
+
+    #[test]
+    fn encrypted_input_is_v2_only() {
+        let event = json!({"type":"result", "ok":false, "error":{"code":"encrypted_input", "message":"password required"}});
+        assert!(serde_json::from_value::<crate::protocol::Event>(event.clone()).is_err());
+        let parsed: EventV2 = serde_json::from_value(event.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(), event);
+    }
 
     #[test]
     fn canonical_run_tool_request_round_trips() {

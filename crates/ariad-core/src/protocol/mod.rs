@@ -91,6 +91,9 @@ pub enum ErrorCode {
     ToolMissing,
     ToolVersion,
     Io,
+    #[serde(skip)]
+    #[schemars(skip)]
+    EncryptedInput,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]

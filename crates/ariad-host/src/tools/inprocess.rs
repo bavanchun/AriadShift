@@ -214,7 +214,7 @@ pub fn execute_with_names(
 
     ctx.check().map_err(|err| map_pdf_error(err, scrubber))?;
 
-    let warnings: Vec<ConvertWarning> = tool_output
+    let mut warnings: Vec<ConvertWarning> = tool_output
         .warnings
         .iter()
         .map(|w| ConvertWarning {
@@ -222,9 +222,22 @@ pub fn execute_with_names(
             message: scrubber.scrub(w),
         })
         .collect();
+    warnings.extend(
+        tool_output
+            .coded_warnings
+            .iter()
+            .map(|warning| ConvertWarning {
+                code: scrubber.scrub(&warning.code),
+                message: scrubber.scrub(&warning.message),
+            }),
+    );
 
     let mut artifacts = Vec::with_capacity(tool_output.artifacts.len());
-    let mut metrics = BTreeMap::new();
+    let mut metrics: BTreeMap<String, Value> = tool_output
+        .metrics
+        .iter()
+        .map(|(key, value)| (scrubber.scrub(key), scrubber.scrub_value(value)))
+        .collect();
     let mut inline_json = None;
     let mut used_names = HashSet::new();
 
@@ -396,6 +409,45 @@ mod tests {
     fn sample_pdf() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf-tools/encrypted-owner-only.plaintext.pdf")
+    }
+
+    #[test]
+    fn passes_structured_warnings_and_metrics_through_bridge() {
+        let spec = ariad_core::tools::specs::security::specs()
+            .into_iter()
+            .find(|spec| spec.id == "pdf.unlock_forms")
+            .unwrap();
+        let workspace = Workspace::new().unwrap();
+        let input = workspace.input_dir().join("form.pdf");
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf-tools/form-acroform.pdf");
+        fs::copy(fixture, &input).unwrap();
+        let result = execute(
+            &spec,
+            &[input],
+            &json!({}),
+            &workspace,
+            &Limits::local(),
+            &SecretScrubber::default(),
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|warning| warning.code == "signature_field_kept")
+        );
+        assert!(result.metrics.contains_key("unlocked_fields"));
+        let err = map_pdf_error(
+            PdfError::Encrypted {
+                needs_password: true,
+            },
+            &SecretScrubber::default(),
+        );
+        assert_eq!(err.code(), "encrypted_input");
+        assert_eq!(err.exit_code(), 12);
     }
 
     #[test]

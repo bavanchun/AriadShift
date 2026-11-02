@@ -1,0 +1,7 @@
+# slug rust-triple upstream-asset sha256
+mac-arm64 aarch64-apple-darwin qpdf-12.4.2.tar.gz 8a58af5b6141319287c1883bec8bd1bd545b7567b7fc5e6ce5d25a1c85f36397
+mac-x64 x86_64-apple-darwin qpdf-12.4.2.tar.gz 8a58af5b6141319287c1883bec8bd1bd545b7567b7fc5e6ce5d25a1c85f36397
+linux-x64 x86_64-unknown-linux-gnu qpdf-12.4.2.tar.gz 8a58af5b6141319287c1883bec8bd1bd545b7567b7fc5e6ce5d25a1c85f36397
+linux-arm64 aarch64-unknown-linux-gnu qpdf-12.4.2.tar.gz 8a58af5b6141319287c1883bec8bd1bd545b7567b7fc5e6ce5d25a1c85f36397
+linux-musl-x64 x86_64-unknown-linux-musl qpdf-12.4.2.tar.gz 8a58af5b6141319287c1883bec8bd1bd545b7567b7fc5e6ce5d25a1c85f36397
+linux-musl-arm64 aarch64-unknown-linux-musl qpdf-12.4.2.tar.gz 8a58af5b6141319287c1883bec8bd1bd545b7567b7fc5e6ce5d25a1c85f36397

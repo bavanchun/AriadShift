@@ -15,8 +15,8 @@ milestone: B (engine breadth)
 
 ## Stack (verified 2026-10-31, stack report §2.3-2.4)
 
-- qpdf 12.4.2 (Apache-2.0) as engine pack `qpdf` (pack name = engine id): the pack ships the pinned qpdf binary (upstream SHA-256 verified, macOS codesigned); the adapter is `ashift __engine qpdf` in `crates/ariad-host/src/engines/qpdf.rs` (the `pandoc_bin` pattern, AD-14), `EngineSpec.protocol = V2`, `sandbox_required: true`.
-- In-process codecs in `ariad-pdf` (feature `codecs`, not in wasm unless size allows): `image` 0.25.10, `jpeg-encoder` 0.7.1 (`(MIT OR Apache-2.0) AND IJG` — IJG notice), `oxipng` 10.2.1 (MIT), `subsetter` 0.2.6 (MIT OR Apache-2.0). mozjpeg (IJG + BSD-3) only if jpeg-encoder quality/size is insufficient (decide by measurement in T1).
+- qpdf 12.4.2 (Apache-2.0) as engine pack `qpdf` (pack name = engine id): the pack builds qpdf from verified source with native crypto on Linux and macOS; release signing and licence review remain prerequisites; the adapter is `ashift __engine qpdf` in `crates/ariad-host/src/engines/qpdf.rs` (the `pandoc_bin` pattern, AD-14), `EngineSpec.protocol = V2`, `sandbox_required: true`.
+- In-process codecs in `ariad-pdf` (feature `codecs`, not in wasm unless size allows): `image` 0.25.10, `flate2`, and `subsetter` 0.2.6. A separately approved encoder follow-up is in progress.
 - Excluded: Ghostscript (AGPL), imagequant/pngquant (GPL — never linked; not shipped this phase).
 - JBIG2 (jbig2enc, Apache-2.0 with patent note): **not shipped** in this stage (owner, 2026-10-31); revisited in phase 20 with a patent/legal check.
 
@@ -24,14 +24,14 @@ milestone: B (engine breadth)
 
 | Tool id | Notes |
 |---|---|
-| `pdf.compress` | `{level: 1..9 \| preset: "screen" \| "ebook" \| "print" \| "lossless", target_bytes?: u64, grayscale?: bool, max_dpi?: u32, jpeg_quality?: u8}`. Pipeline: dedupe streams → recompress Flate → downsample/re-encode images (in-process) → subset/unembed unused fonts → qpdf object streams + unreferenced-resource removal. `target_bytes`: bounded binary search over (max_dpi, jpeg_quality) ≤ 8 iterations, stops at the best result ≥ target; reports achieved size and visual similarity (render diff of 3 sample pages via PDFium) — never returns a result below a similarity floor without a warning. |
+| `pdf.compress` | `{level: 1..9 \| preset: "screen" \| "ebook" \| "print" \| "lossless", target_bytes?: u64, grayscale?: bool, max_dpi?: u32, jpeg_quality?: u8}`. Pipeline: dedupe streams → recompress Flate → downsample/re-encode images (in-process) → subset/unembed unused fonts → in-process object streams + unreferenced-resource removal. `target_bytes`: at most eight quality and DPI candidates, selecting the highest-quality output at or below the target or the smallest candidate with a warning; reports achieved size and PDFium SSIM for first, middle and last pages; warns below 0.98 or if measurement is unavailable. `level` and `preset` are exclusive; the default is ebook. Never return output larger than the input. |
 | `pdf.grayscale` | convert images and colour operators to gray |
-| `pdf.encrypt` | `{user_password?, owner_password, algorithm: "aes-256" = default \| "aes-128", permissions: {print, modify, copy, annotate, fill_forms, extract_accessibility, assemble, print_high}}` via qpdf; passwords only via params, never logged; params redacted in logs/reports |
-| `pdf.decrypt` | `{password}` via qpdf |
+| `pdf.encrypt` | `{user_password?, owner_password, algorithm: "aes-256" = default \| "aes-128", permissions: {print, modify, copy, annotate, fill_forms, extract_accessibility, assemble, print_high}}` via qpdf; passwords only via secret channels, never logged; values redacted in logs/reports |
+| `pdf.decrypt` | `{password?}` via qpdf; absent means the empty user password |
 | `pdf.permissions` | change permissions (needs owner password) |
-| `pdf.repair` | qpdf `--qdf`/rebuild xref; report what was repaired |
+| `pdf.repair` | qpdf rewrite with object streams preserved; report repairs |
 | `pdf.linearize` | qpdf `--linearize` |
-| `pdf.sanitize` | `{javascript, embedded_files, links, metadata, xmp, thumbnails, annotations_of_type: [..], forms: "keep" \| "flatten" \| "remove"}` in `ariad-pdf` (+ PDFium flatten when requested) |
+| `pdf.sanitize` | `{javascript, embedded_files, links, metadata, xmp, thumbnails, annotations_of_type: [..], forms: "keep" \| "flatten" \| "remove"}` in `ariad-pdf`, flattening existing appearances when requested |
 | `pdf.unlock_forms` | remove read-only flags from fields |
 
 ## Tasks
@@ -47,6 +47,21 @@ milestone: B (engine breadth)
 ## Acceptance
 
 - [ ] `pdf.compress` beats or matches Stirling's level 6 output size on ≥ 7 of 10 corpus files with visual similarity ≥ 0.98 (report table).
-- [ ] `target_bytes` hits within 5 % or reports the closest achievable with similarity.
+  The delegated PM accepted the measured 6/10 as a phase deviation; the seven-file target remains unmet. The [per-file measurements and reasons](../reports/compress-measurement-p05.md) record the four misses. Text-heavy parity follow-up: [issue #187](https://github.com/bavanchun/AriadShift/issues/187).
+
+| Input | Stirling bytes | AriadShift bytes | SSIM | Result / explanation |
+| --- | ---: | ---: | ---: | --- |
+| arxiv-multilingual-open-text-2201-05609-v2.pdf | 136838 | 166344 | 1.0000 | Miss: output larger; embedded Type 1 fonts and Flate images are major streams. |
+| arxiv-tableformer-2203-01017-v1.pdf | 206587 | 452180 | 0.9996 | Miss: output larger; embedded fonts and images are major streams. |
+| pd-vi-decree-39-2022.pdf | 2005188 | 2011177 | 0.9998 | Miss: output larger; CCITT is preserved and the signature field retained, unlike the reference. Their individual effect on the gap is unmeasured. |
+| pd-vi-ip-law-155-2025.pdf | 1329700 | 1169330 | 0.9915 | Pass |
+| pd-vi-qd-1922-2026.pdf | 230264 | 178616 | 0.9999 | Pass |
+| pd-en-gao-08-35-highlights.pdf | 40911 | 50759 | 1.0000 | Miss: output larger; Type 1C font and other streams are present. |
+| vi-garden-image-only.pdf | 54116 | 24822 | 0.9976 | Pass |
+| en-map-scan.pdf | 148454 | 43271 | 0.9927 | Pass |
+| vi-garden-scan.pdf | 137490 | 40616 | 0.9929 | Pass |
+| scanned-skewed-vi.pdf | 83801 | 20966 | 0.9944 | Pass |
+
+- [ ] `target_bytes` selects the highest-quality candidate at or below the target, or reports the smallest candidate and warns when the target is not reached; report the gap and similarity for each corpus input.
 - [ ] Passwords never appear in logs, reports, MCP outputs, or panic messages (test greps captured stderr).
 - [ ] Sanitized `javascript-action.pdf` has no `/JS`, `/JavaScript`, `/OpenAction` JS.

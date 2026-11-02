@@ -689,7 +689,7 @@ ashift tool <ID> <INPUT>... [-o <DIR_OR_FILE>] [--param <KEY=VALUE>]... [--param
 - `-o, --output <DIR_OR_FILE>`: Explicit output file or directory. When omitted, single-output and multi-output tools publish beside the first input using default naming, while `pdf.info` prints its inspection summary (or structured JSON with `--json`) without writing a file to disk.
 - `--param <KEY=VALUE>`: Repeatable parameter override (`VALUE` is parsed as JSON when valid, otherwise as a string).
 - `--params-json <FILE|->`: Read the tool parameter JSON object from a file or `-` (stdin). Explicit `--param` flags override keys from `--params-json`.
-- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
+- `--secret <NAME=@FILE|->`: Supply a secret parameter (`x-ariad-secret: true`) from a file (`name=@/path/to/secret`) or stdin (`name=-`). Secrets are limited to 4096 UTF-8 bytes; one trailing newline is removed, and embedded CR, LF and NUL are rejected. Passing a secret parameter as a literal value via `--param`, `--params-json`, or `--secret name=literal` is rejected with exit code `9` (`error[invalid_params]`) and a hint to use `--secret <name>=@<file>` or `--secret <name>=-`.
 - `--overwrite`: Replace existing destination file(s).
 - `--json`: Emit structured JSON output to stdout (the tool's JSON payload directly when no `-o` file is written, for example `PdfInfo` for `pdf.info` or the bookmark list for `pdf.outline --param action=export`; `ToolOutcome` otherwise). Tools that produce only JSON print it to stdout without `--json` too (`pdf.info` prints a human summary instead).
 
@@ -806,6 +806,7 @@ ashift recipe run <RECIPE.JSON> <INPUT>... -o <DIR> [--yes] [--overwrite] [--jso
 - `<INPUT>...`: Input files fed into step 1 of the recipe. On the Free plan, batch runs are capped at 25 files and 250 MB total (`exit_code: 11`, `error[tier_not_allowed]`).
 - `-o, --output <DIR>`: Destination directory for published outputs.
 - `--yes`: Confirm running an imported recipe without an interactive terminal prompt. Recipes loaded from `.json` files are classified as `Imported`, print their step summary to stderr, forbid `watch` and network-fetch tools (`pdf.from_url`, `web.to_pdf`), and require `--yes` in non-interactive scripts (otherwise exiting with code `9`, `error[invalid_params]`).
+- Recipe secret prompt references read one line per distinct secret field from stdin in alphabetical field order, or use hidden terminal prompts. Repeated references to the same field share its value.
 - `--overwrite`: Replace existing destination files in `<DIR>`.
 - `--json`: Emit the `RecipeOutcome` JSON report to stdout.
 

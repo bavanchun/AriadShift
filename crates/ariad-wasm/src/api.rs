@@ -336,6 +336,8 @@ pub struct ToolRun {
     pub data: Option<Value>,
     /// Non-fatal warnings emitted during execution.
     pub warnings: Vec<Notice>,
+    /// Structured tool-specific metrics.
+    pub metrics: std::collections::BTreeMap<String, Value>,
 }
 
 impl ToolRun {
@@ -355,12 +357,13 @@ impl Serialize for ToolRun {
             data.serialize(serializer)
         } else {
             use serde::ser::SerializeMap;
-            let mut map = serializer.serialize_map(Some(5))?;
+            let mut map = serializer.serialize_map(Some(6))?;
             map.serialize_entry("tool", &self.tool)?;
             map.serialize_entry("format", &self.format)?;
             map.serialize_entry("media_type", &self.media_type)?;
             map.serialize_entry("extension", &self.extension)?;
             map.serialize_entry("warnings", &self.warnings)?;
+            map.serialize_entry("metrics", &self.metrics)?;
             map.end()
         }
     }
@@ -466,7 +469,8 @@ pub fn check_browser_access(
 /// - `bytes`: the primary artifact's bytes (or empty when no artifact was emitted),
 /// - `data`: `Some(Value)` for JSON-emitting tools such as `pdf.info`, or `None` for binary
 ///   artifact tools (`pdf.*` structural tools), and
-/// - `warnings`: non-fatal [`Notice`] findings emitted during execution.
+/// - `warnings`: non-fatal [`Notice`] findings emitted during execution, and
+/// - `metrics`: tool-specific measurements.
 pub fn run_tool<I, B, N, S>(
     inputs: I,
     names: N,
@@ -727,7 +731,7 @@ where
         .first()
         .map(|a| a.bytes.clone())
         .unwrap_or_default();
-    let warnings: Vec<Notice> = tool_output
+    let mut warnings: Vec<Notice> = tool_output
         .warnings
         .into_iter()
         .map(|message| Notice {
@@ -736,6 +740,16 @@ where
             source_pos: None,
         })
         .collect();
+    warnings.extend(
+        tool_output
+            .coded_warnings
+            .into_iter()
+            .map(|warning| Notice {
+                code: warning.code,
+                message: warning.message,
+                source_pos: None,
+            }),
+    );
 
     Ok(ToolRun {
         tool: spec.id,
@@ -746,6 +760,7 @@ where
         artifacts,
         data: tool_output.json,
         warnings,
+        metrics: tool_output.metrics,
     })
 }
 
@@ -918,6 +933,34 @@ mod tests {
     use ariad_core::tools::params::InfoParams;
 
     use super::*;
+
+    #[test]
+    fn pdf_tool_exposes_coded_warnings_and_metrics() {
+        use lopdf::{Object, dictionary};
+        let input = read_pdf_fixture("form-acroform.pdf");
+        let mut doc = lopdf::Document::load_mem(&input).unwrap();
+        let field = doc.add_object(dictionary! { "FT" => "Sig", "V" => Object::Null });
+        let form = doc.add_object(dictionary! { "Fields" => vec![Object::Reference(field)] });
+        doc.catalog_mut().unwrap().set("AcroForm", form);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).unwrap();
+        let result = run_tool(
+            [&bytes],
+            ["signed.pdf"],
+            "pdf.unlock_forms",
+            "{}",
+            64 * 1024 * 1024,
+            false,
+        )
+        .unwrap();
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.code == "signed_input_rewritten")
+        );
+        assert!(result.metrics.contains_key("unlocked_fields"));
+    }
 
     fn convert_text(text: &str, from: &str, to: &str) -> String {
         let conversion = convert(text.as_bytes(), from, to, ConvertOptions::default()).unwrap();

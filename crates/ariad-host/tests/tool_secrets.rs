@@ -206,7 +206,9 @@ fn engine_secret_delivery_uses_0600_params_file_and_scrubs_warnings_errors_and_s
     fs::create_dir_all(&out_dir).expect("create out_dir");
 
     let secret_value = "TopSecret\"Pass\\W0rd!2026";
-    let bag = SecretBag::new().with("sec_01JSECRET", secret_value);
+    let bag = SecretBag::new()
+        .with("sec_01JSECRET", secret_value)
+        .unwrap();
     let spec = decrypt_test_spec();
 
     // Case 1: Engine verifies `<work_dir>/params.json` exists with mode `0600`, checks that stdin
@@ -492,7 +494,7 @@ fn recipe_isolates_secrets_per_step_tool_spec() {
     };
 
     let step_a_secret = "StepAExclusiveSecret!2026";
-    let bag = SecretBag::new().with("password", step_a_secret);
+    let bag = SecretBag::new().with("password", step_a_secret).unwrap();
 
     let script = format!(
         r#"

@@ -11,11 +11,15 @@
 pub mod alternate_mix;
 pub mod attachments;
 pub mod booklet;
+#[cfg(feature = "codecs")]
+pub mod compress;
 pub mod crop;
 pub mod decompress;
 pub mod delete_pages;
 pub mod divide_pages;
 pub mod extract_pages;
+#[cfg(feature = "codecs")]
+pub mod grayscale;
 pub mod insert_blank;
 pub mod layers;
 pub mod merge;
@@ -30,9 +34,11 @@ pub mod posterize;
 pub mod reorder;
 pub mod rotate;
 pub mod rotate_content;
+pub mod sanitize;
 pub mod scale;
 pub mod single_page;
 pub mod split;
+pub mod unlock_forms;
 pub mod viewer_prefs;
 
 use ariad_core::{
@@ -42,12 +48,13 @@ use ariad_core::{
         DeletePagesParams, DividePagesParams, ExtractPagesParams, ImageToPdfParams, InfoParams,
         InsertBlankParams, LayersParams, MergeParams, MetadataParams, NupParams, OutlineParams,
         OverlayParams, PageLabelsParams, PortfolioParams, PosterizeParams, ReorderParams,
-        RotateContentParams, RotateParams, ScaleParams, SinglePageParams, SplitParams,
-        ViewerPrefsParams,
+        RotateContentParams, RotateParams, SanitizeParams, ScaleParams, SinglePageParams,
+        SplitParams, UnlockFormsParams, ViewerPrefsParams,
     },
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 use crate::{
     document::{self, PdfDoc, ToolCtx},
@@ -182,6 +189,10 @@ pub struct OutputDoc {
     pub payload: OutputPayload,
     /// Tool-specific warnings for this output.
     pub warnings: Vec<String>,
+    /// Structured diagnostics with stable codes.
+    pub coded_warnings: Vec<ToolWarning>,
+    /// Tool-specific metrics.
+    pub metrics: BTreeMap<String, Value>,
     /// Optional structured JSON value when `format == "json"`.
     pub json: Option<Value>,
     /// Deterministic writer options when `payload` is [`OutputPayload::Pdf`].
@@ -197,6 +208,8 @@ impl OutputDoc {
             format: "pdf".to_owned(),
             payload: OutputPayload::Pdf(Box::new(doc)),
             warnings: Vec::new(),
+            coded_warnings: Vec::new(),
+            metrics: BTreeMap::new(),
             json: None,
             save_options: SaveOptions::default(),
         }
@@ -218,6 +231,8 @@ impl OutputDoc {
             format: "json".to_owned(),
             payload: OutputPayload::Bytes(bytes),
             warnings: Vec::new(),
+            coded_warnings: Vec::new(),
+            metrics: BTreeMap::new(),
             json: Some(value),
             save_options: SaveOptions::default(),
         })
@@ -231,6 +246,8 @@ impl OutputDoc {
             format: format.into(),
             payload: OutputPayload::Bytes(bytes),
             warnings: Vec::new(),
+            coded_warnings: Vec::new(),
+            metrics: BTreeMap::new(),
             json: None,
             save_options: SaveOptions::default(),
         }
@@ -249,6 +266,15 @@ impl OutputDoc {
         self.save_options = save_options;
         self
     }
+}
+
+/// A diagnostic with a stable machine-readable code.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolWarning {
+    /// Stable warning code.
+    pub code: String,
+    /// Human-readable explanation.
+    pub message: String,
 }
 
 /// A serialized output artifact produced by [`run_tool`].
@@ -270,6 +296,10 @@ pub struct ToolOutput {
     /// Non-fatal diagnostic warnings (including [`REPAIRED_XREF_WARNING`] when any input had a
     /// repaired cross-reference table).
     pub warnings: Vec<String>,
+    /// Structured tool-specific diagnostics.
+    pub coded_warnings: Vec<ToolWarning>,
+    /// Tool-specific metrics.
+    pub metrics: BTreeMap<String, Value>,
     /// Optional structured JSON payload for JSON-emitting tools (`pdf.info`, `pdf.outline` export, etc.).
     pub json: Option<Value>,
 }
@@ -292,6 +322,24 @@ pub fn run_tool(
     }
 
     match tool_id {
+        #[cfg(feature = "codecs")]
+        "pdf.compress" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::CompressParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                compress::run_inputs,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.grayscale" => dispatch_structural::<ariad_core::tools::params::GrayscaleParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| grayscale::run(docs, params, &inputs[0].limits, ctx),
+        ),
         "pdf.merge" => {
             dispatch_structural::<MergeParams, _>(tool_id, inputs, params, ctx, merge::run)
         }
@@ -415,6 +463,20 @@ pub fn run_tool(
         "pdf.layers" => {
             dispatch_structural::<LayersParams, _>(tool_id, inputs, params, ctx, layers::run)
         }
+        "pdf.unlock_forms" => dispatch_structural_inputs::<UnlockFormsParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            unlock_forms::run_inputs,
+        ),
+        "pdf.sanitize" => dispatch_structural_inputs::<SanitizeParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            sanitize::run_inputs,
+        ),
         other => Err(PdfError::InvalidParams(format!("unknown tool `{other}`"))),
     }
 }
@@ -454,6 +516,8 @@ fn run_pdf_info(
             bytes: json_bytes,
         }],
         warnings,
+        coded_warnings: Vec::new(),
+        metrics: BTreeMap::new(),
         json: Some(json_val),
     })
 }
@@ -517,6 +581,8 @@ fn run_image_to_pdf(
             bytes: pdf_bytes,
         }],
         warnings: Vec::new(),
+        coded_warnings: Vec::new(),
+        metrics: BTreeMap::new(),
         json: None,
     })
 }
@@ -601,7 +667,15 @@ where
         .unwrap_or_else(|| "document".to_owned());
 
     let (opened_docs, output_docs) = runner(inputs, &typed_params, &local_ctx)?;
-    finalize_tool_output(tool_id, &opened_docs, &first_stem, output_docs, &local_ctx)
+    let original_bytes_available = matches!(inputs[0].source, InputSource::Bytes(_));
+    finalize_tool_output_impl(
+        tool_id,
+        &opened_docs,
+        &first_stem,
+        output_docs,
+        &local_ctx,
+        original_bytes_available,
+    )
 }
 
 /// Serializes [`OutputDoc`]s into [`OutputArtifact`]s via [`writer::save_with_options`] and
@@ -614,9 +688,42 @@ pub fn finalize_tool_output(
     output_docs: Vec<OutputDoc>,
     ctx: &ToolCtx,
 ) -> Result<ToolOutput, PdfError> {
+    finalize_tool_output_impl(tool_id, opened_inputs, first_stem, output_docs, ctx, false)
+}
+
+fn finalize_tool_output_impl(
+    tool_id: &str,
+    opened_inputs: &[PdfDoc],
+    first_stem: &str,
+    output_docs: Vec<OutputDoc>,
+    ctx: &ToolCtx,
+    original_bytes_available: bool,
+) -> Result<ToolOutput, PdfError> {
     ctx.check()?;
 
     let mut warnings = Vec::new();
+    let mut coded_warnings = Vec::new();
+    let mut metrics = BTreeMap::new();
+    let rewritten_pdf = output_docs.iter().any(|output| {
+        output.format == "pdf"
+            && !(original_bytes_available
+                && tool_id == "pdf.compress"
+                && output
+                    .coded_warnings
+                    .iter()
+                    .any(|warning| warning.code == "no_size_gain"))
+    });
+    if rewritten_pdf {
+        for input in opened_inputs {
+            if has_signed_field(input.inner(), ctx)? {
+                coded_warnings.push(ToolWarning {
+                    code: "signed_input_rewritten".to_owned(),
+                    message: "Rewriting this document invalidates existing signatures.".to_owned(),
+                });
+                break;
+            }
+        }
+    }
     if opened_inputs.iter().any(PdfDoc::repaired_xref) {
         warnings.push(REPAIRED_XREF_WARNING.to_owned());
     }
@@ -628,6 +735,12 @@ pub fn finalize_tool_output(
 
     for (idx, mut out_doc) in output_docs.into_iter().enumerate() {
         ctx.check()?;
+        for warning in out_doc.coded_warnings {
+            if !coded_warnings.contains(&warning) {
+                coded_warnings.push(warning);
+            }
+        }
+        metrics.extend(out_doc.metrics);
         for w in out_doc.warnings {
             if !warnings.contains(&w) {
                 warnings.push(w);
@@ -664,13 +777,87 @@ pub fn finalize_tool_output(
     Ok(ToolOutput {
         artifacts,
         warnings,
+        coded_warnings,
+        metrics,
         json: json_payload,
     })
+}
+
+fn has_signed_field(doc: &lopdf::Document, ctx: &ToolCtx) -> Result<bool, PdfError> {
+    use lopdf::Object;
+    use std::collections::HashSet;
+
+    let Ok(form) = doc.catalog().and_then(|catalog| catalog.get(b"AcroForm")) else {
+        return Ok(false);
+    };
+    let (_, form) = doc.dereference(form).map_err(|_| PdfError::Malformed)?;
+    let Ok(fields) = form.as_dict().and_then(|form| form.get(b"Fields")) else {
+        return Ok(false);
+    };
+    let mut pending = vec![(fields, false, 0usize)];
+    let mut visited = HashSet::new();
+    let mut count = 0usize;
+    while let Some((item, inherited_sig, depth)) = pending.pop() {
+        ctx.check()?;
+        count += 1;
+        if count > 100_000 || depth > 100 {
+            return Err(PdfError::Malformed);
+        }
+        match item {
+            Object::Reference(id) => {
+                if !visited.insert((*id, inherited_sig)) {
+                    continue;
+                }
+                pending.push((
+                    doc.get_object(*id).map_err(|_| PdfError::Malformed)?,
+                    inherited_sig,
+                    depth + 1,
+                ));
+            }
+            Object::Array(items) => {
+                pending.extend(items.iter().map(|item| (item, inherited_sig, depth + 1)));
+            }
+            Object::Dictionary(field) => {
+                let signature = match field.get(b"FT") {
+                    Ok(value) => {
+                        doc.dereference(value)
+                            .ok()
+                            .and_then(|(_, value)| value.as_name().ok())
+                            == Some(b"Sig")
+                    }
+                    Err(_) => inherited_sig,
+                };
+                if signature && field.has(b"V") {
+                    return Ok(true);
+                }
+                if let Ok(kids) = field.get(b"Kids") {
+                    pending.push((kids, signature, depth + 1));
+                }
+            }
+            _ => return Err(PdfError::Malformed),
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    #[test]
+    fn detects_signed_acroform_fields_with_inherited_type() {
+        use lopdf::{Document, Object, dictionary};
+        let mut doc = Document::with_version("1.7");
+        let child = doc.add_object(dictionary! { "V" => Object::Null });
+        let parent =
+            doc.add_object(dictionary! { "FT" => "Sig", "Kids" => vec![Object::Reference(child)] });
+        let form = doc.add_object(dictionary! { "Fields" => vec![Object::Reference(parent)] });
+        let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "AcroForm" => form });
+        doc.trailer.set("Root", catalog);
+        assert!(super::has_signed_field(&doc, &super::ToolCtx::new()).unwrap());
+        doc.get_dictionary_mut(child).unwrap().remove(b"V");
+        assert!(!super::has_signed_field(&doc, &super::ToolCtx::new()).unwrap());
+    }
 
     use ariad_core::reader::pdf as core_pdf;
     use serde_json::json;

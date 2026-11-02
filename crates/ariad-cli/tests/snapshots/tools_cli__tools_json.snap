@@ -3290,5 +3290,602 @@ expression: tools_json
     "summary": "Report per page whether a text layer exists and how much of the page an image covers.",
     "tier": "free",
     "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "optimize",
+    "id": "pdf.compress",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "CompressPreset": {
+          "description": "Compression profile.",
+          "oneOf": [
+            {
+              "const": "screen",
+              "description": "Small files for screens.",
+              "type": "string"
+            },
+            {
+              "const": "ebook",
+              "description": "Balanced compression.",
+              "type": "string"
+            },
+            {
+              "const": "print",
+              "description": "Printing quality.",
+              "type": "string"
+            },
+            {
+              "const": "lossless",
+              "description": "Lossless compression.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.compress`.",
+      "properties": {
+        "grayscale": {
+          "default": false,
+          "description": "Convert images to grayscale.",
+          "type": "boolean"
+        },
+        "jpeg_quality": {
+          "default": null,
+          "description": "JPEG quality from 10 through 100.",
+          "format": "uint8",
+          "maximum": 100,
+          "minimum": 10,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "level": {
+          "default": null,
+          "description": "Compression level from 1 through 9.",
+          "format": "uint8",
+          "maximum": 9,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_dpi": {
+          "default": null,
+          "description": "Maximum image resolution from 36 through 1200 dpi.",
+          "format": "uint32",
+          "maximum": 1200,
+          "minimum": 36,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "preset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompressPreset"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional named compression profile."
+        },
+        "target_bytes": {
+          "default": null,
+          "description": "Desired maximum output size in bytes, at least 1024.",
+          "format": "uint64",
+          "minimum": 1024,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "CompressParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Compress a PDF document.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "optimize",
+    "id": "pdf.grayscale",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.grayscale`.",
+      "title": "GrayscaleParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Convert a PDF document to grayscale.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "qpdf",
+    "group": "optimize",
+    "id": "pdf.repair",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.repair`.",
+      "title": "RepairParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Repair a damaged PDF document.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "qpdf",
+    "group": "optimize",
+    "id": "pdf.linearize",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.linearize`.",
+      "title": "LinearizeParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Optimize a PDF document for progressive loading.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "qpdf",
+    "group": "security",
+    "id": "pdf.encrypt",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "EncryptionAlgorithm": {
+          "description": "Supported PDF encryption algorithms.",
+          "oneOf": [
+            {
+              "const": "aes-256",
+              "description": "AES with a 256-bit key.",
+              "type": "string"
+            },
+            {
+              "const": "aes-128",
+              "description": "AES with a 128-bit key.",
+              "type": "string"
+            }
+          ]
+        },
+        "PdfPermissions": {
+          "additionalProperties": false,
+          "description": "Permissions granted to a PDF user.",
+          "properties": {
+            "annotate": {
+              "default": true,
+              "description": "Permit annotate.",
+              "type": "boolean"
+            },
+            "assemble": {
+              "default": true,
+              "description": "Permit assemble.",
+              "type": "boolean"
+            },
+            "copy": {
+              "default": true,
+              "description": "Permit copy.",
+              "type": "boolean"
+            },
+            "extract_accessibility": {
+              "default": true,
+              "description": "Permit extract accessibility.",
+              "type": "boolean"
+            },
+            "fill_forms": {
+              "default": true,
+              "description": "Permit fill forms.",
+              "type": "boolean"
+            },
+            "modify": {
+              "default": true,
+              "description": "Permit modify.",
+              "type": "boolean"
+            },
+            "print": {
+              "default": true,
+              "description": "Permit print.",
+              "type": "boolean"
+            },
+            "print_high": {
+              "default": true,
+              "description": "Permit print high.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.encrypt`.",
+      "properties": {
+        "algorithm": {
+          "$ref": "#/$defs/EncryptionAlgorithm",
+          "default": "aes-256",
+          "description": "Encryption algorithm (AES-256 by default)."
+        },
+        "owner_password": {
+          "description": "Required non-empty owner password.",
+          "minLength": 1,
+          "type": "string",
+          "x-ariad-secret": true
+        },
+        "permissions": {
+          "$ref": "#/$defs/PdfPermissions",
+          "default": {
+            "annotate": true,
+            "assemble": true,
+            "copy": true,
+            "extract_accessibility": true,
+            "fill_forms": true,
+            "modify": true,
+            "print": true,
+            "print_high": true
+          },
+          "description": "Permissions granted to the user."
+        },
+        "user_password": {
+          "default": null,
+          "description": "Optional password needed to open the document.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-ariad-secret": true
+        }
+      },
+      "required": [
+        "owner_password"
+      ],
+      "title": "EncryptParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [
+      "user_password",
+      "owner_password"
+    ],
+    "summary": "Encrypt a PDF document.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "qpdf",
+    "group": "security",
+    "id": "pdf.decrypt",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.decrypt`.",
+      "properties": {
+        "password": {
+          "default": null,
+          "description": "Password; omission means an empty user password.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-ariad-secret": true
+        }
+      },
+      "title": "DecryptParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [
+      "password"
+    ],
+    "summary": "Decrypt a PDF document.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "qpdf",
+    "group": "security",
+    "id": "pdf.permissions",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "PdfPermissions": {
+          "additionalProperties": false,
+          "description": "Permissions granted to a PDF user.",
+          "properties": {
+            "annotate": {
+              "default": true,
+              "description": "Permit annotate.",
+              "type": "boolean"
+            },
+            "assemble": {
+              "default": true,
+              "description": "Permit assemble.",
+              "type": "boolean"
+            },
+            "copy": {
+              "default": true,
+              "description": "Permit copy.",
+              "type": "boolean"
+            },
+            "extract_accessibility": {
+              "default": true,
+              "description": "Permit extract accessibility.",
+              "type": "boolean"
+            },
+            "fill_forms": {
+              "default": true,
+              "description": "Permit fill forms.",
+              "type": "boolean"
+            },
+            "modify": {
+              "default": true,
+              "description": "Permit modify.",
+              "type": "boolean"
+            },
+            "print": {
+              "default": true,
+              "description": "Permit print.",
+              "type": "boolean"
+            },
+            "print_high": {
+              "default": true,
+              "description": "Permit print high.",
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.permissions`.",
+      "properties": {
+        "owner_password": {
+          "description": "Required owner password.",
+          "type": "string",
+          "x-ariad-secret": true
+        },
+        "permissions": {
+          "$ref": "#/$defs/PdfPermissions",
+          "default": {
+            "annotate": true,
+            "assemble": true,
+            "copy": true,
+            "extract_accessibility": true,
+            "fill_forms": true,
+            "modify": true,
+            "print": true,
+            "print_high": true
+          },
+          "description": "Permissions granted to the user."
+        },
+        "user_password": {
+          "default": null,
+          "description": "Optional user password for the resulting document.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "x-ariad-secret": true
+        }
+      },
+      "required": [
+        "owner_password"
+      ],
+      "title": "PermissionsParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [
+      "owner_password",
+      "user_password"
+    ],
+    "summary": "Change PDF permissions.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "security",
+    "id": "pdf.sanitize",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "SanitizeForms": {
+          "description": "Form handling when sanitizing a document.",
+          "oneOf": [
+            {
+              "const": "keep",
+              "description": "Preserve forms.",
+              "type": "string"
+            },
+            {
+              "const": "flatten",
+              "description": "Flatten forms into page content.",
+              "type": "string"
+            },
+            {
+              "const": "remove",
+              "description": "Remove forms.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.sanitize`.",
+      "properties": {
+        "annotations_of_type": {
+          "default": [],
+          "description": "Annotation subtype names, without a slash and containing ASCII letters only.",
+          "items": {
+            "pattern": "^[A-Za-z]+$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "embedded_files": {
+          "default": true,
+          "description": "Remove embedded files.",
+          "type": "boolean"
+        },
+        "forms": {
+          "$ref": "#/$defs/SanitizeForms",
+          "default": "keep",
+          "description": "Form handling (keep by default)."
+        },
+        "javascript": {
+          "default": true,
+          "description": "Remove javascript.",
+          "type": "boolean"
+        },
+        "links": {
+          "default": false,
+          "description": "Remove links.",
+          "type": "boolean"
+        },
+        "metadata": {
+          "default": false,
+          "description": "Remove metadata.",
+          "type": "boolean"
+        },
+        "thumbnails": {
+          "default": true,
+          "description": "Remove thumbnails.",
+          "type": "boolean"
+        },
+        "xmp": {
+          "default": false,
+          "description": "Remove xmp.",
+          "type": "boolean"
+        }
+      },
+      "title": "SanitizeParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Remove selected active content from a PDF document.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "security",
+    "id": "pdf.unlock_forms",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.unlock_forms`.",
+      "title": "UnlockFormsParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Unlock PDF form fields.",
+    "tier": "free",
+    "version": "1"
   }
 ]

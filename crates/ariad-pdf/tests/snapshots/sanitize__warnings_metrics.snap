@@ -1,0 +1,70 @@
+{
+  "annotations.pdf": {
+    "codes": [],
+    "metrics": {
+      "flattened_widgets": 0,
+      "removed_annotations": 0,
+      "removed_embedded_files": 0,
+      "removed_javascript": 0,
+      "removed_links": 0
+    },
+    "warnings": []
+  },
+  "broken-xref.pdf": {
+    "codes": [],
+    "metrics": {
+      "flattened_widgets": 0,
+      "removed_annotations": 0,
+      "removed_embedded_files": 0,
+      "removed_javascript": 0,
+      "removed_links": 0
+    },
+    "warnings": [
+      "cross-reference table was malformed and reconstructed from object offsets"
+    ]
+  },
+  "form-acroform.pdf": {
+    "codes": [],
+    "metrics": {
+      "flattened_widgets": 0,
+      "removed_annotations": 0,
+      "removed_embedded_files": 0,
+      "removed_javascript": 0,
+      "removed_links": 0
+    },
+    "warnings": []
+  },
+  "form-with-values.pdf": {
+    "codes": [],
+    "metrics": {
+      "flattened_widgets": 4,
+      "removed_annotations": 0,
+      "removed_embedded_files": 0,
+      "removed_javascript": 0,
+      "removed_links": 0
+    },
+    "warnings": []
+  },
+  "javascript-action.pdf": {
+    "codes": [],
+    "metrics": {
+      "flattened_widgets": 0,
+      "removed_annotations": 0,
+      "removed_embedded_files": 0,
+      "removed_javascript": 4,
+      "removed_links": 0
+    },
+    "warnings": []
+  },
+  "with-attachments.pdf": {
+    "codes": [],
+    "metrics": {
+      "flattened_widgets": 0,
+      "removed_annotations": 0,
+      "removed_embedded_files": 2,
+      "removed_javascript": 0,
+      "removed_links": 0
+    },
+    "warnings": []
+  }
+}

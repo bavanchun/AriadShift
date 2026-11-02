@@ -286,6 +286,12 @@ fn map_run_error(
             let scrubbed = scrubber.scrub(&message);
             match code {
                 ErrorCode::LimitExceeded => ToolError::LimitExceeded,
+                ErrorCode::InvalidRequest if effective_engine == "qpdf" => {
+                    ToolError::InvalidParams(scrubbed)
+                }
+                ErrorCode::EncryptedInput => ToolError::EncryptedInput {
+                    needs_password: true,
+                },
                 ErrorCode::ToolMissing | ErrorCode::ToolVersion => {
                     ToolError::from_missing_engine(effective_engine)
                 }
@@ -317,6 +323,29 @@ fn map_run_error(
 #[cfg(test)]
 mod pdfium_limit_tests {
     use super::*;
+
+    #[test]
+    fn v1_unknown_error_is_generic_engine_failure() {
+        let line = br#"{"type":"result","ok":false,"error":{"code":"encrypted_input","message":"password required"}}"#;
+        let error = runner::parse_event(line, None, &mut Vec::new()).unwrap_err();
+        let spec = ariad_core::tools::find("pdf.render").unwrap();
+        let mapped = map_run_error(error, spec, "pdfium", &SecretScrubber::default());
+        assert_eq!(mapped.code(), "engine_failure");
+        assert_eq!(mapped.exit_code(), 1);
+    }
+
+    #[test]
+    fn encrypted_input_maps_to_exit_twelve() {
+        let spec = ariad_core::tools::find("pdf.render").unwrap();
+        let error = RunError::EngineFailed {
+            code: ErrorCode::EncryptedInput,
+            message: "password required".into(),
+            memory_limit_mb: None,
+        };
+        let mapped = map_run_error(error, spec, "pdfium", &SecretScrubber::default());
+        assert_eq!(mapped.exit_code(), 12);
+        assert_eq!(mapped.code(), "encrypted_input");
+    }
 
     #[test]
     fn memory_hint_is_only_added_to_crashes() {

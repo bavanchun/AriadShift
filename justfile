@@ -40,8 +40,8 @@ wasm-bindgen-tool:
 # Builds the browser module into packages/ariad-wasm/pkg (not committed).
 wasm-build: wasm-bindgen-tool
     cargo build -p ariad-wasm -p ariad-typst --target wasm32-unknown-unknown --profile wasm-release
-    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg target/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm
-    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg target/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm
+    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-wasm/pkg "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/wasm32-unknown-unknown/wasm-release/ariad_wasm.wasm"
+    .tools/bin/wasm-bindgen --target web --out-dir packages/ariad-typst/pkg "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/wasm32-unknown-unknown/wasm-release/ariad_typst.wasm"
 
 test:
     cargo nextest run --workspace --features ariad-host/test-probe
@@ -323,6 +323,15 @@ pack-pdfium out="target/packs/pdfium":
 # Check the layout, manifest and notices of the pack that `just pack-pdfium` built.
 pack-pdfium-verify out="target/packs/pdfium":
     bash engines/pdfium/pack/make.sh verify --pack "{{out}}"
+
+# Assemble and check an unsigned qpdf development pack for this host.
+pack-qpdf qpdf_dir out="target/packs/qpdf":
+    cargo build -p ariad-cli --bin ashift
+    bash engines/qpdf/pack/make.sh dev "{{qpdf_dir}}" "${CARGO_TARGET_DIR:-{{justfile_directory()}}/target}/debug/ashift" "{{out}}"
+    bash engines/qpdf/pack/make.sh verify "{{out}}"
+
+pack-qpdf-verify out="target/packs/qpdf":
+    bash engines/qpdf/pack/make.sh verify "{{out}}"
 
 # Test the shared pack builder, the pdfium wrapper and the signing guard (offline).
 pack-tooling-test:

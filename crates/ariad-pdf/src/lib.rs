@@ -7,12 +7,20 @@
 
 #![forbid(unsafe_code)]
 
+pub mod color;
 pub mod document;
 pub mod error;
+pub mod flatten;
+#[cfg(feature = "codecs")]
+pub mod fonts;
 pub mod gc;
 pub mod image_to_pdf;
+#[cfg(feature = "codecs")]
+pub mod images;
 pub mod info;
 pub mod naming;
+#[cfg(feature = "codecs")]
+pub mod optimize;
 pub mod paper;
 pub mod tools;
 pub mod writer;

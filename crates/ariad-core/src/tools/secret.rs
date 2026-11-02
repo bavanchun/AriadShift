@@ -161,7 +161,6 @@ impl From<SecretRef> for RawSecretRef {
 pub enum SecretSource {
     /// Inline CLI `--param` or `--params-json` arguments.
     /// Literal secrets and handles are rejected; callers must use `--secret <name>=@<file>` or `--secret <name>=-`
-    /// (or `{"$secret": "prompt"}` for an interactive terminal prompt).
     Argv,
     /// A recipe step (`ariad-recipe/1`).
     /// Literal strings, `@file` paths, and handles are rejected; only `{"$secret": "prompt"}` is allowed.
@@ -445,14 +444,11 @@ pub fn validate_single_secret_value(
                 channel: source,
             })
         }
-        (SecretSource::Argv, SecretRef::Prompt) => Ok(secret_ref),
-        (SecretSource::Argv, SecretRef::Handle(_)) => {
-            Err(SecretValidationError::UnsupportedChannel {
-                field: field.to_owned(),
-                reference: secret_ref,
-                channel: source,
-            })
-        }
+        (SecretSource::Argv, _) => Err(SecretValidationError::UnsupportedChannel {
+            field: field.to_owned(),
+            reference: secret_ref,
+            channel: source,
+        }),
         (SecretSource::Mcp, SecretRef::Handle(_)) => Ok(secret_ref),
         (SecretSource::Mcp, SecretRef::Prompt) => Err(SecretValidationError::UnsupportedChannel {
             field: field.to_owned(),
@@ -496,7 +492,10 @@ mod tests {
 
         let prompt = json!({ "password": { "$secret": "prompt" } });
         assert!(validate_secret_fields(&["password"], &prompt, SecretSource::Recipe).is_ok());
-        assert!(validate_secret_fields(&["password"], &prompt, SecretSource::Argv).is_ok());
+        assert!(matches!(
+            validate_secret_fields(&["password"], &prompt, SecretSource::Argv),
+            Err(SecretValidationError::UnsupportedChannel { .. })
+        ));
         assert!(validate_secret_fields(&["password"], &prompt, SecretSource::Mcp).is_err());
 
         let handle = json!({ "password": { "$secret": "sec_01JABCDEF" } });

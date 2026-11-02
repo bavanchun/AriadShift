@@ -688,7 +688,7 @@ fn run_tool_inner(
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
-    let raw_exec = if !is_out_of_process {
+    let mut raw_exec = if !is_out_of_process {
         inprocess::execute_with_names(
             &spec,
             &staged_inputs_with_names,
@@ -717,6 +717,40 @@ fn run_tool_inner(
         )
         .map_err(|e| e.scrubbed(scrubber))?
     };
+
+    if spec.id == "pdf.compress" && !is_out_of_process {
+        let result = staged_inputs_with_names
+            .first()
+            .zip(raw_exec.artifacts.first())
+            .and_then(|((input, _), (output, _))| {
+                super::similarity::measure(
+                    input,
+                    output,
+                    &request.limits,
+                    request.engine_program.as_deref(),
+                    &request.cancel,
+                )
+                .ok()
+            });
+        if let Some(score) = result {
+            raw_exec.metrics.insert("similarity".into(), json!(score));
+            if score < super::similarity::SIMILARITY_FLOOR {
+                raw_exec.warnings.push(ConvertWarning {
+                    code: "similarity_below_floor".into(),
+                    message: format!("rendered similarity {score:.4} is below 0.98"),
+                });
+            }
+        } else {
+            raw_exec.warnings.push(ConvertWarning {
+                code: "similarity_not_measured".into(),
+                message: "PDFium similarity measurement was unavailable".into(),
+            });
+        }
+    }
+
+    if request.cancel.is_cancelled() {
+        return Err(ToolError::Interrupted);
+    }
 
     // 11. Plan and execute atomic multi-artifact publication.
     let (published, publish_warnings) = publish_tool_outputs(

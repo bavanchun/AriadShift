@@ -88,6 +88,9 @@ assert_classification "compose (infra/compose)" "infra/compose/docker-compose.ym
 # 7b. pdfium engine pack scripts and workflow
 assert_classification "pack (pdfium wrapper)" "engines/pdfium/pack/make.sh" "false" "false" "pack-only change"
 assert_classification "pack (pdfium pins)" "engines/pdfium/pack/targets.txt" "false" "false" "pack-only change"
+assert_classification "pack (qpdf wrapper)" "engines/qpdf/pack/make.sh" "false" "false" "pack-only change"
+assert_classification "pack (qpdf test)" "scripts/test-pack-qpdf.sh" "false" "false" "pack-only change"
+assert_classification "pack (qpdf workflow)" ".github/workflows/pack-qpdf.yml" "false" "false" "pack-only change"
 assert_classification "pack (shared builder)" "scripts/pack/build-pack.sh" "false" "false" "pack-only change"
 assert_classification "pack (workflow)" ".github/workflows/pack-pdfium.yml" "false" "false" "pack-only change"
 assert_classification "mixed (pack + docs)" "$(printf 'docs/packs.md\nscripts/pack/sign-pack.sh')" "false" "false" "pack-only change"

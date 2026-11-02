@@ -257,10 +257,13 @@ fn secret_params_annotation_and_channel_validation_work_end_to_end() {
         ));
     }
 
-    // Prompt reference allowed in Recipe and Argv, rejected in Mcp
+    // Prompt reference allowed in Recipe, rejected in Argv and Mcp
     let prompt_json = json!({"password": {"$secret": "prompt"}});
     assert!(validate_secret_params(&spec, &prompt_json, SecretSource::Recipe).is_ok());
-    assert!(validate_secret_params(&spec, &prompt_json, SecretSource::Argv).is_ok());
+    assert!(matches!(
+        validate_secret_params(&spec, &prompt_json, SecretSource::Argv),
+        Err(SecretValidationError::UnsupportedChannel { .. })
+    ));
     assert!(matches!(
         validate_secret_params(&spec, &prompt_json, SecretSource::Mcp),
         Err(SecretValidationError::UnsupportedChannel { .. })

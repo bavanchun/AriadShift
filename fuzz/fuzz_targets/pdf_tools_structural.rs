@@ -28,6 +28,10 @@ const STRUCTURAL_TOOLS: &[&str] = &[
     "pdf.single_page",
     "pdf.rotate_content",
     "pdf.decompress",
+    "pdf.compress",
+    "pdf.grayscale",
+    "pdf.sanitize",
+    "pdf.unlock_forms",
     "pdf.nup",
     "pdf.booklet",
     "pdf.overlay",
@@ -151,6 +155,11 @@ fn structured_params_for_tool(tool_id: &str, u: &mut Unstructured<'_>) -> Value 
         "pdf.decompress" => json!({
             "pages": page_expr,
             "object_streams": pick(u, &["expand", "keep"])
+        }),
+        "pdf.compress" => json!({ "level": u.int_in_range(1u8..=9).unwrap_or(6) }),
+        "pdf.sanitize" => json!({
+            "javascript": u.arbitrary::<bool>().unwrap_or(true),
+            "forms": pick(u, &["keep", "remove", "flatten"]),
         }),
         "pdf.nup" => json!({
             "per_sheet": pick(u, &[2, 4, 6, 8, 9, 16]),

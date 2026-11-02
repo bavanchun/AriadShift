@@ -261,7 +261,7 @@ fn apply_set_fields(state: &mut MetadataState, fields: &MetadataFields) {
     }
 }
 
-fn remove_info_and_xmp(doc: &mut lopdf::Document) -> Result<(), PdfError> {
+pub(crate) fn remove_info_and_xmp(doc: &mut lopdf::Document) -> Result<(), PdfError> {
     if let Ok(Object::Reference(info_id)) = doc.trailer.get(b"Info").cloned() {
         doc.objects.remove(&info_id);
     }

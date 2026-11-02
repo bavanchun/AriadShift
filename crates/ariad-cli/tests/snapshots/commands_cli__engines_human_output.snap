@@ -11,5 +11,6 @@ typst       [VERSION]  Apache-2.0         ready                              (no
 libreoffice [VERSION]  MPL-2.0            missing (optional)                 (none)
 docling      -         Apache-2.0         not installed (available in v0.2)  docx -> ariad-ir+json
 pdfium       -         Apache-2.0         not installed (run 'ashift engines install pdfium' to install the pdfium engine pack) (none)
+qpdf         -         Apache-2.0         not installed (run 'ashift engines install qpdf' to install the qpdf engine pack) (none)
 
 no engine packs installed

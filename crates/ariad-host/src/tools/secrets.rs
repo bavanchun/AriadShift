@@ -47,15 +47,27 @@ impl SecretBag {
     }
 
     /// Inserts a secret `value` under `key` (a parameter name such as `"password"` or a handle such as `"sec_01J..."`).
-    pub fn insert(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        self.entries.insert(key.into(), value.into());
+    pub fn insert(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<(), &'static str> {
+        let value = value.into();
+        if value.len() > 4096 || value.bytes().any(|byte| matches!(byte, b'\r' | b'\n' | 0)) {
+            return Err("secret must be at most 4096 bytes and contain no CR, LF or NUL");
+        }
+        self.entries.insert(key.into(), value);
+        Ok(())
     }
 
-    /// Builder-style helper that inserts a secret `value` under `key` and returns `self`.
-    #[must_use]
-    pub fn with(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.insert(key, value);
-        self
+    /// Builder-style helper that validates and inserts a secret.
+    pub fn with(
+        mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, &'static str> {
+        self.insert(key, value)?;
+        Ok(self)
     }
 
     /// Looks up a secret value by `key`.
@@ -106,14 +118,20 @@ impl SecretBag {
         for (key, value) in &self.entries {
             if key == "prompt" {
                 if referenced.iter().any(|r| r == "prompt") {
-                    filtered.insert(key.clone(), value.clone());
+                    filtered
+                        .insert(key.clone(), value.clone())
+                        .expect("stored secrets are valid");
                 }
             } else if key.starts_with(ariad_core::tools::SECRET_HANDLE_PREFIX) {
                 if referenced.iter().any(|r| r == key) {
-                    filtered.insert(key.clone(), value.clone());
+                    filtered
+                        .insert(key.clone(), value.clone())
+                        .expect("stored secrets are valid");
                 }
             } else if spec_secrets.iter().any(|sp| sp.eq_ignore_ascii_case(key)) {
-                filtered.insert(key.clone(), value.clone());
+                filtered
+                    .insert(key.clone(), value.clone())
+                    .expect("stored secrets are valid");
             }
         }
         filtered
@@ -541,9 +559,24 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn secret_bag_rejects_control_bytes_and_oversized_values() {
+        let mut bag = SecretBag::new();
+        for invalid in [
+            "a\nb".to_owned(),
+            "a\rb".to_owned(),
+            "a\0b".to_owned(),
+            "x".repeat(4097),
+        ] {
+            assert!(bag.insert("password", invalid).is_err());
+        }
+        assert!(bag.is_empty());
+        assert!(bag.insert("password", "x".repeat(4096)).is_ok());
+    }
+
+    #[test]
     fn scrubber_redacts_raw_json_escaped_and_url_encoded_secrets() {
         let secret = "s3cr3t\"p@ss\\w0rd!";
-        let bag = SecretBag::new().with("password", secret);
+        let bag = SecretBag::new().with("password", secret).unwrap();
         let scrubber = bag.scrubber();
 
         assert!(format!("{bag:?}").contains(REDACTED));
@@ -596,7 +629,9 @@ mod tests {
         };
         let bag = SecretBag::new()
             .with("password", "declared-secret-value-111")
-            .with("unrelated_step_secret", "other-step-secret-222");
+            .unwrap()
+            .with("unrelated_step_secret", "other-step-secret-222")
+            .unwrap();
 
         let resolved = bag
             .resolve_params(&spec, &json!({}), SecretSource::Recipe)

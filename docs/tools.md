@@ -34,7 +34,7 @@ tool_id(inputs[], params) -> artifacts[]
 
 - **Separate registry (AD-1)**: Tools are registered in `ariad-core::tools`, separate from the conversion capability graph (`capabilities.json`). Conversions stay routes; tools never enter the route planner.
 - **In-process structural PDF crate (AD-2)**: `crates/ariad-pdf` (pure Rust built on `lopdf`, `#![forbid(unsafe_code)]`, bounded by `Limits`, fuzzed) executes structural PDF tools (`pdf.info`, `pdf.merge`, `pdf.split`, `pdf.rotate`, `pdf.reorder`, `pdf.crop`, `pdf.metadata`, and invisible OCR text-layer writing) in-process on every runtime, including `wasm32-unknown-unknown` in the browser and offline on macOS.
-- **Out-of-process engine protocol v2 (AD-3)**: `ariad-engine/2` extends `ariad-engine/1` with `op = "run_tool"` and `capabilities.tools[]` while keeping `/1` frozen and unchanged. Each engine declares the protocol version it speaks statically in `EngineSpec.protocol` (`V1` or `V2`) with no runtime handshake. `run_tool` is strictly one-shot and never uses warm sessions (`session_key() == None`).
+- **Out-of-process engine protocol v2 (AD-3)**: `ariad-engine/2` extends `ariad-engine/1` with `op = "run_tool"` and `capabilities.tools[]` while keeping `/1` frozen and unchanged. Each engine declares the protocol version it speaks statically in `EngineSpec.protocol` (`V1` or `V2`) with no runtime handshake. `run_tool` is strictly one-shot and never uses warm sessions (`session_key() == None`). The v2-only `encrypted_input` error indicates a missing or incorrect input password and maps to exit 12; v1 rejects that code.
 - **Stateless edit operations (AD-17)**: Page-mode edits (`pdf.edit_apply` / `edit.apply {ops: [...]}`) are stateless tool invocations taking document bytes plus an ordered operation list and returning new PDF bytes. Document-mode editing happens in the surface editor (Tiptap on web, TextKit on macOS) and exports a full `ariad-ir/2` document. No engine session holds edit state.
 
 ---
@@ -83,8 +83,8 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 |---|---|---|
 | `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.crop_whitespace`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers`, `pdf.remove_blank`, `pdf.detect_scanned`, `pdf.text_layout` |
 | `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
-| `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.linearize`, `pdf.repair` |
-| `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize` |
+| `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.grayscale`, `pdf.linearize`, `pdf.repair` |
+| `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize`, `pdf.unlock_forms` |
 | `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark_add`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
 | `ocr` | Optical character recognition and deskewing | `pdf.ocr`, `pdf.deskew` |
 | `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotate`, `pdf.annotations_flatten`, `pdf.annotations_remove` |
@@ -204,6 +204,9 @@ Input order is preserved end-to-end across CLI arguments, MCP `inputs` arrays, W
 1. Before or during bounded PDF loading (`ariad-pdf::document::open`), the loader inspects the raw trailer for `/Encrypt`.
 2. If `/Encrypt` is present, every tool except `pdf.decrypt` (or tools explicitly accepting a decryption password secret) immediately returns `PdfError::Encrypted` and exits with code `12` (`encrypted_input`), instructing the user to run `pdf.decrypt` first.
 3. Structural tools never save an unencrypted copy of an encrypted input.
+
+Rewriting a PDF invalidates existing signatures; incremental-update output is tracked in [issue #186](https://github.com/bavanchun/AriadShift/issues/186).
+WASM tool results expose structured warning codes and tool metrics alongside their artifacts.
 
 ---
 
@@ -367,11 +370,14 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `image.to_pdf` → `first.pdf`
   - `pdf.decompress` → `report.decompressed.pdf`
   - `pdf.compress` → `report.compressed.pdf`
+  - `pdf.grayscale` → `report.grayscale.pdf`
   - `pdf.linearize` → `report.linearized.pdf`
   - `pdf.repair` → `report.repaired.pdf`
   - `pdf.encrypt` → `report.encrypted.pdf`
   - `pdf.decrypt` → `report.decrypted.pdf`
+  - `pdf.permissions` → `report.permissions.pdf`
   - `pdf.sanitize` → `report.sanitized.pdf`
+  - `pdf.unlock_forms` → `report.unlocked.pdf`
   - `pdf.ocr` → `scan.ocr.pdf`
   - `pdf.sign` → `contract.signed.pdf`
   - `pdf.redact` → `contract.redacted.pdf` (plus `contract.redaction-report.json` when verification report is requested)
@@ -616,12 +622,12 @@ Literal values for any parameter marked `x-ariad-secret: true` are **rejected** 
 
 | Surface | Inline in `params` / argv / URL | Allowed Secret Channel |
 |---|---|---|
-| **CLI (`ashift tool`)** | **Rejected** (exit code `9` with hint to use `--secret`) | `--secret <name>=@<path>` (reads secret bytes from file), `--secret <name>=-` (reads secret from stdin), or interactive terminal prompt when `{"$secret": "prompt"}` is used. |
+| **CLI (`ashift tool`)** | **Rejected** (exit code `9` with hint to use `--secret`) | `--secret <name>=@<path>` (reads secret bytes from file), `--secret <name>=-` (reads secret from stdin). |
 | **Local MCP (`ashift mcp`)** | **Rejected** (MCP error, `exit_code: 9`) | Short-lived in-memory secret handle `{"$secret": "sec_<id>"}` created via `secret_put` (never logged; rejected if handles are not enabled). |
-| **Remote MCP / Cloud HTTP (`ariad-server`)** | **Rejected** (HTTP 400 / MCP error, `exit_code: 9`; never stored in `jobs` DB rows) | Short-lived ephemeral secret handle `{"$secret": "sec_<id>"}` held in memory/ephemeral store for a single job dispatch and wiped upon job completion. |
+| **Remote MCP / Cloud HTTP (`ariad-server`)** | **Rejected** (HTTP 400 / MCP error, `exit_code: 9`; never stored in `jobs` DB rows) | Password tools are unavailable; `secret_put` is not exposed. |
 | **Web (`apps/web` / `ariad-wasm`)** | **Rejected** in URLs, `localStorage`, `sessionStorage`, IndexedDB, and OPFS history | Ephemeral in-memory `SecretBag` passed directly from the password/file dialog to the Web Worker for a single `runTool` call and zeroed/dropped after completion. |
 | **macOS (`apps/macos` / `ariad-ffi`)** | **Rejected** in `UserDefaults`, recent files, and Spotlight/Quick Look metadata | macOS Keychain (`SecItem` / `SecKey` callback for signing identities) or ephemeral secure prompt (`NSSecureTextField`) passed in memory over `ariad-ffi`. |
-| **Recipe (`ariad-recipe/1`)** | **Rejected** (both literal strings and `@file` paths fail validation with exit code `9`) | Only the prompt reference object `{"$secret": "prompt"}` is allowed; the executing surface prompts the user through its allowed channel at runtime. |
+| **Recipe (`ariad-recipe/1`)** | **Rejected** (both literal strings and `@file` paths fail validation with exit code `9`) | Only `{"$secret": "prompt"}` is allowed. CLI recipe execution reads one line per distinct secret field in alphabetical order from stdin, or uses a hidden terminal prompt; the same field shares one value across steps. |
 
 #### CLI Secret Examples
 
@@ -663,6 +669,10 @@ When `ariad-host` dispatches a tool to an out-of-process `ariad-engine/2` engine
 1. The host merges the resolved secret values into `<work_dir>/params.json`, created atomically with permissions `0600` inside the job's isolated workspace.
 2. The `run_tool` request line on stdin carries `"params": {}` and `"params_file": "<work_dir>/params.json"`. Secrets never travel on the engine's command-line `argv` or environment variables.
 3. Immediately after the engine process exits (or is killed on timeout/cancellation), `ariad-host` deletes `<work_dir>/params.json` before tearing down the workspace.
+
+For qpdf, the adapter sends options and passwords through the child's stdin. Passwords containing CR, LF or NUL are rejected with exit 9. A missing pack returns exit 5; an encrypted input requiring a password, a wrong password, or encrypting an already encrypted PDF returns exit 12. Permission changes for newer encrypted files with a nonempty user password require that user password. AES accessibility restrictions are ignored with a `permission_ignored` warning.
+
+Local stdio MCP `secret_put` stores at most 32 secrets in memory for 300 seconds. Each handle is consumed atomically by its first resolving call; the same handle can serve multiple fields in that call. Remote MCP does not provide this store.
 
 ### Secret Scrubbing Rules
 
