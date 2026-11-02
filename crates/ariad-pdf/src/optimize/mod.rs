@@ -359,7 +359,7 @@ pub fn apply_images(
             })
             .transpose()?;
         let image = resized.as_ref().unwrap_or(candidate.image.as_ref());
-        let jpeg = images::encode_jpeg(image, profile.quality).map_err(image_error)?;
+        let jpeg = images::encode_jpeg_420(image, profile.quality).map_err(image_error)?;
         let (encoded, flate_params) = if candidate.flate && resized.is_some() {
             let (flate, params) = images::encode_flate(image, 9).map_err(image_error)?;
             if flate.len() < jpeg.len() {

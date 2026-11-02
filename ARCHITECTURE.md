@@ -1012,6 +1012,7 @@ Phase 0 ends with one working route rather than an empty scaffold, so the IR and
 
 | Topic | Chosen | Rejected | Rationale |
 |---|---|---|---|
+| Lossy compression JPEG | Pure-Rust `oxiarc-jpeg` 4:2:0, Apache-2.0, behind `codecs` | `image` JPEG for lossy presets | Its 4:4:4 output is approximately 50% larger; lossless paths remain unchanged. |
 | Engine password errors | Add `encrypted_input` only to `ariad-engine/2`; preserve the frozen `/1` and pack schemas | Extending `/1` | Password-protected tool input needs an actionable exit without changing the released protocol. |
 | qpdf libjpeg licence | Named qpdf-pack exception for unmodified libjpeg-turbo 3.2.1, pending owner approval; publication remains blocked | A general IJG exception | Exact source and complete notices are recorded with the pack; CI and local development do not constitute approval to distribute |
 | IR → PDF writer | Typst for every IR-family input; LibreOffice only renders the user's own Office/ODF file (first route step) | Letting measured scores chain Pandoc DOCX into LibreOffice for Markdown, HTML and IR JSON | One reproducible, fast, sandbox-light PDF writer for CLI, desktop, server and browser; Office scores do not describe Pandoc-generated DOCX, and the chain fails on hosts that deny LibreOffice's namespaces |

@@ -848,3 +848,29 @@ fn packed_gray_samples_expand_at_supported_bit_depths() {
         );
     }
 }
+
+#[test]
+fn lossy_jpeg_uses_420_sampling() {
+    use ariad_pdf::images::{ColorSpace, DecodedImage, encode_jpeg, encode_jpeg_420};
+    let image = DecodedImage {
+        width: 16,
+        height: 16,
+        color_space: ColorSpace::Rgb,
+        bits_per_component: 8,
+        pixels: vec![128; 16 * 16 * 3],
+        has_soft_mask: false,
+        has_mask: false,
+    };
+    let sampling = |bytes: &[u8]| {
+        let sof = bytes.windows(2).position(|v| v == [0xff, 0xc0]).unwrap();
+        [bytes[sof + 11], bytes[sof + 14], bytes[sof + 17]]
+    };
+    assert_eq!(
+        sampling(&encode_jpeg_420(&image, 85).unwrap()),
+        [0x22, 0x11, 0x11]
+    );
+    assert_eq!(
+        sampling(&encode_jpeg(&image, 85).unwrap()),
+        [0x11, 0x11, 0x11]
+    );
+}

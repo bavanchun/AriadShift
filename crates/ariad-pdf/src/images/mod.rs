@@ -8,6 +8,6 @@ pub mod similarity;
 
 pub use codec::{
     ColorSpace, DecodeSession, DecodedImage, ImageError, decode, encode_flate, encode_jpeg,
-    resample, to_gray,
+    encode_jpeg_420, resample, to_gray,
 };
 pub use placement::{ImageUse, placements};
