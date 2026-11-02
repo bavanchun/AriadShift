@@ -9,7 +9,8 @@ if command -v rpm >/dev/null; then
     rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | LC_ALL=C sort > "$out/packages.txt"
     : > "$out/installed-files.sha256"
     while IFS= read -r package; do
-        rpm -ql "$package" | LC_ALL=C sort | while IFS= read -r file; do
+        query=${package%.(none)}
+        rpm -ql "$query" | LC_ALL=C sort | while IFS= read -r file; do
             if [ -f "$file" ] && [ ! -L "$file" ]; then sha256sum "$file"; fi
         done > "$out/files.tmp"
         sed "s|^|$package  |" "$out/files.tmp" >> "$out/installed-files.sha256"
