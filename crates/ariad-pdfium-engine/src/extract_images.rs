@@ -706,7 +706,7 @@ struct PreflightBudget<'a> {
     glyph_max: usize,
     glyph_max_pixels: u64,
     glyph_max_bytes: u64,
-    font_ids: HashSet<PdfObjectId>,
+    font_ids: HashSet<(PdfObjectId, [u8; 32])>,
     document_work: &'a mut usize,
 }
 
@@ -891,6 +891,7 @@ fn preflight_page_images(
     let mut execution_glyphs = budget.glyph_count;
     let mut execution_pixels = budget.image_pixels;
     let mut execution_bytes = budget.image_bytes;
+    let xobjects = XobjectScope::new(resolve_page_xobject_map(pdf_doc, page_id, max_depth));
     let mut node = page_id;
     let mut ancestors = HashSet::new();
     for _ in 0..=max_depth {
@@ -906,6 +907,7 @@ fn preflight_page_images(
                 ctx,
                 pdf_doc,
                 resources,
+                &xobjects,
                 max_bytes,
                 max_depth,
                 0,
@@ -924,7 +926,6 @@ fn preflight_page_images(
     if ancestors.len() > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    let xobjects = XobjectScope::new(resolve_page_xobject_map(pdf_doc, page_id, max_depth));
     let mut seen = HashMap::new();
     for id in xobjects.objects.values() {
         preflight_xobject(
@@ -1068,10 +1069,12 @@ fn preflight_content_object(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn preflight_type3_fonts(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
     resources: &Object,
+    invoking_scope: &XobjectScope<'_>,
     max_bytes: usize,
     max_depth: usize,
     depth: usize,
@@ -1096,7 +1099,7 @@ fn preflight_type3_fonts(
         charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
         let (id, font) = resolve(Some(doc), font)?;
         if let Some(id) = id
-            && !budget.font_ids.insert(id)
+            && !budget.font_ids.insert((id, invoking_scope.digest))
         {
             continue;
         }
@@ -1121,11 +1124,16 @@ fn preflight_type3_fonts(
             .1
             .as_dict()
             .map_err(|_| EngineFailure::limit_exceeded())?;
-        let mut font_xobjects = BTreeMap::new();
-        if let Ok(resources) = font.get(b"Resources") {
+        let font_scope = if let Ok(resources) = font.get(b"Resources") {
+            validate_xobject_resources(doc, resources)?;
+            let mut font_xobjects = BTreeMap::new();
             insert_xobjects_from_resources!(doc, resources, font_xobjects);
-        }
-        let font_scope = XobjectScope::new(font_xobjects);
+            XobjectScope::new(font_xobjects)
+        } else {
+            let mut scope = invoking_scope.child(BTreeMap::new());
+            scope.page = Some(invoking_scope);
+            scope
+        };
         let mut proc_seen = HashMap::new();
         for (_, proc) in procs.iter() {
             let before = budget.page_work;
@@ -1141,11 +1149,19 @@ fn preflight_type3_fonts(
                 &mut HashSet::new(),
                 budget,
             )?;
+            let (_, proc_object) = resolve(Some(doc), proc)?;
+            let proc_stream = proc_object
+                .as_stream()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            if let Ok(resources) = proc_stream.dict.get(b"Resources") {
+                validate_xobject_resources(doc, resources)?;
+            }
+            let proc_scope = font_scope.form(doc, proc_stream.dict.get(b"Resources").ok());
             let mut proc_cost = budget.page_work - before;
             let mut proc_pixels = budget.image_pixels - pixels_before;
             let mut proc_bytes = budget.image_bytes - bytes_before;
             for name in names {
-                if let Some(&child) = font_scope.get(&name) {
+                if let Some(&child) = proc_scope.get(&name) {
                     let (cost, _, pixels, bytes) = preflight_xobject(
                         ctx,
                         pdf_doc,
@@ -1154,7 +1170,7 @@ fn preflight_type3_fonts(
                         max_depth,
                         depth + 1,
                         &mut proc_seen,
-                        &font_scope,
+                        &proc_scope,
                         budget,
                     )?;
                     proc_pixels = proc_pixels
@@ -1178,6 +1194,7 @@ fn preflight_type3_fonts(
                 ctx,
                 pdf_doc,
                 resources,
+                &font_scope,
                 max_bytes,
                 max_depth,
                 depth + 1,
@@ -1357,19 +1374,20 @@ fn preflight_xobject(
             expansion_glyphs = budget.glyph_count - glyphs_before;
             expansion_pixels = budget.image_pixels - pixels_before;
             expansion_bytes = budget.image_bytes - bytes_before;
+            let xobjects = parent_xobjects.form(doc, stream.dict.get(b"Resources").ok());
             if let Ok(resources) = stream.dict.get(b"Resources") {
                 validate_xobject_resources(doc, resources)?;
                 preflight_type3_fonts(
                     ctx,
                     pdf_doc,
                     resources,
+                    &xobjects,
                     max_bytes,
                     max_depth,
                     depth + 1,
                     budget,
                 )?;
             }
-            let xobjects = parent_xobjects.form(doc, stream.dict.get(b"Resources").ok());
             let mut invoked = HashSet::new();
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
@@ -3857,6 +3875,34 @@ mod corpus_tests {
     }
 
     #[test]
+    fn type3_glyph_resource_invocations_are_charged() {
+        for scope in ["page", "font", "glyph"] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../fixtures/pdf/type3-{scope}-resource.pdf"));
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![path],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "escape",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            let page = *doc.inner().get_pages().values().next().unwrap();
+            let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded);
+            assert_eq!(err.message, "Page glyph execution work exceeds the limit.");
+        }
+    }
+
+    #[test]
     fn boolean_form_operands_are_charged() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf/boolean-form-operand.pdf");
@@ -4164,6 +4210,18 @@ mod corpus_tests {
             (
                 "boolean-form-operand.pdf",
                 "Page form execution work exceeds the limit.",
+            ),
+            (
+                "type3-page-resource.pdf",
+                "Page glyph execution work exceeds the limit.",
+            ),
+            (
+                "type3-font-resource.pdf",
+                "Page glyph execution work exceeds the limit.",
+            ),
+            (
+                "type3-glyph-resource.pdf",
+                "Page glyph execution work exceeds the limit.",
             ),
             (
                 "invalid-name-escape.pdf",

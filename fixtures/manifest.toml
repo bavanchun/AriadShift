@@ -4580,3 +4580,60 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "type3-page-resource-pdf"
+path = "fixtures/pdf/type3-page-resource.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 glyph with page resources"
+origin = "generated"
+generated_by = "fixtures/gen/type3-resource-fallback.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "243daed0629db13b5c264297571fc220f8828f7eca97dea99be25fffe46301c3"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-font-resource-pdf"
+path = "fixtures/pdf/type3-font-resource.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 glyph with font resources"
+origin = "generated"
+generated_by = "fixtures/gen/type3-resource-fallback.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "5c845ddb217b2724306fce814b5f6658c52bc43ab969da88b41c11889d154c95"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-glyph-resource-pdf"
+path = "fixtures/pdf/type3-glyph-resource.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Type3 glyph with glyph resources"
+origin = "generated"
+generated_by = "fixtures/gen/type3-resource-fallback.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7160a208390400a74240ef8f93238be0be3cc3286d0354b6e4db6c2c868f7188"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
