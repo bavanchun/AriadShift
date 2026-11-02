@@ -1159,7 +1159,15 @@ fn refuses_truncated_xobject_names_before_pdfium_page_load() {
 
 #[test]
 fn refuses_repaired_cross_reference_before_loading_pdfium() {
-    for fixture in ["repaired-xref-extraction.pdf", "mismatched-xref-header.pdf"] {
+    for fixture in [
+        "repaired-xref-extraction.pdf",
+        "mismatched-xref-header.pdf",
+        "incremental-xref-shadow.pdf",
+        "incremental-xref-stream-shadow.pdf",
+        "hybrid-xref-stream-shadow.pdf",
+        "overlapping-xref-stream-shadow.pdf",
+        "nested-xref-chain-shadow.pdf",
+    ] {
         let ws = TestWorkspace::from_fixture(&format!("fixtures/pdf/{fixture}"));
         let mut sink = Vec::new();
         let mut ctx = ToolContext::new(
@@ -1171,10 +1179,11 @@ fn refuses_repaired_cross_reference_before_loading_pdfium() {
         );
         let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
             .expect_err("repaired cross-reference must be refused");
-        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.code, ErrorCode::LimitExceeded, "{fixture}");
         assert_eq!(
             err.message,
-            "Image extraction cannot inspect a PDF with a repaired cross-reference table."
+            "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            "{fixture}"
         );
     }
 }

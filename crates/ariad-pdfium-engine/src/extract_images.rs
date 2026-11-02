@@ -293,7 +293,11 @@ pub fn extract_document_images(
     Ok(outcome)
 }
 
-fn check_extraction_xref(bytes: &[u8], pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
+fn check_extraction_xref(
+    ctx: &ToolContext<'_>,
+    bytes: &[u8],
+    pdf_doc: &PdfDoc,
+) -> Result<(), EngineFailure> {
     let mismatch = pdf_doc
         .inner()
         .reference_table
@@ -334,13 +338,263 @@ fn check_extraction_xref(bytes: &[u8], pdf_doc: &PdfDoc) -> Result<(), EngineFai
                     .is_some_and(|b| is_pdf_delimiter_or_ws(*b))
                 || !pdf_doc.inner().objects.contains_key(&(number, *generation))
         });
-    if pdf_doc.repaired_xref() || mismatch {
+    let limit = usize::try_from(ctx.limits().max_decompressed_bytes)
+        .unwrap_or(usize::MAX / 2)
+        .min(
+            usize::try_from(ariad_core::reader::pdf::CONTENT_BUDGET_BASE)
+                .unwrap_or(usize::MAX)
+                .saturating_add(
+                    bytes.len().saturating_mul(
+                        usize::try_from(ariad_core::reader::pdf::CONTENT_BUDGET_PER_INPUT_BYTE)
+                            .unwrap_or(usize::MAX),
+                    ),
+                ),
+        );
+    let chain_valid = !pdf_doc.repaired_xref()
+        && !mismatch
+        && validate_xref_chain(ctx, bytes, pdf_doc, limit).is_some();
+    ctx.check()?;
+    if !chain_valid {
         return Err(EngineFailure::new(
             ErrorCode::LimitExceeded,
             "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
         ));
     }
     Ok(())
+}
+
+// Verify each original section before lopdf merges away superseded entries.
+fn validate_xref_chain(
+    ctx: &ToolContext<'_>,
+    bytes: &[u8],
+    doc: &PdfDoc,
+    limit: usize,
+) -> Option<()> {
+    const MAX_SECTIONS: usize = 1024;
+    const MAX_ENTRIES: usize = 1_000_000;
+    let mut pending = vec![doc.inner().xref_start];
+    let mut visited = HashSet::new();
+    let mut work = 0usize;
+    let mut remaining = limit;
+    while let Some(offset) = pending.pop() {
+        ctx.check().ok()?;
+        if !visited.insert(offset) {
+            continue;
+        }
+        if visited.len() > MAX_SECTIONS {
+            return None;
+        }
+        let mut cursor = offset;
+        let first = xref_token(bytes, &mut cursor)?;
+        let dictionary = if first == b"xref" {
+            loop {
+                let token = xref_token(bytes, &mut cursor)?;
+                if token == b"trailer" {
+                    break xref_dictionary(bytes, &mut cursor)?;
+                }
+                let first_id = xref_integer(token)?;
+                let count = xref_integer(xref_token(bytes, &mut cursor)?)?;
+                work = work.checked_add(count)?;
+                if work > MAX_ENTRIES {
+                    return None;
+                }
+                for i in 0..count {
+                    if i.is_multiple_of(4096) {
+                        ctx.check().ok()?;
+                    }
+                    let object_offset = xref_integer(xref_token(bytes, &mut cursor)?)?;
+                    let generation = xref_integer(xref_token(bytes, &mut cursor)?)?;
+                    let state = xref_token(bytes, &mut cursor)?;
+                    if state == b"n" {
+                        let number = u32::try_from(first_id.checked_add(i)?).ok()?;
+                        let generation = u16::try_from(generation).ok()?;
+                        if !xref_header_matches(bytes, object_offset, number, generation) {
+                            return None;
+                        }
+                    } else if state != b"f" {
+                        return None;
+                    }
+                }
+            }
+        } else {
+            // A cross-reference stream is an indirect stream at the section offset.
+            xref_integer(first)?;
+            xref_integer(xref_token(bytes, &mut cursor)?)?;
+            if xref_token(bytes, &mut cursor)? != b"obj" {
+                return None;
+            }
+            let dict = xref_dictionary(bytes, &mut cursor)?;
+            if !dict.has_type(b"XRef") {
+                return None;
+            }
+            let len = usize::try_from(dict.get(b"Length").ok()?.as_i64().ok()?).ok()?;
+            if len > remaining {
+                return None;
+            }
+            if xref_token(bytes, &mut cursor)? != b"stream" {
+                return None;
+            }
+            while matches!(bytes.get(cursor), Some(b' ' | b'\t')) {
+                cursor += 1;
+            }
+            cursor = match bytes.get(cursor..cursor.checked_add(2)?) {
+                Some(b"\r\n") => cursor + 2,
+                _ if matches!(bytes.get(cursor), Some(b'\r' | b'\n')) => cursor + 1,
+                _ => return None,
+            };
+            let end = cursor.checked_add(len)?;
+            let content = bytes.get(cursor..end)?;
+            let mut marker = end;
+            while bytes.get(marker).is_some_and(|byte| is_pdf_ws(*byte)) {
+                marker += 1;
+            }
+            if bytes.get(marker..marker.checked_add(9)?) != Some(b"endstream")
+                || !bytes
+                    .get(marker + 9)
+                    .is_some_and(|byte| is_pdf_delimiter_or_ws(*byte))
+            {
+                return None;
+            }
+            let stream = lopdf::Stream::new(dict, content.to_vec());
+            if stream.dict.has(b"Filter") {
+                stream.filters().ok()?;
+            }
+            let decoded = stream.get_plain_content_with_limit(remaining).ok()?;
+            remaining = remaining.checked_sub(decoded.len())?;
+            let widths = stream.dict.get(b"W").ok()?.as_array().ok()?;
+            if widths.len() != 3 {
+                return None;
+            }
+            let widths: Vec<usize> = widths
+                .iter()
+                .map(|v| usize::try_from(v.as_i64().ok()?).ok())
+                .collect::<Option<_>>()?;
+            if widths.iter().any(|&w| w > 8) {
+                return None;
+            }
+            let width = widths.iter().try_fold(0usize, |n, &w| n.checked_add(w))?;
+            if width == 0 {
+                return None;
+            }
+            let size = usize::try_from(stream.dict.get(b"Size").ok()?.as_i64().ok()?).ok()?;
+            let indexes = match stream.dict.get(b"Index") {
+                Ok(value) => value
+                    .as_array()
+                    .ok()?
+                    .iter()
+                    .map(|v| usize::try_from(v.as_i64().ok()?).ok())
+                    .collect::<Option<Vec<_>>>()?,
+                Err(_) => vec![0, size],
+            };
+            if !indexes.len().is_multiple_of(2) {
+                return None;
+            }
+            let mut position = 0usize;
+            for pair in indexes.as_chunks::<2>().0 {
+                work = work.checked_add(pair[1])?;
+                if work > MAX_ENTRIES {
+                    return None;
+                }
+                for i in 0..pair[1] {
+                    if i.is_multiple_of(4096) {
+                        ctx.check().ok()?;
+                    }
+                    let end = position.checked_add(width)?;
+                    let entry = decoded.get(position..end)?;
+                    position = end;
+                    let mut field_pos = 0usize;
+                    let mut fields = [0u64; 3];
+                    for (index, &field_width) in widths.iter().enumerate() {
+                        for &byte in entry.get(field_pos..field_pos.checked_add(field_width)?)? {
+                            fields[index] = fields[index]
+                                .checked_mul(256)?
+                                .checked_add(u64::from(byte))?;
+                        }
+                        field_pos += field_width;
+                    }
+                    if widths[0] == 0 {
+                        fields[0] = 1;
+                    }
+                    if fields[0] > 2 {
+                        return None;
+                    }
+                    if fields[0] == 1 {
+                        let number = u32::try_from(pair[0].checked_add(i)?).ok()?;
+                        let object_offset = usize::try_from(fields[1]).ok()?;
+                        let generation = u16::try_from(fields[2]).ok()?;
+                        if !xref_header_matches(bytes, object_offset, number, generation) {
+                            return None;
+                        }
+                    }
+                }
+            }
+            stream.dict
+        };
+        for key in [b"Prev".as_slice(), b"XRefStm".as_slice()] {
+            if let Ok(value) = dictionary.get(key) {
+                let offset = usize::try_from(value.as_i64().ok()?).ok()?;
+                if offset >= bytes.len() {
+                    return None;
+                }
+                pending.push(offset);
+            }
+        }
+    }
+    Some(())
+}
+
+fn xref_token<'a>(bytes: &'a [u8], cursor: &mut usize) -> Option<&'a [u8]> {
+    let (start, end) = next_content_token(bytes, cursor).ok()??;
+    Some(&bytes[start..end])
+}
+
+fn xref_integer(token: &[u8]) -> Option<usize> {
+    if token.is_empty() || !token.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(token).ok()?.parse().ok()
+}
+
+fn xref_dictionary(bytes: &[u8], cursor: &mut usize) -> Option<Dictionary> {
+    let start = *cursor;
+    if xref_token(bytes, cursor)? != b"<<" {
+        return None;
+    }
+    let mut depth = 1usize;
+    while depth > 0 {
+        match xref_token(bytes, cursor)? {
+            b"<<" => depth = depth.checked_add(1)?,
+            b">>" => depth -= 1,
+            _ => {}
+        }
+        if depth > 64 || cursor.checked_sub(start)? > 1024 * 1024 {
+            return None;
+        }
+    }
+    let mut content = bytes[start..*cursor].to_vec();
+    content.extend_from_slice(b" q");
+    let mut operations = Content::decode_strict(&content).ok()?.operations;
+    let op = operations.pop()?;
+    if op.operator != "q" || op.operands.len() != 1 || !operations.is_empty() {
+        return None;
+    }
+    op.operands.into_iter().next()?.as_dict().ok().cloned()
+}
+
+fn xref_header_matches(bytes: &[u8], offset: usize, number: u32, generation: u16) -> bool {
+    let Some(header) = bytes.get(offset..) else {
+        return false;
+    };
+    let mut cursor = 0;
+    let Some(n) = xref_token(header, &mut cursor).and_then(xref_integer) else {
+        return false;
+    };
+    let Some(g) = xref_token(header, &mut cursor).and_then(xref_integer) else {
+        return false;
+    };
+    n == number as usize
+        && g == usize::from(generation)
+        && xref_token(header, &mut cursor) == Some(b"obj")
 }
 
 fn check_name_tokens(bytes: &[u8]) -> Result<(), EngineFailure> {
@@ -471,7 +725,7 @@ fn extract_document_images_with(
         .map_err(|e| EngineFailure::owned(ErrorCode::InvalidRequest, e.to_string()))?;
 
     let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
-    check_extraction_xref(&bytes, &pdf_doc)?;
+    check_extraction_xref(ctx, &bytes, &pdf_doc)?;
     check_document_names(ctx, &bytes, &pdf_doc)?;
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
@@ -3851,6 +4105,36 @@ mod corpus_tests {
     }
 
     #[test]
+    fn valid_linked_xref_streams_are_accepted() {
+        for name in [
+            "incremental-xref-stream-valid.pdf",
+            "hybrid-xref-stream-valid.pdf",
+            "nested-xref-chain-valid.pdf",
+        ] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf")
+                .join(name);
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![path],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "xref",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (bytes, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            check_extraction_xref(&ctx, &bytes, &doc).unwrap();
+        }
+    }
+
+    #[test]
     fn invalid_escaped_form_name_is_charged() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf/invalid-name-escape.pdf");
@@ -4239,7 +4523,7 @@ mod corpus_tests {
             );
             let result = (|| {
                 let (bytes, doc) = read_and_preflight_pdf(&ctx)?;
-                check_extraction_xref(&bytes, &doc)?;
+                check_extraction_xref(&ctx, &bytes, &doc)?;
                 check_document_names(&ctx, &bytes, &doc)?;
                 let mut work = 0;
                 let max_depth = usize::from(ctx.limits().max_nesting_depth);
@@ -4293,6 +4577,26 @@ mod corpus_tests {
             (
                 "invalid-name-escape.pdf",
                 "Page form execution work exceeds the limit.",
+            ),
+            (
+                "incremental-xref-stream-shadow.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            ),
+            (
+                "nested-xref-chain-shadow.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            ),
+            (
+                "overlapping-xref-stream-shadow.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            ),
+            (
+                "hybrid-xref-stream-shadow.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            ),
+            (
+                "incremental-xref-shadow.pdf",
+                "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
             ),
             (
                 "mismatched-xref-header.pdf",

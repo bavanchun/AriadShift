@@ -4675,3 +4675,155 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "incremental-xref-shadow-pdf"
+path = "fixtures/pdf/incremental-xref-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Incremental PDF hiding an invalid older xref entry"
+origin = "generated"
+generated_by = "fixtures/gen/incremental-xref-shadow.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e259a1e95f5ec3a510de83a1f59b963668b514605a7e11a2fd39232d0343d2a1"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "incremental-xref-stream-shadow-pdf"
+path = "fixtures/pdf/incremental-xref-stream-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with hidden xref stream entry"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "8a0ec47e5ba329a54e38132ba783fa1b3d3f7d39968e84fc88c76551fb657295"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "hybrid-xref-stream-shadow-pdf"
+path = "fixtures/pdf/hybrid-xref-stream-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with hidden xref stream entry"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e749f75e0dcde031d4e70d1b6baec0774f281d37d234662b22a690ac9d86d0d2"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "incremental-xref-stream-valid-pdf"
+path = "fixtures/pdf/incremental-xref-stream-valid.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with valid linked xref stream"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "012fa16b2ee00bb6705d7a8a735caab984e0f6679cede2f6aa879dfebe44157e"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "hybrid-xref-stream-valid-pdf"
+path = "fixtures/pdf/hybrid-xref-stream-valid.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with valid linked xref stream"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "e7cba764e8506531d5a96bce21d63f9cb82a93928a07b8c073e5d86092a36ee1"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "overlapping-xref-stream-shadow-pdf"
+path = "fixtures/pdf/overlapping-xref-stream-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with overlapping xref stream ranges"
+origin = "generated"
+generated_by = "fixtures/gen/xref-stream-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2c447e793b2fd13f49f6444b40ae80778ebc294f7b0aac9b82ad995fcb1c7aa4"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "nested-xref-chain-shadow-pdf"
+path = "fixtures/pdf/nested-xref-chain-shadow.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with a nested hybrid xref chain"
+origin = "generated"
+generated_by = "fixtures/gen/nested-xref-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "17a919de6277e54a27d3916c37b536febce0a600253fb8069167047d92c9b783"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "nested-xref-chain-valid-pdf"
+path = "fixtures/pdf/nested-xref-chain-valid.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with a nested hybrid xref chain"
+origin = "generated"
+generated_by = "fixtures/gen/nested-xref-chain.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "6b970502872ab815eb275fa8a522c65596c78e3933a375386a4d182848ccffdf"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
