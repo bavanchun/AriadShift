@@ -40,9 +40,11 @@ pub fn run(ctx: &mut ToolContext<'_>, params: CropWhitespaceParams) -> ToolResul
     let bytes = read_bounded_input(ctx)?;
     let mut pdf_doc = open_structural_pdf(ctx, &bytes)?;
     ctx.warn_repaired_xref(&pdf_doc)?;
-    let canonical = crate::canonical::canonicalize(ctx, &mut pdf_doc, bytes.len())?;
     let pdf_info = info::from_doc(&pdf_doc).map_err(map_pdf_error)?;
     let page_count = pdf_info.page_count;
+    let canonical = crate::canonical::canonicalize(ctx, &mut pdf_doc, bytes.len())?;
+    drop(bytes);
+    drop(pdf_doc);
 
     let selected = params
         .pages
