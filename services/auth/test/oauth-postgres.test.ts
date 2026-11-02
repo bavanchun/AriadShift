@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildAuthOptions, createPool } from "../src/auth.ts";
+import { buildAuthOptions, createAuth, createPool } from "../src/auth.ts";
 import { migrate } from "../src/migrate.ts";
 import {
   OAUTH_TOKEN_LIMITS,
@@ -22,6 +22,7 @@ import {
   json,
   pkce,
   post,
+  REDIRECT_URI,
   token,
 } from "./oauth-helpers.ts";
 
@@ -159,6 +160,56 @@ describe.skipIf(!databaseUrl)("PostgreSQL OAuth serialization across replicas", 
       release();
       await authorization;
     }
+  });
+
+  it("rejects stale CIMD refresh grants without fetching metadata", async () => {
+    const id = "https://postgres-cimd.example/client.json";
+    let fetches = 0;
+    const cimd = {
+      lookup: async () => [{ address: "93.184.216.34", family: 4 }],
+      transport: async () => {
+        fetches++;
+        return {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            client_id: id,
+            redirect_uris: [REDIRECT_URI],
+            token_endpoint_auth_method: "none",
+            grant_types: ["authorization_code", "refresh_token"],
+          }),
+        };
+      },
+    } satisfies import("../src/cimd.ts").CimdFetcherOptions;
+    const service = createService(first, false, cimd);
+    const flow = await browserFlow(service.app, id);
+    const issued = await flow.issue();
+    backup("before-cimd-stale");
+    await observer.query(
+      `UPDATE auth."oauthClient" SET "updatedAt" = now() - interval '25 hours' WHERE "clientId" = $1`,
+      [id],
+    );
+    const priorFetches = fetches;
+    const handler = serializedOAuthHandler(
+      first,
+      service.auth.handler,
+      (database) => createAuth(buildAuthOptions(config, database, cimd)).handler,
+    );
+    const response = await handler(
+      new Request(`${config.baseUrl}/api/auth/oauth2/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: id,
+          refresh_token: issued.refresh_token as string,
+          resource: config.mcpResource,
+        }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(await json(response)).toMatchObject({ error: "invalid_grant" });
+    expect(fetches).toBe(priorFetches);
   });
 
   it("returns the identical refresh response to simultaneous retries on two replicas", async () => {
