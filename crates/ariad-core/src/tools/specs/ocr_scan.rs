@@ -150,4 +150,19 @@ mod tests {
         assert!(public[1].inputs.accepts(200));
         assert!(!public[1].inputs.accepts(201));
     }
+    #[test]
+    fn image_arity_does_not_override_free_quota() {
+        use crate::tools::access::{Plan, RunSize, within_run_quota};
+        let image = specs()
+            .into_iter()
+            .find(|spec| spec.id == "image.ocr")
+            .unwrap();
+        assert!(image.inputs.accepts(25));
+        assert!(within_run_quota(Plan::Free, RunSize::new(25, 250_000_000)));
+        assert!(image.inputs.accepts(26));
+        assert!(!within_run_quota(Plan::Free, RunSize::new(26, 1)));
+        assert!(!within_run_quota(Plan::Free, RunSize::new(1, 250_000_001)));
+        assert!(image.inputs.accepts(200));
+        assert!(!image.inputs.accepts(201));
+    }
 }
