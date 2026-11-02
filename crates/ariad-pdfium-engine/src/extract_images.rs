@@ -831,7 +831,9 @@ impl<'a> XobjectScope<'a> {
         let has_xobjects = resolve(Some(doc), resources)
             .ok()
             .and_then(|(_, value)| value.as_dict().ok())
-            .is_some_and(|dict| dict.has(b"XObject"));
+            .and_then(|dict| dict.get(b"XObject").ok())
+            .and_then(|value| resolve(Some(doc), value).ok())
+            .is_some_and(|(_, value)| value.as_dict().is_ok());
         if !has_xobjects {
             return page.child(BTreeMap::new());
         }
@@ -3956,6 +3958,8 @@ mod corpus_tests {
         let inner = doc.get_object((5, 0)).unwrap().as_stream().unwrap();
         let child = parent.form(&doc, inner.dict.get(b"Resources").ok());
         assert_eq!(child.get(b"X"), Some(&(7, 0)));
+        let invalid = Object::Dictionary(lopdf::dictionary! { "XObject" => 42 });
+        assert_eq!(parent.form(&doc, Some(&invalid)).get(b"X"), Some(&(7, 0)));
         assert_eq!(parent.form(&doc, None).get(b"X"), Some(&(6, 0)));
         assert!(parent.get(b"missing").is_none());
     }
