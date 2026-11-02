@@ -76,3 +76,36 @@ extraction must be preserved. Raw Type 1 programs are outside its input format.
 The current structural pipeline already garbage-collects, deduplicates streams,
 and re-flates eligible streams at maximum compression; this investigation did
 not establish a new 10-file result.
+
+## Final-round input inventory
+
+The following is an inventory of the original inputs, not the compressed
+outputs. Encoded stream lengths come from `qpdf --json`, resolving indirect
+lengths and counting each font program once. Font types and encodings come
+from `pdffonts`. The previous table remains the output measurement.
+
+| Input | Embedded fonts and encoded program bytes | Other dominant encoded streams |
+| --- | --- | --- |
+| arxiv-multilingual | Type 1, Builtin and Custom: 79,590 bytes; unembedded Standard Type 1 has no program bytes | Flate images 214,107; other streams 52,984 |
+| arxiv-tableformer | Type 1, Builtin and Custom: 116,760; CID TrueType Identity-H and simple TrueType MacRoman: 119,469; CID Type 0C Identity-H: 7,617; unembedded Standard Type 1 has no program bytes | Flate images 286,098; other streams 76,179; forms 58,909 |
+| pd-vi-decree-39-2022 | CID TrueType Identity-H: 31,717 | CCITT images 1,968,480; Flate images 40,751; other streams 1,307 |
+| pd-en-gao-08-35-highlights | Type 1C WinAnsi: 20,247 | Other streams 35,351 |
+
+The decree's only font belongs to the signature appearance form. Its
+31,717-byte compressed program contains 67,344 decoded bytes. CCITT image
+streams account for most of the document. The approved policy leaves CCITT
+untouched, and deleting the signature would discard user data. The existing
+subsetter already targets identity CID TrueType; a new simple-font Differences
+or raw Type 1C implementation would not address this input's font. The
+remaining three files do contain the types listed above, but their input byte
+counts alone do not establish that a safe one-round change closes their gaps.
+
+The current implementation scans 45 used glyphs in the decree signature
+appearance and successfully subsets its identity CID TrueType program. A
+diagnostic invocation of `glyph_usage` and `subset_type0` returned
+`Subset { glyphs: 45 }`; the existing optimizer already invokes this path.
+No additional lossless optimization was identified and implemented in this
+round. A fresh host corpus run reproduced all ten rows above: 6/10 met both
+size and SSIM, with zero processing errors. The original 7/10 assertion
+failed. The PM accepted 6/10 as a recorded deviation pending the text-heavy
+parity follow-up; the original seven-file target remains unmet.
