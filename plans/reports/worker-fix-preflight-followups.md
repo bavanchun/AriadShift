@@ -425,3 +425,38 @@ balanced literal strings, the object-number boundary and the small-object
 large-trailer control were accepted. An initial attempt without the library
 beside the executable reported `tool_missing` for accepted paths; the corrected
 run used a temporary copy of the current binary beside the pack library.
+
+## Final resource-scope follow-ups
+
+Page content streams no longer supply their own resource dictionaries to the
+execution budget, and canonical output removes those dictionaries. A stream
+shared with another role is inspected under the same canonical resource scope.
+Type3 glyph procedures without font or procedure resources are refused when
+they depend on named resources, because PDFium can rebind the shared font's
+fallback scope. The image preflight memo includes page scope and depth; shared
+forms are rechecked at stricter depths without charging their resources twice.
+
+Regression tests generate page Pattern, inline-image, soft-mask and Form cases,
+Type3 resource operators and font rebindings, shared page-content streams,
+and both traversal orders of shared Forms. The external delta corpus and its
+controls were also exercised on both render and extraction.
+
+Verification used the shared build lock and 2 GiB systemd scopes for tests:
+
+- `cargo fmt --all --check`, engine clippy with `-D warnings`, and the full
+  `cargo test --locked -p ariad-pdfium-engine` passed with the supplied PDFium
+  pack. A first suite run exposed duplicate Form accounting; the final suite
+  passed after correcting it.
+- The fixture corpus passed: 102 PDFs, 42 expected refusals, zero legitimate
+  refusals. No real file was newly refused.
+- The `pdfs`, round 3, round 4, round 5 and round 5 delta corpus tests passed.
+  The round 4 variant runner matched its documented controls. The eight round 5
+  and fourteen delta PDFs, plus the two remaining round 4 controls, were run
+  through both engine tools; refusals used `limit_exceeded` and the valid
+  round 4 control was accepted.
+- All implementation commits passed `committed`; `git diff --check` passed.
+
+Assumptions: an explicitly present font or glyph resource dictionary is a
+self-contained scope for the requested Type3 rule. The current PR body contained
+neither the earlier closing phrase nor a final Claude Code line when inspected;
+its existing text is preserved while adding the requested issue relationship.
