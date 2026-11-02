@@ -42,6 +42,9 @@ pub fn tool_suffix(tool_id: &str) -> &'static str {
         "pdf.viewer_prefs" => "prefs",
         "pdf.portfolio" => "portfolio",
         "pdf.layers" => "layers",
+        "pdf.remove_blank" => "remove-blank",
+        "pdf.crop_whitespace" => "cropped",
+        "image.to_pdf" => "to-pdf",
         _ => "output",
     }
 }
@@ -69,7 +72,9 @@ pub fn sanitize_stem(input_name_or_stem: &str) -> String {
                         | "jpg"
                         | "jpeg"
                         | "tiff"
+                        | "tif"
                         | "webp"
+                        | "bmp"
                         | "bin"
                 ) =>
         {

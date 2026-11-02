@@ -145,21 +145,26 @@ export function authorizeUrl(clientId: string, extra: Record<string, string | un
 }
 
 /** Real account/client/browser setup shared by memory and PostgreSQL tests. */
-export async function browserFlow(app: App) {
+export async function browserFlow(app: App, metadataClientId?: string) {
   const email = `flow-${randomBytes(8).toString("hex")}@example.com`;
   const password = "correct horse battery staple";
   const signup = await post(app, "/api/auth/sign-up/email", { name: "Flow", email, password });
   if (signup.status !== 200) throw new Error(`sign-up failed: ${signup.status}`);
-  const register = await post(app, "/api/auth/oauth2/register", {
-    client_name: "Security test",
-    redirect_uris: [REDIRECT_URI],
-    token_endpoint_auth_method: "none",
-    grant_types: ["authorization_code", "refresh_token"],
-    response_types: ["code"],
-  });
-  if (![200, 201].includes(register.status))
-    throw new Error(`registration failed: ${register.status}`);
-  const clientId = (await json(register)).client_id as string;
+  let clientId = metadataClientId;
+  if (!clientId) {
+    const register = await post(app, "/api/auth/oauth2/register", {
+      client_name: "Security test",
+      redirect_uris: [REDIRECT_URI],
+      token_endpoint_auth_method: "none",
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+    });
+    if (![200, 201].includes(register.status))
+      throw new Error(`registration failed: ${register.status}`);
+    clientId = (await json(register)).client_id as string;
+  }
+  if (!clientId) throw new Error("client registration returned no client ID");
+  const registeredClientId: string = clientId;
   const jar = new Jar();
   const login = await post(app, "/api/auth/sign-in/email", { email, password });
   if (login.status !== 200) throw new Error(`sign-in failed: ${login.status}`);
@@ -170,7 +175,7 @@ export async function browserFlow(app: App) {
   ): Promise<{ consent: Response; fields: Record<string, string>; callback?: URL }> {
     const proof = pkce();
     const res = await app.request(
-      authorizeUrl(clientId, {
+      authorizeUrl(registeredClientId, {
         code_challenge: proof.challenge,
         code_challenge_method: "S256",
         prompt: "consent",
@@ -198,7 +203,7 @@ export async function browserFlow(app: App) {
       callback,
       fields: {
         grant_type: "authorization_code",
-        client_id: clientId,
+        client_id: registeredClientId,
         code: callback.searchParams.get("code") ?? "",
         redirect_uri: REDIRECT_URI,
         code_verifier: proof.verifier,
@@ -215,10 +220,10 @@ export async function browserFlow(app: App) {
   function refresh(refreshToken: string) {
     return token(app, {
       grant_type: "refresh_token",
-      client_id: clientId,
+      client_id: registeredClientId,
       refresh_token: refreshToken,
       resource: RESOURCE,
     });
   }
-  return { clientId, jar, authorization, issue, refresh };
+  return { clientId: registeredClientId, jar, authorization, issue, refresh };
 }

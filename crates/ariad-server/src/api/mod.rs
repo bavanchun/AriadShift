@@ -76,6 +76,17 @@ pub fn check_pack_memory(pack: Pack, limits: &ariad_core::limits::Limits) -> Res
     Ok(())
 }
 
+/// The worker pack of a planned route; a route through an engine without a pack is refused.
+pub fn route_pack(steps: &[ariad_core::planner::PlanStep]) -> Result<Pack, ApiError> {
+    Pack::for_route(steps).map_err(|error| {
+        ApiError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unsupported_route",
+            error.to_string(),
+        )
+    })
+}
+
 /// Shared state of the API.
 #[derive(Clone)]
 pub struct AppState(Arc<Inner>);

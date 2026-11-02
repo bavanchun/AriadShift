@@ -1,5 +1,6 @@
 ---
 source: crates/ariad-cli/tests/commands_cli.rs
+assertion_line: 684
 expression: normalize_engines_human_stdout(&output)
 ---
 ENGINE       VERSION   LICENSE            STATUS                             ROUTES
@@ -9,5 +10,6 @@ pdf         [VERSION]  Apache-2.0         ready                              (no
 typst       [VERSION]  Apache-2.0         ready                              (none)
 libreoffice [VERSION]  MPL-2.0            missing (optional)                 (none)
 docling      -         Apache-2.0         not installed (available in v0.2)  docx -> ariad-ir+json
+pdfium       -         Apache-2.0         not installed (run 'ashift engines install pdfium' to install the pdfium engine pack) (none)
 
 no engine packs installed

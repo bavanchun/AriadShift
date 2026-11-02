@@ -81,12 +81,12 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 
 | Group | Purpose | Example Tools |
 |---|---|---|
-| `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers` |
-| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.to_images`, `pdf.from_images`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
+| `organize` | Page and document structure manipulation | `pdf.info`, `pdf.merge`, `pdf.split`, `pdf.extract_pages`, `pdf.delete_pages`, `pdf.reorder`, `pdf.rotate`, `pdf.rotate_content`, `pdf.crop`, `pdf.crop_whitespace`, `pdf.scale`, `pdf.nup`, `pdf.booklet`, `pdf.single_page`, `pdf.insert_blank`, `pdf.alternate_mix`, `pdf.divide_pages`, `pdf.posterize`, `pdf.overlay`, `pdf.metadata`, `pdf.outline`, `pdf.attachments`, `pdf.portfolio`, `pdf.page_labels`, `pdf.viewer_prefs`, `pdf.layers`, `pdf.remove_blank`, `pdf.detect_scanned`, `pdf.text_layout` |
+| `convert` | Multi-artifact or specialized document conversions that do not fit 1-to-1 routes | `pdf.render`, `pdf.to_images`, `pdf.thumbnails`, `pdf.extract_images`, `image.to_pdf`, `pdf.to_pdfa`, `pdf.validate_pdfa`, `pdf.from_url` |
 | `optimize` | File size reduction, stream recompression, decompression, linearization, repair | `pdf.decompress`, `pdf.compress`, `pdf.linearize`, `pdf.repair` |
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize` |
 | `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.page_numbers`, `pdf.stamp`, `pdf.watermark_add`, `pdf.watermark_remove`, `pdf.watermark_remove_raster` |
-| `ocr` | Optical character recognition, deskewing, blank page removal | `pdf.ocr`, `pdf.deskew`, `pdf.remove_blank` |
+| `ocr` | Optical character recognition and deskewing | `pdf.ocr`, `pdf.deskew` |
 | `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotate`, `pdf.annotations_flatten`, `pdf.annotations_remove` |
 | `forms` | AcroForm field inspection, filling, creation, and flattening | `pdf.forms_inspect`, `pdf.forms_fill`, `pdf.forms_flatten` |
 | `sign` | PAdES digital signing, timestamping, and signature verification | `pdf.sign`, `pdf.sign_verify` |
@@ -135,7 +135,31 @@ All parameter structs live in `ariad-core::tools::params::*` (pure `serde` + `sc
 }
 ```
 
-> **Note on `runtimes`**: Tools register `["wasm", "local"]` (or `["local"]` for out-of-process engines) until the Phase 13 server tool-job infrastructure (`job_inputs`, worker queues, and plan-to-tool-access mapping) lands, at which point cloud-supported tools add `"cloud"`.
+> **Note on `runtimes`**: Tools register `["wasm", "local"]` (or `["local"]` for out-of-process engines such as `pdfium`) until the Phase 13 server tool-job infrastructure (`job_inputs`, worker queues, and plan-to-tool-access mapping) and Phase 14 browser WASM PDFium integration land.
+
+### Multi-Format Tools (`output_format` and `output_formats`)
+
+Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"png"`, or `"json"`). Tools that can emit artifacts in more than one format additionally declare a non-empty `output_formats` allowlist (serialized in `schemas/tools.v1.json` only when non-empty so single-format descriptors remain unchanged):
+
+- `pdf.render` and `pdf.to_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "webp", "bmp", "tiff"]`
+- `pdf.thumbnails`: `output_format: "png"`, `output_formats: ["png", "json"]`
+- `pdf.extract_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "zip"]`
+
+Before opening each selected page, `pdf.extract_images` checks image dimensions and data against the job's limits. Inline images may use image masks without a color space, lossless ASCIIHex, ASCII85, Flate, RunLength or LZW filters, and CCITT or JPEG as the final filter. JPEG frame dimensions are checked against the image dictionary. Color-space aliases and filters the engine cannot safely inspect still cause `limit_exceeded` before the page is opened. Page budgets include repeated form invocations, inline image data and Type3 glyph uses; unusually complex pages may exceed these limits.
+
+Both `ariad-host` and `ariad-wasm` enforce `ToolSpec::allowed_output_formats()` (`output_formats` when non-empty, otherwise `[output_format]`):
+1. When the caller selects a target format via `params.format` or an explicit `-o <FILE>` extension, the requested format must be in `allowed_output_formats()`.
+2. Before publishing or returning any produced artifact, every emitted artifact's format (and file extension) is checked against `allowed_output_formats()` and, when `params.format` was specified on a single-format-per-run tool (`pdf.render` / `pdf.to_images`), against that requested format.
+
+### Mode-Dependent Engine Availability (`pdf.split` `detect = "pixel"`)
+
+`pdf.split` supports `mode: "blank-separator"` with two detection modes (`detect`):
+- `"content"` (default): Inspects PDF page content streams and resources in-process via `ariad-pdf`. Available on both `wasm` and `local` runtimes without any external pack.
+- `"pixel"`: Rasterizes each page at `dpi` (default `72`, range `36..=600`) and measures the fraction of near-white pixels against `threshold` (default `0.995`, range `0.90..=1.0`) using the out-of-process `pdfium` engine (`local` runtime).
+
+Engine availability for `pdf.split` is decided **before execution** via `ToolSpec::engine_for_params(params)`:
+- When `mode = "blank-separator"` and `detect = "pixel"`, the effective engine is `"pdfium"`.
+- On `ariad-wasm` (where out-of-process engines do not exist) or on `ariad-host` when the `pdfium` engine pack is not installed, the call fails upfront at validation/plan time (before staging inputs or running any structural fallback) with exit code `5` (`engine_unavailable` on WASM; `tool_missing` on the host) naming the missing `"pdfium"` engine and its install hint (`ashift engines install pdfium`). It **never** falls back silently to `"content"` detection.
 
 ---
 
@@ -329,6 +353,14 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.page_labels` → `report.labeled.pdf`
   - `pdf.viewer_prefs` → `report.prefs.pdf`
   - `pdf.layers` (`set_default_visibility` / `remove`) → `report.layers.pdf`; (`list`) → `report.layers.json`
+  - `pdf.remove_blank` → `report.remove-blank.pdf`
+  - `pdf.crop_whitespace` → `report.cropped.pdf`
+  - `pdf.detect_scanned` → `report.detect-scanned.json`
+    Each page has a `saturated` flag: when true, coverage and classification are
+    best-effort results based on the first 2,000 image rectangles. The separate
+    work budget still applies and can return `limit_exceeded`.
+  - `pdf.text_layout` → `report.text-layout.json`
+  - `image.to_pdf` → `first.pdf`
   - `pdf.decompress` → `report.decompressed.pdf`
   - `pdf.compress` → `report.compressed.pdf`
   - `pdf.linearize` → `report.linearized.pdf`
@@ -343,7 +375,9 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio` and `pdf.layers`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
 - **Multi-artifact tools**:
   - `pdf.split` → `<stem>.part-001.pdf`, `<stem>.part-002.pdf`, ... (1-based index, zero-padded to at least 3 digits: `001`..`999`, widening to 4+ digits when parts >= 1,000).
-  - `pdf.to_images` / `pdf.render` → `<stem>.page-001.png`, `<stem>.page-002.png`, ...
+  - `pdf.to_images` / `pdf.render` → `<stem>.page-001.<ext>`, `<stem>.page-002.<ext>`, ... (`combine = "none"`), or `<stem>.pages.<ext>` (`combine = "vertical" | "horizontal"`).
+  - `pdf.thumbnails` → `<stem>.page-001.png`, `<stem>.page-002.png`, ... plus `<stem>.thumbnails.json`.
+  - `pdf.extract_images` → `<stem>.page-001.image-001.<ext>`, ... (`archive = false`), or `<stem>.images.zip` (`archive = true`).
   - `pdf.attachments` and `pdf.portfolio` (`action = "extract"`) → `<stem>.attachment-001.<sanitized-name>` confined inside `<output_dir>`. The attachment's own name and extension are kept and its bytes are written unchanged, except that executable, script, shortcut and installer types (for example `.exe`, `.py`, `.lnk`, `.sh`, `.pkg`) get `.bin` appended to the file name, with one warning per renamed file. Files never get an executable bit. Entries are numbered in name order.
 
 When `-o <FILE>` is passed to a single-artifact tool, that exact file path is used. Passing a non-directory `-o <FILE>` to a multi-artifact tool (such as `pdf.split`) is rejected upfront with exit code `2` (`usage`).
@@ -376,9 +410,19 @@ Every tool invocation receives an `ariad_core::limits::Limits` struct (`Limits::
 | `max_input_bytes` | Checked per input file before staging; in `ariad-wasm`, the sum of all input `Uint8Array` byte lengths is checked against `budgetBytes` before opening any document. |
 | `max_pages` | Checked against input page counts at load (when set in `Limits`), and combined with the fixed 10,000-page structural output ceiling as `min(10_000, max_pages)` for output-producing tools (`pdf.merge`, `pdf.insert_blank`, `pdf.extract_pages`, `pdf.reorder`, `pdf.nup`, `pdf.booklet`, `pdf.divide_pages`, `pdf.posterize`, and `pdf.split`). In `pdf.split`, both the output pages of each part and the cumulative output pages across all parts are capped at `min(10_000, max_pages)` (never the input page count), and serialized part bytes are charged against the per-document decode budget (`max_decompressed_bytes`). |
 | `timeout_s` | Wall-clock timer enforced by the host runner (`JobSpec::for_request`) and cancellation token; kills the engine process tree on expiry. |
-| `max_memory_mb` | Host watchdog samples aggregate resident set size (RSS) of the engine process tree before dispatch and every 250 ms during execution, killing the tree on violation. |
+| `max_memory_mb` | Host watchdog samples aggregate resident set size (RSS) of the engine process tree before dispatch and every 100 ms on macOS or 250 ms elsewhere during execution, killing the tree on violation. Linux PDFium tools additionally receive a hard `RLIMIT_AS` via the launcher before execution, including with sandboxing off. |
 | Decoded stream & object caps | `ariad-pdf` opens every PDF exclusively through `ariad_core::reader::pdf::load_bounded(bytes, &limits)`, enforcing `max_decompressed_bytes` across Flate/LZW/filter streams, `max_nesting_depth` (< 100), and `MAX_OBJECTS` (object count ceiling). |
 | `max_asset_bytes` | Bounds individual embedded images, fonts, or file attachments added or extracted by a tool. |
+
+PDFium image extraction bounds the combined declared inline-image pixels, decoded bytes, and scanned content for each page, including forms; image extraction and scan detection also bound object traversal per page and document. Extraction rejects a form whose estimated nested object expansion exceeds 100,000 visits. Scan detection uses at most 2,000 image rectangles per page, marks pages with omitted rectangles as saturated, and bounds the work used to calculate their union. Complex inputs may therefore reach a limit even when their file size is small.
+
+For PDFium tools, an unspecified `timeout_s` or `max_memory_mb` uses the cloud defaults (600 seconds and 4096 MiB respectively), including local runs. Explicit limits remain unchanged. `pdf.render` and `pdf.to_images` also cap the cumulative encoded page bytes and the final ZIP size at `max_decompressed_bytes`; a limit failure publishes no artifacts.
+
+If PDFium cannot allocate a bitmap after its dimensions have been validated,
+the engine reports `limit_exceeded` with the bitmap size and configured memory
+limit. When an engine crashes or reports a generic failure under a memory
+ceiling, the host instead retains the failure classification and notes that the
+engine may have hit the ceiling, naming it in MiB.
 
 Exceeding any limit terminates the job immediately and returns `limit_exceeded` (exit code `4`).
 

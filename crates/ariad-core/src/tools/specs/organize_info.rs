@@ -16,6 +16,7 @@ pub fn specs() -> Vec<ToolSpec> {
         inputs: InputArity::One,
         input_formats: &["pdf"],
         output_format: "json",
+        output_formats: &[],
         tier: Tier::Free,
         runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
         engine: "ariad-pdf",

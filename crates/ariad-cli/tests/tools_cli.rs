@@ -346,7 +346,10 @@ fn tool_pdf_info_matches_all_corpus_truth_files_and_never_writes_decrypted_copy(
 
 #[test]
 fn tools_command_lists_registry_json_and_human() {
+    let data_dir = TempDir::new().expect("tempdir");
     let output = ashift_cmd()
+        .env_remove("ASHIFT_PACK_PDFIUM")
+        .env("ASHIFT_DATA_DIR", data_dir.path())
         .args(["tools", "--json"])
         .output()
         .expect("run ashift tools --json");
@@ -360,7 +363,7 @@ fn tools_command_lists_registry_json_and_human() {
         .expect("run ashift tools --group organize --json");
     assert!(group_out.status.success());
     let group_json: Value = serde_json::from_slice(&group_out.stdout).expect("parse group JSON");
-    assert_eq!(group_json.as_array().unwrap().len(), 25);
+    assert_eq!(group_json.as_array().unwrap().len(), 29);
 
     let optimize_out = ashift_cmd()
         .args(["tools", "--group", "optimize", "--json"])
@@ -371,7 +374,7 @@ fn tools_command_lists_registry_json_and_human() {
         serde_json::from_slice(&optimize_out.stdout).expect("parse optimize JSON");
     assert_eq!(optimize_json.as_array().unwrap().len(), 1);
     assert_eq!(optimize_json[0]["id"], "pdf.decompress");
-    assert_eq!(tools_json.as_array().unwrap().len(), 26);
+    assert_eq!(tools_json.as_array().unwrap().len(), 35);
 
     let empty_group = ashift_cmd()
         .args(["tools", "--group", "security", "--json"])

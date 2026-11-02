@@ -391,11 +391,16 @@ impl Session {
                     metrics,
                     sandbox: sandbox.clone(),
                 }),
-                Err(RunError::Crash { exit, .. }) => {
+                Err(RunError::Crash {
+                    exit,
+                    memory_limit_mb,
+                    ..
+                }) => {
                     engine.reap(true).await;
                     Err(RunError::Crash {
                         exit,
                         stderr_tail: engine.stderr_tail(),
+                        memory_limit_mb,
                     })
                 }
                 Err(error) => Err(error),

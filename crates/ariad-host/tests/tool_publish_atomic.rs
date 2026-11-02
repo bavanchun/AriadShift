@@ -153,7 +153,7 @@ done
 printf '{"type":"result","ok":true,"metrics":{"pages":5}}\n'
 "#;
     let cmd = EngineCommand {
-        engine: "pdfium".to_owned(),
+        engine: "qpdf".to_owned(),
         program: PathBuf::from("/bin/sh"),
         args: vec![OsString::from("-c"), OsString::from(script)],
         env: Vec::new(),
@@ -170,9 +170,10 @@ printf '{"type":"result","ok":true,"metrics":{"pages":5}}\n'
         inputs: InputArity::One,
         input_formats: &["pdf"],
         output_format: "pdf",
+        output_formats: &[],
         tier: Tier::Free,
         runtimes: &[ToolRuntime::Local],
-        engine: "pdfium",
+        engine: "qpdf",
         params_schema: schema_for_params::<InfoParams>,
         secret_params: &[],
     };
@@ -405,6 +406,7 @@ fn inprocess_pdf_info_and_normative_exit_codes() {
         inputs: InputArity::One,
         input_formats: &["pdf"],
         output_format: "pdf",
+        output_formats: &[],
         tier: Tier::Pro,
         runtimes: &[ToolRuntime::Local],
         engine: "pdfium",
@@ -678,7 +680,7 @@ printf '{"type":"artifact","path":"%s/spoofed.html","format":"html"}\n' "$ws_out
 printf '{"type":"result","ok":true}\n'
 "#;
         let cmd = EngineCommand {
-            engine: "pdfium".to_owned(),
+            engine: "qpdf".to_owned(),
             program: PathBuf::from("/bin/sh"),
             args: vec![OsString::from("-c"), OsString::from(script)],
             env: Vec::new(),
@@ -694,9 +696,10 @@ printf '{"type":"result","ok":true}\n'
             inputs: InputArity::One,
             input_formats: &["pdf"],
             output_format: "pdf",
+            output_formats: &[],
             tier: Tier::Free,
             runtimes: &[ToolRuntime::Local],
-            engine: "pdfium",
+            engine: "qpdf",
             params_schema: schema_for_params::<InfoParams>,
             secret_params: &[],
         };

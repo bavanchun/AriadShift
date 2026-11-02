@@ -473,6 +473,7 @@ fn engine_artifact_symlink_escape_and_size_overflow_are_rejected() {
         inputs: InputArity::One,
         input_formats: &["pdf"],
         output_format: "json",
+        output_formats: &[],
         tier: Tier::Free,
         runtimes: &[ToolRuntime::Local],
         engine: "qpdf",
@@ -556,4 +557,89 @@ printf '%s\n' '{"type":"result","ok":true}'
         "expected LimitExceeded, got {err_oversize:?}"
     );
     assert_eq!(err_oversize.exit_code(), 4);
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn pdfium_enforces_address_limit_with_sandbox_off() {
+    let workspace = Workspace::new().expect("create workspace");
+    let command = v2_engine_command("pdfium");
+    let limits = Limits {
+        max_memory_mb: Some(256),
+        timeout_s: Some(15),
+        ..Limits::local()
+    };
+    let request = make_run_tool_request(&workspace, json!({ "probe_address_limit": true }), limits);
+    let outcome = runner::run_command_v2(&command, &request, CancellationToken::new(), |_| {})
+        .expect("run probe");
+    let metrics = outcome.metrics.expect("probe metrics");
+    assert_eq!(
+        metrics.get("address_limit_soft"),
+        Some(&json!(256_u64 * 1024 * 1024))
+    );
+    assert_eq!(
+        metrics.get("address_limit_hard"),
+        Some(&json!(256_u64 * 1024 * 1024))
+    );
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn pdfium_address_limit_blocks_excess_allocation() {
+    let workspace = Workspace::new().expect("create workspace");
+    let command = v2_engine_command("pdfium");
+    let limits = Limits {
+        max_memory_mb: Some(128),
+        timeout_s: Some(15),
+        ..Limits::local()
+    };
+    let request = make_run_tool_request(&workspace, json!({ "probe_memory_mb": 256 }), limits);
+    let result = runner::run_command_v2(&command, &request, CancellationToken::new(), |_| {});
+    assert!(
+        matches!(result, Err(RunError::MemoryLimitExceeded { limit_mb: 128 })),
+        "expected allocation failure, got {result:?}"
+    );
+}
+
+#[test]
+fn memory_hint_is_limited_to_crashes() {
+    for action in ["crash", "fail"] {
+        for limit in [Some(256), None] {
+            let workspace = Workspace::new().expect("workspace");
+            let command = v2_engine_command("qpdf");
+            let limits = Limits {
+                max_memory_mb: limit,
+                timeout_s: Some(15),
+                ..Limits::local()
+            };
+            let request =
+                make_run_tool_request(&workspace, json!({ "probe_action": action }), limits);
+            let error =
+                runner::run_command_v2(&command, &request, CancellationToken::new(), |_| {})
+                    .unwrap_err();
+            match (&error, action) {
+                (
+                    RunError::Crash {
+                        memory_limit_mb, ..
+                    },
+                    "crash",
+                ) => assert_eq!(*memory_limit_mb, limit),
+                (
+                    RunError::EngineFailed {
+                        code: ariad_core::protocol::ErrorCode::EngineFailure,
+                        memory_limit_mb,
+                        ..
+                    },
+                    "fail",
+                ) => assert_eq!(*memory_limit_mb, None),
+                _ => panic!("unexpected error: {error:?}"),
+            }
+            assert_eq!(
+                error
+                    .to_string()
+                    .contains("may have hit its memory limit (256 MiB)"),
+                action == "crash" && limit.is_some()
+            );
+        }
+    }
 }

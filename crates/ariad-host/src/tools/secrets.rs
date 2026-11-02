@@ -587,6 +587,7 @@ mod tests {
             inputs: InputArity::One,
             input_formats: &["pdf"],
             output_format: "pdf",
+            output_formats: &[],
             tier: Tier::Free,
             runtimes: &[ToolRuntime::Local],
             engine: "qpdf",
