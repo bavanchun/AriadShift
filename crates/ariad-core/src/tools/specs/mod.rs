@@ -7,6 +7,7 @@ pub mod organize_info;
 pub mod organize_layout;
 pub mod organize_pages;
 pub mod organize_sequence;
+pub mod overlay_color;
 pub mod pdfium;
 pub mod security;
 

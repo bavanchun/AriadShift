@@ -173,7 +173,6 @@ impl DecodeBudget {
     }
 
     /// Releases temporary memory after a cached-image decode finishes.
-    #[cfg(feature = "codecs")]
     pub(crate) fn release_temporary(&mut self, bytes: usize) {
         self.decoded = self.decoded.saturating_sub(bytes as u64);
     }

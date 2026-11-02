@@ -7,6 +7,8 @@ use lopdf::{Dictionary, Document, Object, content::Content};
 mod document;
 mod inline;
 mod resources;
+pub(crate) mod targeted;
+pub(crate) mod targeted_document;
 
 pub use document::rewrite_document;
 
@@ -227,7 +229,11 @@ pub fn to_gray_mapper() -> impl Fn(ColorSpace, &[f32]) -> Option<MappedColor> {
         })
     }
 }
-fn resolve<'a>(doc: &'a Document, mut obj: &'a Object, limit: u16) -> Option<&'a Object> {
+pub(crate) fn resolve<'a>(
+    doc: &'a Document,
+    mut obj: &'a Object,
+    limit: u16,
+) -> Option<&'a Object> {
     for _ in 0..=limit {
         match obj {
             Object::Reference(id) => obj = doc.get_object(*id).ok()?,

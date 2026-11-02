@@ -8,6 +8,7 @@
 //!   opened input required cross-reference table reconstruction (`doc.repaired_xref() == true`).
 //! - Deterministic PDF serialization of [`OutputDoc`] artifacts via [`crate::writer::save_with_options`].
 
+pub mod adjust_colors;
 pub mod alternate_mix;
 pub mod attachments;
 pub mod booklet;
@@ -32,6 +33,7 @@ pub(crate) mod page_set;
 pub mod portfolio;
 pub mod posterize;
 pub mod reorder;
+pub mod replace_color;
 pub mod rotate;
 pub mod rotate_content;
 pub mod sanitize;
@@ -322,6 +324,18 @@ pub fn run_tool(
     }
 
     match tool_id {
+        "pdf.replace_color" => dispatch_structural::<
+            ariad_core::tools::params::ReplaceColorParams,
+            _,
+        >(tool_id, inputs, params, ctx, |docs, params, ctx| {
+            replace_color::run(docs, params, &inputs[0].limits, ctx)
+        }),
+        "pdf.adjust_colors" => dispatch_structural::<
+            ariad_core::tools::params::AdjustColorsParams,
+            _,
+        >(tool_id, inputs, params, ctx, |docs, params, ctx| {
+            adjust_colors::run(docs, params, &inputs[0].limits, ctx)
+        }),
         #[cfg(feature = "codecs")]
         "pdf.compress" => {
             dispatch_structural_inputs::<ariad_core::tools::params::CompressParams, _>(

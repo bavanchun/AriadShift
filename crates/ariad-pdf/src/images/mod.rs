@@ -3,6 +3,8 @@
 mod codec;
 mod placement;
 
+pub(crate) use codec::decode_with_budget;
+#[cfg(feature = "codecs")]
 pub(crate) use codec::{decode_cmyk_jpeg, decode_rgb_jpeg, jpeg_transform};
 pub mod similarity;
 

@@ -3,6 +3,7 @@
 //! All tool parameter types live in `ariad-core` with no engine or `lopdf` dependencies so
 //! [`crate::tools::registry`] can resolve `params_schema` without crate cycles.
 
+pub mod adjust_colors;
 pub mod alternate_mix;
 pub mod attachments;
 pub mod booklet;
@@ -38,6 +39,7 @@ pub mod remove_blank;
 pub mod render;
 pub mod reorder;
 pub mod repair;
+pub mod replace_color;
 pub mod rotate;
 pub mod rotate_content;
 pub mod sanitize;
@@ -51,6 +53,7 @@ pub mod viewer_prefs;
 
 use schemars::{JsonSchema, Schema, generate::SchemaSettings};
 
+pub use adjust_colors::AdjustColorsParams;
 pub use alternate_mix::AlternateMixParams;
 pub use attachments::{AttachmentsAction, AttachmentsParams};
 pub use booklet::{BookletBinding, BookletParams};
@@ -86,6 +89,7 @@ pub use remove_blank::RemoveBlankParams;
 pub use render::{Background, Combine, RasterFormat, RenderParams, ToImagesParams};
 pub use reorder::{ReorderParams, ReorderPreset, ReorderSpec};
 pub use repair::RepairParams;
+pub use replace_color::{ColorTarget, ReplaceColorParams};
 pub use rotate::RotateParams;
 pub use rotate_content::RotateContentParams;
 pub use sanitize::{SanitizeForms, SanitizeParams};
