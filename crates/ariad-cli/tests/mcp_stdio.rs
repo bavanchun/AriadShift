@@ -2612,7 +2612,7 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let listed = list_resp["result"]["structuredContent"]
         .as_array()
         .expect("list_doc_tools array");
-    assert_eq!(listed.len(), 35);
+    assert_eq!(listed.len(), 44);
     assert_eq!(listed[0]["id"], "pdf.info");
     assert_eq!(listed[0]["group"], "organize");
     assert_eq!(listed[0]["engine"], "ariad-pdf");
@@ -2627,9 +2627,24 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
             "arguments": { "group": "security" }
         }),
     );
-    let empty_resp = client.read_response(701);
-    assert_eq!(empty_resp["result"]["isError"], false, "{empty_resp}");
-    assert_eq!(empty_resp["result"]["structuredContent"], json!([]));
+    let security_resp = client.read_response(701);
+    assert_eq!(security_resp["result"]["isError"], false, "{security_resp}");
+    let ids: Vec<&str> = security_resp["result"]["structuredContent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "pdf.encrypt",
+            "pdf.decrypt",
+            "pdf.permissions",
+            "pdf.sanitize",
+            "pdf.unlock_forms"
+        ]
+    );
 
     // 3. run_doc_tool pdf.info without output_dir (inline JSON only, no file written)
     // For three corpus files (`multipage-20`, `broken-xref`, `rotated-pages`), assert that
