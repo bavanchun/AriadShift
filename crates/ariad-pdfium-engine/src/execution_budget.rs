@@ -391,7 +391,12 @@ impl Calculator<'_, '_> {
             .map_err(|_| EngineFailure::limit_exceeded())?
             .get(b"G")
             .map_err(|_| EngineFailure::limit_exceeded())?;
-        self.target(Some(group), scope, depth, active)
+        let mask_scope = Scope {
+            page: scope.page.clone(),
+            current: scope.page.clone(),
+            inherited_fonts: Vec::new(),
+        };
+        self.target(Some(group), &mask_scope, depth, active)
     }
 }
 
@@ -548,6 +553,44 @@ mod tests {
         assert_eq!(
             calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
             19
+        );
+    }
+    #[test]
+    fn soft_mask_group_resolves_names_from_page_resources() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = Vec::new();
+        let ctx = context(dir.path(), &mut sink);
+        let mut doc = lopdf::Document::new();
+        let expensive = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let cheap = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let group = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let gs = Object::Dictionary(
+            dictionary! { "SMask" => dictionary! { "G" => Object::Reference(group) } },
+        );
+        let mut scope = Scope::default();
+        scope.page.insert(
+            b"XObject".to_vec(),
+            BTreeMap::from([(b"F".to_vec(), Object::Reference(expensive))]),
+        );
+        scope.current.insert(
+            b"XObject".to_vec(),
+            BTreeMap::from([(b"F".to_vec(), Object::Reference(cheap))]),
+        );
+        let facts = BTreeMap::from([
+            (expensive, facts(500, &[])),
+            (cheap, facts(1, &[])),
+            (group, facts(2, &[(b"Do", b"F")])),
+        ]);
+        let mut calc = Calculator {
+            ctx: &ctx,
+            doc: &doc,
+            facts: &facts,
+            visited: HashSet::new(),
+        };
+        assert_eq!(
+            calc.mask(Some(&gs), &scope, 0, &mut HashSet::new())
+                .unwrap(),
+            502
         );
     }
     #[test]
