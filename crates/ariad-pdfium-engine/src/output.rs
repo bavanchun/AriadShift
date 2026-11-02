@@ -299,6 +299,7 @@ impl<'a> ToolContext<'a> {
         let mut doc = pdf_document::open_with_ctx(&bytes, &open_limits, &pdf_ctx)
             .map_err(map_pdf_open_error)?;
 
+        self.warn_repaired_xref(&doc)?;
         crate::canonical::canonicalize(self, &mut doc, bytes.len())
     }
 
@@ -342,6 +343,19 @@ impl<'a> ToolContext<'a> {
             done: Some(done),
             total: Some(total),
         })
+    }
+
+    pub(crate) fn warn_repaired_xref(
+        &mut self,
+        doc: &ariad_pdf::PdfDoc,
+    ) -> Result<(), EngineFailure> {
+        if doc.repaired_xref() {
+            self.warn(
+                "repaired_xref",
+                "The PDF cross-reference table was repaired.",
+            )?;
+        }
+        Ok(())
     }
 
     /// Emits a `warning` event. `code` is a stable snake_case identifier; `message` never

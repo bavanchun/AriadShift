@@ -124,6 +124,7 @@ pub struct DetectScannedDocument {
 /// Executes `pdf.detect_scanned`.
 pub fn run(ctx: &mut ToolContext<'_>, _params: DetectScannedParams) -> ToolResult {
     let (bytes, mut lopdf_doc) = read_and_preflight_pdf(ctx)?;
+    ctx.warn_repaired_xref(&lopdf_doc)?;
     let canonical = crate::canonical::canonicalize(ctx, &mut lopdf_doc, bytes.len())?;
     drop(bytes);
     let pdfium = ctx.pdfium()?;

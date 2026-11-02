@@ -45,6 +45,35 @@ macro_rules! require_pdfium {
     };
 }
 
+#[test]
+fn repaired_xref_renders_with_warning() {
+    let lib_dir = require_pdfium!();
+    let input = fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/repaired-xref-extraction.pdf"),
+    )
+    .unwrap();
+    let ws = setup_workspace("repaired.pdf", &input);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new("repair", "pdf.render", ws.paths, Limits::local(), &mut sink)
+        .with_library_dir(lib_dir);
+    render::run(
+        &mut ctx,
+        RenderParams {
+            pages: "1".parse().unwrap(),
+            dpi: 72,
+            format: RasterFormat::Png,
+            quality: None,
+            background: Background::White,
+            annotations: true,
+            combine: Combine::None,
+        },
+    )
+    .unwrap();
+    drop(ctx);
+    assert!(String::from_utf8(sink).unwrap().contains("repaired_xref"));
+}
+
 fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools")
 }

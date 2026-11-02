@@ -3936,6 +3936,27 @@ mod corpus_tests {
     }
 
     #[test]
+    fn repaired_xref_warns_for_render_but_is_refused_for_extraction() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/repaired-xref-extraction.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("xref", "pdf.render", paths, Limits::local(), &mut sink);
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        assert!(doc.repaired_xref());
+        assert!(check_extraction_xref(&doc).is_err());
+        assert!(ctx.load_validated_pdf_bytes().is_ok());
+        drop(ctx);
+        assert!(String::from_utf8(sink).unwrap().contains("repaired_xref"));
+    }
+
+    #[test]
     fn valid_linked_xref_streams_are_accepted() {
         for name in [
             "incremental-xref-stream-valid.pdf",

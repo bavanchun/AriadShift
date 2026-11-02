@@ -252,6 +252,7 @@ pub fn run_with_char_limit(
     max_chars: usize,
 ) -> ToolResult {
     let (bytes, mut lopdf_doc) = read_and_preflight_pdf(ctx)?;
+    ctx.warn_repaired_xref(&lopdf_doc)?;
     let canonical = crate::canonical::canonicalize(ctx, &mut lopdf_doc, bytes.len())?;
     drop(bytes);
     let pdfium = ctx.pdfium()?;

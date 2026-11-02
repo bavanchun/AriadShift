@@ -131,12 +131,6 @@ pub(crate) fn canonicalize(
     doc: &mut PdfDoc,
     input_len: usize,
 ) -> Result<Vec<u8>, EngineFailure> {
-    if doc.repaired_xref() {
-        return Err(EngineFailure::new(
-            ErrorCode::LimitExceeded,
-            "PDF cross-reference table required repair.",
-        ));
-    }
     let limit = doc.remaining_decode_bytes().min(
         ctx.limits()
             .max_memory_mb
