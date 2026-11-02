@@ -33,8 +33,41 @@ fn write_operand(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), EngineFailure> {
         return Err(EngineFailure::limit_exceeded());
     }
     let object = &content.operations[0].operands[0];
+    write_content_object(out, object)
+}
+
+pub(crate) fn write_content_object(
+    out: &mut Vec<u8>,
+    object: &Object,
+) -> Result<(), EngineFailure> {
     validate_object(object, 0)?;
-    crate::canonical::write_object(out, object).map_err(|_| EngineFailure::limit_exceeded())
+    fn write_value(out: &mut Vec<u8>, object: &Object) -> Result<(), EngineFailure> {
+        match object {
+            Object::Array(items) => {
+                out.extend_from_slice(b"[ ");
+                for item in items {
+                    write_value(out, item)?;
+                    out.push(b' ');
+                }
+                out.push(b']');
+            }
+            Object::Dictionary(dict) => {
+                out.extend_from_slice(b"<< ");
+                for (key, value) in dict.iter() {
+                    out.push(b'/');
+                    out.extend_from_slice(key);
+                    out.push(b' ');
+                    write_value(out, value)?;
+                    out.push(b' ');
+                }
+                out.extend_from_slice(b">>");
+            }
+            _ => crate::canonical::write_object(out, object)
+                .map_err(|_| EngineFailure::limit_exceeded())?,
+        }
+        Ok(())
+    }
+    write_value(out, object)
 }
 
 pub(crate) fn validate_object(object: &Object, depth: usize) -> Result<(), EngineFailure> {
@@ -74,6 +107,7 @@ pub(crate) fn emit_token(
     if token == b"[" || token == b"<<" {
         let is_dict = token == b"<<";
         let mut key = is_dict;
+        let mut keys = std::collections::HashSet::new();
         loop {
             let before = *cursor;
             let (s, e) =
@@ -86,7 +120,7 @@ pub(crate) fn emit_token(
                 }
                 break;
             }
-            if !scalar(part) || (is_dict && key && !safe_name(part)) {
+            if !scalar(part) || (is_dict && key && (!safe_name(part) || !keys.insert(part))) {
                 return Err(EngineFailure::limit_exceeded());
             }
             validate_token(part)?;
@@ -103,7 +137,7 @@ pub(crate) fn emit_token(
         if token.is_empty()
             || !token
                 .iter()
-                .all(|b| b.is_ascii_alphabetic() || b"*'\"".contains(b))
+                .all(|b| b.is_ascii_alphanumeric() || b"*'\"".contains(b))
         {
             return Err(EngineFailure::limit_exceeded());
         }

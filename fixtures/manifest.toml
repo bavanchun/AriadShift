@@ -5112,3 +5112,79 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "content-non-ascii-pdf"
+path = "fixtures/pdf/content-non-ascii.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream validation"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "29e60bddcbfa63865884c3a3136e5d037d86819c6ca0b485cf68ddf3e02df463"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "content-nested-operands-pdf"
+path = "fixtures/pdf/content-nested-operands.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream validation"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "a5f32658b74520b212acc60a6d67456ad9f550b24e104b458351fccf3bbaa433"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "inline-string-filter-pdf"
+path = "fixtures/pdf/inline-string-filter.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream validation"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "25a2bdea1e95c46c2b18f92d43c090b6071de1d722e13fffce896b605372f0f4"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "content-executable-containers-pdf"
+path = "fixtures/pdf/content-executable-containers.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic content stream validation"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "d5ccfdb72d0d69804c0659d6d6761d9f01e06570dcbf3b9b8ee544ce3cb436bd"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

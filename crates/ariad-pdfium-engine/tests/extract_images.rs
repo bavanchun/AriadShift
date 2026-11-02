@@ -1575,3 +1575,42 @@ fn accepts_whitespace_before_object_header_at_xref_offset() {
     extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
         .expect("whitespace at object offset");
 }
+
+#[test]
+#[ignore = "requires the external adversarial PDF corpus"]
+fn content_container_corpus_is_refused_with_pixel_cap() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    for name in [
+        "poc_a.pdf",
+        "poc_b.pdf",
+        "poc_a85.pdf",
+        "poc_alias.pdf",
+        "poc_ff1.pdf",
+        "poc_ff2.pdf",
+        "pat.pdf",
+        "annot.pdf",
+        "smask.pdf",
+    ] {
+        let input = fs::read(std::path::Path::new(&dir).join(name)).unwrap();
+        for extraction in [false, true] {
+            let ws = TestWorkspace::from_bytes("input.pdf", &input);
+            let mut sink = Vec::new();
+            let limits = Limits {
+                max_asset_bytes: Some(100_000_000),
+                ..Limits::local()
+            };
+            let mut ctx =
+                ToolContext::new("content", "pdf.extract_images", ws.paths, limits, &mut sink)
+                    .with_library_dir(&lib_dir);
+            let result = if extraction {
+                extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+                    .map(|_| ())
+            } else {
+                ctx.load_validated_pdf_bytes().map(|_| ())
+            };
+            let error = result.expect_err(name);
+            assert_eq!(error.code, ErrorCode::LimitExceeded, "{name}");
+        }
+    }
+}

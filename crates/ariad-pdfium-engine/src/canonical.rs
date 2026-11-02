@@ -188,8 +188,6 @@ pub(crate) fn canonicalize(
         .min(u32::MAX as usize)
         .checked_sub(input_len)
         .ok_or_else(EngineFailure::limit_exceeded)?;
-    crate::extract_images::preflight_document_content(ctx, doc)?;
-    let content_streams = crate::extract_images::canonical_content_streams(ctx, doc)?;
     let inner = doc
         .inner_mut()
         .map_err(|_| EngineFailure::limit_exceeded())?;
@@ -250,6 +248,11 @@ pub(crate) fn canonicalize(
         0,
         max_depth,
     )?;
+    let execution = crate::extract_images::preflight_document_content(ctx, doc)?;
+    let content_streams = crate::extract_images::canonical_content_streams(ctx, doc, execution)?;
+    let inner = doc
+        .inner_mut()
+        .map_err(|_| EngineFailure::limit_exceeded())?;
     let mut out = BoundedWriter {
         bytes: Vec::new(),
         limit,
@@ -792,7 +795,9 @@ mod tests {
         assert!(output.starts_with(b"%PDF-"));
         assert_eq!(output.windows(5).filter(|w| *w == b"xref\n").count(), 2); // xref and startxref
         assert!(!output.windows(7).any(|w| w == b"/ObjStm"));
-        check_round_trip(doc.inner(), &output).unwrap();
+        let content_streams =
+            crate::extract_images::canonical_content_streams(&ctx, &doc, 0).unwrap();
+        check_round_trip_with_streams(doc.inner(), &output, &content_streams).unwrap();
         let mut changed = doc.inner().clone();
         changed.trailer.set("Root", lopdf::Object::Null);
         assert!(check_round_trip(&changed, &output).is_err());
