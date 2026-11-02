@@ -85,7 +85,7 @@ export function serializedOAuthHandler(
       timer = setTimeout(() => {
         destroy();
         reject(new Error("OAuth request expired"));
-      }, limits.requestMs);
+      }, limits.requestMs).unref();
     });
     const run = async () => {
       const acquired = await pool.connect();

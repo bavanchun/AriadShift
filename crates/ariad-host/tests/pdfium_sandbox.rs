@@ -11,12 +11,8 @@
 #![cfg(all(unix, feature = "test-probe"))]
 
 use std::{
-    collections::BTreeMap,
-    ffi::OsString,
-    fs,
-    net::TcpListener,
-    os::unix::net::UnixListener,
-    path::{Path, PathBuf},
+    collections::BTreeMap, ffi::OsString, fs, net::TcpListener, os::unix::net::UnixListener,
+    path::PathBuf,
 };
 
 use ariad_core::{
@@ -234,7 +230,7 @@ fn pdfium_without_the_sandbox_reaches_everything_only_when_explicitly_off() {
     // The probe really overwrote the pack file here, which proves the sandboxed run above
     // had to be what denied it.
     assert_eq!(fs::read(&run.pack_file).expect("pack file"), b"changed");
-    assert!(Path::new(&run.escape).exists());
+    assert!(std::path::Path::new(&run.escape).exists());
 }
 
 /// Runs only on macOS CI runners: the Linux development host cannot execute Seatbelt.

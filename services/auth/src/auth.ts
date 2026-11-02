@@ -13,6 +13,7 @@ import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/a
 import { jwt, twoFactor } from "better-auth/plugins";
 import pg from "pg";
 import type { DiscoveryDocument } from "./app.ts";
+import { type CimdFetcherOptions, createCimdExtension } from "./cimd.ts";
 import { AUTH_SCHEMA, type AuthServiceConfig } from "./config.ts";
 import { OAUTH_TOKEN_LIMITS, serializedOAuthHandler } from "./oauth-lock.ts";
 
@@ -44,7 +45,9 @@ const SITEVERIFY_TIMEOUT_MS = 5_000;
 function signupChallenge(config: AuthServiceConfig): BetterAuthPlugin["onRequest"] {
   if (!config.turnstileSecret) return undefined;
   const secret = config.turnstileSecret;
-  const hostnames = new Set(config.trustedOrigins.map((origin) => new URL(origin).hostname));
+  const hostnames = new Set(
+    [config.baseUrl, ...config.trustedOrigins].map((origin) => new URL(origin).hostname),
+  );
   return async (request) => {
     const path = new URL(request.url).pathname.replace(/\/{2,}/g, "/").replace(/\/+$/, "");
     if (request.method !== "POST" || path !== `${BASE_PATH}/sign-up/email`) return;
@@ -171,14 +174,20 @@ export const OAUTH_REGISTRATION_RATE_LIMIT = { window: 60 * 60, max: 20 } as con
 export const CLIENT_IP_HEADER = "x-ariadshift-client-ip";
 
 /** Opens the pool with every unqualified table name resolving to `auth`. */
-export function createPool(config: AuthServiceConfig): pg.Pool {
-  return new pg.Pool({
+export function createPool(
+  config: AuthServiceConfig,
+  onIdleError: (error: Error) => void = (error) =>
+    console.error("Idle auth database connection failed:", error.message),
+): pg.Pool {
+  const pool = new pg.Pool({
     connectionString: config.databaseUrl,
     // A search_path in DATABASE_URL takes precedence over this one.
     options: `-c search_path=${AUTH_SCHEMA}`,
     max: 10,
     connectionTimeoutMillis: OAUTH_TOKEN_LIMITS.checkoutMs,
   });
+  pool.on("error", onIdleError);
+  return pool;
 }
 
 /**
@@ -207,6 +216,7 @@ function socialProviders(config: AuthServiceConfig): BetterAuthOptions["socialPr
 export function buildAuthOptions(
   config: AuthServiceConfig,
   database: NonNullable<BetterAuthOptions["database"]>,
+  cimd?: CimdFetcherOptions,
 ) {
   return {
     appName: APP_NAME,
@@ -408,7 +418,11 @@ export function buildAuthOptions(
               // Absolute, so redirects and JSON `url` answers name this service
               // even when a client resolves them against another base.
               loginPage: `${config.baseUrl}${OAUTH_SIGN_IN_PATH}`,
+              // The provider resumes the signed request and validates its registered
+              // client redirect; it may return that callback directly when consent
+              // is unnecessary, so a same-origin consent-only guard would reject it.
               consentPage: `${config.baseUrl}${OAUTH_CONSENT_PATH}`,
+              signup: { page: `${config.baseUrl}${OAUTH_SIGN_IN_PATH}` },
               scopes: OAUTH_SCOPES,
               grantTypes: [...OAUTH_GRANT_TYPES],
               // RFC 8707: the only resource tokens can be issued for. A request
@@ -425,6 +439,20 @@ export function buildAuthOptions(
               // Native clients (Claude Code, Cursor) often omit application_type
               // and use loopback or custom-scheme callbacks.
               clientRegistrationDefaultApplicationType: "infer",
+              // Client ID Metadata Documents (draft-ietf-oauth-client-id-metadata-document)
+              // let MCP clients identify themselves by an https:// metadata URL
+              // without prior dynamic registration; RFC 7591 stays enabled alongside it.
+              extensions: [
+                createCimdExtension(
+                  {
+                    ...cimd,
+                    allowedHosts: config.cimdAllowedHosts,
+                    deniedHosts: config.cimdDeniedHosts,
+                    registrationRateLimit: OAUTH_REGISTRATION_RATE_LIMIT,
+                  },
+                  config.cimdEnabled,
+                ),
+              ],
               accessTokenExpiresIn: OAUTH_ACCESS_TOKEN_LIFETIME_S,
               refreshTokenReuseInterval: OAUTH_REFRESH_REUSE_INTERVAL_S,
               // Keyed by CLIENT_IP_HEADER like every other Better Auth limit; the

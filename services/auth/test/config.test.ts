@@ -15,6 +15,22 @@ function env(overrides: Record<string, string | undefined> = {}) {
 }
 
 describe("parseConfig", () => {
+  it("validates the opt-in and exact metadata host lists", () => {
+    const config = parseConfig(
+      env({
+        AUTH_CIMD_ENABLED: "true",
+        AUTH_CIMD_ALLOWED_HOSTS: "one.example,two.example",
+        AUTH_CIMD_DENIED_HOSTS: "two.example",
+      }),
+    );
+    expect(config.cimdEnabled).toBe(true);
+    expect(config.cimdAllowedHosts).toEqual(["one.example", "two.example"]);
+    expect(config.cimdDeniedHosts).toEqual(["two.example"]);
+    expect(() => parseConfig(env({ AUTH_CIMD_ENABLED: "yes" }))).toThrow(ConfigError);
+    expect(() => parseConfig(env({ AUTH_CIMD_ALLOWED_HOSTS: "example.com:444" }))).toThrow(
+      ConfigError,
+    );
+  });
   it("accepts the compose environment with defaults", () => {
     const config = parseConfig(env());
     expect(config).toEqual({
@@ -31,6 +47,9 @@ describe("parseConfig", () => {
       google: undefined,
       allowSignUp: false,
       allowInsecureHttp: false,
+      cimdEnabled: false,
+      cimdAllowedHosts: [],
+      cimdDeniedHosts: [],
       oauthDisabledReason: undefined,
     });
   });
@@ -165,5 +184,31 @@ describe("parseConfig", () => {
     expect(() => parseConfig(env({ AUTH_TRUSTED_CLIENT_IP_HEADER: "bad header" }))).toThrow(
       ConfigError,
     );
+  });
+
+  it("requires the Turnstile site key only when signup and the secret are enabled", () => {
+    expect(parseConfig(env({ AUTH_TURNSTILE_SECRET: "turnstile-secret" })).turnstileSecret).toBe(
+      "turnstile-secret",
+    );
+    for (const siteKey of [undefined, "   "]) {
+      expect(() =>
+        parseConfig(
+          env({
+            AUTH_ALLOW_SIGN_UP: "true",
+            AUTH_TURNSTILE_SECRET: "turnstile-secret",
+            AUTH_TURNSTILE_SITE_KEY: siteKey,
+          }),
+        ),
+      ).toThrow(/AUTH_TURNSTILE_SITE_KEY is required/);
+    }
+    expect(parseConfig(env({ AUTH_ALLOW_SIGN_UP: "true" })).turnstileSiteKey).toBeUndefined();
+    const configured = parseConfig(
+      env({
+        AUTH_ALLOW_SIGN_UP: "true",
+        AUTH_TURNSTILE_SECRET: "turnstile-secret",
+        AUTH_TURNSTILE_SITE_KEY: "site-key-prod",
+      }),
+    );
+    expect(configured.turnstileSiteKey).toBe("site-key-prod");
   });
 });
