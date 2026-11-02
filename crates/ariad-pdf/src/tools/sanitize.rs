@@ -135,9 +135,17 @@ pub fn run_inputs(
         }
     }
     let snapshot = doc.clone();
-    for object in doc.objects.values_mut() {
+    for (id, object) in &mut doc.objects {
         budget.check(0)?;
+        let previous = (stats.javascript, stats.links);
+        let action = object.as_dict().ok().is_some_and(|dict| dict.has(b"S"));
+        let counted = action && stats.counted_actions.contains(id);
         scrub_object(object, &snapshot, params, &mut stats, &mut budget, 0)?;
+        if counted {
+            (stats.javascript, stats.links) = previous;
+        } else if action && (stats.javascript, stats.links) != previous {
+            stats.counted_actions.insert(*id);
+        }
     }
     for page_id in pages {
         ctx.check()?;
@@ -326,6 +334,7 @@ fn hex_script_strings(
 
 #[derive(Default)]
 struct Stats {
+    counted_actions: HashSet<ObjectId>,
     javascript: u64,
     embedded: u64,
     links: u64,
@@ -433,6 +442,35 @@ fn scrub_dict(
         dict.remove(b"Thumb");
     }
     if params.javascript || params.links {
+        if let Ok(value) = dict.get(b"AA").cloned() {
+            let mut actions = deref(source, &value, budget.limits)?
+                .as_dict()
+                .map_err(|_| PdfError::Malformed)?
+                .clone();
+            let keys: Vec<_> = actions.iter().map(|(key, _)| key.clone()).collect();
+            for key in keys {
+                let action = actions.get(&key).map_err(|_| PdfError::Malformed)?.clone();
+                match clean_action(
+                    &action,
+                    source,
+                    params,
+                    stats,
+                    budget,
+                    depth + 1,
+                    &mut HashSet::new(),
+                )? {
+                    Some(value) => actions.set(key, value),
+                    None => {
+                        actions.remove(&key);
+                    }
+                }
+            }
+            if actions.is_empty() {
+                dict.remove(b"AA");
+            } else {
+                dict.set("AA", actions);
+            }
+        }
         for key in [b"A".as_slice(), b"OpenAction"] {
             if let Ok(value) = dict.get(key).cloned() {
                 let mut active = HashSet::new();
@@ -440,8 +478,16 @@ fn scrub_dict(
                     && key == b"OpenAction"
                     && contains_javascript(&value, source, budget, depth + 1, &mut active)?
                 {
+                    clean_action(
+                        &value,
+                        source,
+                        params,
+                        stats,
+                        budget,
+                        depth + 1,
+                        &mut active,
+                    )?;
                     dict.remove(key);
-                    stats.javascript += 1;
                     continue;
                 }
                 match clean_action(
@@ -508,7 +554,25 @@ fn contains_javascript(
                 .map(|o| deref(source, o, budget.limits))
                 .transpose()?
                 .and_then(|o| o.as_name().ok());
-            if kind == Some(b"JavaScript") || kind == Some(b"Rendition") && dict.has(b"JS") {
+            let js_uri = kind == Some(b"URI")
+                && dict
+                    .get(b"URI")
+                    .ok()
+                    .map(|value| deref(source, value, budget.limits))
+                    .transpose()?
+                    .and_then(|value| value.as_str().ok())
+                    .is_some_and(|value| {
+                        String::from_utf8_lossy(value)
+                            .trim_start()
+                            .to_ascii_lowercase()
+                            .starts_with("javascript:")
+                    });
+            if matches!(
+                kind,
+                Some(b"JavaScript" | b"Launch" | b"SubmitForm" | b"ImportData")
+            ) || kind == Some(b"Rendition") && dict.has(b"JS")
+                || js_uri
+            {
                 return Ok(true);
             }
             match dict.get(b"Next") {
@@ -536,7 +600,13 @@ fn clean_action(
                 return Err(PdfError::Malformed);
             }
             let target = source.objects.get(id).ok_or(PdfError::Malformed)?;
+            let previous = (stats.javascript, stats.links);
             let result = clean_action(target, source, params, stats, budget, depth + 1, active)?;
+            if stats.counted_actions.contains(id) {
+                (stats.javascript, stats.links) = previous;
+            } else if (stats.javascript, stats.links) != previous {
+                stats.counted_actions.insert(*id);
+            }
             active.remove(id);
             Ok(result)
         }

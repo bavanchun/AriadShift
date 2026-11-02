@@ -608,3 +608,29 @@ fn encrypted_inputs_are_refused_by_both_tools() {
         assert!(matches!(err, ariad_pdf::PdfError::Encrypted { .. }));
     }
 }
+
+#[test]
+fn removes_link_actions_from_additional_actions() {
+    let mut doc = Document::load_mem(&fixture("form-acroform.pdf")).unwrap();
+    let root = doc.trailer.get(b"Root").unwrap().as_reference().unwrap();
+    doc.get_object_mut(root).unwrap().as_dict_mut().unwrap().set("AA", dictionary! {
+        "U" => dictionary! { "S" => "URI", "URI" => Object::string_literal("https://example.test/") },
+        "O" => dictionary! { "S" => "Launch", "F" => Object::string_literal("program") },
+        "C" => dictionary! { "S" => "GoTo", "D" => Object::string_literal("chapter") }
+    });
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let result = Document::load_mem(&sanitize(
+        bytes,
+        json!({"javascript": false, "links": true}),
+    ))
+    .unwrap();
+    let aa = result
+        .catalog()
+        .unwrap()
+        .get(b"AA")
+        .unwrap()
+        .as_dict()
+        .unwrap();
+    assert!(!aa.has(b"U") && !aa.has(b"O") && aa.has(b"C"));
+}
