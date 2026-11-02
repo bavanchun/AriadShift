@@ -64,6 +64,8 @@ Additional pre-final checks after merging s2b: the specified five-package clippy
 
 The remaining host suite passed with the corpus test explicitly filtered, after fixing a test probe that collided with the real qpdf adapter. The full CLI suite passed with both development packs configured; eleven unrelated AppImage and Docling tests remained ignored. The server suite passed. These are pre-s2c results, and the filtered host run is not a full host gate.
 
+A pre-s2c real CLI smoke ran `pdf.compress`, `pdf.encrypt`, `pdf.decrypt`, `pdf.repair`, `pdf.linearize`, `pdf.sanitize` and `doctor --json` successfully with both development packs. All seven commands exited zero; six nonempty PDF artifacts and individual JSON results are under `.run/coord/p05/smoke/`. Doctor reported qpdf 12.4.2 and PDFium ready. Repair returned three `repaired` warnings. The shell script and log are under `.run/coord/p05/`; its temporary password file was deleted.
+
 ## Remaining integration work
 
 - Verify and, where necessary, enforce the signed executable allowlist for qpdf;
