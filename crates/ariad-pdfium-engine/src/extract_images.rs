@@ -4546,6 +4546,36 @@ mod corpus_tests {
     }
 
     #[test]
+    fn property_array_fixtures_preserve_the_supported_depth() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("property", "pdf.render", paths, Limits::local(), &mut sink);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf");
+        let input = fs::read(root.join("property-array.pdf")).unwrap();
+        let mut doc = ariad_pdf::document::open(&input, ctx.limits()).unwrap();
+        let output = crate::canonical::canonicalize(&ctx, &mut doc, input.len()).unwrap();
+        assert!(
+            output
+                .windows(b"/Attached [ /Top ]".len())
+                .any(|w| w == b"/Attached [ /Top ]")
+        );
+        let input = fs::read(root.join("property-deep-array.pdf")).unwrap();
+        let mut doc = ariad_pdf::document::open(&input, ctx.limits()).unwrap();
+        assert_eq!(
+            crate::canonical::canonicalize(&ctx, &mut doc, input.len())
+                .unwrap_err()
+                .code,
+            ErrorCode::LimitExceeded
+        );
+    }
+
+    #[test]
     fn rejects_unreferenced_oversized_image() {
         let dir = tempfile::tempdir().unwrap();
         let paths = RunToolPaths {
@@ -5206,6 +5236,7 @@ mod corpus_tests {
             })
             .collect();
         let expected: BTreeMap<_, _> = [
+            ("property-deep-array.pdf", "A resource limit was exceeded."),
             (
                 "content-executable-containers.pdf",
                 "A resource limit was exceeded.",

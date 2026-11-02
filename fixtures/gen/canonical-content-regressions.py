@@ -35,3 +35,5 @@ pattern = stream(b"q\x80Q", b"/Type /Pattern /PatternType 1 /PaintType 1 /Tiling
 annotation = b"<< /Type /Annot /Subtype /Stamp /Rect [0 0 10 10] /AP << /N << /On 8 0 R >> >> >>"
 form = lambda: stream(b"q\xffQ", b"/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << >>")
 save("content-executable-containers.pdf", [catalog, pages, page, stream(b"q Q"), pattern, annotation, form(), form()])
+save("property-array.pdf", [catalog, pages, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << >> /Contents 4 0 R >>", stream(b"/Artifact << /Attached [/Top] /Type /Pagination /Subtype /Header >> BDC EMC")])
+save("property-deep-array.pdf", [catalog, pages, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << >> /Contents 4 0 R >>", stream(b"/Artifact << /Attached [[/Top]] >> BDC EMC")])

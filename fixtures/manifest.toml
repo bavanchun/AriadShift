@@ -5188,3 +5188,41 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "property-array-pdf"
+path = "fixtures/pdf/property-array.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic marked-content property dictionary"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "7f5fe743d1e8ec72e66c2e2913aebac233d8c39127685269b0cf0951e69543b9"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "property-deep-array-pdf"
+path = "fixtures/pdf/property-deep-array.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic marked-content property dictionary"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-content-regressions.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "1d7aa639408cb7f0d91451012b366018e72fcd0b2a7860e44a5e6f4cdcd80a86"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

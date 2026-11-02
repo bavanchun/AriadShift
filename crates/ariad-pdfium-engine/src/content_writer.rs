@@ -25,7 +25,11 @@ fn scalar(token: &[u8]) -> bool {
             .is_some_and(|b| b.is_ascii_digit() || b"+-.".contains(b))
 }
 
-fn write_operand(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), EngineFailure> {
+fn write_operand(
+    out: &mut Vec<u8>,
+    bytes: &[u8],
+    property_array: bool,
+) -> Result<(), EngineFailure> {
     let mut source = bytes.to_vec();
     source.extend_from_slice(b" q");
     let content = Content::decode(&source).map_err(|_| EngineFailure::limit_exceeded())?;
@@ -33,14 +37,49 @@ fn write_operand(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), EngineFailure> {
         return Err(EngineFailure::limit_exceeded());
     }
     let object = &content.operations[0].operands[0];
-    write_content_object(out, object)
+    write_content_object_inner(out, object, property_array)
 }
 
 pub(crate) fn write_content_object(
     out: &mut Vec<u8>,
     object: &Object,
 ) -> Result<(), EngineFailure> {
-    validate_object(object, 0)?;
+    write_content_object_inner(out, object, false)
+}
+
+fn write_content_object_inner(
+    out: &mut Vec<u8>,
+    object: &Object,
+    property_array: bool,
+) -> Result<(), EngineFailure> {
+    if property_array {
+        let Object::Dictionary(dict) = object else {
+            return Err(EngineFailure::limit_exceeded());
+        };
+        for (key, value) in dict.iter() {
+            if !safe_name(&[b"/".as_slice(), key].concat()) {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            if let Object::Array(items) = value {
+                for item in items {
+                    if !matches!(
+                        item,
+                        Object::Name(_)
+                            | Object::Integer(_)
+                            | Object::Real(_)
+                            | Object::String(_, _)
+                    ) {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
+                    validate_object(item, 2)?;
+                }
+            } else {
+                validate_object(value, 1)?;
+            }
+        }
+    } else {
+        validate_object(object, 0)?;
+    }
     fn write_value(out: &mut Vec<u8>, object: &Object) -> Result<(), EngineFailure> {
         match object {
             Object::Array(items) => {
@@ -108,6 +147,7 @@ pub(crate) fn emit_token(
         let is_dict = token == b"<<";
         let mut key = is_dict;
         let mut keys = std::collections::HashSet::new();
+        let mut property_array = false;
         loop {
             let before = *cursor;
             let (s, e) =
@@ -120,6 +160,25 @@ pub(crate) fn emit_token(
                 }
                 break;
             }
+            if is_dict && !key && part == b"[" {
+                property_array = true;
+                loop {
+                    let before = *cursor;
+                    let (a, b) = next_content_token(bytes, cursor)?
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    validate_gap(&bytes[before..a])?;
+                    let item = &bytes[a..b];
+                    if item == b"]" {
+                        break;
+                    }
+                    if !scalar(item) || matches!(item, b"true" | b"false" | b"null") {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
+                    validate_token(item)?;
+                }
+                key = true;
+                continue;
+            }
             if !scalar(part) || (is_dict && key && (!safe_name(part) || !keys.insert(part))) {
                 return Err(EngineFailure::limit_exceeded());
             }
@@ -128,10 +187,19 @@ pub(crate) fn emit_token(
                 key = !key;
             }
         }
-        write_operand(out, &bytes[start..*cursor])?;
+        if property_array {
+            let mut lookahead = *cursor;
+            let (s, e) = next_content_token(bytes, &mut lookahead)?
+                .ok_or_else(EngineFailure::limit_exceeded)?;
+            validate_gap(&bytes[*cursor..s])?;
+            if !matches!(&bytes[s..e], b"BDC" | b"DP") {
+                return Err(EngineFailure::limit_exceeded());
+            }
+        }
+        write_operand(out, &bytes[start..*cursor], property_array)?;
     } else if scalar(token) {
         validate_token(token)?;
-        write_operand(out, token)?;
+        write_operand(out, token, false)?;
     } else {
         validate_token(token)?;
         if token.is_empty()
@@ -174,6 +242,34 @@ pub(crate) fn validate_gap(bytes: &[u8]) -> Result<(), EngineFailure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn property_arrays_only_allow_scalar_values_before_marked_content() {
+        for input in [
+            b"<< /Attached [/Top 1 (x) <79>] >> BDC".as_slice(),
+            b"<< /Attached [/Top] >> DP",
+        ] {
+            let mut cursor = 0;
+            let (start, end) = next_content_token(input, &mut cursor).unwrap().unwrap();
+            let mut output = Vec::new();
+            emit_token(input, start, end, &mut cursor, &mut output).unwrap();
+            assert!(
+                output.windows(4).any(|w| w == b"<78>") || output.windows(4).any(|w| w == b"/Top")
+            );
+        }
+        for input in [
+            b"<< /K [[/A]] >> BDC".as_slice(),
+            b"<< /K [<< /A 1 >>] >> BDC",
+            b"<< /K << /A 1 >> >> BDC",
+            b"<< /K [true] >> BDC",
+            b"<< /K [/A] >> q",
+            b"[[/A]] TJ",
+        ] {
+            let mut cursor = 0;
+            let (start, end) = next_content_token(input, &mut cursor).unwrap().unwrap();
+            assert!(emit_token(input, start, end, &mut cursor, &mut Vec::new()).is_err());
+        }
+    }
 
     #[test]
     fn writes_simple_operands_and_rejects_ambiguous_structure() {
