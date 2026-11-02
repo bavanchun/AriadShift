@@ -1,5 +1,6 @@
 //! Per-file tool specification lists concatenated into the global tool registry.
 
+pub mod optimize;
 pub mod organize_document;
 pub mod organize_geometry;
 pub mod organize_info;
@@ -7,6 +8,7 @@ pub mod organize_layout;
 pub mod organize_pages;
 pub mod organize_sequence;
 pub mod pdfium;
+pub mod security;
 
 use crate::tools::ToolSpec;
 
