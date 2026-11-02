@@ -384,3 +384,37 @@ refused. The implementation preserves that documented behaviour; accepting
 those controls would contradict the execution limit. The regression test
 checks all eight round-5 files are refused. The earlier graph/control regression test also passed; it permits some controls
 to be refused and therefore does not prove acceptance of every control.
+
+## Selected-page budgeting and follow-up regressions
+
+The manager confirmed the four resource-scope controls above are supposed to be
+refused because they exceed the execution budget. Their rejection is correct.
+
+Canonical re-emission and classification still inspect the whole document. Page
+preflight and execution totals now apply to the pages the tool will execute;
+rendering, thumbnails, image extraction, text layout, and whitespace cropping
+pass their page selections to preflight. The 1,500-page generated regression
+renders page one and rejects selecting all pages at the execution ceiling.
+
+Soft-mask groups resolve against the actual page resources, including when a
+Type3 glyph has a different fallback scope. Scoped stream and glyph costs are
+memoized with the active call set and depth in the key, preserving cycle and
+depth checks. Resource category maps are shared. The 64-font, 64-glyph,
+1,000-call timing test completes under one second and reaches the cost limit.
+
+Regression tests cover an unclassified appearance in an indirect annotation
+array, mixed Form/Pattern/soft-mask chains at the depth boundary, and real
+PDFium inline-image boundaries for Flate, RunLength, LZW EarlyChange 0 and 1,
+ASCIIHex whitespace, and ASCII85 `z`. Flate data with non-whitespace bytes
+following the zlib end is refused. `docs/tools.md` describes the relevant
+limits and classification refusals.
+
+Verification: `cargo fmt --all --check`, `cargo clippy --locked -p
+ariad-pdfium-engine --all-targets -- -D warnings`, and `cargo test --locked -p
+ariad-pdfium-engine` passed via the shared build lock; tests used the PDFium
+pack and a 2 GiB systemd scope. The fixture corpus passed with 102 PDFs, 42
+expected refusals, and no new real-document refusals. The available earlier
+external corpora, nine content-container samples, both remaining round-4
+samples, and all eight round-5 samples were checked; the round-5 samples and
+controls were refused on both validation and extraction paths. The earlier
+graph/control test passed. No independent delta review was performed here.
