@@ -36,9 +36,12 @@ pub fn run(ctx: &mut ToolContext<'_>, params: RemoveBlankParams) -> ToolResult {
         .map_err(|err| EngineFailure::owned(ErrorCode::InvalidRequest, err.to_string()))?;
 
     let bytes = read_bounded_input(ctx)?;
-    let structural_doc = open_structural_pdf(ctx, &bytes)?;
+    let mut structural_doc = open_structural_pdf(ctx, &bytes)?;
+    ctx.warn_repaired_xref(&structural_doc)?;
+    let canonical = crate::canonical::canonicalize(ctx, &mut structural_doc, bytes.len())?;
+    drop(bytes);
     let (blank_pages, white_ratios) =
-        detect_blank_pages_in_bytes(ctx, &bytes, params.dpi, params.threshold)?;
+        detect_blank_pages_in_bytes(ctx, &canonical, params.dpi, params.threshold)?;
 
     let pages_before = u32::try_from(white_ratios.len()).unwrap_or(u32::MAX);
     if blank_pages.len() == white_ratios.len() {
@@ -131,9 +134,12 @@ pub fn split_pixel(ctx: &mut ToolContext<'_>, params: &Value) -> ToolResult {
     split_params.validate()?;
 
     let bytes = read_bounded_input(ctx)?;
-    let structural_doc = open_structural_pdf(ctx, &bytes)?;
+    let mut structural_doc = open_structural_pdf(ctx, &bytes)?;
+    ctx.warn_repaired_xref(&structural_doc)?;
+    let canonical = crate::canonical::canonicalize(ctx, &mut structural_doc, bytes.len())?;
+    drop(bytes);
     let (blank_pages, white_ratios) =
-        detect_blank_pages_in_bytes(ctx, &bytes, split_params.dpi, split_params.threshold)?;
+        detect_blank_pages_in_bytes(ctx, &canonical, split_params.dpi, split_params.threshold)?;
 
     if blank_pages.len() == white_ratios.len() {
         return Err(EngineFailure::new(
@@ -174,8 +180,12 @@ pub fn page_white_ratios(ctx: &mut ToolContext<'_>, dpi: u32) -> Result<Vec<f64>
         return Err(EngineFailure::invalid_request());
     }
     let bytes = read_bounded_input(ctx)?;
-    let _ = open_structural_pdf(ctx, &bytes)?;
-    let (_, ratios) = detect_blank_pages_in_bytes(ctx, &bytes, dpi, DEFAULT_THRESHOLD)?;
+    let mut doc = open_structural_pdf(ctx, &bytes)?;
+    ctx.warn_repaired_xref(&doc)?;
+    let canonical = crate::canonical::canonicalize(ctx, &mut doc, bytes.len())?;
+    drop(bytes);
+    drop(doc);
+    let (_, ratios) = detect_blank_pages_in_bytes(ctx, &canonical, dpi, DEFAULT_THRESHOLD)?;
     Ok(ratios)
 }
 
@@ -190,8 +200,12 @@ pub fn detect_blank_pages(
         .validate()
         .map_err(|err| EngineFailure::owned(ErrorCode::InvalidRequest, err.to_string()))?;
     let bytes = read_bounded_input(ctx)?;
-    let _ = open_structural_pdf(ctx, &bytes)?;
-    detect_blank_pages_in_bytes(ctx, &bytes, dpi, threshold)
+    let mut doc = open_structural_pdf(ctx, &bytes)?;
+    ctx.warn_repaired_xref(&doc)?;
+    let canonical = crate::canonical::canonicalize(ctx, &mut doc, bytes.len())?;
+    drop(bytes);
+    drop(doc);
+    detect_blank_pages_in_bytes(ctx, &canonical, dpi, threshold)
 }
 
 pub(crate) fn detect_blank_pages_in_bytes(
@@ -383,7 +397,8 @@ pub(crate) fn read_bounded_input(ctx: &ToolContext<'_>) -> Result<Vec<u8>, Engin
     {
         return Err(EngineFailure::limit_exceeded());
     }
-    let bytes = fs::read(ctx.input()).map_err(|_| EngineFailure::io())?;
+    let mut bytes = fs::read(ctx.input()).map_err(|_| EngineFailure::io())?;
+    crate::canonical::normalize_zero_prev(ctx, &mut bytes)?;
     if let Some(max_bytes) = ctx.limits().max_input_bytes
         && (bytes.len() as u64) > max_bytes
     {

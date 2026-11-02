@@ -125,8 +125,9 @@ pub(crate) fn read_and_preflight_pdf(
     {
         return Err(EngineFailure::limit_exceeded());
     }
-    let bytes = fs::read(input_path).map_err(|_| EngineFailure::io())?;
+    let mut bytes = fs::read(input_path).map_err(|_| EngineFailure::io())?;
     ctx.check()?;
+    crate::canonical::normalize_zero_prev(ctx, &mut bytes)?;
     if has_encrypt_in_trailer(&bytes) {
         return Err(EngineFailure::new(
             ErrorCode::EngineFailure,
@@ -250,10 +251,18 @@ pub fn run_with_char_limit(
     params: TextLayoutParams,
     max_chars: usize,
 ) -> ToolResult {
-    let (bytes, _lopdf_doc) = read_and_preflight_pdf(ctx)?;
+    let (bytes, mut lopdf_doc) = read_and_preflight_pdf(ctx)?;
+    ctx.warn_repaired_xref(&lopdf_doc)?;
+    let canonical = crate::canonical::canonicalize_selected(
+        ctx,
+        &mut lopdf_doc,
+        bytes.len(),
+        Some(&params.pages),
+    )?;
+    drop(bytes);
     let pdfium = ctx.pdfium()?;
     let doc = pdfium
-        .load_pdf_from_byte_slice(&bytes, None)
+        .load_pdf_from_byte_slice(&canonical, None)
         .map_err(map_pdfium_error)?;
 
     let total_pages =
@@ -264,7 +273,6 @@ pub fn run_with_char_limit(
             "The PDF has no pages.",
         ));
     }
-    ctx.check_page_count(total_pages)?;
 
     let selected_pages = expand_pages(&params.pages, total_pages)?;
     ctx.check_page_count(selected_pages.len())?;

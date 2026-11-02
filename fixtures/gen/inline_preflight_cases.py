@@ -5,6 +5,8 @@ import zlib
 cases = {
     'inline-conflicting-keys.pdf': b'BI /Width 1 /W 20000 /H 20000 /BPC 8 /CS /G /F /AHx ID 00> EI',
     'inline-flate-oversized.pdf': b'BI /W 1 /H 1 /BPC 8 /CS /G /F /Fl ID ' + zlib.compress(bytes(4096)) + b' EI',
+    'inline-hex-key-render.pdf': b'BI /W 1 /H 1 /BPC 8 /CS /RGB /F /AHx /#57 1 /#46 /CCF ID FF0000> EI',
+    'inline-hex-key-bomb.pdf': b'BI /W 7200 /H 7200 /BPC 8 /CS /G /F /Fl /#57 1 /#48 1 /#46 /CCF ID ' + zlib.compress(bytes(7200 * 7200)) + b' EI',
 }
 for name, content in cases.items():
     objects = [b'<< /Type /Catalog /Pages 2 0 R >>', b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>', b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Contents 4 0 R >>', b'<< /Length %d >>\nstream\n' % len(content) + content + b'\nendstream']

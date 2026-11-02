@@ -143,6 +143,12 @@ jobs:
           second=$(cd "$RUNNER_TEMP/pack-rebuild" && { sha256sum ./*.tar.zst 2>/dev/null || shasum -a 256 ./*.tar.zst; })
           [ "${first%% *}" = "${second%% *}" ] || { echo "component bytes differ between builds" >&2; exit 1; }
 
+      - name: Verify macOS render goldens
+        if: matrix.slug == 'mac-arm64'
+        env:
+          ARIAD_TEST_PDFIUM_DIR: ${{ env.PACK_DEV }}/bin
+        run: cargo test --locked -p ariad-pdfium-engine --test render golden_renders_match_embedded_font_document_pages_1_and_2
+
       # The engine must find libpdfium next to itself and answer a describe request.
       - name: Smoke test the engine on the runner
         if: "!matrix.musl"
