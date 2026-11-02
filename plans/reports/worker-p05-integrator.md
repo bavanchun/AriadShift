@@ -58,7 +58,7 @@ The pre-encoder host gate also ran 195 host unit tests successfully before its c
 - In `fuzz/`, `cargo check --features pdf-reader` and `cargo fmt --all --check`: passed; this enables and builds the phase-5 structural cases.
 - Frozen v1 protocol and pack schemas match `origin/dev` byte for byte.
 
-These results precede the integration of s2b and are not a final gate.
+The focused tests above precede the integration of s2b and are not a final gate. Subsequent checks on the integrated tree passed `licenses-check`, `deny`, `spell`, the registry snapshot test and the `wasm32-unknown-unknown` check. The first notice generation failed on a missing workspace dependency; installing the frozen pnpm lockfile and running the normal web build supplied the required bundle analysis, after which notice generation and `licenses-check` passed. The web build took 5m44s. Logs are in the main checkout under `.run/coord/p05/integrator-logs/`.
 
 Additional pre-final checks after merging s2b: the specified five-package clippy command passed with `-D warnings` in 35 seconds; `just pack-tooling-test` passed 55 checks; `scripts/test-pack-qpdf.sh` passed against the real development pack. The host pack verification, PDFium sandbox, qpdf adapter and qpdf secret test binaries passed 27 tests, including the signed-manifest executable checks and Linux child confinement. The development qpdf binary reports 12.4.2. Logs are under `.run/coord/p05/integrator-logs/` in the main checkout. These checks must be repeated if subsequent source changes affect them.
 
