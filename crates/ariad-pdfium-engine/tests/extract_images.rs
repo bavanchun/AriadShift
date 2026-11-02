@@ -1665,3 +1665,163 @@ fn resource_scope_corpus_is_refused() {
     }
     assert_eq!(count, 8);
 }
+
+fn pdf_with_content(content: &[u8]) -> Vec<u8> {
+    assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << >> /Contents 4 0 R >>"
+            .to_vec(),
+        stream_object("", content),
+    ])
+}
+
+#[test]
+fn indirect_annotation_appearance_without_classification_is_refused() {
+    let input = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << >> /Contents 4 0 R /Annots 5 0 R >>".to_vec(),
+        stream_object("", b"q Q"),
+        b"[ << /Type /Annot /Subtype /Stamp /Rect [0 0 10 10] /AP << /N 6 0 R >> >> ]".to_vec(),
+        stream_object("", b"q Q"),
+    ]);
+    let ws = TestWorkspace::from_bytes("appearance.pdf", &input);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "appearance",
+        "pdf.render",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    );
+    let err = ctx
+        .load_validated_pdf_bytes()
+        .expect_err("unclassified appearance must be refused");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn nested_form_pattern_and_mask_depth_is_enforced_before_pdfium() {
+    use lopdf::{Document, Object, Stream, dictionary};
+    let lib_dir = require_pdfium!();
+    for depth in [8, 9] {
+        let mut doc = Document::with_version("1.4");
+        let pages = doc.new_object_id();
+        let leaf_dict = if depth % 3 == 1 {
+            dictionary! { "Type" => "Pattern", "PatternType" => 1, "PaintType" => 1, "TilingType" => 1, "BBox" => vec![0.into(),0.into(),10.into(),10.into()], "XStep" => 10, "YStep" => 10 }
+        } else {
+            dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => vec![0.into(),0.into(),10.into(),10.into()] }
+        };
+        let leaf = doc.add_object(Stream::new(leaf_dict, b"0 0 1 1 re f".to_vec()));
+        let mut next = leaf;
+        for i in (1..depth).rev() {
+            let bbox = vec![0.into(), 0.into(), 10.into(), 10.into()];
+            let (dict, content) = match i % 3 {
+                0 => (
+                    dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => bbox, "Resources" => dictionary! { "Pattern" => dictionary! { "P" => Object::Reference(next) } } },
+                    b"/Pattern cs /P scn 0 0 1 1 re f".to_vec(),
+                ),
+                1 => (
+                    dictionary! { "Type" => "Pattern", "PatternType" => 1, "PaintType" => 1, "TilingType" => 1, "BBox" => bbox, "XStep" => 10, "YStep" => 10, "Resources" => dictionary! { "XObject" => dictionary! { "F" => Object::Reference(next) } } },
+                    b"/F Do".to_vec(),
+                ),
+                _ => (
+                    dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => bbox, "Resources" => dictionary! { "ExtGState" => dictionary! { "GS" => dictionary! { "Type" => "ExtGState", "SMask" => dictionary! { "S" => "Alpha", "G" => Object::Reference(next) } } } } },
+                    b"/GS gs".to_vec(),
+                ),
+            };
+            next = doc.add_object(Stream::new(dict, content));
+        }
+        // The outer resource operation matches the kind of its target.
+        let root = b"/Pattern cs /P scn 0 0 1 1 re f".to_vec();
+        let content = doc.add_object(Stream::new(dictionary! {}, root));
+        let page = doc.add_object(dictionary! { "Type" => "Page", "Parent" => Object::Reference(pages), "MediaBox" => vec![0.into(),0.into(),10.into(),10.into()], "Contents" => Object::Reference(content), "Resources" => dictionary! { "Pattern" => dictionary! { "P" => Object::Reference(next) } } });
+        doc.objects.insert(pages, Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1 }));
+        let catalog = doc
+            .add_object(dictionary! { "Type" => "Catalog", "Pages" => Object::Reference(pages) });
+        doc.trailer.set("Root", Object::Reference(catalog));
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).unwrap();
+        let ws = TestWorkspace::from_bytes("depth.pdf", &bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("depth", "pdf.render", ws.paths, Limits::local(), &mut sink)
+            .with_library_dir(&lib_dir);
+        let result = ctx.load_validated_pdf_bytes();
+        if depth == 9 {
+            assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+        } else {
+            let bytes = result.expect("eight levels must be accepted");
+            let pdfium = ctx.pdfium().unwrap();
+            let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).unwrap();
+            doc.pages()
+                .get(0)
+                .unwrap()
+                .render_with_config(&PdfRenderConfig::new().set_target_size(10, 10))
+                .unwrap();
+        }
+    }
+}
+
+#[test]
+fn inline_filter_payload_boundaries_match_pdfium() {
+    use std::io::Write;
+    let lib_dir = require_pdfium!();
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&[0; 4]).unwrap();
+    let flate = encoder.finish().unwrap();
+    let mut trailing = flate.clone();
+    trailing.extend_from_slice(b"XYZ");
+    let samples: Vec<(&str, Vec<u8>, bool)> = vec![
+        ("/Filter /FlateDecode", flate, false),
+        ("/Filter /FlateDecode", trailing, true),
+        ("/Filter /RunLengthDecode", vec![253, 0, 128], false),
+        (
+            "/Filter /LZWDecode /DecodeParms << /EarlyChange 0 >>",
+            vec![0x80, 0, 0, 0, 0, 4, 4],
+            false,
+        ),
+        (
+            "/Filter /LZWDecode /DecodeParms << /EarlyChange 1 >>",
+            vec![0x80, 0, 0, 0, 0, 4, 4],
+            false,
+        ),
+        ("/Filter /ASCIIHexDecode", b"00 00\n00 00 >".to_vec(), false),
+        ("/Filter /ASCII85Decode", b"z~>".to_vec(), false),
+    ];
+    let render = |pdfium: &Pdfium, bytes: &[u8]| {
+        let doc = pdfium.load_pdf_from_byte_slice(bytes, None).unwrap();
+        doc.pages()
+            .get(0)
+            .unwrap()
+            .render_with_config(&PdfRenderConfig::new().set_target_size(40, 40))
+            .unwrap()
+            .as_rgba_bytes()
+    };
+    for (filter, data, must_refuse) in samples {
+        let mut content = format!("q 1 0 0 1 20 20 cm BI /Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceGray {filter} ID ").into_bytes();
+        content.extend_from_slice(&data);
+        content.extend_from_slice(b" EI Q 0 0 0 rg 1 1 8 8 re f");
+        let input = pdf_with_content(&content);
+        let ws = TestWorkspace::from_bytes("inline.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx =
+            ToolContext::new("inline", "pdf.render", ws.paths, Limits::local(), &mut sink)
+                .with_library_dir(&lib_dir);
+        let canonical = ctx.load_validated_pdf_bytes();
+        if must_refuse {
+            assert_eq!(
+                canonical.unwrap_err().code,
+                ErrorCode::LimitExceeded,
+                "{filter}"
+            );
+            continue;
+        }
+        let canonical = canonical.unwrap_or_else(|err| panic!("{filter}: {err:?}"));
+        let pdfium = ctx.pdfium().unwrap();
+        let control = pdf_with_content(b"0 0 0 rg 1 1 8 8 re f");
+        let expected = render(&pdfium, &control);
+        assert_eq!(render(&pdfium, &input), expected, "original {filter}");
+        assert_eq!(render(&pdfium, &canonical), expected, "canonical {filter}");
+    }
+}

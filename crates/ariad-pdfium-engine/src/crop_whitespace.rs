@@ -42,7 +42,12 @@ pub fn run(ctx: &mut ToolContext<'_>, params: CropWhitespaceParams) -> ToolResul
     ctx.warn_repaired_xref(&pdf_doc)?;
     let pdf_info = info::from_doc(&pdf_doc).map_err(map_pdf_error)?;
     let page_count = pdf_info.page_count;
-    let canonical = crate::canonical::canonicalize(ctx, &mut pdf_doc, bytes.len())?;
+    let canonical = crate::canonical::canonicalize_selected(
+        ctx,
+        &mut pdf_doc,
+        bytes.len(),
+        Some(&params.pages),
+    )?;
     drop(bytes);
     drop(pdf_doc);
 
