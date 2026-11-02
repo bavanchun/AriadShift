@@ -81,6 +81,7 @@ jobs:
             docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/qpdf-input:/input:ro" -v "$RUNNER_TEMP/qpdf-output:/output" "$IMAGE" \
               bash -c 'bash /work/engines/qpdf/pack/record-inputs.sh /output/receipt && bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output'
           fi
+          (cd "$RUNNER_TEMP/qpdf-output" && sha256sum bin/qpdf > receipt/qpdf-sha256.txt)
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/qpdf-output"
       - name: Upload Linux input receipts
         if: runner.os == 'Linux'
@@ -158,7 +159,7 @@ jobs:
       - name: Require approval and stable branch ancestry
         run: |
           git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends minisign zstd
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: qpdf-pack-*
@@ -181,7 +182,7 @@ jobs:
             printf '%s  %s\n' "$digest" "sources/$name" | sha256sum --check
           done < engines/qpdf/pack/runtime-sources.txt
       - name: Verify release evidence
-        run: bash engines/qpdf/pack/check-release.sh receipts sources
+        run: bash engines/qpdf/pack/check-release.sh receipts sources pack-dist
       - name: Archive receipts
         run: |
           for dir in receipts/qpdf-input-receipts-*; do

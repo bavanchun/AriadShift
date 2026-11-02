@@ -2,8 +2,8 @@
 # Fail closed unless the exact component review explicitly records approval.
 set -euo pipefail
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
-python3 - "$here/licence-review.toml" "$here/runtime-sources.txt" "${1:-}" "${2:-}" <<'PY'
-import pathlib, sys, tomllib
+python3 - "$here/licence-review.toml" "$here/runtime-sources.txt" "${1:-}" "${2:-}" "${3:-}" "$here/targets.txt" <<'PY'
+import pathlib, subprocess, sys, tomllib
 p = pathlib.Path(sys.argv[1])
 try:
     review = tomllib.loads(p.read_text())
@@ -22,9 +22,9 @@ try:
         raise ValueError('review is pending or does not match the approved component')
     import hashlib
     source_manifest = pathlib.Path(sys.argv[2]).read_bytes()
-    receipts, sources = pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4])
-    if not sys.argv[3] or not sys.argv[4]:
-        raise ValueError('receipt and source directories are required')
+    receipts, sources, packdir = map(pathlib.Path, sys.argv[3:6])
+    if not all(sys.argv[3:6]):
+        raise ValueError('receipt, source and pack directories are required')
     entries = [line.split() for line in source_manifest.decode().splitlines()]
     if len(entries) != 5 or any(len(entry) != 3 for entry in entries):
         raise ValueError('invalid source manifest')
@@ -41,8 +41,23 @@ try:
         'linux-musl-x64': ['d1d482472ed91240731c60dbae8176bc1e32e1dfb694856da6759f6d32716325', '563244a562f5c48b921f7f0b4a571e373cfcba65175fe2d4f752c5f975738bcd', '62ce308cdbf127dcac6eee1520a4ffec8dc98b30974653908842fe4cc7d90b43', '310b51cff12e1d5ce5f135c558a82e2550427da5465bbd16c9ff9b05e63ee3d9'],
         'linux-musl-arm64': ['ff3fecfc32c9a1bed4a47a32ccfee6f6f575708258f912c218dce8ed0d892221', '2ec3dc4be953d842cc51193248367d86829ed699a1ed094fb5149b1b3fc62919', '8385c811d93b64ee1877005a5473cde8ebabe82d346301f2b153ff8cb6a71510', '45afe0a9f78de3402b6b5d11f5153ed955bf59d59b45344d9c3fed9f4bbf2f66'],
     }
+    triples = {line.split()[0]: line.split()[1] for line in pathlib.Path(sys.argv[6]).read_text().splitlines() if line and not line.startswith('#')}
+    manifest = tomllib.loads((packdir / 'pack.toml').read_text())
     for platform, (image, gcc, stdcpp, libgcc) in platforms.items():
         receipt = receipts / f'qpdf-input-receipts-{platform}'
+        targets = [t for t in manifest['targets'] if t['triple'] == triples[platform]]
+        if len(targets) != 1:
+            raise ValueError(f'pack target mismatch: {platform}')
+        components = [c for c in targets[0]['components'] if c['name'] == 'engine']
+        if len(components) != 1:
+            raise ValueError(f'pack component mismatch: {platform}')
+        component = components[0]
+        archive = packdir / pathlib.Path(component['url']).name
+        if hashlib.sha256(archive.read_bytes()).hexdigest() != component['sha256']:
+            raise ValueError(f'pack archive hash mismatch: {platform}')
+        binary = subprocess.run(['tar', '--zstd', '-xOf', str(archive), 'bin/qpdf'], check=True, capture_output=True).stdout
+        if (receipt / 'qpdf-sha256.txt').read_text().split() != [hashlib.sha256(binary).hexdigest(), 'bin/qpdf']:
+            raise ValueError(f'qpdf hash mismatch: {platform}')
         if (receipt / 'runtime-sources.txt').read_bytes() != source_manifest:
             raise ValueError(f'source receipt mismatch: {platform}')
         if not (receipt / 'image.txt').read_text().strip().endswith('@sha256:' + image):
@@ -59,6 +74,6 @@ try:
         runtime = (receipt / 'runtime-sha256.txt').read_text().splitlines()
         if len(runtime) != 2 or runtime[0].split()[0] != libgcc or runtime[1].split()[0] != stdcpp:
             raise ValueError(f'runtime hash mismatch: {platform}')
-except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
+except (OSError, ValueError, KeyError, subprocess.CalledProcessError, tomllib.TOMLDecodeError) as exc:
     sys.exit(f'qpdf release refused: {exc}')
 PY

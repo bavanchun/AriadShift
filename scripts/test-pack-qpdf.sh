@@ -16,10 +16,11 @@ if bash "$repo/engines/qpdf/pack/check-release.sh" >/dev/null 2>&1; then
     echo 'committed incomplete runtime review was accepted' >&2; exit 1
 fi
 cp "$repo/engines/qpdf/pack/check-release.sh" "$tmp/check-release.sh"
+cp "$repo/engines/qpdf/pack/targets.txt" "$tmp/targets.txt"
 cp "$repo/engines/qpdf/pack/licence-review.toml" "$tmp/licence-review.toml"
-mkdir -p "$tmp/sources" "$tmp/receipts"
+mkdir -p "$tmp/sources" "$tmp/receipts" "$tmp/packdir"
 python3 - "$tmp" <<'PYTEST'
-import hashlib, pathlib, sys
+import hashlib, pathlib, subprocess, sys
 root = pathlib.Path(sys.argv[1])
 entries = []
 for i in range(5):
@@ -39,18 +40,27 @@ apk_hashes = {
     'linux-musl-x64': ['d1d482472ed91240731c60dbae8176bc1e32e1dfb694856da6759f6d32716325', '563244a562f5c48b921f7f0b4a571e373cfcba65175fe2d4f752c5f975738bcd', '62ce308cdbf127dcac6eee1520a4ffec8dc98b30974653908842fe4cc7d90b43', '310b51cff12e1d5ce5f135c558a82e2550427da5465bbd16c9ff9b05e63ee3d9'],
     'linux-musl-arm64': ['ff3fecfc32c9a1bed4a47a32ccfee6f6f575708258f912c218dce8ed0d892221', '2ec3dc4be953d842cc51193248367d86829ed699a1ed094fb5149b1b3fc62919', '8385c811d93b64ee1877005a5473cde8ebabe82d346301f2b153ff8cb6a71510', '45afe0a9f78de3402b6b5d11f5153ed955bf59d59b45344d9c3fed9f4bbf2f66'],
 }
+targets = {line.split()[0]: line.split()[1] for line in (root / 'targets.txt').read_text().splitlines() if line and not line.startswith('#')}
+manifest_lines = []
+(root / 'bin').mkdir()
+(root / 'bin/qpdf').write_bytes(b'qpdf fixture')
 for slug, (image, gcc, stdcpp, libgcc) in platforms.items():
+    archive = root / 'packdir' / f'{slug}.tar.zst'
+    subprocess.run(['tar', '--zstd', '-cf', str(archive), '-C', str(root), 'bin/qpdf'], check=True)
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    manifest_lines.append(f'[[targets]]\ntriple = "{targets[slug]}"\n[[targets.components]]\nname = "engine"\nurl = "{archive.name}"\nsha256 = "{digest}"\n')
     d = root / 'receipts' / f'qpdf-input-receipts-{slug}'
     d.mkdir()
-    for name, value in {'image.txt': f'image@sha256:{image}', 'image-id.txt': 'sha256:abc', 'gcc-version.txt': gcc, 'packages.txt': 'package', 'package-sha256.txt': ''.join(f'{h} package\n' for h in apk_hashes.get(slug, ['hash'])), 'runtime-sha256.txt': f'{libgcc}  libgcc.a\n{stdcpp}  libstdc++.a\n', 'runtime-sources.txt': manifest}.items():
+    for name, value in {'image.txt': f'image@sha256:{image}', 'image-id.txt': 'sha256:abc', 'gcc-version.txt': gcc, 'packages.txt': 'package', 'package-sha256.txt': ''.join(f'{h} package\n' for h in apk_hashes.get(slug, ['hash'])), 'runtime-sha256.txt': f'{libgcc}  libgcc.a\n{stdcpp}  libstdc++.a\n', 'runtime-sources.txt': manifest, 'qpdf-sha256.txt': f'{hashlib.sha256(b"qpdf fixture").hexdigest()}  bin/qpdf\n'}.items():
         (d / name).write_text(value)
+(root / 'packdir/pack.toml').write_text(''.join(manifest_lines))
 PYTEST
 python3 - "$tmp/licence-review.toml" <<'PY'
 import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 p.write_text(p.read_text().replace('pending_owner_approval = true', 'pending_owner_approval = false'))
 PY
-if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" >/dev/null 2>&1; then
+if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" "$tmp/packdir" >/dev/null 2>&1; then
     echo 'incomplete runtime review was accepted' >&2; exit 1
 fi
 python3 - "$tmp/licence-review.toml" <<'PY'
@@ -58,19 +68,24 @@ import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 p.write_text(p.read_text().replace('runtime_review_complete = false', 'runtime_review_complete = true'))
 PY
-bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources"
+bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" "$tmp/packdir"
+printf 'wrong  bin/qpdf\n' > "$tmp/receipts/qpdf-input-receipts-linux-x64/qpdf-sha256.txt"
+if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" "$tmp/packdir" >/dev/null 2>&1; then
+    echo 'qpdf hash mismatch was accepted' >&2; exit 1
+fi
+printf '%s  bin/qpdf\n' "$(printf 'qpdf fixture' | sha256sum | cut -d ' ' -f 1)" > "$tmp/receipts/qpdf-input-receipts-linux-x64/qpdf-sha256.txt"
 mv "$tmp/receipts/qpdf-input-receipts-linux-x64" "$tmp/missing-receipt"
-if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" >/dev/null 2>&1; then
+if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" "$tmp/packdir" >/dev/null 2>&1; then
     echo 'missing receipt was accepted' >&2; exit 1
 fi
 mv "$tmp/missing-receipt" "$tmp/receipts/qpdf-input-receipts-linux-x64"
 mv "$tmp/sources/source-0" "$tmp/missing-source"
-if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" >/dev/null 2>&1; then
+if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" "$tmp/packdir" >/dev/null 2>&1; then
     echo 'missing source was accepted' >&2; exit 1
 fi
 mv "$tmp/missing-source" "$tmp/sources/source-0"
 printf 'changed' > "$tmp/sources/source-0"
-if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" >/dev/null 2>&1; then
+if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" "$tmp/packdir" >/dev/null 2>&1; then
     echo 'source hash mismatch was accepted' >&2; exit 1
 fi
 printf 'source-0' > "$tmp/sources/source-0"
@@ -79,7 +94,7 @@ import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 p.write_text(p.read_text().replace('version = "3.2.1"', 'version = "3.2.0"'))
 PY
-if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" >/dev/null 2>&1; then
+if bash "$tmp/check-release.sh" "$tmp/receipts" "$tmp/sources" "$tmp/packdir" >/dev/null 2>&1; then
     echo 'mismatched component review was accepted' >&2; exit 1
 fi
 python3 - "$repo/engines/qpdf/pack/licence-review.toml" "$tmp" <<'PYTEST'
@@ -111,7 +126,7 @@ if review['sha256'] != source_hash or source_hash != build_hash:
 
 def check(text, accepted, label):
     review_path.write_text(text)
-    result = subprocess.run(['bash', str(directory / 'check-release.sh'), str(directory / 'receipts'), str(directory / 'sources')], capture_output=True)
+    result = subprocess.run(['bash', str(directory / 'check-release.sh'), str(directory / 'receipts'), str(directory / 'sources'), str(directory / 'packdir')], capture_output=True)
     if (result.returncode == 0) != accepted:
         sys.exit(f'{label}: unexpected release gate result')
 
