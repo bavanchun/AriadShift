@@ -1,6 +1,7 @@
 //! Secret handling at the CLI and host engine boundary.
 #[cfg(unix)]
 use ariad_core::tools::{SecretSource, specs::security};
+#[cfg(unix)]
 use ariad_host::tools::SecretBag;
 #[cfg(unix)]
 use ariad_host::tools::{InputRef, OutputTarget, ToolRequest, run_tool};
