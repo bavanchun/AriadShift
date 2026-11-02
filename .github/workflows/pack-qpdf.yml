@@ -69,15 +69,24 @@ jobs:
         if: runner.os == 'Linux'
         timeout-minutes: 10
         run: |
-          mkdir -p "$RUNNER_TEMP/qpdf-output"
+          mkdir -p "$RUNNER_TEMP/qpdf-output/receipt"
+          printf '%s\n' "$IMAGE" > "$RUNNER_TEMP/qpdf-output/receipt/image.txt"
           if [ '${{ matrix.kind }}' = musl ]; then
             docker run --rm -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/qpdf-input:/input:ro" -v "$RUNNER_TEMP/qpdf-output:/output" "$IMAGE" \
-              sh -c 'apk add --no-cache bash build-base cmake pkgconf binutils libgcc-static && bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output'
+              sh -c 'mkdir -p /output/receipt/apks && apk add --cache-dir /output/receipt/apks --cache-packages bash build-base cmake pkgconf binutils libgcc-static && apk fix --reinstall --cache-dir /output/receipt/apks --cache-packages $(apk info) && bash /work/engines/qpdf/pack/record-inputs.sh /output/receipt && bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output'
           else
             docker run --rm --network none -v "$GITHUB_WORKSPACE:/work:ro" -v "$RUNNER_TEMP/qpdf-input:/input:ro" -v "$RUNNER_TEMP/qpdf-output:/output" "$IMAGE" \
-              bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output
+              bash -c 'bash /work/engines/qpdf/pack/record-inputs.sh /output/receipt && bash /work/engines/qpdf/pack/compile-qpdf.sh /input/qpdf.tar.gz /input/jpeg.tar.gz /input/zlib.tar.gz /output'
           fi
           sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/qpdf-output"
+      - name: Upload Linux input receipts
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qpdf-input-receipts-${{ matrix.slug }}
+          path: ${{ runner.temp }}/qpdf-output/receipt/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
       - name: Build macOS qpdf
         if: runner.os == 'macOS'
         timeout-minutes: 10
