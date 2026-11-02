@@ -305,3 +305,49 @@ Assumptions: the round-5 grammar takes precedence over compatibility when the
 two cannot both be met without changing the specified serialization. No
 macOS or Windows runtime verification was performed; the earlier OS table is
 source inspection only.
+
+### Round 5 — answers implemented
+
+The Mac PM's subsequent decision supersedes the two open implementation
+points above. BDC and DP property dictionaries can contain one array of names,
+numbers or strings; other nested containers are refused. The generated
+`property-array.pdf` is accepted and re-emitted canonically, while
+`property-deep-array.pdf` is refused. The original Vietnamese document now
+passes preflight without removing its marked-content properties.
+
+The execution budget records resource references during token preflight. It
+resolves Form, tiling Pattern, ExtGState soft-mask and shading references in
+the applicable resource scope, charges each occurrence through nested streams,
+and refuses nesting beyond eight. Type3 glyph work includes the maximum glyph
+stream cost. Annotation appearances, including state dictionaries, are charged
+for each annotation on each page. The budget reports the computed cost when a
+page or document ceiling is exceeded. The existing nested-Form integration test
+now exercises eight levels; a separate test verifies refusal at nine.
+
+Final verification at `43e069c4`:
+
+- The requested fmt and clippy checks passed through the build lock. The full
+  `cargo test --locked -p ariad-pdfium-engine` passed under the 2 GiB scope
+  with the supplied PDFium pack, including Linux render goldens.
+- The ignored corpus test passed: 100 PDFs, including six new generated
+  fixtures; 40 expected refusals and zero unexpected refusals. None of the
+  original 94 files has a new refusal, so no new budget cost is reported.
+- The property fixtures, resource-reference accounting, repeated Pattern and
+  soft-mask costs, annotation multiplication, depth limit and unreferenced
+  image checks passed. Regenerating all six fixtures matched their manifest
+  hashes.
+- Four round-3 samples and nine named round-4 samples were refused on
+  validation and extraction with the 25-million-pixel limit. Both remaining
+  PDFs in the round-4 working directories were checked: the malformed
+  regression input was refused and the simple `q Q` control was accepted.
+  The old PDF directory scan and the graph/render-control test passed; the
+  explicitly accepted control cases remain accepted as the PM clarified.
+- Both implementation commits passed `committed`. The first full-suite run
+  exposed the prior 12-level success test, which was updated to exercise the
+  newly specified eight-level maximum; the final suite passed. Initial clippy
+  lifetime and type-complexity findings were corrected before the final run.
+
+Independent round-5 review remains the manager's separate next step. The
+per-platform sandbox table above is source inspection, not macOS or Windows
+runtime verification; the lack of a hard memory rlimit on those systems remains
+for the manager to track.
