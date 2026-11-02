@@ -42,6 +42,9 @@ try:
         'linux-musl-arm64': ['ff3fecfc32c9a1bed4a47a32ccfee6f6f575708258f912c218dce8ed0d892221', '2ec3dc4be953d842cc51193248367d86829ed699a1ed094fb5149b1b3fc62919', '8385c811d93b64ee1877005a5473cde8ebabe82d346301f2b153ff8cb6a71510', '45afe0a9f78de3402b6b5d11f5153ed955bf59d59b45344d9c3fed9f4bbf2f66'],
     }
     triples = {line.split()[0]: line.split()[1] for line in pathlib.Path(sys.argv[6]).read_text().splitlines() if line and not line.startswith('#')}
+    linux_targets = {slug for slug in triples if slug.startswith('linux-')}
+    if set(platforms) != linux_targets:
+        raise ValueError('Linux target and reviewed platform sets differ')
     manifest = tomllib.loads((packdir / 'pack.toml').read_text())
     for platform, (image, gcc, stdcpp, libgcc) in platforms.items():
         receipt = receipts / f'qpdf-input-receipts-{platform}'
@@ -74,6 +77,13 @@ try:
         runtime = (receipt / 'runtime-sha256.txt').read_text().splitlines()
         if len(runtime) != 2 or runtime[0].split()[0] != libgcc or runtime[1].split()[0] != stdcpp:
             raise ValueError(f'runtime hash mismatch: {platform}')
+        extra = (receipt / 'runtime-extra-sha256.txt').read_text().splitlines()
+        records = [line.split() for line in extra]
+        if any(len(parts) != 2 or len(parts[0]) != 64 or any(c not in '0123456789abcdef' for c in parts[0]) for parts in records):
+            raise ValueError(f'invalid extra runtime receipt: {platform}')
+        names = [pathlib.Path(parts[1]).name for parts in records]
+        if len(names) != len(set(names)) or not {'libgcc_eh.a', 'crtbegin.o', 'crtend.o'}.issubset(names):
+            raise ValueError(f'extra runtime receipt missing: {platform}')
 except (OSError, ValueError, KeyError, subprocess.CalledProcessError, tomllib.TOMLDecodeError) as exc:
     sys.exit(f'qpdf release refused: {exc}')
 PY

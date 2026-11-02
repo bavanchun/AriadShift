@@ -5,6 +5,13 @@ out=$1
 mkdir -p "$out"
 gcc --version > "$out/gcc-version.txt"
 sha256sum "$(gcc -print-file-name=libgcc.a)" "$(g++ -print-file-name=libstdc++.a)" > "$out/runtime-sha256.txt"
+extra_runtime=()
+for name in libgcc_eh.a crt1.o Scrt1.o rcrt1.o crti.o crtn.o crtbegin.o crtbeginS.o crtbeginT.o crtend.o crtendS.o; do
+    path=$(gcc -print-file-name="$name")
+    if [ -f "$path" ]; then extra_runtime+=("$path"); fi
+done
+[ -f "$(gcc -print-file-name=libgcc_eh.a)" ]
+sha256sum "${extra_runtime[@]}" > "$out/runtime-extra-sha256.txt"
 if command -v rpm >/dev/null; then
     rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | LC_ALL=C sort > "$out/packages.txt"
     : > "$out/installed-files.sha256"

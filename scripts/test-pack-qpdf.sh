@@ -51,7 +51,7 @@ for slug, (image, gcc, stdcpp, libgcc) in platforms.items():
     manifest_lines.append(f'[[targets]]\ntriple = "{targets[slug]}"\n[[targets.components]]\nname = "engine"\nurl = "{archive.name}"\nsha256 = "{digest}"\n')
     d = root / 'receipts' / f'qpdf-input-receipts-{slug}'
     d.mkdir()
-    for name, value in {'image.txt': f'image@sha256:{image}', 'image-id.txt': 'sha256:abc', 'gcc-version.txt': gcc, 'packages.txt': 'package', 'package-sha256.txt': ''.join(f'{h} package\n' for h in apk_hashes.get(slug, ['hash'])), 'runtime-sha256.txt': f'{libgcc}  libgcc.a\n{stdcpp}  libstdc++.a\n', 'runtime-sources.txt': manifest, 'qpdf-sha256.txt': f'{hashlib.sha256(b"qpdf fixture").hexdigest()}  bin/qpdf\n'}.items():
+    for name, value in {'image.txt': f'image@sha256:{image}', 'image-id.txt': 'sha256:abc', 'gcc-version.txt': gcc, 'packages.txt': 'package', 'package-sha256.txt': ''.join(f'{h} package\n' for h in apk_hashes.get(slug, ['hash'])), 'runtime-sha256.txt': f'{libgcc}  libgcc.a\n{stdcpp}  libstdc++.a\n', 'runtime-sources.txt': manifest, 'qpdf-sha256.txt': f'{hashlib.sha256(b"qpdf fixture").hexdigest()}  bin/qpdf\n', 'runtime-extra-sha256.txt': ''.join(f'{"0" * 64}  /runtime/{name}\n' for name in ('libgcc_eh.a', 'crtbegin.o', 'crtend.o'))}.items():
         (d / name).write_text(value)
 (root / 'packdir/pack.toml').write_text(''.join(manifest_lines))
 PYTEST
@@ -135,6 +135,23 @@ approved = approved.replace('runtime_review_complete = false', 'runtime_review_c
 check(approved.replace('runtime_review_complete = true', 'runtime_review_complete = false'), False, 'runtime pending')
 check(approved.replace('pending_owner_approval = false', 'pending_owner_approval = true'), False, 'owner approval pending')
 check(approved, True, 'both reviews complete')
+# Each mutation must independently make the otherwise valid evidence fail.
+mutations = [
+    (directory / 'receipts/qpdf-input-receipts-linux-x64/image.txt', lambda text: text.replace('f6adc', '00000')),
+    (directory / 'receipts/qpdf-input-receipts-linux-x64/runtime-sha256.txt', lambda text: '0' + text[1:]),
+    (directory / 'receipts/qpdf-input-receipts-linux-x64/gcc-version.txt', lambda text: 'wrong compiler'),
+    (directory / 'receipts/qpdf-input-receipts-linux-musl-x64/package-sha256.txt', lambda text: text.replace('d1d482', '000000')),
+    (directory / 'receipts/qpdf-input-receipts-linux-x64/runtime-sources.txt', lambda text: text + 'changed'),
+    (directory / 'runtime-sources.txt', lambda text: text + text.splitlines(keepends=True)[0]),
+    (directory / 'targets.txt', lambda text: text + 'linux-new new-triple source hash\n'),
+    (directory / 'receipts/qpdf-input-receipts-linux-x64/runtime-extra-sha256.txt', lambda text: text.replace('libgcc_eh.a', 'missing.a')),
+]
+for path, mutate in mutations:
+    saved = path.read_text()
+    path.write_text(mutate(saved))
+    check(approved, False, f'mutated {path.name}')
+    path.write_text(saved)
+
 check(approved + '\nunknown_key = true\n', False, 'unknown key')
 check(approved.replace('pending_owner_approval = false', 'pending_owner_approval = "false"'), False, 'string flag')
 for key, value in tomllib.loads(approved).items():
