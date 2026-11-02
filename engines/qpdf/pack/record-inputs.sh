@@ -11,8 +11,8 @@ if command -v rpm >/dev/null; then
     while IFS= read -r package; do
         query=${package%.(none)}
         rpm -ql "$query" | LC_ALL=C sort | while IFS= read -r file; do
-            if [ -f "$file" ] && [ ! -L "$file" ]; then sha256sum "$file"; fi
-        done > "$out/files.tmp"
+            if [ -f "$file" ] && [ ! -L "$file" ]; then printf '%s\0' "$file"; fi
+        done | xargs -0 -r sha256sum > "$out/files.tmp"
         sed "s|^|$package  |" "$out/files.tmp" >> "$out/installed-files.sha256"
         printf '%s  %s\n' "$(sha256sum "$out/files.tmp" | cut -d ' ' -f 1)" "$package"
     done < "$out/packages.txt" > "$out/package-sha256.txt"
