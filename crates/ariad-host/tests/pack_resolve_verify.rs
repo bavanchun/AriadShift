@@ -47,7 +47,14 @@ fn resolve_pack_verifies_signature_and_reuses_only_safe_cached_digests() {
     assert_eq!(command.engine, "qpdf");
     assert_eq!(command.protocol(), Protocol::V2);
     assert!(command.sandbox_required());
-    assert_eq!(command.program, root.join("bin").join("engine"));
+    assert!(command.args.iter().any(|arg| arg == "__engine"));
+    let ariad_host::runner::EngineCommand { env: variables, .. } = &command;
+    assert!(
+        variables
+            .iter()
+            .any(|(key, value)| key == "ASHIFT_QPDF_PROGRAM"
+                && value == root.join("bin").join("engine").as_os_str())
+    );
     assert_eq!(command.install_root.as_deref(), Some(root.as_path()));
 
     let first_hashes = resolve_hash_computations_for(&root);
