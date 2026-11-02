@@ -6,11 +6,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use ariad_core::protocol::ToolAvailability;
+use ariad_core::protocol::{ToolAvailability, v2::EventV2};
 
 use crate::{
     convert::ConvertError,
-    engines::docling,
+    engines::{self, ResolveError, docling},
     packs::{self, PackContext, PackHealth},
     pandoc_bin::{self, PANDOC_SUPPORTED, PandocBinaryError},
     runner,
@@ -339,7 +339,10 @@ pub fn doctor(
     if cancel.is_cancelled() {
         return Err(ConvertError::Interrupted);
     }
-    checks.extend(docling_checks(engine_program, cancel));
+    checks.extend(docling_checks(engine_program, cancel.clone()));
+
+    // 6. The pdfium engine pack. It is optional.
+    checks.push(pdfium_check(engine_program, cancel));
 
     Ok(DoctorReport {
         checks,
@@ -639,6 +642,84 @@ fn docling_checks(engine_program: &Path, cancel: CancellationToken) -> Vec<Docto
                 },
             }]
         }
+    }
+}
+
+/// Optional check for the pdfium engine pack: resolves it (signature and digests when
+/// installed) and runs a `describe` round trip over `ariad-engine/2`.
+fn pdfium_check(engine_program: &Path, cancel: CancellationToken) -> DoctorCheck {
+    let spec = &engines::PDFIUM;
+    let check = |ok: bool, message: String, hint: String| DoctorCheck {
+        id: format!("{}_engine", spec.id),
+        ok,
+        required: false,
+        message,
+        hint: if ok { String::new() } else { hint },
+    };
+    let command = match engines::resolve_pack_with_options(spec.id, Some(engine_program)) {
+        Ok((command, _options)) => command,
+        Err(error @ ResolveError::NotInstalled { .. }) => {
+            return check(
+                false,
+                "pdfium engine is not installed; PDF rendering, thumbnails and image tools need it"
+                    .to_owned(),
+                error.hint().unwrap_or(spec.install_hint).to_owned(),
+            );
+        }
+        Err(error) => {
+            return check(
+                false,
+                format!("pdfium engine cannot be used: {error}"),
+                error.hint().unwrap_or(spec.install_hint).to_owned(),
+            );
+        }
+    };
+    match runner::describe_command_v2(&command, runner::DESCRIBE_TIMEOUT, cancel) {
+        Ok(EventV2::Capabilities {
+            protocol,
+            version,
+            tool,
+            ..
+        }) if protocol == spec.protocol.as_str() && tool.status == ToolAvailability::Found => {
+            check(
+                true,
+                format!("pdfium engine {version} passes describe round trip; protocol {protocol}"),
+                String::new(),
+            )
+        }
+        Ok(EventV2::Capabilities { protocol, tool, .. }) => check(
+            false,
+            if protocol == spec.protocol.as_str() {
+                format!("pdfium engine reports {} as not ready", tool.name)
+            } else {
+                format!(
+                    "pdfium engine speaks '{protocol}' but this ashift expects '{}'",
+                    spec.protocol.as_str()
+                )
+            },
+            "run 'ashift engines verify pdfium' or reinstall the pack".to_owned(),
+        ),
+        Ok(_) => check(
+            false,
+            "pdfium engine returned an unexpected describe response".to_owned(),
+            "run 'ashift engines verify pdfium' or reinstall the pack".to_owned(),
+        ),
+        Err(runner::RunError::SandboxLaunchFailed(detail)) => check(
+            false,
+            format!("pdfium engine is installed but cannot start: {detail}"),
+            launcher_failure_hint(&detail).to_owned(),
+        ),
+        Err(runner::RunError::SandboxUnavailable(detail)) => check(
+            false,
+            format!("pdfium engine needs OS sandbox isolation, which is unavailable: {detail}"),
+            "see the sandbox check above; the pdfium engine never runs unsandboxed unless ASHIFT_SANDBOX=off"
+                .to_owned(),
+        ),
+        Err(error) => check(
+            false,
+            format!("pdfium engine describe round trip failed: {error}"),
+            "run 'ashift engines verify pdfium' or reinstall the pack".to_owned(),
+        ),
     }
 }
 

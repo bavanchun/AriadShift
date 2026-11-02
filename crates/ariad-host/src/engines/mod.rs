@@ -10,7 +10,7 @@ pub mod typst;
 pub use resolve::{ResolveError, resolve_pack, resolve_pack_in, resolve_pack_with_options};
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     ffi::OsString,
     path::Path,
     sync::{Mutex, OnceLock},
@@ -18,12 +18,8 @@ use std::{
 
 use ariad_core::{
     format::Format,
-    protocol::{
-        Event, PROTOCOL, ToolAvailability, ToolStatus,
-        v2::{EventV2, PROTOCOL_V2, RequestV2, ToolCapability},
-    },
+    protocol::{Event, PROTOCOL, ToolAvailability, ToolStatus, v2::PROTOCOL_V2},
 };
-use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::runner::{self, RunError};
@@ -61,9 +57,12 @@ pub fn serve_builtin(
         "pdf" => pdf::serve(input, output),
         "typst" => typst::serve(input, output),
         "libreoffice" => libreoffice::serve(input, output),
-        other => {
-            if let Some(spec) = pack_spec(other).filter(|spec| spec.protocol == Protocol::V2) {
-                return serve_v2_pack_engine(spec, input, output);
+        _ => {
+            // A pack engine is served by the pack's own executable. Only test-probe builds
+            // answer for one, with a stand-in that never runs real tool code.
+            #[cfg(feature = "test-probe")]
+            if let Some(spec) = pack_spec(engine).filter(|spec| spec.protocol == Protocol::V2) {
+                return test_pack_engine::serve(spec, input, output);
             }
             eprintln!("Unknown built-in engine: {engine}");
             std::process::ExitCode::from(2)
@@ -71,128 +70,223 @@ pub fn serve_builtin(
     }
 }
 
-fn serve_v2_pack_engine(
-    spec: &EngineSpec,
-    input: impl std::io::BufRead,
-    output: impl std::io::Write,
-) -> std::process::ExitCode {
-    common::serve_v2(input, output, |request, out| match request {
-        RequestV2::Describe { protocol, .. } => {
-            let tools = tools_for_engine(spec.id);
-            let capabilities = EventV2::Capabilities {
-                protocol: PROTOCOL_V2.to_owned(),
-                engine: spec.id.to_owned(),
-                version: env!("CARGO_PKG_VERSION").to_owned(),
-                tool: ToolStatus {
-                    name: spec.id.to_owned(),
-                    version: Some(env!("CARGO_PKG_VERSION").to_owned()),
-                    status: ToolAvailability::Found,
-                },
-                license: spec.license.to_owned(),
-                routes: Vec::new(),
-                tools,
-                enforces_memory_limit: false,
-                supports_session: false,
-                models: None,
-            };
-            common::emit_capabilities_v2(out, &protocol, capabilities)
-        }
-        RequestV2::Convert { .. } => Err(common::EngineFailure::unsupported_route()),
-        RequestV2::RunTool {
-            protocol,
-            tool,
-            inputs,
-            output,
-            params,
-            params_file,
-            work_dir,
-            limits,
-            ..
-        } => {
-            if params_file.is_some() && params.as_object().is_some_and(|map| !map.is_empty()) {
-                return Err(common::EngineFailure::invalid_request());
-            }
-            let (paths, resolved_params) = common::validate_run_tool(
-                &protocol,
-                &inputs,
-                &output,
-                &params,
-                params_file.as_deref(),
-                &work_dir,
-                &limits,
-            )?;
+/// Stand-in for a pack engine, compiled only into `test-probe` builds. It answers `describe`
+/// and fakes `run_tool` so the host runner, limits and sandbox can be tested without a pack.
+#[cfg(feature = "test-probe")]
+mod test_pack_engine {
+    use std::{collections::BTreeMap, path::Path};
 
-            if resolved_params.get("probe_action") == Some(&json!("hang")) {
-                loop {
-                    std::thread::sleep(std::time::Duration::from_secs(60));
-                }
+    use ariad_core::protocol::{
+        ToolAvailability, ToolStatus,
+        v2::{EventV2, PROTOCOL_V2, RequestV2, ToolCapability},
+    };
+    use serde_json::{Value, json};
+
+    use super::{EngineSpec, common};
+
+    pub(super) fn serve(
+        spec: &EngineSpec,
+        input: impl std::io::BufRead,
+        output: impl std::io::Write,
+    ) -> std::process::ExitCode {
+        common::serve_v2(input, output, |request, out| match request {
+            RequestV2::Describe { protocol, .. } => {
+                let tools = tools_for_engine(spec.id);
+                let capabilities = EventV2::Capabilities {
+                    protocol: PROTOCOL_V2.to_owned(),
+                    engine: spec.id.to_owned(),
+                    version: env!("CARGO_PKG_VERSION").to_owned(),
+                    tool: ToolStatus {
+                        name: spec.id.to_owned(),
+                        version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+                        status: ToolAvailability::Found,
+                    },
+                    license: spec.license.to_owned(),
+                    routes: Vec::new(),
+                    tools,
+                    enforces_memory_limit: false,
+                    supports_session: false,
+                    models: None,
+                };
+                common::emit_capabilities_v2(out, &protocol, capabilities)
             }
-            if let Some(megabytes) = resolved_params
-                .get("probe_memory_mb")
-                .and_then(Value::as_u64)
-            {
-                let len = usize::try_from(megabytes)
-                    .unwrap_or(64)
-                    .saturating_mul(1024 * 1024);
-                let mut buf = vec![0_u8; len];
-                for page in buf.chunks_mut(4096) {
-                    page[0] = 1;
+            RequestV2::Convert { .. } => Err(common::EngineFailure::unsupported_route()),
+            RequestV2::RunTool {
+                protocol,
+                tool,
+                inputs,
+                output,
+                params,
+                params_file,
+                work_dir,
+                limits,
+                ..
+            } => {
+                if params_file.is_some() && params.as_object().is_some_and(|map| !map.is_empty()) {
+                    return Err(common::EngineFailure::invalid_request());
                 }
-                loop {
-                    std::hint::black_box(&mut buf);
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                let (paths, resolved_params) = common::validate_run_tool(
+                    &protocol,
+                    &inputs,
+                    &output,
+                    &params,
+                    params_file.as_deref(),
+                    &work_dir,
+                    &limits,
+                )?;
+
+                if resolved_params.get("probe_action") == Some(&json!("hang")) {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                    }
                 }
-            }
-            if resolved_params.get("probe_sandbox") == Some(&json!(true)) {
+                if resolved_params.get("probe_action") == Some(&json!("crash")) {
+                    std::process::exit(9);
+                }
+                if resolved_params.get("probe_action") == Some(&json!("fail")) {
+                    return Err(common::EngineFailure::new(
+                        ariad_core::protocol::ErrorCode::EngineFailure,
+                        "probe engine failure",
+                    ));
+                }
+                if let Some(megabytes) = resolved_params
+                    .get("probe_memory_mb")
+                    .and_then(Value::as_u64)
+                {
+                    let len = usize::try_from(megabytes)
+                        .unwrap_or(64)
+                        .saturating_mul(1024 * 1024);
+                    let mut buf = vec![0_u8; len];
+                    for page in buf.chunks_mut(4096) {
+                        page[0] = 1;
+                    }
+                    loop {
+                        std::hint::black_box(&mut buf);
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                }
+                if resolved_params.get("probe_sandbox") == Some(&json!(true)) {
+                    let mut metrics = BTreeMap::new();
+                    let first_input = &paths.inputs[0];
+                    metrics.insert(
+                        "read_input".to_owned(),
+                        json!(if std::fs::read(first_input).is_ok() {
+                            "allowed"
+                        } else {
+                            "denied"
+                        }),
+                    );
+                    let out_probe = paths.output_dir.join("probe-output.bin");
+                    metrics.insert(
+                        "write_output".to_owned(),
+                        json!(if std::fs::write(&out_probe, b"ok").is_ok() {
+                            "allowed"
+                        } else {
+                            "denied"
+                        }),
+                    );
+                    let work_probe = paths.work_dir.join("probe-work.bin");
+                    metrics.insert(
+                        "write_work_dir".to_owned(),
+                        json!(if std::fs::write(&work_probe, b"ok").is_ok() {
+                            let _ = std::fs::remove_file(&work_probe);
+                            "allowed"
+                        } else {
+                            "denied"
+                        }),
+                    );
+                    if let Some(input_dir) = first_input.parent() {
+                        let tamper_in = input_dir.join("tamper-input.bin");
+                        let allowed = std::fs::write(&tamper_in, b"no").is_ok();
+                        if allowed {
+                            let _ = std::fs::remove_file(&tamper_in);
+                        }
+                        metrics.insert(
+                            "write_input_dir".to_owned(),
+                            json!(if allowed { "allowed" } else { "denied" }),
+                        );
+                    }
+                    if let Some(outside) = resolved_params.get("outside").and_then(Value::as_str) {
+                        let allowed = std::fs::write(outside, b"escape").is_ok();
+                        if allowed {
+                            let _ = std::fs::remove_file(outside);
+                        }
+                        metrics.insert(
+                            "write_outside".to_owned(),
+                            json!(if allowed { "allowed" } else { "denied" }),
+                        );
+                    }
+                    #[cfg(unix)]
+                    if let Some(pf) = &params_file {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(meta) = std::fs::metadata(pf) {
+                            metrics.insert(
+                                "params_file_mode".to_owned(),
+                                json!(meta.permissions().mode() & 0o777),
+                            );
+                        }
+                    }
+                    return common::emit_artifacts_success(
+                        out,
+                        &[(out_probe.as_path(), "pdf")],
+                        Some(metrics),
+                    );
+                }
+
+                for input_path in &paths.inputs {
+                    if std::fs::metadata(input_path).is_err() {
+                        return Err(common::EngineFailure::invalid_request());
+                    }
+                }
+                common::emit_v2(
+                    out,
+                    EventV2::Progress {
+                        stage: "run_tool".to_owned(),
+                        done: Some(1),
+                        total: Some(1),
+                    },
+                )
+                .map_err(|_| common::EngineFailure::io())?;
+                if resolved_params.get("emit_warning") == Some(&json!(true)) {
+                    common::emit_v2(
+                        out,
+                        EventV2::Warning {
+                            code: "tool_notice".to_owned(),
+                            message: format!("executed {tool}"),
+                        },
+                    )
+                    .map_err(|_| common::EngineFailure::io())?;
+                }
+                let out_format = ariad_core::tools::find(&tool)
+                    .map_or("pdf", |tool_spec| tool_spec.output_format)
+                    .to_owned();
+                let artifact_count = resolved_params
+                    .get("artifact_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1)
+                    .clamp(1, 16);
+                let mut written_paths = Vec::new();
+                for idx in 0..artifact_count {
+                    let filename = if artifact_count == 1 {
+                        format!("output.{out_format}")
+                    } else {
+                        format!("output-{idx}.{out_format}")
+                    };
+                    let artifact_path = paths.output_dir.join(filename);
+                    std::fs::write(&artifact_path, b"%PDF-1.7\n")
+                        .map_err(|_| common::EngineFailure::io())?;
+                    written_paths.push(artifact_path);
+                }
                 let mut metrics = BTreeMap::new();
-                let first_input = &paths.inputs[0];
-                metrics.insert(
-                    "read_input".to_owned(),
-                    json!(if std::fs::read(first_input).is_ok() {
-                        "allowed"
-                    } else {
-                        "denied"
-                    }),
-                );
-                let out_probe = paths.output_dir.join("probe-output.bin");
-                metrics.insert(
-                    "write_output".to_owned(),
-                    json!(if std::fs::write(&out_probe, b"ok").is_ok() {
-                        "allowed"
-                    } else {
-                        "denied"
-                    }),
-                );
-                let work_probe = paths.work_dir.join("probe-work.bin");
-                metrics.insert(
-                    "write_work_dir".to_owned(),
-                    json!(if std::fs::write(&work_probe, b"ok").is_ok() {
-                        let _ = std::fs::remove_file(&work_probe);
-                        "allowed"
-                    } else {
-                        "denied"
-                    }),
-                );
-                if let Some(input_dir) = first_input.parent() {
-                    let tamper_in = input_dir.join("tamper-input.bin");
-                    let allowed = std::fs::write(&tamper_in, b"no").is_ok();
-                    if allowed {
-                        let _ = std::fs::remove_file(&tamper_in);
-                    }
-                    metrics.insert(
-                        "write_input_dir".to_owned(),
-                        json!(if allowed { "allowed" } else { "denied" }),
-                    );
-                }
-                if let Some(outside) = resolved_params.get("outside").and_then(Value::as_str) {
-                    let allowed = std::fs::write(outside, b"escape").is_ok();
-                    if allowed {
-                        let _ = std::fs::remove_file(outside);
-                    }
-                    metrics.insert(
-                        "write_outside".to_owned(),
-                        json!(if allowed { "allowed" } else { "denied" }),
-                    );
+                metrics.insert("inputs".to_owned(), json!(inputs.len()));
+                metrics.insert("artifacts".to_owned(), json!(artifact_count));
+                #[cfg(target_os = "linux")]
+                if resolved_params.get("probe_address_limit") == Some(&json!(true)) {
+                    let (soft, hard) =
+                        nix::sys::resource::getrlimit(nix::sys::resource::Resource::RLIMIT_AS)
+                            .map_err(|_| common::EngineFailure::io())?;
+                    metrics.insert("address_limit_soft".to_owned(), json!(soft));
+                    metrics.insert("address_limit_hard".to_owned(), json!(hard));
                 }
                 #[cfg(unix)]
                 if let Some(pf) = &params_file {
@@ -204,110 +298,47 @@ fn serve_v2_pack_engine(
                         );
                     }
                 }
-                return common::emit_artifacts_success(
-                    out,
-                    &[(out_probe.as_path(), "pdf")],
-                    Some(metrics),
-                );
-            }
-
-            for input_path in &paths.inputs {
-                if std::fs::metadata(input_path).is_err() {
-                    return Err(common::EngineFailure::invalid_request());
+                if let Some(obj) = resolved_params.as_object() {
+                    metrics.insert("params_keys".to_owned(), json!(obj.len()));
                 }
+                let artifact_refs: Vec<(&Path, &str)> = written_paths
+                    .iter()
+                    .map(|p| (p.as_path(), out_format.as_str()))
+                    .collect();
+                common::emit_artifacts_success(out, &artifact_refs, Some(metrics))
             }
-            common::emit_v2(
-                out,
-                EventV2::Progress {
-                    stage: "run_tool".to_owned(),
-                    done: Some(1),
-                    total: Some(1),
-                },
-            )
-            .map_err(|_| common::EngineFailure::io())?;
-            if resolved_params.get("emit_warning") == Some(&json!(true)) {
-                common::emit_v2(
-                    out,
-                    EventV2::Warning {
-                        code: "tool_notice".to_owned(),
-                        message: format!("executed {tool}"),
-                    },
-                )
-                .map_err(|_| common::EngineFailure::io())?;
-            }
-            let out_format = ariad_core::tools::find(&tool)
-                .map_or("pdf", |tool_spec| tool_spec.output_format)
-                .to_owned();
-            let artifact_count = resolved_params
-                .get("artifact_count")
-                .and_then(Value::as_u64)
-                .unwrap_or(1)
-                .clamp(1, 16);
-            let mut written_paths = Vec::new();
-            for idx in 0..artifact_count {
-                let filename = if artifact_count == 1 {
-                    format!("output.{out_format}")
-                } else {
-                    format!("output-{idx}.{out_format}")
-                };
-                let artifact_path = paths.output_dir.join(filename);
-                std::fs::write(&artifact_path, b"%PDF-1.7\n")
-                    .map_err(|_| common::EngineFailure::io())?;
-                written_paths.push(artifact_path);
-            }
-            let mut metrics = BTreeMap::new();
-            metrics.insert("inputs".to_owned(), json!(inputs.len()));
-            metrics.insert("artifacts".to_owned(), json!(artifact_count));
-            #[cfg(unix)]
-            if let Some(pf) = &params_file {
-                use std::os::unix::fs::PermissionsExt;
-                if let Ok(meta) = std::fs::metadata(pf) {
-                    metrics.insert(
-                        "params_file_mode".to_owned(),
-                        json!(meta.permissions().mode() & 0o777),
-                    );
-                }
-            }
-            if let Some(obj) = resolved_params.as_object() {
-                metrics.insert("params_keys".to_owned(), json!(obj.len()));
-            }
-            let artifact_refs: Vec<(&Path, &str)> = written_paths
-                .iter()
-                .map(|p| (p.as_path(), out_format.as_str()))
-                .collect();
-            common::emit_artifacts_success(out, &artifact_refs, Some(metrics))
-        }
-    })
-}
-
-fn tools_for_engine(engine_id: &str) -> Vec<ToolCapability> {
-    let mut tools: Vec<ToolCapability> = ariad_core::tools::all()
-        .iter()
-        .filter(|spec| spec.engine == engine_id)
-        .map(|spec| ToolCapability {
-            id: spec.id.to_owned(),
-            version: spec.version.to_owned(),
         })
-        .collect();
-    if tools.is_empty() {
-        let default_tool = match engine_id {
-            "pdfium" => Some(("pdf.render", "1")),
-            "qpdf" => Some(("pdf.linearize", "1")),
-            "tesseract" => Some(("ocr.recognize", "1")),
-            "sign" => Some(("pdf.sign", "1")),
-            "verapdf" => Some(("pdf.validate_pdfa", "1")),
-            "ai" => Some(("ai.summarize", "1")),
-            "inpaint" => Some(("pdf.remove_watermark", "1")),
-            _ => None,
-        };
-        if let Some((id, version)) = default_tool {
-            tools.push(ToolCapability {
-                id: id.to_owned(),
-                version: version.to_owned(),
-            });
-        }
     }
-    tools
+
+    fn tools_for_engine(engine_id: &str) -> Vec<ToolCapability> {
+        let mut tools: Vec<ToolCapability> = ariad_core::tools::all()
+            .iter()
+            .filter(|spec| spec.engine == engine_id)
+            .map(|spec| ToolCapability {
+                id: spec.id.to_owned(),
+                version: spec.version.to_owned(),
+            })
+            .collect();
+        if tools.is_empty() {
+            let default_tool = match engine_id {
+                "pdfium" => Some(("pdf.render", "1")),
+                "qpdf" => Some(("pdf.linearize", "1")),
+                "tesseract" => Some(("ocr.recognize", "1")),
+                "sign" => Some(("pdf.sign", "1")),
+                "verapdf" => Some(("pdf.validate_pdfa", "1")),
+                "ai" => Some(("ai.summarize", "1")),
+                "inpaint" => Some(("pdf.remove_watermark", "1")),
+                _ => None,
+            };
+            if let Some((id, version)) = default_tool {
+                tools.push(ToolCapability {
+                    id: id.to_owned(),
+                    version: version.to_owned(),
+                });
+            }
+        }
+        tools
+    }
 }
 
 /// The in-process engine identifier for pure-Rust operations.
@@ -835,6 +866,38 @@ mod tests {
 
 #[cfg(test)]
 mod dispatch_tests {
+    #[cfg(not(feature = "test-probe"))]
+    #[test]
+    fn production_builds_never_answer_for_a_pack_engine() {
+        for spec in super::PACK_ENGINES {
+            let mut output = Vec::new();
+            assert_eq!(
+                super::serve_builtin(spec.id, std::io::Cursor::new([]), &mut output),
+                std::process::ExitCode::from(2),
+                "{}",
+                spec.id
+            );
+            assert!(output.is_empty(), "{} produced protocol output", spec.id);
+        }
+    }
+
+    #[cfg(feature = "test-probe")]
+    #[test]
+    fn test_probe_builds_stand_in_for_v2_pack_engines_only() {
+        let request = b"{\"op\":\"describe\",\"protocol\":\"ariad-engine/2\",\"job\":\"d\"}\n";
+        let mut output = Vec::new();
+        super::serve_builtin("pdfium", std::io::Cursor::new(request), &mut output);
+        let text = String::from_utf8(output).expect("utf-8");
+        assert!(text.contains("\"engine\":\"pdfium\""), "{text}");
+        // docling is a v1 pack: the stand-in must not answer for it.
+        let mut output = Vec::new();
+        assert_eq!(
+            super::serve_builtin("docling", std::io::Cursor::new([]), &mut output),
+            std::process::ExitCode::from(2),
+        );
+        assert!(output.is_empty());
+    }
+
     #[test]
     fn unknown_engine_fails_without_writing_protocol_output() {
         let mut output = Vec::new();

@@ -85,6 +85,16 @@ assert_classification "workflow (cloud-e2e.yml)" ".github/workflows/cloud-e2e.ym
 assert_classification "e2e test (infra/test/e2e)" "infra/test/e2e/run.sh" "false" "false" "JavaScript-only change"
 assert_classification "compose (infra/compose)" "infra/compose/docker-compose.yml" "true" "false" "code change"
 
+# 7b. pdfium engine pack scripts and workflow
+assert_classification "pack (pdfium wrapper)" "engines/pdfium/pack/make.sh" "false" "false" "pack-only change"
+assert_classification "pack (pdfium pins)" "engines/pdfium/pack/targets.txt" "false" "false" "pack-only change"
+assert_classification "pack (shared builder)" "scripts/pack/build-pack.sh" "false" "false" "pack-only change"
+assert_classification "pack (workflow)" ".github/workflows/pack-pdfium.yml" "false" "false" "pack-only change"
+assert_classification "mixed (pack + docs)" "$(printf 'docs/packs.md\nscripts/pack/sign-pack.sh')" "false" "false" "pack-only change"
+assert_classification "mixed (pack + host)" "$(printf 'scripts/pack/sign-pack.sh\ncrates/ariad-host/src/main.rs')" "true" "false" "code change"
+assert_classification "mixed (pack + web)" "$(printf 'engines/pdfium/pack/make.sh\napps/web/src/index.ts')" "false" "true" "JavaScript-only change"
+assert_classification "pdfium engine crate" "crates/ariad-pdfium-engine/src/main.rs" "true" "false" "code change"
+
 # 8. docs-only
 assert_classification "docs-only (docs/)" "docs/cli.md" "false" "false" "documentation-only change"
 assert_classification "docs-only (README.md)" "README.md" "false" "false" "documentation-only change"

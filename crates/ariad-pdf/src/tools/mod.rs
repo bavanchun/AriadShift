@@ -39,10 +39,11 @@ use ariad_core::{
     limits::Limits,
     tools::params::{
         AlternateMixParams, AttachmentsParams, BookletParams, CropParams, DecompressParams,
-        DeletePagesParams, DividePagesParams, ExtractPagesParams, InfoParams, InsertBlankParams,
-        LayersParams, MergeParams, MetadataParams, NupParams, OutlineParams, OverlayParams,
-        PageLabelsParams, PortfolioParams, PosterizeParams, ReorderParams, RotateContentParams,
-        RotateParams, ScaleParams, SinglePageParams, SplitParams, ViewerPrefsParams,
+        DeletePagesParams, DividePagesParams, ExtractPagesParams, ImageToPdfParams, InfoParams,
+        InsertBlankParams, LayersParams, MergeParams, MetadataParams, NupParams, OutlineParams,
+        OverlayParams, PageLabelsParams, PortfolioParams, PosterizeParams, ReorderParams,
+        RotateContentParams, RotateParams, ScaleParams, SinglePageParams, SplitParams,
+        ViewerPrefsParams,
     },
 };
 use serde::de::DeserializeOwned;
@@ -286,6 +287,9 @@ pub fn run_tool(
     if tool_id == "pdf.info" {
         return run_pdf_info(inputs, params, ctx);
     }
+    if tool_id == "image.to_pdf" {
+        return run_image_to_pdf(inputs, params, ctx);
+    }
 
     match tool_id {
         "pdf.merge" => {
@@ -451,6 +455,69 @@ fn run_pdf_info(
         }],
         warnings,
         json: Some(json_val),
+    })
+}
+
+fn run_image_to_pdf(
+    inputs: &[InputDoc],
+    params: &Value,
+    ctx: &ToolCtx,
+) -> Result<ToolOutput, PdfError> {
+    let typed_params: ImageToPdfParams = serde_json::from_value(params.clone())
+        .map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+    if inputs.is_empty() {
+        return Err(PdfError::InvalidParams(
+            "image.to_pdf requires at least 1 input image".to_owned(),
+        ));
+    }
+
+    let mut raw_slices: Vec<&[u8]> = Vec::with_capacity(inputs.len());
+    let mut merged_limits = inputs[0].limits.clone();
+    for input in inputs {
+        let InputSource::Bytes(ref bytes) = input.source else {
+            return Err(PdfError::InvalidParams(
+                "image.to_pdf requires raw image byte inputs".to_owned(),
+            ));
+        };
+        raw_slices.push(bytes.as_slice());
+        merged_limits.max_decompressed_bytes = merged_limits
+            .max_decompressed_bytes
+            .min(input.limits.max_decompressed_bytes);
+        if let Some(max_in) = input.limits.max_input_bytes {
+            merged_limits.max_input_bytes = Some(
+                merged_limits
+                    .max_input_bytes
+                    .map_or(max_in, |cur| cur.min(max_in)),
+            );
+        }
+        if let Some(max_p) = input.limits.max_pages {
+            merged_limits.max_pages = Some(merged_limits.max_pages.map_or(max_p, |c| c.min(max_p)));
+        }
+    }
+    if let Some(ctx_max_pages) = ctx.max_pages {
+        merged_limits.max_pages = Some(
+            merged_limits
+                .max_pages
+                .map_or(ctx_max_pages, |c| c.min(ctx_max_pages)),
+        );
+    }
+
+    let pdf_bytes =
+        crate::image_to_pdf::run_with_ctx(raw_slices, &typed_params, &merged_limits, ctx)?;
+    let first_stem = inputs
+        .first()
+        .map(InputDoc::clean_stem)
+        .unwrap_or_else(|| "document".to_owned());
+    let name = default_pdf_output_name(&first_stem, "image.to_pdf");
+
+    Ok(ToolOutput {
+        artifacts: vec![OutputArtifact {
+            name,
+            format: "pdf".to_owned(),
+            bytes: pdf_bytes,
+        }],
+        warnings: Vec::new(),
+        json: None,
     })
 }
 

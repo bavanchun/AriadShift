@@ -6,7 +6,7 @@ use ariad_core::{
     reader::pdf::ReadError,
     tools::{
         page_range::DuplicatePolicy,
-        params::split::{SplitMode, SplitParams},
+        params::split::{SplitDetectMode, SplitMode, SplitParams},
     },
 };
 
@@ -93,6 +93,12 @@ pub fn run(
     ctx: &ToolCtx,
 ) -> Result<Vec<OutputDoc>, PdfError> {
     ctx.check()?;
+    params
+        .validate()
+        .map_err(|e| PdfError::InvalidParams(e.to_string()))?;
+    if params.detect == SplitDetectMode::Pixel {
+        return Err(PdfError::NotImplemented("pdfium".to_owned()));
+    }
     if inputs.len() != 1 {
         return Err(PdfError::InvalidParams(format!(
             "pdf.split requires exactly 1 input document (got {})",
@@ -218,6 +224,69 @@ pub fn run(
     }
 
     Ok(sink.into_outputs(&stem))
+}
+
+/// Splits `source` at the 1-based `blank_separator_pages` (dropping the separator pages) using the
+/// structural `lopdf` page-set builder and returns serialized [`crate::tools::OutputArtifact`]s and
+/// warnings.
+pub fn split_at_separator_pages(
+    source: &PdfDoc,
+    stem: &str,
+    blank_separator_pages: &[u32],
+    ctx: &ToolCtx,
+) -> Result<(Vec<crate::tools::OutputArtifact>, Vec<String>), PdfError> {
+    ctx.check()?;
+    let page_count = doc_page_count(source);
+    if page_count == 0 {
+        return Err(PdfError::InvalidParams(
+            "cannot split a 0-page PDF document".to_owned(),
+        ));
+    }
+
+    let blank_set: BTreeSet<u32> = blank_separator_pages.iter().copied().collect();
+    let mut groups: Vec<Vec<u32>> = Vec::new();
+    let mut current_run: Vec<u32> = Vec::new();
+    let mut total_pages = 0_u64;
+
+    for page_no in 1..=page_count {
+        ctx.check()?;
+        if blank_set.contains(&page_no) {
+            if !current_run.is_empty() {
+                groups.push(std::mem::take(&mut current_run));
+            }
+        } else {
+            let part_pages = (current_run.len() as u64).saturating_add(1);
+            ensure_total_pages_within_cap(part_pages, ctx.max_pages)?;
+            total_pages = total_pages.saturating_add(1);
+            ensure_total_pages_within_cap(total_pages, ctx.max_pages)?;
+            current_run.push(page_no);
+        }
+    }
+    if !current_run.is_empty() {
+        groups.push(current_run);
+    }
+
+    if groups.is_empty() {
+        return Err(PdfError::InvalidParams(
+            "cannot split by blank separators: all pages in document are blank".to_owned(),
+        ));
+    }
+
+    let mut sink = PartSink::new(source);
+    for group in groups {
+        ctx.check()?;
+        let part_doc = build_page_set_output(source, &group, SPLIT_PART_OPTIONS, ctx)?;
+        sink.push(part_doc, ctx)?;
+    }
+
+    let tool_out = crate::tools::finalize_tool_output(
+        "pdf.split",
+        std::slice::from_ref(source),
+        stem,
+        sink.into_outputs(stem),
+        ctx,
+    )?;
+    Ok((tool_out.artifacts, tool_out.warnings))
 }
 
 fn compute_bookmark_groups(
