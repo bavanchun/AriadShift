@@ -355,12 +355,12 @@ fn check_name_tokens(bytes: &[u8]) -> Result<(), EngineFailure> {
         while cursor < bytes.len() && !is_pdf_delimiter_or_ws(bytes[cursor]) {
             cursor += 1;
         }
-        // The content parser retains 255 bytes including '/'. Reject raw
-        // spellings that could truncate before name escape decoding.
+        // The content parser retains 255 bytes including '/'; the syntax parser
+        // retains 256. The stricter bound prevents either from truncating names.
         if cursor - start > 254 {
             return Err(EngineFailure::new(
                 ErrorCode::LimitExceeded,
-                "PDF name exceeds the safe token length.",
+                "PDF object name exceeds the safe token length.",
             ));
         }
     }
@@ -1706,7 +1706,7 @@ fn preflight_content(
             if token.len() > 255 {
                 return Err(EngineFailure::new(
                     ErrorCode::LimitExceeded,
-                    "PDF name exceeds the safe token length.",
+                    "PDF content name exceeds the safe token length.",
                 ));
             }
             last_name = Some(decode_pdf_name(&token[1..]));
@@ -1730,7 +1730,7 @@ fn preflight_content(
                 if name.len() > 254 {
                     return Err(EngineFailure::new(
                         ErrorCode::LimitExceeded,
-                        "PDF name exceeds the safe token length.",
+                        "PDF form string operand exceeds the safe token length.",
                     ));
                 }
                 invoked.push(name.clone());
@@ -1749,7 +1749,7 @@ fn preflight_content(
             if bytes[s] == b'/' && e - s > 255 {
                 return Err(EngineFailure::new(
                     ErrorCode::LimitExceeded,
-                    "PDF name exceeds the safe token length.",
+                    "PDF content name exceeds the safe token length.",
                 ));
             }
             match &bytes[s..e] {
@@ -3877,6 +3877,35 @@ mod corpus_tests {
     }
 
     #[test]
+    fn overlong_form_string_operand_is_refused() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/long-string-form-operand.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "escape",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        let page = *doc.inner().get_pages().values().next().unwrap();
+        let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF form string operand exceeds the safe token length."
+        );
+    }
+
+    #[test]
     fn page_fallback_form_invocations_are_charged() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf/form-fallback-budget.pdf");
@@ -4258,6 +4287,10 @@ mod corpus_tests {
                 "Form expansion work exceeds the limit.",
             ),
             (
+                "long-string-form-operand.pdf",
+                "PDF form string operand exceeds the safe token length.",
+            ),
+            (
                 "invalid-name-escape.pdf",
                 "Page form execution work exceeds the limit.",
             ),
@@ -4271,19 +4304,19 @@ mod corpus_tests {
             ),
             (
                 "compressed-content-name.pdf",
-                "PDF name exceeds the safe token length.",
+                "PDF content name exceeds the safe token length.",
             ),
             (
                 "compressed-resource-name.pdf",
-                "PDF name exceeds the safe token length.",
+                "PDF object name exceeds the safe token length.",
             ),
             (
                 "escaped-resource-name.pdf",
-                "PDF name exceeds the safe token length.",
+                "PDF object name exceeds the safe token length.",
             ),
             (
                 "long-content-name.pdf",
-                "PDF name exceeds the safe token length.",
+                "PDF content name exceeds the safe token length.",
             ),
             (
                 "indirect-image-preflight.pdf",

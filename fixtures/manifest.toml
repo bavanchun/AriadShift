@@ -4656,3 +4656,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "long-string-form-operand-pdf"
+path = "fixtures/pdf/long-string-form-operand.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with overlong string form operand"
+origin = "generated"
+generated_by = "fixtures/gen/long-string-form-operand.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "59db55a4f0f8d23d391e97b2e8426683e5a9d2902ed4d26cf00f892ce473ec3a"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

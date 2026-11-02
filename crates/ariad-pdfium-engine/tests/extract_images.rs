@@ -1147,7 +1147,13 @@ fn refuses_truncated_xobject_names_before_pdfium_page_load() {
         let error = extract_images::run(&mut ctx, ExtractImagesParams::default())
             .expect_err("ambiguous name is rejected");
         assert_eq!(error.code, ErrorCode::LimitExceeded);
-        assert_eq!(error.message, "PDF name exceeds the safe token length.");
+        let reason =
+            if fixture == "compressed-content-name.pdf" || fixture == "long-content-name.pdf" {
+                "PDF content name exceeds the safe token length."
+            } else {
+                "PDF object name exceeds the safe token length."
+            };
+        assert_eq!(error.message, reason, "{fixture}");
     }
 }
 
