@@ -1,83 +1,110 @@
-# Optimize and security integration handoff
+# Optimize and security integration gate
 
-Status: incomplete; Linux gate is not ready. This record describes the current
-worktree, not an accepted phase completion.
+Status: gate-ready for the accepted phase scope. The original compression
+acceptance target remains unmet: the delegated PM accepted 6/10 as a recorded
+phase deviation, with [text-heavy parity tracked in issue #187](https://github.com/bavanchun/AriadShift/issues/187).
+This is not a claim that the original 7/10 target passed. Distribution remains
+subject to the separate owner-pending qpdf licence reviews and release controls.
 
-## Base and integration
+## Integration and decisions
 
-Fetched `origin/dev` at `b3b76a80cefc655fcb81dedf26a6ebbaf65eb023` and merged
-it as `fbe54969547c10ebf18bfb8b1391d565626af3a9`. The earlier integration
-head was `d3af6777443645750afdf370168f29a72a25d901`. Merged s3 at
-`f6bcfb1245b4c2a1bcae82944cdc55ae6cce766a` as `6ccff7ff5eae42f7e533820c25a1f39f706584ce`.
-The other slice heads are c0 `08b09fab87a69c806e81aaa7bb6dd9edd4a878c3`,
-s1 `95217d9f2a0d52cb80421cb001b1db3f39f0ae36`, s2
+The fetched base was `origin/dev` `b3b76a80cefc655fcb81dedf26a6ebbaf65eb023`,
+merged as `fbe54969547c10ebf18bfb8b1391d565626af3a9`. The initial phase head
+was `d3af6777443645750afdf370168f29a72a25d901`; s3
+`f6bcfb1245b4c2a1bcae82944cdc55ae6cce766a` was merged as
+`6ccff7ff5eae42f7e533820c25a1f39f706584ce`. The other initial slice heads were
+c0 `08b09fab87a69c806e81aaa7bb6dd9edd4a878c3`, s1
+`95217d9f2a0d52cb80421cb001b1db3f39f0ae36`, s2
 `6c3700728eee56cc95a747ab3c360dff3329d75b`, s4
 `7d3ce010296be2a9d743dec94ac5b5a4cce9d8cc`, and s5
-`2394bfd402c312593e35066d22913b1094aa90d4`. Their commits are in the
-merged ancestry. The architecture conflict retained both decision rows.
+`2394bfd402c312593e35066d22913b1094aa90d4`. The merged encoder, font and
+final investigation records are `worker-p05-s2b.md`, `worker-p05-s2c.md` and
+`worker-p05-s2d.md`. The tested product revision was
+`7486d50b55b9929781498b7b6e2a0b0cb5dc42c5`; the subsequent change before this
+report only adds the `loca` and exact Type 1 byte tokens to the spelling
+configuration. It does not alter product code or test behavior.
 
-The approved Mac decisions are in `.run/coord/from-mac/p05-decisions.md` in
-the main checkout; D6 is v2-only and the frozen v1 schemas must stay unchanged.
-The Mac PM approved the encoder follow-up in `.run/coord/from-mac/34-compress-acceptance.md`; the 7/10 bar remains unchanged.
-No release or licence exception is approved by this handoff.
+The Mac PM approved D1–D14, the v2-only D6 wire error, local single-use MCP
+handles, shared `signed_input_rewritten` diagnostics, the source-built qpdf
+approach for macOS, and the documented 6/10 deviation. The frozen v1 engine
+and pack schemas match `origin/dev` byte for byte. qpdf distribution is still
+blocked on owner-pending IJG and GNU runtime review; no new general licence
+exception or unsigned pack index entry was added.
 
-Committed integration work registers the nine tools, reconciles shared warning and metric support, adds module, dispatch, naming and similarity-hook changes, updates the lockfile and generates `schemas/tools.v1.json`. The pack recipe finds the freshly built CLI when `CARGO_TARGET_DIR` is set. The shared signed-input warning, CLI recipe secret prompts, real CLI and MCP secret tests, WASM diagnostics and fuzz target coverage have also been committed. The gate and overall phase remain incomplete.
+The integration registers the tools, schemas and dispatch, forwards coded
+warnings and metrics to native and WASM surfaces, warns when rewriting signed
+AcroForm input, implements recipe stdin and hidden terminal secret prompts,
+and adds registered-tool CLI and MCP tests. The signed manifest remains the
+executable authority; the host pack tests cover rogue executables, a modified
+receipt and Linux sandbox inheritance. Test-only protocol probes now have an
+explicit entrypoint, keeping synthetic requests separate from the real qpdf
+adapter. Tool and engine snapshots, names, docs, fuzz cases and generated
+notices were updated. Existing in-memory signature dictionary assertions remain.
 
 ## Linux gate evidence
 
-All commands below ran in this worktree via
-`/home/vchun/Codes/01-AriadShift/.run/coord/bin/build-lock.sh`. Metadata was
-checked with `btrfs filesystem usage /home` before heavy steps; approximately
-1.5 GiB of allocated metadata remained, with no meaningful unallocated device
-space. No build cleanup was performed.
+Every heavy command below ran sequentially via
+`/home/vchun/Codes/01-AriadShift/.run/coord/bin/build-lock.sh`, with the shared
+`CARGO_TARGET_DIR=/home/vchun/.cache/ariadshift-target`. The environment used
+`ASHIFT_PANDOC=/home/vchun/Codes/01-AriadShift/.tools/pandoc/bin/pandoc`,
+`ARIAD_TEST_PDFIUM_DIR=/home/vchun/Codes/01-AriadShift/.run/coord/pdfium-pack/bin`,
+`ASHIFT_PACK_PDFIUM=/home/vchun/Codes/01-AriadShift/.run/coord/pdfium-pack`,
+`ARIAD_TEST_QPDF_DIR=/home/vchun/Codes/01-AriadShift/.run/coord/qpdf/12.4.2/linux-x64`,
+and `ASHIFT_PACK_QPDF=/home/vchun/Codes/01-AriadShift/.run/coord/qpdf-p05-dev`.
+`SOURCE_DATE_EPOCH` was unset for the suites, because the writer tests compare
+an unset value with an explicit override. The comparison additionally used
+`ARIAD_TEST_STIRLING_DIR=/home/vchun/Codes/01-AriadShift/.run/coord/p05/stirling-outputs`.
+Metadata headroom was checked before heavy steps; the last check showed 9.03 GiB
+used of 10.51 GiB allocated. No data or other session's process was removed.
 
-| Gate | Result and evidence |
-| --- | --- |
-| Pack | First `env CARGO_TARGET_DIR=/home/vchun/.cache/ariadshift-target UV_NO_CONFIG=1 ... just pack-qpdf /home/vchun/Codes/01-AriadShift/.run/coord/qpdf/12.4.2/linux-x64` failed because the recipe hard-coded the worktree CLI path. After correcting the recipe, the same command passed assembly and its verify step. This is a development pack only; signed resolution and version checks remain. |
-| Format | `cargo fmt --all --check` passed. |
-| Schema | `cargo test --locked -p ariad-core --test tools_registry regenerate_tools_schema -- --ignored` passed, one test; generated tools schema is uncommitted. |
-| Core/PDF | FAIL: `cargo test --locked -p ariad-core -p ariad-pdf -p ariad-engine-io --features ariad-pdf/codecs` exited 101 at `ebook_matches_stirling_on_corpus`: 0 processing errors, 6/10 met the size threshold; the corpus test took 76.49 s. Earlier test binaries in this command passed, but later binaries did not run. This test does not measure SSIM. |
-| Clippy, pack tooling | Passed in subsequent pre-final checks below. |
-| WASM, full host, surfaces, measurement, real smoke, policy, fuzz gate, commit check | Final gate not completed. They are not passes. |
+Logs named below are in the main checkout under
+`.run/coord/p05/integrator-logs/`. Durations exclude lock waiting.
 
-The core/PDF command used `ASHIFT_PANDOC=/home/vchun/Codes/01-AriadShift/.tools/pandoc/bin/pandoc`, `ARIAD_TEST_PDFIUM_DIR=/home/vchun/Codes/01-AriadShift/.run/coord/pdfium-pack/bin`, `ASHIFT_PACK_PDFIUM=/home/vchun/Codes/01-AriadShift/.run/coord/pdfium-pack`, and `ARIAD_TEST_QPDF_DIR=/home/vchun/Codes/01-AriadShift/.run/coord/qpdf/12.4.2/linux-x64`. The harness captured the command output; no separate complete log was saved.
+| Gate | Command and result | Duration / log |
+| --- | --- | --- |
+| Pack | `env UV_NO_CONFIG=1 just pack-qpdf "$ARIAD_TEST_QPDF_DIR" <development-pack>`: PASS; manifest and notices verified with the newly built CLI. The development binary reports qpdf 12.4.2. | 23.3 s; `gate-pack.log` |
+| Format | `cargo fmt --all --check`: PASS. | 2.6 s; `gate-format.log` |
+| Clippy | `cargo clippy --locked -p ariad-core -p ariad-pdf -p ariad-host -p ariad-server -p ariad-cli --all-targets --features ariad-pdf/codecs,ariad-host/test-probe -- -D warnings`: PASS. | 18.9 s; `gate-clippy.log` |
+| WASM | `cargo check --locked -p ariad-pdf -p ariad-wasm --target wasm32-unknown-unknown` and `cargo test --locked -p ariad-wasm`: PASS; 16 tests. | 0.4 s and 3.0 s; `gate-wasm-check.log`, `gate-wasm-test.log` |
+| Pack tooling | `env UV_NO_CONFIG=1 just pack-tooling-test` and `bash scripts/test-pack-qpdf.sh` with `QPDF_TEST_PACK` set: PASS; 55 shared checks, qpdf checks passed. | 2.2 s and 0.7 s; `gate-pack-tooling.log`, `gate-qpdf-test.log` |
+| Core/PDF | `cargo test --locked -p ariad-core -p ariad-pdf -p ariad-engine-io --features ariad-pdf/codecs`: PASS with the approved 6/10 baseline. Four tests were ignored: three schema generators and one release-only timing test. | 2m52s; `gate-core-pdf.log` |
+| Host | `cargo test --locked -p ariad-host --features test-probe`: PASS with both real packs and no ignored host tests. The first run with Stirling comparison included exceeded ten minutes after 9/10 rows and was terminated; the full suite was rerun without that extra comparison, and the comparison was completed separately below. | 6m36s retry; `gate-host.log`, `gate-host-retry.log` |
+| CLI | `cargo test --locked -p ariad-cli --features ariad-host/test-probe`: PASS with both real packs. Eleven unrelated Docling/AppImage tests were ignored; the real qpdf and PDFium checks were configured. | 4m34s; `gate-cli.log` |
+| Server | `cargo test --locked -p ariad-server`: PASS. | 1m34s; `gate-server.log` |
+| Measurement | `cargo test --locked -p ariad-host --features test-probe --test compress_similarity corpus_size_and_similarity_against_stirling -- --nocapture`: PASS against the approved baseline. Ten input rows, ten target results and ten finite Stirling SSIM values matched the supplied TSV in order; the same six files met both size and SSIM thresholds, with zero errors. Target sizes were within 5% for 0/10; the chosen closest outputs and warning are documented in the measurement report. | 6m37s; `gate-measurement.log` |
+| Smoke | `bash .run/coord/p05/smoke.sh` using the newly built CLI and both packs: PASS; compress, encrypt, decrypt, repair, linearize, sanitize and doctor each exited zero. Six nonempty PDFs and JSON results are in `.run/coord/p05/smoke/`; doctor reported both engines ready. | 3.5 s; `gate-smoke.log` |
+| Policy | `env UV_NO_CONFIG=1 just licenses-check`, `just deny`, `just spell`, and `bash scripts/test-ci-scope.sh`: PASS. CI scope: 93 checks. The first spell run failed on valid font tokens; the corrected dictionary passed. | 1m20s, 3.7 s, 0.4 s, 1.6 s; `gate-licenses.log`, `gate-deny.log`, `gate-spell-retry.log`, `gate-ci-scope.log` |
+| Fuzz | In `fuzz/`, `cargo check --locked` and `cargo check --locked --features pdf-reader`: PASS, including the phase tool targets. | 7.9 s and 1.4 s; `gate-fuzz.log`, `gate-fuzz-pdf.log` |
+| Commits | `sh scripts/check-commits.sh origin/dev..HEAD`: PASS before this report; repeat after the report commit. | 1.0 s; `gate-commits.log` |
 
-A prior worker measurement, not a rerun on this integrated tree, reports six
-of ten files meeting both size and SSIM and zero of ten target runs within five
-percent; see `plans/reports/compress-measurement-p05.md`. The seven-file joint
-threshold therefore remains unmet on that evidence. No Stirling output PDF was
-committed.
+An earlier core/PDF attempt incorrectly set `SOURCE_DATE_EPOCH` globally and
+failed a writer test that deliberately compares the unset and set cases. The
+successful gate above explicitly unsets it. Before final verification, an
+outdated synthetic qpdf probe and CLI inventory snapshots failed and were fixed;
+the affected runner tests, snapshots and full surfaces were rerun. No test was
+weakened to hide those failures. The compression assertion is the explicit
+accepted 6/10 phase baseline, not a claim that 7/10 was reached.
 
-The pre-encoder host gate also ran 195 host unit tests successfully before its corpus test failed at 6/10 after 393.89 seconds. Its later test binaries did not run, and it is not evidence for the post-encoder tree.
+## Review and outstanding Mac work
 
-## Subsequent focused verification
+The integration review examined the shared signature helper, secret channels,
+manifest executable enforcement, sandbox path and relevant font code. It was a
+scoped inline review, not an independent audit of the entire 153-file phase.
+The s2c report records conservative font exclusions, including unsupported
+simple-font encodings and raw CFF, which remain within issue #187's follow-up.
+No Stirling output PDF or user document was committed.
 
-- `cargo test -p ariad-pdf --lib detects_signed_acroform_fields_with_inherited_type`: passed, one test.
-- With `ASHIFT_PACK_QPDF` pointing to the freshly assembled development pack, `cargo test --locked -p ariad-cli --features test-probe --test secrets_surfaces --test mcp_secrets`: passed, nine tests, including actual qpdf, recipe prompts and handle reuse.
-- `cargo test --locked -p ariad-wasm pdf_tool_exposes_coded_warnings_and_metrics`: passed, one test.
-- In `fuzz/`, `cargo check --features pdf-reader` and `cargo fmt --all --check`: passed; this enables and builds the phase-5 structural cases.
-- Frozen v1 protocol and pack schemas match `origin/dev` byte for byte.
+On macOS, build a source qpdf development pack and run
+`ARIAD_TEST_QPDF_DIR=<source-built-qpdf-dir> ASHIFT_PACK_QPDF=<pack-root> cargo test --locked -p ariad-host --features test-probe --test qpdf_adapter --test qpdf_secrets`,
+including the Seatbelt child-confinement case. Complete the phase PR's macOS
+build, signing and native checks on the Mac/CI. `apps/macos` and `ariad-ffi`
+are not present in this tree, so their future bindings cannot be tested here.
+These Mac checks do not block the Linux phase gate under the PM directive.
+The unsigned Linux development qpdf pack is for local testing only; signed
+release publication and its owner-pending licence reviews are separate.
 
-The focused tests above precede the integration of s2b and are not a final gate. Subsequent checks on the integrated tree passed `licenses-check`, `deny`, `spell`, the registry snapshot test the `wasm32-unknown-unknown` check, all 16 WASM tests, and 93 CI-scope checks. The first notice generation failed on a missing workspace dependency; installing the frozen pnpm lockfile and running the normal web build supplied the required bundle analysis, after which notice generation and `licenses-check` passed. The web build took 5m44s. Logs are in the main checkout under `.run/coord/p05/integrator-logs/`.
-
-Additional pre-final checks after merging s2b: the specified five-package clippy command passed with `-D warnings` in 35 seconds; `just pack-tooling-test` passed 55 checks; `scripts/test-pack-qpdf.sh` passed against the real development pack. The host pack verification, PDFium sandbox, qpdf adapter and qpdf secret test binaries passed 27 tests, including the signed-manifest executable checks and Linux child confinement. The development qpdf binary reports 12.4.2. Logs are under `.run/coord/p05/integrator-logs/` in the main checkout. These checks must be repeated if subsequent source changes affect them.
-
-The remaining host suite passed with the corpus test explicitly filtered, after fixing a test probe that collided with the real qpdf adapter. The full CLI suite passed with both development packs configured; eleven unrelated AppImage and Docling tests remained ignored. The server suite passed. These are pre-s2c results, and the filtered host run is not a full host gate.
-
-A pre-s2c real CLI smoke ran `pdf.compress`, `pdf.encrypt`, `pdf.decrypt`, `pdf.repair`, `pdf.linearize`, `pdf.sanitize` and `doctor --json` successfully with both development packs. All seven commands exited zero; six nonempty PDF artifacts and individual JSON results are under `.run/coord/p05/smoke/`. Doctor reported qpdf 12.4.2 and PDFium ready. Repair returned three `repaired` warnings. The shell script and log are under `.run/coord/p05/`; its temporary password file was deleted.
-
-## Remaining integration work
-
-- Verify and, where necessary, enforce the signed executable allowlist for qpdf;
-  exercise Linux child confinement, hostile inputs and pack resolution.
-- Complete snapshots, documentation, licence notice regeneration and all unrun gate commands. Re-run the joint
-  10-file size/SSIM comparison and target ladder against the final code.
-- Inspect and commit the integration and generated files only after validating
-  them. No worker worktree or branch was deleted; cleanup protocol was not
-  found beyond the instruction to preserve unmerged work.
-
-## Mac decisions and work
-
-The Mac PM approved the encoder follow-up and source-built macOS qpdf. The merged encoder follow-up reports 6/10 for the joint size and SSIM criterion. Decision 37 keeps the bar unchanged and dispatches a lossless optimization follow-up; that work is in progress. IJG and GNU runtime items remain owner-pending and block distribution, not the phase merge. Run and
-record macOS qpdf build, signing, Seatbelt child confinement, bindings and native
-tests on the Mac. No macOS verification was run here.
+No worker branch or worktree was removed. The smoke password file was temporary
+and deleted; smoke artifacts and the development pack remain in coordination
+storage for review. The local `.tools/bin/committed` points to the existing
+pinned 1.1.11 tool in the main checkout. No process started by this integration
+is left running.
