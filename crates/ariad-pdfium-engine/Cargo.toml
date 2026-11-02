@@ -1,0 +1,43 @@
+[package]
+name = "ariad-pdfium-engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Out-of-process PDFium engine for AriadShift (ariad-engine/2): rendering, images, text geometry and pixel analysis"
+readme = "../../README.md"
+publish = false
+
+[lib]
+name = "ariad_pdfium_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ariad-pdfium-engine"
+path = "src/main.rs"
+
+[dependencies]
+ariad-core.workspace = true
+ariad-engine-io.workspace = true
+ariad-pdf.workspace = true
+lopdf.workspace = true
+flate2.workspace = true
+# PDFium is loaded at run time from the pack directory; no static or bundled feature is enabled,
+# and the `image_*` features stay off so the codec set below is the only one in the tree.
+pdfium-render = { version = "=0.9.5", default-features = false, features = ["pdfium_8125", "thread_safe"] }
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff"] }
+zip = { version = "=9.0.5", default-features = false, features = ["deflate"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+jsonschema.workspace = true
+tempfile.workspace = true
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true

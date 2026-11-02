@@ -6,10 +6,10 @@ components included in or used to build this binary distribution.
 
 Table of Contents
 -----------------
-- Apache License 2.0 (Apache-2.0): 601 component(s)
-- MIT License (MIT): 214 component(s)
+- Apache License 2.0 (Apache-2.0): 604 component(s)
+- MIT License (MIT): 218 component(s)
 - Unicode License v3 (Unicode-3.0): 30 component(s)
-- ISC License (ISC): 18 component(s)
+- ISC License (ISC): 19 component(s)
 - BSD 3-Clause "New" or "Revised" License (BSD-3-Clause): 14 component(s)
 - BSD 2-Clause "Simplified" License (BSD-2-Clause): 7 component(s)
 - Mozilla Public License 2.0 (MPL-2.0): 6 component(s)
@@ -10276,6 +10276,7 @@ Used by:
   - unicode-segmentation 1.13.3 (https://github.com/unicode-rs/unicode-segmentation)
   - unicode-vo 0.1.0 (https://github.com/RazrFalcon/unicode-vo)
   - url 2.5.8 (https://github.com/servo/rust-url)
+  - utf16string 0.2.0 (https://github.com/getsentry/utf16string)
   - uuid 1.28.0 (https://github.com/uuid-rs/uuid)
   - version_check 0.9.5 (https://github.com/SergioBenitez/version_check)
   - wasm-bindgen-macro-support 0.2.129 (https://github.com/wasm-bindgen/wasm-bindgen/tree/main/crates/macro-support)
@@ -14932,6 +14933,7 @@ Used by:
   - ariad-engine-io 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-host 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-pdf 0.2.0 (https://github.com/bavanchun/AriadShift)
+  - ariad-pdfium-engine 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-server 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-typst 0.2.0 (https://github.com/bavanchun/AriadShift)
   - ariad-wasm 0.2.0 (https://github.com/bavanchun/AriadShift)
@@ -15005,6 +15007,7 @@ Used by:
   - paste 1.0.15 (https://github.com/dtolnay/paste)
   - pastey 0.2.3 (https://github.com/as1100k/pastey)
   - pdf-writer 0.15.0 (https://github.com/typst/pdf-writer)
+  - pdfium-render 0.9.5 (https://github.com/ajrcarey/pdfium-render)
   - pin-project-lite 0.2.17 (https://github.com/taiki-e/pin-project-lite)
   - portable-atomic 1.15.0 (https://github.com/taiki-e/portable-atomic)
   - proc-macro2 1.0.107 (https://github.com/dtolnay/proc-macro2)
@@ -16861,6 +16864,31 @@ License: ISC License (ISC)
 --------------------------------------------------------------------------------
 
 Used by:
+  - libloading 0.7.4 (https://github.com/nagisa/rust_libloading/)
+
+License Text:
+-------------
+Copyright © 2015, Simonas Kazlauskas
+
+Permission to use, copy, modify, and/or distribute this software for any purpose with or without
+fee is hereby granted, provided that the above copyright notice and this permission notice appear
+in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
+SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: ISC License (ISC)
+--------------------------------------------------------------------------------
+
+Used by:
   - rustls-webpki 0.103.16 (https://github.com/rustls/webpki)
 
 License Text:
@@ -18355,6 +18383,26 @@ License: MIT License (MIT)
 --------------------------------------------------------------------------------
 
 Used by:
+  - fax 0.2.7 (https://github.com/pdf-rs/fax)
+
+License Text:
+-------------
+Copyright © 2021 The pdf-rs contributers.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
   - lopdf 0.46.0 (https://github.com/J-F-Liu/lopdf.git)
 
 License Text:
@@ -18636,6 +18684,40 @@ License Text:
 MIT License
 
 Copyright (c) 2018 Matthew D. Steele
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
+  - tiff 0.11.3 (https://github.com/image-rs/image-tiff)
+
+License Text:
+-------------
+MIT License
+
+Copyright (c) 2018 PistonDevelopers
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19909,6 +19991,39 @@ License: MIT License (MIT)
 --------------------------------------------------------------------------------
 
 Used by:
+  - vecmath 1.0.0 (https://github.com/pistondevelopers/vecmath.git)
+
+License Text:
+-------------
+The MIT License (MIT)
+
+Copyright (c) 2014 PistonDevelopers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
   - rust-ini 0.21.3 (https://github.com/zonyitoo/rust-ini)
 
 License Text:
@@ -20147,6 +20262,41 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+================================================================================
+
+--------------------------------------------------------------------------------
+License: MIT License (MIT)
+--------------------------------------------------------------------------------
+
+Used by:
+  - piston-float 1.0.1 (https://github.com/pistondevelopers/float.git)
+
+License Text:
+-------------
+The MIT License (MIT)
+
+Copyright (c) 2015 PistonDevelopers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 
 
 ================================================================================

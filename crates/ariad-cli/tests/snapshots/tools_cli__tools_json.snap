@@ -125,6 +125,21 @@ expression: tools_json
           "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
           "type": "string"
         },
+        "SplitDetectMode": {
+          "description": "Blank-separator detection strategy for `pdf.split` when `mode == \"blank-separator\"`.",
+          "oneOf": [
+            {
+              "const": "content",
+              "description": "In-process structural content-stream inspection (`ariad-pdf`).",
+              "type": "string"
+            },
+            {
+              "const": "pixel",
+              "description": "Out-of-process grayscale raster white-ratio detection (`pdfium` engine).",
+              "type": "string"
+            }
+          ]
+        },
         "SplitMode": {
           "description": "Splitting strategy for `pdf.split`.",
           "oneOf": [
@@ -150,7 +165,7 @@ expression: tools_json
             },
             {
               "const": "blank-separator",
-              "description": "Split on content-empty separator pages (pages with no drawing operators or only whitespace).",
+              "description": "Split on blank separator pages.",
               "type": "string"
             }
           ]
@@ -167,6 +182,21 @@ expression: tools_json
           "minimum": 0.0,
           "type": [
             "number",
+            "null"
+          ]
+        },
+        "detect": {
+          "$ref": "#/$defs/SplitDetectMode",
+          "default": "content",
+          "description": "Blank-separator detection strategy (`\"content\"` in-process or `\"pixel\"` via `pdfium`)."
+        },
+        "dpi": {
+          "description": "Optional raster DPI (`36..=600`) when `detect == \"pixel\"`.",
+          "format": "uint32",
+          "maximum": 600,
+          "minimum": 36,
+          "type": [
+            "integer",
             "null"
           ]
         },
@@ -210,6 +240,16 @@ expression: tools_json
           },
           "type": [
             "array",
+            "null"
+          ]
+        },
+        "threshold": {
+          "description": "Optional white-pixel ratio threshold in `(0.0, 1.0]` when `detect == \"pixel\"`.",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": [
+            "number",
             "null"
           ]
         }
@@ -2569,6 +2609,685 @@ expression: tools_json
     ],
     "secret_params": [],
     "summary": "List, toggle default visibility, or remove Optional Content Group (OCG) layers.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "convert",
+    "id": "pdf.render",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "png",
+    "output_formats": [
+      "png",
+      "jpeg",
+      "webp",
+      "bmp",
+      "tiff",
+      "zip"
+    ],
+    "params_schema": {
+      "$defs": {
+        "Background": {
+          "description": "Page background painted before the page content.",
+          "oneOf": [
+            {
+              "const": "white",
+              "description": "Opaque white.",
+              "type": "string"
+            },
+            {
+              "const": "transparent",
+              "description": "Fully transparent; rejected for formats without alpha.",
+              "type": "string"
+            }
+          ]
+        },
+        "Combine": {
+          "description": "Whether the rendered pages stay separate images or become one tall image.",
+          "oneOf": [
+            {
+              "const": "none",
+              "description": "One image per page.",
+              "type": "string"
+            },
+            {
+              "const": "vertical",
+              "description": "All selected pages stacked vertically into a single image.",
+              "type": "string"
+            }
+          ]
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        },
+        "RasterFormat": {
+          "description": "Image encoding of a rendered page.",
+          "oneOf": [
+            {
+              "const": "png",
+              "description": "Lossless PNG.",
+              "type": "string"
+            },
+            {
+              "const": "jpeg",
+              "description": "Lossy JPEG; has no alpha channel.",
+              "type": "string"
+            },
+            {
+              "const": "webp",
+              "description": "WebP.",
+              "type": "string"
+            },
+            {
+              "const": "bmp",
+              "description": "Uncompressed BMP.",
+              "type": "string"
+            },
+            {
+              "const": "tiff",
+              "description": "TIFF.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.render`.",
+      "properties": {
+        "annotations": {
+          "default": true,
+          "description": "Whether annotations and form widgets are drawn.",
+          "type": "boolean"
+        },
+        "background": {
+          "$ref": "#/$defs/Background",
+          "default": "white",
+          "description": "Page background; `transparent` is rejected for `jpeg`."
+        },
+        "combine": {
+          "$ref": "#/$defs/Combine",
+          "default": "none",
+          "description": "`vertical` stacks every selected page into one tall image."
+        },
+        "dpi": {
+          "default": 150,
+          "description": "Render resolution in dots per inch.",
+          "format": "uint32",
+          "maximum": 600,
+          "minimum": 36,
+          "type": "integer"
+        },
+        "format": {
+          "$ref": "#/$defs/RasterFormat",
+          "default": "png",
+          "description": "Output image encoding."
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all",
+          "description": "Pages to render (1-based selector)."
+        },
+        "quality": {
+          "description": "Encoder quality for `jpeg` and `webp` (1 to 100); the encoder default applies when\nabsent. Rejected for lossless formats.",
+          "format": "uint8",
+          "maximum": 100,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "RenderParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Render PDF pages to PNG, JPEG, WebP, BMP or TIFF images at a chosen resolution.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "convert",
+    "id": "pdf.to_images",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "png",
+    "output_formats": [
+      "png",
+      "jpeg",
+      "webp",
+      "bmp",
+      "tiff",
+      "zip"
+    ],
+    "params_schema": {
+      "$defs": {
+        "Background": {
+          "description": "Page background painted before the page content.",
+          "oneOf": [
+            {
+              "const": "white",
+              "description": "Opaque white.",
+              "type": "string"
+            },
+            {
+              "const": "transparent",
+              "description": "Fully transparent; rejected for formats without alpha.",
+              "type": "string"
+            }
+          ]
+        },
+        "Combine": {
+          "description": "Whether the rendered pages stay separate images or become one tall image.",
+          "oneOf": [
+            {
+              "const": "none",
+              "description": "One image per page.",
+              "type": "string"
+            },
+            {
+              "const": "vertical",
+              "description": "All selected pages stacked vertically into a single image.",
+              "type": "string"
+            }
+          ]
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        },
+        "RasterFormat": {
+          "description": "Image encoding of a rendered page.",
+          "oneOf": [
+            {
+              "const": "png",
+              "description": "Lossless PNG.",
+              "type": "string"
+            },
+            {
+              "const": "jpeg",
+              "description": "Lossy JPEG; has no alpha channel.",
+              "type": "string"
+            },
+            {
+              "const": "webp",
+              "description": "WebP.",
+              "type": "string"
+            },
+            {
+              "const": "bmp",
+              "description": "Uncompressed BMP.",
+              "type": "string"
+            },
+            {
+              "const": "tiff",
+              "description": "TIFF.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.to_images`, the alias of `pdf.render` with Stirling-PDF's 300 dpi\ndefault.",
+      "properties": {
+        "annotations": {
+          "default": true,
+          "description": "Whether annotations and form widgets are drawn.",
+          "type": "boolean"
+        },
+        "background": {
+          "$ref": "#/$defs/Background",
+          "default": "white",
+          "description": "Page background; `transparent` is rejected for `jpeg`."
+        },
+        "combine": {
+          "$ref": "#/$defs/Combine",
+          "default": "none",
+          "description": "`vertical` stacks every selected page into one tall image."
+        },
+        "dpi": {
+          "default": 300,
+          "description": "Render resolution in dots per inch.",
+          "format": "uint32",
+          "maximum": 600,
+          "minimum": 36,
+          "type": "integer"
+        },
+        "format": {
+          "$ref": "#/$defs/RasterFormat",
+          "default": "png",
+          "description": "Output image encoding."
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all",
+          "description": "Pages to render (1-based selector)."
+        },
+        "quality": {
+          "description": "Encoder quality for `jpeg` and `webp` (1 to 100); the encoder default applies when\nabsent. Rejected for lossless formats.",
+          "format": "uint8",
+          "maximum": 100,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "title": "ToImagesParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Convert PDF pages to images, optionally stacked into one tall image (alias of pdf.render with 300 dpi default).",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "convert",
+    "id": "pdf.thumbnails",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "png",
+    "output_formats": [
+      "png",
+      "json"
+    ],
+    "params_schema": {
+      "$defs": {
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.thumbnails`.",
+      "properties": {
+        "max_px": {
+          "default": 256,
+          "description": "Longest edge of each thumbnail in pixels.",
+          "format": "uint32",
+          "maximum": 512,
+          "minimum": 64,
+          "type": "integer"
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all",
+          "description": "Pages to render (1-based selector)."
+        }
+      },
+      "title": "ThumbnailsParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Render small page thumbnails and a JSON index of them.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "ariad-pdf",
+    "group": "convert",
+    "id": "image.to_pdf",
+    "input_formats": [
+      "png",
+      "jpeg",
+      "webp",
+      "tiff",
+      "bmp"
+    ],
+    "inputs": {
+      "arity": "many",
+      "max": 500,
+      "min": 1
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "Orientation": {
+          "description": "Page orientation for paper sizes; ignored by `fit-image`.",
+          "oneOf": [
+            {
+              "const": "auto",
+              "description": "Landscape when the image is wider than tall, portrait otherwise.",
+              "type": "string"
+            },
+            {
+              "const": "portrait",
+              "description": "Always portrait.",
+              "type": "string"
+            },
+            {
+              "const": "landscape",
+              "description": "Always landscape.",
+              "type": "string"
+            }
+          ]
+        },
+        "PageSize": {
+          "description": "Page size of the generated PDF.",
+          "oneOf": [
+            {
+              "const": "fit-image",
+              "description": "Every page takes the size of its image.",
+              "type": "string"
+            },
+            {
+              "const": "a3",
+              "description": "ISO A3.",
+              "type": "string"
+            },
+            {
+              "const": "a4",
+              "description": "ISO A4.",
+              "type": "string"
+            },
+            {
+              "const": "a5",
+              "description": "ISO A5.",
+              "type": "string"
+            },
+            {
+              "const": "letter",
+              "description": "US Letter.",
+              "type": "string"
+            },
+            {
+              "const": "legal",
+              "description": "US Legal.",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `image.to_pdf`.",
+      "properties": {
+        "margin_pt": {
+          "default": 0.0,
+          "description": "Margin around the image in points.",
+          "format": "double",
+          "maximum": 144.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "orientation": {
+          "$ref": "#/$defs/Orientation",
+          "default": "auto",
+          "description": "Page orientation for paper sizes."
+        },
+        "page": {
+          "$ref": "#/$defs/PageSize",
+          "default": "fit-image",
+          "description": "Page size: the image size (`fit-image`) or a paper size."
+        }
+      },
+      "title": "ImageToPdfParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "wasm",
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Combine PNG, JPEG, WebP, TIFF or BMP images into one PDF, one image per page.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "convert",
+    "id": "pdf.extract_images",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "png",
+    "output_formats": [
+      "png",
+      "jpeg",
+      "zip"
+    ],
+    "params_schema": {
+      "$defs": {
+        "ExtractFormat": {
+          "description": "Encoding of the extracted images.",
+          "oneOf": [
+            {
+              "const": "original",
+              "description": "Keep the encoding stored in the PDF where it is a standalone image format, otherwise PNG.",
+              "type": "string"
+            },
+            {
+              "const": "png",
+              "description": "Always re-encode as PNG.",
+              "type": "string"
+            }
+          ]
+        },
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.extract_images`.",
+      "properties": {
+        "format": {
+          "$ref": "#/$defs/ExtractFormat",
+          "default": "original",
+          "description": "Output encoding."
+        },
+        "min_px": {
+          "default": 0,
+          "description": "Skip images whose width or height is below this many pixels (0 keeps every image).",
+          "format": "uint32",
+          "maximum": 16384,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all",
+          "description": "Pages to scan (1-based selector)."
+        }
+      },
+      "title": "ExtractImagesParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Extract the embedded images of a PDF, keeping their stored encoding where possible.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "organize",
+    "id": "pdf.text_layout",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$defs": {
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.text_layout`.",
+      "properties": {
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all",
+          "description": "Pages to analyse (1-based selector)."
+        }
+      },
+      "title": "TextLayoutParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Report characters, words and lines with bounding boxes, font name, size and colour as JSON.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "organize",
+    "id": "pdf.remove_blank",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.remove_blank`.",
+      "properties": {
+        "dpi": {
+          "default": 50,
+          "description": "Resolution in dots per inch at which pages are rendered for the analysis.",
+          "format": "uint32",
+          "maximum": 600,
+          "minimum": 36,
+          "type": "integer"
+        },
+        "threshold": {
+          "default": 0.99,
+          "description": "Share of white pixels (0 to 1) at or above which a page counts as blank.",
+          "format": "double",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "title": "RemoveBlankParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Remove blank pages detected from low-resolution renders.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "organize",
+    "id": "pdf.crop_whitespace",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "pdf",
+    "params_schema": {
+      "$defs": {
+        "PageRange": {
+          "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.crop_whitespace`.",
+      "properties": {
+        "padding_pt": {
+          "default": 0.0,
+          "description": "Padding kept around the detected content in points.",
+          "format": "double",
+          "maximum": 144.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "pages": {
+          "$ref": "#/$defs/PageRange",
+          "default": "all",
+          "description": "Pages to crop (1-based selector)."
+        }
+      },
+      "title": "CropWhitespaceParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Set each page's crop box to its content bounding box plus optional padding.",
+    "tier": "free",
+    "version": "1"
+  },
+  {
+    "engine": "pdfium",
+    "group": "organize",
+    "id": "pdf.detect_scanned",
+    "input_formats": [
+      "pdf"
+    ],
+    "inputs": {
+      "arity": "one"
+    },
+    "output_format": "json",
+    "params_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "Parameters for `pdf.detect_scanned`.\n\nThe tool takes no parameters (`{}`) and rejects any unknown fields.",
+      "title": "DetectScannedParams",
+      "type": "object"
+    },
+    "runtimes": [
+      "local"
+    ],
+    "secret_params": [],
+    "summary": "Report per page whether a text layer exists and how much of the page an image covers.",
     "tier": "free",
     "version": "1"
   }

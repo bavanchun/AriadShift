@@ -111,7 +111,9 @@ fn structured_params_for_tool(tool_id: &str, u: &mut Unstructured<'_>) -> Value 
             0 => json!({ "mode": "every", "every": u.int_in_range(1u32..=4).unwrap_or(1) }),
             1 => json!({ "mode": "ranges", "ranges": ["1", "1-last"] }),
             2 => json!({ "mode": "bookmarks", "level": u.int_in_range(1u8..=3).unwrap_or(1) }),
-            3 => json!({ "mode": "size", "max_bytes": u.int_in_range(512u64..=65536).unwrap_or(4096) }),
+            3 => {
+                json!({ "mode": "size", "max_bytes": u.int_in_range(512u64..=65536).unwrap_or(4096) })
+            }
             _ => json!({ "mode": "blank-separator", "blank_threshold": 0.99 }),
         },
         "pdf.extract_pages" | "pdf.delete_pages" => json!({ "pages": page_expr }),
@@ -223,7 +225,9 @@ fn structured_params_for_tool(tool_id: &str, u: &mut Unstructured<'_>) -> Value 
         },
         "pdf.layers" => match u.int_in_range(0u8..=2).unwrap_or(0) {
             0 => json!({ "action": "list" }),
-            1 => json!({ "action": "set_default_visibility", "names": ["Layer1"], "visible": false }),
+            1 => {
+                json!({ "action": "set_default_visibility", "names": ["Layer1"], "visible": false })
+            }
             _ => json!({ "action": "remove", "names": ["AriadShift Watermark"] }),
         },
         _ => json!({}),
@@ -260,20 +264,25 @@ fuzz_target!(|data: &[u8]| {
     };
 
     let mut u = Unstructured::new(param_seed);
-    let selected_idx = usize::from(param_seed.first().copied().unwrap_or(0)) % STRUCTURAL_TOOLS.len();
+    let selected_idx =
+        usize::from(param_seed.first().copied().unwrap_or(0)) % STRUCTURAL_TOOLS.len();
     let selected_tool = STRUCTURAL_TOOLS[selected_idx];
 
     // 1. Fuzz the selected tool with completely arbitrary JSON (either parsed from `param_seed`
     //    or synthesized recursively) and raw byte inputs.
-    let raw_params: Value = serde_json::from_slice(param_seed)
-        .unwrap_or_else(|_| bounded_json_value(&mut u, 2));
+    let raw_params: Value =
+        serde_json::from_slice(param_seed).unwrap_or_else(|_| bounded_json_value(&mut u, 2));
     let raw_inputs = if requires_two_inputs(selected_tool) {
         vec![
             InputDoc::with_limits("in1.pdf", primary_pdf.to_vec(), limits.clone()),
             InputDoc::with_limits("in2.pdf", secondary_pdf.to_vec(), limits.clone()),
         ]
     } else {
-        vec![InputDoc::with_limits("in1.pdf", primary_pdf.to_vec(), limits.clone())]
+        vec![InputDoc::with_limits(
+            "in1.pdf",
+            primary_pdf.to_vec(),
+            limits.clone(),
+        )]
     };
     let _ = run_tool(selected_tool, &raw_inputs, &raw_params, &ctx);
 

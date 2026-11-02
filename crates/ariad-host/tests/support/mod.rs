@@ -296,6 +296,9 @@ pub struct PackBuilder {
     pub triple: String,
     pub entrypoint: Vec<String>,
     pub requires: String,
+    /// `engine_protocol` written into the manifest; defaults to what the host registers for an
+    /// engine of this name, so packs for registered engines are valid.
+    pub engine_protocol: Option<String>,
     pub notices: Vec<String>,
     pub env: Vec<(String, String)>,
     pub options: Vec<(String, String)>,
@@ -310,11 +313,20 @@ impl PackBuilder {
             triple: packs::host_targets()[0].clone(),
             entrypoint: vec!["bin/engine".to_owned()],
             requires: ">=0.1.0".to_owned(),
+            engine_protocol: ariad_host::engines::pack_spec(name)
+                .filter(|spec| spec.protocol == ariad_host::engines::Protocol::V2)
+                .map(|spec| spec.protocol.as_str().to_owned()),
             notices: vec!["LICENSE.txt".to_owned()],
             env: vec![("HF_HUB_OFFLINE".to_owned(), "1".to_owned())],
             options: vec![("artifacts_path".to_owned(), "{root}/models".to_owned())],
             components: Vec::new(),
         }
+    }
+
+    /// Overrides the `engine_protocol` written into the manifest.
+    pub fn engine_protocol(mut self, value: Option<&str>) -> Self {
+        self.engine_protocol = value.map(str::to_owned);
+        self
     }
 
     /// Adds a component file named `file`, unpacked into `dest`.
@@ -351,12 +363,33 @@ impl PackBuilder {
             files.push((Some(name.clone()), path));
             dests.push((name.clone(), dest.clone()));
         }
+        // A pack that declares `engine_protocol` is generated from a template, like the release
+        // pipeline does with `ashift __pack manifest --base`.
+        let template = tempfile::tempdir().unwrap();
+        let base = self.engine_protocol.as_ref().map(|protocol| {
+            let path = template.path().join("base.toml");
+            fs::write(
+                &path,
+                format!(
+                    "schema = \"{}\"\nname = \"{}\"\nversion = \"{}\"\nlicense = \"MIT\"\n\
+                     requires_ashift = \"{}\"\nengine_protocol = \"{protocol}\"\ntargets = []\n",
+                    packs::MANIFEST_SCHEMA,
+                    self.name,
+                    self.version,
+                    self.requires
+                ),
+            )
+            .unwrap();
+            path
+        });
         let mut manifest = packs::generate_manifest(&ManifestRequest {
             name: self.name.clone(),
             version: self.version.clone(),
             target: self.triple.clone(),
-            base: None,
+            base,
+            engine_protocol: self.engine_protocol.clone(),
             entrypoint: self.entrypoint.clone(),
+            executables: Vec::new(),
             url_prefix: None,
             dests,
             components: files,
@@ -364,8 +397,12 @@ impl PackBuilder {
         .expect("generate manifest");
         manifest.license = "MIT".to_owned();
         manifest.requires_ashift.clone_from(&self.requires);
+        manifest.engine_protocol.clone_from(&self.engine_protocol);
         manifest.notices.clone_from(&self.notices);
         let target = &mut manifest.targets[0];
+        target
+            .executables
+            .retain(|exec| !self.notices.contains(exec) || self.entrypoint.first() == Some(exec));
         for (key, value) in &self.env {
             target.env.insert(key.clone(), value.clone());
         }
@@ -411,10 +448,12 @@ impl PackBuilder {
             description: String::new(),
             license: "MIT".to_owned(),
             requires_ashift: self.requires.clone(),
+            engine_protocol: self.engine_protocol.clone(),
             notices: Vec::new(),
             targets: vec![packs::Target {
                 triple: self.triple.clone(),
                 entrypoint: self.entrypoint.clone(),
+                executables: Vec::new(),
                 env: Default::default(),
                 options: Default::default(),
                 components,

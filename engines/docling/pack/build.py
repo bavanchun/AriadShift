@@ -844,27 +844,48 @@ def pack_fields(version: str, expression: str) -> str:
     )
 
 
-def target_block(target: str) -> str:
-    """The target's entrypoint and default options, without components."""
+def archive_executables(archive_path: Path) -> list[str]:
+    """Sorted executable regular-file paths inside ``archive_path``, excluding ``notices``."""
+    executables: set[str] = set()
+    with tarfile.open(archive_path, "r:zst") as tar:
+        for info in tar.getmembers():
+            if not info.isfile():
+                continue
+            name = info.name.removeprefix("./")
+            if name in NOTICES or name.startswith("notices/"):
+                continue
+            if (info.mode & 0o111) or name.lower().endswith((".exe", ".bat", ".cmd")):
+                executables.add(name)
+    return sorted(executables)
+
+
+def target_block(target: str, executables: list[str] | tuple[str, ...] = ()) -> str:
+    """The target's entrypoint, declared executables and default options, without components."""
     argv = ", ".join(_toml(part) for part in entrypoint(target))
-    return "\n".join(
+    lines = [
+        "",
+        "[[targets]]",
+        f"triple = {_toml(target)}",
+        f"entrypoint = [{argv}]",
+    ]
+    if executables:
+        declared = ", ".join(_toml(path) for path in sorted(set(executables)))
+        lines.append(f"executables = [{declared}]")
+    lines.extend(
         [
-            "",
-            "[[targets]]",
-            f"triple = {_toml(target)}",
-            f"entrypoint = [{argv}]",
             'options = { artifacts_path = "{root}/models", tessdata_path = "{root}/tessdata" }',
             "",
         ]
     )
+    return "\n".join(lines)
 
 
 def write_manifest(ashift: str, out: Path, builds: list[TargetBuild]) -> None:
     """Writes the unsigned ``ariad-pack/1`` manifest of ``builds`` to ``out/pack.toml``.
 
-    ``ashift __pack manifest`` hashes the component files and declares the size and entry count
-    of each archive. A target is added by passing the previous output as ``--base``, with the
-    target's own entrypoint and options appended to it.
+    ``ashift __pack manifest`` hashes the component files and declares the size, entry count and
+    executable paths of each archive. A target is added by passing the previous output as
+    ``--base``, with the target's own entrypoint, executables and options appended to it.
     """
     versions = {build.version for build in builds}
     if len(versions) != 1:
@@ -875,8 +896,14 @@ def write_manifest(ashift: str, out: Path, builds: list[TargetBuild]) -> None:
         version, licenses.combined_expression(build.license for build in builds)
     )
     for build in sorted(builds, key=lambda item: item.triple):
+        executables: set[str] = set()
+        for file in build.files.values():
+            executables.update(archive_executables(out / file))
         base = out / "pack.base.toml"
-        base.write_text(base_text + target_block(build.triple), encoding="utf-8")
+        base.write_text(
+            base_text + target_block(build.triple, sorted(executables)),
+            encoding="utf-8",
+        )
         command = [
             ashift,
             "__pack",

@@ -42,9 +42,9 @@ use crate::{
             PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
             default_single_artifact_name, ensure_no_parent_traversal,
             extracted_quarantine_warnings, is_safe_extracted_extension, open_confined_output_dir,
-            publish_atomic, render_naming_template, validate_artifact_extensions,
-            validate_extracted_artifact_extensions, validate_output_path_extension,
-            validate_target_filename,
+            publish_atomic, render_naming_template, replace_staged_input_stem,
+            validate_extracted_artifact_extensions, validate_output_path_for_spec,
+            validate_spec_artifact_extensions, validate_target_filename,
         },
         secrets::{SecretBag, SecretScrubber},
     },
@@ -579,6 +579,10 @@ fn run_tool_inner(
         request.spec_override.is_none(),
     )
     .map_err(|msg| ToolError::InvalidParams(scrubber.scrub(&msg)))?;
+    if request.spec_override.is_none() {
+        validate_semantic_params(spec.id, &resolved_secrets.schema_params)
+            .map_err(|msg| ToolError::InvalidParams(scrubber.scrub(&msg)))?;
+    }
 
     // Validate optional naming template early if provided (exit code 9).
     if let Some(ref template) = request.naming_template {
@@ -603,16 +607,12 @@ fn run_tool_inner(
         )));
     }
 
-    // 8. Pre-validate output target confinement before staging or running the tool (exit code 2 / 6).
+    // 8. Pre-validate output target confinement and engine availability before staging or running.
     let emits_json = spec.output_format.eq_ignore_ascii_case("json")
         || tool_action_emits_json(spec.id, &resolved_secrets.schema_params);
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
-    let effective_output_format = if emits_json {
-        "json"
-    } else {
-        spec.output_format
-    };
+    let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
 
     let mut input_paths: Vec<PathBuf> = request.inputs.iter().map(|i| i.path.clone()).collect();
     preflight_output_target(
@@ -620,9 +620,19 @@ fn run_tool_inner(
         &input_paths,
         request.allowed_dirs.as_ref(),
         request.overwrite,
-        effective_output_format,
+        &spec,
+        &resolved_secrets.schema_params,
+        emits_json,
         extracts_attachments,
     )?;
+
+    if effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some() {
+        let _ = engine::resolve_engine_command(
+            effective_engine,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    }
 
     // 9. Confine, copy from the confined handle into `<ws>/in/`, size-check, and sniff format on the workspace copy.
     let workspace =
@@ -676,7 +686,9 @@ fn run_tool_inner(
     }
 
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
-    let raw_exec = if spec.engine == INPROCESS_PDF_ENGINE && request.engine_command.is_none() {
+    let is_out_of_process =
+        effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
+    let raw_exec = if !is_out_of_process {
         inprocess::execute_with_names(
             &spec,
             &staged_inputs_with_names,
@@ -691,6 +703,7 @@ fn run_tool_inner(
     } else {
         engine::execute(
             &spec,
+            effective_engine,
             &staged_inputs_with_format,
             &resolved_secrets.engine_params,
             resolved_secrets.has_secrets,
@@ -709,7 +722,8 @@ fn run_tool_inner(
     let (published, publish_warnings) = publish_tool_outputs(
         &workspace,
         &spec,
-        effective_output_format,
+        &resolved_secrets.schema_params,
+        is_out_of_process,
         emits_json || raw_exec.inline_json.is_some(),
         extracts_attachments,
         &raw_exec.artifacts,
@@ -734,7 +748,7 @@ fn run_tool_inner(
     Ok(ToolOutcome {
         tool: spec.id.to_owned(),
         version: spec.version.to_owned(),
-        engine: spec.engine.to_owned(),
+        engine: effective_engine.to_owned(),
         artifacts: published,
         warnings,
         metrics,
@@ -911,6 +925,7 @@ fn stage_and_classify_input(
                     spec.input_formats.join(", ")
                 )));
             }
+            None if spec.accepts_format("bmp") && is_bmp_file(&raw_staged_path) => "bmp".to_owned(),
             None => {
                 let _ = fs::remove_file(&raw_staged_path);
                 let ext = input_ref
@@ -1019,12 +1034,23 @@ fn copy_unconfined_input_to_file(
     Ok(())
 }
 
+fn is_bmp_file(path: &Path) -> bool {
+    let Ok(mut f) = fs::File::open(path) else {
+        return false;
+    };
+    let mut header = [0_u8; 14];
+    f.read_exact(&mut header).is_ok() && header.starts_with(b"BM")
+}
+
+#[allow(clippy::too_many_arguments)]
 fn preflight_output_target(
     output: &OutputTarget,
     inputs: &[PathBuf],
     allowed_dirs: Option<&AllowedDirs>,
     _overwrite: bool,
-    spec_output_format: &str,
+    spec: &ToolSpec,
+    params: &Value,
+    emits_json: bool,
     extracts_attachments: bool,
 ) -> Result<(), ToolError> {
     match output {
@@ -1078,7 +1104,7 @@ fn preflight_output_target(
                         )));
                     }
                 } else {
-                    validate_output_path_extension(path, spec_output_format)?;
+                    validate_output_path_for_spec(path, spec, params, emits_json)?;
                 }
             }
             Ok(())
@@ -1090,7 +1116,8 @@ fn preflight_output_target(
 fn publish_tool_outputs(
     workspace: &Workspace,
     spec: &ToolSpec,
-    effective_output_format: &str,
+    params: &Value,
+    is_out_of_process: bool,
     emits_json: bool,
     extracts_attachments: bool,
     raw_artifacts: &[(PathBuf, String)],
@@ -1117,8 +1144,8 @@ fn publish_tool_outputs(
     let (dest_dir, explicit_single_filename): (PathBuf, Option<String>) = match output {
         OutputTarget::None => return Ok((Vec::new(), Vec::new())),
         OutputTarget::DefaultBesideInput => {
-            // Inline-JSON actions (`pdf.info`, `outline export`, `attachments list`, `portfolio list`, `layers list`)
-            // without `-o` emit structured JSON inline without writing a file next to input.
+            // Inline-JSON actions (`pdf.info`, `outline export`, `attachments list`, `portfolio list`, `layers list`,
+            // `pdf.text_layout`, `pdf.detect_scanned`) without `-o` emit structured JSON inline without writing a file next to input.
             if (spec.id == "pdf.info" || emits_json) && naming_template.is_none() {
                 return Ok((Vec::new(), Vec::new()));
             }
@@ -1188,6 +1215,10 @@ fn publish_tool_outputs(
                 .and_then(|s| s.to_str())
                 .unwrap_or("attachment.bin")
                 .to_owned()
+        } else if is_out_of_process
+            && let Some(engine_named) = replace_staged_input_stem(staged_path, first_input)
+        {
+            engine_named
         } else if multi {
             default_multi_artifact_name(first_input, spec.id, index_1_based, format)
         } else {
@@ -1203,7 +1234,7 @@ fn publish_tool_outputs(
     if extracts_attachments {
         validate_extracted_artifact_extensions(&staged)?;
     } else {
-        validate_artifact_extensions(effective_output_format, &staged)?;
+        validate_spec_artifact_extensions(spec, params, emits_json, &staged)?;
     }
 
     let quarantine_warnings = if extracts_attachments {
@@ -1270,4 +1301,55 @@ fn validate_with_compiled(validator: &jsonschema::Validator, params: &Value) -> 
         return Err(format!("{path}: {error}"));
     }
     Ok(())
+}
+
+fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String> {
+    use ariad_core::tools::params::{
+        CropWhitespaceParams, ExtractImagesParams, ImageToPdfParams, RemoveBlankParams,
+        RenderParams, SplitParams, ThumbnailsParams, ToImagesParams,
+    };
+
+    match tool_id {
+        "pdf.split" => {
+            let p: SplitParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.render" => {
+            let p: RenderParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.to_images" => {
+            let p: ToImagesParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.thumbnails" => {
+            let p: ThumbnailsParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.extract_images" => {
+            let p: ExtractImagesParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.remove_blank" => {
+            let p: RemoveBlankParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.crop_whitespace" => {
+            let p: CropWhitespaceParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        "image.to_pdf" => {
+            let p: ImageToPdfParams =
+                serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
+            p.validate().map_err(|e| e.to_string())
+        }
+        _ => Ok(()),
+    }
 }

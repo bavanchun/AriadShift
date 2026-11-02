@@ -538,23 +538,48 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
 
     resolve_pack_in(&ctx, "qpdf").expect("initial resolve succeeds");
 
+    // Tamper with BOTH receipt.toml and .locks/<name>-<version>.manifest together so both
+    // mark `models/weights.bin` as `executable = true` and `record.executables` lists extra paths.
+    let receipt_path = root.join("receipt.toml");
+    let original_receipt = fs::read_to_string(&receipt_path).expect("read receipt.toml");
     let record_path = data.path().join("packs/.locks/qpdf-1.0.0.manifest");
     let original_record = fs::read_to_string(&record_path).expect("read manifest record");
     let rogue_rel = format!("bin/rogue{}", std::env::consts::EXE_SUFFIX);
-    let tampered_record = original_record.replace(
+
+    let mark_weights_exec = |text: &str| -> String {
+        let marker = "path = \"models/weights.bin\"\n";
+        let pos = text.find(marker).expect("models/weights.bin in file list");
+        let after = &text[pos..];
+        let size_line_end = after
+            .find("size = 4096\n")
+            .map(|idx| pos + idx + "size = 4096\n".len())
+            .expect("size = 4096 line");
+        let mut out = String::with_capacity(text.len() + 32);
+        out.push_str(&text[..size_line_end]);
+        out.push_str("executable = true\n");
+        out.push_str(&text[size_line_end..]);
+        out
+    };
+
+    let tampered_receipt = mark_weights_exec(&original_receipt);
+    let tampered_record = mark_weights_exec(&original_record).replace(
         "executables = [\"bin/engine\"]",
         &format!(
             "executables = [\"bin/engine\", \"LICENSE.txt\", \"models/weights.bin\", \"{rogue_rel}\"]"
         ),
     );
+    assert_ne!(original_receipt, tampered_receipt);
     assert_ne!(original_record, tampered_record);
+    fs::write(&receipt_path, &tampered_receipt).expect("write tampered receipt.toml");
     fs::write(&record_path, &tampered_record).expect("write tampered manifest record");
 
-    // Extra paths in the local manifest record are ignored when no unlisted executable is on disk.
+    // Extra executable flags in BOTH receipt.toml and the local manifest record are ignored
+    // when no unlisted executable is on disk.
     resolve_pack_in(&ctx, "qpdf")
-        .expect("extra entries in local manifest record executables are ignored");
+        .expect("extra executable claims in receipt and manifest record are ignored");
 
-    // Dropping an executable at the tampered path is still refused on every target.
+    // Dropping an executable at the tampered path is still refused on every target, even when
+    // both receipt.toml and the manifest record list it.
     let rogue_path = root.join(&rogue_rel);
     fs::write(&rogue_path, b"#!/bin/sh\nexit 0\n").expect("write rogue executable");
     #[cfg(unix)]
@@ -563,7 +588,7 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
         fs::set_permissions(&rogue_path, fs::Permissions::from_mode(0o755)).unwrap();
     }
     let err = resolve_pack_in(&ctx, "qpdf")
-        .expect_err("unlisted executable listed in tampered manifest record must be refused");
+        .expect_err("unlisted executable listed in tampered receipt and record must be refused");
     assert_eq!(err.code(), "tool_missing");
     assert!(
         err.to_string().contains("unlisted executable"),
@@ -571,15 +596,15 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
     );
     fs::remove_file(&rogue_path).unwrap();
 
-    // Marking a recorded non-executable archive file +x is still refused even when added to
-    // the local manifest record's executables list.
+    // Marking `models/weights.bin` +x on disk is refused even when BOTH receipt.toml and
+    // .locks/qpdf-1.0.0.manifest claim `executable = true` and list it in `executables`.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let weights = root.join("models/weights.bin");
         fs::set_permissions(&weights, fs::Permissions::from_mode(0o755)).unwrap();
         let err = resolve_pack_in(&ctx, "qpdf").expect_err(
-            "non-executable archive member added to manifest record executables must be refused",
+            "archive member marked +x with matching tampered receipt and record must be refused",
         );
         assert_eq!(err.code(), "tool_missing");
         assert!(
@@ -589,10 +614,54 @@ fn tampered_manifest_record_executables_cannot_widen_allowed_set() {
         fs::set_permissions(&weights, fs::Permissions::from_mode(0o644)).unwrap();
     }
 
+    // A pack whose signed manifest omits `executables` altogether resolves only its declared
+    // top-level executables (`entrypoint[0]` and `Unpack::File` with `executable = true`).
+    #[cfg(unix)]
+    {
+        use support::{Entry, tar_bytes, zstd};
+        let legacy_src = support::temp();
+        let archive = zstd(&tar_bytes(&[
+            Entry::Dir("bin/"),
+            Entry::File("bin/engine", b"#!/bin/sh\nexit 0\n".to_vec(), 0o755),
+            Entry::File("bin/extra-helper", b"#!/bin/sh\nexit 0\n".to_vec(), 0o755),
+            Entry::File("LICENSE.txt", b"MIT\n".to_vec(), 0o644),
+        ]));
+        let builder = PackBuilder::new("verapdf", "1.0.0").component(
+            "runtime",
+            "runtime.tar.zst",
+            archive,
+            ".",
+        );
+        let manifest_toml = builder.write_unsigned(legacy_src.path());
+        let mut manifest = packs::Manifest::parse(&manifest_toml).expect("parse manifest");
+        manifest.targets[0].executables.clear();
+        let stripped_toml = manifest.to_toml().unwrap();
+        assert!(!stripped_toml.contains("executables"));
+        fs::write(legacy_src.path().join(packs::MANIFEST_FILE), stripped_toml).unwrap();
+        support::sign_into(legacy_src.path(), &key, "pack:verapdf version:1.0.0");
+
+        let legacy_err = packs::install(
+            &ctx,
+            &InstallRequest {
+                name: "verapdf".to_owned(),
+                version: None,
+                source: InstallSource::Directory(legacy_src.path().to_path_buf()),
+            },
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .expect_err("undeclared archive executable must fail during install");
+        assert!(
+            legacy_err
+                .to_string()
+                .contains("archive member 'bin/extra-helper' is executable but not declared")
+        );
+    }
+
     // Also test a pack with a non-executable Unpack::File component whose filename has an
     // executable extension on Windows (.exe) and +x on Unix: the signed component flag
-    // (executable = false) must bound the allowed set on every target even if the local
-    // manifest record lists it in executables.
+    // (executable = false) must bound the allowed set on every target even if BOTH the receipt
+    // and the local manifest record list it as executable.
     let file_pack_src = support::temp();
     let program = format!("engine{}", std::env::consts::EXE_SUFFIX);
     let mut builder = PackBuilder::new("sign", "1.0.0")

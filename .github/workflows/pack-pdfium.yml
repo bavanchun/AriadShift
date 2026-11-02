@@ -1,0 +1,272 @@
+name: PDFium pack
+
+# Builds the pdfium engine pack for every target, checks it, and on `pack-pdfium-v*` tags signs
+# and publishes it. The shared builder is scripts/pack/build-pack.sh and the pack wrapper is
+# engines/pdfium/pack/make.sh; docs/packs.md describes the format and the signing flow.
+# Pull requests and manual runs build unsigned packs only. The minisign key exists solely in
+# the protected `release` environment, which only the tag-triggered release job uses.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - engines/pdfium/**
+      - scripts/pack/**
+      - crates/ariad-pdfium-engine/**
+      - justfile
+      - .github/workflows/pack-pdfium.yml
+  push:
+    tags: ["pack-pdfium-v*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  tooling:
+    name: Pack tooling tests
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install zstd
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
+      - name: Lint the pack scripts
+        run: shellcheck -x scripts/pack/*.sh engines/pdfium/pack/make.sh
+
+      - name: Test the builder, the wrapper and the signing guard
+        run: bash scripts/pack/test-pack-tooling.sh
+
+  pack:
+    name: Pack (${{ matrix.slug }})
+    needs: tooling
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {slug: linux-x64, triple: x86_64-unknown-linux-gnu, os: ubuntu-26.04}
+          - {slug: linux-arm64, triple: aarch64-unknown-linux-gnu, os: ubuntu-26.04-arm}
+          - {slug: linux-musl-x64, triple: x86_64-unknown-linux-musl, os: ubuntu-26.04, musl: true}
+          - {slug: linux-musl-arm64, triple: aarch64-unknown-linux-musl, os: ubuntu-26.04-arm, musl: true}
+          - {slug: mac-arm64, triple: aarch64-apple-darwin, os: macos-26}
+          # Cross-built on the arm64 runner; the smoke test needs Rosetta and is skipped without it.
+          - {slug: mac-x64, triple: x86_64-apple-darwin, os: macos-26}
+    defaults:
+      run:
+        shell: bash
+    env:
+      PACK_OUT: ${{ github.workspace }}/pack-out
+      PACK_DEV: ${{ github.workspace }}/pack-dev
+      ASHIFT_BIN: ${{ github.workspace }}/target/debug/ashift
+      SLUG: ${{ matrix.slug }}
+      TRIPLE: ${{ matrix.triple }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          target: ${{ matrix.triple }}
+          cache: false
+
+      - name: Install Linux tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
+      - name: Install macOS tools
+        if: runner.os == 'macOS'
+        run: brew install zstd gnu-tar
+
+      # The host ashift writes the manifest; it is not part of the pack.
+      - name: Build ashift
+        run: cargo build -p ariad-cli --bin ashift
+
+      - name: Build the engine
+        if: "!matrix.musl"
+        run: |
+          cargo build --release -p ariad-pdfium-engine --target "$TRIPLE"
+          echo "ENGINE_BIN=$GITHUB_WORKSPACE/target/$TRIPLE/release/ariad-pdfium-engine" >> "$GITHUB_ENV"
+
+      # A musl engine links libc dynamically, because a static musl binary cannot dlopen
+      # libpdfium. The Rust image (digest-pinned, toolchain 1.99.0 as in rust-toolchain.toml)
+      # runs on the runner's own architecture, so its host triple is the pack triple.
+      - name: Build the musl engine in Alpine
+        if: matrix.musl
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work \
+            -e RUSTUP_TOOLCHAIN=1.99.0 -e RUSTFLAGS='-C target-feature=-crt-static' \
+            -e CARGO_TARGET_DIR=/work/target-musl \
+            rust:1.99.0-alpine3.24@sha256:0cce0a5e0e8ba67b455257a3a02a1d99005f382748789d6464460028810f1627 \
+            cargo build --release -p ariad-pdfium-engine
+          sudo chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE/target-musl"
+          echo "ENGINE_BIN=$GITHUB_WORKSPACE/target-musl/release/ariad-pdfium-engine" >> "$GITHUB_ENV"
+
+      # Ad-hoc codesigning on macOS happens inside the builder. Developer-ID signing needs
+      # APPLE_SIGNING_IDENTITY, which only a keychain-import step could provide.
+      - name: Build the pack
+        run: >-
+          bash engines/pdfium/pack/make.sh pack --slug "$SLUG"
+          --engine "$ENGINE_BIN"
+          --ashift "$ASHIFT_BIN" --out "$PACK_OUT" --unpack-dir "$PACK_DEV"
+
+      - name: Check the pack layout, manifest and notices
+        run: bash engines/pdfium/pack/make.sh verify --pack "$PACK_DEV"
+
+      - name: Rebuild and compare the component hash
+        run: |
+          first=$(sha256sum "$PACK_OUT"/*.tar.zst 2>/dev/null || shasum -a 256 "$PACK_OUT"/*.tar.zst)
+          bash engines/pdfium/pack/make.sh pack --slug "$SLUG" \
+            --engine "$ENGINE_BIN" \
+            --ashift "$ASHIFT_BIN" --out "$RUNNER_TEMP/pack-rebuild"
+          second=$(cd "$RUNNER_TEMP/pack-rebuild" && { sha256sum ./*.tar.zst 2>/dev/null || shasum -a 256 ./*.tar.zst; })
+          [ "${first%% *}" = "${second%% *}" ] || { echo "component bytes differ between builds" >&2; exit 1; }
+
+      # The engine must find libpdfium next to itself and answer a describe request.
+      - name: Smoke test the engine on the runner
+        if: "!matrix.musl"
+        run: |
+          request='{"protocol":"ariad-engine/2","job":"job_smoke","op":"describe"}'
+          run=("$PACK_DEV/bin/ariad-pdfium-engine")
+          if [ "$SLUG" = mac-x64 ]; then
+            if ! arch -x86_64 true 2>/dev/null; then
+              echo "Rosetta is not available; the mac-x64 smoke test is deferred"
+              exit 0
+            fi
+            run=(arch -x86_64 "${run[@]}")
+          fi
+          printf '%s\n' "$request" | "${run[@]}" | tee "$RUNNER_TEMP/describe.out"
+          grep -q '"protocol":"ariad-engine/2"' "$RUNNER_TEMP/describe.out"
+
+      # Alpine pinned by digest (3.24.3 at the time of writing).
+      - name: Smoke test the musl engine on Alpine
+        if: matrix.musl
+        run: |
+          request='{"protocol":"ariad-engine/2","job":"job_smoke","op":"describe"}'
+          printf '%s\n' "$request" | docker run --rm -i -v "$PACK_DEV:/pack:ro" \
+            alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a \
+            /pack/bin/ariad-pdfium-engine | tee "$RUNNER_TEMP/describe.out"
+          grep -q '"protocol":"ariad-engine/2"' "$RUNNER_TEMP/describe.out"
+
+      - name: Upload the component
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pdfium-pack-${{ matrix.slug }}
+          path: ${{ env.PACK_OUT }}/*.tar.zst
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
+          if-no-files-found: error
+
+  manifest:
+    name: Merged manifest
+    needs: pack
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    env:
+      DIST: ${{ github.workspace }}/pack-dist
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
+        with:
+          cache: false
+
+      - name: Install zstd
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zstd
+
+      - name: Download the components
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: pdfium-pack-*
+          path: ${{ env.DIST }}
+          merge-multiple: true
+
+      - name: Build ashift
+        run: cargo build -p ariad-cli --bin ashift
+
+      - name: Write the unsigned manifest
+        run: >-
+          bash engines/pdfium/pack/make.sh merge --dist "$DIST"
+          --ashift "$GITHUB_WORKSPACE/target/debug/ashift"
+
+      - name: Upload the unsigned manifest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pdfium-pack-manifest
+          path: ${{ env.DIST }}/pack.toml
+          retention-days: ${{ github.event_name == 'pull_request' && 1 || 14 }}
+          if-no-files-found: error
+
+  release:
+    name: Sign and publish
+    needs: [manifest]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/pack-pdfium-v')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    # The signing key and the release permission exist only here.
+    environment: release
+    permissions:
+      contents: write
+    env:
+      DIST: ${{ github.workspace }}/pack-dist
+      TAG: ${{ github.ref_name }}
+      PUBLIC_KEY: crates/ariad-host/data/pack-keys/${{ vars.PACK_SIGNING_KEY_ID }}.pub
+      MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+      MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install minisign
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends minisign
+
+      - name: Download the components and the manifest
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: pdfium-pack-*
+          path: ${{ env.DIST }}
+          merge-multiple: true
+
+      - name: Sign the manifest
+        run: |
+          # shellcheck source=engines/pdfium/pack/pack.conf
+          . engines/pdfium/pack/pack.conf
+          test -f "$PUBLIC_KEY"
+          bash scripts/pack/sign-pack.sh --name "$PACK_NAME" --version "$PACK_VERSION" \
+            --manifest "$DIST/pack.toml" --public-key "$PUBLIC_KEY"
+
+      - name: Publish the release
+        run: |
+          gh release create "$TAG" --verify-tag --title "$TAG" \
+            --notes "Signed pdfium engine pack. Install with: ashift engines install pdfium" \
+            "$DIST/pack.toml" "$DIST/pack.toml.minisig" "$DIST"/*.tar.zst

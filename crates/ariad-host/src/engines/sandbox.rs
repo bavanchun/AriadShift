@@ -29,7 +29,7 @@ pub const ENGINE_PATHS: &[(&str, EnginePathsFn)] = &[
     ("pdf", EnginePaths::default),
     ("typst", EnginePaths::default),
     ("libreoffice", libreoffice_paths),
-    ("pdfium", EnginePaths::default),
+    ("pdfium", pdfium_paths),
     ("qpdf", EnginePaths::default),
     ("tesseract", EnginePaths::default),
     ("sign", EnginePaths::default),
@@ -61,6 +61,16 @@ pub fn requires_isolation(engine: &str, mode: SandboxMode) -> bool {
         SandboxMode::Off => false,
         SandboxMode::Required => true,
         SandboxMode::BestEffort => super::spec(engine).is_some_and(|spec| spec.sandbox_required),
+    }
+}
+
+/// The pdfium pack engine loads `libpdfium` from beside its own binary, so the pack's install
+/// root (read and execute, never write) is all it needs besides its workspace. Document code
+/// may write scratch files, so `/tmp` is private to the job.
+fn pdfium_paths() -> EnginePaths {
+    EnginePaths {
+        private_tmp: true,
+        ..EnginePaths::default()
     }
 }
 
@@ -191,6 +201,34 @@ mod tests {
         assert_eq!(ids.len(), count, "duplicate engine id in ENGINE_PATHS");
         assert_eq!(paths_for("no-such-engine"), super::EnginePaths::default());
         assert_eq!(paths_for("probe"), super::EnginePaths::default());
+    }
+
+    #[test]
+    fn every_pack_engine_declares_its_sandbox_paths() {
+        for engine in crate::engines::PACK_ENGINES {
+            assert!(
+                ENGINE_PATHS.iter().any(|(id, _)| *id == engine.id),
+                "{}",
+                engine.id
+            );
+        }
+    }
+
+    #[test]
+    fn pdfium_gets_a_private_tmp_and_no_extra_paths() {
+        let paths = paths_for("pdfium");
+        assert!(paths.private_tmp);
+        assert!(paths.read_only.is_empty());
+        assert!(paths.exec.is_empty());
+    }
+
+    #[test]
+    fn pdfium_refuses_to_degrade_in_best_effort_mode() {
+        use crate::sandbox::SandboxMode;
+
+        assert!(super::requires_isolation("pdfium", SandboxMode::BestEffort));
+        assert!(super::requires_isolation("pdfium", SandboxMode::Required));
+        assert!(!super::requires_isolation("pdfium", SandboxMode::Off));
     }
 
     #[test]

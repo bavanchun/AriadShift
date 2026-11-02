@@ -598,6 +598,34 @@ where
             .with("exit_code", 9u8)
     })?;
 
+    if spec.id == "pdf.split" {
+        let split_params: ariad_core::tools::params::SplitParams =
+            serde_json::from_value(params_value.clone()).map_err(|err| {
+                ApiError::new("invalid_params", format!("invalid tool parameters: {err}"))
+                    .with("tool", spec.id)
+                    .with("exit_code", 9u8)
+            })?;
+        split_params.validate().map_err(|err| {
+            ApiError::new("invalid_params", format!("invalid tool parameters: {err}"))
+                .with("tool", spec.id)
+                .with("exit_code", 9u8)
+        })?;
+    }
+
+    let effective_engine = spec.engine_for_params(&params_value);
+    if effective_engine != "ariad-pdf" {
+        return Err(ApiError::new(
+            "engine_unavailable",
+            format!(
+                "tool '{}' requires the '{effective_engine}' engine, which is not available in the browser",
+                spec.id
+            ),
+        )
+        .with("tool", spec.id)
+        .with("engine", effective_engine)
+        .with("exit_code", 5u8));
+    }
+
     for (idx, (input_bytes, input_name)) in inputs.iter().zip(names.iter()).enumerate() {
         if tool_input_is_attachment_payload(spec.id, &params_value, idx) {
             continue;
@@ -605,9 +633,15 @@ where
         let bytes = input_bytes.as_ref();
         let name = input_name.as_ref();
         let detected = sniff_tool_input_format(bytes, name);
-        let accepted = detected.is_some_and(|fmt| spec.accepts_core_format(fmt));
+        let is_bmp = detected.is_none() && bytes.len() >= 14 && bytes.starts_with(b"BM");
+        let accepted = detected.is_some_and(|fmt| spec.accepts_core_format(fmt))
+            || (is_bmp && spec.accepts_format("bmp"));
         if !accepted {
-            let found = detected.map_or("unknown", Format::id);
+            let found = if is_bmp {
+                "bmp"
+            } else {
+                detected.map_or("unknown", Format::id)
+            };
             return Err(ApiError::new(
                 "wrong_input",
                 format!(
@@ -628,16 +662,6 @@ where
         ..Limits::local()
     };
 
-    if spec.engine != "ariad-pdf" {
-        return Err(ApiError::new(
-            "engine_unavailable",
-            format!("tool '{}' is not implemented in ariad-wasm", spec.id),
-        )
-        .with("tool", spec.id)
-        .with("engine", spec.engine)
-        .with("exit_code", 5u8));
-    }
-
     let input_docs: Vec<InputDoc> = inputs
         .iter()
         .zip(names.iter())
@@ -649,6 +673,30 @@ where
     let tool_output =
         ariad_pdf::tools::run_tool(spec.id, &input_docs, &params_value, &ToolCtx::default())
             .map_err(|err| map_pdf_error(spec.id, err))?;
+
+    let check_artifact_formats = !tool_action_extracts_attachments(spec.id, &params_value)
+        && !tool_action_emits_json(spec.id, &params_value);
+    if check_artifact_formats {
+        for out in &tool_output.artifacts {
+            let raw_fmt = if out.format.is_empty() {
+                spec.output_format
+            } else {
+                out.format.as_str()
+            };
+            if !spec.allows_artifact_format(raw_fmt, &params_value) {
+                return Err(ApiError::new(
+                    "engine_failure",
+                    format!(
+                        "artifact '{}' reported format '{raw_fmt}', which is not allowed for tool '{}'",
+                        out.name, spec.id
+                    ),
+                )
+                .with("tool", spec.id)
+                .with("format", raw_fmt)
+                .with("exit_code", 1u8));
+            }
+        }
+    }
 
     let primary_format = tool_output
         .artifacts
@@ -710,6 +758,23 @@ fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: 
     }
 }
 
+fn tool_action_extracts_attachments(spec_id: &str, params: &Value) -> bool {
+    matches!(spec_id, "pdf.attachments" | "pdf.portfolio")
+        && params.get("action").and_then(Value::as_str) == Some("extract")
+}
+
+fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {
+    if spec_id == "pdf.info" {
+        return true;
+    }
+    let action = params.get("action").and_then(Value::as_str);
+    match spec_id {
+        "pdf.outline" => action == Some("export"),
+        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" => action == Some("list"),
+        _ => false,
+    }
+}
+
 fn tool_output_format_meta(output_format: &str) -> (&'static str, &'static str, &'static str) {
     match output_format.to_ascii_lowercase().as_str() {
         "json" => ("json", "application/json", "json"),
@@ -724,6 +789,7 @@ fn tool_output_format_meta(output_format: &str) -> (&'static str, &'static str, 
         "jpg" | "jpeg" => ("jpeg", "image/jpeg", "jpg"),
         "webp" => ("webp", "image/webp", "webp"),
         "tif" | "tiff" => ("tiff", "image/tiff", "tiff"),
+        "bmp" => ("bmp", "image/bmp", "bmp"),
         "docx" => (
             "docx",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -1278,6 +1344,7 @@ mod tests {
             inputs: InputArity::One,
             input_formats: &["pdf"],
             output_format: "json",
+            output_formats: &[],
             params_schema: ariad_core::tools::params::schema_for_params::<InfoParams>,
             tier: Tier::Pro,
             runtimes: &[ToolRuntime::Wasm, ToolRuntime::Local],
@@ -1393,6 +1460,7 @@ mod tests {
             inputs: InputArity::One,
             input_formats: &["pdf"],
             output_format: "json",
+            output_formats: &[],
             params_schema: ariad_core::tools::params::schema_for_params::<InfoParams>,
             tier: Tier::Free,
             runtimes: &[ToolRuntime::Wasm],
@@ -1418,6 +1486,7 @@ mod tests {
             inputs: InputArity::One,
             input_formats: &["pdf"],
             output_format: "json",
+            output_formats: &[],
             params_schema: ariad_core::tools::params::schema_for_params::<InfoParams>,
             tier: Tier::Free,
             runtimes: &[ToolRuntime::Local],
@@ -1447,6 +1516,7 @@ mod tests {
             inputs: InputArity::One,
             input_formats: &["pdf"],
             output_format: "pdf",
+            output_formats: &[],
             params_schema: ariad_core::tools::params::schema_for_params::<
                 ariad_core::tools::params::RotateParams,
             >,
@@ -1601,5 +1671,95 @@ mod tests {
         assert_eq!(portfolio_extracted.artifacts[1].format, "csv");
         assert_eq!(portfolio_extracted.artifacts[1].media_type, "text/csv");
         assert_eq!(portfolio_extracted.artifacts[1].bytes, csv_bytes);
+    }
+
+    #[test]
+    fn run_tool_pdf_split_pixel_and_pdfium_tools_fail_early_in_wasm_while_image_to_pdf_succeeds() {
+        let multipage = read_pdf_fixture("multipage-20.pdf");
+        let budget = 64 * 1024 * 1024;
+
+        // 1. `pdf.split` with `mode = "blank-separator"` and `detect = "pixel"` fails at validation
+        // time on `wasm` with `engine_unavailable` naming `"pdfium"`, never falling back to content.
+        let pixel_split_err = run_tool(
+            [multipage.as_slice()],
+            ["multipage-20.pdf"],
+            "pdf.split",
+            r#"{"mode":"blank-separator","detect":"pixel"}"#,
+            budget,
+            false,
+        )
+        .expect_err("pixel blank-separator split must fail on wasm");
+        assert_eq!(pixel_split_err.code(), "engine_unavailable");
+        assert_eq!(
+            pixel_split_err.detail("engine"),
+            Some(&serde_json::json!("pdfium"))
+        );
+        assert_eq!(
+            pixel_split_err.detail("exit_code"),
+            Some(&serde_json::json!(5))
+        );
+
+        // 2. `pdf.split` with `detect = "pixel"` and `mode = "every"` is rejected as `invalid_params` (exit 9).
+        let bad_detect_err = run_tool(
+            [multipage.as_slice()],
+            ["multipage-20.pdf"],
+            "pdf.split",
+            r#"{"mode":"every","every":2,"detect":"pixel"}"#,
+            budget,
+            false,
+        )
+        .expect_err("detect=pixel with mode=every must fail param validation");
+        assert_eq!(bad_detect_err.code(), "invalid_params");
+        assert_eq!(
+            bad_detect_err.detail("exit_code"),
+            Some(&serde_json::json!(9))
+        );
+
+        // 3. Every registered `pdfium` tool is refused on `wasm` with `engine_unavailable` (exit 5).
+        for spec in ariad_core::tools::all()
+            .iter()
+            .filter(|s| s.engine == "pdfium")
+        {
+            let err = run_tool(
+                [multipage.as_slice()],
+                ["multipage-20.pdf"],
+                spec.id,
+                "{}",
+                budget,
+                false,
+            )
+            .expect_err("pdfium tool must not run in wasm");
+            assert_eq!(err.code(), "engine_unavailable", "{}", spec.id);
+            assert_eq!(
+                err.detail("engine"),
+                Some(&serde_json::json!("pdfium")),
+                "{}",
+                spec.id
+            );
+            assert_eq!(err.detail("exit_code"), Some(&serde_json::json!(5)));
+        }
+
+        // 4. `image.to_pdf` runs in-process on `wasm` across BMP inputs.
+        // Valid 1x1 24-bit uncompressed BMP (14-byte BITMAPFILEHEADER + 40-byte BITMAPINFOHEADER + 4-byte row).
+        let bmp_buf: [u8; 58] = [
+            b'B', b'M', 58, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0, // BITMAPFILEHEADER
+            40, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0, // BITMAPINFOHEADER (1x1, 24bpp)
+            0, 0, 0, 0, 4, 0, 0, 0, 0x13, 0x0B, 0, 0, 0x13, 0x0B, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            210, 120, 30, 0, // 1 BGR pixel + 1 padding byte
+        ];
+        let img_pdf = run_tool(
+            [bmp_buf.as_slice()],
+            ["sample.bmp"],
+            "image.to_pdf",
+            r#"{"page":"fit-image"}"#,
+            budget,
+            false,
+        )
+        .expect("image.to_pdf must succeed in wasm on BMP input");
+        assert_eq!(img_pdf.tool, "image.to_pdf");
+        assert_eq!(img_pdf.format, "pdf");
+        assert_eq!(img_pdf.media_type, "application/pdf");
+        assert_eq!(img_pdf.extension, "pdf");
+        assert!(img_pdf.bytes.starts_with(b"%PDF-1.7"));
     }
 }

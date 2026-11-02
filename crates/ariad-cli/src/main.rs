@@ -296,9 +296,15 @@ struct PackManifestArgs {
     /// Existing manifest or template: pack fields and other targets are kept.
     #[arg(long, value_name = "FILE")]
     base: Option<PathBuf>,
+    /// Wire protocol the pack's engine speaks (ariad-engine/1 or ariad-engine/2).
+    #[arg(long = "engine-protocol", value_name = "PROTOCOL")]
+    engine_protocol: Option<String>,
     /// Entrypoint argument; repeat once per argv element, the program first.
     #[arg(long = "entrypoint", value_name = "ARG", allow_hyphen_values = true)]
     entrypoint: Vec<String>,
+    /// Executable path inside an archive component, relative to the pack root (repeat).
+    #[arg(long = "executable", value_name = "PATH")]
+    executables: Vec<String>,
     /// Prefix for component URLs (default: the file name, relative to the manifest).
     #[arg(long, value_name = "URL")]
     url_prefix: Option<String>,
@@ -1437,7 +1443,9 @@ fn run_pack_manifest(args: PackManifestArgs) -> ExitCode {
         version: args.version,
         target: args.target,
         base: args.base,
+        engine_protocol: args.engine_protocol,
         entrypoint: args.entrypoint,
+        executables: args.executables,
         url_prefix: args.url_prefix,
         dests,
         components,

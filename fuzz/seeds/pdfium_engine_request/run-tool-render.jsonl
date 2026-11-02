@@ -1,0 +1,1 @@
+{"op":"run_tool","protocol":"ariad-engine/2","job":"job-render","tool":"pdf.render","inputs":[{"path":"/work/in/doc.pdf","format":"pdf"}],"output":{"dir":"/work/out"},"params":{"format":"png","dpi":150},"work_dir":"/work/tmp","limits":{}}

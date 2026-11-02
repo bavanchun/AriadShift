@@ -1,6 +1,7 @@
 //! Generates pack manifests from built component files (`ashift __pack manifest`).
 
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -9,11 +10,11 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     PackError,
-    extract::scan,
+    extract::scan_with_executables,
     fetch::sha256_file,
     manifest::{
-        Component, MANIFEST_SCHEMA, Manifest, Target, Unpack, validate_component_name,
-        validate_pack_name,
+        Component, MANIFEST_SCHEMA, Manifest, Target, Unpack, relative_path,
+        validate_component_name, validate_pack_name,
     },
 };
 
@@ -26,8 +27,13 @@ pub struct ManifestRequest {
     pub target: String,
     /// Existing manifest or template providing the pack fields and other targets.
     pub base: Option<PathBuf>,
+    /// Wire protocol the pack's engine speaks (e.g. "ariad-engine/2").
+    pub engine_protocol: Option<String>,
     /// Entrypoint argv for the target; keeps the base's entrypoint when empty.
     pub entrypoint: Vec<String>,
+    /// Explicit executable paths inside archive components, relative to the install root;
+    /// merged with executables scanned from archive components.
+    pub executables: Vec<String>,
     /// Prefix for component URLs; the bare file name (relative to the manifest) otherwise.
     pub url_prefix: Option<String>,
     /// `(component, dest)` pairs; components default to the install root.
@@ -70,12 +76,20 @@ pub fn generate_manifest(request: &ManifestRequest) -> Result<Manifest, PackErro
             description: String::new(),
             license: "NOASSERTION".to_owned(),
             requires_ashift: format!(">={}", env!("CARGO_PKG_VERSION")),
+            engine_protocol: None,
             notices: Vec::new(),
             targets: Vec::new(),
         },
     };
     manifest.name.clone_from(&request.name);
     manifest.version.clone_from(&request.version);
+    if let Some(protocol) = request
+        .engine_protocol
+        .as_deref()
+        .filter(|p| !p.trim().is_empty())
+    {
+        manifest.engine_protocol = Some(protocol.to_owned());
+    }
 
     let index = match manifest
         .targets
@@ -87,6 +101,7 @@ pub fn generate_manifest(request: &ManifestRequest) -> Result<Manifest, PackErro
             manifest.targets.push(Target {
                 triple: request.target.clone(),
                 entrypoint: Vec::new(),
+                executables: Vec::new(),
                 env: Default::default(),
                 options: Default::default(),
                 components: Vec::new(),
@@ -94,6 +109,11 @@ pub fn generate_manifest(request: &ManifestRequest) -> Result<Manifest, PackErro
             manifest.targets.len() - 1
         }
     };
+    let notice_paths: BTreeSet<String> = manifest
+        .notices
+        .iter()
+        .filter_map(|notice| relative_path(notice).ok().map(|parts| parts.join("/")))
+        .collect();
     let target = &mut manifest.targets[index];
     if !request.entrypoint.is_empty() {
         target.entrypoint.clone_from(&request.entrypoint);
@@ -104,12 +124,36 @@ pub fn generate_manifest(request: &ManifestRequest) -> Result<Manifest, PackErro
             request.target
         )));
     }
+    let entrypoint_path = target
+        .entrypoint
+        .first()
+        .and_then(|entrypoint| relative_path(entrypoint).ok().map(|parts| parts.join("/")));
     let cancel = CancellationToken::new();
-    target.components = request
-        .components
+    let mut executables: BTreeSet<String> = target
+        .executables
         .iter()
-        .map(|(name, path)| describe_component(request, name.as_deref(), path, &cancel))
-        .collect::<Result<_, _>>()?;
+        .filter_map(|exec| relative_path(exec).ok().map(|parts| parts.join("/")))
+        .collect();
+    for exec in &request.executables {
+        let normalized = relative_path(exec)
+            .map(|parts| parts.join("/"))
+            .map_err(|reason| {
+                PackError::Usage(format!("invalid --executable '{exec}': {reason}"))
+            })?;
+        executables.insert(normalized);
+    }
+    let mut components = Vec::with_capacity(request.components.len());
+    for (name, path) in &request.components {
+        let (component, component_executables) =
+            describe_component(request, name.as_deref(), path, &cancel)?;
+        executables.extend(component_executables);
+        components.push(component);
+    }
+    executables.retain(|exec| {
+        !notice_paths.contains(exec) || entrypoint_path.as_deref() == Some(exec.as_str())
+    });
+    target.executables = executables.into_iter().collect();
+    target.components = components;
     manifest.validate()?;
     Ok(manifest)
 }
@@ -119,7 +163,7 @@ fn describe_component(
     name: Option<&str>,
     path: &Path,
     cancel: &CancellationToken,
-) -> Result<Component, PackError> {
+) -> Result<(Component, Vec<String>), PackError> {
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -128,33 +172,36 @@ fn describe_component(
     let name = name.map_or_else(|| component_name(file_name, unpack), str::to_owned);
     validate_component_name(&name).map_err(PackError::Usage)?;
     let (sha256, size) = sha256_file(path, cancel)?;
-    let (unpacked_size, entries) = if unpack.is_archive() {
-        let stats = scan(path, unpack, &name)?;
-        (Some(stats.bytes), Some(stats.entries))
+    let dest = request
+        .dests
+        .iter()
+        .find(|(component, _)| component == &name)
+        .map_or_else(|| ".".to_owned(), |(_, dest)| dest.clone());
+    let (unpacked_size, entries, archive_executables) = if unpack.is_archive() {
+        let (stats, executables) = scan_with_executables(path, unpack, &name, &dest)?;
+        (Some(stats.bytes), Some(stats.entries), executables)
     } else {
-        (None, None)
+        (None, None, Vec::new())
     };
     let url = match &request.url_prefix {
         Some(prefix) if prefix.ends_with('/') => format!("{prefix}{file_name}"),
         Some(prefix) => format!("{prefix}/{file_name}"),
         None => file_name.to_owned(),
     };
-    let dest = request
-        .dests
-        .iter()
-        .find(|(component, _)| component == &name)
-        .map_or_else(|| ".".to_owned(), |(_, dest)| dest.clone());
-    Ok(Component {
-        executable: !unpack.is_archive() && is_executable(path),
-        name,
-        url,
-        sha256,
-        size,
-        unpack,
-        dest,
-        unpacked_size,
-        entries,
-    })
+    Ok((
+        Component {
+            executable: !unpack.is_archive() && is_executable(path),
+            name,
+            url,
+            sha256,
+            size,
+            unpack,
+            dest,
+            unpacked_size,
+            entries,
+        },
+        archive_executables,
+    ))
 }
 
 fn component_name(file_name: &str, unpack: Unpack) -> String {
@@ -189,6 +236,107 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn request_with_base(
+        directory: &Path,
+        name: &str,
+        engine_protocol: Option<&str>,
+    ) -> ManifestRequest {
+        let engine = directory.join("engine");
+        fs::write(&engine, b"binary").unwrap();
+        let protocol = engine_protocol
+            .map(|value| format!("engine_protocol = \"{value}\"\n"))
+            .unwrap_or_default();
+        let base = directory.join("base.toml");
+        fs::write(
+            &base,
+            format!(
+                "schema = \"ariad-pack/1\"\nname = \"{name}\"\nversion = \"0.1.0\"\n\
+                 license = \"MIT\"\nrequires_ashift = \">=0.1.0\"\n{protocol}targets = []\n"
+            ),
+        )
+        .unwrap();
+        ManifestRequest {
+            name: name.to_owned(),
+            version: "0.1.0".to_owned(),
+            target: "x86_64-unknown-linux-gnu".to_owned(),
+            base: Some(base),
+            entrypoint: vec!["engine".to_owned()],
+            components: vec![(None, engine)],
+            ..ManifestRequest::default()
+        }
+    }
+
+    #[test]
+    fn engine_protocol_in_the_base_manifest_is_emitted() {
+        let directory = tempfile::tempdir().unwrap();
+        let request = request_with_base(directory.path(), "pdfium", Some("ariad-engine/2"));
+        let manifest = generate_manifest(&request).expect("matching protocol");
+        assert_eq!(manifest.engine_protocol.as_deref(), Some("ariad-engine/2"));
+        let text = manifest.to_toml().unwrap();
+        assert!(
+            text.contains("engine_protocol = \"ariad-engine/2\""),
+            "{text}"
+        );
+        let proto_idx = text.find("engine_protocol = \"ariad-engine/2\"").unwrap();
+        let targets_idx = text.find("[[targets]]").unwrap();
+        assert!(
+            proto_idx < targets_idx,
+            "engine_protocol must precede [[targets]]"
+        );
+    }
+
+    #[test]
+    fn engine_protocol_flag_sets_field_and_precedes_targets() {
+        let directory = tempfile::tempdir().unwrap();
+        let engine = directory.path().join("engine");
+        fs::write(&engine, b"binary").unwrap();
+        let request = ManifestRequest {
+            name: "pdfium".to_owned(),
+            version: "0.1.0".to_owned(),
+            target: "x86_64-unknown-linux-gnu".to_owned(),
+            engine_protocol: Some("ariad-engine/2".to_owned()),
+            entrypoint: vec!["engine".to_owned()],
+            components: vec![(None, engine)],
+            ..ManifestRequest::default()
+        };
+        let manifest = generate_manifest(&request).expect("generate with engine_protocol flag");
+        assert_eq!(manifest.engine_protocol.as_deref(), Some("ariad-engine/2"));
+        let text = manifest.to_toml().unwrap();
+        let proto_idx = text.find("engine_protocol = \"ariad-engine/2\"").unwrap();
+        let targets_idx = text.find("[[targets]]").unwrap();
+        assert!(
+            proto_idx < targets_idx,
+            "engine_protocol must precede [[targets]]"
+        );
+    }
+
+    #[test]
+    fn engine_protocol_flag_with_base_manifest() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut request = request_with_base(directory.path(), "pdfium", Some("ariad-engine/2"));
+        // Matching flag repeats with base (e.g. multi-target merge)
+        request.engine_protocol = Some("ariad-engine/2".to_owned());
+        let manifest = generate_manifest(&request).expect("matching protocol flag and base");
+        assert_eq!(manifest.engine_protocol.as_deref(), Some("ariad-engine/2"));
+
+        // When base has no protocol, flag supplies it
+        let mut request_no_base_proto = request_with_base(directory.path(), "pdfium", None);
+        request_no_base_proto.engine_protocol = Some("ariad-engine/2".to_owned());
+        let manifest2 = generate_manifest(&request_no_base_proto).expect("flag supplies protocol");
+        assert_eq!(manifest2.engine_protocol.as_deref(), Some("ariad-engine/2"));
+    }
+
+    #[test]
+    fn engine_protocol_mismatch_is_refused_when_generating() {
+        let directory = tempfile::tempdir().unwrap();
+        let request = request_with_base(directory.path(), "pdfium", None);
+        let error = generate_manifest(&request).expect_err("v2 engine without the field");
+        assert!(error.to_string().contains("engine_protocol"), "{error}");
+        let docling = request_with_base(directory.path(), "docling", None);
+        let manifest = generate_manifest(&docling).expect("docling stays on ariad-engine/1");
+        assert_eq!(manifest.engine_protocol, None);
+    }
 
     #[test]
     fn component_names_drop_archive_extensions() {

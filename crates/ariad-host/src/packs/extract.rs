@@ -193,20 +193,35 @@ pub(crate) fn extract(
 /// Reads an archive with the extraction rules but writes nothing; used to declare
 /// `unpacked_size` and `entries` when a manifest is generated.
 pub fn scan(source: &Path, unpack: Unpack, component: &str) -> Result<Stats, PackError> {
+    let (stats, _) = scan_with_executables(source, unpack, component, ".")?;
+    Ok(stats)
+}
+
+/// Reads an archive with the extraction rules and returns both [`Stats`] and the sorted list of
+/// executable regular-file paths inside `dest` (relative to the install root).
+pub(crate) fn scan_with_executables(
+    source: &Path,
+    unpack: Unpack,
+    component: &str,
+    dest: &str,
+) -> Result<(Stats, Vec<String>), PackError> {
     let mut sink = Scanner {
         component: component.to_owned(),
         ..Scanner::default()
     };
-    walk(
+    let stats = walk(
         source,
         unpack,
         component,
-        ".",
+        dest,
         false,
         Bounds::unbounded(),
         &mut sink,
         &CancellationToken::new(),
-    )
+    )?;
+    sink.executables.sort();
+    sink.executables.dedup();
+    Ok((stats, sink.executables))
 }
 
 /// Runs the install-time archive writer, budgets and final link check in an existing,
@@ -895,13 +910,26 @@ fn executable_bits(_file: &File) -> bool {
     false
 }
 
+fn has_windows_exec_extension(full: &[String]) -> bool {
+    let Some(last) = full.last() else {
+        return false;
+    };
+    let Some((_, ext)) = last.rsplit_once('.') else {
+        return false;
+    };
+    ext.eq_ignore_ascii_case("exe")
+        || ext.eq_ignore_ascii_case("bat")
+        || ext.eq_ignore_ascii_case("cmd")
+}
+
 /// Validates an archive without writing it.
 #[derive(Default)]
 struct Scanner {
     component: String,
-    files: HashMap<String, u64>,
+    files: HashMap<String, (u64, bool)>,
     dirs: HashSet<String>,
     links: HashSet<String>,
+    executables: Vec<String>,
 }
 
 impl Scanner {
@@ -938,14 +966,19 @@ impl Sink for Scanner {
         &mut self,
         full: &[String],
         reader: &mut dyn Read,
-        _executable: bool,
+        executable: bool,
         budget: &mut Budget<'_>,
     ) -> Result<(), PackError> {
         self.check_new(full, false)?;
         let size =
             io::copy(reader, &mut io::sink()).map_err(|error| corrupt(&self.component, error))?;
         budget.count_bytes(size)?;
-        self.files.insert(full.join("/"), size);
+        let is_exec = executable || has_windows_exec_extension(full);
+        let path = full.join("/");
+        if is_exec {
+            self.executables.push(path.clone());
+        }
+        self.files.insert(path, (size, is_exec));
         Ok(())
     }
 
@@ -962,7 +995,7 @@ impl Sink for Scanner {
         budget: &mut Budget<'_>,
     ) -> Result<(), PackError> {
         self.check_new(full, false)?;
-        let Some(&size) = self.files.get(&target.join("/")) else {
+        let Some(&(size, target_exec)) = self.files.get(&target.join("/")) else {
             return Err(unsafe_entry(
                 &self.component,
                 &full.join("/"),
@@ -970,7 +1003,12 @@ impl Sink for Scanner {
             ));
         };
         budget.count_bytes(size)?;
-        self.files.insert(full.join("/"), size);
+        let is_exec = target_exec || has_windows_exec_extension(full);
+        let path = full.join("/");
+        if is_exec {
+            self.executables.push(path.clone());
+        }
+        self.files.insert(path, (size, is_exec));
         Ok(())
     }
 }

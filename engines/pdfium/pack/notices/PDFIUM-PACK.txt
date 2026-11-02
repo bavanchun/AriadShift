@@ -1,0 +1,24 @@
+AriadShift pdfium engine pack
+=============================
+
+This pack contains:
+
+  bin/ariad-pdfium-engine   the AriadShift engine (Apache-2.0, see ariadshift-LICENSE)
+  bin/libpdfium.*           PDFium, built by bblanchon/pdfium-binaries
+  notices/                  the licences of everything above
+
+PDFium is licensed under the BSD 3-Clause licence (notices/third-party/pdfium.txt). The
+pdfium-binaries build scripts are MIT licensed (notices/pdfium-binaries-LICENSE). The libraries
+PDFium bundles keep their own licences, one file per library in notices/third-party/: FreeType
+(FreeType Project License), ICU (Unicode License v3), libjpeg-turbo (BSD-3-Clause, IJG, zlib),
+OpenJPEG (BSD-2-Clause), Little CMS (MIT), libpng (libpng-2.0), zlib, HarfBuzz (MIT), Abseil
+(Apache-2.0), AGG 2.3 (BSD-3-Clause style), and the other libraries listed there.
+
+notices/pdfium-VERSION records the exact PDFium version. Source for PDFium is available at
+https://pdfium.googlesource.com/pdfium/ and for the build at
+https://github.com/bblanchon/pdfium-binaries.
+
+notices/ariadshift-THIRD_PARTY_LICENSES lists the Rust crates linked into the engine.
+
+Target notes: the x86_64-unknown-linux-musl and aarch64-unknown-linux-musl pack targets are
+marked "unverified" pending musl-native libpdfium runtime validation (tracked in #132).

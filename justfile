@@ -312,6 +312,22 @@ pack-docling-verify out="target/pack-docling" input="fixtures/scan/vi-garden-300
 pack-docling-test out="target/pack-docling":
     uv run --no-project --python 3.14 python engines/docling/pack/build.py conformance --out "{{out}}"
 
+# Build the unsigned pdfium engine pack for this host into target/packs/pdfium, an unpacked
+# development pack: `export ASHIFT_PACK_PDFIUM=$PWD/target/packs/pdfium`. The components go to
+# target/packs/pdfium-dist. Downloads the pinned PDFium archive unless PDFIUM_ARCHIVE names a copy.
+pack-pdfium out="target/packs/pdfium":
+    cargo build -p ariad-pdfium-engine -p ariad-cli --bin ariad-pdfium-engine --bin ashift
+    bash engines/pdfium/pack/make.sh dev --engine "{{justfile_directory()}}/target/debug/ariad-pdfium-engine" --ashift "{{justfile_directory()}}/target/debug/ashift" --out "{{out}}-dist" --unpack-dir "{{out}}"
+    bash engines/pdfium/pack/make.sh verify --pack "{{out}}"
+
+# Check the layout, manifest and notices of the pack that `just pack-pdfium` built.
+pack-pdfium-verify out="target/packs/pdfium":
+    bash engines/pdfium/pack/make.sh verify --pack "{{out}}"
+
+# Test the shared pack builder, the pdfium wrapper and the signing guard (offline).
+pack-tooling-test:
+    bash scripts/pack/test-pack-tooling.sh
+
 # Run fuzz targets on Linux (default: all targets, 60 s each)
 [linux]
 fuzz target="" seconds="60":
@@ -331,7 +347,7 @@ fuzz target="" seconds="60":
         mkdir -p "fuzz/corpus/$t"
         build_options=()
         case "$t" in
-            pdf_reader|pdf_open_bounded) build_options=(--dev --features pdf-reader) ;;
+            pdf_reader|pdf_open_bounded|pdf_tools_structural) build_options=(--dev --features pdf-reader) ;;
             typst_writer) build_options=(--dev --features typst-writer) ;;
         esac
         cargo fuzz run -s none "${build_options[@]}" "$t" "fuzz/corpus/$t" "fuzz/seeds/$t" -- -max_total_time="{{seconds}}" -timeout=10 -rss_limit_mb=2048

@@ -65,17 +65,22 @@ pub enum RunError {
     #[error("engine run was cancelled")]
     Cancelled,
     #[error("engine reported {code:?}: {message}")]
-    EngineFailed { code: ErrorCode, message: String },
+    EngineFailed {
+        code: ErrorCode,
+        message: String,
+        memory_limit_mb: Option<u32>,
+    },
     #[error("engine process tree exceeded max_memory_mb ({limit_mb} MB)")]
     MemoryLimitExceeded { limit_mb: u32 },
     #[error("engine sandbox is unavailable: {0}")]
     SandboxUnavailable(String),
     #[error("engine sandbox could not start: {0}")]
     SandboxLaunchFailed(String),
-    #[error("engine crashed with exit {exit:?}: {stderr_tail}")]
+    #[error("engine crashed with exit {exit:?}: {stderr_tail}{}", memory_limit_hint(*memory_limit_mb))]
     Crash {
         exit: Option<i32>,
         stderr_tail: String,
+        memory_limit_mb: Option<u32>,
     },
     #[error("engine protocol violation: {0}")]
     ProtocolViolation(&'static str),
@@ -83,6 +88,12 @@ pub enum RunError {
     Spawn(#[source] io::Error),
     #[error("engine I/O failed")]
     Io(#[source] io::Error),
+}
+
+pub(crate) fn memory_limit_hint(limit_mb: Option<u32>) -> String {
+    limit_mb.map_or_else(String::new, |limit| {
+        format!(" The engine may have hit its memory limit ({limit} MiB).")
+    })
 }
 
 /// How the host starts one engine process.
@@ -809,7 +820,13 @@ where
         };
         (writable, ipc)
     };
-    let (program, args, sandbox) = prepare_launch_with_read_only(command, &writable, &read_only)?;
+    let memory_limit = if command.engine == "pdfium" {
+        request.limits().and_then(|limits| limits.max_memory_mb)
+    } else {
+        None
+    };
+    let (program, args, sandbox) =
+        prepare_launch_with_limit(command, &writable, &read_only, memory_limit)?;
     let tmp_dir = request.work_dir().map_or_else(
         || {
             describe_workspace
@@ -836,6 +853,7 @@ where
             Err(RunError::EngineFailed {
                 code: ErrorCode::EngineFailure,
                 message,
+                ..
             }) if matches!(
                 sandbox,
                 SandboxOutcome::Applied | SandboxOutcome::Degraded(_)
@@ -845,10 +863,23 @@ where
             {
                 return Err(RunError::SandboxLaunchFailed(message));
             }
-            Err(RunError::Crash { exit, .. }) => {
+            Err(RunError::Crash {
+                exit,
+                memory_limit_mb,
+                ..
+            }) => {
+                let stderr_tail = process.stderr_tail();
+                #[cfg(target_os = "linux")]
+                if let Some(limit_mb) = memory_limit
+                    && stderr_tail.contains("memory allocation of ")
+                    && stderr_tail.contains(" failed")
+                {
+                    return Err(RunError::MemoryLimitExceeded { limit_mb });
+                }
                 return Err(RunError::Crash {
                     exit,
-                    stderr_tail: process.stderr_tail(),
+                    stderr_tail,
+                    memory_limit_mb,
                 });
             }
             Err(error) => return Err(error),
@@ -993,12 +1024,34 @@ pub(crate) fn prepare_launch_with_read_only(
     writable: &[PathBuf],
     read_only: &[PathBuf],
 ) -> Result<(PathBuf, Vec<OsString>, SandboxOutcome), RunError> {
+    prepare_launch_with_limit(command, writable, read_only, None)
+}
+
+fn prepare_launch_with_limit(
+    command: &EngineCommand,
+    writable: &[PathBuf],
+    read_only: &[PathBuf],
+    memory_limit_mb: Option<u32>,
+) -> Result<(PathBuf, Vec<OsString>, SandboxOutcome), RunError> {
     let mode = match command.sandbox {
         Some(mode) => mode,
         None => sandbox::effective_mode().map_err(RunError::SandboxUnavailable)?,
     };
     let direct = |outcome| Ok((command.program.clone(), command.args.clone(), outcome));
     if mode == SandboxMode::Off {
+        #[cfg(target_os = "linux")]
+        if let Some(limit_mb) = memory_limit_mb {
+            let launcher = command.launcher.as_ref().ok_or_else(|| {
+                RunError::SandboxUnavailable("PDFium requires a resource-limit launcher".to_owned())
+            })?;
+            let mut policy = SandboxPolicy::default();
+            policy
+                .rlimits
+                .push(("as".to_owned(), u64::from(limit_mb) * 1024 * 1024));
+            let mut args = policy.launcher_args(false, &command.program, &command.args);
+            args.insert(1, OsString::from("--limits-only"));
+            return Ok((launcher.clone(), args, SandboxOutcome::Off));
+        }
         return direct(SandboxOutcome::Off);
     }
     let strict = crate::engines::sandbox::requires_isolation(&command.engine, mode);
@@ -1053,6 +1106,14 @@ pub(crate) fn prepare_launch_with_read_only(
         )));
     }
     let mut policy = SandboxPolicy::for_engine(&command.engine, &command.program, writable);
+    #[cfg(target_os = "linux")]
+    if let Some(limit_mb) = memory_limit_mb {
+        policy
+            .rlimits
+            .push(("as".to_owned(), u64::from(limit_mb) * 1024 * 1024));
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = memory_limit_mb;
     if let Some(root) = &command.install_root {
         policy.exec.push(root.clone());
     }
@@ -1299,6 +1360,7 @@ impl EngineProcess {
                     return Err(RunError::Crash {
                         exit: status.code(),
                         stderr_tail: String::new(),
+                        memory_limit_mb: job.memory_limit_mb,
                     });
                 }
                 _ => {}
@@ -1354,7 +1416,11 @@ impl EngineProcess {
             }
             return match result {
                 Some((false, _, Some(EngineError { code, message }))) => {
-                    Err(RunError::EngineFailed { code, message })
+                    Err(RunError::EngineFailed {
+                        memory_limit_mb: None,
+                        code,
+                        message,
+                    })
                 }
                 Some((true, metrics, None)) => Ok((artifacts, metrics)),
                 _ => Err(RunError::ProtocolViolation(
@@ -1371,13 +1437,16 @@ impl EngineProcess {
         #[cfg(windows)]
         let _ = self.child.start_kill();
         match result {
-            Some((false, _, Some(EngineError { code, message }))) => {
-                Err(RunError::EngineFailed { code, message })
-            }
+            Some((false, _, Some(EngineError { code, message }))) => Err(RunError::EngineFailed {
+                memory_limit_mb: None,
+                code,
+                message,
+            }),
             Some((true, metrics, None)) if exit_status.success() => Ok((artifacts, metrics)),
             _ => Err(RunError::Crash {
                 exit: exit_status.code(),
                 stderr_tail: String::new(),
+                memory_limit_mb: job.memory_limit_mb,
             }),
         }
     }

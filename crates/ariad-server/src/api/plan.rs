@@ -85,25 +85,29 @@ pub async fn plan(
                 detail,
             )
         })?;
-    super::check_pack_memory(Pack::for_route(&plan.steps), &caller.entitlement.limits)?;
+    let pack = super::route_pack(&plan.steps)?;
+    super::check_pack_memory(pack, &caller.entitlement.limits)?;
+    let alternatives = plan
+        .alternatives
+        .iter()
+        .map(|alt| {
+            Ok(PlanAlternative {
+                route: alt.steps.iter().map(RouteStep::from).collect(),
+                score: RouteScore::from(&alt.score),
+                measured: alt.measured,
+                pack: super::route_pack(&alt.steps)?,
+            })
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
     Ok(Json(PlanResponse {
         from: source.id().to_owned(),
         to: target.id().to_owned(),
         profile: request.profile,
-        pack: Pack::for_route(&plan.steps),
+        pack,
         route: plan.steps.iter().map(RouteStep::from).collect(),
         score: RouteScore::from(&plan.score),
         measured: plan.measured,
-        alternatives: plan
-            .alternatives
-            .iter()
-            .map(|alt| PlanAlternative {
-                route: alt.steps.iter().map(RouteStep::from).collect(),
-                score: RouteScore::from(&alt.score),
-                measured: alt.measured,
-                pack: Pack::for_route(&alt.steps),
-            })
-            .collect(),
+        alternatives,
     }))
 }
 
@@ -128,7 +132,9 @@ pub async fn capabilities(State(state): State<AppState>) -> Response {
             engines.contains(&edge.engine)
                 && supported.contains(&(edge.from, edge.to, edge.engine.as_str()))
         })
-        .map(|edge| {
+        .filter_map(|edge| {
+            // `deployable_engines` only lists engines with a pack; skip anything unmapped.
+            let pack = Pack::for_engine(&edge.engine).ok()?;
             for format in [edge.from, edge.to] {
                 if routing::resolve_format(format.id()).is_none() {
                     continue;
@@ -137,11 +143,11 @@ pub async fn capabilities(State(state): State<AppState>) -> Response {
                     .entry(format.id())
                     .or_insert_with(|| FormatInfo::from(format));
             }
-            CapabilityEdge {
+            Some(CapabilityEdge {
                 from: edge.from.id().to_owned(),
                 to: edge.to.id().to_owned(),
                 engine: edge.engine.clone(),
-                pack: Pack::for_engine(&edge.engine),
+                pack,
                 license: edge.license.clone(),
                 metrics: edge.metrics.map(|m| EdgeMetrics {
                     fidelity: m.fidelity,
@@ -150,7 +156,7 @@ pub async fn capabilities(State(state): State<AppState>) -> Response {
                     peak_mem_mb: m.peak_mem_mb,
                     samples: m.samples,
                 }),
-            }
+            })
         })
         .collect();
     let body = Capabilities {

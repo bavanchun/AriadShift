@@ -47,3 +47,38 @@ pub fn run(
     let trimmed = build_page_set_output(source, &surviving, PageSetOptions::default(), ctx)?;
     Ok(vec![trimmed])
 }
+
+/// Deletes the 1-based `deleted_pages` from `source`, keeping at least 1 page, and returns the
+/// serialized deterministic PDF bytes and any non-fatal warnings.
+pub fn delete_page_numbers(
+    source: &PdfDoc,
+    deleted_pages: &[u32],
+    ctx: &ToolCtx,
+) -> Result<(Vec<u8>, Vec<String>), PdfError> {
+    ctx.check()?;
+    let page_count = doc_page_count(source);
+    let deleted_set: BTreeSet<u32> = deleted_pages.iter().copied().collect();
+    let surviving: Vec<u32> = (1..=page_count)
+        .filter(|p| !deleted_set.contains(p))
+        .collect();
+    if surviving.is_empty() {
+        return Err(PdfError::InvalidParams(
+            "cannot delete all pages; at least 1 page must remain".to_owned(),
+        ));
+    }
+    let trimmed = build_page_set_output(source, &surviving, PageSetOptions::default(), ctx)?;
+    let tool_out = crate::tools::finalize_tool_output(
+        "pdf.delete_pages",
+        std::slice::from_ref(source),
+        "document",
+        vec![trimmed],
+        ctx,
+    )?;
+    let bytes = tool_out
+        .artifacts
+        .into_iter()
+        .next()
+        .map(|a| a.bytes)
+        .unwrap_or_default();
+    Ok((bytes, tool_out.warnings))
+}

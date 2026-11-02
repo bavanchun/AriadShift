@@ -1205,7 +1205,7 @@ fn convert_error_exit_codes_are_exhaustive_and_distinct() {
             ConvertError::OutputIo => {}
             ConvertError::UnsupportedIrVersion => {}
             ConvertError::InvalidCapabilities(_) => {}
-            ConvertError::Failed => {}
+            ConvertError::Failed | ConvertError::FailedWithMemoryHint { .. } => {}
             ConvertError::DestinationSameAsInput => {}
             ConvertError::UnsupportedRoute { .. } => {}
             ConvertError::LimitExceeded => {}

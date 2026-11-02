@@ -197,7 +197,7 @@ pub enum ToolGroup {
     Security,
     /// Stamps, page numbers, headers/footers, watermarks, background overlays.
     Overlay,
-    /// Optical character recognition, deskewing, blank page removal.
+    /// Optical character recognition and deskewing.
     Ocr,
     /// Highlights, notes, freehand ink, geometric markups, comment flattening.
     Annotate,
@@ -466,8 +466,12 @@ pub struct ToolSpec {
     pub inputs: InputArity,
     /// Accepted input format identifiers (e.g. `&["pdf"]`).
     pub input_formats: &'static [&'static str],
-    /// Produced output format identifier (e.g. `"pdf"` or `"json"`).
+    /// Primary output format identifier (e.g. `"pdf"`, `"json"`, `"png"`).
     pub output_format: &'static str,
+    /// Optional list of all allowed output format identifiers when a tool can emit more than one
+    /// format (e.g. `&["png", "jpeg", "webp", "tiff", "bmp", "zip"]`). When empty (`&[]`),
+    /// [`Self::output_format`] is the sole allowed format.
+    pub output_formats: &'static [&'static str],
     /// Access tier (`Free` or `Pro`).
     pub tier: Tier,
     /// Runtimes where this tool can execute.
@@ -478,6 +482,23 @@ pub struct ToolSpec {
     pub params_schema: fn() -> Schema,
     /// Parameter field names marked `"x-ariad-secret": true` (`docs/tools.md` §11).
     pub secret_params: &'static [&'static str],
+}
+
+/// Normalizes a tool format identifier or file extension (such as `"jpg"`, `"tif"`, `"bmp"`,
+/// `"zip"`, `"json"`) into its canonical tool format string.
+#[must_use]
+pub fn normalize_tool_format(raw: &str) -> Option<&'static str> {
+    let trimmed = raw.trim().trim_start_matches('.');
+    if trimmed.eq_ignore_ascii_case("bmp") {
+        return Some("bmp");
+    }
+    if trimmed.eq_ignore_ascii_case("zip") {
+        return Some("zip");
+    }
+    Format::from_user_name(trimmed).map(|fmt| match fmt {
+        Format::AriadIrJson => "json",
+        other => other.id(),
+    })
 }
 
 impl ToolSpec {
@@ -519,6 +540,96 @@ impl ToolSpec {
         self.accepts_format(format.id()) || self.accepts_format(format.user_name())
     }
 
+    /// Returns the allowed output format identifiers for this tool.
+    ///
+    /// Always starts with [`Self::output_format`]; multi-format tools list every permitted
+    /// artifact format in [`Self::output_formats`].
+    #[must_use]
+    pub fn allowed_output_formats(&self) -> &[&'static str] {
+        if self.output_formats.is_empty() {
+            std::slice::from_ref(&self.output_format)
+        } else {
+            self.output_formats
+        }
+    }
+
+    /// Returns `true` if `format` (or an equivalent extension like `"jpg"` or `"tif"`) is in
+    /// [`Self::allowed_output_formats`].
+    #[must_use]
+    pub fn accepts_output_format(&self, format: &str) -> bool {
+        let norm =
+            normalize_tool_format(format).unwrap_or_else(|| format.trim().trim_start_matches('.'));
+        self.allowed_output_formats()
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(norm))
+    }
+
+    /// Returns `true` if an emitted artifact of `artifact_format` is permitted both by this tool's
+    /// [`Self::allowed_output_formats`] and by the format selected in `params` (when applicable).
+    #[must_use]
+    pub fn allows_artifact_format(
+        &self,
+        artifact_format: &str,
+        params: &serde_json::Value,
+    ) -> bool {
+        let norm = normalize_tool_format(artifact_format)
+            .unwrap_or_else(|| artifact_format.trim().trim_start_matches('.'));
+        if self.id == "pdf.outline"
+            && params.get("action").and_then(serde_json::Value::as_str) == Some("export")
+        {
+            return norm.eq_ignore_ascii_case("json");
+        }
+        if matches!(self.id, "pdf.attachments" | "pdf.portfolio" | "pdf.layers")
+            && params.get("action").and_then(serde_json::Value::as_str) == Some("list")
+        {
+            return norm.eq_ignore_ascii_case("json");
+        }
+        if !self.accepts_output_format(norm) {
+            return false;
+        }
+        if let Some(picked) = params.get("format").and_then(serde_json::Value::as_str) {
+            if picked.eq_ignore_ascii_case("original") {
+                return true;
+            }
+            if norm.eq_ignore_ascii_case("zip") && self.accepts_output_format("zip") {
+                let combine = params
+                    .get("combine")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("none");
+                return combine.eq_ignore_ascii_case("none");
+            }
+            let norm_picked = normalize_tool_format(picked)
+                .unwrap_or_else(|| picked.trim().trim_start_matches('.'));
+            return norm.eq_ignore_ascii_case(norm_picked);
+        }
+        if matches!(self.id, "pdf.render" | "pdf.to_images") {
+            if norm.eq_ignore_ascii_case("zip") {
+                let combine = params
+                    .get("combine")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("none");
+                return combine.eq_ignore_ascii_case("none");
+            }
+            return norm.eq_ignore_ascii_case(self.output_format);
+        }
+        true
+    }
+
+    /// Returns the engine identifier required to execute this tool with `params`.
+    ///
+    /// Most tools always use [`Self::engine`]; `pdf.split` with `detect = "pixel"` requires the
+    /// out-of-process `"pdfium"` engine.
+    #[must_use]
+    pub fn engine_for_params(&self, params: &serde_json::Value) -> &'static str {
+        if self.id == "pdf.split"
+            && params.get("detect").and_then(serde_json::Value::as_str) == Some("pixel")
+        {
+            "pdfium"
+        } else {
+            self.engine
+        }
+    }
+
     /// Returns `true` if this tool supports running on `runtime`.
     #[must_use]
     pub fn supports_runtime(&self, runtime: ToolRuntime) -> bool {
@@ -552,8 +663,13 @@ pub struct ToolDescriptor {
     /// Accepted input format identifiers.
     #[schemars(length(min = 1))]
     pub input_formats: Vec<String>,
-    /// Produced output format identifier.
+    /// Primary output format identifier.
     pub output_format: String,
+    /// Optional list of all allowed output format identifiers when a tool can emit more than one
+    /// format (e.g. `["png", "jpeg", "webp", "tiff", "bmp", "zip"]`). When omitted or empty,
+    /// [`Self::output_format`] is the sole allowed format.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub output_formats: Vec<String>,
     /// Access tier (`free` or `pro`).
     pub tier: Tier,
     /// Supported execution runtimes.
@@ -577,6 +693,11 @@ impl From<&ToolSpec> for ToolDescriptor {
             inputs: spec.inputs,
             input_formats: spec.input_formats.iter().map(|s| (*s).to_owned()).collect(),
             output_format: spec.output_format.to_owned(),
+            output_formats: spec
+                .output_formats
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
             tier: spec.tier,
             runtimes: spec.runtimes.to_vec(),
             engine: spec.engine.to_owned(),
@@ -658,6 +779,28 @@ pub fn validate_specs(specs: &[ToolSpec]) -> Result<(), RegistryError> {
                 id: spec.id.to_owned(),
                 reason: "output_format must not be empty",
             });
+        }
+        if !spec.output_formats.is_empty() {
+            if spec.output_formats[0] != spec.output_format {
+                return Err(RegistryError::InvalidSpec {
+                    id: spec.id.to_owned(),
+                    reason: "output_formats must start with output_format",
+                });
+            }
+            let mut seen_out = HashSet::new();
+            for &fmt in spec.output_formats {
+                if fmt.trim().is_empty()
+                    || !fmt
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                    || !seen_out.insert(fmt)
+                {
+                    return Err(RegistryError::InvalidSpec {
+                        id: spec.id.to_owned(),
+                        reason: "output_formats must contain unique non-empty lowercase format ids",
+                    });
+                }
+            }
         }
         if spec.runtimes.is_empty() {
             return Err(RegistryError::InvalidSpec {

@@ -153,7 +153,9 @@ pub fn describe(
 fn describe_failure(error: runner::RunError) -> String {
     const STATUS_DLL_NOT_FOUND: i32 = -1_073_741_515;
     let missing_dll = match &error {
-        runner::RunError::Crash { exit, stderr_tail } => {
+        runner::RunError::Crash {
+            exit, stderr_tail, ..
+        } => {
             *exit == Some(STATUS_DLL_NOT_FOUND)
                 || stderr_tail.contains("ImportError: DLL load failed")
         }
@@ -278,16 +280,19 @@ mod tests {
             RunError::Crash {
                 exit: Some(-1_073_741_515),
                 stderr_tail: String::new(),
+                memory_limit_mb: None,
             },
             RunError::Spawn(std::io::Error::from_raw_os_error(126)),
             RunError::EngineFailed {
                 code: ariad_core::protocol::ErrorCode::EngineFailure,
                 message: "ImportError: DLL load failed while importing torch".to_owned(),
+                memory_limit_mb: None,
             },
             RunError::Crash {
                 exit: Some(1),
                 stderr_tail: "Traceback:\nImportError: DLL load failed while importing torch"
                     .to_owned(),
+                memory_limit_mb: None,
             },
         ] {
             let message = super::describe_failure(error);
@@ -301,10 +306,12 @@ mod tests {
             RunError::EngineFailed {
                 code: ariad_core::protocol::ErrorCode::EngineFailure,
                 message: "ImportError: No module named torch".to_owned(),
+                memory_limit_mb: None,
             },
             RunError::Crash {
                 exit: Some(1),
                 stderr_tail: "unrelated engine failure".to_owned(),
+                memory_limit_mb: None,
             },
             RunError::Timeout,
         ] {
