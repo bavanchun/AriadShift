@@ -178,7 +178,17 @@ jobs:
         run: |
           mkdir -p sources
           while read -r digest name url; do
-            curl -fsSL --retry 3 --max-time 900 "$url" -o "sources/$name"
+            case "$url" in
+              https://github.com/alpinelinux/aports.git\#*)
+                revision=${url#*#}
+                commit=${revision%:*}; tree=${revision#*:}
+                git init -q "$RUNNER_TEMP/aports"
+                git -C "$RUNNER_TEMP/aports" fetch --depth=1 https://github.com/alpinelinux/aports.git "$commit"
+                test "$(git -C "$RUNNER_TEMP/aports" rev-parse "FETCH_HEAD^{tree}")" = "$tree"
+                git -C "$RUNNER_TEMP/aports" archive --format=tar --mtime=1970-01-01T00:00:00Z "$tree" | gzip -n -9 > "sources/$name"
+                ;;
+              *) curl -fsSL --retry 3 --max-time 900 "$url" -o "sources/$name" ;;
+            esac
             printf '%s  %s\n' "$digest" "sources/$name" | sha256sum --check
           done < engines/qpdf/pack/runtime-sources.txt
       - name: Verify release evidence

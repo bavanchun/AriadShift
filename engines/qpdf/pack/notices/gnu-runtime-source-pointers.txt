@@ -7,16 +7,24 @@ https://repo.almalinux.org/vault/8.10/AppStream/Source/Packages/gcc-toolset-14-g
 SHA-256: 0131355464ff7b4958d0d668b3166e05c95c9d0bc4af243ff580a10b78b123eb
 
 The reviewed Alpine GCC 15.2.0-r5 package source and patches are:
-https://codeload.github.com/alpinelinux/aports/tar.gz/423a8ad043d07f2c7546c8ec3e2b0384cda360ae
-SHA-256: e2f1c69afc7f9117488e7d8d2da2daf19ba251c1b9a71c29049b5297eb0eb10e
+https://github.com/alpinelinux/aports.git
+Commit: 423a8ad043d07f2c7546c8ec3e2b0384cda360ae
+Tree: fdc22fc9917d617912bd2c28bfee03adf6d6337f
+Re-archive SHA-256: f0da39bfec4e09fa4b094a8b56de789ef51173fb0fde40d5956e5d08b8fdf44f
 https://ftp.gnu.org/gnu/gcc/gcc-15.2.0/gcc-15.2.0.tar.xz
 SHA-256: 438fd996826b0c82485a29da03a72d71d6e3541a83ec702df4271f6fe025d24e
 
 The reviewed Alpine musl 1.2.6-r3 source and patches are:
-https://codeload.github.com/alpinelinux/aports/tar.gz/8f79d39391b46d6dbf1800fb68b8212a21d5ee2e
-SHA-256: ea30c7a4e842d60d44f71796bbd5ab84a2f9cc5c47f4da1558043fca9a9b79d4
+https://github.com/alpinelinux/aports.git
+Commit: 8f79d39391b46d6dbf1800fb68b8212a21d5ee2e
+Tree: a2c974cbf55e94e4486872ef61f890e41eaed465
+Re-archive SHA-256: f60b8b0741ea79a46c50b1c0cf193da2f03b47569f105a6e7190426ed03f3cf6
 https://musl.libc.org/releases/musl-1.2.6.tar.gz
 SHA-256: d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a
+
+Re-archive each tree with Git (tree order, numeric owner and group zero):
+  git archive --format=tar --mtime=1970-01-01T00:00:00Z TREE | gzip -n -9
+The release retains these resulting archives with the corresponding sources.
 
 These pointers identify reviewed inputs and do not by themselves establish
 which exact inputs a future release used. The accompanying source offer applies
