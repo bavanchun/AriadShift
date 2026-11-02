@@ -68,48 +68,67 @@ changes beyond this preflight task. The raw-name scan's known conservative false
 refusals remain as documented because broadening the parser could weaken the
 fail-closed behavior.
 
-## Round 2 — incomplete
+## Round 2 — canonical PDF before PDFium
 
-The round-2 review demonstrated that checking linked xref headers does not
-ensure that lopdf and PDFium select the same objects. Canonical serialization
-of the loaded object graph is required before this can be considered fixed.
-The earlier completion statement applies only to the first review round.
+The prior xref-header walk could not model every difference between lopdf and
+PDFium. PDFium tools now serialize the strictly loaded object graph through
+lopdf's plain writer as a classic xref PDF. Extraction preflights that same
+graph. The per-entry xref header walk and its repeated whitespace scanning have
+been removed. Inputs requiring cross-reference repair are refused. Canonical
+output is charged against the remaining decoded-data budget and the job memory
+limit; output offsets are capped to the writer's 32-bit range. Stream lengths
+are set to the serialized content length. Strings use equivalent hexadecimal
+syntax to avoid quadratic work in lopdf's literal-string writer, and extraction
+checks the escaped length of object names before PDFium can truncate them.
+Conflicting generations and references that would resolve differently are
+refused.
 
-The supplied PoC generators were run under `/tmp/t17b-pocs`. The supplied
-Python PDFium probe could not run because `pypdfium2` is not installed in the
-active Python environment. The real engine pack remains available for tests.
+The bounded trailer scan treats `/Prev 0` as the end of the chain without
+changing offsets, and the name scan uses offsets relative to `%PDF`. The tests
+`accepts_prefix_and_zero_previous_xref` and
+`accepts_whitespace_before_object_header_at_xref_offset` cover both kinds of
+leading whitespace. `writes_one_classic_table_without_object_streams` reads the
+result in strict mode and checks the canonical structure;
+`bounded_output_rejects_growth_past_budget` covers the bounded writer.
 
-A regression test for nested Type3 fonts in a glyph's own resources failed
-before the fix: preflight returned `Ok(())` for an oversized inline image. The
-fix descends into that resource dictionary using the glyph's resource scope.
-The post-fix test passed. The documentation no
-longer claims that xref header checks guarantee parser equivalence. The PR no
-longer contains a closing directive for issue #164.
+The in-repository generator `fixtures/gen/canonical-xref-cases.py` produces the
+five reviewed PoCs and a harmless control, all listed in the fixture manifest.
+`canonical_output_matches_preflight_for_ambiguous_xrefs` runs each input
+through extraction and checks either refusal or exact PDFium raster equality
+with the control. The Type3 glyph-resource fix is covered by
+`glyph_resources_visit_nested_type3_fonts`. Six earlier xref-shadow fixtures
+are now accepted because their selected graphs can be serialized safely; the
+corpus still checks the exact reasons for all remaining expected refusals.
 
-Assumption: the round-2 decision supersedes the review's proposed list of
-individual xref trigger checks. The canonicalization, five engine-backed
-regression fixtures, memory accounting, timing measurements, corpus and golden
-checks remain outstanding. No overhead timing has been measured yet.
+### Timing
 
-Round-2 verification, with `build-lock.sh` and a 2 GiB systemd scope for
-tests:
+One warm-cache debug-build run under a 2 GiB scope, using the exact 59 fixture
+paths present at revision `730e9f5`, measured 1,052.7 ms to read and preflight
+without serialization and 1,213.2 ms including serialization: an extra
+160.5 ms (15.2%). Two repaired-xref files were refused; 57 were serialized.
+The 1,000-page fixture measured 109.2 ms without and 148.4 ms with serialization:
+an extra 39.2 ms (35.9%). These measurements cover loading and serialization,
+not PDFium rendering, and are not statistically sampled. The 400-entry,
+10 MB whitespace PoC took 1.118 s to read and 0.139 ms to serialize, with no
+per-entry header scan.
 
-- `cargo fmt --all --check`: passed.
-- `cargo clippy --locked -p ariad-pdfium-engine --all-targets -- -D warnings`:
-  passed.
-- `cargo test --locked -p ariad-pdfium-engine` with the specified PDFium pack:
-  passed, including the Linux render golden. This golden tests the existing
-  input path, not canonicalized input.
+### Verification
+
+- `cargo fmt --all --check` and `cargo clippy --locked -p ariad-pdfium-engine
+  --all-targets -- -D warnings` passed through the shared build lock.
+- `cargo test --locked -p ariad-pdfium-engine` passed with the supplied PDFium
+  pack and the 2 GiB scope, including the Linux render golden.
 - `cargo test --locked -p ariad-pdfium-engine preflight_fixture_corpus --
-  --ignored --nocapture`: passed with no unexpected refusals.
-- The first attempt to nest a systemd scope inside `build-lock.sh` failed to
-  start the transient unit. Running the build lock inside the 2 GiB scope
-  succeeded.
+  --ignored --nocapture` passed under the same scope: 85 PDFs, 25 expected
+  refusals and zero unexpected refusals.
+- `cargo test --locked -p ariad-pdf --lib` passed 25 tests under the 2 GiB
+  scope. An earlier `document::` filter matched no tests and is not counted.
+- The supplied PoC generators ran. The optional Python probe could not run
+  because `pypdfium2` was absent; the real engine tests provide the comparison.
+- A nested systemd scope failed to start during the initial setup; running the
+  build lock inside the 2 GiB scope succeeded. Two clippy warnings and the
+  changed xref-test expectations were corrected and checked again.
 
-The existing xref header walk has not been removed; its unbounded whitespace
-work, misleading refusal message, `/Prev 0` refusal, and leading-whitespace
-refusal remain. Canonicalization and its memory charge have not been
-implemented, and no overhead timing is available for either the corpus or the
-1,000-page file. The five in-repository refusal-or-equivalence fixtures and
-engine-hook assertions have not been created. The macOS golden remains a CI
-requirement. The current branch is not ready to close issue #164 or merge.
+Assumptions: `/Prev 0` terminates the chain, and an absent object number remains
+unresolved in both parsers. The macOS render golden remains for CI; PR #185
+requires re-review before merge and issue #164 remains open until then.
