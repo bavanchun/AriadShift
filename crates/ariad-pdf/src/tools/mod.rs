@@ -8,6 +8,8 @@
 //!   opened input required cross-reference table reconstruction (`doc.repaired_xref() == true`).
 //! - Deterministic PDF serialization of [`OutputDoc`] artifacts via [`crate::writer::save_with_options`].
 
+pub mod add_image;
+pub mod add_text;
 pub mod adjust_colors;
 pub mod alternate_mix;
 pub mod attachments;
@@ -23,6 +25,8 @@ pub mod extract_pages;
 pub mod grayscale;
 pub mod insert_blank;
 pub mod layers;
+mod mark_image;
+mod marks_common;
 pub mod merge;
 pub mod metadata;
 pub mod nup;
@@ -32,6 +36,7 @@ pub mod page_labels;
 pub(crate) mod page_set;
 pub mod portfolio;
 pub mod posterize;
+pub mod qr;
 pub mod reorder;
 pub mod replace_color;
 pub mod rotate;
@@ -40,8 +45,10 @@ pub mod sanitize;
 pub mod scale;
 pub mod single_page;
 pub mod split;
+pub mod stamp;
 pub mod unlock_forms;
 pub mod viewer_prefs;
+pub mod watermark;
 pub mod watermark_detect;
 mod watermark_identity;
 pub mod watermark_remove;
@@ -328,6 +335,40 @@ pub fn run_tool(
     }
 
     match tool_id {
+        "pdf.watermark" => dispatch_structural_inputs::<
+            ariad_core::tools::params::WatermarkParams,
+            _,
+        >(tool_id, inputs, params, ctx, watermark::run_inputs),
+        "pdf.add_image" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::AddImageParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                add_image::run_inputs,
+            )
+        }
+        "pdf.add_text" => dispatch_structural::<ariad_core::tools::params::AddTextParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| add_text::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        "pdf.stamp" => dispatch_structural::<ariad_core::tools::params::StampParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| stamp::run(docs, params, &inputs[0].limits, ctx),
+        ),
+        "pdf.qr" => dispatch_structural::<ariad_core::tools::params::QrParams, _>(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            |docs, params, ctx| qr::run(docs, params, &inputs[0].limits, ctx),
+        ),
         "pdf.watermark_remove" => dispatch_structural_inputs::<
             ariad_core::tools::params::WatermarkRemoveParams,
             _,

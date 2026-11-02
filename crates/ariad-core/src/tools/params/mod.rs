@@ -3,6 +3,8 @@
 //! All tool parameter types live in `ariad-core` with no engine or `lopdf` dependencies so
 //! [`crate::tools::registry`] can resolve `params_schema` without crate cycles.
 
+pub mod add_image;
+pub mod add_text;
 pub mod adjust_colors;
 pub mod alternate_mix;
 pub mod attachments;
@@ -31,10 +33,12 @@ pub mod nup;
 pub mod outline;
 pub mod overlay;
 pub mod overlay_common;
+pub mod overlay_marks_common;
 pub mod page_labels;
 pub mod permissions;
 pub mod portfolio;
 pub mod posterize;
+pub mod qr;
 pub mod remove_blank;
 pub mod render;
 pub mod reorder;
@@ -46,15 +50,19 @@ pub mod sanitize;
 pub mod scale;
 pub mod single_page;
 pub mod split;
+pub mod stamp;
 pub mod text_layout;
 pub mod thumbnails;
 pub mod unlock_forms;
 pub mod viewer_prefs;
+pub mod watermark;
 pub mod watermark_detect;
 pub mod watermark_remove;
 
 use schemars::{JsonSchema, Schema, generate::SchemaSettings};
 
+pub use add_image::AddImageParams;
+pub use add_text::{AddTextParams, TextAlignment};
 pub use adjust_colors::AdjustColorsParams;
 pub use alternate_mix::AlternateMixParams;
 pub use attachments::{AttachmentsAction, AttachmentsParams};
@@ -87,6 +95,7 @@ pub use page_labels::{PageLabelRange, PageLabelStyle, PageLabelsParams};
 pub use permissions::{PdfPermissions, PermissionsParams};
 pub use portfolio::{PortfolioAction, PortfolioParams, PortfolioView};
 pub use posterize::{PosterizeParams, PosterizeTiles};
+pub use qr::{QrBackground, QrLevel, QrParams};
 pub use remove_blank::RemoveBlankParams;
 pub use render::{Background, Combine, RasterFormat, RenderParams, ToImagesParams};
 pub use reorder::{ReorderParams, ReorderPreset, ReorderSpec};
@@ -98,10 +107,12 @@ pub use sanitize::{SanitizeForms, SanitizeParams};
 pub use scale::{ScaleFit, ScaleParams};
 pub use single_page::SinglePageParams;
 pub use split::{SplitDetectMode, SplitMode, SplitParams};
+pub use stamp::{StampParams, StampPreset};
 pub use text_layout::TextLayoutParams;
 pub use thumbnails::ThumbnailsParams;
 pub use unlock_forms::UnlockFormsParams;
 pub use viewer_prefs::{ViewerPageLayout, ViewerPageMode, ViewerPrefsParams};
+pub use watermark::{AutoSize, WatermarkFontSize, WatermarkKind, WatermarkLayout, WatermarkParams};
 pub use watermark_detect::WatermarkDetectParams;
 pub use watermark_remove::WatermarkRemoveParams;
 

@@ -78,10 +78,40 @@ pub fn draw(
     position: LayerPosition,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
-    if placement.width <= 0.0
+    draw_many(
+        pdf,
+        page,
+        geometry,
+        image,
+        placement,
+        &[(placement.x, placement.y)],
+        marking,
+        position,
+        ctx,
+    )
+}
+
+/// Place the same image repeatedly in a single isolated page stream.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_many(
+    pdf: &mut PdfDoc,
+    page: lopdf::ObjectId,
+    geometry: &PageGeometry,
+    image: ImageXObject,
+    placement: ImagePlacement,
+    placements: &[(f64, f64)],
+    marking: Marking,
+    position: LayerPosition,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    if !placement.width.is_finite()
+        || !placement.height.is_finite()
+        || placement.width <= 0.0
         || placement.height <= 0.0
         || !placement.rotation_deg.is_finite()
         || placement.rotation_deg.abs() > 360_000.0
+        || placements.is_empty()
+        || placements.len() > super::geometry::MAX_PLACEMENTS_PER_PAGE
     {
         return Err(PdfError::InvalidParams("invalid image placement".into()));
     }
@@ -93,36 +123,45 @@ pub fn draw(
         "im",
         Object::Reference(image.id),
     )?;
-    let mut operations = Vec::new();
-    if placement.opacity.value() < 1.0 {
+    let gs = if placement.opacity.value() < 1.0 {
         let opacity = number(placement.opacity.value())?;
-        let id = pdf.inner_mut()?.add_object(
-            dictionary! { "Type" => "ExtGState", "ca" => opacity.clone(), "CA" => opacity },
-        );
+        let id = pdf
+            .inner_mut()?
+            .add_object(dictionary! {"Type"=>"ExtGState","ca"=>opacity.clone(),"CA"=>opacity});
         layer::require_transparency(pdf.inner_mut()?);
-        let gs = layer::insert_resource(
+        Some(layer::insert_resource(
             pdf.inner(),
             &mut resources,
             b"ExtGState",
             "gs",
             Object::Reference(id),
-        )?;
-        operations.push(Operation::new("gs", vec![Object::Name(gs)]));
+        )?)
+    } else {
+        None
+    };
+    let mut operations = Vec::with_capacity(placements.len() * 5);
+    for &(x, y) in placements {
+        ctx.check()?;
+        let transform = orientation_matrix(image.orientation)?
+            .then(Matrix::scale(placement.width, placement.height))
+            .then(Matrix::rotate_deg(placement.rotation_deg))
+            .then(Matrix::translate(x, y))
+            .then(geometry.visual_to_user);
+        operations.push(Operation::new("q", vec![]));
+        if let Some(gs) = &gs {
+            operations.push(Operation::new("gs", vec![Object::Name(gs.clone())]));
+        }
+        operations.push(Operation::new(
+            "cm",
+            transform
+                .0
+                .into_iter()
+                .map(number)
+                .collect::<Result<Vec<_>, _>>()?,
+        ));
+        operations.push(Operation::new("Do", vec![Object::Name(name.clone())]));
+        operations.push(Operation::new("Q", vec![]));
     }
-    let transform = orientation_matrix(image.orientation)?
-        .then(Matrix::scale(placement.width, placement.height))
-        .then(Matrix::rotate_deg(placement.rotation_deg))
-        .then(Matrix::translate(placement.x, placement.y))
-        .then(geometry.visual_to_user);
-    operations.push(Operation::new(
-        "cm",
-        transform
-            .0
-            .into_iter()
-            .map(number)
-            .collect::<Result<_, _>>()?,
-    ));
-    operations.push(Operation::new("Do", vec![Object::Name(name)]));
     let body = Content { operations }
         .encode()
         .map_err(|_| PdfError::Malformed)?;

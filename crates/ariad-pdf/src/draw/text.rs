@@ -140,11 +140,45 @@ pub fn draw(
     position: LayerPosition,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
+    draw_many(
+        pdf,
+        page,
+        geometry,
+        font,
+        layout,
+        style,
+        &[(x, y)],
+        marking,
+        position,
+        ctx,
+    )
+}
+
+/// Draw one layout at several positions in a single isolated content stream.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_many(
+    pdf: &mut PdfDoc,
+    page: lopdf::ObjectId,
+    geometry: &PageGeometry,
+    font: &EmbeddedFont,
+    layout: &TextLayout,
+    style: &TextStyle,
+    placements: &[(f64, f64)],
+    marking: Marking,
+    position: LayerPosition,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
+    const MAX_OPERATIONS: usize = 262_144;
+    const MAX_TEXT_BYTES: usize = 64 * 1024 * 1024;
     if !style.rotation_deg.is_finite()
         || style.rotation_deg.abs() > 360_000.0
         || style.size_pt != layout.size_pt
+        || placements.is_empty()
+        || placements.len() > super::geometry::MAX_PLACEMENTS_PER_PAGE
     {
-        return Err(PdfError::InvalidParams("invalid text style".into()));
+        return Err(PdfError::InvalidParams(
+            "invalid text style or placements".into(),
+        ));
     }
     let mut resources = layer::page_resources(pdf.inner(), page);
     let font_name = layer::insert_resource(
@@ -156,9 +190,9 @@ pub fn draw(
     )?;
     let alpha = style.opacity.value();
     let gs_name = if alpha < 1.0 {
-        let gs = pdf.inner_mut()?.add_object(
-            dictionary! { "Type" => "ExtGState", "ca" => real(alpha)?, "CA" => real(alpha)? },
-        );
+        let gs = pdf
+            .inner_mut()?
+            .add_object(dictionary! {"Type"=>"ExtGState","ca"=>real(alpha)?,"CA"=>real(alpha)?});
         layer::require_transparency(pdf.inner_mut()?);
         Some(layer::insert_resource(
             pdf.inner(),
@@ -170,37 +204,27 @@ pub fn draw(
     } else {
         None
     };
-    let transform = Matrix::rotate_deg(style.rotation_deg)
-        .then(Matrix::translate(x, y))
-        .then(geometry.visual_to_user);
-    let mut operations = Vec::new();
-    operations.push(Operation::new(
-        "cm",
-        transform
-            .0
-            .into_iter()
-            .map(real)
-            .collect::<Result<Vec<_>, _>>()?,
-    ));
+    let mut template = Vec::new();
     if let Some(gs) = gs_name {
-        operations.push(Operation::new("gs", vec![Object::Name(gs)]));
+        template.push(Operation::new("gs", vec![Object::Name(gs)]));
     }
-    operations.push(Operation::new("rg", super::path::components(&style.color)?));
+    template.push(Operation::new("rg", super::path::components(&style.color)?));
     if let Some((color, width)) = &style.stroke {
         if !width.is_finite() || *width < 0.0 {
             return Err(PdfError::InvalidParams("invalid text stroke width".into()));
         }
-        operations.push(Operation::new("RG", super::path::components(color)?));
-        operations.push(Operation::new("w", vec![real(*width)?]));
+        template.push(Operation::new("RG", super::path::components(color)?));
+        template.push(Operation::new("w", vec![real(*width)?]));
     }
-    operations.push(Operation::new("BT", vec![]));
+    template.push(Operation::new("BT", vec![]));
     if style.stroke.is_some() {
-        operations.push(Operation::new("Tr", vec![2.into()]));
+        template.push(Operation::new("Tr", vec![2.into()]));
     }
-    operations.push(Operation::new(
+    template.push(Operation::new(
         "Tf",
         vec![Object::Name(font_name), real(style.size_pt)?],
     ));
+    let mut encoded_bytes = 0usize;
     for (index, (line, width)) in layout.lines.iter().zip(&layout.widths).enumerate() {
         let dx = match style.align {
             TextAlign::Left => 0.0,
@@ -208,7 +232,7 @@ pub fn draw(
             TextAlign::Right => layout.width - width,
         };
         let baseline = layout.height - layout.ascent - (index as f64 * layout.line_step);
-        operations.push(Operation::new(
+        template.push(Operation::new(
             "Tm",
             vec![
                 1.into(),
@@ -219,15 +243,42 @@ pub fn draw(
                 real(baseline)?,
             ],
         ));
-        operations.push(Operation::new(
+        let encoded = font.encode(line)?;
+        encoded_bytes = encoded_bytes.saturating_add(encoded.len());
+        template.push(Operation::new(
             "Tj",
-            vec![Object::String(
-                font.encode(line)?,
-                StringFormat::Hexadecimal,
-            )],
+            vec![Object::String(encoded, StringFormat::Hexadecimal)],
         ));
     }
-    operations.push(Operation::new("ET", vec![]));
+    template.push(Operation::new("ET", vec![]));
+    let operation_count = placements
+        .len()
+        .saturating_mul(template.len().saturating_add(3));
+    if operation_count > MAX_OPERATIONS
+        || placements.len().saturating_mul(encoded_bytes) > MAX_TEXT_BYTES
+    {
+        return Err(PdfError::InvalidParams(
+            "text placements exceed drawing limits".into(),
+        ));
+    }
+    let mut operations = Vec::with_capacity(operation_count);
+    for &(x, y) in placements {
+        ctx.check()?;
+        let transform = Matrix::rotate_deg(style.rotation_deg)
+            .then(Matrix::translate(x, y))
+            .then(geometry.visual_to_user);
+        operations.push(Operation::new("q", vec![]));
+        operations.push(Operation::new(
+            "cm",
+            transform
+                .0
+                .into_iter()
+                .map(real)
+                .collect::<Result<Vec<_>, _>>()?,
+        ));
+        operations.extend(template.iter().cloned());
+        operations.push(Operation::new("Q", vec![]));
+    }
     let body = Content { operations }
         .encode()
         .map_err(|_| PdfError::Malformed)?;
