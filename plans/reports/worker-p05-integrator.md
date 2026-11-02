@@ -18,7 +18,7 @@ merged ancestry. The architecture conflict retained both decision rows.
 
 The approved Mac decisions are in `.run/coord/from-mac/p05-decisions.md` in
 the main checkout; D6 is v2-only and the frozen v1 schemas must stay unchanged.
-The pending compression decision is in `.run/coord/to-mac/p05-compress-acceptance.md`.
+The Mac PM approved the encoder follow-up in `.run/coord/from-mac/34-compress-acceptance.md`; the 7/10 bar remains unchanged.
 No release or licence exception is approved by this handoff.
 
 Uncommitted integration work registers the nine tools, reconciles shared
@@ -69,10 +69,6 @@ committed.
 
 ## Mac decisions and work
 
-The PM must choose the response to the 6/10 compression result, including any
-encoder change and associated licence review. The s3 handoff describes a
-source-built macOS qpdf instead of the approved upstream-if-reviewed approach,
-and an IJG exception and GNU runtime review pending owner approval; distribution
-must remain blocked pending explicit decisions and completed review. Run and
+The Mac PM approved the encoder follow-up and source-built macOS qpdf. IJG and GNU runtime items remain owner-pending and block distribution, not the phase merge. Run and
 record macOS qpdf build, signing, Seatbelt child confinement, bindings and native
 tests on the Mac. No macOS verification was run here.

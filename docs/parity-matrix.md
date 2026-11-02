@@ -98,21 +98,23 @@ Free regardless of tier: every local tool, every local conversion route, Documen
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.compress` (`target_bytes` covers the fixed-size presets and "for email") | optimize | S15 compress levels 1-9 | Compress PDF; Compress presets (100 KB, 200 KB, 500 KB, 1 MB, 2 MB); Compress for email | 5 | ariad-pdf, qpdf, pdfium | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.grayscale` | optimize | S32 colour operations | PDF to Greyscale | 5 | ariad-pdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.repair` | optimize | S16 repair | Repair PDF | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.compress` (`target_bytes` covers the fixed-size presets and "for email") | optimize | S15 compress levels 1-9 | Compress PDF; Compress presets (100 KB, 200 KB, 500 KB, 1 MB, 2 MB); Compress for email | 5 | ariad-pdf, pdfium | local | Free | CLI, MCP, web(h), mac |
+| `pdf.grayscale` | optimize | S32 colour operations | PDF to Greyscale | 5 | ariad-pdf | local | Free | CLI, MCP, web(h), mac |
+| `pdf.repair` | optimize | S16 repair | Repair PDF | 5 | qpdf | local | Free | CLI, MCP, web(h), mac |
 | `pdf.decompress` † (task T3) | optimize | S16 decompress | — | 3 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.linearize` | optimize | — | Linearize PDF | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
+| `pdf.linearize` | optimize | — | Linearize PDF | 5 | qpdf | local | Free | CLI, MCP, web(h), mac |
+
+Compression runs in-process; PDFium is used only for similarity measurement. Cloud runtimes are planned for phase 13.
 
 ### security
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.encrypt` | security | S26 add password | Encrypt PDF; Protect PDF | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.decrypt` | security | S26 remove password | Decrypt PDF; Unlock PDF; Remove Restrictions | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.permissions` | security | S26 change permissions | Change Permissions | 5 | qpdf | local, cloud | Free | CLI, MCP, web(h), mac |
-| `pdf.sanitize` | security | S27 sanitize | Sanitize PDF; Remove Annotations; Remove Metadata | 5 | ariad-pdf, pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.unlock_forms` | security | S28 unlock form fields | — | 5 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.encrypt` | security | S26 add password | Encrypt PDF; Protect PDF | 5 | qpdf | local | Free | CLI, MCP, web(h), mac |
+| `pdf.decrypt` | security | S26 remove password | Decrypt PDF; Unlock PDF; Remove Restrictions | 5 | qpdf | local | Free | CLI, MCP, web(h), mac |
+| `pdf.permissions` | security | S26 change permissions | Change Permissions | 5 | qpdf | local | Free | CLI, MCP, web(h), mac |
+| `pdf.sanitize` | security | S27 sanitize | Sanitize PDF; Remove Annotations; Remove Metadata | 5 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
+| `pdf.unlock_forms` | security | S28 unlock form fields | — | 5 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
 
 ### overlay
 
@@ -205,7 +207,7 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 | Watermark removal level 1 (`pdf.watermark_detect`, `pdf.watermark_remove`: layers, artifacts, repeated objects; user-selected candidates only) | overlay | — | — | 6 | ariad-pdf, pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | Watermark removal level 2 (`pdf.watermark_remove_raster`: Florence-2 detection, OpenCV inpainting; LaMa only after weight-licence review) | overlay | — | — | 13 | inpaint-pack | local | Free | CLI, MCP, web(h), mac |
 | Vietnamese-first OCR (`vie` default, diacritic CER recorded against the Docling route) | ocr | OCR languages request (#6534) | Czech and Polish diacritics lost in the editor (#860, #776) | 7 | tesseract | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| Target-size compression (`pdf.compress` `target_bytes` with a similarity floor) | optimize | levels 1-9 only | fixed presets leave 380 KB for a 200 KB goal (#704) | 5 | ariad-pdf, qpdf, pdfium | local, cloud | Free | CLI, MCP, web(h), mac |
+| Target-size compression (`pdf.compress` `target_bytes` with a similarity floor) | optimize | levels 1-9 only | fixed presets leave 380 KB for a 200 KB goal (#704) | 5 | ariad-pdf, pdfium | local | Free | CLI, MCP, web(h), mac |
 
 ## Platform capabilities (not tools)
 

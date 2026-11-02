@@ -15,8 +15,8 @@ milestone: B (engine breadth)
 
 ## Stack (verified 2026-10-31, stack report §2.3-2.4)
 
-- qpdf 12.4.2 (Apache-2.0) as engine pack `qpdf` (pack name = engine id): the pack ships the pinned qpdf binary (upstream SHA-256 verified, macOS codesigned); the adapter is `ashift __engine qpdf` in `crates/ariad-host/src/engines/qpdf.rs` (the `pandoc_bin` pattern, AD-14), `EngineSpec.protocol = V2`, `sandbox_required: true`.
-- In-process codecs in `ariad-pdf` (feature `codecs`, not in wasm unless size allows): `image` 0.25.10, `jpeg-encoder` 0.7.1 (`(MIT OR Apache-2.0) AND IJG` — IJG notice), `oxipng` 10.2.1 (MIT), `subsetter` 0.2.6 (MIT OR Apache-2.0). mozjpeg (IJG + BSD-3) only if jpeg-encoder quality/size is insufficient (decide by measurement in T1).
+- qpdf 12.4.2 (Apache-2.0) as engine pack `qpdf` (pack name = engine id): the pack builds qpdf from verified source with native crypto on Linux and macOS; release signing and licence review remain prerequisites; the adapter is `ashift __engine qpdf` in `crates/ariad-host/src/engines/qpdf.rs` (the `pandoc_bin` pattern, AD-14), `EngineSpec.protocol = V2`, `sandbox_required: true`.
+- In-process codecs in `ariad-pdf` (feature `codecs`, not in wasm unless size allows): `image` 0.25.10, `flate2`, and `subsetter` 0.2.6. A separately approved encoder follow-up is in progress.
 - Excluded: Ghostscript (AGPL), imagequant/pngquant (GPL — never linked; not shipped this phase).
 - JBIG2 (jbig2enc, Apache-2.0 with patent note): **not shipped** in this stage (owner, 2026-10-31); revisited in phase 20 with a patent/legal check.
 
@@ -24,14 +24,14 @@ milestone: B (engine breadth)
 
 | Tool id | Notes |
 |---|---|
-| `pdf.compress` | `{level: 1..9 \| preset: "screen" \| "ebook" \| "print" \| "lossless", target_bytes?: u64, grayscale?: bool, max_dpi?: u32, jpeg_quality?: u8}`. Pipeline: dedupe streams → recompress Flate → downsample/re-encode images (in-process) → subset/unembed unused fonts → qpdf object streams + unreferenced-resource removal. `target_bytes`: bounded binary search over (max_dpi, jpeg_quality) ≤ 8 iterations, stops at the best result ≥ target; reports achieved size and visual similarity (render diff of 3 sample pages via PDFium) — never returns a result below a similarity floor without a warning. |
+| `pdf.compress` | `{level: 1..9 \| preset: "screen" \| "ebook" \| "print" \| "lossless", target_bytes?: u64, grayscale?: bool, max_dpi?: u32, jpeg_quality?: u8}`. Pipeline: dedupe streams → recompress Flate → downsample/re-encode images (in-process) → subset/unembed unused fonts → in-process object streams + unreferenced-resource removal. `target_bytes`: at most eight quality and DPI candidates, selecting the highest-quality output at or below the target or the smallest candidate with a warning; reports achieved size and PDFium SSIM for first, middle and last pages; warns below 0.98 or if measurement is unavailable. `level` and `preset` are exclusive; the default is ebook. Never return output larger than the input. |
 | `pdf.grayscale` | convert images and colour operators to gray |
 | `pdf.encrypt` | `{user_password?, owner_password, algorithm: "aes-256" = default \| "aes-128", permissions: {print, modify, copy, annotate, fill_forms, extract_accessibility, assemble, print_high}}` via qpdf; passwords only via params, never logged; params redacted in logs/reports |
-| `pdf.decrypt` | `{password}` via qpdf |
+| `pdf.decrypt` | `{password?}` via qpdf; absent means the empty user password |
 | `pdf.permissions` | change permissions (needs owner password) |
-| `pdf.repair` | qpdf `--qdf`/rebuild xref; report what was repaired |
+| `pdf.repair` | qpdf rewrite with object streams preserved; report repairs |
 | `pdf.linearize` | qpdf `--linearize` |
-| `pdf.sanitize` | `{javascript, embedded_files, links, metadata, xmp, thumbnails, annotations_of_type: [..], forms: "keep" \| "flatten" \| "remove"}` in `ariad-pdf` (+ PDFium flatten when requested) |
+| `pdf.sanitize` | `{javascript, embedded_files, links, metadata, xmp, thumbnails, annotations_of_type: [..], forms: "keep" \| "flatten" \| "remove"}` in `ariad-pdf`, flattening existing appearances when requested |
 | `pdf.unlock_forms` | remove read-only flags from fields |
 
 ## Tasks
