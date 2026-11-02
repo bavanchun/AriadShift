@@ -4637,3 +4637,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "form-fallback-budget-pdf"
+path = "fixtures/pdf/form-fallback-budget.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with repeated page resource fallback"
+origin = "generated"
+generated_by = "fixtures/gen/form-fallback-budget.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "b8385e011db3462c67748da2e86aeece70ba9daa200a37d1a6fdf1cc7a11463a"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

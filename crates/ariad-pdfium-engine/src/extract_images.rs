@@ -3877,6 +3877,32 @@ mod corpus_tests {
     }
 
     #[test]
+    fn page_fallback_form_invocations_are_charged() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/form-fallback-budget.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "escape",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        let page = *doc.inner().get_pages().values().next().unwrap();
+        let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Form expansion work exceeds the limit.");
+    }
+
+    #[test]
     fn type3_glyph_resource_invocations_are_charged() {
         for scope in ["page", "font", "glyph"] {
             let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -4226,6 +4252,10 @@ mod corpus_tests {
             (
                 "type3-glyph-resource.pdf",
                 "Page glyph execution work exceeds the limit.",
+            ),
+            (
+                "form-fallback-budget.pdf",
+                "Form expansion work exceeds the limit.",
             ),
             (
                 "invalid-name-escape.pdf",
