@@ -74,7 +74,8 @@ pub fn stamp_into<R: Read + Seek, W: Write + Seek>(
             name == CORE_PROPERTIES
         };
         if !target {
-            writer.raw_copy_file(entry)?;
+            // Re-encode the decoded name so EFS describes the name the ZIP reader decoded.
+            writer.raw_copy_file_rename(entry, name)?;
             continue;
         }
         // Only the XML being rewritten is buffered; unrelated entries are copied raw.
