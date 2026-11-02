@@ -9,6 +9,7 @@ use std::{
 fn secret_put_enforces_capacity_and_never_echoes_values() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_ashift"))
         .arg("mcp")
+        .env("RUST_LOG", "trace")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -124,6 +125,7 @@ print(json.dumps({"type":"result", "ok":True, "metrics":{"params_keys":len(param
         .arg("mcp")
         .arg("--allow-dir")
         .arg(dir.path())
+        .env("RUST_LOG", "trace")
         .env("ARIAD_MCP_TEST_PROBE", "1")
         .env("ARIAD_MCP_TEST_PROBE_PROGRAM", &probe)
         .stdin(Stdio::piped())

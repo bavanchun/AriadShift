@@ -208,9 +208,19 @@ fn install_panic_hook() {
     std::panic::set_hook(Box::new(|_| eprintln!("ashift: internal error")));
 }
 
+fn install_secret_safe_tracing() -> bool {
+    tracing::subscriber::set_global_default(tracing::subscriber::NoSubscriber::default()).is_ok()
+}
+
 /// Runs the MCP stdio server.
 pub async fn run_mcp(args: McpArgs) -> ExitCode {
     install_panic_hook();
+    // The MCP library traces full request arguments at debug level. A dedicated
+    // stdio process must not accept any subscriber that can record secret_put values.
+    if !install_secret_safe_tracing() {
+        eprintln!("ashift: mcp cannot start with an existing tracing subscriber");
+        return ExitCode::from(1);
+    }
     // 1. Startup stale workspace sweep (older than 24h)
     let _ = ariad_host::workspace::sweep_stale(Duration::from_secs(24 * 3600));
 

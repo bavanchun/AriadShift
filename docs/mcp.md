@@ -169,7 +169,7 @@ Executes a registered document manipulation tool under the same `--allow-dir` pa
 
 ### 7. `secret_put`
 
-Stores a secret in the local stdio server's memory and returns a single-use handle for `run_doc_tool`. The value must be nonempty UTF-8 and at most 4096 bytes. Up to 32 unexpired handles are held per server; each expires after 300 seconds and is consumed atomically by the first call that resolves it. A handle may be used for multiple secret fields in that same call. Nothing is persisted, and shutdown discards all handles. This tool is not exposed by remote MCP.
+Stores a secret in the local stdio server's memory and returns a single-use handle for `run_doc_tool`. The value must be nonempty UTF-8 and at most 4096 bytes. Up to 32 unexpired handles are held per server; each expires after 300 seconds and is consumed atomically by the first call that resolves it. A handle may be used for multiple secret fields in that same call. Nothing is persisted, and shutdown discards all handles. The stdio server disables tracing so request arguments cannot enter debug logs. This tool is not exposed by remote MCP.
 
 Call `secret_put` with `{"value":"<secret>"}`. The result is `{"handle":"sec_<id>","expires_in_s":300}`. Pass the returned handle as, for example, `{"password":{"$secret":"sec_<id>"}}` in `run_doc_tool` parameters. Unknown, expired, used, and malformed handles fail with `invalid_params` (exit 9).
 

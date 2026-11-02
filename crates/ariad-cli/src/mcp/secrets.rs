@@ -193,3 +193,20 @@ mod panic_tests {
         assert!(String::from_utf8_lossy(&output.stderr).contains("ashift: internal error"));
     }
 }
+
+#[cfg(test)]
+mod tracing_tests {
+    #[test]
+    fn refuses_to_start_if_a_tracing_subscriber_is_already_set() {
+        const KEY: &str = "ARIAD_MCP_TRACE_TEST";
+        if std::env::var_os(KEY).is_some() {
+            assert!(super::super::install_secret_safe_tracing());
+            assert!(!super::super::install_secret_safe_tracing());
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "mcp::secrets::tracing_tests::refuses_to_start_if_a_tracing_subscriber_is_already_set"])
+            .env(KEY, "1").output().unwrap();
+        assert!(output.status.success());
+    }
+}
