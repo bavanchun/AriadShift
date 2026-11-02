@@ -10,8 +10,9 @@ use ariad_core::{
     },
     tools::{
         params::{
-            CropWhitespaceParams, DetectScannedParams, ExtractImagesParams, RemoveBlankParams,
-            RenderParams, ScanRenderParams, TextLayoutParams, ThumbnailsParams, ToImagesParams,
+            CropWhitespaceParams, DeskewParams, DetectScannedParams, ExtractImagesParams,
+            RemoveBlankParams, RenderParams, ScanRenderParams, ScanSplitParams,
+            ScannerEffectParams, TextLayoutParams, ThumbnailsParams, ToImagesParams,
         },
         specs::pdfium::specs,
     },
@@ -39,6 +40,9 @@ pub const TOOL_IDS: &[&str] = &[
     "pdf.detect_scanned",
     "pdf.split",
     "scan.render",
+    "pdf.deskew",
+    "pdf.scan_split",
+    "pdf.scanner_effect",
 ];
 
 /// Contract version reported for `pdf.split`, whose spec lives with the structural PDF tools.
@@ -146,6 +150,11 @@ pub fn run_tool(ctx: &mut ToolContext<'_>, params: Value) -> ToolResult {
     ctx.check()?;
     match ctx.tool().to_owned().as_str() {
         "scan.render" => crate::scan::render::run(ctx, parse::<ScanRenderParams>(params)?),
+        "pdf.deskew" => crate::scan::tools::deskew(ctx, parse::<DeskewParams>(params)?),
+        "pdf.scan_split" => crate::scan::tools::scan_split(ctx, parse::<ScanSplitParams>(params)?),
+        "pdf.scanner_effect" => {
+            crate::scan::tools::scanner_effect(ctx, parse::<ScannerEffectParams>(params)?)
+        }
         "pdf.render" => {
             let params: RenderParams = parse(params)?;
             params.validate().map_err(invalid)?;
@@ -274,6 +283,9 @@ mod tests {
                 "pdf.detect_scanned",
                 "pdf.split",
                 "scan.render",
+                "pdf.deskew",
+                "pdf.scan_split",
+                "pdf.scanner_effect",
             ]
         );
         assert_eq!(events[1], json!({"type":"result","ok":true}));
@@ -300,6 +312,9 @@ mod tests {
             ("pdf.crop_whitespace", json!({})),
             ("pdf.detect_scanned", json!({})),
             ("scan.render", json!({})),
+            ("pdf.deskew", json!({})),
+            ("pdf.scan_split", json!({})),
+            ("pdf.scanner_effect", json!({})),
             (
                 "pdf.split",
                 json!({"mode": "blank-separator", "detect": "pixel"}),
@@ -341,6 +356,9 @@ mod tests {
             ("pdf.remove_blank", json!({"threshold": 2})),
             ("pdf.detect_scanned", json!({"pages": "all"})),
             ("scan.render", json!({"dpi": 601})),
+            ("pdf.deskew", json!({"max_angle_deg": 46})),
+            ("pdf.scan_split", json!({"min_area_ratio": 1})),
+            ("pdf.scanner_effect", json!({"quality": 9})),
         ] {
             let (events, _) = run_request(&run_tool_request(ws.path(), tool, params));
             let last = events.last().expect("a result event");

@@ -65,16 +65,16 @@ pub fn run(ctx: &mut ToolContext<'_>, params: ScanRenderParams) -> ToolResult {
         )?;
         let mut gray = DynamicImage::ImageRgba8(rgba).into_luma8();
         ctx.check()?;
-        let angle = skew::estimate(&gray, 10.0);
+        let angle = skew::estimate_checked(&gray, 10.0, || ctx.check())?;
         if params.deskew
             && let Some(value) = angle
             && value.confidence >= 0.02
             && value.angle_deg.abs() >= 0.1
         {
-            gray = raster::rotate(&gray, -value.angle_deg);
+            gray = raster::rotate_checked(&gray, -value.angle_deg, || ctx.check())?;
         }
         if params.clean {
-            gray = raster::clean(&gray);
+            gray = raster::clean_checked(&gray, || ctx.check())?;
         }
         ctx.check()?;
         let mut encoded = Cursor::new(Vec::new());

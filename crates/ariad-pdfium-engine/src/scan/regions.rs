@@ -21,13 +21,26 @@ pub struct Region {
 /// conservative to one grid cell; padding is applied after filtering by area.
 #[must_use]
 pub fn detect(image: &GrayImage, min_area_ratio: f32, padding: u32) -> Vec<Region> {
+    detect_checked(image, min_area_ratio, padding, || {
+        Ok::<(), std::convert::Infallible>(())
+    })
+    .unwrap()
+}
+
+/// Detect regions while polling the caller's cancellation and deadline check.
+pub fn detect_checked<E>(
+    image: &GrayImage,
+    min_area_ratio: f32,
+    padding: u32,
+    mut check: impl FnMut() -> Result<(), E>,
+) -> Result<Vec<Region>, E> {
     let (width, height) = image.dimensions();
     if width == 0
         || height == 0
         || !min_area_ratio.is_finite()
         || !(0.001..=0.9).contains(&min_area_ratio)
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let mut border = [0_u64; 256];
     let step = (width.max(height) / 4096).max(1);
@@ -54,6 +67,7 @@ pub fn detect(image: &GrayImage, min_area_ratio: f32, padding: u32) -> Vec<Regio
     let rows = height.div_ceil(cell);
     let mut grid = vec![false; cols as usize * rows as usize];
     for gy in 0..rows {
+        check()?;
         for gx in 0..cols {
             let x0 = gx * cell;
             let y0 = gy * cell;
@@ -85,6 +99,9 @@ pub fn detect(image: &GrayImage, min_area_ratio: f32, padding: u32) -> Vec<Regio
             let (mut n, mut sx, mut sy, mut sxx, mut syy, mut sxy) =
                 (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
             while let Some((x, y)) = queue.pop_front() {
+                if (n as usize).is_multiple_of(4096) {
+                    check()?;
+                }
                 let (xf, yf) = (f64::from(x), f64::from(y));
                 n += 1.0;
                 sx += xf;
@@ -137,7 +154,7 @@ pub fn detect(image: &GrayImage, min_area_ratio: f32, padding: u32) -> Vec<Regio
         }
     }
     regions.sort_by_key(|region| (region.y0, region.x0));
-    regions
+    Ok(regions)
 }
 
 #[cfg(test)]
@@ -162,5 +179,15 @@ mod tests {
         assert_eq!(regions[0].x0, 0);
         assert!(regions.iter().any(|r| r.x0 <= 120 && r.x1 >= 180));
         assert!(detect(&GrayImage::from_pixel(50, 50, Luma([255])), 0.02, 0).is_empty());
+    }
+    #[test]
+    fn detects_cancellation_during_grid_scan() {
+        let image = GrayImage::from_pixel(200, 200, Luma([160]));
+        let mut checks = 0;
+        let result = detect_checked(&image, 0.02, 0, || {
+            checks += 1;
+            if checks > 3 { Err(()) } else { Ok(()) }
+        });
+        assert!(result.is_err());
     }
 }

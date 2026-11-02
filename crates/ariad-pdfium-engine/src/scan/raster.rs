@@ -5,11 +5,24 @@ use image::{GrayImage, Luma};
 /// Positive angles rotate counter-clockwise in page coordinates.
 #[must_use]
 pub fn rotate(image: &GrayImage, angle_deg: f32) -> GrayImage {
+    rotate_checked(image, angle_deg, || Ok::<(), std::convert::Infallible>(())).unwrap()
+}
+
+/// Rotate while checking cancellation and deadlines once per output row.
+pub fn rotate_checked<E>(
+    image: &GrayImage,
+    angle_deg: f32,
+    mut check: impl FnMut() -> Result<(), E>,
+) -> Result<GrayImage, E> {
+    check()?;
     let mut output = GrayImage::from_pixel(image.width(), image.height(), Luma([255]));
     let (sin, cos) = angle_deg.to_radians().sin_cos();
     let cx = (image.width() as f32 - 1.0) / 2.0;
     let cy = (image.height() as f32 - 1.0) / 2.0;
     for (x, y, pixel) in output.enumerate_pixels_mut() {
+        if x == 0 {
+            check()?;
+        }
         let dx = x as f32 - cx;
         let dy = y as f32 - cy;
         // Inverse transform in image coordinates, whose y axis points down.
@@ -33,15 +46,27 @@ pub fn rotate(image: &GrayImage, angle_deg: f32) -> GrayImage {
             *pixel = Luma([(top * (1.0 - fy) + bottom * fy).round() as u8]);
         }
     }
-    output
+    Ok(output)
 }
 
 /// Normalize a scan's background using a global histogram-derived white point.
 /// Dark text remains dark and the operation is deterministic.
 #[must_use]
 pub fn clean(image: &GrayImage) -> GrayImage {
+    clean_checked(image, || Ok::<(), std::convert::Infallible>(())).unwrap()
+}
+
+/// Normalize a scan while checking cancellation and deadlines once per row.
+pub fn clean_checked<E>(
+    image: &GrayImage,
+    mut check: impl FnMut() -> Result<(), E>,
+) -> Result<GrayImage, E> {
+    check()?;
     let mut histogram = [0_u64; 256];
-    for pixel in image.pixels() {
+    for (x, _, pixel) in image.enumerate_pixels() {
+        if x == 0 {
+            check()?;
+        }
         histogram[usize::from(pixel[0])] += 1;
     }
     let total = u64::from(image.width()) * u64::from(image.height());
@@ -55,10 +80,15 @@ pub fn clean(image: &GrayImage) -> GrayImage {
             break;
         }
     }
-    image::ImageBuffer::from_fn(image.width(), image.height(), |x, y| {
+    let mut output = GrayImage::new(image.width(), image.height());
+    for (x, y, pixel) in output.enumerate_pixels_mut() {
+        if x == 0 {
+            check()?;
+        }
         let value = u32::from(image.get_pixel(x, y)[0]);
-        Luma([((value * 255 / u32::from(white)).min(255)) as u8])
-    })
+        *pixel = Luma([((value * 255 / u32::from(white)).min(255)) as u8]);
+    }
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -87,5 +117,21 @@ mod tests {
             .unwrap()
             .angle_deg;
         assert!(angle.abs() <= 0.5, "{angle}");
+    }
+    #[test]
+    fn pixel_operations_observe_cancellation() {
+        let image = GrayImage::from_pixel(100, 100, Luma([200]));
+        let mut checks = 0;
+        let result = rotate_checked(&image, 1.0, || {
+            checks += 1;
+            if checks > 3 { Err(()) } else { Ok(()) }
+        });
+        assert!(result.is_err());
+        let mut checks = 0;
+        let result = clean_checked(&image, || {
+            checks += 1;
+            if checks > 3 { Err(()) } else { Ok(()) }
+        });
+        assert!(result.is_err());
     }
 }

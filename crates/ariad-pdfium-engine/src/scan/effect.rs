@@ -6,6 +6,16 @@ use image::{Rgba, RgbaImage};
 /// Callers enforce the pixel and memory limits before invoking this operation.
 #[must_use]
 pub fn apply(image: &RgbaImage, params: &ScannerEffectParams) -> RgbaImage {
+    apply_checked(image, params, || Ok::<(), std::convert::Infallible>(())).unwrap()
+}
+
+/// Apply the effect while polling cancellation and deadlines between rows and stages.
+pub fn apply_checked<E>(
+    image: &RgbaImage,
+    params: &ScannerEffectParams,
+    mut check: impl FnMut() -> Result<(), E>,
+) -> Result<RgbaImage, E> {
+    check()?;
     let mut state = params.seed ^ 0x9e37_79b9_7f4a_7c15;
     if state == 0 {
         state = 0x2545_f491_4f6c_dd1d;
@@ -19,7 +29,10 @@ pub fn apply(image: &RgbaImage, params: &ScannerEffectParams) -> RgbaImage {
     let angle = (next() * 2.0 - 1.0) * params.skew_deg;
     let mut treated = image.clone();
     let contrast = 1.0 + params.contrast;
-    for pixel in treated.pixels_mut() {
+    for (x, _, pixel) in treated.enumerate_pixels_mut() {
+        if x == 0 {
+            check()?;
+        }
         let gray = (0.2126 * f32::from(pixel[0])
             + 0.7152 * f32::from(pixel[1])
             + 0.0722 * f32::from(pixel[2]))
@@ -36,11 +49,13 @@ pub fn apply(image: &RgbaImage, params: &ScannerEffectParams) -> RgbaImage {
             .clamp(0.0, 255.0) as u8;
         }
     }
+    check()?;
     if params.blur > 0.0 {
         treated = image::imageops::blur(&treated, params.blur);
     }
+    check()?;
     if angle.abs() < f32::EPSILON {
-        return treated;
+        return Ok(treated);
     }
     let (sin, cos) = angle.to_radians().sin_cos();
     let cx = (treated.width() as f32 - 1.0) / 2.0;
@@ -51,6 +66,9 @@ pub fn apply(image: &RgbaImage, params: &ScannerEffectParams) -> RgbaImage {
         Rgba([255, 255, 255, 255]),
     );
     for (x, y, pixel) in result.enumerate_pixels_mut() {
+        if x == 0 {
+            check()?;
+        }
         let dx = x as f32 - cx;
         let dy = y as f32 - cy;
         let sx = (cos * dx - sin * dy + cx).round();
@@ -59,7 +77,7 @@ pub fn apply(image: &RgbaImage, params: &ScannerEffectParams) -> RgbaImage {
             *pixel = *treated.get_pixel(sx as u32, sy as u32);
         }
     }
-    result
+    Ok(result)
 }
 
 #[cfg(test)]

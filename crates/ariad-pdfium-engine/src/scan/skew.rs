@@ -16,12 +16,25 @@ pub struct SkewEstimate {
 /// Blank images have no estimate. The angle describes the input, not the correction.
 #[must_use]
 pub fn estimate(image: &GrayImage, max_angle_deg: f32) -> Option<SkewEstimate> {
+    estimate_checked(image, max_angle_deg, || {
+        Ok::<(), std::convert::Infallible>(())
+    })
+    .unwrap()
+}
+
+/// Estimate skew while polling the caller's cancellation and deadline check.
+pub fn estimate_checked<E>(
+    image: &GrayImage,
+    max_angle_deg: f32,
+    mut check: impl FnMut() -> Result<(), E>,
+) -> Result<Option<SkewEstimate>, E> {
+    check()?;
     if image.width() == 0
         || image.height() == 0
         || !max_angle_deg.is_finite()
         || !(0.0..=45.0).contains(&max_angle_deg)
     {
-        return None;
+        return Ok(None);
     }
     let scale = (800.0 / image.width().max(image.height()) as f32).min(1.0);
     let width = ((image.width() as f32 * scale).round() as u32).max(1);
@@ -37,7 +50,7 @@ pub fn estimate(image: &GrayImage, max_angle_deg: f32) -> Option<SkewEstimate> {
         })
         .collect();
     if points.len() < 20 || points.len() * 100 > (width as usize * height as usize) * 35 {
-        return None;
+        return Ok(None);
     }
     let bins = ((width as f32).hypot(height as f32).ceil() as usize) + 3;
     let mut profile = vec![0_u32; bins];
@@ -46,6 +59,7 @@ pub fn estimate(image: &GrayImage, max_angle_deg: f32) -> Option<SkewEstimate> {
     let mut sum = 0.0_f64;
     let mut n = 0_u32;
     for step in -steps..=steps {
+        check()?;
         profile.fill(0);
         let angle = (step as f32 * 0.25).to_radians();
         let (sin, cos) = angle.sin_cos();
@@ -67,10 +81,10 @@ pub fn estimate(image: &GrayImage, max_angle_deg: f32) -> Option<SkewEstimate> {
     } else {
         0.0
     };
-    Some(SkewEstimate {
+    Ok(Some(SkewEstimate {
         angle_deg: best.1 as f32 * 0.25,
         confidence,
-    })
+    }))
 }
 
 #[cfg(test)]
@@ -101,5 +115,18 @@ mod tests {
         }
         let result = estimate(&image, 10.0).unwrap();
         assert!((result.angle_deg - 3.0).abs() <= 0.5, "{result:?}");
+    }
+    #[test]
+    fn detects_cancellation_during_projection() {
+        let mut image = GrayImage::from_pixel(100, 100, Luma([255]));
+        for x in 10..90 {
+            image.put_pixel(x, 50, Luma([0]));
+        }
+        let mut checks = 0;
+        let result = estimate_checked(&image, 10.0, || {
+            checks += 1;
+            if checks > 3 { Err(()) } else { Ok(()) }
+        });
+        assert!(result.is_err());
     }
 }
