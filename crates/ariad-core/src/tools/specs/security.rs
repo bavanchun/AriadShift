@@ -168,10 +168,18 @@ mod contract_tests {
         let invalid: SanitizeParams =
             serde_json::from_value(json!({"annotations_of_type":["/Link"]})).unwrap();
         assert!(invalid.validate().is_err());
+        let schema =
+            serde_json::to_value(crate::tools::params::schema_for_params::<SanitizeParams>())
+                .unwrap();
+        assert!(!jsonschema::is_valid(
+            &schema,
+            &json!({"annotations_of_type":["/Link"]})
+        ));
         let decrypt: DecryptParams = serde_json::from_value(json!({})).unwrap();
         assert_eq!(decrypt.password, None);
         let permissions: PermissionsParams =
             serde_json::from_value(json!({"owner_password":"owner"})).unwrap();
+        assert!(serde_json::from_value::<PermissionsParams>(json!({"owner_password":""})).is_ok());
         round_trip(compress);
         round_trip(GrayscaleParams::default());
         round_trip(encrypt);

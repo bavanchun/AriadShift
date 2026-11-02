@@ -1,5 +1,4 @@
 //! Shared PDF permissions and permission-change parameters.
-use super::ParamsError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 fn enabled() -> bool {
@@ -52,8 +51,7 @@ impl Default for PdfPermissions {
 #[derive(Clone, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionsParams {
-    /// Required non-empty owner password.
-    #[schemars(length(min = 1))]
+    /// Required owner password.
     pub owner_password: String,
     /// Optional user password for the resulting document.
     #[serde(default)]
@@ -62,17 +60,6 @@ pub struct PermissionsParams {
     #[serde(default)]
     pub permissions: PdfPermissions,
 }
-impl PermissionsParams {
-    /// Rejects an empty owner password.
-    pub fn validate(&self) -> Result<(), ParamsError> {
-        if self.owner_password.is_empty() {
-            Err(ParamsError::new("owner_password", "must not be empty"))
-        } else {
-            Ok(())
-        }
-    }
-}
-
 impl std::fmt::Debug for PermissionsParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PermissionsParams")

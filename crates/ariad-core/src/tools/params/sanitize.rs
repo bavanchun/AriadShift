@@ -41,6 +41,7 @@ pub struct SanitizeParams {
     pub xmp: bool,
     /// Annotation subtype names, without a slash and containing ASCII letters only.
     #[serde(default)]
+    #[schemars(inner(regex(pattern = "^[A-Za-z]+$")))]
     pub annotations_of_type: Vec<String>,
     /// Form handling (keep by default).
     #[serde(default)]
