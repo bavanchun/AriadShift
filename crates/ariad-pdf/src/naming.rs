@@ -32,6 +32,8 @@ pub fn tool_suffix(tool_id: &str) -> &'static str {
         "pdf.decompress" => "decompressed",
         "pdf.compress" => "compressed",
         "pdf.grayscale" => "grayscale",
+        "pdf.watermark_remove" => "unwatermarked",
+        "pdf.watermark_detect" => "watermarks",
         "pdf.replace_color" => "recolored",
         "pdf.adjust_colors" => "adjusted",
         "pdf.encrypt" => "encrypted",

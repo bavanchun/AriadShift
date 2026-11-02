@@ -1,0 +1,74 @@
+---
+source: crates/ariad-pdf/tests/watermark_detect.rs
+expression: detection
+---
+{
+  "candidates": [
+    {
+      "bbox": [
+        150.0,
+        380.0,
+        470.0,
+        460.0
+      ],
+      "confidence": 0.9900000095367432,
+      "id": "wm1.3f19999a.616c6c.c51f2ecf0f27f4b2e438aac62e366a1e53c78941782852496cb07a4da2d6ed99",
+      "kind": "repeated_xobject",
+      "origin": "other",
+      "pages": [
+        1,
+        2,
+        3
+      ],
+      "preview": {
+        "bbox": [
+          150.0,
+          380.0,
+          470.0,
+          460.0
+        ],
+        "page": 1
+      },
+      "rotate": 0,
+      "signals": [
+        "low_alpha",
+        "large_text",
+        "page_center",
+        "watermark_word"
+      ],
+      "summary": "SAMPLE COPY"
+    },
+    {
+      "bbox": [
+        72.0,
+        757.6,
+        366.0,
+        772.0
+      ],
+      "confidence": 0.6000000238418579,
+      "id": "wm1.3f19999a.616c6c.4070705c03f2981360e38ca2b780d904445aceda92a0b2b76eb1f92f2d6a1058",
+      "kind": "repeated_text",
+      "origin": "other",
+      "pages": [
+        1,
+        2,
+        3
+      ],
+      "preview": {
+        "bbox": [
+          72.0,
+          757.6,
+          366.0,
+          772.0
+        ],
+        "page": 1
+      },
+      "rotate": 0,
+      "signals": [
+        "watermark_word"
+      ],
+      "summary": "Field Ledger with Repeated Form XObject Watermark"
+    }
+  ],
+  "page_count": 3
+}

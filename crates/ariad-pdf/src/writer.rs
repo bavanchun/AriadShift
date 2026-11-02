@@ -616,7 +616,7 @@ pub fn format_pdf_date_utc(epoch_secs: i64) -> Vec<u8> {
     format!("D:{year:04}{m:02}{d:02}{hour:02}{minute:02}{second:02}Z").into_bytes()
 }
 
-fn sha256_chunks(chunks: &[&[u8]]) -> [u8; 32] {
+pub(crate) fn sha256_chunks(chunks: &[&[u8]]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     for chunk in chunks {
         hasher.update(chunk);

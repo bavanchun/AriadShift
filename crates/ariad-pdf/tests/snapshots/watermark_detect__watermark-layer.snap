@@ -1,0 +1,72 @@
+---
+source: crates/ariad-pdf/tests/watermark_detect.rs
+expression: detection
+---
+{
+  "candidates": [
+    {
+      "bbox": [
+        114.54440093040466,
+        314.9088801860809,
+        374.1915114402771,
+        574.5559906959534
+      ],
+      "confidence": 0.9800000190734863,
+      "id": "wm1.3f19999a.616c6c.e5a3042bb0ac9afc6eb0bdc2b59fda68f583bd6a2ea0114ffe0756da167f9fc7",
+      "kind": "ocg",
+      "origin": "other",
+      "pages": [
+        1,
+        2,
+        3
+      ],
+      "preview": {
+        "bbox": [
+          114.54440093040466,
+          314.9088801860809,
+          374.1915114402771,
+          574.5559906959534
+        ],
+        "page": 1
+      },
+      "rotate": 0,
+      "signals": [
+        "page_center",
+        "watermark_word"
+      ],
+      "summary": "AriadShift Watermark"
+    },
+    {
+      "bbox": [
+        72.0,
+        757.6,
+        336.0,
+        772.0
+      ],
+      "confidence": 0.6000000238418579,
+      "id": "wm1.3f19999a.616c6c.9aae3284e6b1dcb7526a25196a43c476084711dc7124d2432b0528ac0b1004cb",
+      "kind": "repeated_text",
+      "origin": "other",
+      "pages": [
+        1,
+        2,
+        3
+      ],
+      "preview": {
+        "bbox": [
+          72.0,
+          757.6,
+          336.0,
+          772.0
+        ],
+        "page": 1
+      },
+      "rotate": 0,
+      "signals": [
+        "watermark_word"
+      ],
+      "summary": "Engineering Specification with OCG Watermark"
+    }
+  ],
+  "page_count": 3
+}

@@ -57,7 +57,11 @@ fn resource_size(value: &Object, depth: u16, limit: u16) -> Result<usize, PdfErr
     Ok(size)
 }
 
-fn dictionary_size(items: &Dictionary, depth: u16, limit: u16) -> Result<usize, PdfError> {
+pub(crate) fn dictionary_size(
+    items: &Dictionary,
+    depth: u16,
+    limit: u16,
+) -> Result<usize, PdfError> {
     let mut size = 0usize;
     for (key, item) in items {
         size = size

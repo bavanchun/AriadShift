@@ -50,6 +50,8 @@ pub mod text_layout;
 pub mod thumbnails;
 pub mod unlock_forms;
 pub mod viewer_prefs;
+pub mod watermark_detect;
+pub mod watermark_remove;
 
 use schemars::{JsonSchema, Schema, generate::SchemaSettings};
 
@@ -100,6 +102,8 @@ pub use text_layout::TextLayoutParams;
 pub use thumbnails::ThumbnailsParams;
 pub use unlock_forms::UnlockFormsParams;
 pub use viewer_prefs::{ViewerPageLayout, ViewerPageMode, ViewerPrefsParams};
+pub use watermark_detect::WatermarkDetectParams;
+pub use watermark_remove::WatermarkRemoveParams;
 
 /// A parameter value that the JSON schema alone cannot reject, reported without any document
 /// content so it is safe to relay as an engine failure message.

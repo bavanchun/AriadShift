@@ -475,6 +475,8 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.decompress" => "decompressed".to_owned(),
         "pdf.compress" => "compressed".to_owned(),
         "pdf.grayscale" => "grayscale".to_owned(),
+        "pdf.watermark_remove" => "unwatermarked",
+        "pdf.watermark_detect" => "watermarks",
         "pdf.replace_color" => "recolored".to_owned(),
         "pdf.adjust_colors" => "adjusted".to_owned(),
         "pdf.ocr" => "ocr".to_owned(),

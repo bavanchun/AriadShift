@@ -42,6 +42,10 @@ pub mod single_page;
 pub mod split;
 pub mod unlock_forms;
 pub mod viewer_prefs;
+pub mod watermark_detect;
+mod watermark_identity;
+pub mod watermark_remove;
+mod watermark_scan;
 
 use ariad_core::{
     limits::Limits,
@@ -324,6 +328,18 @@ pub fn run_tool(
     }
 
     match tool_id {
+        "pdf.watermark_remove" => dispatch_structural_inputs::<
+            ariad_core::tools::params::WatermarkRemoveParams,
+            _,
+        >(
+            tool_id, inputs, params, ctx, watermark_remove::run_inputs
+        ),
+        "pdf.watermark_detect" => dispatch_structural_inputs::<
+            ariad_core::tools::params::WatermarkDetectParams,
+            _,
+        >(
+            tool_id, inputs, params, ctx, watermark_detect::run_inputs
+        ),
         "pdf.replace_color" => dispatch_structural::<
             ariad_core::tools::params::ReplaceColorParams,
             _,
