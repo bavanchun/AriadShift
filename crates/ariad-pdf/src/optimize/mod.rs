@@ -88,21 +88,38 @@ pub fn structural(pdf: &mut PdfDoc, limits: &Limits, ctx: &ToolCtx) -> Result<()
         Err(fonts::FontError::Pdf(error)) => return Err(error),
         Err(_) => None,
     };
-    let ids: Vec<_> = pdf
-        .inner()
-        .objects
-        .iter()
-        .filter_map(|(&id, object)| {
-            let dict = object.as_dict().ok()?;
-            (dict.get(b"Subtype").and_then(Object::as_name).ok() == Some(b"Type0")).then_some(id)
-        })
-        .collect();
-    if let Some(usage) = usage {
-        for id in ids {
-            ctx.check()?;
-            if let Err(fonts::FontError::Pdf(error)) = fonts::subset_type0(pdf, id, &usage, limits)
-            {
-                return Err(error);
+    if let Some(usage) = &usage {
+        type Subsetter = fn(
+            &mut PdfDoc,
+            ObjectId,
+            &fonts::GlyphUsage,
+            &Limits,
+        ) -> Result<fonts::SubsetOutcome, fonts::FontError>;
+        let subsetters: [(&[u8], Subsetter); 2] = [
+            (b"Type0", fonts::subset_type0),
+            (b"TrueType", fonts::subset_simple_truetype),
+        ];
+        for (subtype, subset) in subsetters {
+            let ids: Vec<_> = pdf
+                .inner()
+                .objects
+                .iter()
+                .filter_map(|(&id, object)| {
+                    (object
+                        .as_dict()
+                        .ok()?
+                        .get(b"Subtype")
+                        .and_then(Object::as_name)
+                        .ok()
+                        == Some(subtype))
+                    .then_some(id)
+                })
+                .collect();
+            for id in ids {
+                ctx.check()?;
+                if let Err(fonts::FontError::Pdf(error)) = subset(pdf, id, usage, limits) {
+                    return Err(error);
+                }
             }
         }
     }
