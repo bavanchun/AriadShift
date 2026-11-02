@@ -1133,6 +1133,56 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
         false
     };
 
+    if let Err(err) = recipe.validate(ariad_core::tools::RecipeOrigin::Imported) {
+        return report_error("recipe", &ToolError::InvalidParams(err.to_string()));
+    }
+    if !confirmed {
+        return report_error(
+            "recipe",
+            &ToolError::InvalidParams(
+                "imported recipe requires explicit confirmation (--yes)".to_owned(),
+            ),
+        );
+    }
+    let mut prompt_fields = std::collections::BTreeSet::new();
+    for step in &recipe.steps {
+        if let ariad_core::tools::Step::Tool { tool, params } = step
+            && let Some(spec) = ariad_core::tools::registry::find(tool.as_str())
+        {
+            for &field in spec.secret_params {
+                if params
+                    .get(field)
+                    .and_then(|v| v.get("$secret"))
+                    .and_then(|v| v.as_str())
+                    == Some("prompt")
+                {
+                    prompt_fields.insert(field);
+                }
+            }
+        }
+    }
+    let mut secrets = SecretBag::new();
+    for field in prompt_fields {
+        if io::stdin().is_terminal() {
+            match rpassword::prompt_password(format!("secret for {field}: ")) {
+                Ok(value) => secrets.insert(field, value),
+                Err(err) => return report_error("recipe", &ToolError::InputIo(err.to_string())),
+            }
+            continue;
+        }
+        let mut value = String::new();
+        match io::stdin().read_line(&mut value) {
+            Ok(0) => {
+                return report_error(
+                    "recipe",
+                    &ToolError::InvalidParams(format!("missing secret for {field}")),
+                );
+            }
+            Err(err) => return report_error("recipe", &ToolError::InputIo(err.to_string())),
+            Ok(_) => secrets.insert(field, trim_single_trailing_newline(value)),
+        }
+    }
+
     let engine_program = match std::env::current_exe() {
         Ok(path) => path,
         Err(err) => return report_error("recipe", &ToolError::InputIo(err.to_string())),
@@ -1143,6 +1193,7 @@ fn run_recipe_run(args: RecipeRunArgs) -> ExitCode {
 
     let request = RecipeRequest::new(recipe, inputs, args.output)
         .with_origin(ariad_core::tools::RecipeOrigin::Imported, confirmed)
+        .with_secrets(secrets)
         .with_overwrite(args.overwrite)
         .with_engine_program(engine_program);
 

@@ -806,6 +806,7 @@ ashift recipe run <RECIPE.JSON> <INPUT>... -o <DIR> [--yes] [--overwrite] [--jso
 - `<INPUT>...`: Input files fed into step 1 of the recipe. On the Free plan, batch runs are capped at 25 files and 250 MB total (`exit_code: 11`, `error[tier_not_allowed]`).
 - `-o, --output <DIR>`: Destination directory for published outputs.
 - `--yes`: Confirm running an imported recipe without an interactive terminal prompt. Recipes loaded from `.json` files are classified as `Imported`, print their step summary to stderr, forbid `watch` and network-fetch tools (`pdf.from_url`, `web.to_pdf`), and require `--yes` in non-interactive scripts (otherwise exiting with code `9`, `error[invalid_params]`).
+- Recipe secret prompt references read one line per distinct secret field from stdin in alphabetical field order, or use hidden terminal prompts. Repeated references to the same field share its value.
 - `--overwrite`: Replace existing destination files in `<DIR>`.
 - `--json`: Emit the `RecipeOutcome` JSON report to stdout.
 

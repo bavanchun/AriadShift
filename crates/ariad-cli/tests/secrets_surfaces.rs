@@ -107,3 +107,100 @@ fn scrubber_removes_json_and_url_encoded_forms() {
         assert_eq!(scrubber.scrub(value), "[REDACTED]");
     }
 }
+
+#[test]
+fn registered_password_tools_and_recipe_use_secret_channels() {
+    use std::{fs, io::Write, process::Stdio};
+    if std::env::var_os("ASHIFT_PACK_QPDF").is_none() {
+        eprintln!("skipping real qpdf test: ASHIFT_PACK_QPDF is unset");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let secret = "recipe-channel-test-value";
+    let password_file = dir.path().join("password");
+    fs::write(&password_file, secret).unwrap();
+    let encrypted = dir.path().join("encrypted.pdf");
+    let encryption = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["tool", "pdf.encrypt"])
+        .arg(fixture())
+        .args([
+            "--secret",
+            &format!("owner_password=@{}", password_file.display()),
+        ])
+        .arg("-o")
+        .arg(&encrypted)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        encryption.status.success(),
+        "encryption failed with {:?}",
+        encryption.status.code()
+    );
+    assert!(!String::from_utf8_lossy(&encryption.stdout).contains(secret));
+    assert!(!String::from_utf8_lossy(&encryption.stderr).contains(secret));
+
+    let wrong = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["tool", "pdf.decrypt"])
+        .arg(&encrypted)
+        .args(["--secret", "password=-", "--json"])
+        .arg("-o")
+        .arg(dir.path().join("wrong.pdf"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut wrong = wrong;
+    wrong
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"incorrect-value\n")
+        .unwrap();
+    let wrong = wrong.wait_with_output().unwrap();
+    assert_eq!(wrong.status.code(), Some(12));
+    assert!(!String::from_utf8_lossy(&wrong.stdout).contains("incorrect-value"));
+    assert!(!String::from_utf8_lossy(&wrong.stderr).contains("incorrect-value"));
+
+    let recipe_path = dir.path().join("recipe.json");
+    fs::write(&recipe_path, json!({"version":"ariad-recipe/1","steps":[{"tool":"pdf.decrypt","params":{"password":{"$secret":"prompt"}}}]}).to_string()).unwrap();
+    let output_dir = dir.path().join("output");
+    fs::create_dir(&output_dir).unwrap();
+    let mut recipe = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["recipe", "run"])
+        .arg(&recipe_path)
+        .arg(&encrypted)
+        .arg("-o")
+        .arg(&output_dir)
+        .args(["--yes", "--json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(recipe.stdin.take().unwrap(), "{secret}").unwrap();
+    let result = recipe.wait_with_output().unwrap();
+    assert!(
+        result.status.success(),
+        "recipe failed with {:?}",
+        result.status.code()
+    );
+    assert!(!String::from_utf8_lossy(&result.stdout).contains(secret));
+    assert!(!String::from_utf8_lossy(&result.stderr).contains(secret));
+    assert!(fs::read_dir(output_dir).unwrap().next().is_some());
+}
+
+#[test]
+fn registered_password_tool_reports_missing_qpdf_pack() {
+    let dir = tempfile::tempdir().unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .args(["tool", "pdf.decrypt"])
+        .arg(fixture())
+        .arg("-o")
+        .arg(dir.path().join("out.pdf"))
+        .env("ASHIFT_PACK_QPDF", dir.path().join("missing"))
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(5));
+}

@@ -194,6 +194,7 @@ dependencies = [
  "minisign",
  "quick-xml 0.42.0",
  "rmcp",
+ "rpassword",
  "schemars 1.2.3",
  "serde",
  "serde_json",

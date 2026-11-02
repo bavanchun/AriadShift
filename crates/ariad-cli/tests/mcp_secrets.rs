@@ -288,3 +288,99 @@ print(json.dumps({"type":"result", "ok":True, "metrics":{"params_keys":len(param
     assert!(!stderr.contains(&escaped[1..escaped.len() - 1]));
     assert!(!stderr.contains(&encoded));
 }
+
+#[test]
+fn secret_handle_runs_registered_qpdf_tool() {
+    if std::env::var_os("ASHIFT_PACK_QPDF").is_none() {
+        eprintln!("skipping real qpdf test: ASHIFT_PACK_QPDF is unset");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.pdf");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf-tools/encrypted-aes256.plaintext.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_ashift"))
+        .arg("mcp")
+        .arg("--allow-dir")
+        .arg(dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    fn call(stdin: &mut impl Write, stdout: &mut impl BufRead, request: Value, id: u64) -> Value {
+        writeln!(stdin, "{request}").unwrap();
+        stdin.flush().unwrap();
+        loop {
+            let mut line = String::new();
+            assert_ne!(stdout.read_line(&mut line).unwrap(), 0);
+            let message: Value = serde_json::from_str(&line).unwrap();
+            if message["id"] == id && message.get("result").is_some() {
+                return message;
+            }
+            if message["method"] == "roots/list" {
+                writeln!(
+                    stdin,
+                    "{}",
+                    json!({"jsonrpc":"2.0","id":message["id"],"result":{"roots":[]}})
+                )
+                .unwrap();
+                stdin.flush().unwrap();
+            }
+        }
+    }
+    call(
+        &mut stdin,
+        &mut stdout,
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{"roots":{"listChanged":true}},"clientInfo":{"name":"test","version":"1"}}}),
+        1,
+    );
+    writeln!(
+        stdin,
+        "{}",
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"})
+    )
+    .unwrap();
+    stdin.flush().unwrap();
+    let secret = "mcp-real-tool-secret";
+    let result = call(
+        &mut stdin,
+        &mut stdout,
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"secret_put","arguments":{"value":secret}}}),
+        2,
+    );
+    let handle = result["result"]["structuredContent"]["handle"]
+        .as_str()
+        .unwrap();
+    let arguments = json!({"tool":"pdf.encrypt","inputs":[input],"output":dir.path().join("encrypted.pdf"),"params":{"owner_password":{"$secret":handle}}});
+    let result = call(
+        &mut stdin,
+        &mut stdout,
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"run_doc_tool","arguments":arguments}}),
+        3,
+    );
+    assert_eq!(
+        result["result"]["isError"],
+        false,
+        "{}",
+        result.to_string().replace(secret, "[redacted]")
+    );
+    assert!(!result.to_string().contains(secret));
+    let result = call(
+        &mut stdin,
+        &mut stdout,
+        json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"run_doc_tool","arguments":arguments}}),
+        4,
+    );
+    assert_eq!(result["result"]["structuredContent"]["exit_code"], 9);
+    assert!(!result.to_string().contains(secret));
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    assert!(!String::from_utf8_lossy(&output.stderr).contains(secret));
+}
