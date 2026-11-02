@@ -132,3 +132,48 @@ per-entry header scan.
 Assumptions: `/Prev 0` terminates the chain, and an absent object number remains
 unresolved in both parsers. The macOS render golden remains for CI; PR #185
 requires re-review before merge and issue #164 remains open until then.
+
+## Round 3 — canonical token and repair follow-ups
+
+The canonical graph is refused at depth 63 or greater, independently of the
+configured nesting limit. The local depth regression and the generated deeply
+nested page fixture exercise the boundary. The canonical writer emits finite
+plain-decimal reals, i32 integers, escaped nonempty names and hexadecimal
+strings. It rejects oversized names and references to object zero. A strict
+lopdf reload compares the emitted trailer and all emitted objects, including
+stream bytes, with the inspected graph; regenerated xref, object-stream and
+linearization containers are omitted as in the previous writer. The generated
+infinite-real, large-integer and zero-reference fixtures exercise refusals.
+
+Cross-reference repair now warns and continues for rendering and the other
+PDFium tools; extraction retains its refusal. The original-byte name scan and
+its extra object-stream decode were removed because canonical names and
+content names are checked directly. The blank-page paths drop their input byte
+buffer before rendering, and the helper-only paths also drop the structural
+graph. Structural output tools retain the graph they need to save their result.
+
+The output budget is `min(remaining decode bytes, memory limit, 4 GiB - 1)
+- input bytes`. With 2 GiB remaining and output approximately the size of the
+input, the effective input ceiling is about 1 GiB; decoded stream charges and
+larger canonical output reduce it. The local decode budget is 4 GiB and the
+cloud decode budget is 2 GiB. Peak memory can still include the input, loaded
+graph, canonical bytes and the temporary strict reparse; the process ceiling
+continues to bound PDFium workloads. The assumed equivalence excludes
+parser-only stream metadata and the regenerated containers, but includes
+object types, numeric values, names, string values and raw stream bytes.
+
+### Round 3 verification
+
+- The generated fixtures match their manifest SHA-256 hashes. `refuses_deeply_nested_page_fixture`, `refuses_pdfium_parser_depth_even_with_a_larger_configured_limit`, `refuses_unsafe_scalar_fixtures`, `names_respect_pdfium_token_limit`, `serializes_reals_names_and_strings_losslessly`, and `writes_one_classic_table_without_object_streams` cover the canonical boundary and its round-trip guard.
+- `repaired_xref_renders_with_warning` and `refuses_repaired_cross_reference_before_loading_pdfium` cover both xref paths. `accepts_name_like_text_in_trailing_comment` covers the removed raw scan. The blank and split integration tests cover continued behavior after releasing input bytes; no separate peak-RSS regression was added.
+- `cargo fmt --all --check` and `cargo clippy --locked -p ariad-pdfium-engine --all-targets -- -D warnings` passed through the build lock.
+- `cargo test --locked -p ariad-pdfium-engine` passed with the supplied PDFium pack under a 2 GiB systemd scope, including the Linux render goldens. The comment regression was added afterward and passed in a focused run; the engine code did not change after the full suite.
+- The ignored fixture corpus passed under the 2 GiB scope: 89 PDFs, 29 expected refusals, zero unexpected refusals.
+- The ignored `adversarial_canonical_graphs_are_refused_or_render_the_control` test passed under the 2 GiB scope on the 11 supplied PoCs, using the actual PDFium pack.
+- Every final commit passed `committed`. An intermediate fixup commit failed that lint as expected; it was squashed and the final commits were checked again.
+- `cargo test --locked -p ariad-pdf --lib` passed all 25 tests under the 2 GiB scope.
+
+The source review's parser findings were used as the pre-fix reproduction; the
+new depth fixture test first exposed an invalid test limit of 128, which was
+corrected to 99 before it passed. macOS render goldens remain for CI. No PR
+closing reference was added; the round-3 review remains outstanding.
