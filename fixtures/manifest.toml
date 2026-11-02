@@ -4827,3 +4827,117 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "canonical-control-pdf"
+path = "fixtures/pdf/canonical-control.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical control PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "3013e1b5f66c62473259b4a18928fdf6da4d74f2fb100084f2e85ebefc4436e0"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-gen-precedence-pdf"
+path = "fixtures/pdf/canonical-gen-precedence.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical gen precedence PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "b6753c20606aa794625c53725a393318cc62543a52dfd0172e519772317d863a"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-hybrid-root-pdf"
+path = "fixtures/pdf/canonical-hybrid-root.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical hybrid root PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "f1ed7bd1d10b5ae1c85bdb6aa86f942a2eac60e96ffec2737358c6e02a379c08"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-objstm-index-pdf"
+path = "fixtures/pdf/canonical-objstm-index.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical objstm index PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "c1de64a46e5f4faa9ebc045610564a848c9ad8ef26a0d088cf865973f328d6df"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-prev-cycle-pdf"
+path = "fixtures/pdf/canonical-prev-cycle.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical prev cycle PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "29543d694340948a80e5110342793f22049fe6d57161b9fc381fa77acc8e5edc"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "canonical-short-entries-pdf"
+path = "fixtures/pdf/canonical-short-entries.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic canonical short entries PDF"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-xref-cases.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "0cedab1b2aa3eb1d87d30a3eac40203c28ef7fcb493829c2217db1700165d1a6"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
