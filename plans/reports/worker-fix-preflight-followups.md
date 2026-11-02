@@ -351,3 +351,36 @@ Independent round-5 review remains the manager's separate next step. The
 per-platform sandbox table above is source inspection, not macOS or Windows
 runtime verification; the lack of a hard memory rlimit on those systems remains
 for the manager to track.
+
+## Type3 resource and inherited-font scopes
+
+The execution budget discarded the Type3 font's resources when a CharProc
+specified an empty resource dictionary, and a child Form could hide an active
+font with its own empty Font dictionary. The budget now preserves the selected
+font's resource scope for glyph fallback and conservatively considers fonts
+inherited from ancestor scopes, including their selection resources. Type3 font
+resources are also traversed for nested fonts. An empty font Resources dictionary
+is treated as present, as indicated by PDFium's pointer check; retaining fallback
+categories conservatively can overcharge rather than miss work.
+
+The generated `type3-charproc-resource-budget.pdf` and
+`type3-inherited-font-budget.pdf` fixtures exercise both cases. The test
+`type3_resource_scopes_charge_executed_glyphs` verifies limit-exceeded errors;
+`inherited_font_keeps_its_selection_resources` covers the retained scope. The
+CharProc fixture was accepted by the pre-fix code and refused after the fix.
+Fixture hashes were checked against the manifest.
+
+Verification uses the shared build lock and 2 GiB systemd scopes for tests:
+fmt, engine clippy and the full engine suite; the ignored fixture corpus passed
+with 102 PDFs, 42 expected refusals and zero unexpected refusals (no new
+refusals in the original 100). The prior external graph and content tests passed,
+as did the round-5 scope corpus on both validation and extraction paths. A
+round-4 test initially used the wrong directory and passed when rerun against
+all nine samples in a temporary directory.
+
+The task says the round-5 controls must be accepted, but the authoritative
+review explicitly says all four named controls exceed the budget and are
+refused. The implementation preserves that documented behaviour; accepting
+those controls would contradict the execution limit. The regression test
+checks all eight round-5 files are refused. The earlier graph/control regression test also passed; it permits some controls
+to be refused and therefore does not prove acceptance of every control.

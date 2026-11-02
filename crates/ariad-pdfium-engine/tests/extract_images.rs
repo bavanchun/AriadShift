@@ -1614,3 +1614,54 @@ fn content_container_corpus_is_refused_with_pixel_cap() {
         }
     }
 }
+
+#[test]
+fn type3_resource_scopes_charge_executed_glyphs() {
+    for name in [
+        "type3-charproc-resource-budget.pdf",
+        "type3-inherited-font-budget.pdf",
+    ] {
+        let ws = TestWorkspace::from_fixture(&format!("fixtures/pdf/{name}"));
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("scope", "pdf.render", ws.paths, Limits::local(), &mut sink);
+        let err = ctx.load_validated_pdf_bytes().expect_err(name);
+        assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}: {err:?}");
+        assert!(
+            err.message.contains("Content execution cost"),
+            "{name}: {err:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires external resource-scope regression corpus"]
+fn resource_scope_corpus_is_refused() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    let mut count = 0;
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy();
+        if !name.starts_with("r5-poc") || !name.ends_with(".pdf") {
+            continue;
+        }
+        count += 1;
+        let bytes = fs::read(&path).unwrap();
+        for extraction in [false, true] {
+            let ws = TestWorkspace::from_bytes("input.pdf", &bytes);
+            let mut sink = Vec::new();
+            let mut ctx =
+                ToolContext::new("scope", "pdf.render", ws.paths, Limits::local(), &mut sink)
+                    .with_library_dir(&lib_dir);
+            let result = if extraction {
+                extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+                    .map(|_| ())
+            } else {
+                ctx.load_validated_pdf_bytes().map(|_| ())
+            };
+            let err = result.expect_err(&name);
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}: {err:?}");
+        }
+    }
+    assert_eq!(count, 8);
+}

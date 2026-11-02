@@ -1328,6 +1328,18 @@ fn preflight_type3_fonts(
             scope.page = Some(invoking_scope);
             scope
         };
+        if let Ok(resources) = font.get(b"Resources") {
+            preflight_type3_fonts(
+                ctx,
+                pdf_doc,
+                resources,
+                &font_scope,
+                max_bytes,
+                max_depth,
+                depth + 1,
+                budget,
+            )?;
+        }
         let mut proc_seen = HashMap::new();
         for (_, proc) in procs.iter() {
             let before = budget.page_work;
@@ -5303,6 +5315,14 @@ mod corpus_tests {
             })
             .collect();
         let expected: BTreeMap<_, _> = [
+            (
+                "type3-charproc-resource-budget.pdf",
+                "Content execution cost 530506 exceeds limit 100000.",
+            ),
+            (
+                "type3-inherited-font-budget.pdf",
+                "Content execution cost 153103 exceeds limit 100000.",
+            ),
             ("property-deep-array.pdf", "A resource limit was exceeded."),
             (
                 "content-executable-containers.pdf",

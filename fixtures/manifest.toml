@@ -5226,3 +5226,41 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "type3-charproc-resource-budget-pdf"
+path = "fixtures/pdf/type3-charproc-resource-budget.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic Type3 resource scope execution budget"
+origin = "generated"
+generated_by = "fixtures/gen/type3-scope-budget.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "3c41a8f6700372fa5b6e5d507e85f924d1e808ea37458980c4ec532a14c7f8a4"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
+id = "type3-inherited-font-budget-pdf"
+path = "fixtures/pdf/type3-inherited-font-budget.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic Type3 resource scope execution budget"
+origin = "generated"
+generated_by = "fixtures/gen/type3-scope-budget.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "308694b0d9df4d5aede005f0b1b427a9d9c69009d4822217bd81e8897bd89a9c"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []

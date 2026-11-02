@@ -1,5 +1,6 @@
 //! Bound execution of content resources before PDFium opens a document.
 use std::collections::{BTreeMap, HashSet};
+use std::rc::Rc;
 
 use ariad_core::protocol::ErrorCode;
 use ariad_engine_io::EngineFailure;
@@ -29,6 +30,7 @@ type Categories = BTreeMap<Vec<u8>, BTreeMap<Vec<u8>, Object>>;
 struct Scope {
     page: Categories,
     current: Categories,
+    inherited_fonts: Vec<(Object, Rc<Categories>)>,
 }
 
 impl Scope {
@@ -37,6 +39,7 @@ impl Scope {
         Ok(Self {
             page: current.clone(),
             current,
+            inherited_fonts: Vec::new(),
         })
     }
     fn child(
@@ -49,9 +52,19 @@ impl Scope {
         };
         let mut current = self.page.clone();
         current.extend(categories(doc, Some(resources))?);
+        let mut inherited_fonts = self.inherited_fonts.clone();
+        if let Some(fonts) = self.current.get(b"Font".as_slice()) {
+            let selected_resources = Rc::new(self.current.clone());
+            inherited_fonts.extend(
+                fonts
+                    .values()
+                    .map(|font| (font.clone(), Rc::clone(&selected_resources))),
+            );
+        }
         Ok(Self {
             page: self.page.clone(),
             current,
+            inherited_fonts,
         })
     }
     fn get(&self, category: &[u8], name: &[u8]) -> Option<&Object> {
@@ -221,8 +234,19 @@ impl Calculator<'_, '_> {
         }
         if facts.glyphs > 0 {
             let mut max_glyph = 0usize;
-            if let Some(fonts) = scope.current.get(b"Font".as_slice()) {
-                for font in fonts.values() {
+            {
+                let fonts = scope
+                    .current
+                    .get(b"Font".as_slice())
+                    .into_iter()
+                    .flat_map(|fonts| fonts.values().map(|font| (font, &scope.current)))
+                    .chain(
+                        scope
+                            .inherited_fonts
+                            .iter()
+                            .map(|(font, resources)| (font, resources.as_ref())),
+                    );
+                for (font, selected_resources) in fonts {
                     let font = resolve(Some(self.doc), font)?
                         .1
                         .as_dict()
@@ -242,7 +266,16 @@ impl Calculator<'_, '_> {
                         .1
                         .as_dict()
                         .map_err(|_| EngineFailure::limit_exceeded())?;
-                    let glyph_scope = scope.child(self.doc, font.get(b"Resources").ok())?;
+                    let selected_scope = Scope {
+                        page: selected_resources.clone(),
+                        current: selected_resources.clone(),
+                        inherited_fonts: scope.inherited_fonts.clone(),
+                    };
+                    let mut glyph_scope =
+                        selected_scope.child(self.doc, font.get(b"Resources").ok())?;
+                    // PDFium treats even an empty font Resources dictionary as present.
+                    // Its selected font scope becomes the CharProc's fallback scope.
+                    glyph_scope.page = glyph_scope.current.clone();
                     for (_, proc) in procs.iter() {
                         let (proc_id, _) = resolve(Some(self.doc), proc)?;
                         let glyph_cost = self.stream(
@@ -459,6 +492,21 @@ mod tests {
     }
     fn form(doc: &mut lopdf::Document, dict: Dictionary) -> ObjectId {
         doc.add_object(lopdf::Stream::new(dict, b"q Q".to_vec()))
+    }
+    #[test]
+    fn inherited_font_keeps_its_selection_resources() {
+        let doc = lopdf::Document::new();
+        let parent = Object::Dictionary(dictionary! {
+            "Font" => dictionary! { "F" => dictionary! { "Subtype" => "Type3" } },
+            "Pattern" => dictionary! { "P" => 7 },
+        });
+        let parent = Scope::from_page(&doc, Some(&parent)).unwrap();
+        let child = Object::Dictionary(
+            dictionary! { "Font" => dictionary! {}, "Pattern" => dictionary! {} },
+        );
+        let child = parent.child(&doc, Some(&child)).unwrap();
+        assert!(child.get(b"Pattern", b"P").is_none());
+        assert!(child.inherited_fonts[0].1[b"Pattern".as_slice()].contains_key(b"P".as_slice()));
     }
     #[test]
     fn pattern_and_soft_mask_costs_multiply_through_forms() {
