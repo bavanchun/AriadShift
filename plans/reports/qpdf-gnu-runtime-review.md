@@ -53,38 +53,73 @@ are glibc/libm/loader on glibc and musl libc on musl. Embedded C++ exception
 and unwind symbols are present. These observations do not establish the
 archive byte identities or full ABI series of the statically linked runtimes.
 
-## Source and provenance gaps
+## Source and provenance evidence
 
-The locally available pinned x64 manylinux image reports GCC 14.2.1 20250110
-(Red Hat 14.2.1-11). RPM ownership identifies `gcc-toolset-14-gcc`,
-`gcc-toolset-14-gcc-c++` and `gcc-toolset-14-libstdc++-devel`, all
-14.2.1-11.el8_10 and all naming source RPM
-`gcc-toolset-14-gcc-14.2.1-11.el8_10.src.rpm`. The local image archives have
-SHA-256 `308fa896e2bdae71da3b8dc67fc577d3951c74e8bc7a6e6c96e9da7ee1911784`
-(libstdc++.a) and
-`99358806eb985f6202a57b56ea2f105d1e4c987729421cc136b4b7c0678a3b9a`
-(libgcc.a). These are local-image receipts, not a CI link map. Arm64 logs
-show the same compiler version but do not establish package ownership or
-archive hashes.
+Both pinned manylinux images were inspected locally. Their GCC and C++
+development RPMs identify AlmaLinux `gcc-toolset-14-gcc-14.2.1-11.el8_10.src.rpm`
+as source. The exact [AlmaLinux vault SRPM](https://repo.almalinux.org/vault/8.10/AppStream/Source/Packages/gcc-toolset-14-gcc-14.2.1-11.el8_10.src.rpm)
+was downloaded and has SHA-256
+`0131355464ff7b4958d0d668b3166e05c95c9d0bc4af243ff580a10b78b123eb`.
+Its AlmaLinux signature and RPM digests passed `rpm -Kv` in the pinned x64
+image. Both images report GCC 14.2.1 20250110 (Red Hat 14.2.1-11); RPM owns
+libstdc++.a in `gcc-toolset-14-libstdc++-devel` and libgcc.a in
+`gcc-toolset-14-gcc`. The SHA-256 of these files in each pinned image is:
 
-A same-named [Rocky Linux source RPM](https://download.rockylinux.org/pub/rocky/8.10/AppStream/source/tree/Packages/g/gcc-toolset-14-gcc-14.2.1-11.el8_10.src.rpm)
-was downloaded and hashed `fabd21d53718b7a75100536711fd2d5ef61e1f6a1320837985fd5ae7ced852cc`.
-Its vendor and contents have not been tied to the AlmaLinux image package
-build; it is a candidate, not a corresponding-source receipt. An attempted
-AlmaLinux source URL returned 404. Obtain and hash the actual vendor SRPM,
-prove both image packages derive from it, and preserve build instructions.
+| Platform | libstdc++.a | libgcc.a |
+| --- | --- | --- |
+| linux-x64 | `308fa896e2bdae71da3b8dc67fc577d3951c74e8bc7a6e6c96e9da7ee1911784` | `99358806eb985f6202a57b56ea2f105d1e4c987729421cc136b4b7c0678a3b9a` |
+| linux-arm64 | `d8dcea39c8507d21c2274e9353b1ee720f172b303dcb5e1bf4d4cfbe38f72f2c` | `69c8b51af4a99672127fffc2fe892d0d57329e2b4058bcd925edc44fada8c213` |
 
-For musl, the historical [Alpine aports GCC recipe](https://github.com/alpinelinux/aports/blob/fd4fecacbfd0cd40be42efa3c9d72bc03a88428c/main/gcc/APKBUILD)
-has SHA-256 `0c6e047f661398a9da936bfe8ab76067668f0ddb90109155f59e66dea6107988`,
-identifies 15.2.0-r5, references GCC 15.2.0 and names Alpine patches. The
-recipe is historical evidence, not proof that either installed APK was built
-from that revision. The unpinned APKs, per-architecture package hashes,
-source archives and patched build recipe remain to be bound to each binary.
-A download of the GCC 15.2.0 upstream archive timed out after 120 seconds;
-its SHA-256 was therefore not established in this review.
-The [GCC archive index](https://ftp.gnu.org/gnu/gcc/) is a source reference,
-not proof of vendor corresponding source. No release-tag runtime build
-provenance exists in the reviewed run.
+For both musl platforms, downloaded Alpine v3.24 GCC, libgcc-static and
+libstdc++-dev APKs identify GCC 15.2.0-r5 and aports commit
+[`423a8ad043d07f2c7546c8ec3e2b0384cda360ae`](https://github.com/alpinelinux/aports/tree/423a8ad043d07f2c7546c8ec3e2b0384cda360ae/main/gcc)
+in `.PKGINFO`. The [source and patches snapshot](https://codeload.github.com/alpinelinux/aports/tar.gz/423a8ad043d07f2c7546c8ec3e2b0384cda360ae)
+has SHA-256 `e2f1c69afc7f9117488e7d8d2da2daf19ba251c1b9a71c29049b5297eb0eb10e`;
+its APKBUILD SHA-256 is `71d831dbef88c2b0ff7b36b7422e878a07751419583a44b06cda2e561cdb82d4`.
+The recipe references [GCC 15.2.0](https://ftp.gnu.org/gnu/gcc/gcc-15.2.0/gcc-15.2.0.tar.xz),
+SHA-256 `438fd996826b0c82485a29da03a72d71d6e3541a83ec702df4271f6fe025d24e`.
+The downloaded archive's SHA-512 matches the APKBUILD:
+`89047a2e07bd9da265b507b516ed3635adb17491c7f4f67cf090f0bd5b3fc7f2ee6e4cc4008beef7ca884b6b71dffe2bb652b21f01a702e17b468cca2d10b2de`.
+
+| Platform | libgcc-static APK SHA-256 | libstdc++-dev APK SHA-256 |
+| --- | --- | --- |
+| linux-musl-x64 | `563244a562f5c48b921f7f0b4a571e373cfcba65175fe2d4f752c5f975738bcd` | `62ce308cdbf127dcac6eee1520a4ffec8dc98b30974653908842fe4cc7d90b43` |
+| linux-musl-arm64 | `2ec3dc4be953d842cc51193248367d86829ed699a1ed094fb5149b1b3fc62919` | `8385c811d93b64ee1877005a5473cde8ebabe82d346301f2b153ff8cb6a71510` |
+
+The GCC APK SHA-256 is `d1d482472ed91240731c60dbae8176bc1e32e1dfb694856da6759f6d32716325`
+(x64) and `ff3fecfc32c9a1bed4a47a32ccfee6f6f575708258f912c218dce8ed0d892221`
+(arm64). These files were downloaded from `https://dl-cdn.alpinelinux.org/alpine/v3.24/main/ARCH/NAME-15.2.0-r5.apk`,
+where `ARCH` is `x86_64` or `aarch64` and `NAME` is `libgcc-static` or
+`libstdc++-dev` or `gcc`. Extracted libgcc.a hashes are
+`aeae756b465a790521bc47a999d0c935c3efad7df06e1b89d334f52d371918e2`
+(x64) and `13418fd4e14bf4cd601f3d41addbec08617533454cc6fef2a0ce92ecbf83118f`
+(arm64); libstdc++.a hashes are
+`3c5a681959e644f7274b39a9efb4dbb56533a57306a456ce3580bd94f31520a5`
+(x64) and `b2b03b70be60cd0ae15cdca348fb002313786d229391a6b064c747528de68936`
+(arm64). They are current vendor packages matching logged versions; the CI
+did not record APK hashes, so byte identity with its installed files is not
+independently established.
+
+The musl-dev 1.2.6-r3 APKs name aports commit
+[`8f79d39391b46d6dbf1800fb68b8212a21d5ee2e`](https://github.com/alpinelinux/aports/tree/8f79d39391b46d6dbf1800fb68b8212a21d5ee2e/main/musl).
+Its [source and patches snapshot](https://codeload.github.com/alpinelinux/aports/tar.gz/8f79d39391b46d6dbf1800fb68b8212a21d5ee2e)
+has SHA-256 `ea30c7a4e842d60d44f71796bbd5ab84a2f9cc5c47f4da1558043fca9a9b79d4`;
+the APKBUILD has SHA-256 `22c5adb3f3b68ab84e5ff7d20df68447063d1ecb5c7b39afd5a04a1dfd444a35`.
+The [musl 1.2.6 archive](https://musl.libc.org/releases/musl-1.2.6.tar.gz)
+has SHA-256 `d585fd3b613c66151fc3249e8ed44f77020cb5e6c1e635a616d3f9f82460512a`;
+its SHA-512 matches APKBUILD
+`1adad96eddb3a2eb0cacb3e363b0046568925fcdd75cf8b0503f2139df1f693d64730779ca0ce8131b7624ab2d37f4247bb1d3393c523de6e30d2b1d7732555c`.
+The musl-dev APK SHA-256 is `310b51cff12e1d5ce5f135c558a82e2550427da5465bbd16c9ff9b05e63ee3d9`
+(x64) and `45afe0a9f78de3402b6b5d11f5153ed955bf59d59b45344d9c3fed9f4bbf2f66`
+(arm64). The URLs use the same Alpine path pattern above with package
+`musl-dev-1.2.6-r3.apk`.
+
+The available green run and commit are recorded above and correspond to the
+four workflow image references. They are PR build provenance; there was no
+release tag and the release job was skipped. A PR run cannot establish the
+identity or source inputs of a future tagged release. The [GCC archive
+index](https://ftp.gnu.org/gnu/gcc/) provides upstream releases, not vendor
+patch provenance on its own.
 
 ## Notices and gate requirements
 
@@ -92,8 +127,12 @@ The existing GPL-3.0 and GCC RLE 3.1 texts match the Docling copies byte for
 byte. This change adds the complete Docling LGPL-2.1 text and a written
 three-year source offer; `make.sh` sends the notices directory to the shared
 pack builder. The new source-pointer notice gives the GCC index and explicitly
-requires verification. The text alone cannot establish that maintainers can
-fulfil the offer for these builds. Historic PR artifacts predate these files.
+requires verification. Before distribution, mirror the verified source RPM, Alpine source archives,
+aports snapshots and build instructions as immutable release assets, retain
+them for at least three years after the last distribution, and record their
+URLs and hashes in the source-pointer notice. This is a mirror plan, not
+evidence that the assets have already been uploaded or retained. The offer
+text alone cannot establish that maintainers can fulfil it for these builds. Historic PR artifacts predate these files.
 A fresh release archive must be inspected before distribution.
 
 The gate currently compares a single boolean and does not validate source,
@@ -109,8 +148,8 @@ changed or unreviewed receipts and package drift. No fabricated receipt is
 added in this review.
 
 Assumptions: PR artifacts are unsigned review evidence only; the exact GCC
-release is not inferred from ABI versions. Source archives and images from a
-similar distribution or matching filenames are not interchangeable proof.
+release is not inferred from ABI versions. Version-matched APKs are not proof
+of byte-identical CI inputs, and a mirror plan is not a published mirror.
 
 Validation: the four artifacts were downloaded with `gh run download` and
 inspected as above; `bash scripts/test-pack-qpdf.sh` passed. The release gate
