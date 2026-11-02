@@ -381,14 +381,16 @@ impl Serialize for ToolRun {
             data.serialize(serializer)
         } else {
             use serde::ser::SerializeMap;
-            let mut map = serializer.serialize_map(Some(7))?;
+            let mut map = serializer.serialize_map(Some(6 + usize::from(self.data.is_some())))?;
             map.serialize_entry("tool", &self.tool)?;
             map.serialize_entry("format", &self.format)?;
             map.serialize_entry("media_type", &self.media_type)?;
             map.serialize_entry("extension", &self.extension)?;
             map.serialize_entry("warnings", &self.warnings)?;
             map.serialize_entry("metrics", &self.metrics)?;
-            map.serialize_entry("data", &self.data)?;
+            if let Some(data) = &self.data {
+                map.serialize_entry("data", data)?;
+            }
             map.end()
         }
     }

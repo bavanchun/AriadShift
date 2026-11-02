@@ -889,7 +889,6 @@ fn collect_resource_uses(
     }
     Ok(true)
 }
-#[allow(clippy::too_many_arguments)]
 fn annotation_resource_uses(
     doc: &Document,
     page: ObjectId,
@@ -987,6 +986,7 @@ fn annotation_resource_uses(
     Ok(true)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn remove_unused_resources(
     doc: &Document,
     page: ObjectId,
