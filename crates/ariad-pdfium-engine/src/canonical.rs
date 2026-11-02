@@ -262,6 +262,7 @@ pub(crate) fn canonicalize(
     }
     ctx.check()?;
     check_round_trip(inner, &out.bytes)?;
+    crate::extract_images::preflight_document_content(ctx, doc)?;
     ctx.check()?;
     Ok(out.bytes)
 }

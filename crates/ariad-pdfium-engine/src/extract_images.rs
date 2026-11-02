@@ -697,6 +697,19 @@ impl<'a> XobjectScope<'a> {
 }
 
 // Refuse any content we cannot inspect before PDFium parses the page.
+pub(crate) fn preflight_document_content(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+) -> Result<(), EngineFailure> {
+    let max_depth = usize::from(ctx.limits().max_nesting_depth);
+    let max_bytes = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
+    let mut work = 0;
+    for page in preflight_page_tree(pdf_doc.inner(), max_depth)? {
+        preflight_page_images(ctx, pdf_doc, page, max_bytes, max_depth, &mut work)?;
+    }
+    Ok(())
+}
+
 fn preflight_page_images(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
@@ -1541,6 +1554,48 @@ fn color_components(
     }
 }
 
+fn resource_name(token: &[u8]) -> Result<&[u8], EngineFailure> {
+    let valid = if token.first() == Some(&b'/') {
+        token.len() <= 255 && !token.contains(&b'#')
+    } else if token.first() == Some(&b'(') && token.last() == Some(&b')') {
+        token[1..token.len() - 1]
+            .iter()
+            .all(|b| (0x20..=0x7e).contains(b) && *b != b'\\')
+    } else {
+        false
+    };
+    if !valid {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF resource operand is ambiguous.",
+        ));
+    }
+    Ok(if token[0] == b'/' {
+        &token[1..]
+    } else {
+        &token[1..token.len() - 1]
+    })
+}
+
+fn content_number(token: &[u8]) -> bool {
+    let token = token
+        .strip_prefix(b"+")
+        .or_else(|| token.strip_prefix(b"-"))
+        .unwrap_or(token);
+    let mut dots = 0;
+    let mut digits = 0;
+    for byte in token {
+        if *byte == b'.' {
+            dots += 1;
+        } else if byte.is_ascii_digit() {
+            digits += 1;
+        } else {
+            return false;
+        }
+    }
+    digits > 0 && dots <= 1
+}
+
 fn preflight_content(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
@@ -1551,13 +1606,93 @@ fn preflight_content(
     let mut cursor = 0;
     let mut invoked = Vec::new();
     let mut last_name = None;
+    let mut operands: Vec<&[u8]> = Vec::new();
+    let mut compound = Vec::new();
+    let mut compound_start = 0;
     while let Some((start, end)) = next_content_token(bytes, &mut cursor)? {
         let token = &bytes[start..end];
+        if token == b"[" || token == b"<<" {
+            if compound.is_empty() {
+                compound_start = start;
+            }
+            compound.push(token);
+            if compound.len() >= 63 {
+                return Err(EngineFailure::limit_exceeded());
+            }
+        } else if token == b"]" || token == b">>" {
+            let opening = compound.pop().ok_or_else(EngineFailure::limit_exceeded)?;
+            if !matches!((opening, token), (b"[", b"]") | (b"<<", b">>")) {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            if compound.is_empty() {
+                operands.push(&bytes[compound_start..end]);
+                if operands.len() > 2 {
+                    operands.remove(0);
+                }
+            }
+        } else if compound.is_empty() {
+            let operand = token
+                .first()
+                .is_some_and(|b| matches!(*b, b'/' | b'(' | b'<'))
+                || token
+                    .first()
+                    .is_some_and(|b| b.is_ascii_digit() || matches!(*b, b'+' | b'-' | b'.'))
+                || matches!(token, b"true" | b"false" | b"null");
+            if operand {
+                operands.push(token);
+            } else {
+                let last = operands.last().copied();
+                match token {
+                    b"Do" | b"gs" | b"sh" | b"cs" | b"CS" => {
+                        resource_name(last.ok_or_else(EngineFailure::limit_exceeded)?)?;
+                    }
+                    b"Tf" => {
+                        resource_name(
+                            operands
+                                .iter()
+                                .rev()
+                                .nth(1)
+                                .ok_or_else(EngineFailure::limit_exceeded)?,
+                        )?;
+                    }
+                    b"BDC" | b"DP" => {
+                        let value = last.ok_or_else(EngineFailure::limit_exceeded)?;
+                        if !value.starts_with(b"<<") {
+                            resource_name(value)?;
+                        }
+                    }
+                    b"scn" | b"SCN" => {
+                        if let Some(value) = last
+                            && !content_number(value)
+                        {
+                            resource_name(value)?;
+                        }
+                    }
+                    _ => {}
+                }
+                operands.clear();
+            }
+            if operands.len() > 2 {
+                operands.remove(0);
+            }
+        }
         if token
             .first()
             .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'\'' || *b == b'"')
         {
             charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
+        }
+        if !compound.is_empty() && token.first() == Some(&b'/') && token.len() > 255 {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "PDF content name exceeds the safe token length.",
+            ));
+        }
+        if !compound.is_empty()
+            && token.first() != Some(&b'(')
+            && !(token.first() == Some(&b'<') && token != b"<<")
+        {
+            continue;
         }
         if token.first() == Some(&b'/') {
             if token.len() > 255 {
@@ -1573,7 +1708,7 @@ fn preflight_content(
             last_name = content_string_operand(token)?;
             budget.glyph_count = budget
                 .glyph_count
-                .checked_add(last_name.as_ref().map_or(0, Vec::len))
+                .checked_add(token.len())
                 .ok_or_else(EngineFailure::limit_exceeded)?;
             continue;
         }
@@ -1602,6 +1737,9 @@ fn preflight_content(
         let mut nesting = 0usize;
         let mut expect_key = true;
         let mut keys = HashSet::new();
+        let mut key: &[u8] = b"";
+        let mut filter_array = false;
+        let mut color_array = false;
         let dict_end = loop {
             let (s, e) = next_content_token(bytes, &mut cursor)?
                 .ok_or_else(EngineFailure::limit_exceeded)?;
@@ -1623,9 +1761,22 @@ fn preflight_content(
                         ));
                     }
                     expect_key = false;
+                    key = &bytes[s..e];
                     continue;
                 }
+                if matches!(key, b"/CS" | b"/ColorSpace" | b"/F" | b"/Filter") {
+                    if &bytes[s..e] == b"[" {
+                        filter_array = matches!(key, b"/F" | b"/Filter");
+                        color_array = !filter_array;
+                    } else {
+                        resource_name(&bytes[s..e])?;
+                    }
+                }
                 expect_key = true;
+            } else if (nesting == 1 && filter_array && &bytes[s..e] != b"]")
+                || (color_array && bytes[s] == b'(')
+            {
+                resource_name(&bytes[s..e])?;
             }
             match &bytes[s..e] {
                 b"[" | b"<<" => {
@@ -1637,7 +1788,11 @@ fn preflight_content(
                 b"]" | b">>" => {
                     nesting = nesting
                         .checked_sub(1)
-                        .ok_or_else(EngineFailure::limit_exceeded)?
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    if nesting == 0 {
+                        filter_array = false;
+                        color_array = false;
+                    }
                 }
                 _ => {}
             }
@@ -1645,7 +1800,8 @@ fn preflight_content(
         let mut dictionary = b"<< ".to_vec();
         dictionary.extend_from_slice(&bytes[dict_start..dict_end]);
         dictionary.extend_from_slice(b" >> q");
-        let content = Content::decode(&dictionary).map_err(|_| EngineFailure::limit_exceeded())?;
+        let mut content =
+            Content::decode(&dictionary).map_err(|_| EngineFailure::limit_exceeded())?;
         let mut checked = content
             .operations
             .first()
@@ -1660,10 +1816,30 @@ fn preflight_content(
         )?;
         let dict = content
             .operations
-            .first()
-            .and_then(|op| op.operands.first())
-            .and_then(|o| o.as_dict().ok())
+            .first_mut()
+            .and_then(|op| op.operands.first_mut())
+            .and_then(|o| o.as_dict_mut().ok())
             .ok_or_else(EngineFailure::limit_exceeded)?;
+        fn normalize_resource(value: &mut Object) {
+            if let Object::String(bytes, _) = value {
+                *value = Object::Name(std::mem::take(bytes));
+            }
+        }
+        for key in [b"CS".as_slice(), b"ColorSpace", b"F", b"Filter"] {
+            if let Ok(value) = dict.get_mut(key) {
+                if let Object::Array(items) = value {
+                    if matches!(key, b"F" | b"Filter") {
+                        for item in items {
+                            normalize_resource(item);
+                        }
+                    } else if let Some(first) = items.first_mut() {
+                        normalize_resource(first);
+                    }
+                } else {
+                    normalize_resource(value);
+                }
+            }
+        }
         fn has_reference(value: &Object) -> bool {
             match value {
                 Object::Reference(_) => true,
@@ -2081,6 +2257,9 @@ fn preflight_content(
         if &bytes[s..e] != b"EI" {
             return Err(EngineFailure::limit_exceeded());
         }
+    }
+    if !compound.is_empty() {
+        return Err(EngineFailure::limit_exceeded());
     }
     Ok(invoked)
 }
@@ -3540,10 +3719,10 @@ mod corpus_tests {
         );
         let mut page = 0;
         let mut document = 0;
-        let content = b"(F\\155) Do <466d> Do /Fm Do";
+        let content = b"(Fm) Do /Fm Do";
         assert_eq!(
             scan_do_operators(&ctx, content, &mut page, &mut document).unwrap(),
-            vec![b"Fm".to_vec(); 3]
+            vec![b"Fm".to_vec(); 2]
         );
         let mut budget = PreflightBudget {
             scanned: 0,
@@ -3559,7 +3738,149 @@ mod corpus_tests {
         };
         assert_eq!(
             preflight_content(&ctx, &lopdf::Document::new(), content, 1024, &mut budget).unwrap(),
-            vec![b"Fm".to_vec(); 3]
+            vec![b"Fm".to_vec(); 2]
+        );
+    }
+
+    #[test]
+    fn content_resource_and_crlf_fixtures_are_refused() {
+        for (name, reason) in [
+            (
+                "resource-string-cr-do.pdf",
+                "PDF resource operand is ambiguous.",
+            ),
+            (
+                "type3-crlf-count.pdf",
+                "Page glyph execution work exceeds the limit.",
+            ),
+        ] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf")
+                .join(name);
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![path],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "resource-fixture",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            let page = *doc.inner().get_pages().values().next().unwrap();
+            let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}");
+            assert_eq!(err.message, reason, "{name}");
+        }
+    }
+
+    #[test]
+    fn resource_operands_reject_ambiguous_tokens_and_count_raw_strings() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "resources",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        for op in [
+            "Do", "gs", "sh", "cs", "CS", "scn", "SCN", "BDC", "DP", "Tf",
+        ] {
+            for bad in ["/A#42", "(a\\b)", "(a\rb)", "<4142>", "true"] {
+                let content = match op {
+                    "Tf" => format!("{bad} 12 Tf"),
+                    "BDC" | "DP" => format!("/Tag {bad} {op}"),
+                    _ => format!("{bad} {op}"),
+                };
+                let mut work = 0;
+                let mut budget = PreflightBudget {
+                    scanned: 0,
+                    image_bytes: 0,
+                    image_pixels: 0,
+                    page_work: 0,
+                    glyph_count: 0,
+                    glyph_max: 0,
+                    glyph_max_pixels: 0,
+                    glyph_max_bytes: 0,
+                    font_ids: HashSet::new(),
+                    document_work: &mut work,
+                };
+                let err = preflight_content(
+                    &ctx,
+                    &lopdf::Document::new(),
+                    content.as_bytes(),
+                    1024,
+                    &mut budget,
+                )
+                .unwrap_err();
+                assert_eq!(
+                    err.message, "PDF resource operand is ambiguous.",
+                    "{content}"
+                );
+            }
+        }
+        for content in [
+            b"BI /W 1 /H 1 /BPC 8 /CS (G\r) ID x EI".as_slice(),
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /F (A\\Hx) ID x EI",
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /F [<414878>] ID x EI",
+        ] {
+            let mut work = 0;
+            let mut budget = PreflightBudget {
+                scanned: 0,
+                image_bytes: 0,
+                image_pixels: 0,
+                page_work: 0,
+                glyph_count: 0,
+                glyph_max: 0,
+                glyph_max_pixels: 0,
+                glyph_max_bytes: 0,
+                font_ids: HashSet::new(),
+                document_work: &mut work,
+            };
+            let err = preflight_content(&ctx, &lopdf::Document::new(), content, 1024, &mut budget)
+                .unwrap_err();
+            assert_eq!(err.message, "PDF resource operand is ambiguous.");
+        }
+        let mut work = 0;
+        let mut budget = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut work,
+        };
+        preflight_content(&ctx, &lopdf::Document::new(), b"(Fm) Do (Font) 12 Tf /State gs /Shade sh /RGB cs /RGB CS 1 0 /Pattern scn /Pattern SCN /Tag (Properties) BDC /Tag << /K 1 >> DP", 1024, &mut budget).unwrap();
+        budget.glyph_count = 0;
+        preflight_content(
+            &ctx,
+            &lopdf::Document::new(),
+            b"BT /F 1 Tf (a\r\nb) Tj [(x) 1 <4142>] TJ ET",
+            1024,
+            &mut budget,
+        )
+        .unwrap();
+        assert_eq!(
+            budget.glyph_count,
+            b"(a\r\nb)".len() + b"(x)".len() + b"<4142>".len()
         );
     }
 
@@ -3656,6 +3977,7 @@ mod corpus_tests {
             c
         };
         let samples = vec![
+            (make(b"/W 1 /H 1 /BPC 8 /CS (G) /F (AHx)", b"00>"), true),
             (make(b"/W 8 /H 1 /IM true", &[0]), true),
             (make(b"/W 8 /H 8 /IM true /F /CCF", &[0xff]), true),
             (
@@ -3705,7 +4027,7 @@ mod corpus_tests {
                 assert_eq!(e.code, ErrorCode::LimitExceeded);
                 assert_eq!(
                     e.message,
-                    if index == 6 {
+                    if index == 7 {
                         "Inline JPEG dimensions exceed the image dictionary."
                     } else {
                         "Inline image codec cannot precede another filter."
@@ -3798,7 +4120,7 @@ mod corpus_tests {
         for (name, reason) in [
             (
                 "inline-indirect-key.pdf",
-                "Inline image dictionaries cannot contain indirect references.",
+                "Inline image has invalid or duplicate keys.",
             ),
             (
                 "xobject-abbreviated-keys.pdf",
@@ -3892,7 +4214,7 @@ mod corpus_tests {
     }
 
     #[test]
-    fn invalid_escaped_form_name_is_charged() {
+    fn invalid_escaped_form_name_is_refused() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf/invalid-name-escape.pdf");
         let dir = tempfile::tempdir().unwrap();
@@ -3914,7 +4236,7 @@ mod corpus_tests {
         let page = *doc.inner().get_pages().values().next().unwrap();
         let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
         assert_eq!(err.code, ErrorCode::LimitExceeded);
-        assert_eq!(err.message, "Page form execution work exceeds the limit.");
+        assert_eq!(err.message, "PDF resource operand is ambiguous.");
     }
 
     #[test]
@@ -4001,7 +4323,7 @@ mod corpus_tests {
     }
 
     #[test]
-    fn boolean_form_operands_are_charged() {
+    fn boolean_form_operands_are_refused() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf/boolean-form-operand.pdf");
         let dir = tempfile::tempdir().unwrap();
@@ -4023,7 +4345,7 @@ mod corpus_tests {
         let page = *doc.inner().get_pages().values().next().unwrap();
         let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
         assert_eq!(err.code, ErrorCode::LimitExceeded);
-        assert_eq!(err.message, "Page form execution work exceeds the limit.");
+        assert_eq!(err.message, "PDF resource operand is ambiguous.");
     }
 
     #[test]
@@ -4310,6 +4632,10 @@ mod corpus_tests {
             .collect();
         let expected: BTreeMap<_, _> = [
             (
+                "ambiguous-page-tree.pdf",
+                "Page tree node with Kids is not a Pages node.",
+            ),
+            (
                 "canonical-deep-64.pdf",
                 "PDF object nesting exceeds the safe depth.",
             ),
@@ -4336,7 +4662,7 @@ mod corpus_tests {
             ),
             (
                 "boolean-form-operand.pdf",
-                "Page form execution work exceeds the limit.",
+                "PDF resource operand is ambiguous.",
             ),
             (
                 "type3-page-resource.pdf",
@@ -4360,7 +4686,15 @@ mod corpus_tests {
             ),
             (
                 "invalid-name-escape.pdf",
-                "Page form execution work exceeds the limit.",
+                "PDF resource operand is ambiguous.",
+            ),
+            (
+                "resource-string-cr-do.pdf",
+                "PDF resource operand is ambiguous.",
+            ),
+            (
+                "type3-crlf-count.pdf",
+                "Page glyph execution work exceeds the limit.",
             ),
             (
                 "broken-xref.pdf",
@@ -4412,7 +4746,7 @@ mod corpus_tests {
             ),
             (
                 "inline-indirect-key.pdf",
-                "Inline image dictionaries cannot contain indirect references.",
+                "Inline image has invalid or duplicate keys.",
             ),
             (
                 "inline-lzw-large.pdf",

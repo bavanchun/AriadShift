@@ -1382,6 +1382,76 @@ fn canonical_output_matches_preflight_for_ambiguous_xrefs() {
 
 #[test]
 #[ignore = "requires the external adversarial PDF corpus"]
+fn adversarial_content_streams_are_refused_before_pdfium() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    for name in [
+        "round3-2a-inline-key-hex-render.pdf",
+        "round3-2b-inline-key-hex-52mp-bomb.pdf",
+        "round3-3-string-cr-do.pdf",
+        "round3-4-max-objnum-rebuild.pdf",
+    ] {
+        let input = fs::read(std::path::Path::new(&dir).join(name)).unwrap();
+        for extraction in [false, true] {
+            let ws = TestWorkspace::from_bytes("input.pdf", &input);
+            let mut sink = Vec::new();
+            let mut ctx = ToolContext::new(
+                "adversarial",
+                "pdf.extract_images",
+                ws.paths,
+                Limits::local(),
+                &mut sink,
+            )
+            .with_library_dir(&lib_dir);
+            let result = if extraction {
+                extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+                    .map(|_| ())
+            } else {
+                ctx.load_validated_pdf_bytes().map(|_| ())
+            };
+            let error = result.expect_err(name);
+            assert_eq!(error.code, ErrorCode::LimitExceeded, "{name}: {error:?}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the external adversarial PDF corpus"]
+fn all_adversarial_pdfs_are_preflighted() {
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    let mut paths: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "pdf"))
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty());
+    for path in paths {
+        let bytes = fs::read(&path).unwrap();
+        let ws = TestWorkspace::from_bytes("input.pdf", &bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "adversarial",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        match ctx.load_validated_pdf_bytes() {
+            Ok(_) => eprintln!("ACCEPTED {}", path.display()),
+            Err(err) => {
+                eprintln!("REFUSED {}: {}", path.display(), err.message);
+                assert!(matches!(
+                    err.code,
+                    ErrorCode::LimitExceeded | ErrorCode::EngineFailure | ErrorCode::InvalidRequest
+                ));
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the external adversarial PDF corpus"]
 fn adversarial_canonical_graphs_are_refused_or_render_the_control() {
     let lib_dir = require_pdfium!();
     let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
