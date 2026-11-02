@@ -15023,7 +15023,7 @@ Used by:
   - rustc-hash 2.1.3 (https://github.com/rust-lang/rustc-hash)
   - rustversion 1.0.23 (https://github.com/dtolnay/rustversion)
   - ryu 1.0.23 (https://github.com/dtolnay/ryu)
-  - saphyr-parser 0.2.2 (https://github.com/saphyr-rs/saphyr)
+  - saphyr-parser 0.3.3 (https://github.com/saphyr-rs/saphyr)
   - semver 1.0.28 (https://github.com/dtolnay/semver)
   - serde-untagged 0.1.9 (https://github.com/dtolnay/serde-untagged)
   - serde 1.0.229 (https://github.com/serde-rs/serde)
@@ -15750,7 +15750,7 @@ License: BSD 2-Clause "Simplified" License (BSD-2-Clause)
 --------------------------------------------------------------------------------
 
 Used by:
-  - comrak 0.56.0 (https://github.com/kivikakk/comrak)
+  - comrak 0.57.0 (https://github.com/kivikakk/comrak)
 
 License Text:
 -------------
@@ -19073,8 +19073,8 @@ License: MIT License (MIT)
 --------------------------------------------------------------------------------
 
 Used by:
-  - jsonschema 0.59.0 (https://github.com/Stranger6667/jsonschema)
-  - referencing 0.59.0 (https://github.com/Stranger6667/jsonschema)
+  - jsonschema 0.60.2 (https://github.com/Stranger6667/jsonschema)
+  - referencing 0.60.2 (https://github.com/Stranger6667/jsonschema)
 
 License Text:
 -------------
@@ -19424,8 +19424,8 @@ Used by:
   - dlopen2 0.8.2 (https://github.com/OpenByteDev/dlopen2)
   - dlopen2_derive 0.4.3 (https://github.com/OpenByteDev/dlopen2)
   - dpi 0.1.2 (https://github.com/rust-windowing/winit)
-  - jsonschema-regex 0.59.0 (https://github.com/Stranger6667/jsonschema)
-  - jsonschema-value 0.59.0 (https://github.com/Stranger6667/jsonschema)
+  - jsonschema-regex 0.60.2 (https://github.com/Stranger6667/jsonschema)
+  - jsonschema-value 0.60.2 (https://github.com/Stranger6667/jsonschema)
   - libm 0.2.16 (https://github.com/rust-lang/compiler-builtins)
   - minisign-verify 0.3.0 (https://github.com/jedisct1/rust-minisign-verify)
   - objc2-encode 4.1.0 (https://github.com/madsmtm/objc2)

@@ -1,10 +1,8 @@
 # Cargo dependency update
 
-Status: incomplete. The required license notice check fails because
-`THIRD_PARTY_LICENSES` lists the old versions. The task permits changes only
-to Cargo manifests, lockfiles, required call sites, and this report, so the
-notice was not regenerated. The branch requires that file to be updated and
-`just licenses-check` rerun before it is ready to ship.
+Status: complete. The manager extended the scope to permit regenerating
+`THIRD_PARTY_LICENSES`. Its diff contains only the requested crate versions
+and their jsonschema transitive dependencies; both license gates now pass.
 
 ## Changes and assumptions
 
@@ -39,9 +37,15 @@ All Cargo and just commands ran individually through the shared build lock.
 - PASS: `cargo test --locked -p ariad-cli --features ariad-host/test-probe`.
 - PASS: `cargo check --locked` in `fuzz/`.
 - PASS: `env UV_NO_CONFIG=1 just deny` (duplicate dependency warnings).
-- FAIL: `env UV_NO_CONFIG=1 just licenses-check`: `THIRD_PARTY_LICENSES`
-  is stale for comrak, jsonschema, referencing and saphyr-parser; the check
-  stopped before the desktop and web notice checks.
+- PASS: `env UV_NO_CONFIG=1 just licenses-check`, with
+  `MISE_PNPM_VERSION=12.9.1` and a completed web build. Initially the Rust
+  notices were stale; after regeneration, web checks also required an installed
+  pnpm and Next.js bundle analysis.
+- PASS: `env UV_NO_CONFIG=1 just licenses` after a frozen pnpm install. Its
+  initial run failed because the desktop workspace dependency was not installed.
+  The generated desktop notice was restored and the command rerun successfully.
+- PASS: `env UV_NO_CONFIG=1 MISE_PNPM_VERSION=12.9.1 just web-build` to
+  produce the bundle analysis required by the web notice check.
 - PASS: `env UV_NO_CONFIG=1 just pandoc` installed the pinned Pandoc.
   Initial host test runs failed seven tests with missing Pandoc, including
   `doctor_describe_failure_produces_failed_report`; direct Cargo commands need
@@ -58,5 +62,5 @@ Title: `build(deps): update Cargo parser and schema dependencies`
 
 Body: Update comrak, jsonschema and saphyr-parser with both root and fuzz
 lockfiles synchronized, preserving the previous empty front matter scalar
-behavior. Supersedes #169, #170, #171, #173, #174 and #175. Regenerate the
-third-party notice and rerun the license check before merging.
+behavior, and refresh third-party notices. Supersedes #169, #170, #171,
+#173, #174 and #175.
