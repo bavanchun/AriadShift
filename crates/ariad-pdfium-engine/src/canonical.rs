@@ -188,6 +188,8 @@ pub(crate) fn canonicalize(
         .min(u32::MAX as usize)
         .checked_sub(input_len)
         .ok_or_else(EngineFailure::limit_exceeded)?;
+    crate::extract_images::preflight_document_content(ctx, doc)?;
+    let content_streams = crate::extract_images::canonical_content_streams(ctx, doc)?;
     let inner = doc
         .inner_mut()
         .map_err(|_| EngineFailure::limit_exceeded())?;
@@ -253,7 +255,7 @@ pub(crate) fn canonicalize(
         limit,
         ctx,
     };
-    if write_document(&mut out, inner).is_err() {
+    if write_document(&mut out, inner, &content_streams).is_err() {
         ctx.check()?;
         return Err(EngineFailure::new(
             ErrorCode::LimitExceeded,
@@ -261,8 +263,7 @@ pub(crate) fn canonicalize(
         ));
     }
     ctx.check()?;
-    check_round_trip(inner, &out.bytes)?;
-    crate::extract_images::preflight_document_content(ctx, doc)?;
+    check_round_trip_with_streams(inner, &out.bytes, &content_streams)?;
     ctx.check()?;
     Ok(out.bytes)
 }
@@ -280,7 +281,7 @@ fn write_name(out: &mut impl Write, name: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-fn write_object(out: &mut impl Write, object: &lopdf::Object) -> io::Result<()> {
+pub(crate) fn write_object(out: &mut impl Write, object: &lopdf::Object) -> io::Result<()> {
     use lopdf::Object;
     match object {
         Object::Null => out.write_all(b"null"),
@@ -357,7 +358,11 @@ fn is_regenerated(object: &lopdf::Object) -> bool {
     matches!(object.type_name(), Ok(b"ObjStm" | b"XRef" | b"Linearized"))
 }
 
-fn write_document(out: &mut BoundedWriter<'_, '_>, doc: &mut lopdf::Document) -> io::Result<()> {
+fn write_document(
+    out: &mut BoundedWriter<'_, '_>,
+    doc: &mut lopdf::Document,
+    content_streams: &std::collections::BTreeMap<lopdf::ObjectId, lopdf::Object>,
+) -> io::Result<()> {
     writeln!(out, "%PDF-{}", doc.version)?;
     out.write_all(b"%\xE2\xE3\xCF\xD3\n")?;
     let mut offsets = Vec::new();
@@ -367,7 +372,10 @@ fn write_document(out: &mut BoundedWriter<'_, '_>, doc: &mut lopdf::Document) ->
         }
         offsets.push((number, generation, out.bytes.len()));
         writeln!(out, "{number} {generation} obj")?;
-        write_object(out, object)?;
+        write_object(
+            out,
+            content_streams.get(&(number, generation)).unwrap_or(object),
+        )?;
         out.write_all(b"\nendobj\n")?;
     }
     let start = out.bytes.len();
@@ -381,7 +389,16 @@ fn write_document(out: &mut BoundedWriter<'_, '_>, doc: &mut lopdf::Document) ->
     write!(out, "\nstartxref\n{start}\n%%EOF")
 }
 
+#[cfg(test)]
 fn check_round_trip(expected: &lopdf::Document, bytes: &[u8]) -> Result<(), EngineFailure> {
+    check_round_trip_with_streams(expected, bytes, &std::collections::BTreeMap::new())
+}
+
+fn check_round_trip_with_streams(
+    expected: &lopdf::Document,
+    bytes: &[u8],
+    content_streams: &std::collections::BTreeMap<lopdf::ObjectId, lopdf::Object>,
+) -> Result<(), EngineFailure> {
     let failure = || {
         EngineFailure::new(
             ErrorCode::LimitExceeded,
@@ -412,7 +429,7 @@ fn check_round_trip(expected: &lopdf::Document, bytes: &[u8]) -> Result<(), Engi
             && !actual
                 .objects
                 .get(id)
-                .is_some_and(|other| same_object(object, other))
+                .is_some_and(|other| same_object(content_streams.get(id).unwrap_or(object), other))
         {
             return Err(failure());
         }

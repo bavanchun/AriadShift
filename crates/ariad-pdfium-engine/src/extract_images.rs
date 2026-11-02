@@ -710,6 +710,89 @@ pub(crate) fn preflight_document_content(
     Ok(())
 }
 
+pub(crate) fn canonical_content_streams(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+) -> Result<BTreeMap<PdfObjectId, Object>, EngineFailure> {
+    let doc = pdf_doc.inner();
+    let mut ids = HashSet::new();
+    fn content_ids(
+        doc: &lopdf::Document,
+        value: &Object,
+        ids: &mut HashSet<PdfObjectId>,
+        depth: usize,
+    ) -> Result<(), EngineFailure> {
+        if depth >= 63 {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        match value {
+            Object::Reference(id) => {
+                let value = doc
+                    .get_object(*id)
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                if matches!(value, Object::Stream(_)) {
+                    ids.insert(*id);
+                } else {
+                    content_ids(doc, value, ids, depth + 1)?;
+                }
+            }
+            Object::Array(items) => {
+                for item in items {
+                    content_ids(doc, item, ids, depth + 1)?;
+                }
+            }
+            Object::Null => (),
+            _ => return Err(EngineFailure::limit_exceeded()),
+        }
+        Ok(())
+    }
+    for page in preflight_page_tree(doc, usize::from(ctx.limits().max_nesting_depth))? {
+        let page = doc
+            .get_dictionary(page)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        if let Ok(content) = page.get(b"Contents") {
+            content_ids(doc, content, &mut ids, 0)?;
+        }
+    }
+    for (&id, value) in &doc.objects {
+        if let Object::Stream(stream) = value
+            && stream
+                .dict
+                .get(b"Subtype")
+                .is_ok_and(|v| v.as_name().is_ok_and(|n| n == b"Form"))
+        {
+            ids.insert(id);
+        }
+    }
+    let mut out = BTreeMap::new();
+    let mut remaining = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
+    for id in ids {
+        ctx.check()?;
+        let stream = doc
+            .get_object(id)
+            .and_then(Object::as_stream)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let bytes = preflight_stream_bytes(doc, stream, remaining)?;
+        remaining = remaining
+            .checked_sub(bytes.len())
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        let content = rewrite_preflighted_content(ctx, doc, &bytes, remaining)?;
+        remaining = remaining
+            .checked_sub(content.len())
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        let mut stream = stream.clone();
+        stream.content = content;
+        stream.dict.remove(b"Filter");
+        stream.dict.remove(b"DecodeParms");
+        stream.dict.set(
+            "Length",
+            i64::try_from(stream.content.len()).map_err(|_| EngineFailure::limit_exceeded())?,
+        );
+        out.insert(id, Object::Stream(stream));
+    }
+    Ok(out)
+}
+
 fn preflight_page_images(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
@@ -1603,7 +1686,19 @@ fn preflight_content(
     max_bytes: usize,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<Vec<Vec<u8>>, EngineFailure> {
+    preflight_content_inner(ctx, doc, bytes, max_bytes, budget, None)
+}
+
+fn preflight_content_inner(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    bytes: &[u8],
+    max_bytes: usize,
+    budget: &mut PreflightBudget<'_>,
+    mut output: Option<&mut Vec<u8>>,
+) -> Result<Vec<Vec<u8>>, EngineFailure> {
     let mut cursor = 0;
+    let mut previous = 0;
     let mut invoked = Vec::new();
     let mut last_name = None;
     let mut operands: Vec<&[u8]> = Vec::new();
@@ -1611,6 +1706,14 @@ fn preflight_content(
     let mut compound_start = 0;
     while let Some((start, end)) = next_content_token(bytes, &mut cursor)? {
         let token = &bytes[start..end];
+        if let Some(out) = output.as_deref_mut() {
+            crate::content_writer::validate_gap(&bytes[previous..start])?;
+            if compound.is_empty() && token != b"BI" {
+                let mut emitted_cursor = cursor;
+                crate::content_writer::emit_token(bytes, start, end, &mut emitted_cursor, out)?;
+            }
+        }
+        previous = end;
         if token == b"[" || token == b"<<" {
             if compound.is_empty() {
                 compound_start = start;
@@ -2257,11 +2360,46 @@ fn preflight_content(
         if &bytes[s..e] != b"EI" {
             return Err(EngineFailure::limit_exceeded());
         }
+        if output.is_some() {
+            // Inline content is handled separately after the payload is decoded.
+            return Err(EngineFailure::limit_exceeded());
+        }
+        previous = e;
+    }
+    if output.is_some() {
+        crate::content_writer::validate_gap(&bytes[previous..])?;
     }
     if !compound.is_empty() {
         return Err(EngineFailure::limit_exceeded());
     }
     Ok(invoked)
+}
+
+pub(crate) fn rewrite_preflighted_content(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    bytes: &[u8],
+    max_bytes: usize,
+) -> Result<Vec<u8>, EngineFailure> {
+    let mut work = 0;
+    let mut budget = PreflightBudget {
+        scanned: 0,
+        image_bytes: 0,
+        image_pixels: 0,
+        page_work: 0,
+        glyph_count: 0,
+        glyph_max: 0,
+        glyph_max_pixels: 0,
+        glyph_max_bytes: 0,
+        font_ids: HashSet::new(),
+        document_work: &mut work,
+    };
+    let mut out = Vec::new();
+    preflight_content_inner(ctx, doc, bytes, max_bytes, &mut budget, Some(&mut out))?;
+    if out.len() > max_bytes {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    Ok(out)
 }
 
 fn inline_run_length_len(
