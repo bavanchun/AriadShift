@@ -1118,7 +1118,10 @@ fn preflight_xobject(
             let jbig2_pos = filters.iter().position(|name| *name == b"JBIG2Decode");
             // Special image codecs behind another filter cannot be inspected directly.
             if jpx_pos.is_some_and(|pos| pos != 0) || jbig2_pos.is_some_and(|pos| pos != 0) {
-                return Err(EngineFailure::limit_exceeded());
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Image codec cannot be inspected after another filter.",
+                ));
             }
             let jpx = jpx_pos.is_some();
             let jpx_info = if jpx {
@@ -1272,7 +1275,12 @@ fn preflight_image_dict(
     };
     let width = number(b"Width", b"W")?;
     let height = number(b"Height", b"H")?;
-    ctx.check_pixels(width, height)?;
+    ctx.check_pixels(width, height).map_err(|_| {
+        EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Image dimensions exceed the pixel limit.",
+        )
+    })?;
     let mask = get(b"ImageMask", b"IM")?
         .map(|v| v.as_bool().map_err(|_| EngineFailure::limit_exceeded()))
         .transpose()?
@@ -3449,7 +3457,12 @@ mod corpus_tests {
         let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
-        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+        assert_eq!(
+            preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work)
+                .unwrap_err()
+                .message,
+            "Image dimensions exceed the pixel limit."
+        );
     }
 
     #[test]
@@ -3483,7 +3496,12 @@ mod corpus_tests {
         let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
-        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+        assert_eq!(
+            preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work)
+                .unwrap_err()
+                .message,
+            "Image dimensions exceed the pixel limit."
+        );
     }
 
     #[test]
@@ -3647,7 +3665,12 @@ mod corpus_tests {
         let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
         let page = *doc.inner().get_pages().values().next().expect("page");
         let mut work = 0;
-        assert!(preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err());
+        assert_eq!(
+            preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work)
+                .unwrap_err()
+                .message,
+            "Image dimensions exceed the pixel limit."
+        );
     }
 
     #[test]
@@ -3683,8 +3706,11 @@ mod corpus_tests {
             let (_, doc) = read_and_preflight_pdf(&ctx).expect("document");
             let page = *doc.inner().get_pages().values().next().expect("page");
             let mut work = 0;
-            assert!(
-                preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work).is_err(),
+            assert_eq!(
+                preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut work)
+                    .unwrap_err()
+                    .message,
+                "Image codec cannot be inspected after another filter.",
                 "{name}"
             );
         }
