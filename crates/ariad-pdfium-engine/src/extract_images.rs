@@ -1660,6 +1660,10 @@ fn preflight_content(
                 .ok_or_else(EngineFailure::limit_exceeded)?;
             continue;
         }
+        if token == b"true" || token == b"false" {
+            last_name = Some(token.to_vec());
+            continue;
+        }
         if token == b"Do" {
             charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
             if let Some(name) = last_name.take() {
@@ -2654,6 +2658,8 @@ fn scan_do_operators(
             if let Some(name) = last_name.take() {
                 names.push(name);
             }
+        } else if token == b"true" || token == b"false" {
+            last_name = Some(token.to_vec());
         } else if token == b"BI" {
             // Skip inline image `BI ... ID ... EI` so binary payload doesn't confuse tokenizing.
             last_name = None;
@@ -3811,6 +3817,32 @@ mod corpus_tests {
     }
 
     #[test]
+    fn boolean_form_operands_are_charged() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/boolean-form-operand.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "escape",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        let page = *doc.inner().get_pages().values().next().unwrap();
+        let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Page form execution work exceeds the limit.");
+    }
+
+    #[test]
     fn content_names_truncate_before_escape_decoding() {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/long-content-name.pdf");
@@ -4089,6 +4121,10 @@ mod corpus_tests {
             })
             .collect();
         let expected: BTreeMap<_, _> = [
+            (
+                "boolean-form-operand.pdf",
+                "Page form execution work exceeds the limit.",
+            ),
             (
                 "invalid-name-escape.pdf",
                 "Page form execution work exceeds the limit.",

@@ -4542,3 +4542,22 @@ phase = "4"
 routes = []
 companions = []
 
+
+[[fixture]]
+id = "boolean-form-operand-pdf"
+path = "fixtures/pdf/boolean-form-operand.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with boolean form operands"
+origin = "generated"
+generated_by = "fixtures/gen/boolean-form-operand.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "717f79d490bd5b13f97f333c11256359f20e3d1db6f4cab74640fa59663a1e39"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
