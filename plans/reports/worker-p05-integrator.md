@@ -59,6 +59,8 @@ The pre-encoder host gate also ran 195 host unit tests successfully before its c
 
 These results precede the integration of s2b and are not a final gate.
 
+Additional pre-final checks after merging s2b: the specified five-package clippy command passed with `-D warnings` in 35 seconds; `just pack-tooling-test` passed 55 checks; `scripts/test-pack-qpdf.sh` passed against the real development pack. The host pack verification, PDFium sandbox, qpdf adapter and qpdf secret test binaries passed 27 tests, including the signed-manifest executable checks and Linux child confinement. The development qpdf binary reports 12.4.2. Logs are under `.run/coord/p05/integrator-logs/` in the main checkout. These checks must be repeated if subsequent source changes affect them.
+
 ## Remaining integration work
 
 - Verify and, where necessary, enforce the signed executable allowlist for qpdf;
