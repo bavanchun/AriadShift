@@ -67,5 +67,13 @@ expression: normalize_engines_json_stdout(&output)
     "status": "not installed",
     "note": "run 'ashift engines install pdfium' to install the pdfium engine pack",
     "routes": []
+  },
+  {
+    "id": "qpdf",
+    "version": "-",
+    "license": "Apache-2.0",
+    "status": "not installed",
+    "note": "run 'ashift engines install qpdf' to install the qpdf engine pack",
+    "routes": []
   }
 ]
