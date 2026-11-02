@@ -648,6 +648,14 @@ def test_wheel_imports_use_system_runtime_names_without_relocating_image_data(tm
         windows_imports.retarget(path, {alias: b"msvcp140.dll"})
 
 
+def _add_with_mode(tar, path, arcname, mode):
+    """Add ``path`` with an explicit member mode; Windows has no exec bits to read."""
+    info = tar.gettarinfo(path, arcname=arcname)
+    info.mode = mode
+    with path.open("rb") as handle:
+        tar.addfile(info, handle)
+
+
 def test_archive_executables_and_target_block_emit_declared_executables(tmp_path):
     root = tmp_path / "root"
     bin_dir = root / "runtime/bin"
@@ -668,8 +676,8 @@ def test_archive_executables_and_target_block_emit_declared_executables(tmp_path
 
     archive_path = tmp_path / "runtime.tar.zst"
     with build.tarfile.open(archive_path, "w:zst") as tar:
-        for item in (py_bin, mod_py, notice):
-            tar.add(item, arcname=item.relative_to(root).as_posix(), recursive=False)
+        for item, mode in ((py_bin, 0o755), (mod_py, 0o644), (notice, 0o755)):
+            _add_with_mode(tar, item, item.relative_to(root).as_posix(), mode)
 
     execs = build.archive_executables(archive_path)
     assert execs == ["runtime/bin/python3.14"]
@@ -687,5 +695,5 @@ def test_archive_executables_preserves_hidden_path(tmp_path):
     executable.chmod(0o755)
     archive = tmp_path / "runtime.tar.zst"
     with build.tarfile.open(archive, "w:zst") as tar:
-        tar.add(executable, arcname="./.hidden/helper")
+        _add_with_mode(tar, executable, "./.hidden/helper", 0o755)
     assert build.archive_executables(archive) == [".hidden/helper"]
