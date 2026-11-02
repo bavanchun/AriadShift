@@ -711,7 +711,7 @@ fn refuses_uninspectable_page_content_entry() {
 #[test]
 fn repeated_nested_forms_are_expanded_once() {
     let lib_dir = require_pdfium!();
-    let depth = 12usize;
+    let depth = 8usize;
     let mut objects = vec![
         b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),

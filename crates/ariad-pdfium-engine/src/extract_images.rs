@@ -99,7 +99,7 @@ pub struct ExtractImagesOutcome {
     pub images_skipped_min_px: usize,
 }
 
-fn resolve<'a>(
+pub(crate) fn resolve<'a>(
     doc: Option<&'a lopdf::Document>,
     object: &'a Object,
 ) -> Result<(Option<PdfObjectId>, &'a Object), EngineFailure> {
@@ -474,7 +474,7 @@ fn extract_document_images_with(
 
 // PDFium treats every node containing Kids as intermediate and every other node as a leaf.
 // Reject classification differences so the ordered IDs match lopdf's page lookup.
-fn preflight_page_tree(
+pub(crate) fn preflight_page_tree(
     doc: &lopdf::Document,
     max_depth: usize,
 ) -> Result<Vec<PdfObjectId>, EngineFailure> {
@@ -953,6 +953,7 @@ pub(crate) fn canonical_content_streams(
     let mut remaining = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
     let mut document_work = 0;
     let mut memo = HashMap::new();
+    let mut facts = BTreeMap::new();
     for id in ids {
         ctx.check()?;
         let stream = doc
@@ -963,7 +964,7 @@ pub(crate) fn canonical_content_streams(
         remaining = remaining
             .checked_sub(bytes.len())
             .ok_or_else(EngineFailure::limit_exceeded)?;
-        let (content, invoked) =
+        let (content, invoked, stream_facts) =
             rewrite_preflighted_content(ctx, doc, &bytes, remaining, &mut document_work)?;
         let mut xobjects = BTreeMap::new();
         if let Ok(resources) = stream.dict.get(b"Resources") {
@@ -1013,7 +1014,9 @@ pub(crate) fn canonical_content_streams(
             i64::try_from(stream.content.len()).map_err(|_| EngineFailure::limit_exceeded())?,
         );
         out.insert(id, Object::Stream(stream));
+        facts.insert(id, stream_facts);
     }
+    crate::execution_budget::check(ctx, doc, &facts)?;
     Ok(out)
 }
 
@@ -1934,7 +1937,7 @@ fn preflight_content(
     max_bytes: usize,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<Vec<Vec<u8>>, EngineFailure> {
-    preflight_content_inner(ctx, doc, bytes, max_bytes, budget, None)
+    preflight_content_inner(ctx, doc, bytes, max_bytes, budget, None, None)
 }
 
 fn preflight_content_inner(
@@ -1944,6 +1947,7 @@ fn preflight_content_inner(
     max_bytes: usize,
     budget: &mut PreflightBudget<'_>,
     mut output: Option<&mut Vec<u8>>,
+    mut calls: Option<&mut Vec<crate::execution_budget::Call>>,
 ) -> Result<Vec<Vec<u8>>, EngineFailure> {
     let mut cursor = 0;
     let mut previous = 0;
@@ -2020,6 +2024,17 @@ fn preflight_content_inner(
                         }
                     }
                     _ => {}
+                }
+                if let Some(calls) = calls.as_deref_mut()
+                    && matches!(token, b"Do" | b"gs" | b"sh" | b"scn" | b"SCN")
+                    && let Some(value) = last
+                    && !content_number(value)
+                {
+                    let name = resource_name(value)?.to_vec();
+                    calls.push(crate::execution_budget::Call {
+                        op: token.to_vec(),
+                        name,
+                    });
                 }
                 operands.clear();
             }
@@ -2712,13 +2727,15 @@ fn preflight_content_inner(
     Ok(invoked)
 }
 
+type RewrittenContent = (Vec<u8>, Vec<Vec<u8>>, crate::execution_budget::Facts);
+
 pub(crate) fn rewrite_preflighted_content(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
     bytes: &[u8],
     max_bytes: usize,
     work: &mut usize,
-) -> Result<(Vec<u8>, Vec<Vec<u8>>), EngineFailure> {
+) -> Result<RewrittenContent, EngineFailure> {
     let mut budget = PreflightBudget {
         scanned: 0,
         image_bytes: 0,
@@ -2732,11 +2749,25 @@ pub(crate) fn rewrite_preflighted_content(
         document_work: work,
     };
     let mut out = Vec::new();
-    let invoked = preflight_content_inner(ctx, doc, bytes, max_bytes, &mut budget, Some(&mut out))?;
+    let mut calls = Vec::new();
+    let invoked = preflight_content_inner(
+        ctx,
+        doc,
+        bytes,
+        max_bytes,
+        &mut budget,
+        Some(&mut out),
+        Some(&mut calls),
+    )?;
+    let facts = crate::execution_budget::Facts {
+        ops: budget.page_work,
+        glyphs: budget.glyph_count,
+        calls,
+    };
     if out.len() > max_bytes {
         return Err(EngineFailure::limit_exceeded());
     }
-    Ok((out, invoked))
+    Ok((out, invoked, facts))
 }
 
 fn inline_run_length_len(
@@ -4597,6 +4628,42 @@ mod corpus_tests {
             .add_object(lopdf::Stream::new(dict, vec![]));
         let error = crate::canonical::canonicalize(&ctx, &mut doc, input.len()).unwrap_err();
         assert_eq!(error.message, "Image dimensions exceed the pixel limit.");
+    }
+
+    #[test]
+    fn records_each_resource_invocation_for_execution_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("calls", "pdf.render", paths, Limits::local(), &mut sink);
+        let (_, _, facts) = rewrite_preflighted_content(
+            &ctx,
+            &lopdf::Document::new(),
+            b"/P scn /P SCN /S gs /X Do /H sh",
+            4096,
+            &mut 0,
+        )
+        .unwrap();
+        let calls: Vec<_> = facts
+            .calls
+            .iter()
+            .map(|c| (c.op.as_slice(), c.name.as_slice()))
+            .collect();
+        assert_eq!(
+            calls,
+            vec![
+                (b"scn".as_slice(), b"P".as_slice()),
+                (b"SCN", b"P"),
+                (b"gs", b"S"),
+                (b"Do", b"X"),
+                (b"sh", b"H")
+            ]
+        );
     }
 
     #[test]
