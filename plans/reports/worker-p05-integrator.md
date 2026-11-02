@@ -62,6 +62,8 @@ The focused tests above precede the integration of s2b and are not a final gate.
 
 Additional pre-final checks after merging s2b: the specified five-package clippy command passed with `-D warnings` in 35 seconds; `just pack-tooling-test` passed 55 checks; `scripts/test-pack-qpdf.sh` passed against the real development pack. The host pack verification, PDFium sandbox, qpdf adapter and qpdf secret test binaries passed 27 tests, including the signed-manifest executable checks and Linux child confinement. The development qpdf binary reports 12.4.2. Logs are under `.run/coord/p05/integrator-logs/` in the main checkout. These checks must be repeated if subsequent source changes affect them.
 
+The remaining host suite passed with the corpus test explicitly filtered, after fixing a test probe that collided with the real qpdf adapter. The full CLI suite passed with both development packs configured; eleven unrelated AppImage and Docling tests remained ignored. The server suite passed. These are pre-s2c results, and the filtered host run is not a full host gate.
+
 ## Remaining integration work
 
 - Verify and, where necessary, enforce the signed executable allowlist for qpdf;
