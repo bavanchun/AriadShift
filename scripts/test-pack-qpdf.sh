@@ -17,11 +17,31 @@ if bash "$repo/engines/qpdf/pack/check-release.sh" >/dev/null 2>&1; then
 fi
 cp "$repo/engines/qpdf/pack/check-release.sh" "$tmp/check-release.sh"
 python3 - "$repo/engines/qpdf/pack/licence-review.toml" "$tmp" <<'PYTEST'
-import pathlib, subprocess, sys, tomllib
+import pathlib, re, subprocess, sys, tomllib
 
 source, directory = map(pathlib.Path, sys.argv[1:])
 review_path = directory / 'licence-review.toml'
 original = source.read_text()
+review = tomllib.loads(original)
+repo = source.parents[3]
+gate = (source.parent / 'check-release.sh').read_text()
+compiler = (source.parent / 'compile-qpdf.sh').read_text()
+workflow = (repo / '.github/workflows/pack-qpdf.yml').read_text()
+
+def one(pattern, text, label):
+    matches = re.findall(pattern, text, re.MULTILINE)
+    if len(matches) != 1:
+        sys.exit(f'{label}: expected exactly one match')
+    return matches[0]
+
+source_url = one(r"'source': '([^']+)'", gate, 'release gate source')
+source_hash = one(r"'sha256': '([^']+)'", gate, 'release gate hash')
+build_hash = one(r'^verify ([0-9a-f]{64}) "\$jpeg"$', compiler, 'build hash')
+download_url = one(r'curl [^\n]* (https://\S*libjpeg-turbo\S*) -o "\$RUNNER_TEMP/qpdf-input/jpeg.tar.gz"', workflow, 'download source')
+if review['source'] != source_url or source_url != download_url:
+    sys.exit('libjpeg-turbo source URL differs between review, gate and workflow')
+if review['sha256'] != source_hash or source_hash != build_hash:
+    sys.exit('libjpeg-turbo SHA-256 differs between review, gate and build')
 
 def check(text, accepted, label):
     review_path.write_text(text)
