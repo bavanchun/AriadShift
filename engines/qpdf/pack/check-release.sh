@@ -34,6 +34,10 @@ try:
         'linux-musl-x64': ('be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a', '15.2.0', '3c5a681959e644f7274b39a9efb4dbb56533a57306a456ce3580bd94f31520a5', 'aeae756b465a790521bc47a999d0c935c3efad7df06e1b89d334f52d371918e2'),
         'linux-musl-arm64': ('be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a', '15.2.0', 'b2b03b70be60cd0ae15cdca348fb002313786d229391a6b064c747528de68936', '13418fd4e14bf4cd601f3d41addbec08617533454cc6fef2a0ce92ecbf83118f'),
     }
+    apk_hashes = {
+        'linux-musl-x64': ['d1d482472ed91240731c60dbae8176bc1e32e1dfb694856da6759f6d32716325', '563244a562f5c48b921f7f0b4a571e373cfcba65175fe2d4f752c5f975738bcd', '62ce308cdbf127dcac6eee1520a4ffec8dc98b30974653908842fe4cc7d90b43', '310b51cff12e1d5ce5f135c558a82e2550427da5465bbd16c9ff9b05e63ee3d9'],
+        'linux-musl-arm64': ['ff3fecfc32c9a1bed4a47a32ccfee6f6f575708258f912c218dce8ed0d892221', '2ec3dc4be953d842cc51193248367d86829ed699a1ed094fb5149b1b3fc62919', '8385c811d93b64ee1877005a5473cde8ebabe82d346301f2b153ff8cb6a71510', '45afe0a9f78de3402b6b5d11f5153ed955bf59d59b45344d9c3fed9f4bbf2f66'],
+    }
     for platform, (image, gcc, stdcpp, libgcc) in platforms.items():
         receipt = receipts / f'qpdf-input-receipts-{platform}'
         if (receipt / 'runtime-sources.txt').read_bytes() != source_manifest:
@@ -46,6 +50,9 @@ try:
             raise ValueError(f'compiler mismatch: {platform}')
         if not (receipt / 'packages.txt').read_text().strip() or not (receipt / 'package-sha256.txt').read_text().strip():
             raise ValueError(f'package receipt missing: {platform}')
+        package_hashes = {line.split()[0] for line in (receipt / 'package-sha256.txt').read_text().splitlines() if line.split()}
+        if not set(apk_hashes.get(platform, [])).issubset(package_hashes):
+            raise ValueError(f'package hash mismatch: {platform}')
         runtime = (receipt / 'runtime-sha256.txt').read_text().splitlines()
         if len(runtime) != 2 or runtime[0].split()[0] != libgcc or runtime[1].split()[0] != stdcpp:
             raise ValueError(f'runtime hash mismatch: {platform}')
