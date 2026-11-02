@@ -153,9 +153,12 @@ if [ -n "${QPDF_SOURCE_ARCHIVE:-}" ]; then bash "$script" verify-archive mac-arm
 if [ -n "${QPDF_TEST_PACK:-}" ]; then
     bash "$script" verify "$QPDF_TEST_PACK"
     cp -R "$QPDF_TEST_PACK" "$tmp/pack"
-    rm "$tmp/pack/notices/qpdf-LICENSE.txt"
-    if bash "$script" verify "$tmp/pack" >/dev/null 2>&1; then
-        echo 'missing notice was accepted' >&2; exit 1
-    fi
+    for notice in qpdf-LICENSE.txt gnu-LGPL-2.1.txt gnu-runtime-source-offer.txt gnu-runtime-source-pointers.txt; do
+        mv "$tmp/pack/notices/$notice" "$tmp/notice"
+        if bash "$script" verify "$tmp/pack" >/dev/null 2>&1; then
+            echo "missing notice $notice was accepted" >&2; exit 1
+        fi
+        mv "$tmp/notice" "$tmp/pack/notices/$notice"
+    done
 fi
 echo 'qpdf pack checks passed'
