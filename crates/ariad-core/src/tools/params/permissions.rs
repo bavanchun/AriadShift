@@ -49,7 +49,7 @@ impl Default for PdfPermissions {
     }
 }
 /// Parameters for `pdf.permissions`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PermissionsParams {
     /// Required non-empty owner password.
@@ -70,5 +70,15 @@ impl PermissionsParams {
         } else {
             Ok(())
         }
+    }
+}
+
+impl std::fmt::Debug for PermissionsParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PermissionsParams")
+            .field("owner_password", &"[REDACTED]")
+            .field("user_password", &"[REDACTED]")
+            .field("permissions", &self.permissions)
+            .finish()
     }
 }

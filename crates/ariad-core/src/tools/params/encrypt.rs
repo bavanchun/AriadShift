@@ -14,7 +14,7 @@ pub enum EncryptionAlgorithm {
     Aes128,
 }
 /// Parameters for `pdf.encrypt`.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EncryptParams {
     /// Optional password needed to open the document.
@@ -38,5 +38,16 @@ impl EncryptParams {
         } else {
             Ok(())
         }
+    }
+}
+
+impl std::fmt::Debug for EncryptParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EncryptParams")
+            .field("user_password", &"[REDACTED]")
+            .field("owner_password", &"[REDACTED]")
+            .field("algorithm", &self.algorithm)
+            .field("permissions", &self.permissions)
+            .finish()
     }
 }

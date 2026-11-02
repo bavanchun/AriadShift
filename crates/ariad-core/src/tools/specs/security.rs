@@ -181,3 +181,28 @@ mod contract_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod secret_debug_tests {
+    use crate::tools::params::{DecryptParams, EncryptParams, PermissionsParams};
+    use serde_json::json;
+    #[test]
+    fn password_parameter_debug_output_is_redacted() {
+        let value = "sensitive-debug-value";
+        let decrypt: DecryptParams = serde_json::from_value(json!({"password": value})).unwrap();
+        let encrypt: EncryptParams =
+            serde_json::from_value(json!({"owner_password": value, "user_password": value}))
+                .unwrap();
+        let permissions: PermissionsParams =
+            serde_json::from_value(json!({"owner_password": value, "user_password": value}))
+                .unwrap();
+        for rendered in [
+            format!("{decrypt:?}"),
+            format!("{encrypt:?}"),
+            format!("{permissions:?}"),
+        ] {
+            assert!(!rendered.contains(value));
+            assert!(rendered.contains("[REDACTED]"));
+        }
+    }
+}
