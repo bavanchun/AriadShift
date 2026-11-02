@@ -418,3 +418,10 @@ external corpora, nine content-container samples, both remaining round-4
 samples, and all eight round-5 samples were checked; the round-5 samples and
 controls were refused on both validation and extraction paths. The earlier
 graph/control test passed. No independent delta review was performed here.
+
+The supplied round-4 variant runner was also executed with the current engine
+and PDFium library. Unsafe variants returned `limit_exceeded`; equal aliases,
+balanced literal strings, the object-number boundary and the small-object
+large-trailer control were accepted. An initial attempt without the library
+beside the executable reported `tool_missing` for accepted paths; the corrected
+run used a temporary copy of the current binary beside the pack library.
