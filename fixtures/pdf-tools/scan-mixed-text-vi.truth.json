@@ -1,0 +1,16 @@
+{
+  "pages": [
+    {
+      "visible_text": true,
+      "invisible_text": false
+    },
+    {
+      "visible_text": false,
+      "invisible_text": false
+    },
+    {
+      "visible_text": false,
+      "invisible_text": true
+    }
+  ]
+}
