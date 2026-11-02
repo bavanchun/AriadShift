@@ -127,9 +127,15 @@ mod tests {
         assert!(store.put("x".into()).is_err());
         assert!(store.put("".into()).is_err());
         assert!(store.put("x".repeat(MAX_BYTES + 1)).is_err());
+    }
+
+    #[test]
+    fn rejects_control_bytes_in_an_empty_store() {
+        let store = SecretStore::default();
         for value in ["a\nb", "a\rb", "a\0b"] {
             assert!(store.put(value.into()).is_err());
         }
+        assert!(store.put("valid".into()).is_ok());
     }
 }
 
