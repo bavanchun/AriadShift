@@ -57,6 +57,25 @@ routes = ["pdf->md"]
 companions = []
 
 [[fixture]]
+id = "canonical-large-object-number-pdf"
+path = "fixtures/pdf/canonical-large-object-number.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "Synthetic PDF with a large object number"
+origin = "generated"
+generated_by = "fixtures/gen/canonical-large-object-number.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "609bee8796e62ccfd18232338c6f051ec9d586120fc79d70a8b46f5a989bf7a5"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
+
+[[fixture]]
 id = "pd-vi-decree-39-2022"
 path = "fixtures/pdf/pd-vi-decree-39-2022.pdf"
 format = "pdf"

@@ -200,7 +200,7 @@ pub(crate) fn canonicalize(
             "PDF version cannot be serialized safely.",
         ));
     }
-    if inner.max_id >= i32::MAX as u32 {
+    if inner.max_id > 1_000_000 || inner.objects.keys().any(|&(number, _)| number > 1_000_000) {
         return Err(EngineFailure::new(
             ErrorCode::LimitExceeded,
             "PDF object numbers exceed the safe range.",
@@ -592,6 +592,37 @@ mod tests {
     use ariad_core::limits::Limits;
     use ariad_engine_io::RunToolPaths;
     use std::{fs, path::Path, time::Instant};
+
+    #[test]
+    fn refuses_excessive_object_numbers() {
+        let input = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf/canonical-large-object-number.pdf"),
+        )
+        .unwrap();
+        for stale_max in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new("objects", "pdf.render", paths, Limits::local(), &mut sink);
+            let mut doc = ariad_pdf::document::open(&input, ctx.limits()).unwrap();
+            let inner = doc.inner_mut().unwrap();
+            if stale_max {
+                inner.max_id = 3;
+            }
+            let error = canonicalize(&ctx, &mut doc, input.len()).unwrap_err();
+            assert!(
+                error.message.contains("object numbers"),
+                "{}",
+                error.message
+            );
+        }
+    }
 
     #[test]
     fn refuses_pdfium_parser_depth_even_with_a_larger_configured_limit() {

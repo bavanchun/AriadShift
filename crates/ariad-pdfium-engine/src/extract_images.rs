@@ -4236,6 +4236,10 @@ mod corpus_tests {
             ),
             ("canonical-zero-ref.pdf", "PDF refers to object zero."),
             (
+                "canonical-large-object-number.pdf",
+                "PDF object numbers exceed the safe range.",
+            ),
+            (
                 "boolean-form-operand.pdf",
                 "Page form execution work exceeds the limit.",
             ),
