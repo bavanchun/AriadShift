@@ -1,6 +1,7 @@
 //! Conservative Type0 font program subsetting.
 
 mod truetype;
+mod type1;
 
 use ariad_core::limits::Limits;
 
@@ -565,5 +566,203 @@ pub fn subset_simple_truetype(
         .set("FontDescriptor", descriptor_id);
     Ok(SubsetOutcome::Subset {
         glyphs: glyphs.len(),
+    })
+}
+
+fn standard_glyph_name(code: u8) -> Option<Vec<u8>> {
+    const DIGIT_NAMES: [&[u8]; 10] = [
+        b"zero", b"one", b"two", b"three", b"four", b"five", b"six", b"seven", b"eight", b"nine",
+    ];
+    let name: &[u8] = match code {
+        b'A'..=b'Z' | b'a'..=b'z' => return Some(vec![code]),
+        b'0'..=b'9' => DIGIT_NAMES[usize::from(code - b'0')],
+        b' ' => b"space",
+        b'!' => b"exclam",
+        b'"' => b"quotedbl",
+        b'#' => b"numbersign",
+        b'$' => b"dollar",
+        b'%' => b"percent",
+        b'&' => b"ampersand",
+        b'\'' => b"quoteright",
+        b'(' => b"parenleft",
+        b')' => b"parenright",
+        b'*' => b"asterisk",
+        b'+' => b"plus",
+        b',' => b"comma",
+        b'-' => b"hyphen",
+        b'.' => b"period",
+        b'/' => b"slash",
+        b':' => b"colon",
+        b';' => b"semicolon",
+        b'<' => b"less",
+        b'=' => b"equal",
+        b'>' => b"greater",
+        b'?' => b"question",
+        b'@' => b"at",
+        b'[' => b"bracketleft",
+        b'\\' => b"backslash",
+        b']' => b"bracketright",
+        b'^' => b"asciicircum",
+        b'_' => b"underscore",
+        b'`' => b"quoteleft",
+        b'{' => b"braceleft",
+        b'|' => b"bar",
+        b'}' => b"braceright",
+        b'~' => b"asciitilde",
+        193 => b"grave",
+        194 => b"acute",
+        195 => b"circumflex",
+        196 => b"tilde",
+        197 => b"macron",
+        198 => b"breve",
+        199 => b"dotaccent",
+        200 => b"dieresis",
+        202 => b"ring",
+        203 => b"cedilla",
+        205 => b"hungarumlaut",
+        206 => b"ogonek",
+        207 => b"caron",
+        _ => return None,
+    };
+    Some(name.to_vec())
+}
+
+/// Prune simple Type 1 charstrings without changing the PDF font dictionary encoding.
+pub fn subset_simple_type1(
+    doc: &mut PdfDoc,
+    font_id: ObjectId,
+    usage: &GlyphUsage,
+    limits: &Limits,
+) -> Result<SubsetOutcome, FontError> {
+    if usage.incomplete {
+        return Ok(SubsetOutcome::Skipped("ambiguous glyph scan"));
+    }
+    let Some(codes) = usage.simple.get(&font_id) else {
+        return Ok(SubsetOutcome::Skipped("font not used"));
+    };
+    let pdf = doc.inner();
+    let Some(font) = pdf.get_object(font_id).ok().and_then(|o| o.as_dict().ok()) else {
+        return Ok(SubsetOutcome::Skipped("missing font"));
+    };
+    if font.get(b"Subtype").and_then(Object::as_name).ok() != Some(b"Type1") {
+        return Ok(SubsetOutcome::Skipped("font is not Type 1"));
+    }
+    if font.get(b"FontDescriptor").ok().is_some_and(|descriptor| {
+        shared_font_program(pdf, descriptor, b"FontFile", limits.max_nesting_depth)
+    }) {
+        return Ok(SubsetOutcome::Skipped("shared font program"));
+    }
+    let Some(mut descriptor) = font
+        .get(b"FontDescriptor")
+        .ok()
+        .and_then(|o| dict(pdf, o, limits.max_nesting_depth))
+        .cloned()
+    else {
+        return Ok(SubsetOutcome::Skipped("missing font descriptor"));
+    };
+    let Some(program) = descriptor
+        .get(b"FontFile")
+        .ok()
+        .and_then(|o| resolve(pdf, o, limits.max_nesting_depth))
+        .and_then(|o| o.as_stream().ok())
+    else {
+        return Ok(SubsetOutcome::Skipped("missing Type 1 program"));
+    };
+    let length = |key: &[u8]| {
+        program
+            .dict
+            .get(key)
+            .and_then(Object::as_i64)
+            .ok()
+            .and_then(|v| usize::try_from(v).ok())
+    };
+    let (Some(length1), Some(length2), Some(length3)) =
+        (length(b"Length1"), length(b"Length2"), length(b"Length3"))
+    else {
+        return Ok(SubsetOutcome::Skipped("invalid Type 1 lengths"));
+    };
+    let mut budget = doc.decode_budget();
+    let bytes = match content_bytes(program, &mut budget) {
+        Ok(bytes) => bytes,
+        Err(FontError::Malformed) => return Ok(SubsetOutcome::Skipped("unsupported font stream")),
+        Err(e) => return Err(e),
+    };
+    if length1
+        .checked_add(length2)
+        .and_then(|v| v.checked_add(length3))
+        != Some(bytes.len())
+    {
+        return Ok(SubsetOutcome::Skipped("invalid Type 1 lengths"));
+    }
+    let mut mapping: BTreeMap<u8, Vec<u8>> = BTreeMap::new();
+    let encoding = font
+        .get(b"Encoding")
+        .ok()
+        .and_then(|o| resolve(pdf, o, limits.max_nesting_depth));
+    let program_uses_standard_encoding = bytes.get(..length1).is_some_and(|head| {
+        head.windows(b"/Encoding StandardEncoding def".len())
+            .any(|window| window == b"/Encoding StandardEncoding def")
+    });
+    let standard = match encoding {
+        Some(Object::Name(name)) => name == b"StandardEncoding",
+        Some(Object::Dictionary(d)) => d
+            .get(b"BaseEncoding")
+            .and_then(Object::as_name)
+            .map_or(program_uses_standard_encoding, |name| {
+                name == b"StandardEncoding"
+            }),
+        None => program_uses_standard_encoding,
+        _ => false,
+    };
+    if !standard {
+        return Ok(SubsetOutcome::Skipped("unsupported Type 1 encoding"));
+    }
+    for code in codes {
+        if let Some(name) = standard_glyph_name(*code) {
+            mapping.insert(*code, name);
+        }
+    }
+    if let Some(Object::Dictionary(d)) = encoding
+        && let Ok(items) = d.get(b"Differences").and_then(Object::as_array)
+    {
+        let mut next = None;
+        for item in items {
+            match item {
+                Object::Integer(n) => next = u8::try_from(*n).ok(),
+                Object::Name(name) => {
+                    let Some(code) = next else {
+                        return Ok(SubsetOutcome::Skipped("invalid differences"));
+                    };
+                    mapping.insert(code, name.clone());
+                    next = code.checked_add(1);
+                }
+                _ => return Ok(SubsetOutcome::Skipped("invalid differences")),
+            }
+        }
+    }
+    let Some(names) = codes
+        .iter()
+        .map(|code| mapping.get(code).cloned())
+        .collect::<Option<BTreeSet<_>>>()
+    else {
+        return Ok(SubsetOutcome::Skipped("unmapped character"));
+    };
+    let Some((subset, new_length2)) = type1::subset(&bytes, length1, length2, &names) else {
+        return Ok(SubsetOutcome::Skipped("unsupported Type 1 program"));
+    };
+    if subset.len() >= bytes.len() {
+        return Ok(SubsetOutcome::Skipped("no size gain"));
+    }
+    let pdf = doc.inner_mut()?;
+    let file_id = pdf.add_object(Stream::new(dictionary! {"Length1" => length1 as i64, "Length2" => new_length2 as i64, "Length3" => length3 as i64}, subset));
+    descriptor.set("FontFile", file_id);
+    descriptor.remove(b"CharSet");
+    let descriptor_id = pdf.add_object(descriptor);
+    pdf.get_object_mut(font_id)
+        .and_then(Object::as_dict_mut)
+        .map_err(|_| FontError::Malformed)?
+        .set("FontDescriptor", descriptor_id);
+    Ok(SubsetOutcome::Subset {
+        glyphs: names.len(),
     })
 }

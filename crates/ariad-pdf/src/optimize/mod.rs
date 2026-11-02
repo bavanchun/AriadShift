@@ -95,9 +95,10 @@ pub fn structural(pdf: &mut PdfDoc, limits: &Limits, ctx: &ToolCtx) -> Result<()
             &fonts::GlyphUsage,
             &Limits,
         ) -> Result<fonts::SubsetOutcome, fonts::FontError>;
-        let subsetters: [(&[u8], Subsetter); 2] = [
+        let subsetters: [(&[u8], Subsetter); 3] = [
             (b"Type0", fonts::subset_type0),
             (b"TrueType", fonts::subset_simple_truetype),
+            (b"Type1", fonts::subset_simple_type1),
         ];
         for (subtype, subset) in subsetters {
             let ids: Vec<_> = pdf
