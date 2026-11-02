@@ -1,10 +1,12 @@
 //! Bound execution of content resources before PDFium opens a document.
-use std::collections::{BTreeMap, HashSet};
+use std::cell::OnceCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use ariad_core::protocol::ErrorCode;
 use ariad_engine_io::EngineFailure;
 use lopdf::{Dictionary, Object, ObjectId};
+use sha2::{Digest, Sha256};
 
 use crate::{
     extract_images::{preflight_page_tree, resolve},
@@ -24,22 +26,24 @@ pub(crate) struct Facts {
     pub calls: Vec<Call>,
 }
 
-type Categories = BTreeMap<Vec<u8>, BTreeMap<Vec<u8>, Object>>;
+type Categories = BTreeMap<Vec<u8>, Rc<BTreeMap<Vec<u8>, Object>>>;
 
 #[derive(Clone, Default)]
 struct Scope {
-    page: Categories,
-    current: Categories,
+    page: Rc<Categories>,
+    current: Rc<Categories>,
     inherited_fonts: Vec<(Object, Rc<Categories>)>,
+    digest: OnceCell<[u8; 32]>,
 }
 
 impl Scope {
     fn from_page(doc: &lopdf::Document, resources: Option<&Object>) -> Result<Self, EngineFailure> {
-        let current = categories(doc, resources)?;
+        let current = Rc::new(categories(doc, resources)?);
         Ok(Self {
             page: current.clone(),
             current,
             inherited_fonts: Vec::new(),
+            digest: OnceCell::new(),
         })
     }
     fn child(
@@ -50,11 +54,11 @@ impl Scope {
         let Some(resources) = resources else {
             return Ok(self.clone());
         };
-        let mut current = self.page.clone();
+        let mut current = (*self.page).clone();
         current.extend(categories(doc, Some(resources))?);
         let mut inherited_fonts = self.inherited_fonts.clone();
         if let Some(fonts) = self.current.get(b"Font".as_slice()) {
-            let selected_resources = Rc::new(self.current.clone());
+            let selected_resources = Rc::clone(&self.current);
             inherited_fonts.extend(
                 fonts
                     .values()
@@ -63,8 +67,21 @@ impl Scope {
         }
         Ok(Self {
             page: self.page.clone(),
-            current,
+            current: Rc::new(current),
             inherited_fonts,
+            digest: OnceCell::new(),
+        })
+    }
+    fn digest(&self) -> [u8; 32] {
+        *self.digest.get_or_init(|| {
+            Sha256::digest(
+                format!(
+                    "{:?}|{:?}|{:?}",
+                    self.page, self.current, self.inherited_fonts
+                )
+                .as_bytes(),
+            )
+            .into()
         })
     }
     fn get(&self, category: &[u8], name: &[u8]) -> Option<&Object> {
@@ -100,10 +117,12 @@ fn categories(
                 .map_err(|_| EngineFailure::limit_exceeded())?;
             out.insert(
                 category.to_vec(),
-                values
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect(),
+                Rc::new(
+                    values
+                        .iter()
+                        .map(|(name, value)| (name.clone(), value.clone()))
+                        .collect(),
+                ),
             );
         }
     }
@@ -184,11 +203,15 @@ fn limit(cost: usize, max: usize) -> Result<usize, EngineFailure> {
     Ok(cost)
 }
 
+type MemoKey = (ObjectId, [u8; 32], usize, Vec<ObjectId>);
+type GlyphKey = ([u8; 32], usize, Vec<ObjectId>);
+
 struct Calculator<'a, 'b> {
     ctx: &'a ToolContext<'b>,
     doc: &'a lopdf::Document,
     facts: &'a BTreeMap<ObjectId, Facts>,
-    visited: HashSet<ObjectId>,
+    memo: HashMap<MemoKey, usize>,
+    glyph_memo: HashMap<GlyphKey, usize>,
 }
 
 impl Calculator<'_, '_> {
@@ -203,7 +226,13 @@ impl Calculator<'_, '_> {
         if depth > 8 || !active.insert(id) {
             return Err(EngineFailure::limit_exceeded());
         }
-        self.visited.insert(id);
+        let mut ancestors: Vec<_> = active.iter().copied().collect();
+        ancestors.sort_unstable();
+        let key = (id, scope.digest(), depth, ancestors);
+        if let Some(&cost) = self.memo.get(&key) {
+            active.remove(&id);
+            return Ok(cost);
+        }
         let facts = self
             .facts
             .get(&id)
@@ -233,8 +262,13 @@ impl Calculator<'_, '_> {
             )?;
         }
         if facts.glyphs > 0 {
-            let mut max_glyph = 0usize;
-            {
+            let mut ancestors: Vec<_> = active.iter().copied().collect();
+            ancestors.sort_unstable();
+            let glyph_key = (scope.digest(), depth, ancestors);
+            let max_glyph = if let Some(&cost) = self.glyph_memo.get(&glyph_key) {
+                cost
+            } else {
+                let mut max_glyph = 0usize;
                 let fonts = scope
                     .current
                     .get(b"Font".as_slice())
@@ -244,7 +278,7 @@ impl Calculator<'_, '_> {
                         scope
                             .inherited_fonts
                             .iter()
-                            .map(|(font, resources)| (font, resources.as_ref())),
+                            .map(|(font, resources)| (font, resources)),
                     );
                 for (font, selected_resources) in fonts {
                     let font = resolve(Some(self.doc), font)?
@@ -270,12 +304,14 @@ impl Calculator<'_, '_> {
                         page: selected_resources.clone(),
                         current: selected_resources.clone(),
                         inherited_fonts: scope.inherited_fonts.clone(),
+                        digest: OnceCell::new(),
                     };
                     let mut glyph_scope =
                         selected_scope.child(self.doc, font.get(b"Resources").ok())?;
                     // PDFium treats even an empty font Resources dictionary as present.
                     // Its selected font scope becomes the CharProc's fallback scope.
                     glyph_scope.page = glyph_scope.current.clone();
+                    glyph_scope.digest = OnceCell::new();
                     for (_, proc) in procs.iter() {
                         let (proc_id, _) = resolve(Some(self.doc), proc)?;
                         let glyph_cost = self.stream(
@@ -287,7 +323,9 @@ impl Calculator<'_, '_> {
                         max_glyph = max_glyph.max(glyph_cost);
                     }
                 }
-            }
+                self.glyph_memo.insert(glyph_key, max_glyph);
+                max_glyph
+            };
             cost = limit(
                 cost.checked_add(
                     facts
@@ -300,6 +338,7 @@ impl Calculator<'_, '_> {
             )?;
         }
         active.remove(&id);
+        self.memo.insert(key, cost);
         Ok(cost)
     }
     fn target(
@@ -395,6 +434,7 @@ impl Calculator<'_, '_> {
             page: scope.page.clone(),
             current: scope.page.clone(),
             inherited_fonts: Vec::new(),
+            digest: OnceCell::new(),
         };
         self.target(Some(group), &mask_scope, depth, active)
     }
@@ -410,7 +450,8 @@ pub(crate) fn check(
         ctx,
         doc,
         facts,
-        visited: HashSet::new(),
+        memo: HashMap::new(),
+        glyph_memo: HashMap::new(),
     };
     let mut total = 0usize;
     let all_pages = preflight_page_tree(doc, usize::from(ctx.limits().max_nesting_depth))?;
@@ -522,18 +563,21 @@ mod tests {
         );
         let root = form(&mut doc, dictionary! {});
         let mut scope = Scope::default();
-        scope.current.insert(
+        Rc::make_mut(&mut scope.current).insert(
             b"Pattern".to_vec(),
-            BTreeMap::from([(b"P".to_vec(), Object::Reference(pattern))]),
+            Rc::new(BTreeMap::from([(
+                b"P".to_vec(),
+                Object::Reference(pattern),
+            )])),
         );
-        scope.current.insert(
+        Rc::make_mut(&mut scope.current).insert(
             b"ExtGState".to_vec(),
-            BTreeMap::from([(
+            Rc::new(BTreeMap::from([(
                 b"S".to_vec(),
                 Object::Dictionary(
                     dictionary! { "SMask" => dictionary! { "G" => Object::Reference(child) } },
                 ),
-            )]),
+            )])),
         );
         scope.page = scope.current.clone();
         let facts = BTreeMap::from([
@@ -548,7 +592,8 @@ mod tests {
             ctx: &ctx,
             doc: &doc,
             facts: &facts,
-            visited: HashSet::new(),
+            memo: HashMap::new(),
+            glyph_memo: HashMap::new(),
         };
         assert_eq!(
             calc.stream(root, &scope, 0, &mut HashSet::new()).unwrap(),
@@ -568,13 +613,16 @@ mod tests {
             dictionary! { "SMask" => dictionary! { "G" => Object::Reference(group) } },
         );
         let mut scope = Scope::default();
-        scope.page.insert(
+        Rc::make_mut(&mut scope.page).insert(
             b"XObject".to_vec(),
-            BTreeMap::from([(b"F".to_vec(), Object::Reference(expensive))]),
+            Rc::new(BTreeMap::from([(
+                b"F".to_vec(),
+                Object::Reference(expensive),
+            )])),
         );
-        scope.current.insert(
+        Rc::make_mut(&mut scope.current).insert(
             b"XObject".to_vec(),
-            BTreeMap::from([(b"F".to_vec(), Object::Reference(cheap))]),
+            Rc::new(BTreeMap::from([(b"F".to_vec(), Object::Reference(cheap))])),
         );
         let facts = BTreeMap::from([
             (expensive, facts(500, &[])),
@@ -585,12 +633,69 @@ mod tests {
             ctx: &ctx,
             doc: &doc,
             facts: &facts,
-            visited: HashSet::new(),
+            memo: HashMap::new(),
+            glyph_memo: HashMap::new(),
         };
         assert_eq!(
             calc.mask(Some(&gs), &scope, 0, &mut HashSet::new())
                 .unwrap(),
             502
+        );
+    }
+    #[test]
+    fn many_type3_fonts_and_glyphs_are_memoized() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut sink = Vec::new();
+        let ctx = context(dir.path(), &mut sink);
+        let mut doc = lopdf::Document::new();
+        let mut all = BTreeMap::new();
+        let mut procs = Dictionary::new();
+        for i in 0..64 {
+            let id = form(&mut doc, dictionary! {});
+            procs.set(format!("G{i}"), Object::Reference(id));
+            all.insert(id, facts(5, &[]));
+        }
+        let mut fonts = Dictionary::new();
+        for i in 0..64 {
+            let id =
+                doc.add_object(dictionary! { "Subtype" => "Type3", "CharProcs" => procs.clone() });
+            fonts.set(format!("F{i}"), Object::Reference(id));
+        }
+        let child = form(&mut doc, dictionary! { "Subtype" => "Form" });
+        let root = form(&mut doc, dictionary! {});
+        let resources = Object::Dictionary(
+            dictionary! { "Font" => fonts, "XObject" => dictionary! { "F" => Object::Reference(child) } },
+        );
+        let scope = Scope::from_page(&doc, Some(&resources)).unwrap();
+        all.insert(
+            child,
+            Facts {
+                ops: 1,
+                glyphs: 20,
+                calls: Vec::new(),
+            },
+        );
+        all.insert(
+            root,
+            facts(1, &vec![(b"Do".as_slice(), b"F".as_slice()); 1000]),
+        );
+        let mut calc = Calculator {
+            ctx: &ctx,
+            doc: &doc,
+            facts: &all,
+            memo: HashMap::new(),
+            glyph_memo: HashMap::new(),
+        };
+        let start = std::time::Instant::now();
+        let err = calc
+            .stream(root, &scope, 0, &mut HashSet::new())
+            .unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert!(err.message.contains("Content execution cost"), "{err:?}");
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(1),
+            "elapsed: {:?}",
+            start.elapsed()
         );
     }
     #[test]
@@ -633,7 +738,8 @@ mod tests {
             ctx: &ctx,
             doc: &doc,
             facts: &all,
-            visited: HashSet::new(),
+            memo: HashMap::new(),
+            glyph_memo: HashMap::new(),
         };
         assert!(
             calc.stream(child, &Scope::default(), 0, &mut HashSet::new())
