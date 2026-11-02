@@ -1110,6 +1110,27 @@ fn accepts_name_like_bytes_inside_image_stream() {
 }
 
 #[test]
+fn accepts_name_like_text_in_trailing_comment() {
+    let lib_dir = require_pdfium!();
+    let mut input = fs::read(repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();
+    input.extend_from_slice(b"\n% /");
+    input.extend(std::iter::repeat_n(b'a', 300));
+    input.push(b'\n');
+    let ws = TestWorkspace::from_bytes("comment.pdf", &input);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "comment",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+        .expect("a comment is not a PDF name");
+}
+
+#[test]
 fn refuses_truncated_xobject_names_before_pdfium_page_load() {
     let lib_dir = require_pdfium!();
     for fixture in [

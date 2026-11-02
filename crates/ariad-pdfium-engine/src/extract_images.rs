@@ -303,175 +303,6 @@ fn check_extraction_xref(pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
     Ok(())
 }
 
-fn check_serialized_names(
-    object: &Object,
-    depth: usize,
-    max_depth: usize,
-) -> Result<(), EngineFailure> {
-    if depth > max_depth {
-        return Err(EngineFailure::limit_exceeded());
-    }
-    let check = |name: &[u8]| {
-        let encoded = name.iter().fold(0usize, |len, &byte| {
-            len.saturating_add(
-                if b" \t\n\r\x0c()<>[]{}/%#".contains(&byte) || !(33..=126).contains(&byte) {
-                    3
-                } else {
-                    1
-                },
-            )
-        });
-        if encoded > 254 {
-            Err(EngineFailure::new(
-                ErrorCode::LimitExceeded,
-                "PDF object name exceeds the safe token length.",
-            ))
-        } else {
-            Ok(())
-        }
-    };
-    match object {
-        Object::Name(name) => check(name)?,
-        Object::Array(items) => {
-            for item in items {
-                check_serialized_names(item, depth + 1, max_depth)?;
-            }
-        }
-        Object::Dictionary(dict) => {
-            for (key, value) in dict.iter() {
-                check(key)?;
-                check_serialized_names(value, depth + 1, max_depth)?;
-            }
-        }
-        Object::Stream(stream) => {
-            for (key, value) in stream.dict.iter() {
-                check(key)?;
-                check_serialized_names(value, depth + 1, max_depth)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn check_name_tokens(bytes: &[u8]) -> Result<(), EngineFailure> {
-    let mut cursor = 0;
-    while cursor < bytes.len() {
-        if bytes[cursor] != b'/' {
-            cursor += 1;
-            continue;
-        }
-        cursor += 1;
-        let start = cursor;
-        while cursor < bytes.len() && !is_pdf_delimiter_or_ws(bytes[cursor]) {
-            cursor += 1;
-        }
-        // The content parser retains 255 bytes including '/'; the syntax parser
-        // retains 256. The stricter bound prevents either from truncating names.
-        if cursor - start > 254 {
-            return Err(EngineFailure::new(
-                ErrorCode::LimitExceeded,
-                "PDF object name exceeds the safe token length.",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn check_document_names(
-    ctx: &ToolContext<'_>,
-    bytes: &[u8],
-    doc: &PdfDoc,
-) -> Result<(), EngineFailure> {
-    let cap = usize::try_from(ctx.limits().max_decompressed_bytes).unwrap_or(usize::MAX / 2);
-    let mut streams = Vec::new();
-    let xref = &doc.inner().reference_table.entries;
-    let mut offsets: Vec<_> = xref
-        .values()
-        .filter_map(|entry| match entry {
-            lopdf::xref::XrefEntry::Normal { offset, .. } => Some(*offset as usize),
-            _ => None,
-        })
-        .collect();
-    offsets.sort_unstable();
-    offsets.dedup();
-    for (id, object) in &doc.inner().objects {
-        ctx.check()?;
-        if let Object::Stream(stream) = object {
-            if let Some(lopdf::xref::XrefEntry::Normal { offset, generation }) = xref.get(&id.0)
-                && *generation == id.1
-            {
-                let start = *offset as usize;
-                let bound = offsets
-                    .get(offsets.partition_point(|n| *n <= start))
-                    .copied()
-                    .unwrap_or(bytes.len())
-                    .min(bytes.len());
-                if start < bound {
-                    let object_bytes = &bytes[start..bound];
-                    let mut candidates = Vec::new();
-                    let mut compared = 0usize;
-                    for (pos, token) in object_bytes.windows(6).enumerate() {
-                        if token != b"stream"
-                            || (pos > 0 && !is_pdf_delimiter_or_ws(object_bytes[pos - 1]))
-                        {
-                            continue;
-                        }
-                        let after = pos + 6;
-                        let body = if object_bytes.get(after..after + 2) == Some(b"\r\n") {
-                            after + 2
-                        } else if matches!(object_bytes.get(after), Some(b'\r' | b'\n')) {
-                            after + 1
-                        } else {
-                            continue;
-                        };
-                        let Some(end) = body.checked_add(stream.content.len()) else {
-                            continue;
-                        };
-                        if end > object_bytes.len() {
-                            continue;
-                        }
-                        compared = compared.saturating_add(stream.content.len());
-                        if compared > object_bytes.len().saturating_mul(2) {
-                            return Err(EngineFailure::new(
-                                ErrorCode::LimitExceeded,
-                                "PDF stream location search exceeds the work limit.",
-                            ));
-                        }
-                        if object_bytes.get(body..end) != Some(stream.content.as_slice()) {
-                            continue;
-                        }
-                        let mut marker = end;
-                        while object_bytes.get(marker).is_some_and(|b| is_pdf_ws(*b)) {
-                            marker += 1;
-                        }
-                        if object_bytes.get(marker..marker + 9) == Some(b"endstream") {
-                            candidates.push((start + body, start + end));
-                        }
-                    }
-                    if candidates.len() == 1 {
-                        streams.push(candidates[0]);
-                    }
-                }
-            }
-            if stream.dict.has_type(b"ObjStm") {
-                let decoded = preflight_stream_bytes(doc.inner(), stream, cap)?;
-                check_name_tokens(&decoded)?;
-            }
-        }
-    }
-    streams.sort_unstable();
-    let mut cursor = 0;
-    for (start, end) in streams {
-        if start > cursor {
-            check_name_tokens(&bytes[cursor..start])?;
-        }
-        cursor = cursor.max(end);
-    }
-    check_name_tokens(&bytes[cursor..])?;
-    Ok(())
-}
-
 fn extract_document_images_with(
     ctx: &mut ToolContext<'_>,
     params: &ExtractImagesParams,
@@ -483,13 +314,7 @@ fn extract_document_images_with(
 
     let (bytes, mut pdf_doc) = read_and_preflight_pdf(ctx)?;
     check_extraction_xref(&pdf_doc)?;
-    let header = bytes.windows(5).position(|w| w == b"%PDF-").unwrap_or(0);
-    check_document_names(ctx, &bytes[header..], &pdf_doc)?;
     let canonical = crate::canonical::canonicalize(ctx, &mut pdf_doc, bytes.len())?;
-    for object in pdf_doc.inner().objects.values() {
-        ctx.check()?;
-        check_serialized_names(object, 0, usize::from(ctx.limits().max_nesting_depth))?;
-    }
     drop(bytes);
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
@@ -3929,13 +3754,6 @@ mod corpus_tests {
     }
 
     #[test]
-    fn serialized_names_respect_pdfium_token_limit() {
-        assert!(check_serialized_names(&Object::Name(vec![b'a'; 254]), 0, 64).is_ok());
-        let error = check_serialized_names(&Object::Name(vec![b'#'; 85]), 0, 64).unwrap_err();
-        assert_eq!(error.code, ErrorCode::LimitExceeded);
-    }
-
-    #[test]
     fn repaired_xref_warns_for_render_but_is_refused_for_extraction() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf/repaired-xref-extraction.pdf");
@@ -4376,13 +4194,7 @@ mod corpus_tests {
             let result = (|| {
                 let (bytes, mut doc) = read_and_preflight_pdf(&ctx)?;
                 check_extraction_xref(&doc)?;
-                let header = bytes.windows(5).position(|w| w == b"%PDF-").unwrap_or(0);
-                check_document_names(&ctx, &bytes[header..], &doc)?;
                 let canonical = crate::canonical::canonicalize(&ctx, &mut doc, bytes.len())?;
-                for object in doc.inner().objects.values() {
-                    ctx.check()?;
-                    check_serialized_names(object, 0, usize::from(ctx.limits().max_nesting_depth))?;
-                }
                 let mut work = 0;
                 let max_depth = usize::from(ctx.limits().max_nesting_depth);
                 let max_bytes = usize::try_from(doc.remaining_decode_bytes())
@@ -4410,6 +4222,19 @@ mod corpus_tests {
             })
             .collect();
         let expected: BTreeMap<_, _> = [
+            (
+                "canonical-deep-64.pdf",
+                "PDF object nesting exceeds the safe depth.",
+            ),
+            (
+                "canonical-inf-real.pdf",
+                "PDF contains a non-finite real number.",
+            ),
+            (
+                "canonical-big-integer.pdf",
+                "PDF integer exceeds the safe range.",
+            ),
+            ("canonical-zero-ref.pdf", "PDF refers to object zero."),
             (
                 "boolean-form-operand.pdf",
                 "Page form execution work exceeds the limit.",
