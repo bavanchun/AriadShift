@@ -314,7 +314,12 @@ fn extract_document_images_with(
 
     let (bytes, mut pdf_doc) = read_and_preflight_pdf(ctx)?;
     check_extraction_xref(&pdf_doc)?;
-    let canonical = crate::canonical::canonicalize(ctx, &mut pdf_doc, bytes.len())?;
+    let canonical = crate::canonical::canonicalize_selected(
+        ctx,
+        &mut pdf_doc,
+        bytes.len(),
+        Some(&params.pages),
+    )?;
     drop(bytes);
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
@@ -331,7 +336,6 @@ fn extract_document_images_with(
             "The PDF has no pages.",
         ));
     }
-    ctx.check_page_count(total_pages)?;
     if page_ids.len() != total_pages {
         return Err(EngineFailure::limit_exceeded());
     }
@@ -700,12 +704,19 @@ impl<'a> XobjectScope<'a> {
 pub(crate) fn preflight_document_content(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
+    pages: Option<&ariad_core::tools::PageRange>,
 ) -> Result<usize, EngineFailure> {
     let max_depth = usize::from(ctx.limits().max_nesting_depth);
     let max_bytes = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
     let mut work = 0;
     let mut execution = 0;
-    for page in preflight_page_tree(pdf_doc.inner(), max_depth)? {
+    let all_pages = preflight_page_tree(pdf_doc.inner(), max_depth)?;
+    let selected = match pages {
+        Some(range) => ctx.resolve_pages(range, all_pages.len())?,
+        None => (1..=all_pages.len()).collect(),
+    };
+    for number in selected {
+        let page = all_pages[number - 1];
         preflight_page_images_inner(
             ctx,
             pdf_doc,
@@ -722,7 +733,8 @@ pub(crate) fn preflight_document_content(
 pub(crate) fn canonical_content_streams(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
-    mut document_execution: usize,
+    _document_execution: usize,
+    pages: Option<&ariad_core::tools::PageRange>,
 ) -> Result<BTreeMap<PdfObjectId, Object>, EngineFailure> {
     let doc = pdf_doc.inner();
     let mut ids = HashSet::new();
@@ -951,10 +963,10 @@ pub(crate) fn canonical_content_streams(
     }
     let mut out = BTreeMap::new();
     let mut remaining = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
-    let mut document_work = 0;
     let mut memo = HashMap::new();
     let mut facts = BTreeMap::new();
     for id in ids {
+        let mut document_work = 0;
         ctx.check()?;
         let stream = doc
             .get_object(id)
@@ -996,10 +1008,7 @@ pub(crate) fn canonical_content_streams(
                     &scope,
                     &mut budget,
                 )?;
-                document_execution = document_execution
-                    .checked_add(cost)
-                    .filter(|n| *n <= 1_000_000)
-                    .ok_or_else(EngineFailure::limit_exceeded)?;
+                let _ = cost;
             }
         }
         remaining = remaining
@@ -1016,7 +1025,7 @@ pub(crate) fn canonical_content_streams(
         out.insert(id, Object::Stream(stream));
         facts.insert(id, stream_facts);
     }
-    crate::execution_budget::check(ctx, doc, &facts)?;
+    crate::execution_budget::check(ctx, doc, &facts, pages)?;
     Ok(out)
 }
 

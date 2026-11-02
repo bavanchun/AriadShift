@@ -399,6 +399,7 @@ pub(crate) fn check(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
     facts: &BTreeMap<ObjectId, Facts>,
+    pages: Option<&ariad_core::tools::PageRange>,
 ) -> Result<(), EngineFailure> {
     let mut calc = Calculator {
         ctx,
@@ -407,7 +408,13 @@ pub(crate) fn check(
         visited: HashSet::new(),
     };
     let mut total = 0usize;
-    for page_id in preflight_page_tree(doc, usize::from(ctx.limits().max_nesting_depth))? {
+    let all_pages = preflight_page_tree(doc, usize::from(ctx.limits().max_nesting_depth))?;
+    let selected = match pages {
+        Some(range) => ctx.resolve_pages(range, all_pages.len())?,
+        None => (1..=all_pages.len()).collect(),
+    };
+    for number in selected {
+        let page_id = all_pages[number - 1];
         let page = doc
             .get_dictionary(page_id)
             .map_err(|_| EngineFailure::limit_exceeded())?;
@@ -446,17 +453,6 @@ pub(crate) fn check(
                 .ok_or_else(EngineFailure::limit_exceeded)?,
             1_000_000,
         )?;
-    }
-    for id in facts.keys() {
-        if !calc.visited.contains(id) {
-            let cost = calc.stream(*id, &Scope::default(), 0, &mut HashSet::new())?;
-            total = limit(
-                total
-                    .checked_add(cost)
-                    .ok_or_else(EngineFailure::limit_exceeded)?,
-                1_000_000,
-            )?;
-        }
     }
     Ok(())
 }
@@ -571,7 +567,7 @@ mod tests {
             .add_object(dictionary! { "Type" => "Catalog", "Pages" => Object::Reference(pages) });
         doc.trailer.set("Root", Object::Reference(catalog));
         let all = BTreeMap::from([(content, facts(1, &[])), (appearance, facts(60_000, &[]))]);
-        let error = check(&ctx, &doc, &all).unwrap_err();
+        let error = check(&ctx, &doc, &all, None).unwrap_err();
         assert!(error.message.contains("120001"));
     }
 

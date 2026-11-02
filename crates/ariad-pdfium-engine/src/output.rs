@@ -268,6 +268,13 @@ impl<'a> ToolContext<'a> {
     /// Password-protected and owner-password-encrypted PDFs fail with a typed error pointing
     /// to `pdf.decrypt`. Corrupt inputs fail with a typed error, never a panic.
     pub fn load_validated_pdf_bytes(&mut self) -> Result<Vec<u8>, EngineFailure> {
+        self.load_validated_pdf_bytes_for_pages(None)
+    }
+
+    pub fn load_validated_pdf_bytes_for_pages(
+        &mut self,
+        pages: Option<&PageRange>,
+    ) -> Result<Vec<u8>, EngineFailure> {
         self.check()?;
         self.limits
             .validate()
@@ -300,7 +307,7 @@ impl<'a> ToolContext<'a> {
             .map_err(map_pdf_open_error)?;
 
         self.warn_repaired_xref(&doc)?;
-        crate::canonical::canonicalize(self, &mut doc, bytes.len())
+        crate::canonical::canonicalize_selected(self, &mut doc, bytes.len(), pages)
     }
 
     /// Resolves `range` against `total_pages` with [`DuplicatePolicy::Reject`] and enforces

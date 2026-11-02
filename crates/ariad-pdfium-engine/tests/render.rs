@@ -937,3 +937,67 @@ fn render_streams_each_page_and_rejects_cumulative_output_without_artifacts() {
     assert!(artifact_events(&parse_events(&sink.events)).is_empty());
     assert_eq!(fs::read_dir(&ws.paths.output_dir).unwrap().count(), 0);
 }
+
+#[test]
+fn selected_page_of_large_document_obeys_execution_budget() {
+    use lopdf::{Document, Object, Stream, dictionary};
+    let lib_dir = require_pdfium!();
+    let mut doc = Document::with_version("1.4");
+    let pages = doc.new_object_id();
+    let content = doc.add_object(Stream::new(dictionary! {}, b"0 0 m 1 1 l S\n".repeat(400)));
+    let mut kids = Vec::new();
+    for _ in 0..1500 {
+        let page = doc.add_object(dictionary! {
+            "Type" => "Page", "Parent" => Object::Reference(pages),
+            "MediaBox" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+            "Resources" => dictionary! {}, "Contents" => Object::Reference(content),
+        });
+        kids.push(Object::Reference(page));
+    }
+    doc.objects.insert(
+        pages,
+        Object::Dictionary(dictionary! { "Type" => "Pages", "Count" => 1500, "Kids" => kids }),
+    );
+    let catalog =
+        doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => Object::Reference(pages) });
+    doc.trailer.set("Root", Object::Reference(catalog));
+    let mut bytes = Vec::new();
+    doc.save_to(&mut bytes).unwrap();
+    let params = RenderParams {
+        pages: "1".parse().unwrap(),
+        dpi: 72,
+        format: RasterFormat::Png,
+        quality: None,
+        background: Background::White,
+        annotations: true,
+        combine: Combine::None,
+    };
+    let ws = setup_workspace("large.pdf", &bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "selected",
+        "pdf.render",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(&lib_dir);
+    render::run(&mut ctx, params.clone()).expect("one selected page renders");
+    let ws = setup_workspace("large.pdf", &bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new("all", "pdf.render", ws.paths, Limits::local(), &mut sink)
+        .with_library_dir(&lib_dir);
+    let err = render::run(
+        &mut ctx,
+        RenderParams {
+            pages: "1-1500".parse().unwrap(),
+            ..params
+        },
+    )
+    .expect_err("all pages exceed execution budget");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert!(
+        err.message.contains("work exceeds") || err.message.contains("execution cost"),
+        "{err:?}"
+    );
+}

@@ -253,7 +253,12 @@ pub fn run_with_char_limit(
 ) -> ToolResult {
     let (bytes, mut lopdf_doc) = read_and_preflight_pdf(ctx)?;
     ctx.warn_repaired_xref(&lopdf_doc)?;
-    let canonical = crate::canonical::canonicalize(ctx, &mut lopdf_doc, bytes.len())?;
+    let canonical = crate::canonical::canonicalize_selected(
+        ctx,
+        &mut lopdf_doc,
+        bytes.len(),
+        Some(&params.pages),
+    )?;
     drop(bytes);
     let pdfium = ctx.pdfium()?;
     let doc = pdfium
@@ -268,7 +273,6 @@ pub fn run_with_char_limit(
             "The PDF has no pages.",
         ));
     }
-    ctx.check_page_count(total_pages)?;
 
     let selected_pages = expand_pages(&params.pages, total_pages)?;
     ctx.check_page_count(selected_pages.len())?;
