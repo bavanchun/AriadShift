@@ -1543,7 +1543,15 @@ fn validate_xobject_resources(
     Ok(())
 }
 
-type PreflightMemo = HashMap<(PdfObjectId, [u8; 32]), (usize, usize, u64, u64)>;
+type PreflightMemo = HashMap<(PdfObjectId, [u8; 32], [u8; 32], usize), (usize, usize, u64, u64)>;
+
+fn preflight_memo_key(
+    id: PdfObjectId,
+    scope: &XobjectScope<'_>,
+    depth: usize,
+) -> (PdfObjectId, [u8; 32], [u8; 32], usize) {
+    (id, scope.digest, scope.page.unwrap_or(scope).digest, depth)
+}
 
 #[allow(clippy::too_many_arguments)]
 fn preflight_xobject(
@@ -1561,7 +1569,7 @@ fn preflight_xobject(
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    let scope_key = (id, parent_xobjects.digest);
+    let scope_key = preflight_memo_key(id, parent_xobjects, depth);
     if let Some(&cost) = seen.get(&scope_key) {
         return (cost.0 != 0)
             .then_some(cost)
@@ -5142,6 +5150,24 @@ mod corpus_tests {
         assert_eq!(decode_pdf_name(b"Im#4G"), b"Im@");
         let escaped = [vec![b'A'; 253], b"#41tail".to_vec()].concat();
         assert_eq!(decode_pdf_name(&escaped).len(), 254);
+    }
+
+    #[test]
+    fn preflight_memo_distinguishes_page_fallback_and_depth() {
+        let page_a = XobjectScope::new(BTreeMap::from([(b"X".to_vec(), (1, 0))]));
+        let page_b = XobjectScope::new(BTreeMap::from([(b"X".to_vec(), (2, 0))]));
+        let mut form_a = XobjectScope::new(BTreeMap::new());
+        let mut form_b = XobjectScope::new(BTreeMap::new());
+        form_a.page = Some(&page_a);
+        form_b.page = Some(&page_b);
+        assert_ne!(
+            preflight_memo_key((3, 0), &form_a, 1),
+            preflight_memo_key((3, 0), &form_b, 1)
+        );
+        assert_ne!(
+            preflight_memo_key((3, 0), &form_a, 1),
+            preflight_memo_key((3, 0), &form_a, 2)
+        );
     }
 
     #[test]
