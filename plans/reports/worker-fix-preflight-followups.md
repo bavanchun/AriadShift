@@ -1,21 +1,22 @@
 # PDFium image preflight follow-ups
 
-Status: incomplete. The effective xref table check misses older overwritten
-entries in incremental updates. This remaining security gap must be fixed before
-the issue is closed.
+Status: complete. Extraction validates all linked cross-reference sections
+before loading PDFium, including entries superseded by incremental updates.
 
 ## Changes
 
-- Object-header verification checks normal entries in lopdf's effective xref
-  and checks that the corresponding object exists. The extraction regression
-  `refuses_repaired_cross_reference_before_loading_pdfium` passes for a wrong
-  first entry and a later duplicate object. Lopdf merges earlier xref entries
-  into the newest table, discarding overwritten entries; the present check
-  does not independently verify those discarded entries. A temporary incremental
-  PDF with an invalid oldest entry and a corrected newest entry reached the
-  PDFium loading step (`ToolMissing`) instead of returning `LimitExceeded`.
-  The reproduction reused `refuses_repaired_cross_reference_before_loading_pdfium`
-  with a temporary input; the committed fixture was restored afterward.
+- Object-header verification now walks `/Prev` and `/XRefStm` through classic
+  tables and compressed or uncompressed xref streams. It checks every normal
+  entry before section merging, including overlapping stream index ranges.
+  Section count, entry count, dictionary size and decoded stream bytes are
+  bounded. Uninspectable sections fail with the repaired-xref refusal.
+  `refuses_repaired_cross_reference_before_loading_pdfium` covers the original
+  wrong header, a newer entry hiding an older mismatch, hybrid streams,
+  overlapping ranges and a nested hybrid-to-previous chain. Each asserts
+  `LimitExceeded` and the exact gate reason without loading PDFium.
+  `valid_linked_xref_streams_are_accepted` covers valid compressed, hybrid and
+  nested chains. The original incremental reproduction returned `ToolMissing`
+  before the fix and now returns the gate reason.
 - Invalid name escapes now map each non-hex digit to zero. The regression
   `invalid_escaped_form_name_is_charged` failed with the old decoder and passed
   after the fix; the name decoder test also checks mixed valid/invalid digits.
@@ -30,8 +31,9 @@ the issue is closed.
 - Raw object names, content names and string operands have separate refusal
   messages. `overlong_form_string_operand_is_refused` isolates the string
   operand, and existing extraction assertions distinguish the other cases.
-- The documentation now describes the object-resolution risk. The token-limit
-  comment identifies both PDFium parser limits.
+- The documentation describes the cross-reference checks and their bounded,
+  fail-closed behavior. The token-limit comment identifies both PDFium parser
+  limits.
 
 Fixtures are generated in `fixtures/gen/`, carry Apache-2.0 provenance in the
 manifest, and are a few kilobytes or less. The named budgets and error code
@@ -53,11 +55,12 @@ through `build-lock.sh` after those corrections:
 - `cargo clippy --locked -p ariad-pdfium-engine --all-targets -- -D warnings`.
 - `cargo test --locked -p ariad-pdfium-engine`, with the supplied PDFium pack.
 - `cargo test --locked -p ariad-pdfium-engine preflight_fixture_corpus -- --ignored --nocapture`:
-  71 PDFs, 26 expected refusals, zero unexpected refusals.
+  79 PDFs, 31 expected refusals, zero unexpected refusals.
 
-The full test and corpus commands ran in a systemd scope capped at 2 GiB. The
-incremental-xref reproduction above fails, so passing corpus results do not
-establish that all revisions are safe.
+The full test and corpus commands ran in a systemd scope capped at 2 GiB.
+The focused cross-reference regression and valid-chain test passed. The first
+build identified an ambiguous integer type and the first clippy run identified
+a chunk-iteration lint; both were fixed before the final passing checks.
 
 The review's extra object-stream decode was not removed because its decoded
 bytes are not exposed by the existing bounded loader; sharing them would require
