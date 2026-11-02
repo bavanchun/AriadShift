@@ -135,6 +135,11 @@ approved = approved.replace('runtime_review_complete = false', 'runtime_review_c
 check(approved.replace('runtime_review_complete = true', 'runtime_review_complete = false'), False, 'runtime pending')
 check(approved.replace('pending_owner_approval = false', 'pending_owner_approval = true'), False, 'owner approval pending')
 check(approved, True, 'both reviews complete')
+if subprocess.run(['bash', str(directory / 'check-release.sh'), '--review-only']).returncode != 0:
+    sys.exit('approved review-only check was rejected')
+review_path.write_text(original)
+if subprocess.run(['bash', str(directory / 'check-release.sh'), '--review-only'], capture_output=True).returncode == 0:
+    sys.exit('pending review-only check was accepted')
 # Each mutation must independently make the otherwise valid evidence fail.
 mutations = [
     (directory / 'receipts/qpdf-input-receipts-linux-x64/image.txt', lambda text: text.replace('f6adc', '00000')),

@@ -20,6 +20,8 @@ try:
         raise ValueError('review flags must be booleans')
     if review != expected:
         raise ValueError('review is pending or does not match the approved component')
+    if sys.argv[3] == '--review-only':
+        sys.exit(0)
     import hashlib
     source_manifest = pathlib.Path(sys.argv[2]).read_bytes()
     receipts, sources, packdir = map(pathlib.Path, sys.argv[3:6])
