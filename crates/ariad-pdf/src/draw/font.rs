@@ -22,6 +22,8 @@ fn bytes(face: FontFace) -> &'static [u8] {
     }
 }
 fn parsed(face: FontFace) -> Result<Face<'static>, PdfError> {
+    // Only bundled Libertinus faces selected by FontFace reach this parser;
+    // fonts from an input PDF or user-supplied file cannot be passed here.
     Face::parse(bytes(face), 0).map_err(|_| PdfError::Malformed)
 }
 
@@ -347,6 +349,23 @@ mod tests {
         }
         fn close(&mut self) {
             self.0.push((4, vec![]));
+        }
+    }
+
+    #[test]
+    fn subset_entry_accepts_only_bundled_font_identifiers() {
+        for name in ["serif", "serif-bold"] {
+            let face: FontFace = serde_json::from_value(serde_json::json!(name)).unwrap();
+            let mut plan = FontPlan::new(face);
+            plan.add_text("Example").unwrap();
+            plan.embed(&mut Document::with_version("1.7")).unwrap();
+        }
+        for value in [
+            serde_json::json!("/tmp/user-font.otf"),
+            serde_json::json!([0, 1, 2, 3]),
+            serde_json::json!({"bytes": [0, 1, 2, 3]}),
+        ] {
+            assert!(serde_json::from_value::<FontFace>(value).is_err());
         }
     }
 
