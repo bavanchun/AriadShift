@@ -622,7 +622,7 @@ Literal values for any parameter marked `x-ariad-secret: true` are **rejected** 
 
 | Surface | Inline in `params` / argv / URL | Allowed Secret Channel |
 |---|---|---|
-| **CLI (`ashift tool`)** | **Rejected** (exit code `9` with hint to use `--secret`) | `--secret <name>=@<path>` (reads secret bytes from file), `--secret <name>=-` (reads secret from stdin), or interactive terminal prompt when `{"$secret": "prompt"}` is used. |
+| **CLI (`ashift tool`)** | **Rejected** (exit code `9` with hint to use `--secret`) | `--secret <name>=@<path>` (reads secret bytes from file), `--secret <name>=-` (reads secret from stdin). |
 | **Local MCP (`ashift mcp`)** | **Rejected** (MCP error, `exit_code: 9`) | Short-lived in-memory secret handle `{"$secret": "sec_<id>"}` created via `secret_put` (never logged; rejected if handles are not enabled). |
 | **Remote MCP / Cloud HTTP (`ariad-server`)** | **Rejected** (HTTP 400 / MCP error, `exit_code: 9`; never stored in `jobs` DB rows) | Password tools are unavailable; `secret_put` is not exposed. |
 | **Web (`apps/web` / `ariad-wasm`)** | **Rejected** in URLs, `localStorage`, `sessionStorage`, IndexedDB, and OPFS history | Ephemeral in-memory `SecretBag` passed directly from the password/file dialog to the Web Worker for a single `runTool` call and zeroed/dropped after completion. |
