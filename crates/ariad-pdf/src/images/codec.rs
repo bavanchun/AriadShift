@@ -396,6 +396,7 @@ pub struct DecodeSession<'a> {
     doc: &'a PdfDoc,
     budget: DecodeBudget,
     max_depth: u16,
+    release_temporary: bool,
 }
 
 impl<'a> DecodeSession<'a> {
@@ -406,7 +407,16 @@ impl<'a> DecodeSession<'a> {
             doc,
             budget: doc.decode_budget(),
             max_depth: limits.max_nesting_depth,
+            release_temporary: false,
         }
+    }
+
+    /// Starts a session retaining decoded pixels while releasing temporary stream buffers.
+    /// The caller must retain every returned image until the session is dropped.
+    pub fn for_cached_images(doc: &'a PdfDoc, limits: &Limits) -> Self {
+        let mut session = Self::new(doc, limits);
+        session.release_temporary = true;
+        session
     }
 
     pub fn decode(
@@ -414,7 +424,14 @@ impl<'a> DecodeSession<'a> {
         stream_id: ObjectId,
         ctx: &ToolCtx,
     ) -> Result<DecodedImage, ImageError> {
-        decode_with_budget(self.doc, stream_id, ctx, &mut self.budget, self.max_depth)
+        decode_with_budget(
+            self.doc,
+            stream_id,
+            ctx,
+            &mut self.budget,
+            self.max_depth,
+            self.release_temporary,
+        )
     }
 }
 
@@ -424,6 +441,7 @@ fn decode_with_budget(
     ctx: &ToolCtx,
     budget: &mut DecodeBudget,
     max_depth: u16,
+    release_temporary: bool,
 ) -> Result<DecodedImage, ImageError> {
     ctx.check()?;
     let pdf = doc.inner();
@@ -665,6 +683,9 @@ fn decode_with_budget(
                 pixels.push((value.clamp(0.0, 1.0) * 255.0).round() as u8);
             }
         }
+    }
+    if release_temporary {
+        budget.release_temporary(data.len());
     }
     Ok(DecodedImage {
         width,

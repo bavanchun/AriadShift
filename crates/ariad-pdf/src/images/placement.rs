@@ -6,12 +6,28 @@ use ariad_core::{limits::Limits, reader::pdf::ReadError};
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, content::Content};
 use std::collections::{HashMap, HashSet};
 
-/// The highest effective resolution observed for an image and its draw count.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// The effective resolution range observed for an image and its draw count.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ImageUse {
     pub max_dpi_x: f64,
     pub max_dpi_y: f64,
+    /// Lowest horizontal resolution across all painted placements.
+    pub min_dpi_x: f64,
+    /// Lowest vertical resolution across all painted placements.
+    pub min_dpi_y: f64,
     pub uses: u64,
+}
+
+impl Default for ImageUse {
+    fn default() -> Self {
+        Self {
+            max_dpi_x: 0.0,
+            max_dpi_y: 0.0,
+            min_dpi_x: f64::INFINITY,
+            min_dpi_y: f64::INFINITY,
+            uses: 0,
+        }
+    }
 }
 
 struct Scanner<'a> {
@@ -21,6 +37,8 @@ struct Scanner<'a> {
     max_depth: u16,
     active: HashSet<ObjectId>,
     visits: usize,
+    operations: u32,
+    max_operations: u32,
     images: HashMap<ObjectId, ImageUse>,
 }
 const MAX_VISITS: usize = 100_000;
@@ -71,9 +89,9 @@ fn rect(obj: Option<&Object>) -> Option<[f64; 4]> {
     let rect = [real(&a[0])?, real(&a[1])?, real(&a[2])?, real(&a[3])?];
     rect.iter().all(|value| value.is_finite()).then_some(rect)
 }
-fn stream_matrix(dict: &Dictionary) -> Result<Matrix, ImageError> {
+fn stream_matrix(doc: &Document, dict: &Dictionary, depth: u16) -> Result<Matrix, ImageError> {
     match dict.get(b"Matrix") {
-        Ok(value) => matrix(Some(value)).ok_or(ImageError::Malformed("form matrix")),
+        Ok(value) => matrix(deref(doc, value, depth)).ok_or(ImageError::Malformed("form matrix")),
         Err(_) => Ok(Matrix::identity()),
     }
 }
@@ -95,7 +113,7 @@ impl Scanner<'_> {
             rect(stream.dict.get(b"BBox").ok()).ok_or(ImageError::Malformed("appearance box"))?;
         let target = rect(annotation.get(b"Rect").ok())
             .ok_or(ImageError::Malformed("annotation rectangle"))?;
-        let transform = stream_matrix(&stream.dict)?;
+        let transform = stream_matrix(self.doc, &stream.dict, self.max_depth)?;
         let points = [
             transform.transform_point(bbox[0], bbox[1]),
             transform.transform_point(bbox[0], bbox[3]),
@@ -162,7 +180,7 @@ impl Scanner<'_> {
                 .ok()
                 .and_then(|v| dict(self.doc, v, self.max_depth))
                 .unwrap_or(resources);
-            let ctm = stream_matrix(&stream.dict)?.then(ctm);
+            let ctm = stream_matrix(self.doc, &stream.dict, self.max_depth)?.then(ctm);
             if ctm.0.iter().any(|value| !value.is_finite()) {
                 return Err(ImageError::Malformed("transformation matrix"));
             }
@@ -184,12 +202,15 @@ impl Scanner<'_> {
             Content::decode(bytes).map_err(|_| ImageError::Malformed("content operations"))?;
         let mut stack = Vec::new();
         for op in content.operations {
-            self.visits = self.visits.saturating_add(1);
-            if self.visits > MAX_VISITS {
-                return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
-                    limit: MAX_VISITS,
+            self.operations = self.operations.saturating_add(1);
+            if self.operations > self.max_operations {
+                return Err(PdfError::LimitExceeded(ReadError::TooManyBlocks {
+                    limit: self.max_operations,
                 })
                 .into());
+            }
+            if self.operations.is_multiple_of(128) {
+                self.ctx.check()?;
             }
             match op.operator.as_str() {
                 "q" => stack.push(ctm),
@@ -245,16 +266,20 @@ impl Scanner<'_> {
                             let [a, b, c, d, _, _] = ctm.0;
                             let (sx, sy) = (a.hypot(b), c.hypot(d));
                             let entry = self.images.entry(id).or_default();
-                            entry.max_dpi_x = entry.max_dpi_x.max(if sx == 0.0 {
+                            let dpi_x = if sx == 0.0 {
                                 f64::INFINITY
                             } else {
                                 w as f64 * 72.0 / sx
-                            });
-                            entry.max_dpi_y = entry.max_dpi_y.max(if sy == 0.0 {
+                            };
+                            let dpi_y = if sy == 0.0 {
                                 f64::INFINITY
                             } else {
                                 h as f64 * 72.0 / sy
-                            });
+                            };
+                            entry.max_dpi_x = entry.max_dpi_x.max(dpi_x);
+                            entry.max_dpi_y = entry.max_dpi_y.max(dpi_y);
+                            entry.min_dpi_x = entry.min_dpi_x.min(dpi_x);
+                            entry.min_dpi_y = entry.min_dpi_y.min(dpi_y);
                             entry.uses = entry.uses.saturating_add(1);
                         }
                         b"Form" => self.enter(id, resources, ctm, depth.saturating_add(1))?,
@@ -313,6 +338,8 @@ pub fn placements(
         max_depth: limits.max_nesting_depth,
         active: HashSet::new(),
         visits: 0,
+        operations: 0,
+        max_operations: limits.max_blocks,
         images: HashMap::new(),
     };
     for page_id in crate::color::page_ids(doc.inner(), limits, ctx)? {
