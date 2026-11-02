@@ -303,6 +303,12 @@ fn extract_document_images_with(
         .map_err(|e| EngineFailure::owned(ErrorCode::InvalidRequest, e.to_string()))?;
 
     let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
+    if pdf_doc.repaired_xref() {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+        ));
+    }
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
     let pdfium = ctx.pdfium()?;

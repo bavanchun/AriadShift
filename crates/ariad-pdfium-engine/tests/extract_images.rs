@@ -1016,6 +1016,26 @@ fn refuses_oversized_inline_image_in_indirect_subtype_form() {
 }
 
 #[test]
+fn refuses_repaired_cross_reference_before_loading_pdfium() {
+    let ws = TestWorkspace::from_fixture("fixtures/pdf/repaired-xref-extraction.pdf");
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "repaired-xref",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    );
+    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect_err("repaired cross-reference must be refused");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+    assert_eq!(
+        err.message,
+        "Image extraction cannot inspect a PDF with a repaired cross-reference table."
+    );
+}
+
+#[test]
 fn refuses_inconsistent_page_tree_before_page_load() {
     let lib_dir = require_pdfium!();
     let ws = TestWorkspace::from_fixture("fixtures/pdf/ambiguous-page-tree.pdf");

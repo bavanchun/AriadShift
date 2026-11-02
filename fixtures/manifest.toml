@@ -4322,3 +4322,22 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fixture]]
+id = "repaired-xref-extraction-pdf"
+path = "fixtures/pdf/repaired-xref-extraction.pdf"
+format = "pdf"
+media_type = "application/pdf"
+languages = []
+title = "PDF with damaged cross-reference entries"
+origin = "generated"
+generated_by = "fixtures/gen/repaired-xref-extraction.py"
+license = "Apache-2.0"
+license_basis = "Original synthetic PDF generated for AriadShift."
+attribution = "AriadShift contributors"
+sha256 = "2ed9921873c6757f51474b8f09624a26e1b83a59c13b982c96e94cf959f0b924"
+pages = 1
+tags = []
+phase = "4"
+routes = []
+companions = []
