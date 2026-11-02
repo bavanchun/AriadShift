@@ -7,10 +7,12 @@ gcc --version > "$out/gcc-version.txt"
 sha256sum "$(gcc -print-file-name=libgcc.a)" "$(g++ -print-file-name=libstdc++.a)" > "$out/runtime-sha256.txt"
 if command -v rpm >/dev/null; then
     rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\n' | LC_ALL=C sort > "$out/packages.txt"
+    : > "$out/installed-files.sha256"
     while IFS= read -r package; do
         rpm -ql "$package" | LC_ALL=C sort | while IFS= read -r file; do
             if [ -f "$file" ] && [ ! -L "$file" ]; then sha256sum "$file"; fi
         done > "$out/files.tmp"
+        sed "s|^|$package  |" "$out/files.tmp" >> "$out/installed-files.sha256"
         printf '%s  %s\n' "$(sha256sum "$out/files.tmp" | cut -d ' ' -f 1)" "$package"
     done < "$out/packages.txt" > "$out/package-sha256.txt"
 else
