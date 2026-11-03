@@ -56,7 +56,7 @@ struct Sidecar<'a> {
 
 fn ocr_timeout(pages: usize, explicit: Option<u64>) -> u64 {
     let scaled = 600u64.saturating_add((pages as u64).saturating_mul(15));
-    explicit.map_or(scaled, |limit| scaled.min(limit))
+    scaled.min(explicit.unwrap_or(14_400))
 }
 
 impl Write for Sidecar<'_> {
@@ -765,5 +765,8 @@ mod timeout_tests {
         assert_eq!(ocr_timeout(50, None), 1350);
         assert_eq!(ocr_timeout(50, Some(900)), 900);
         assert_eq!(ocr_timeout(1, Some(900)), 615);
+        assert_eq!(ocr_timeout(920, None), 14_400);
+        assert_eq!(ocr_timeout(921, None), 14_400);
+        assert_eq!(ocr_timeout(10_000, Some(20_000)), 20_000);
     }
 }
