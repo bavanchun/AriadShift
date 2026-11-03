@@ -4,12 +4,14 @@ Changes in each AriadShift release, newest first. Installation commands and down
 
 ## 0.4.0 (unreleased)
 
-Overlay, watermark, OCR and scan tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools, plus local OCR and scan operations. (#206, #212)
+Overlay, watermark, OCR, scan, annotation and form tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools, plus local OCR and scan operations and AcroForm and annotation editing. (#206, #212)
 
 ### Added
 
 - **OCR and scan tools.** `pdf.ocr` and `image.ocr` add searchable PDF, text and hOCR outputs; `pdf.auto_rotate`, `pdf.deskew`, `pdf.scan_split` and `pdf.scanner_effect` prepare or transform scanned pages. The CLI, recipes and local MCP expose these tools. OCR uses the out-of-process Tesseract pack and PDF operations also use PDFium. See [ocr.md](ocr.md). (#212)
 - **Opt-in OCR languages.** The Tesseract pack includes English, Vietnamese and orientation data; additional verified models can be installed explicitly with `ashift engines languages install`. (#212)
+- **PDF annotations and AcroForms.** `pdf.annotations` lists, adds, updates, deletes and flattens markups; `pdf.annotations_import` and `pdf.annotations_export` exchange XFDF and JSON. `pdf.forms_list`, `pdf.forms_fill`, `pdf.forms_create`, `pdf.forms_flatten`, `pdf.forms_import` and `pdf.forms_export` run in-process locally and in WASM. Form data supports FDF, XFDF, JSON and CSV, including batch fill.
+- **Form-field proposals.** `pdf.forms_detect` uses the local PDFium pack to suggest fields from lines, boxes, text and scanned pages; users review proposals before creating fields.
 - **15 overlay and watermark PDF tools**, all in the Free tier and runnable on the CLI, local MCP server, and in the browser via `ariad-wasm`. All 15 run in-process in `ariad-pdf` with no external engine packs:
   - Page marks: `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`.
   - Page furniture: `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`.
@@ -29,6 +31,7 @@ Overlay, watermark, OCR and scan tools for the PDF suite. `ashift` gains 15 in-p
 ### Known limitations
 
 - **Tesseract pack availability.** The pack is not yet published; Windows and musl systems are deferred. See [packs.md](packs.md#the-tesseract-pack). (#202, #212)
+- **Form actions and signatures.** Embedded form and annotation JavaScript is never executed, calculations are not run, and XFA is reported but not edited. Rewriting a signed PDF invalidates its signatures and emits a warning. Form detection is local-only until PDFium WASM integration. CSV export prefixes spreadsheet formula-like cells with an apostrophe.
 - **Watermark removal limits.** `pdf.watermark_remove` acts strictly on explicit, user-selected candidate identifiers returned by `pdf.watermark_detect`; wildcard selections, blank candidate lists, or automatic "remove all" operations are refused. A removal request supports at most eight distinct detection queries and at most 1,000 selected candidate identifiers per invocation. Detection and removal share a single decode and work budget within the request; near the decode limit, detection can succeed while removal fails with a limit error. Unsupported image formats or uninspected image objects are reported as warnings and not removed. Removing third-party watermarks emits a warning.
 
 ## 0.3.0 (2026-11-03)

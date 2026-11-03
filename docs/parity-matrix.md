@@ -149,13 +149,13 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 
 | AriadShift tool id | Group | Stirling | Bento | Phase | Engine | Runtimes | Tier | Surfaces |
 |---|---|---|---|---|---|---|---|---|
-| `pdf.annotations` (list, add, update, delete, flatten) | annotate | S34 annotate | PDF Editor; Remove Annotations; Flatten PDF | 8 | pdfium | wasm, local | Free | CLI, MCP, web, mac |
+| `pdf.annotations` (list, add, update, delete, flatten) | annotate | S34 annotate | PDF Editor; Remove Annotations; Flatten PDF | 8 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
 | `pdf.annotations_import` / `pdf.annotations_export` (XFDF, JSON) | annotate | — | — | 8 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
-| `pdf.forms_list` | forms | S35 | — | 8 | pdfium | wasm, local | Free | CLI, MCP, web, mac |
-| `pdf.forms_fill` | forms | S35 fill forms | PDF Form Filler | 8 | pdfium | wasm, local | Free | CLI, MCP, web, mac |
-| `pdf.forms_create` | forms | S35 form editor | Create Fillable Forms | 8 | ariad-pdf, pdfium | wasm, local | Free | CLI, MCP, web, mac |
-| `pdf.forms_detect` | forms | S35 auto form detection | — | 8 | pdfium | wasm, local | Free | CLI, MCP, web, mac |
-| `pdf.forms_flatten` | forms | S28 flatten forms | Flatten PDF | 8 | pdfium | wasm, local | Free | CLI, MCP, web, mac |
+| `pdf.forms_list` | forms | S35 | — | 8 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
+| `pdf.forms_fill` | forms | S35 fill forms | PDF Form Filler | 8 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
+| `pdf.forms_create` | forms | S35 form editor | Create Fillable Forms | 8 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
+| `pdf.forms_detect` | forms | S35 auto form detection | — | 8 | pdfium | local (WASM in phase 14) | Free | CLI, MCP, web, mac |
+| `pdf.forms_flatten` | forms | S28 flatten forms | Flatten PDF | 8 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
 | `pdf.forms_import` / `pdf.forms_export` (FDF, XFDF, JSON, CSV) | forms | — | — | 8 | ariad-pdf | wasm, local | Free | CLI, MCP, web, mac |
 
 ### redact and sign

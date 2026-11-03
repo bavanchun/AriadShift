@@ -90,8 +90,8 @@ Every tool belongs to exactly one group from the closed `ToolGroup` enum:
 | `security` | Encryption, decryption, permission flags, sanitization | `pdf.encrypt`, `pdf.decrypt`, `pdf.permissions`, `pdf.sanitize`, `pdf.unlock_forms` |
 | `overlay` | Stamps, page numbers, headers/footers, watermarks, background overlays | `pdf.replace_color`, `pdf.adjust_colors`, `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`, `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`, `pdf.watermark_detect`, `pdf.watermark_remove` |
 | `ocr` | Optical character recognition and deskewing | `pdf.ocr`, `pdf.deskew` |
-| `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotate`, `pdf.annotations_flatten`, `pdf.annotations_remove` |
-| `forms` | AcroForm field inspection, filling, creation, and flattening | `pdf.forms_inspect`, `pdf.forms_fill`, `pdf.forms_flatten` |
+| `annotate` | Highlights, notes, freehand ink, geometric markups, comment flattening | `pdf.annotations`, `pdf.annotations_import`, `pdf.annotations_export` |
+| `forms` | AcroForm field inspection, filling, creation, detection, and flattening | `pdf.forms_list`, `pdf.forms_fill`, `pdf.forms_create`, `pdf.forms_detect`, `pdf.forms_flatten`, `pdf.forms_import`, `pdf.forms_export` |
 | `sign` | PAdES digital signing, timestamping, and signature verification | `pdf.sign`, `pdf.sign_verify` |
 | `redact` | True object-stream and raster redaction with verification report | `pdf.redact`, `pdf.redact_verify` |
 | `compare` | Visual overlay comparison and semantic content comparison | `pdf.compare_visual`, `pdf.compare_semantic` |
@@ -148,11 +148,22 @@ Text and image marks use the bundled Libertinus fonts and visual page coordinate
 
 Page numbering and headers support page labels. Headers and footers expand `{filename}`, `{date}`, `{n}`, `{total}` and `{label}`; the original Unicode filename is cleaned of path components and control characters. The date comes from an explicit parameter or the clock injected into `ToolCtx` by the host. Contents pages derive from the document outline, keep links to original pages and shift page labels; generation is bounded to 50 pages.
 
+`pdf.annotations` lists, adds, updates, deletes or flattens annotations. Listing emits JSON; other actions emit a PDF. Annotation interchange uses XFDF or JSON. XFDF page numbers are zero-based; tool parameters and JSON use one-based pages. Links accept the shared safe-link policy. Widgets are handled by the form tools. Hidden or non-viewable annotations and widgets remain when flattening.
+
+The form tools list, fill, create and flatten AcroForm fields. Existing read-only fields are skipped, calculations and JavaScript are never executed, and XFA content is reported but not edited. Rewriting a signed input emits `signed_input_rewritten`; it does not preserve the signature. New field names cannot contain dots. Radio and checkbox creation requires an `export_value`; `tab_order` orders new widgets in the page annotation array. Non-ASCII appearances use the bundled Libertinus font; supported Standard-14 fonts are reused for ASCII text.
+
+Form data imports accept FDF, XFDF, JSON or CSV; exports use the requested `format`. The second input to an import is a data file, not a PDF. Each CSV or JSON batch record produces a separate PDF, with a default limit of 1,000 records and a maximum of 10,000. CSV fields use `|` to separate multi-select values; exported cells and headers that start with spreadsheet formula characters are prefixed with an apostrophe. XFDF DTDs and external entities are rejected, and file references are never opened.
+
+`pdf.forms_detect` uses the out-of-process PDFium pack locally to propose fields from vector rules, boxes and text; it can use a raster fallback on scanned pages. Proposals are suggestions for user review and can be passed to `pdf.forms_create`. Browser detection is deferred until the PDFium WASM integration; the other nine tools run in `ariad-pdf` locally and in WASM.
+
 Every `ToolSpec` carries a primary `output_format` string (such as `"pdf"`, `"png"`, or `"json"`). Tools that can emit artifacts in more than one format additionally declare a non-empty `output_formats` allowlist (serialized in `schemas/tools.v1.json` only when non-empty so single-format descriptors remain unchanged):
 
 - `pdf.render` and `pdf.to_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "webp", "bmp", "tiff"]`
 - `pdf.thumbnails`: `output_format: "png"`, `output_formats: ["png", "json"]`
 - `pdf.extract_images`: `output_format: "png"`, `output_formats: ["png", "jpeg", "zip"]`
+- `pdf.annotations`: PDF for editing actions and JSON for `list`.
+- `pdf.annotations_export`: XFDF (default) or JSON.
+- `pdf.forms_export`: JSON (default), FDF, XFDF or CSV.
 
 Before PDFium opens a document, the engine checks page image dimensions and data against the job's limits. Inline images may use image masks without a color space, lossless ASCIIHex, ASCII85, Flate, RunLength or LZW filters, and CCITT or JPEG as the final filter. JPEG frame dimensions are checked against the image dictionary. Color-space aliases and filters the engine cannot safely inspect still cause `limit_exceeded` before the page is opened. Page budgets include repeated form invocations, inline image data and Type3 glyph uses; unusually complex pages may exceed these limits.
 
@@ -189,6 +200,7 @@ Each `ToolSpec` declares its input arity:
   - `pdf.merge`: `many(2, 500)`
   - `pdf.alternate_mix`: `many(2, 2)`
   - `pdf.overlay`: `many(2, 2)`
+  - `pdf.annotations_import` / `pdf.forms_import`: `many(2, 2)` (base PDF followed by data file)
   - `pdf.compare_visual` / `pdf.compare_semantic`: `many(2, 2)`
   - `pdf.attachments`: `many(1, 100)` (`list` / `extract` / `remove` take 1 PDF; `add` takes the base PDF followed by attachment files)
   - `pdf.portfolio`: `many(1, 100)` (`create` takes 1..=100 input files; `list` / `extract` take 1 portfolio PDF)
@@ -197,7 +209,7 @@ Supplying fewer or more inputs than `inputs` allows fails before engine dispatch
 
 ### Accepted Formats
 
-Each `ToolSpec` declares `input_formats` using canonical format identifiers (for example, `["pdf"]` or `["png", "jpeg", "tiff", "webp"]`). The host sniffs every input file's actual content (magic bytes and container inspection, identical to `ashift inspect`) rather than trusting the filename extension. If any input's detected format is not in `input_formats`, execution fails before dispatch with exit code `10` (`wrong_input`). Regular files are required; directories, FIFOs, sockets, and device nodes are rejected upfront.
+Each `ToolSpec` declares `input_formats` using canonical format identifiers (for example, `["pdf"]` or `["png", "jpeg", "tiff", "webp"]`). The host sniffs every input file's actual content (magic bytes and container inspection, identical to `ashift inspect`) rather than trusting the filename extension. If any input's detected format is not in `input_formats`, execution fails before dispatch with exit code `10` (`wrong_input`). Regular files are required; directories, FIFOs, sockets, and device nodes are rejected upfront. The data payload at input 1 of `pdf.annotations_import` and `pdf.forms_import` is exempt from PDF format sniffing; the corresponding bounded interchange parser identifies it.
 
 ### Ordering Semantics
 
@@ -371,6 +383,8 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.page_labels` → `report.labeled.pdf`
   - `pdf.viewer_prefs` → `report.prefs.pdf`
   - `pdf.layers` (`set_default_visibility` / `remove`) → `report.layers.pdf`; (`list`) → `report.layers.json`
+  - `pdf.annotations` → `report.annotations.pdf`, or `report.annotations.json` for `list`; import → `report.annotated.pdf`; export → `report.annotations.<xfdf|json>`.
+  - `pdf.forms_list` → `report.fields.json`; `pdf.forms_fill` → `report.filled.pdf`; `pdf.forms_create` → `report.form.pdf`; `pdf.forms_flatten` → `report.flattened.pdf`; `pdf.forms_detect` → `report.detected-fields.json`; `pdf.forms_export` → `report.form-data.<json|fdf|xfdf|csv>`.
   - `pdf.remove_blank` → `report.remove-blank.pdf`
   - `pdf.crop_whitespace` → `report.cropped.pdf`
   - `pdf.detect_scanned` → `report.detect-scanned.json`
@@ -393,8 +407,9 @@ Let `<stem>` be the filename stem of `inputs[0]` (with its format extension stri
   - `pdf.sign` → `contract.signed.pdf`
   - `pdf.redact` → `contract.redacted.pdf` (plus `contract.redaction-report.json` when verification report is requested)
   - `pdf.info` → prints structured JSON to stdout on CLI when `--json` is passed (or human summary without `-o`), and writes `report.info.json` when `-o` specifies a directory or file.
-  - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio` and `pdf.layers`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
+  - JSON-emitting actions (`pdf.outline` `export`, and `list` on `pdf.attachments`, `pdf.portfolio`, `pdf.layers` and `pdf.annotations`) never write a PDF. Without `-o` the CLI prints the JSON to stdout and creates no file beside the input; `-o <dir>` writes the `.json` name listed above and `-o <FILE>.json` writes that exact file.
 - **Multi-artifact tools**:
+  - `pdf.forms_import` batches → `<stem>.filled-001.pdf`, `<stem>.filled-002.pdf`, ...; an optional `name_column` supplies sanitized, deduplicated names.
   - `pdf.split` → `<stem>.part-001.pdf`, `<stem>.part-002.pdf`, ... (1-based index, zero-padded to at least 3 digits: `001`..`999`, widening to 4+ digits when parts >= 1,000).
   - `pdf.to_images` / `pdf.render` → `<stem>.page-001.<ext>`, `<stem>.page-002.<ext>`, ... (`combine = "none"`), or `<stem>.pages.<ext>` (`combine = "vertical" | "horizontal"`).
   - `pdf.thumbnails` → `<stem>.page-001.png`, `<stem>.page-002.png`, ... plus `<stem>.thumbnails.json`.
