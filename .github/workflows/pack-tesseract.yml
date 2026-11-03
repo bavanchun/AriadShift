@@ -89,6 +89,9 @@ jobs:
           bash engines/tesseract/pack/compile-tesseract.sh "$RUNNER_TEMP/tesseract-input/tesseract.tar.gz" "$RUNNER_TEMP/tesseract-input/leptonica.tar.gz" "$RUNNER_TEMP/tesseract-first"
       - name: Build manifest tool
         run: cargo build -p ariad-cli --bin ashift
+      - name: Allow sandboxed engines to create user namespaces
+        if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - name: Assemble unsigned pack
         run: |
           bash engines/tesseract/pack/make.sh pack "$SLUG" "$RUNNER_TEMP/tesseract-first" "$RUNNER_TEMP/tesseract-input/tessdata" "$GITHUB_WORKSPACE/target/debug/ashift" "$RUNNER_TEMP/tesseract-pack"
