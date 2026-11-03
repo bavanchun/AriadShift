@@ -393,6 +393,14 @@ pub struct AnnotationsExportParams {
     pub pages: PageRange,
 }
 
+fn one() -> f64 {
+    1.0
+}
+
+fn font_size() -> f64 {
+    12.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,11 +463,4 @@ mod tests {
         item.uri = Some("javascript:alert(1)".into());
         assert!(item.validate().is_err());
     }
-}
-
-fn one() -> f64 {
-    1.0
-}
-fn font_size() -> f64 {
-    12.0
 }

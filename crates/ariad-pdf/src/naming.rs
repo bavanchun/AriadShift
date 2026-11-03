@@ -189,6 +189,39 @@ pub fn doc_stem(doc: &PdfDoc) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+/// Derive a portable ASCII field identifier from a human-readable label.
+#[must_use]
+pub fn field_name_from_label(label: &str) -> String {
+    use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
+    let mut result = String::new();
+    let mut separator = false;
+    for ch in label.nfd() {
+        if is_combining_mark(ch) {
+            continue;
+        }
+        let ch = match ch {
+            'đ' | 'Đ' => 'd',
+            _ => ch.to_ascii_lowercase(),
+        };
+        if ch.is_ascii_alphanumeric() {
+            if separator && !result.is_empty() && result.len() < 40 {
+                result.push('_');
+            }
+            separator = false;
+            if result.len() < 40 {
+                result.push(ch);
+            }
+        } else {
+            separator = true;
+        }
+    }
+    if result.is_empty() {
+        "field".into()
+    } else {
+        result.trim_end_matches('_').into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,38 +264,5 @@ mod tests {
             part_output_name("book.pdf", 1000, 1000),
             "book.part-1000.pdf"
         );
-    }
-}
-
-/// Derive a portable ASCII field identifier from a human-readable label.
-#[must_use]
-pub fn field_name_from_label(label: &str) -> String {
-    use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
-    let mut result = String::new();
-    let mut separator = false;
-    for ch in label.nfd() {
-        if is_combining_mark(ch) {
-            continue;
-        }
-        let ch = match ch {
-            'đ' | 'Đ' => 'd',
-            _ => ch.to_ascii_lowercase(),
-        };
-        if ch.is_ascii_alphanumeric() {
-            if separator && !result.is_empty() && result.len() < 40 {
-                result.push('_');
-            }
-            separator = false;
-            if result.len() < 40 {
-                result.push(ch);
-            }
-        } else {
-            separator = true;
-        }
-    }
-    if result.is_empty() {
-        "field".into()
-    } else {
-        result.trim_end_matches('_').into()
     }
 }

@@ -177,33 +177,6 @@ pub fn write_forms(record: &FormRecord) -> Result<Vec<u8>, PdfError> {
     Ok(output.finish())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn records_preserve_types_and_report_duplicates() {
-        let input = br#"[{"x":1,"x":2,"ok":false,"v":["a","b"],"clear":null}]"#;
-        let (records, warnings) = read_forms(input, 1, &ToolCtx::new()).unwrap();
-        assert_eq!(records[0]["x"], FormValue::Text("2".into()));
-        assert_eq!(records[0]["ok"], FormValue::Bool(false));
-        assert_eq!(warnings.len(), 1);
-        let encoded = write_forms(&records[0]).unwrap();
-        assert_eq!(
-            read_forms(&encoded, 1, &ToolCtx::new()).unwrap().0[0],
-            records[0]
-        );
-    }
-    #[test]
-    fn rejects_invalid_values_and_excess_records() {
-        let (records, _) = read_forms(br#"{"number":1.2500e+4}"#, 1, &ToolCtx::new()).unwrap();
-        assert_eq!(records[0]["number"], FormValue::Text("1.2500e+4".into()));
-        assert!(read_forms(br#"[{},{ }]"#, 1, &ToolCtx::new()).is_err());
-        assert!(read_forms(br#"{"x":{"nested":1}}"#, 1, &ToolCtx::new()).is_err());
-        let deeply_nested = format!("{}0{}", "[".repeat(65), "]".repeat(65));
-        assert!(read_forms(deeply_nested.as_bytes(), 1, &ToolCtx::new()).is_err());
-    }
-}
-
 /// Read annotation metadata exported by AriadShift, rejecting unsupported or invalid entries.
 pub fn read_annotations(
     bytes: &[u8],
@@ -233,4 +206,31 @@ pub fn read_annotations(
         items.push(item);
     }
     Ok(items)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn records_preserve_types_and_report_duplicates() {
+        let input = br#"[{"x":1,"x":2,"ok":false,"v":["a","b"],"clear":null}]"#;
+        let (records, warnings) = read_forms(input, 1, &ToolCtx::new()).unwrap();
+        assert_eq!(records[0]["x"], FormValue::Text("2".into()));
+        assert_eq!(records[0]["ok"], FormValue::Bool(false));
+        assert_eq!(warnings.len(), 1);
+        let encoded = write_forms(&records[0]).unwrap();
+        assert_eq!(
+            read_forms(&encoded, 1, &ToolCtx::new()).unwrap().0[0],
+            records[0]
+        );
+    }
+    #[test]
+    fn rejects_invalid_values_and_excess_records() {
+        let (records, _) = read_forms(br#"{"number":1.2500e+4}"#, 1, &ToolCtx::new()).unwrap();
+        assert_eq!(records[0]["number"], FormValue::Text("1.2500e+4".into()));
+        assert!(read_forms(br#"[{},{ }]"#, 1, &ToolCtx::new()).is_err());
+        assert!(read_forms(br#"{"x":{"nested":1}}"#, 1, &ToolCtx::new()).is_err());
+        let deeply_nested = format!("{}0{}", "[".repeat(65), "]".repeat(65));
+        assert!(read_forms(deeply_nested.as_bytes(), 1, &ToolCtx::new()).is_err());
+    }
 }
