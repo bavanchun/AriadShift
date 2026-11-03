@@ -28,7 +28,7 @@ use crate::{
 };
 
 const MAX_SELECTED: usize = 1_000;
-const MAX_QUERIES: usize = 32;
+const MAX_QUERIES: usize = 8;
 
 #[derive(Default)]
 struct Edits {
@@ -527,15 +527,19 @@ pub fn run_inputs(
         return Err(invalid("too many distinct watermark detection queries"));
     }
     let mut found: BTreeMap<String, Candidate> = BTreeMap::new();
+    let mut budget = original.decode_budget();
+    let mut form_visits = 0;
     for query in queries.values() {
         ctx.check()?;
-        let detection = watermark_scan::scan(
+        let detection = watermark_scan::scan_with_budget(
             &original,
             &input_hash,
             input_len,
             query,
             &inputs[0].limits,
             ctx,
+            &mut budget,
+            &mut form_visits,
         )?;
         for candidate in detection.candidates {
             found.insert(candidate.id.clone(), candidate);
@@ -617,7 +621,6 @@ pub fn run_inputs(
         .filter_map(|candidate| candidate.ocg)
         .collect();
     let mut output = original.clone();
-    let mut budget = output.decode_budget();
     let doc = output.inner_mut()?;
     let page_ids = page_ids(doc, &inputs[0].limits, ctx)?;
     let mut affected: BTreeSet<u32> = trees.keys().map(|(p, _)| *p).collect();
@@ -724,9 +727,14 @@ pub fn run_inputs(
             Object::Array(streams.into_iter().map(Object::Reference).collect()),
         );
     }
-    for id in selected_groups {
-        prune_own_ocg(doc, id, &page_ids, &mut budget, &inputs[0].limits, ctx)?;
-    }
+    prune_own_ocgs(
+        doc,
+        &selected_groups,
+        &page_ids,
+        &mut budget,
+        &inputs[0].limits,
+        ctx,
+    )?;
     let report:Vec<_>=selected.iter().map(|candidate| {
         let mut per_page:BTreeMap<u32,(usize,usize)>=BTreeMap::new();
         for occurrence in &candidate.occurrences { let entry=per_page.entry(occurrence.page).or_default(); if candidate.kind=="annotation" || occurrence.own_stream {entry.0+=1;} else {entry.1+=occurrence.end-occurrence.start;} }
@@ -1286,188 +1294,199 @@ fn properties_without_group(
     }
     Ok(props)
 }
-fn references_group(
+fn referenced_groups(
     doc: &Document,
     catalog: ObjectId,
     props: &Dictionary,
-    target: ObjectId,
+    targets: &BTreeSet<ObjectId>,
+    limits: &Limits,
     ctx: &ToolCtx,
-    limit: u16,
-) -> Result<bool, PdfError> {
-    use std::collections::VecDeque;
-    let mut queue = VecDeque::new();
+) -> Result<HashSet<ObjectId>, PdfError> {
+    let mut stack: Vec<(&Object, u16)> = doc.trailer.iter().map(|(_, value)| (value, 0)).collect();
+    // Managed group arrays are rewritten below. All other optional-content properties
+    // remain roots, so an unknown or custom reference conservatively retains a group.
+    for (key, value) in props.iter() {
+        if key == b"OCGs" {
+            continue;
+        }
+        if key == b"D" {
+            let defaults = resolve(doc, value, limits.max_nesting_depth)
+                .and_then(|v| v.as_dict().ok())
+                .ok_or(PdfError::Malformed)?;
+            for (key, value) in defaults.iter() {
+                if ![b"Order".as_slice(), b"ON", b"OFF", b"Locked", b"RBGroups"]
+                    .contains(&key.as_slice())
+                {
+                    stack.push((value, 0));
+                }
+            }
+        } else {
+            stack.push((value, 0));
+        }
+    }
     let mut seen = HashSet::new();
+    let mut used = HashSet::new();
     let mut count = 0_usize;
-    fn visit(
-        value: &Object,
-        target: ObjectId,
-        seen: &mut HashSet<ObjectId>,
-        queue: &mut VecDeque<ObjectId>,
-        count: &mut usize,
-        limit: u16,
-        ctx: &ToolCtx,
-    ) -> Result<bool, PdfError> {
-        let mut stack = vec![(value, 0_u16)];
-        while let Some((value, depth)) = stack.pop() {
-            *count = count.saturating_add(1);
-            if (*count).is_multiple_of(1024) {
-                ctx.check()?;
-            }
-            if *count > 4_000_000 {
-                return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
-                    limit: 4_000_000,
-                }));
-            }
-            if depth > limit.min(64) {
-                return Err(PdfError::LimitExceeded(ReadError::NestingTooDeep {
-                    limit: limit.min(64),
-                }));
-            }
-            match value {
-                Object::Reference(id) if *id == target => return Ok(true),
-                Object::Reference(id) => {
-                    if seen.insert(*id) {
-                        queue.push_back(*id);
-                    }
-                }
-                Object::Array(items) => {
-                    stack.extend(items.iter().map(|v| (v, depth.saturating_add(1))))
-                }
-                Object::Dictionary(items) => {
-                    stack.extend(items.iter().map(|(_, v)| (v, depth.saturating_add(1))))
-                }
-                Object::Stream(stream) => stack.extend(
-                    stream
-                        .dict
-                        .iter()
-                        .map(|(_, v)| (v, depth.saturating_add(1))),
-                ),
-                _ => {}
-            }
-        }
-        Ok(false)
-    }
-    for (_, value) in doc.trailer.iter() {
-        if visit(value, target, &mut seen, &mut queue, &mut count, limit, ctx)? {
-            return Ok(true);
-        }
-    }
-    while let Some(id) = queue.pop_front() {
+    while let Some((object, depth)) = stack.pop() {
+        count += 1;
         if count.is_multiple_of(1024) {
             ctx.check()?;
         }
-        let Some(object) = doc.objects.get(&id) else {
-            continue;
-        };
-        if id == catalog {
-            let dict = object.as_dict().map_err(|_| PdfError::Malformed)?;
-            for (key, value) in dict.iter() {
-                if key != b"OCProperties"
-                    && visit(value, target, &mut seen, &mut queue, &mut count, limit, ctx)?
-                {
-                    return Ok(true);
+        if count > 4_000_000 {
+            return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
+                limit: 4_000_000,
+            }));
+        }
+        if depth > limits.max_nesting_depth.min(64) {
+            return Err(PdfError::LimitExceeded(ReadError::NestingTooDeep {
+                limit: limits.max_nesting_depth.min(64),
+            }));
+        }
+        match object {
+            Object::Reference(id) => {
+                if targets.contains(id) {
+                    used.insert(*id);
+                }
+                if seen.insert(*id) {
+                    let object = doc.objects.get(id).ok_or(PdfError::Malformed)?;
+                    if *id == catalog {
+                        let dict = object.as_dict().map_err(|_| PdfError::Malformed)?;
+                        stack.extend(
+                            dict.iter()
+                                .filter(|(key, _)| *key != b"OCProperties")
+                                .map(|(_, v)| (v, 0)),
+                        );
+                    } else {
+                        stack.push((object, 0));
+                    }
                 }
             }
-            let replacement = Object::Dictionary(props.clone());
-            if visit(
-                &replacement,
-                target,
-                &mut seen,
-                &mut queue,
-                &mut count,
-                limit,
-                ctx,
-            )? {
-                return Ok(true);
-            }
-        } else if visit(
-            object, target, &mut seen, &mut queue, &mut count, limit, ctx,
-        )? {
-            return Ok(true);
+            Object::Array(items) => stack.extend(items.iter().map(|v| (v, depth + 1))),
+            Object::Dictionary(items) => stack.extend(items.iter().map(|(_, v)| (v, depth + 1))),
+            Object::Stream(stream) => stack.extend(stream.dict.iter().map(|(_, v)| (v, depth + 1))),
+            _ => {}
         }
     }
-    Ok(false)
+    Ok(used)
 }
-fn prune_own_ocg(
+
+fn prune_own_ocgs(
     doc: &mut Document,
-    target: ObjectId,
+    targets: &BTreeSet<ObjectId>,
     pages: &[ObjectId],
     budget: &mut DecodeBudget,
     limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
-    // Refuse to infer reachability when content names or nested content cannot be exhaustively
-    // inspected. In that case the harmless group is retained rather than risking unrelated marks.
-    let mut active = HashSet::new();
-    let mut visits = 0;
-    for page in pages {
-        ctx.check()?;
-        let resources = page_resources(doc, *page, limits)?;
-        if !annotation_resource_uses(
-            doc,
-            *page,
-            &resources,
-            &mut HashSet::new(),
-            budget,
-            limits,
-            ctx,
-        )? {
-            return Ok(());
-        }
-        if !soft_mask_resource_uses(doc, &resources, &mut HashSet::new(), budget, limits, ctx)? {
-            return Ok(());
-        }
-        let streams = contents(doc, *page, limits.max_nesting_depth)?;
-        if !collect_resource_uses(
-            doc,
-            &resources,
-            &streams,
-            &mut HashSet::new(),
-            budget,
-            limits,
-            ctx,
-            &mut active,
-            &mut visits,
-            0,
-        )? {
-            return Ok(());
-        }
-    }
-    let catalog = crate::tools::metadata::catalog_object_id(doc)?;
-    let Some(object) = doc
-        .get_dictionary(catalog)
-        .map_err(|_| PdfError::Malformed)?
-        .get(b"OCProperties")
-        .ok()
-    else {
+    if targets.is_empty() {
         return Ok(());
+    }
+    // If a complete reachability analysis is impossible, retain harmless groups.
+    let inspect = (|| -> Result<Option<HashSet<ObjectId>>, PdfError> {
+        let mut active = HashSet::new();
+        let mut visits = 0;
+        for page in pages {
+            ctx.check()?;
+            let resources = page_resources(doc, *page, limits)?;
+            if !annotation_resource_uses(
+                doc,
+                *page,
+                &resources,
+                &mut HashSet::new(),
+                budget,
+                limits,
+                ctx,
+            )? || !soft_mask_resource_uses(
+                doc,
+                &resources,
+                &mut HashSet::new(),
+                budget,
+                limits,
+                ctx,
+            )? || !collect_resource_uses(
+                doc,
+                &resources,
+                &contents(doc, *page, limits.max_nesting_depth)?,
+                &mut HashSet::new(),
+                budget,
+                limits,
+                ctx,
+                &mut active,
+                &mut visits,
+                0,
+            )? {
+                return Ok(None);
+            }
+        }
+        let catalog = crate::tools::metadata::catalog_object_id(doc)?;
+        let Some(object) = doc
+            .get_dictionary(catalog)
+            .map_err(|_| PdfError::Malformed)?
+            .get(b"OCProperties")
+            .ok()
+        else {
+            return Ok(None);
+        };
+        let props = resolve(doc, object, limits.max_nesting_depth)
+            .and_then(|v| v.as_dict().ok())
+            .ok_or(PdfError::Malformed)?;
+        Ok(Some(referenced_groups(
+            doc, catalog, props, targets, limits, ctx,
+        )?))
+    })();
+    let used = match inspect {
+        Ok(Some(used)) => used,
+        Ok(None) | Err(PdfError::Malformed | PdfError::LimitExceeded(_)) => return Ok(()),
+        Err(error) => return Err(error),
     };
-    budget.charge(crate::color::targeted_document::resource_size(
-        object,
-        0,
-        limits.max_nesting_depth,
-    )?)?;
-    let object = object.clone();
-    let updated =
-        match properties_without_group(doc, &object, target, limits.max_nesting_depth, ctx, budget)
-        {
-            Ok(updated) => updated,
-            Err(PdfError::Malformed) => return Ok(()),
+    let catalog = crate::tools::metadata::catalog_object_id(doc)?;
+    for target in targets.iter().filter(|target| !used.contains(target)) {
+        ctx.check()?;
+        let Some(object) = doc
+            .get_dictionary(catalog)
+            .map_err(|_| PdfError::Malformed)?
+            .get(b"OCProperties")
+            .ok()
+        else {
+            break;
+        };
+        let size = match crate::color::targeted_document::resource_size(
+            object,
+            0,
+            limits.max_nesting_depth,
+        ) {
+            Ok(size) => size,
+            Err(PdfError::Malformed | PdfError::LimitExceeded(_)) => break,
             Err(error) => return Err(error),
         };
-    budget.charge(crate::color::targeted_document::dictionary_size(
-        &updated,
-        0,
-        limits.max_nesting_depth,
-    )?)?;
-    if !references_group(
-        doc,
-        catalog,
-        &updated,
-        target,
-        ctx,
-        limits.max_nesting_depth,
-    )? {
+        if budget.charge(size).is_err() {
+            break;
+        }
+        let object = object.clone();
+        let updated = match properties_without_group(
+            doc,
+            &object,
+            *target,
+            limits.max_nesting_depth,
+            ctx,
+            budget,
+        ) {
+            Ok(updated) => updated,
+            Err(PdfError::Malformed | PdfError::LimitExceeded(_)) => break,
+            Err(error) => return Err(error),
+        };
+        let size = match crate::color::targeted_document::dictionary_size(
+            &updated,
+            0,
+            limits.max_nesting_depth,
+        ) {
+            Ok(size) => size,
+            Err(PdfError::Malformed | PdfError::LimitExceeded(_)) => break,
+            Err(error) => return Err(error),
+        };
+        if budget.charge(size).is_err() {
+            break;
+        }
         let empty = updated
             .get(b"OCGs")
             .ok()
@@ -1518,6 +1537,73 @@ fn invalid_selection(
 mod tests {
     use super::*;
     use lopdf::dictionary;
+
+    #[test]
+    fn optional_content_reachability_keeps_custom_references() {
+        let mut doc = Document::with_version("1.5");
+        let group_a = doc.add_object(dictionary! {"Type" => "OCG", "Name" => "A"});
+        let group_b = doc.add_object(dictionary! {"Type" => "OCG", "Name" => "B"});
+        let props = dictionary! {
+            "OCGs" => vec![Object::Reference(group_a), Object::Reference(group_b)],
+            "D" => dictionary! {"Order" => vec![Object::Reference(group_a), Object::Reference(group_b)]},
+            "Custom" => Object::Reference(group_b),
+        };
+        let catalog =
+            doc.add_object(dictionary! {"Type" => "Catalog", "OCProperties" => props.clone()});
+        doc.trailer.set("Root", catalog);
+        let targets = BTreeSet::from([group_a, group_b]);
+        let used = referenced_groups(
+            &doc,
+            catalog,
+            &props,
+            &targets,
+            &Limits::local(),
+            &ToolCtx::new(),
+        )
+        .unwrap();
+        assert!(!used.contains(&group_a));
+        assert!(used.contains(&group_b));
+    }
+
+    #[test]
+    fn repeated_detection_queries_share_the_removal_work_budget() {
+        let fixture = include_bytes!("../../../../fixtures/pdf-tools/mixed-sizes.pdf");
+        let mut doc = Document::load_mem(fixture).unwrap();
+        let page = doc.get_pages()[&1];
+        let stream = doc.add_object(lopdf::Stream::new(dictionary! {}, b"q Q\n".repeat(40_000)));
+        doc.get_dictionary_mut(page)
+            .unwrap()
+            .set("Contents", stream);
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).unwrap();
+        let mut input = InputDoc::new("hostile.pdf", bytes);
+        input.limits.max_decompressed_bytes = 3_600_000;
+        let ctx = ToolCtx::new();
+        let pdf = input.open_for_mutation(&ctx).unwrap();
+        let (hash, len) = source_identity(&input).unwrap();
+        let mut queries = Vec::new();
+        for ratio in [0.1_f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8] {
+            let query = WatermarkDetectParams {
+                pages: ariad_core::tools::page_range::PageRange::parse("1").unwrap(),
+                min_page_ratio: ratio,
+            };
+            queries.push(query);
+        }
+        watermark_scan::scan(&pdf, &hash, len, &queries[0], &input.limits, &ctx).unwrap();
+        let candidates = queries
+            .iter()
+            .map(|query| {
+                super::super::watermark_identity::candidate_id(&hash, query, b"forged").unwrap()
+            })
+            .collect();
+        let params = WatermarkRemoveParams { candidates };
+        assert!(matches!(
+            run_inputs(&[input], &params, &ctx),
+            Err(PdfError::LimitExceeded(
+                ReadError::DecompressedTooLarge { .. }
+            ))
+        ));
+    }
 
     #[test]
     fn shared_optional_content_arrays_do_not_expand() {

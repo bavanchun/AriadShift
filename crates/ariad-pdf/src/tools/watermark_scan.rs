@@ -433,10 +433,10 @@ struct Scanner<'a> {
     doc: &'a Document,
     limits: &'a Limits,
     ctx: &'a ToolCtx,
-    budget: DecodeBudget,
+    budget: &'a mut DecodeBudget,
     decoder: PdfTextDecoder<'a>,
     active_forms: HashSet<ObjectId>,
-    form_visits: usize,
+    form_visits: &'a mut usize,
     drawables: Vec<Drawable>,
     image_cache: HashMap<ObjectId, Option<Vec<u8>>>,
     unsupported_images: usize,
@@ -617,6 +617,9 @@ impl<'a> Scanner<'a> {
                 limit: self.limits.max_nesting_depth.min(64),
             }));
         }
+        // Charge parsed operations as well as decoded bytes so repeated queries share a CPU bound.
+        self.budget
+            .charge(content.operations.len().saturating_mul(16))?;
         *page_ops = page_ops.saturating_add(content.operations.len() as u64);
         if *page_ops > MAX_PAGE_OPERATORS {
             return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
@@ -916,8 +919,8 @@ impl<'a> Scanner<'a> {
                             }
                         }
                         if subtype == b"Form" {
-                            self.form_visits += 1;
-                            if self.form_visits > MAX_FORM_VISITS {
+                            *self.form_visits += 1;
+                            if *self.form_visits > MAX_FORM_VISITS {
                                 return Err(PdfError::LimitExceeded(ReadError::TooManyObjects {
                                     limit: MAX_FORM_VISITS,
                                 }));
@@ -1084,7 +1087,7 @@ impl<'a> Scanner<'a> {
                                     self.pdf,
                                     id,
                                     self.ctx,
-                                    &mut self.budget,
+                                    self.budget,
                                     self.limits.max_nesting_depth,
                                     false,
                                     false,
@@ -1355,21 +1358,47 @@ pub(super) fn scan(
     limits: &Limits,
     ctx: &ToolCtx,
 ) -> Result<Detection, PdfError> {
+    let mut budget = pdf.decode_budget();
+    let mut form_visits = 0;
+    scan_with_budget(
+        pdf,
+        input_hash,
+        input_len,
+        params,
+        limits,
+        ctx,
+        &mut budget,
+        &mut form_visits,
+    )
+}
+
+/// Scan with work limits shared with other scans and the subsequent removal.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn scan_with_budget(
+    pdf: &PdfDoc,
+    input_hash: &[u8; 32],
+    input_len: usize,
+    params: &WatermarkDetectParams,
+    limits: &Limits,
+    ctx: &ToolCtx,
+    budget: &mut DecodeBudget,
+    form_visits: &mut usize,
+) -> Result<Detection, PdfError> {
     params
         .validate()
         .map_err(|error| PdfError::InvalidParams(error.into()))?;
     let doc = pdf.inner();
     let page_ids = page_ids(doc, limits, ctx)?;
-    let selected = crate::recolor::selected_pages(pdf, &params.pages, limits, ctx)?;
+    let selected = crate::color::selected_pages(pdf, &params.pages, limits, ctx)?;
     let mut scanner = Scanner {
         pdf,
         doc,
         limits,
         ctx,
-        budget: pdf.decode_budget(),
+        budget,
         decoder: PdfTextDecoder::new(doc, input_len, limits),
         active_forms: HashSet::new(),
-        form_visits: 0,
+        form_visits,
         drawables: Vec::new(),
         image_cache: HashMap::new(),
         unsupported_images: 0,
