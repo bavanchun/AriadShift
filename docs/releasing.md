@@ -176,6 +176,8 @@ excluded from musl targets. Desktop installers and updater metadata are built by
 
 ### `release.yml` — what runs and what to do on failure
 
+Product release tag runs exclude `pack-*` tags and verify that the tagged commit is an ancestor of `origin/main` before planning. Pull request rehearsals do not require that ancestry.
+
 - **`plan`**: Runs `cargo-dist` to compute the release manifest (`dist-manifest.json`), target matrix, and artifact list. On pull requests touching release paths, `release.yml` runs in rehearsal mode (`publishing == 'false'`) and stops after building artifacts. If `plan` fails, check `dist-workspace.toml` and `Cargo.toml` version consistency.
 - **`build-local-artifacts`**: Builds `ashift` (`ashift.exe` on Windows) with `cargo-auditable` across the five release targets (`aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `x86_64-pc-windows-msvc`) and packages each archive with `LICENSE`, `NOTICE`, `THIRD_PARTY_LICENSES`, and a `.sha256` checksum. If a target build fails before `host` runs, no release has been published yet; fix the defect on `dev`, promote, and cut the next version tag.
 - **`build-global-artifacts`**: Generates the shell and PowerShell installers, the Homebrew formula (`ashift.rb`), and CycloneDX SBOMs (`*.cdx.xml`) for `ariad-core`, `ariad-typst`, `ariad-host`, and `ariad-cli`.
