@@ -42,7 +42,7 @@ fn widget_rectangles(
 ) -> Result<Vec<[f64; 4]>, EngineFailure> {
     let mut result = Vec::new();
     for (index, annotation) in page.annotations().iter().enumerate() {
-        if index % 1024 == 0 {
+        if index.is_multiple_of(1024) {
             ctx.check()?;
         }
         if index >= 50_000 || index >= ctx.limits().max_blocks as usize {

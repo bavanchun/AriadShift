@@ -52,7 +52,7 @@ impl Walker<'_, '_, '_> {
         let values: Vec<Object> = xobjects.iter().map(|(_, v)| v.clone()).collect();
         for value in &values {
             self.count += 1;
-            if self.count % 1024 == 0 {
+            if self.count.is_multiple_of(1024) {
                 self.ctx.check()?;
             }
             if self.count > 50_000 || self.count > self.ctx.limits().max_blocks as usize {

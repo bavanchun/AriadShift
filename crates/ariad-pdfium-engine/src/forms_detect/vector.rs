@@ -32,7 +32,7 @@ pub(super) fn collect<'a>(
     }
     for object in iter {
         output.visits += 1;
-        if output.visits % 1024 == 0 {
+        if output.visits.is_multiple_of(1024) {
             ctx.check()?;
         }
         if output.visits > MAX_OBJECTS || output.visits > ctx.limits().max_blocks as usize {
@@ -55,7 +55,7 @@ pub(super) fn collect<'a>(
                 let mut linear = true;
                 for segment in segments.iter() {
                     output.visits += 1;
-                    if output.visits % 1024 == 0 {
+                    if output.visits.is_multiple_of(1024) {
                         ctx.check()?;
                     }
                     if output.visits > MAX_OBJECTS
@@ -92,13 +92,13 @@ pub(super) fn collect<'a>(
                             previous = Some(point);
                         }
                     }
-                    if segment.is_close() {
-                        if let (Some(p), Some(f)) = (previous, first) {
-                            if p != f {
-                                output.edges.push(Edge { a: p, b: f });
-                            }
-                            closed = true;
+                    if segment.is_close()
+                        && let (Some(p), Some(f)) = (previous, first)
+                    {
+                        if p != f {
+                            output.edges.push(Edge { a: p, b: f });
                         }
+                        closed = true;
                     }
                 }
                 if linear && closed && polygon.len() >= 4 && polygon.len() <= 5 {

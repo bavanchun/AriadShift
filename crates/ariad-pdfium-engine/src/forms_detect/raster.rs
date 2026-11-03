@@ -57,7 +57,7 @@ pub(super) fn detect(
     let h = image.height();
     let mut runs: Vec<Run> = Vec::new();
     for y in 0..h {
-        if y % 32 == 0 {
+        if y.is_multiple_of(32) {
             ctx.check()?;
         }
         let mut start = None;
@@ -66,14 +66,13 @@ pub(super) fn detect(
             if is_dark && start.is_none() {
                 start = Some(x);
             }
-            if !is_dark {
-                if let Some(x1) = start.take() {
-                    if x - x1 >= 8 {
-                        runs.push(Run { x1, x2: x - 1, y });
-                        if runs.len() > 50_000 {
-                            return Err(EngineFailure::limit_exceeded());
-                        }
-                    }
+            if !is_dark
+                && let Some(x1) = start.take()
+                && x - x1 >= 8
+            {
+                runs.push(Run { x1, x2: x - 1, y });
+                if runs.len() > 50_000 {
+                    return Err(EngineFailure::limit_exceeded());
                 }
             }
         }
@@ -106,7 +105,7 @@ pub(super) fn detect(
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut work = 0usize;
     for (i, run) in runs.iter().enumerate() {
-        if i % 256 == 0 {
+        if i.is_multiple_of(256) {
             ctx.check()?;
         }
         // Ignore near-identical scanlines from a single thick stroke.
@@ -121,7 +120,7 @@ pub(super) fn detect(
         if (8..=30).contains(&length) {
             for other in runs.iter().skip(i + 1) {
                 work += 1;
-                if work % 1024 == 0 {
+                if work.is_multiple_of(1024) {
                     ctx.check()?;
                 }
                 if work > 1_000_000 {

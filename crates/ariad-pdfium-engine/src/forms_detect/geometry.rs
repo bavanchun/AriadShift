@@ -47,7 +47,7 @@ pub(super) fn overlaps_widget(
     ctx: &crate::output::ToolContext<'_>,
 ) -> Result<bool, ariad_engine_io::EngineFailure> {
     for (index, widget) in widgets.iter().enumerate() {
-        if index % 1024 == 0 {
+        if index.is_multiple_of(1024) {
             ctx.check()?;
         }
         if iou(rect, *widget) > 0.3 {
@@ -84,7 +84,7 @@ fn supported_box(r: [f64; 4]) -> Option<FieldType> {
     let h = r[3] - r[1];
     if (6.0..=20.0).contains(&w) && (6.0..=20.0).contains(&h) && (w - h).abs() <= w.max(h) * 0.22 {
         Some(FieldType::Checkbox)
-    } else if w >= 36.0 && h >= 12.0 && h <= 300.0 {
+    } else if w >= 36.0 && (12.0..=300.0).contains(&h) {
         Some(FieldType::Text)
     } else {
         None
@@ -96,7 +96,7 @@ fn has_text_inside(
     ctx: &crate::output::ToolContext<'_>,
 ) -> Result<bool, ariad_engine_io::EngineFailure> {
     for (index, word) in words.iter().enumerate() {
-        if index % 1024 == 0 {
+        if index.is_multiple_of(1024) {
             ctx.check()?;
         }
         let center = [(word[0] + word[2]) / 2.0, (word[1] + word[3]) / 2.0];
@@ -118,7 +118,7 @@ fn nearest<'a>(
 ) -> Result<Option<&'a Label>, ariad_engine_io::EngineFailure> {
     let mut best: Option<(f64, &Label)> = None;
     for (index, label) in labels.iter().enumerate() {
-        if index % 1024 == 0 {
+        if index.is_multiple_of(1024) {
             ctx.check()?;
         }
         let cy = (rect[1] + rect[3]) / 2.0;
@@ -143,13 +143,12 @@ fn nearest<'a>(
                 None
             }
         };
-        if let Some(score) = score {
-            if best
+        if let Some(score) = score
+            && best
                 .as_ref()
                 .is_none_or(|(old, _)| score.total_cmp(old).is_lt())
-            {
-                best = Some((score, label));
-            }
+        {
+            best = Some((score, label));
         }
     }
     Ok(best.map(|(_, label)| label))
@@ -194,7 +193,7 @@ pub(super) fn candidates(
     'outer: for (i, &(l, r, y)) in h.iter().enumerate() {
         for &(l2, r2, y2) in h.iter().skip(i + 1) {
             work += 1;
-            if work % 1024 == 0 {
+            if work.is_multiple_of(1024) {
                 ctx.check()?;
             }
             if work > MAX_WORK {
@@ -210,7 +209,7 @@ pub(super) fn candidates(
             let mut right = false;
             for &(x, yb, yt) in &v {
                 work += 1;
-                if work % 1024 == 0 {
+                if work.is_multiple_of(1024) {
                     ctx.check()?;
                 }
                 if work > MAX_WORK {
@@ -236,7 +235,7 @@ pub(super) fn candidates(
     }
     let mut output = Vec::new();
     for (i, rect) in boxes.iter().enumerate() {
-        if i % 256 == 0 {
+        if i.is_multiple_of(256) {
             ctx.check()?;
         }
         if let Some(kind) = supported_box(*rect) {
@@ -267,7 +266,7 @@ pub(super) fn candidates(
         }
     }
     for (index, (l, r, y)) in h.into_iter().enumerate() {
-        if index % 256 == 0 {
+        if index.is_multiple_of(256) {
             ctx.check()?;
         }
         if r - l < 36.0 {
@@ -275,7 +274,7 @@ pub(super) fn candidates(
         }
         let mut border = false;
         for (box_index, b) in boxes.iter().enumerate() {
-            if box_index % 1024 == 0 {
+            if box_index.is_multiple_of(1024) {
                 ctx.check()?;
             }
             if near(l, b[0]) && near(r, b[2]) && (near(y, b[1]) || near(y, b[3])) {
@@ -324,7 +323,7 @@ pub(super) fn proposals(
     candidates.sort_by(|a, b| b.confidence.total_cmp(&a.confidence));
     let mut accepted: Vec<Candidate> = Vec::new();
     for (index, candidate) in candidates.into_iter().enumerate() {
-        if index % 256 == 0 {
+        if index.is_multiple_of(256) {
             ctx.check()?;
         }
         if candidate.confidence < min_confidence
