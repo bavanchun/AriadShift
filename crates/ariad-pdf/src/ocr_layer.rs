@@ -271,7 +271,13 @@ fn add_text_layer_inner(
                 }
                 stream.push_str("> Tj ");
                 if position + 1 < line.words.len() {
-                    stream.push_str("0.01 Tz <");
+                    // Give the explicit separator the actual inter-word advance so readers
+                    // do not infer an additional space from the geometric gap.
+                    let next = &line.words[position + 1].bbox;
+                    let gap = next.x0.saturating_sub(b.x1) as f64;
+                    let width = f64::from(b.x1 - b.x0);
+                    let spacing = (100.0 * gap * glyphs / width).clamp(0.01, 10_000.0);
+                    write!(stream, "{spacing:.6} Tz <").expect("string write");
                     for byte in encoding.encode(font_index, " ")? {
                         write!(stream, "{byte:02X}").expect("string write");
                     }

@@ -170,6 +170,24 @@ impl Workspace {
         Ok(file)
     }
 
+    /// Create a new artifact through the captured output directory capability.
+    pub fn write_artifact(&self, name: &str, bytes: &[u8]) -> Result<PathBuf, WorkspaceError> {
+        use std::io::Write;
+        let mut parts = Path::new(name).components();
+        if !matches!(parts.next(), Some(Component::Normal(_))) || parts.next().is_some() {
+            return Err(WorkspaceError::ArtifactOutsideOutput);
+        }
+        let directory = self
+            .output_handle
+            .as_ref()
+            .ok_or_else(|| io::Error::other("workspace is closed"))?;
+        let mut options = cap_std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        let mut file = directory.open_with(name, &options)?;
+        file.write_all(bytes)?;
+        Ok(self.output_dir.join(name))
+    }
+
     /// Atomically promotes a completed output artifact into the destination directory.
     pub fn promote(
         &self,

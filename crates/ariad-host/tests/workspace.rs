@@ -424,3 +424,24 @@ fn artifact_reads_refuse_symlinks_and_non_regular_files() {
         Err(WorkspaceError::ArtifactOutsideOutput)
     ));
 }
+
+#[test]
+fn staged_artifact_creation_rejects_paths_and_existing_symlinks() {
+    let workspace = ariad_host::workspace::Workspace::new().unwrap();
+    assert!(workspace.write_artifact("../escape", b"bad").is_err());
+    let path = workspace.write_artifact("result.pdf", b"ok").unwrap();
+    assert_eq!(std::fs::read(path).unwrap(), b"ok");
+    assert!(
+        workspace
+            .write_artifact("result.pdf", b"overwrite")
+            .is_err()
+    );
+    #[cfg(unix)]
+    {
+        let external = tempfile::NamedTempFile::new().unwrap();
+        std::os::unix::fs::symlink(external.path(), workspace.output_dir().join("link.pdf"))
+            .unwrap();
+        assert!(workspace.write_artifact("link.pdf", b"bad").is_err());
+        assert!(std::fs::read(external.path()).unwrap().is_empty());
+    }
+}

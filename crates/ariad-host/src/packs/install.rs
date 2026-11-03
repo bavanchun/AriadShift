@@ -260,8 +260,12 @@ fn remove_path(path: &Path) {
 }
 
 /// Holds the per-pack lock; released when dropped.
-struct PackLock {
+pub(super) struct PackLock {
     _file: File,
+}
+
+pub(super) fn tesseract_lock(context: &PackContext) -> Result<PackLock, PackError> {
+    lock(&Layout::new(context), "tesseract")
 }
 
 fn lock(layout: &Layout, name: &str) -> Result<PackLock, PackError> {
@@ -682,6 +686,10 @@ fn sweep(layout: &Layout, name: &str) {
     let now = SystemTime::now();
     if let Ok(entries) = fs::read_dir(layout.cache()) {
         for entry in entries.flatten() {
+            // Explicitly installed OCR languages have their own list/remove lifecycle.
+            if entry.file_name() == "tesseract-languages" {
+                continue;
+            }
             let age = entry
                 .metadata()
                 .and_then(|metadata| metadata.modified())

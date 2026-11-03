@@ -165,4 +165,18 @@ mod tests {
         assert!(image.inputs.accepts(200));
         assert!(!image.inputs.accepts(201));
     }
+
+    #[test]
+    fn output_selection_restricts_artifact_formats() {
+        use serde_json::json;
+        let specs = specs();
+        let pdf = specs.iter().find(|s| s.id == "pdf.ocr").unwrap();
+        let image = specs.iter().find(|s| s.id == "image.ocr").unwrap();
+        assert!(pdf.allows_artifact_format("pdf", &json!({"output":"pdf+txt"})));
+        assert!(pdf.allows_artifact_format("txt", &json!({"output":"pdf+txt"})));
+        assert!(!pdf.allows_artifact_format("hocr", &json!({"output":"pdf+txt"})));
+        assert!(image.allows_artifact_format("hocr", &json!({"output":"hocr"})));
+        assert!(!image.allows_artifact_format("pdf", &json!({"output":"hocr"})));
+        assert_eq!(crate::tools::normalize_tool_format(".HOCR"), Some("hocr"));
+    }
 }

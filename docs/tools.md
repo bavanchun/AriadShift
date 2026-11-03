@@ -4,6 +4,8 @@ This document specifies the normative contract for AriadShift document tools (`a
 
 All tool registration, parameter validation, access control, page-range parsing, and recipe definitions live in `ariad-core::tools`. Structural PDF operations run in-process inside `ariad-pdf` (including on `wasm32`), while rendering, encryption, OCR, signing, validation, and AI tools run out of process over `ariad-engine/2` orchestrated by `ariad-host`. Product surfaces (`ashift` CLI, MCP servers, `apps/web`, `apps/macos`) carry no document manipulation logic.
 
+For OCR and scan tool parameters, engine packs, and output behavior, see [OCR and scan tools](ocr.md).
+
 ## Table of Contents
 
 - [1. Architecture Boundary: Tools vs. Conversions](#1-architecture-boundary-tools-vs-conversions)

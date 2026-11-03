@@ -161,10 +161,15 @@ fn tool_pdf_info_matches_all_corpus_truth_files_and_never_writes_decrypted_copy(
         })
         .collect();
     truth_paths.sort();
+    truth_paths.retain(|path| {
+        let bytes = fs::read(path).expect("read fixture truth");
+        let truth: Value = serde_json::from_slice(&bytes).expect("parse fixture truth");
+        truth.get("pdf_info").is_some()
+    });
     assert_eq!(
         truth_paths.len(),
         22,
-        "expected 22 truth files in fixtures/pdf-tools"
+        "expected 22 pdf.info truth files in fixtures/pdf-tools"
     );
 
     let tmp = TempDir::new().expect("tempdir");
@@ -388,7 +393,22 @@ fn tools_command_lists_registry_json_and_human() {
             "pdf.linearize"
         ]
     );
-    assert_eq!(tools_json.as_array().unwrap().len(), 44);
+    let all_tools = tools_json.as_array().unwrap();
+    assert_eq!(all_tools.len(), 50);
+    for id in [
+        "pdf.ocr",
+        "image.ocr",
+        "pdf.auto_rotate",
+        "pdf.deskew",
+        "pdf.scan_split",
+        "pdf.scanner_effect",
+    ] {
+        assert!(
+            all_tools
+                .iter()
+                .any(|tool| tool["id"] == id && tool["runtimes"] == json!(["local"]))
+        );
+    }
 
     let empty_group = ashift_cmd()
         .args(["tools", "--group", "security", "--json"])
@@ -655,6 +675,187 @@ fn tool_cli_error_classes_return_documented_exit_codes() {
         1,
         &["error[io]"],
     );
+}
+
+#[test]
+fn ocr_and_scan_tools_run_through_cli_with_development_packs() {
+    let (Some(tesseract), Some(pdfium)) = (
+        std::env::var_os("ARIAD_TEST_TESSERACT_PACK"),
+        std::env::var_os("ARIAD_TEST_PDFIUM_PACK"),
+    ) else {
+        eprintln!("skipping: development OCR packs are unavailable");
+        return;
+    };
+    let tmp = TempDir::new().unwrap();
+    for (tool, input) in [
+        ("pdf.ocr", "fixtures/scan/vi-garden-300dpi.pdf"),
+        ("image.ocr", "fixtures/scan/vi-garden-300dpi.png"),
+        (
+            "pdf.auto_rotate",
+            "fixtures/pdf-tools/scan-rotated-90-vi.pdf",
+        ),
+        ("pdf.deskew", "fixtures/pdf-tools/scanned-skewed-vi.pdf"),
+        ("pdf.scan_split", "fixtures/pdf-tools/scan-photos-3.pdf"),
+        ("pdf.scanner_effect", "fixtures/scan/vi-garden-300dpi.pdf"),
+    ] {
+        let output = tmp.path().join(format!("{tool}.pdf"));
+        let result = ashift_cmd()
+            .envs([
+                ("ASHIFT_PACK_TESSERACT", &tesseract),
+                ("ASHIFT_PACK_PDFIUM", &pdfium),
+            ])
+            .args(["tool", tool])
+            .arg(repository_root().join(input))
+            .arg("-o")
+            .arg(&output)
+            .args(["--param", "dpi=150", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{tool}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(fs::read(output).unwrap().starts_with(b"%PDF-"), "{tool}");
+    }
+}
+
+#[test]
+fn image_ocr_reports_missing_pack() {
+    let tmp = TempDir::new().unwrap();
+    let input = repository_root().join("fixtures/scan/vi-garden-300dpi.png");
+    let missing = tmp.path().join("missing-pack");
+    let result = ashift_cmd()
+        .envs([
+            ("ASHIFT_PACK_TESSERACT", &missing),
+            ("ASHIFT_DATA_DIR", &missing),
+        ])
+        .args(["tool", "image.ocr"])
+        .arg(input)
+        .arg("-o")
+        .arg(tmp.path().join("out.pdf"))
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(5),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn recipe_runs_ocr_and_scan_tools_with_development_packs() {
+    let (Some(tesseract), Some(pdfium)) = (
+        std::env::var_os("ARIAD_TEST_TESSERACT_PACK"),
+        std::env::var_os("ARIAD_TEST_PDFIUM_PACK"),
+    ) else {
+        eprintln!("skipping: development OCR packs are unavailable");
+        return;
+    };
+    let tmp = TempDir::new().unwrap();
+    for (index, (tool, input)) in [
+        ("pdf.ocr", "fixtures/scan/vi-garden-300dpi.pdf"),
+        ("image.ocr", "fixtures/scan/vi-garden-300dpi.png"),
+        (
+            "pdf.auto_rotate",
+            "fixtures/pdf-tools/scan-rotated-90-vi.pdf",
+        ),
+        ("pdf.deskew", "fixtures/pdf-tools/scanned-skewed-vi.pdf"),
+        ("pdf.scan_split", "fixtures/pdf-tools/scan-photos-3.pdf"),
+        ("pdf.scanner_effect", "fixtures/scan/vi-garden-300dpi.pdf"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let output = tmp.path().join(format!("output-{index}"));
+        fs::create_dir(&output).unwrap();
+        let recipe = tmp.path().join(format!("recipe-{index}.json"));
+        fs::write(
+            &recipe,
+            serde_json::to_vec(&json!({
+                "version":"ariad-recipe/1", "steps":[{"tool":tool,"params":{"dpi":150}}],
+                "naming":"{stem}.{n}.pdf"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let result = ashift_cmd()
+            .envs([
+                ("ASHIFT_PACK_TESSERACT", &tesseract),
+                ("ASHIFT_PACK_PDFIUM", &pdfium),
+            ])
+            .args(["recipe", "run"])
+            .arg(recipe)
+            .arg(repository_root().join(input))
+            .arg("-o")
+            .arg(&output)
+            .args(["--yes", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{tool}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let path = fs::read_dir(output)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert!(fs::read(path).unwrap().starts_with(b"%PDF-"), "{tool}");
+    }
+}
+
+#[test]
+fn recipe_runs_image_ocr_with_development_pack() {
+    let Some(pack) = std::env::var_os("ARIAD_TEST_TESSERACT_PACK") else {
+        eprintln!("skipping: development Tesseract pack is unavailable");
+        return;
+    };
+    let tmp = TempDir::new().unwrap();
+    let output = tmp.path().join("out");
+    fs::create_dir(&output).unwrap();
+    let recipe = tmp.path().join("ocr.json");
+    fs::write(
+        &recipe,
+        serde_json::to_vec(&json!({
+            "version": "ariad-recipe/1", "steps": [{"tool": "image.ocr", "params": {}}],
+            "naming": "{stem}.{n}.pdf"
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let input = repository_root().join("fixtures/scan/vi-garden-300dpi.png");
+    let result = ashift_cmd()
+        .envs([("ASHIFT_PACK_TESSERACT", pack)])
+        .args(["recipe", "run"])
+        .arg(recipe)
+        .arg(input)
+        .arg("-o")
+        .arg(&output)
+        .args(["--yes", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let pdf = fs::read_dir(output)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let text = std::process::Command::new("pdftotext")
+        .arg(pdf)
+        .arg("-")
+        .output()
+        .unwrap();
+    assert!(text.status.success());
+    assert!(String::from_utf8_lossy(&text.stdout).contains("Khu vườn đọc sách"));
 }
 
 #[test]

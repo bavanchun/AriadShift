@@ -59,6 +59,43 @@ pub fn execute(
     let command =
         resolve_engine_command(effective_engine, engine_program, engine_command_override)?;
 
+    if effective_engine == "tesseract" && spec.id == "ocr.recognize" {
+        let params: ariad_core::tools::params::OcrRecognizeParams =
+            serde_json::from_value(engine_params.clone())
+                .map_err(|_| ToolError::EngineFailure("invalid OCR parameters".into()))?;
+        for language in params.languages {
+            if command.install_root.as_ref().is_some_and(|root| {
+                root.join("tessdata")
+                    .join(format!("{language}.traineddata"))
+                    .is_file()
+            }) {
+                continue;
+            }
+            let context =
+                crate::packs::PackContext::from_env().map_err(|_| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: "OCR language cache is unavailable".into(),
+                })?;
+            let source = crate::packs::languages::verified_path(&context, &language, &cancel)
+                .map_err(|error| match error {
+                    crate::packs::PackError::Interrupted => ToolError::Interrupted,
+                    _ => ToolError::ToolMissing {
+                        engine: "tesseract".into(),
+                        hint: format!("OCR language '{language}' could not be verified"),
+                    },
+                })?
+                .ok_or_else(|| ToolError::ToolMissing {
+                    engine: "tesseract".into(),
+                    hint: format!("OCR language '{language}' is not installed"),
+                })?;
+            let directory = workspace.work_dir().join("ocr-models");
+            fs::create_dir_all(&directory)
+                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+            fs::copy(source, directory.join(format!("{language}.traineddata")))
+                .map_err(|_| ToolError::OutputIo("could not stage OCR model".into()))?;
+        }
+    }
+
     let inputs: Vec<Input> = staged_inputs
         .iter()
         .map(|(path, format)| Input {

@@ -26,5 +26,6 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(pdfium::specs());
     list.extend(optimize::specs());
     list.extend(security::specs());
+    list.extend(ocr_scan::specs());
     list
 }

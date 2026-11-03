@@ -129,3 +129,45 @@ fn crops_rotated_pages_in_display_coordinates() {
         90
     );
 }
+#[test]
+fn clean_replacement_is_limited_to_image_only_pages() {
+    use ariad_core::limits::Limits;
+    use ariad_pdf::{ToolCtx, document, image_to_pdf, scan_pages};
+    let image = include_bytes!("../../../fixtures/scan/vi-garden-300dpi.png");
+    let limits = Limits::local();
+    let bytes = image_to_pdf::run([image.as_slice()], &Default::default(), &limits).unwrap();
+    let ctx = ToolCtx::default();
+    let mut pdf = document::open(&bytes, &limits).unwrap();
+    assert!(scan_pages::is_image_only(&pdf, 1, &ctx).unwrap());
+    assert!(
+        scan_pages::replace_with_cleaned_image(&mut pdf, 1, 2, 2, &[0, 1, 2, 3], &ctx).unwrap()
+    );
+    assert!(scan_pages::is_image_only(&pdf, 1, &ctx).unwrap());
+    let page_id = *pdf.inner().get_pages().values().next().unwrap();
+    pdf.inner_mut()
+        .unwrap()
+        .get_dictionary_mut(page_id)
+        .unwrap()
+        .set("Annots", lopdf::Object::Array(vec![]));
+    let before = pdf.inner().objects.clone();
+    assert!(
+        !scan_pages::replace_with_cleaned_image(&mut pdf, 1, 2, 2, &[0, 1, 2, 3], &ctx).unwrap()
+    );
+    assert!(
+        before == pdf.inner().objects,
+        "refused cleaning modified PDF objects"
+    );
+    let mut vector = document::open(&bytes, &limits).unwrap();
+    let page_id = *vector.inner().get_pages().values().next().unwrap();
+    let content = vector.inner_mut().unwrap().add_object(lopdf::Stream::new(
+        lopdf::dictionary! {},
+        b"0 0 10 10 re f\n".to_vec(),
+    ));
+    vector
+        .inner_mut()
+        .unwrap()
+        .get_dictionary_mut(page_id)
+        .unwrap()
+        .set("Contents", content);
+    assert!(!scan_pages::is_image_only(&vector, 1, &ctx).unwrap());
+}

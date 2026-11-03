@@ -1,0 +1,101 @@
+{
+  "normalization": "Unicode NFC and collapsed whitespace; case preserved",
+  "tesseract": {
+    "version": "5.5.4",
+    "route": "image.ocr using unsigned source-built development pack",
+    "languages": "per fixture"
+  },
+  "docling": {
+    "runtime": "ariad-docling 0.2.0 development runtime before source PyTorch replacement; complete pack not built",
+    "version": "docling-slim 2.142.0",
+    "ocr": "system Tesseract 5.5.3",
+    "languages": "per fixture",
+    "models": "pinned Docling pack models and identical pack tessdata"
+  },
+  "results": [
+    {
+      "language": "vie",
+      "fixture": {
+        "path": "fixtures/scan/vi-garden-300dpi.png",
+        "sha256": "1aac4670f56191e2e4565f611ecb915b6ce51c884ab41bb2913a830ce1474350"
+      },
+      "truth": {
+        "path": "fixtures/scan/truth/vi-garden-300dpi.txt",
+        "sha256": "25ef501a392f2950782ae8d0d29f6552b083f2b5461700ef9f7bf15713fe17a7"
+      },
+      "tesseract": {
+        "cer": 0.0,
+        "wer": 0.0,
+        "transcript": {
+          "sha256": "9cd69fd572930840901433a53534dd7243b9f90fb869449ac161d4a86dc75f40",
+          "text": "Khu vườn đọc sách\n\nKhu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư\nxin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng.\n\n"
+        }
+      },
+      "docling": {
+        "cer": 0.0,
+        "wer": 0.0,
+        "transcript": {
+          "sha256": "c3fa9704e27f4bd84a17a97cabc7d3aa4501e3345fc7ed49ba9604035fdfc9ab",
+          "text": "Khu vườn đọc sách\n\nKhu vườn đọc sách nằm sau thư viện phường, nơi trước đây chỉ có một khoảng sân trống. Các cô thủ thư xin hạt giống từ trường tiểu học, còn bác thợ mộc đóng ba chiếc ghế dài bằng gỗ tái sử dụng."
+        }
+      },
+      "cer_gap_percentage_points": 0.0
+    },
+    {
+      "language": "vie",
+      "fixture": {
+        "path": "fixtures/scan/vi-river-200dpi.png",
+        "sha256": "8ed2e636aee0f55b3d1b210d1c9967c4b9a7ef6792241ce222ce5ee0139c4552"
+      },
+      "truth": {
+        "path": "fixtures/scan/truth/vi-river-200dpi.txt",
+        "sha256": "3aee74d6d3650da6a9dfdfe54ae06f6e04e93cd4890681f3aeea89719fe7e55d"
+      },
+      "tesseract": {
+        "cer": 0.0,
+        "wer": 0.0,
+        "transcript": {
+          "sha256": "c84d898f599c433616827670e86bd812a14ca03597384d7417b5cb5f28706ab8",
+          "text": "Đường ven sông\n\nThành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn\nmặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng\nqua cây cầu gỗ.\n\n"
+        }
+      },
+      "docling": {
+        "cer": 0.0,
+        "wer": 0.0,
+        "transcript": {
+          "sha256": "b88f600cd5e0791879a3248de4126abce2a8334460874df0fdd92998e6dcc6ee",
+          "text": "Đường ven sông\n\nThành phố nhỏ thức dậy trước tiếng chuông xe đạp. Người bán hàng kéo tấm bạt xanh ra khỏi quầy, còn mặt sông giữ lại màu hồng nhạt của bình minh. Từ bến đá, con đường lát gạch men theo hàng me rồi vòng qua cây cầu gỗ."
+        }
+      },
+      "cer_gap_percentage_points": 0.0
+    },
+    {
+      "language": "eng",
+      "fixture": {
+        "path": "fixtures/scan/en-map-room-150dpi.png",
+        "sha256": "72659e10a57708a36284d1fca4f41d4cb9e69362b875b7c7be788ad4fb27fa0e"
+      },
+      "truth": {
+        "path": "fixtures/scan/truth/en-map-room-150dpi.txt",
+        "sha256": "badbb175d86c54e88ada4d5ce26e15d09146ec7397a7dccf0640d513bb078cd5"
+      },
+      "tesseract": {
+        "cer": 0.0,
+        "wer": 0.0,
+        "transcript": {
+          "sha256": "b1935baa67a7451d255fe85bd1ad3bb08d53da216b1e89e807be5cab21a85ab7",
+          "text": "Notes from the Map Room\n\nThe map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans,\nferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each\n\nsheet flat while readers compare editions.\n\n"
+        }
+      },
+      "docling": {
+        "cer": 0.0,
+        "wer": 0.0,
+        "transcript": {
+          "sha256": "3bb38e1d9b310848440a6459bee2f62b9593a0bfcdf2477c2e7f11123c451d97",
+          "text": "Notes from the Map Room\n\nThe map room occupies the quiet end of the neighborhood library. Its shelves hold folded street plans, ferry schedules, and hand-drawn routes collected over several decades. A small brass weight keeps each sheet flat while readers compare editions."
+        }
+      },
+      "cer_gap_percentage_points": 0.0
+    }
+  ]
+}

@@ -495,6 +495,12 @@ pub fn normalize_tool_format(raw: &str) -> Option<&'static str> {
     if trimmed.eq_ignore_ascii_case("zip") {
         return Some("zip");
     }
+    if trimmed.eq_ignore_ascii_case("txt") {
+        return Some("txt");
+    }
+    if trimmed.eq_ignore_ascii_case("hocr") {
+        return Some("hocr");
+    }
     Format::from_user_name(trimmed).map(|fmt| match fmt {
         Format::AriadIrJson => "json",
         other => other.id(),
@@ -586,6 +592,25 @@ impl ToolSpec {
         }
         if !self.accepts_output_format(norm) {
             return false;
+        }
+        if self.id == "pdf.ocr" {
+            return match params
+                .get("output")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("pdf")
+            {
+                "pdf" => norm == "pdf",
+                "pdf+txt" => matches!(norm, "pdf" | "txt"),
+                "pdf+hocr" => matches!(norm, "pdf" | "hocr"),
+                _ => false,
+            };
+        }
+        if self.id == "image.ocr" {
+            return params
+                .get("output")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("pdf")
+                == norm;
         }
         if let Some(picked) = params.get("format").and_then(serde_json::Value::as_str) {
             if picked.eq_ignore_ascii_case("original") {

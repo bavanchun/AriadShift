@@ -1222,6 +1222,12 @@ mod tests {
             })
             .collect();
         truth_paths.sort();
+        // Some scan fixtures carry tool-specific truth rather than pdf.info data.
+        truth_paths.retain(|path| {
+            let bytes = std::fs::read(path).expect("read fixture truth");
+            let truth: Value = serde_json::from_slice(&bytes).expect("parse fixture truth");
+            truth.get("pdf_info").is_some()
+        });
         assert_eq!(truth_paths.len(), 22);
 
         let budget = 64 * 1024 * 1024;

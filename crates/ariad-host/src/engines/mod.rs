@@ -1,3 +1,4 @@
+mod adapter;
 pub mod common;
 pub mod docling;
 pub mod libreoffice;
@@ -6,6 +7,9 @@ pub mod pdf;
 pub mod qpdf;
 pub mod resolve;
 pub mod sandbox;
+pub mod tesseract;
+mod tesseract_hocr;
+pub(crate) mod tesseract_image;
 pub mod typst;
 
 pub use resolve::{ResolveError, resolve_pack, resolve_pack_in, resolve_pack_with_options};
@@ -59,6 +63,7 @@ pub fn serve_builtin(
         "typst" => typst::serve(input, output),
         "libreoffice" => libreoffice::serve(input, output),
         "qpdf" => qpdf::serve(input, output),
+        "tesseract" => tesseract::serve(input, output),
         _ => {
             // A pack engine is served by the pack's own executable. Only test-probe builds
             // answer for one, with a stand-in that never runs real tool code.
@@ -535,7 +540,7 @@ pub const TESSERACT: EngineSpec = EngineSpec {
     builtin: false,
     protocol: Protocol::V2,
     sandbox_required: true,
-    pack_program_env: None,
+    pack_program_env: Some("ASHIFT_TESSERACT_PROGRAM"),
 };
 
 /// PAdES digital signing and verification pack (`ariad-engine/2`).

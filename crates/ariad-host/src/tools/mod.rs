@@ -7,6 +7,8 @@
 
 pub mod engine;
 pub mod inprocess;
+mod ocr;
+mod ocr_text;
 pub mod publish;
 pub mod recipe;
 pub mod run;
