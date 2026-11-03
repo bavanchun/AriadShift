@@ -239,12 +239,28 @@ fn unknown_engine_fails_closed_and_uninstalled_engine_reports_not_installed() {
         assert_eq!(err.code(), "tool_missing");
         assert_eq!(err.error_code(), ErrorCode::ToolMissing);
         assert_eq!(err.exit_code(), 5);
-        assert!(
-            err.hint()
-                .is_some_and(|h| h.contains(&format!("ashift engines install {known_pack}"))),
-            "expected install hint for {known_pack}, got {:?}",
-            err.hint()
-        );
+        let hint = err.hint().expect("missing pack has a hint");
+        if known_pack == "tesseract" && cfg!(windows) {
+            assert_eq!(
+                hint,
+                "Tesseract packs are unavailable on Windows; see https://github.com/bavanchun/AriadShift/issues/202"
+            );
+        } else if known_pack == "tesseract"
+            && cfg!(target_os = "linux")
+            && !ariad_host::packs::host_targets()
+                .iter()
+                .any(|target| target.ends_with("-linux-gnu"))
+        {
+            assert_eq!(
+                hint,
+                "Tesseract packs require glibc on Linux; see https://github.com/bavanchun/AriadShift/issues/202"
+            );
+        } else {
+            assert!(
+                hint.contains(&format!("ashift engines install {known_pack}")),
+                "expected install hint for {known_pack}, got {hint:?}"
+            );
+        }
     }
 }
 
