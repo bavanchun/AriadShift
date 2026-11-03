@@ -247,13 +247,13 @@ impl Walker<'_> {
         depth: usize,
     ) -> Result<(), PdfError> {
         self.check(depth)?;
-        if let Ok(id) = object.as_reference() {
-            if !self.visited.insert(id) {
-                self.listing
-                    .warnings
-                    .push("field_cycle: repeated field reference skipped".into());
-                return Ok(());
-            }
+        if let Ok(id) = object.as_reference()
+            && !self.visited.insert(id)
+        {
+            self.listing
+                .warnings
+                .push("field_cycle: repeated field reference skipped".into());
+            return Ok(());
         }
         let field = match resolve(self.doc, object, self.limits.max_nesting_depth)
             .and_then(|v| v.as_dict().map_err(|_| PdfError::Malformed))
@@ -374,7 +374,7 @@ impl Walker<'_> {
                     let mut visited = 0usize;
                     while let Some((value, level)) = pending.pop() {
                         visited += 1;
-                        if visited % 256 == 0 {
+                        if visited.is_multiple_of(256) {
                             self.ctx.check()?;
                         }
                         if visited > MAX_FIELDS || visited > self.limits.max_blocks as usize {
@@ -421,10 +421,10 @@ impl Walker<'_> {
                 } else {
                     FormValue::Null(())
                 };
-                if kind == Some(FieldType::Checkbox) {
-                    if let FormValue::Text(s) = &value {
-                        value = FormValue::Bool(s != "Off");
-                    }
+                if kind == Some(FieldType::Checkbox)
+                    && let FormValue::Text(s) = &value
+                {
+                    value = FormValue::Bool(s != "Off");
                 }
                 let first = widgets
                     .iter()

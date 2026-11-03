@@ -45,7 +45,7 @@ pub(crate) fn unique_marker(
                 limit: limits.max_nesting_depth,
             }));
         }
-        if count % 256 == 0 {
+        if count.is_multiple_of(256) {
             ctx.check()?;
         }
         match object {
@@ -238,12 +238,12 @@ pub fn flatten(
             .warnings
             .push("duplicate_field_name: only the first field with each name is edited".into());
     }
-    if let Some(names) = requested.as_ref() {
-        if names.iter().any(|name| !infos.contains_key(name)) {
-            report
-                .warnings
-                .push("unknown_field: selected field was not found on the selected pages".into());
-        }
+    if let Some(names) = requested.as_ref()
+        && names.iter().any(|name| !infos.contains_key(name))
+    {
+        report
+            .warnings
+            .push("unknown_field: selected field was not found on the selected pages".into());
     }
     let mut page_widgets = HashSet::new();
     for &page in &chosen_pages {

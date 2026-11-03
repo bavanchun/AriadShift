@@ -308,14 +308,14 @@ pub fn flatten(
                 continue;
             }
             let mut entry = entry.clone();
-            if let Object::Dictionary(dict) = &mut entry {
-                if let Ok(flag) = dict.get(marker.as_bytes()).and_then(Object::as_bool) {
-                    changed = true;
-                    if !flag {
-                        continue;
-                    }
-                    dict.remove(marker.as_bytes());
+            if let Object::Dictionary(dict) = &mut entry
+                && let Ok(flag) = dict.get(marker.as_bytes()).and_then(Object::as_bool)
+            {
+                changed = true;
+                if !flag {
+                    continue;
                 }
+                dict.remove(marker.as_bytes());
             }
             kept.push(entry);
         }

@@ -92,7 +92,7 @@ pub(super) fn check(
                 if count > limits.max_blocks {
                     return Err(blocks(limits.max_blocks));
                 }
-                if count % 256 == 0 {
+                if count.is_multiple_of(256) {
                     ctx.check()?;
                 }
                 match event {

@@ -97,7 +97,7 @@ fn rect(item: &AnnotationItem) -> Result<[f64; 4], PdfError> {
         y_max = y_max.max(p[1]);
     };
     for q in item.quads.as_deref().unwrap_or_default() {
-        for xy in q.chunks_exact(2) {
+        for xy in q.as_chunks::<2>().0 {
             add([xy[0], xy[1]]);
         }
     }
@@ -162,20 +162,18 @@ fn existing_names(
                     limit: limits.max_blocks.min(MAX_ANNOTATION_SCAN as u32),
                 }));
             }
-            if count % 256 == 0 {
+            if count.is_multiple_of(256) {
                 ctx.check()?;
             }
             if let Ok(dict) = resolve(doc, &entry, limits.max_nesting_depth)
                 .and_then(|v| v.as_dict().map_err(|_| PdfError::Malformed))
-            {
-                if let Some(name) = dict
+                && let Some(name) = dict
                     .get(b"NM")
                     .ok()
                     .and_then(|v| resolve(doc, v, limits.max_nesting_depth).ok())
                     .and_then(decode_pdf_object_string)
-                {
-                    names.insert(name);
-                }
+            {
+                names.insert(name);
             }
         }
     }
@@ -207,7 +205,7 @@ pub(super) fn object_for_item(
             && point[1] <= rect[3];
     };
     for quad in item.quads.as_deref().unwrap_or_default() {
-        for pair in quad.chunks_exact(2) {
+        for pair in quad.as_chunks::<2>().0 {
             check([pair[0], pair[1]]);
         }
     }

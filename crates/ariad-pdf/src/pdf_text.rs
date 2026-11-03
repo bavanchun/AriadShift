@@ -12,10 +12,10 @@ fn pdf_doc_encoding() -> &'static HashMap<char, u8> {
             let object = Object::String(vec![byte], StringFormat::Literal);
             if let Ok(decoded) = lopdf::decode_text_string(&object) {
                 let mut chars = decoded.chars();
-                if let (Some(ch), None) = (chars.next(), chars.next()) {
-                    if ch != char::REPLACEMENT_CHARACTER {
-                        reverse.entry(ch).or_insert(byte);
-                    }
+                if let (Some(ch), None) = (chars.next(), chars.next())
+                    && ch != char::REPLACEMENT_CHARACTER
+                {
+                    reverse.entry(ch).or_insert(byte);
                 }
             }
         }
@@ -30,13 +30,12 @@ pub(crate) fn encode_bytes(text: &str) -> Vec<u8> {
         .chars()
         .map(|c| map.get(&c).copied())
         .collect::<Option<Vec<_>>>();
-    if let Some(bytes) = bytes {
-        if !bytes.starts_with(&[0xfe, 0xff])
-            && !bytes.starts_with(&[0xff, 0xfe])
-            && !bytes.starts_with(&[0xef, 0xbb, 0xbf])
-        {
-            return bytes;
-        }
+    if let Some(bytes) = bytes
+        && !bytes.starts_with(&[0xfe, 0xff])
+        && !bytes.starts_with(&[0xff, 0xfe])
+        && !bytes.starts_with(&[0xef, 0xbb, 0xbf])
+    {
+        return bytes;
     }
     let mut bytes = Vec::with_capacity(text.len().saturating_mul(2).saturating_add(2));
     bytes.extend_from_slice(&[0xfe, 0xff]);

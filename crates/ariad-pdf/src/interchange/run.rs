@@ -40,13 +40,13 @@ fn raw_payload(input: &InputDoc) -> Result<&[u8], PdfError> {
             "import data must be raw bytes".into(),
         ));
     };
-    if let Some(limit) = input.limits.max_input_bytes {
-        if bytes.len() as u64 > limit {
-            return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
-                actual: bytes.len() as u64,
-                limit,
-            }));
-        }
+    if let Some(limit) = input.limits.max_input_bytes
+        && bytes.len() as u64 > limit
+    {
+        return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
+            actual: bytes.len() as u64,
+            limit,
+        }));
     }
     if bytes.starts_with(b"%PDF-") {
         return Err(PdfError::InvalidParams(
@@ -164,10 +164,10 @@ pub fn forms_import(
                 FormValue::Text(s) => Some(s.clone()),
                 _ => None,
             });
-        if let Some(column) = &params.name_column {
-            if !metadata.contains_key(column) {
-                record.remove(column);
-            }
+        if let Some(column) = &params.name_column
+            && !metadata.contains_key(column)
+        {
+            record.remove(column);
         }
         let mut unknown_warnings = Vec::new();
         for (name, value) in record.iter_mut() {
@@ -178,10 +178,9 @@ pub fn forms_import(
                 if format == DataFormat::Csv
                     && field.field_type == Some(FieldType::List)
                     && field.flags.multi_select
+                    && let FormValue::Text(text) = value
                 {
-                    if let FormValue::Text(text) = value {
-                        *value = FormValue::Multi(text.split('|').map(str::to_owned).collect());
-                    }
+                    *value = FormValue::Multi(text.split('|').map(str::to_owned).collect());
                 }
             } else if unknown_seen.insert(name.clone()) {
                 unknown_warnings.push("unknown_field: field was not found".to_owned());

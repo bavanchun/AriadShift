@@ -37,14 +37,18 @@ fn array(doc: &Document, value: &Object, limit: u16) -> Result<Vec<Object>, PdfE
         .cloned()
         .map_err(|_| PdfError::Malformed)
 }
+struct WidgetCollection<'a> {
+    seen: HashSet<ObjectId>,
+    remaining: &'a mut u32,
+    out: &'a mut HashSet<ObjectId>,
+}
+
 fn collect_widgets(
     doc: &Document,
     value: &Object,
     limit: u16,
-    seen: &mut HashSet<ObjectId>,
+    state: &mut WidgetCollection<'_>,
     depth: usize,
-    remaining: &mut u32,
-    out: &mut HashSet<ObjectId>,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     ctx.check()?;
@@ -53,16 +57,16 @@ fn collect_widgets(
             limit: limit.min(MAX_FIELD_DEPTH as u16),
         }));
     }
-    if *remaining == 0 {
+    if *state.remaining == 0 {
         return Err(PdfError::LimitExceeded(ReadError::TooManyBlocks {
             limit: 0,
         }));
     }
-    *remaining -= 1;
-    if let Ok(id) = value.as_reference() {
-        if !seen.insert(id) {
-            return Err(PdfError::Malformed);
-        }
+    *state.remaining -= 1;
+    if let Ok(id) = value.as_reference()
+        && !state.seen.insert(id)
+    {
+        return Err(PdfError::Malformed);
     }
     let field = dictionary(doc, value, limit)?;
     if field
@@ -73,7 +77,7 @@ fn collect_widgets(
         == Some(b"Widget")
     {
         if let Ok(id) = value.as_reference() {
-            out.insert(id);
+            state.out.insert(id);
         } else {
             return Err(PdfError::InvalidParams(
                 "cannot replace a direct widget".into(),
@@ -82,7 +86,7 @@ fn collect_widgets(
     }
     if let Ok(kids) = field.get(b"Kids") {
         for child in array(doc, kids, limit)? {
-            collect_widgets(doc, &child, limit, seen, depth + 1, remaining, out, ctx)?;
+            collect_widgets(doc, &child, limit, state, depth + 1, ctx)?;
         }
     }
     Ok(())
@@ -417,16 +421,15 @@ pub fn create(
                     "radio default must be a state name".into(),
                 ));
             }
-            if let Some(FormValue::Text(value)) = &group[0].default {
-                if value != "Off"
-                    && !group
-                        .iter()
-                        .any(|f| f.export_value.as_deref() == Some(value.as_str()))
-                {
-                    return Err(PdfError::InvalidParams(
-                        "radio default is not an export value".into(),
-                    ));
-                }
+            if let Some(FormValue::Text(value)) = &group[0].default
+                && value != "Off"
+                && !group
+                    .iter()
+                    .any(|f| f.export_value.as_deref() == Some(value.as_str()))
+            {
+                return Err(PdfError::InvalidParams(
+                    "radio default is not an export value".into(),
+                ));
             }
         }
         if group.len() > 1 {
@@ -499,10 +502,12 @@ pub fn create(
                 doc,
                 &entry,
                 limits.max_nesting_depth,
-                &mut HashSet::new(),
+                &mut WidgetCollection {
+                    seen: HashSet::new(),
+                    remaining: &mut remaining,
+                    out: &mut removed_widgets,
+                },
                 0,
-                &mut remaining,
-                &mut removed_widgets,
                 ctx,
             )?;
         } else {

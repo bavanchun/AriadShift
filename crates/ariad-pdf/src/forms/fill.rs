@@ -60,12 +60,12 @@ fn parse_font_size(da: &str) -> Option<f64> {
     let mut previous = "";
     let mut result = None;
     for token in da.split_whitespace().take(256) {
-        if token == "Tf" {
-            if let Ok(size) = previous.parse::<f64>() {
-                if size.is_finite() && (0.0..=1000.0).contains(&size) {
-                    result = Some(size);
-                }
-            }
+        if token == "Tf"
+            && let Ok(size) = previous.parse::<f64>()
+            && size.is_finite()
+            && (0.0..=1000.0).contains(&size)
+        {
+            result = Some(size);
         }
         previous = token;
     }
@@ -82,15 +82,19 @@ struct Locator<'a> {
     duplicate_names: bool,
     resources: HashMap<*const Object, Arc<Object>>,
 }
+struct Inherited<'a> {
+    prefix: &'a str,
+    align: u8,
+    size: f64,
+    appearance: &'a str,
+    resources: Option<&'a Object>,
+}
+
 impl Locator<'_> {
     fn visit(
         &mut self,
         obj: &Object,
-        prefix: &str,
-        align: u8,
-        inherited_size: f64,
-        inherited_da: &str,
-        inherited_resources: Option<&Object>,
+        inherited: Inherited<'_>,
         depth: usize,
     ) -> Result<(), PdfError> {
         self.ctx.check()?;
@@ -118,25 +122,25 @@ impl Locator<'_> {
             .ok()
             .and_then(|v| decode(self.doc, v, self.limits.max_nesting_depth))
             .unwrap_or_default();
-        let name = if prefix.is_empty() {
+        let name = if inherited.prefix.is_empty() {
             part
         } else if part.is_empty() {
-            prefix.to_owned()
+            inherited.prefix.to_owned()
         } else {
-            format!("{prefix}.{part}")
+            format!("{}.{part}", inherited.prefix)
         };
         let align = get(self.doc, dict, b"Q", self.limits.max_nesting_depth)
             .and_then(|o| o.as_i64().ok())
             .and_then(|v| u8::try_from(v).ok())
             .filter(|v| *v <= 2)
-            .unwrap_or(align);
+            .unwrap_or(inherited.align);
         let default_appearance = dict
             .get(b"DA")
             .ok()
             .and_then(|v| decode(self.doc, v, self.limits.max_nesting_depth))
-            .unwrap_or_else(|| inherited_da.to_owned());
-        let font_size = parse_font_size(&default_appearance).unwrap_or(inherited_size);
-        let resources = dict.get(b"DR").ok().or(inherited_resources);
+            .unwrap_or_else(|| inherited.appearance.to_owned());
+        let font_size = parse_font_size(&default_appearance).unwrap_or(inherited.size);
+        let resources = dict.get(b"DR").ok().or(inherited.resources);
         let kid_array = get(self.doc, dict, b"Kids", self.limits.max_nesting_depth)
             .and_then(|o| o.as_array().ok());
         if kid_array.is_some_and(|kids| {
@@ -223,22 +227,26 @@ impl Locator<'_> {
         for child in fields {
             self.visit(
                 &child,
-                &name,
-                align,
-                font_size,
-                &default_appearance,
-                resources,
+                Inherited {
+                    prefix: &name,
+                    align,
+                    size: font_size,
+                    appearance: &default_appearance,
+                    resources,
+                },
                 depth + 1,
             )?;
         }
         Ok(())
     }
 }
+type LocatedFields = (HashMap<String, FieldRef>, Option<Vec<ObjectId>>, bool);
+
 pub(super) fn locate(
     doc: &Document,
     limits: &Limits,
     ctx: &ToolCtx,
-) -> Result<(HashMap<String, FieldRef>, Option<Vec<ObjectId>>, bool), PdfError> {
+) -> Result<LocatedFields, PdfError> {
     let root = catalog_object_id(doc)?;
     let catalog = doc.get_dictionary(root).map_err(|_| PdfError::Malformed)?;
     let form = catalog
@@ -287,7 +295,17 @@ pub(super) fn locate(
                     .and_then(|v| decode(doc, v, limits.max_nesting_depth))
                     .unwrap_or_default();
                 let size = parse_font_size(&da).unwrap_or(0.0);
-                locator.visit(field, "", 0, size, &da, form.get(b"DR").ok(), 0)?;
+                locator.visit(
+                    field,
+                    Inherited {
+                        prefix: "",
+                        align: 0,
+                        size,
+                        appearance: &da,
+                        resources: form.get(b"DR").ok(),
+                    },
+                    0,
+                )?;
             }
         }
     }
@@ -446,12 +464,11 @@ fn prepare(
                 text = text.replace(['\r', '\n'], " ");
                 warnings.push("newlines_replaced: single-line field contained newlines".into());
             }
-            if let Some(max) = info.max_length {
-                if text.chars().count() > max as usize {
-                    text = text.chars().take(max as usize).collect();
-                    warnings
-                        .push("value_truncated: field value exceeded its maximum length".into());
-                }
+            if let Some(max) = info.max_length
+                && text.chars().count() > max as usize
+            {
+                text = text.chars().take(max as usize).collect();
+                warnings.push("value_truncated: field value exceeded its maximum length".into());
             }
             Ok(FormValue::Text(text))
         }

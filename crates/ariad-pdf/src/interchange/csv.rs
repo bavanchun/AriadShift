@@ -108,7 +108,7 @@ pub(super) fn detect_delimiter(bytes: &[u8]) -> u8 {
             b'"' => quoted = !quoted,
             b'\r' | b'\n' if !quoted => break,
             c if !quoted => {
-                if let Some(index) = [b',', b';', b'\t'].iter().position(|x| *x == c) {
+                if let Some(index) = b",;\t".iter().position(|x| *x == c) {
                     counts[index] += 1;
                 }
             }
@@ -117,7 +117,7 @@ pub(super) fn detect_delimiter(bytes: &[u8]) -> u8 {
         i += 1;
     }
     let index = (1..3).fold(0, |best, i| if counts[i] > counts[best] { i } else { best });
-    [b',', b';', b'\t'][index]
+    b",;\t"[index]
 }
 
 /// Serialize one record using CRLF and prefix spreadsheet formulas with an apostrophe.

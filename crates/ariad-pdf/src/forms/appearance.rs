@@ -538,7 +538,7 @@ pub(crate) fn split_lines(
         }
         for word in paragraph.split_word_bounds() {
             checked = checked.saturating_add(1);
-            if checked % 256 == 0 {
+            if checked.is_multiple_of(256) {
                 ctx.check()?;
             }
             let word_width = plan.measure_line(word, size)?;
@@ -553,7 +553,7 @@ pub(crate) fn split_lines(
             if multiline && word_width > available {
                 for grapheme in word.graphemes(true) {
                     checked = checked.saturating_add(1);
-                    if checked % 256 == 0 {
+                    if checked.is_multiple_of(256) {
                         ctx.check()?;
                     }
                     let advance = plan.measure_line(grapheme, size)?;

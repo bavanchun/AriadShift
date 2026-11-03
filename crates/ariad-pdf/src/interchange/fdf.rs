@@ -334,23 +334,27 @@ fn value(node: &Node, objects: &HashMap<(u32, u16), Node>) -> Result<FormValue, 
         _ => Err(invalid()),
     }
 }
+struct WalkState {
+    seen: HashSet<(u32, u16)>,
+    output: FormRecord,
+    visited: usize,
+}
+
 fn walk(
     node: &Node,
     prefix: &str,
     objects: &HashMap<(u32, u16), Node>,
-    seen: &mut HashSet<(u32, u16)>,
-    output: &mut FormRecord,
-    visited: &mut usize,
+    state: &mut WalkState,
     depth: usize,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
     ctx.check()?;
-    *visited = visited.saturating_add(1);
-    if depth > MAX_FIELD_DEPTH || *visited > MAX_FIELDS {
+    state.visited = state.visited.saturating_add(1);
+    if depth > MAX_FIELD_DEPTH || state.visited > MAX_FIELDS {
         return Err(invalid());
     }
     let key = if let Node::Ref(n, g) = node {
-        if !seen.insert((*n, *g)) {
+        if !state.seen.insert((*n, *g)) {
             return Err(invalid());
         }
         Some((*n, *g))
@@ -373,21 +377,21 @@ fn walk(
     if name.len() > MAX_DATA_STRING_BYTES {
         return Err(invalid());
     }
-    if let Some(v) = field.get(b"V".as_slice()) {
-        if !name.is_empty() {
-            output.insert(name.clone(), value(v, objects)?);
-        }
+    if let Some(v) = field.get(b"V".as_slice())
+        && !name.is_empty()
+    {
+        state.output.insert(name.clone(), value(v, objects)?);
     }
     if let Some(kids) = field.get(b"Kids".as_slice()) {
         let Node::Array(kids) = resolve(kids, objects)? else {
             return Err(invalid());
         };
         for kid in kids {
-            walk(kid, &name, objects, seen, output, visited, depth + 1, ctx)?;
+            walk(kid, &name, objects, state, depth + 1, ctx)?;
         }
     }
     if let Some(key) = key {
-        seen.remove(&key);
+        state.seen.remove(&key);
     }
     Ok(())
 }
@@ -466,22 +470,15 @@ pub fn read_forms(bytes: &[u8], ctx: &ToolCtx) -> Result<FormRecord, PdfError> {
     let Node::Array(fields) = resolve(fields, &objects)? else {
         return Err(invalid());
     };
-    let mut output = FormRecord::new();
-    let mut seen = HashSet::new();
-    let mut visited = 0;
+    let mut state = WalkState {
+        seen: HashSet::new(),
+        output: FormRecord::new(),
+        visited: 0,
+    };
     for field in fields {
-        walk(
-            field,
-            "",
-            &objects,
-            &mut seen,
-            &mut output,
-            &mut visited,
-            0,
-            ctx,
-        )?;
+        walk(field, "", &objects, &mut state, 0, ctx)?;
     }
-    Ok(output)
+    Ok(state.output)
 }
 
 #[derive(Default)]

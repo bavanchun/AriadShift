@@ -44,27 +44,23 @@ fn validate_strings(
     for key in [b"NM".as_slice(), b"Contents", b"T", b"Subj", b"DA"] {
         if let Some(Object::String(bytes, _) | Object::Name(bytes)) =
             get(doc, dictionary, key, limits)
+            && bytes.len() > MAX_ANNOTATION_STRING_BYTES
         {
-            if bytes.len() > MAX_ANNOTATION_STRING_BYTES {
-                return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
-                    actual: bytes.len() as u64,
-                    limit: MAX_ANNOTATION_STRING_BYTES as u64,
-                }));
-            }
+            return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
+                actual: bytes.len() as u64,
+                limit: MAX_ANNOTATION_STRING_BYTES as u64,
+            }));
         }
     }
     if let Some(action) = get(doc, dictionary, b"A", limits).and_then(|value| value.as_dict().ok())
-    {
-        if let Some(Object::String(bytes, _) | Object::Name(bytes)) =
+        && let Some(Object::String(bytes, _) | Object::Name(bytes)) =
             get(doc, action, b"URI", limits)
-        {
-            if bytes.len() > MAX_ANNOTATION_STRING_BYTES {
-                return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
-                    actual: bytes.len() as u64,
-                    limit: MAX_ANNOTATION_STRING_BYTES as u64,
-                }));
-            }
-        }
+        && bytes.len() > MAX_ANNOTATION_STRING_BYTES
+    {
+        return Err(PdfError::LimitExceeded(ReadError::InputTooLarge {
+            actual: bytes.len() as u64,
+            limit: MAX_ANNOTATION_STRING_BYTES as u64,
+        }));
     }
     Ok(())
 }
@@ -165,12 +161,12 @@ fn geometry_budget(
         b"IC",
         b"LE",
     ] {
-        if let Some(array) = get(doc, dictionary, key, limits).and_then(|v| v.as_array().ok()) {
-            if array.len() > cap {
-                return Err(PdfError::LimitExceeded(ReadError::TooManyBlocks {
-                    limit: cap as u32,
-                }));
-            }
+        if let Some(array) = get(doc, dictionary, key, limits).and_then(|v| v.as_array().ok())
+            && array.len() > cap
+        {
+            return Err(PdfError::LimitExceeded(ReadError::TooManyBlocks {
+                limit: cap as u32,
+            }));
         }
     }
     if let Some(strokes) = get(doc, dictionary, b"InkList", limits).and_then(|v| v.as_array().ok())
@@ -205,12 +201,12 @@ fn font_size(doc: &Document, dictionary: &Dictionary, limits: &Limits) -> f64 {
     };
     let mut previous = "";
     for token in da.split_whitespace() {
-        if token == "Tf" {
-            if let Ok(size) = previous.parse::<f64>() {
-                if size.is_finite() && size > 0.0 {
-                    return size;
-                }
-            }
+        if token == "Tf"
+            && let Ok(size) = previous.parse::<f64>()
+            && size.is_finite()
+            && size > 0.0
+        {
+            return size;
         }
         previous = token;
     }
@@ -582,7 +578,7 @@ pub fn list(
         )
         .and_then(|v| {
             if v.len() % 2 == 0 {
-                Some(v.chunks_exact(2).map(|c| [c[0], c[1]]).collect())
+                Some(v.as_chunks::<2>().0.iter().map(|c| [c[0], c[1]]).collect())
             } else {
                 None
             }
@@ -608,7 +604,14 @@ pub fn list(
                                     .and_then(number)
                             })
                             .collect();
-                        Some(nums?.chunks_exact(2).map(|p| [p[0], p[1]]).collect())
+                        Some(
+                            nums?
+                                .as_chunks::<2>()
+                                .0
+                                .iter()
+                                .map(|p| [p[0], p[1]])
+                                .collect(),
+                        )
                     })
                     .collect()
             });

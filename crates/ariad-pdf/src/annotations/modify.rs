@@ -210,15 +210,15 @@ pub fn delete(
             ctx.check()?;
         }
         let dict = read::dictionary_at(doc, location, limits)?;
-        if let Ok(parent) = dict.get(b"IRT").and_then(Object::as_reference) {
-            if let Some(parent) = by_object.get(&parent) {
-                children.entry(*parent).or_default().push(index);
-            }
+        if let Ok(parent) = dict.get(b"IRT").and_then(Object::as_reference)
+            && let Some(parent) = by_object.get(&parent)
+        {
+            children.entry(*parent).or_default().push(index);
         }
-        if let Ok(popup) = dict.get(b"Popup").and_then(Object::as_reference) {
-            if let Some(child) = by_object.get(&popup) {
-                children.entry(index).or_default().push(*child);
-            }
+        if let Ok(popup) = dict.get(b"Popup").and_then(Object::as_reference)
+            && let Some(child) = by_object.get(&popup)
+        {
+            children.entry(index).or_default().push(*child);
         }
     }
     let selected_pages: HashSet<_> = selector.pages.iter().copied().collect();
@@ -228,13 +228,13 @@ pub fn delete(
         if !selected_pages.contains(&location.page) {
             continue;
         }
-        if let Some(info) = by_name.get(&location.id) {
-            if selected(info, selector) {
-                if info.subtype == "Widget" {
-                    warned_widgets = true;
-                } else {
-                    queue.push_back(index);
-                }
+        if let Some(info) = by_name.get(&location.id)
+            && selected(info, selector)
+        {
+            if info.subtype == "Widget" {
+                warned_widgets = true;
+            } else {
+                queue.push_back(index);
             }
         }
     }

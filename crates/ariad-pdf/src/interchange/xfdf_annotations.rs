@@ -89,7 +89,12 @@ fn points(s: &str) -> Result<Vec<[f64; 2]>, PdfError> {
     if nums.len() % 2 != 0 {
         return Err(invalid());
     }
-    Ok(nums.chunks_exact(2).map(|x| [x[0], x[1]]).collect())
+    Ok(nums
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|x| [x[0], x[1]])
+        .collect())
 }
 fn from_attrs(name: &str, a: &BTreeMap<String, String>) -> Result<AnnotationItem, PdfError> {
     let mut value = serde_json::json!({"type":kind(name).ok_or_else(invalid)?,"page":a.get("page").ok_or_else(invalid)?.parse::<u32>().map_err(|_| invalid())?.checked_add(1).ok_or_else(invalid)?});
@@ -132,7 +137,7 @@ fn from_attrs(name: &str, a: &BTreeMap<String, String>) -> Result<AnnotationItem
         }
         obj.insert(
             "quads".into(),
-            serde_json::json!(n.chunks_exact(8).collect::<Vec<_>>()),
+            serde_json::json!(n.as_chunks::<8>().0.iter().collect::<Vec<_>>()),
         );
     }
     if let (Some(a), Some(b)) = (a.get("start"), a.get("end")) {
@@ -157,30 +162,30 @@ fn from_attrs(name: &str, a: &BTreeMap<String, String>) -> Result<AnnotationItem
         let set: HashSet<_> = v.split(',').map(str::trim).collect();
         obj.insert("flags".into(), serde_json::json!({"hidden":set.contains("hidden"),"print":set.contains("print"),"no_view":set.contains("noview"),"no_rotate":set.contains("norotate"),"locked":set.contains("locked"),"read_only":set.contains("readonly")}));
     }
-    if name == "stamp" {
-        if let Some(v) = a.get("icon") {
-            let stamp = match v.as_str() {
-                "Approved" => Some("approved"),
-                "Experimental" => Some("experimental"),
-                "NotApproved" => Some("not_approved"),
-                "AsIs" => Some("as_is"),
-                "Expired" => Some("expired"),
-                "NotForPublicRelease" => Some("not_for_public_release"),
-                "Confidential" => Some("confidential"),
-                "Final" => Some("final"),
-                "Sold" => Some("sold"),
-                "Departmental" => Some("departmental"),
-                "ForComment" => Some("for_comment"),
-                "TopSecret" => Some("top_secret"),
-                "Draft" => Some("draft"),
-                "ForPublicRelease" => Some("for_public_release"),
-                _ => None,
-            };
-            if let Some(stamp) = stamp {
-                obj.insert("stamp".into(), stamp.into());
-            } else {
-                obj.insert("text".into(), v.clone().into());
-            }
+    if name == "stamp"
+        && let Some(v) = a.get("icon")
+    {
+        let stamp = match v.as_str() {
+            "Approved" => Some("approved"),
+            "Experimental" => Some("experimental"),
+            "NotApproved" => Some("not_approved"),
+            "AsIs" => Some("as_is"),
+            "Expired" => Some("expired"),
+            "NotForPublicRelease" => Some("not_for_public_release"),
+            "Confidential" => Some("confidential"),
+            "Final" => Some("final"),
+            "Sold" => Some("sold"),
+            "Departmental" => Some("departmental"),
+            "ForComment" => Some("for_comment"),
+            "TopSecret" => Some("top_secret"),
+            "Draft" => Some("draft"),
+            "ForPublicRelease" => Some("for_public_release"),
+            _ => None,
+        };
+        if let Some(stamp) = stamp {
+            obj.insert("stamp".into(), stamp.into());
+        } else {
+            obj.insert("text".into(), v.clone().into());
         }
     }
     if let Some(v) = a.get("dest-page") {
@@ -222,7 +227,7 @@ pub fn read(bytes: &[u8], ctx: &ToolCtx) -> Result<(Vec<AnnotationItem>, Vec<Str
         if events > MAX_EVENTS {
             return Err(invalid());
         }
-        if events % 256 == 0 {
+        if events.is_multiple_of(256) {
             ctx.check()?;
         }
         let (ns, event) = reader.read_resolved_event().map_err(|_| invalid())?;

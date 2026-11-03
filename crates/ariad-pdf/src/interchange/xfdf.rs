@@ -76,7 +76,7 @@ pub fn read_forms(bytes: &[u8], ctx: &ToolCtx) -> Result<(FormRecord, Vec<String
         if events > MAX_EVENTS {
             return Err(invalid());
         }
-        if events % 256 == 0 {
+        if events.is_multiple_of(256) {
             ctx.check()?;
         }
         let (namespace, event) = reader.read_resolved_event().map_err(|_| invalid())?;
