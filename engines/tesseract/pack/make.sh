@@ -3,7 +3,7 @@
 set -euo pipefail
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 repo=$(CDPATH='' cd -- "$here/../../.." && pwd)
-requires_ashift=${PACK_REQUIRES_ASHIFT:-">=0.3.0, <2.0.0"}
+requires_ashift=${PACK_REQUIRES_ASHIFT:-">=0.4.0, <2.0.0"}
 die() { printf 'tesseract-pack: %s\n' "$*" >&2; exit 1; }
 slug() {
     case "$(uname -s)-$(uname -m)" in
