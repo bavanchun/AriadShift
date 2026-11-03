@@ -218,22 +218,26 @@ pub fn flatten(
         .filter_map(|(index, id)| selected.contains(&((index + 1) as u32)).then_some(*id))
         .collect();
     let listing = list::list(&edited, pages, true, limits, ctx)?;
-    let (refs, _) = fill::locate(edited.inner(), limits, ctx)?;
+    let (refs, _, duplicate_names) = fill::locate(edited.inner(), limits, ctx)?;
     let requested = names.map(|names| names.iter().cloned().collect::<HashSet<_>>());
-    let infos: HashMap<_, _> = listing
-        .fields
-        .iter()
-        .filter(|field| {
-            requested
-                .as_ref()
-                .is_none_or(|set| set.contains(&field.name))
-        })
-        .map(|field| (field.name.clone(), field))
-        .collect();
+    let mut infos = HashMap::new();
+    for field in &listing.fields {
+        if requested
+            .as_ref()
+            .is_none_or(|set| set.contains(&field.name))
+        {
+            infos.entry(field.name.clone()).or_insert(field);
+        }
+    }
     let mut report = EditReport {
         warnings: listing.warnings.clone(),
         ..EditReport::default()
     };
+    if duplicate_names {
+        report
+            .warnings
+            .push("duplicate_field_name: only the first field with each name is edited".into());
+    }
     if let Some(names) = requested.as_ref() {
         if names.iter().any(|name| !infos.contains_key(name)) {
             report

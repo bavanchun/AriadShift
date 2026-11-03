@@ -37,6 +37,47 @@ fn list_fields(pdf: &ariad_pdf::PdfDoc) -> Vec<ariad_core::tools::params::form_m
 }
 
 #[test]
+fn duplicate_field_names_edit_the_first_and_warn() {
+    use lopdf::Object;
+    let mut pdf = open(&fixture("forms-all-types.pdf"));
+    let doc = pdf.inner_mut().unwrap();
+    let duplicate = doc
+        .objects
+        .values_mut()
+        .find_map(|obj| {
+            let dict = obj.as_dict_mut().ok()?;
+            (dict.get(b"T").ok()?.as_str().ok()? == b"readonly").then_some(dict)
+        })
+        .unwrap();
+    duplicate.set("T", Object::string_literal("name"));
+    let before: Vec<_> = list_fields(&pdf)
+        .into_iter()
+        .filter(|field| field.name == "name")
+        .collect();
+    assert_eq!(before.len(), 2);
+    let report = fill::fill(
+        &mut pdf,
+        &BTreeMap::from([("name".into(), FormValue::Text("first".into()))]),
+        &FillOptions { strict: true },
+        &Limits::local(),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("duplicate_field_name:"))
+    );
+    let after: Vec<_> = list_fields(&pdf)
+        .into_iter()
+        .filter(|field| field.name == "name")
+        .collect();
+    assert_eq!(after[0].value, FormValue::Text("first".into()));
+    assert_eq!(after[1].value, before[1].value);
+}
+
+#[test]
 fn fill_unicode_checkbox_and_radio_then_flatten_selected_fields() {
     let mut pdf = open(&fixture("forms-all-types.pdf"));
     let values = BTreeMap::from([

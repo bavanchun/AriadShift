@@ -79,6 +79,7 @@ struct Locator<'a> {
     seen: HashSet<ObjectId>,
     count: u32,
     fields: HashMap<String, FieldRef>,
+    duplicate_names: bool,
     resources: HashMap<*const Object, Arc<Object>>,
 }
 impl Locator<'_> {
@@ -197,31 +198,26 @@ impl Locator<'_> {
                         .clone()
                 })
             };
-            if self
-                .fields
-                .insert(
-                    name.clone(),
-                    FieldRef {
-                        id,
-                        widgets,
-                        align,
-                        font_size,
-                        default_appearance: default_appearance.clone(),
-                        standard_font: appearance::standard_font(
-                            self.doc,
-                            &default_appearance,
-                            resources,
-                            self.limits.max_nesting_depth,
-                        ),
-                        resources: shared_resources,
-                        has_appearance_font,
-                    },
-                )
-                .is_some()
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                self.fields.entry(name.clone())
             {
-                return Err(PdfError::InvalidParams(
-                    "duplicate field names in document".into(),
-                ));
+                entry.insert(FieldRef {
+                    id,
+                    widgets,
+                    align,
+                    font_size,
+                    default_appearance: default_appearance.clone(),
+                    standard_font: appearance::standard_font(
+                        self.doc,
+                        &default_appearance,
+                        resources,
+                        self.limits.max_nesting_depth,
+                    ),
+                    resources: shared_resources,
+                    has_appearance_font,
+                });
+            } else {
+                self.duplicate_names = true;
             }
         }
         for child in fields {
@@ -242,7 +238,7 @@ pub(super) fn locate(
     doc: &Document,
     limits: &Limits,
     ctx: &ToolCtx,
-) -> Result<(HashMap<String, FieldRef>, Option<Vec<ObjectId>>), PdfError> {
+) -> Result<(HashMap<String, FieldRef>, Option<Vec<ObjectId>>, bool), PdfError> {
     let root = catalog_object_id(doc)?;
     let catalog = doc.get_dictionary(root).map_err(|_| PdfError::Malformed)?;
     let form = catalog
@@ -257,6 +253,7 @@ pub(super) fn locate(
         seen: HashSet::new(),
         count: 0,
         fields: HashMap::new(),
+        duplicate_names: false,
         resources: HashMap::new(),
     };
     let mut calculations = None;
@@ -294,7 +291,7 @@ pub(super) fn locate(
             }
         }
     }
-    Ok((locator.fields, calculations))
+    Ok((locator.fields, calculations, locator.duplicate_names))
 }
 
 pub(super) fn widget_rect(
@@ -560,12 +557,16 @@ pub fn fill(
         warnings: listing.warnings.clone(),
         ..EditReport::default()
     };
-    let infos: HashMap<_, _> = listing
-        .fields
-        .into_iter()
-        .map(|info| (info.name.clone(), info))
-        .collect();
-    let (refs, has_calculations) = locate(edited.inner(), limits, ctx)?;
+    let mut infos = HashMap::new();
+    for info in listing.fields {
+        infos.entry(info.name.clone()).or_insert(info);
+    }
+    let (refs, has_calculations, duplicate_names) = locate(edited.inner(), limits, ctx)?;
+    if duplicate_names {
+        report
+            .warnings
+            .push("duplicate_field_name: only the first field with each name is edited".into());
+    }
     let order: HashSet<_> = has_calculations
         .as_ref()
         .into_iter()
