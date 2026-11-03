@@ -275,21 +275,57 @@ fn actions(
 ) -> Result<ActionSummary, PdfError> {
     let mut names = Vec::new();
     let mut javascript = false;
-    let mut inspect = |key: &str, value: &Object| {
-        if let Ok(action) = resolve(doc, value, limits.max_nesting_depth)
-            .and_then(|v| v.as_dict().map_err(|_| PdfError::Malformed))
-        {
-            if get(doc, action, b"S", limits).and_then(|v| v.as_name().ok()) == Some(b"JavaScript")
-            {
-                javascript = true;
+    let mut visits = 0usize;
+    let mut inspect = |key: &str, value: &Object| -> Result<(), PdfError> {
+        let mut pending = vec![(value, 0usize)];
+        let mut seen = HashSet::new();
+        while let Some((value, depth)) = pending.pop() {
+            visits = visits.saturating_add(1);
+            if visits > limits.max_blocks as usize {
+                return Err(PdfError::LimitExceeded(ReadError::TooManyBlocks {
+                    limit: limits.max_blocks,
+                }));
             }
-            if !names.iter().any(|existing| existing == key) {
-                names.push(key.to_owned());
+            if depth > usize::from(limits.max_nesting_depth) {
+                return Err(PdfError::LimitExceeded(ReadError::NestingTooDeep {
+                    limit: limits.max_nesting_depth,
+                }));
+            }
+            ctx.check()?;
+            match value {
+                Object::Reference(id) if seen.insert(*id) => {
+                    if let Ok(object) = doc.get_object(*id) {
+                        pending.push((object, depth + 1));
+                    }
+                }
+                Object::Array(items) => {
+                    if items.len() > limits.max_blocks as usize {
+                        return Err(PdfError::LimitExceeded(ReadError::TooManyBlocks {
+                            limit: limits.max_blocks,
+                        }));
+                    }
+                    pending.extend(items.iter().map(|item| (item, depth + 1)));
+                }
+                Object::Dictionary(action) => {
+                    if get(doc, action, b"S", limits).and_then(|v| v.as_name().ok())
+                        == Some(b"JavaScript")
+                    {
+                        javascript = true;
+                    }
+                    if !names.iter().any(|existing| existing == key) {
+                        names.push(key.to_owned());
+                    }
+                    if let Ok(next) = action.get(b"Next") {
+                        pending.push((next, depth + 1));
+                    }
+                }
+                _ => {}
             }
         }
+        Ok(())
     };
     if let Ok(action) = dictionary.get(b"A") {
-        inspect("action", action);
+        inspect("action", action)?;
     }
     if let Some(aa) = get(doc, dictionary, b"AA", limits).and_then(|v| v.as_dict().ok()) {
         if aa.len() > limits.max_blocks as usize {
@@ -308,7 +344,7 @@ fn actions(
                 b"X" => "mouse_exit",
                 _ => "other",
             };
-            inspect(name, value);
+            inspect(name, value)?;
         }
     }
     names.sort();
@@ -526,11 +562,7 @@ pub fn list(
             });
         let quads = numbers(doc, dictionary, b"QuadPoints", limits).and_then(|v| {
             if v.len() % 8 == 0 {
-                Some(
-                    v.chunks_exact(8)
-                        .map(|c| c.try_into().unwrap_or([0.0; 8]))
-                        .collect(),
-                )
+                Some(v.as_chunks::<8>().0.to_vec())
             } else {
                 None
             }

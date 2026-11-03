@@ -123,3 +123,35 @@ fn rejects_oversized_annotation_strings_before_decoding() {
         Err(ariad_pdf::PdfError::LimitExceeded(_))
     ));
 }
+
+#[test]
+fn reports_javascript_in_cyclic_next_action_chain() {
+    use lopdf::{Object, dictionary};
+    let limits = Limits::local();
+    let mut pdf = document::open(&fixture("forms-all-types.pdf"), &limits).unwrap();
+    let doc = pdf.inner_mut().unwrap();
+    let page = *doc.get_pages().values().next().unwrap();
+    let first = doc.new_object_id();
+    let second = doc.new_object_id();
+    doc.objects.insert(
+        first,
+        Object::Dictionary(dictionary! {
+            "S" => "Named", "Next" => vec![Object::Reference(second)]
+        }),
+    );
+    doc.objects.insert(
+        second,
+        Object::Dictionary(dictionary! {
+            "S" => "JavaScript", "Next" => Object::Reference(first)
+        }),
+    );
+    let annotation = dictionary! {
+        "Subtype" => "Text", "Rect" => vec![0.into(), 0.into(), 10.into(), 10.into()],
+        "A" => Object::Reference(first)
+    };
+    doc.get_dictionary_mut(page)
+        .unwrap()
+        .set("Annots", vec![Object::Dictionary(annotation)]);
+    let listing = read::list(&pdf, &selector(), &limits, &ToolCtx::new()).unwrap();
+    assert!(listing.annotations[0].actions.has_javascript);
+}
