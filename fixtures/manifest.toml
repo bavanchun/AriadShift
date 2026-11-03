@@ -5283,3 +5283,13 @@ tags = []
 phase = "4"
 routes = []
 companions = []
+
+[[fuzz_seed]]
+id = "fuzz-pdf-draw-params-add-text"
+target = "pdf_draw_params"
+path = "fuzz/seeds/pdf_draw_params/add-text.txt"
+sha256 = "d26197f197c8868c377315853d3b914ccc1c204d211b437c238060650f3a7ffd"
+source = "Original synthetic add-text parameters for the PDF drawing fuzz target."
+license = "Apache-2.0"
+license_basis = "Original synthetic parser input authored for AriadShift and distributed under the repository license."
+attribution = "AriadShift contributors"

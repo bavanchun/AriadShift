@@ -15,6 +15,10 @@ ci = read('.github/workflows/ci.yml')
 static = ci.split('\n  static:\n')[1].split('\n  lint-windows:\n')[0]
 assert 'cargo check --locked -p ariad-pdf --no-default-features\n' in static
 assert 'cargo check --locked -p ariad-pdf --no-default-features --features codecs' in static
+fuzz_targets = re.search(r'targets="([^"]+)"', ci)
+assert fuzz_targets, 'CI fuzz target list is missing'
+for target in fuzz_targets.group(1).split():
+    assert any(Path('fuzz/seeds', target).iterdir()), f'missing fuzz seed for {target}'
 server = ci.split('\n  server:\n')[1].split('\n  fuzz:\n')[0]
 assert 'ARIAD_TEST_DATABASE_URL:' in server and 'ARIAD_TEST_REQUIRE_DATABASE: "1"' in server
 server_recipe = recipes.split('\ntest-server:\n')[1].split('\n# Build/check')[0]
