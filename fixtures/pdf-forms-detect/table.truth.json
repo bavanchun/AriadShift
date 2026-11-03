@@ -1,0 +1,157 @@
+{
+  "version": "ariad-truth/0",
+  "id": "detect-table",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 1,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0
+  ],
+  "metadata": {
+    "title": "Synthetic form detection: table",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": false,
+  "field_names": [],
+  "form_fields": [],
+  "has_annotations": false,
+  "annotations": [],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 1,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "Synthetic form detection: table",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": false,
+    "has_annotations": false,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Synthetic form detection: table",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  },
+  "detected_fields": [
+    {
+      "name": "item",
+      "type": "text",
+      "rect": [
+        201,
+        701,
+        319,
+        729
+      ]
+    },
+    {
+      "name": "item_2",
+      "type": "text",
+      "rect": [
+        321,
+        701,
+        439,
+        729
+      ]
+    },
+    {
+      "name": "count",
+      "type": "text",
+      "rect": [
+        201,
+        671,
+        319,
+        699
+      ]
+    },
+    {
+      "name": "count_2",
+      "type": "text",
+      "rect": [
+        321,
+        671,
+        439,
+        699
+      ]
+    },
+    {
+      "name": "price",
+      "type": "text",
+      "rect": [
+        201,
+        641,
+        319,
+        669
+      ]
+    },
+    {
+      "name": "price_2",
+      "type": "text",
+      "rect": [
+        321,
+        641,
+        439,
+        669
+      ]
+    }
+  ]
+}

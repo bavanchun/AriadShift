@@ -788,6 +788,7 @@ fn tool_input_is_attachment_payload(spec_id: &str, params: &Value, input_index: 
     match spec_id {
         "pdf.attachments" => action == Some("add") && input_index >= 1,
         "pdf.portfolio" => action == Some("create"),
+        "pdf.annotations_import" | "pdf.forms_import" => input_index >= 1,
         _ => false,
     }
 }
@@ -804,7 +805,18 @@ fn tool_action_emits_json(spec_id: &str, params: &Value) -> bool {
     let action = params.get("action").and_then(Value::as_str);
     match spec_id {
         "pdf.outline" => action == Some("export"),
-        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" => action == Some("list"),
+        "pdf.forms_export" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .unwrap_or("json")
+            .eq_ignore_ascii_case("json"),
+        "pdf.annotations_export" => params
+            .get("format")
+            .and_then(Value::as_str)
+            .is_some_and(|format| format.eq_ignore_ascii_case("json")),
+        "pdf.attachments" | "pdf.portfolio" | "pdf.layers" | "pdf.annotations" => {
+            action == Some("list")
+        }
         _ => false,
     }
 }
@@ -817,6 +829,8 @@ fn tool_output_format_meta(output_format: &str) -> (&'static str, &'static str, 
         "md" | "markdown" => ("markdown", "text/markdown", "md"),
         "html" | "htm" => ("html", "text/html", "html"),
         "csv" => ("csv", "text/csv", "csv"),
+        "fdf" => ("fdf", "application/fdf", "fdf"),
+        "xfdf" => ("xfdf", "application/xfdf", "xfdf"),
         "txt" => ("txt", "text/plain", "txt"),
         "xml" => ("xml", "application/xml", "xml"),
         "png" => ("png", "image/png", "png"),
@@ -952,6 +966,37 @@ mod tests {
     use ariad_core::tools::params::InfoParams;
 
     use super::*;
+
+    #[test]
+    fn annotation_form_payload_and_format_metadata() {
+        let empty = serde_json::json!({});
+        for id in ["pdf.forms_import", "pdf.annotations_import"] {
+            assert!(!tool_input_is_attachment_payload(id, &empty, 0));
+            assert!(tool_input_is_attachment_payload(id, &empty, 1));
+        }
+        assert!(tool_action_emits_json(
+            "pdf.annotations",
+            &serde_json::json!({"action":"list"})
+        ));
+        assert!(tool_action_emits_json("pdf.forms_export", &empty));
+        assert!(!tool_action_emits_json(
+            "pdf.forms_export",
+            &serde_json::json!({"format":"csv"})
+        ));
+        assert!(tool_action_emits_json(
+            "pdf.annotations_export",
+            &serde_json::json!({"format":"json"})
+        ));
+        assert!(!tool_action_emits_json("pdf.annotations_export", &empty));
+        assert_eq!(
+            tool_output_format_meta("fdf"),
+            ("fdf", "application/fdf", "fdf")
+        );
+        assert_eq!(
+            tool_output_format_meta("xfdf"),
+            ("xfdf", "application/xfdf", "xfdf")
+        );
+    }
 
     #[test]
     fn pdf_tool_exposes_coded_warnings_and_metrics() {

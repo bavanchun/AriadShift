@@ -243,9 +243,15 @@ pub struct PdfDoc {
     inner: Document,
     provenance: TrailerProvenance,
     decode_budget: DecodeBudget,
+    source_len: u64,
 }
 
 impl PdfDoc {
+    /// Size of the original serialized input used to open this document.
+    #[must_use]
+    pub const fn source_len(&self) -> u64 {
+        self.source_len
+    }
     /// Borrows the underlying [`lopdf::Document`].
     #[must_use]
     pub const fn inner(&self) -> &Document {
@@ -421,6 +427,7 @@ pub fn open_for_info_with_ctx(
 
     Ok(PdfDoc {
         inner,
+        source_len: bytes.len() as u64,
         provenance: TrailerProvenance {
             encrypted,
             encrypt_object_id,

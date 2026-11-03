@@ -1,0 +1,368 @@
+{
+  "version": "ariad-truth/0",
+  "id": "annotations-all-types",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 1,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0
+  ],
+  "metadata": {
+    "title": "Synthetic annotations coverage",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": false,
+  "field_names": [],
+  "form_fields": [],
+  "has_annotations": true,
+  "annotations": [
+    {
+      "subtype": "Highlight",
+      "page": 1,
+      "rect": [
+        40,
+        740,
+        160,
+        770
+      ],
+      "contents": "Annotation 0",
+      "has_appearance": true,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Underline",
+      "page": 1,
+      "rect": [
+        210,
+        740,
+        330,
+        770
+      ],
+      "contents": "Annotation 1",
+      "has_appearance": false,
+      "flags": 2,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "StrikeOut",
+      "page": 1,
+      "rect": [
+        380,
+        740,
+        500,
+        770
+      ],
+      "contents": "Annotation 2",
+      "has_appearance": true,
+      "flags": 32,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Squiggly",
+      "page": 1,
+      "rect": [
+        40,
+        665,
+        160,
+        695
+      ],
+      "contents": "Annotation 3",
+      "has_appearance": false,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": true
+    },
+    {
+      "subtype": "Text",
+      "page": 1,
+      "rect": [
+        210,
+        665,
+        330,
+        695
+      ],
+      "contents": "Annotation 4",
+      "has_appearance": true,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "FreeText",
+      "page": 1,
+      "rect": [
+        380,
+        665,
+        500,
+        695
+      ],
+      "contents": "Annotation 5",
+      "has_appearance": false,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Ink",
+      "page": 1,
+      "rect": [
+        40,
+        590,
+        160,
+        620
+      ],
+      "contents": "Annotation 6",
+      "has_appearance": true,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Line",
+      "page": 1,
+      "rect": [
+        210,
+        590,
+        330,
+        620
+      ],
+      "contents": "Annotation 7",
+      "has_appearance": false,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Line",
+      "page": 1,
+      "rect": [
+        380,
+        590,
+        500,
+        620
+      ],
+      "contents": "Annotation 8",
+      "has_appearance": true,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Square",
+      "page": 1,
+      "rect": [
+        40,
+        515,
+        160,
+        545
+      ],
+      "contents": "Annotation 9",
+      "has_appearance": false,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Circle",
+      "page": 1,
+      "rect": [
+        210,
+        515,
+        330,
+        545
+      ],
+      "contents": "Annotation 10",
+      "has_appearance": true,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Polygon",
+      "page": 1,
+      "rect": [
+        380,
+        515,
+        500,
+        545
+      ],
+      "contents": "Annotation 11",
+      "has_appearance": false,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "PolyLine",
+      "page": 1,
+      "rect": [
+        40,
+        440,
+        160,
+        470
+      ],
+      "contents": "Annotation 12",
+      "has_appearance": true,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Stamp",
+      "page": 1,
+      "rect": [
+        210,
+        440,
+        330,
+        470
+      ],
+      "contents": "Annotation 13",
+      "has_appearance": false,
+      "flags": 4,
+      "uri": null,
+      "ocg_off": false
+    },
+    {
+      "subtype": "Link",
+      "page": 1,
+      "rect": [
+        380,
+        440,
+        500,
+        470
+      ],
+      "contents": "Annotation 14",
+      "has_appearance": false,
+      "flags": 4,
+      "uri": "https://example.org/",
+      "ocg_off": false
+    },
+    {
+      "subtype": "Popup",
+      "page": 1,
+      "rect": [
+        50,
+        300,
+        180,
+        400
+      ],
+      "popup_of": "annotation-4",
+      "has_appearance": false
+    },
+    {
+      "subtype": "Text",
+      "page": 1,
+      "rect": [
+        60,
+        250,
+        80,
+        270
+      ],
+      "reply_to": "annotation-4",
+      "contents": "reply",
+      "has_appearance": false
+    },
+    {
+      "subtype": "FileAttachment",
+      "page": 1,
+      "rect": [
+        90,
+        250,
+        110,
+        270
+      ],
+      "has_appearance": false
+    },
+    {
+      "subtype": "Redact",
+      "page": 1,
+      "rect": [
+        120,
+        250,
+        150,
+        270
+      ],
+      "has_appearance": false
+    }
+  ],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 1,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "Synthetic annotations coverage",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": false,
+    "has_annotations": true,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Synthetic annotations coverage",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  }
+}

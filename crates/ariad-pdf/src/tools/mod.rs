@@ -358,6 +358,83 @@ pub fn run_tool(
 
     match tool_id {
         #[cfg(feature = "codecs")]
+        "pdf.annotations" => dispatch_structural_inputs::<
+            ariad_core::tools::params::annotations::AnnotationsParams,
+            _,
+        >(tool_id, inputs, params, ctx, crate::annotations::run::run),
+        #[cfg(feature = "codecs")]
+        "pdf.annotations_import" => dispatch_structural_inputs::<
+            ariad_core::tools::params::annotations::AnnotationsImportParams,
+            _,
+        >(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            crate::interchange::run::annotations_import,
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.annotations_export" => dispatch_structural_inputs::<
+            ariad_core::tools::params::annotations::AnnotationsExportParams,
+            _,
+        >(
+            tool_id,
+            inputs,
+            params,
+            ctx,
+            crate::interchange::run::annotations_export,
+        ),
+        #[cfg(feature = "codecs")]
+        "pdf.forms_list" => dispatch_structural_inputs::<
+            ariad_core::tools::params::forms::FormsListParams,
+            _,
+        >(tool_id, inputs, params, ctx, crate::forms::run::list_inputs),
+        #[cfg(feature = "codecs")]
+        "pdf.forms_fill" => dispatch_structural_inputs::<
+            ariad_core::tools::params::forms::FormsFillParams,
+            _,
+        >(tool_id, inputs, params, ctx, crate::forms::run::fill_inputs),
+        #[cfg(feature = "codecs")]
+        "pdf.forms_create" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::forms::FormsCreateParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                crate::forms::run::create_inputs,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.forms_flatten" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::forms::FormsFlattenParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                crate::forms::run::flatten_inputs,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.forms_import" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::forms::FormsImportParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                crate::interchange::run::forms_import,
+            )
+        }
+        #[cfg(feature = "codecs")]
+        "pdf.forms_export" => {
+            dispatch_structural_inputs::<ariad_core::tools::params::forms::FormsExportParams, _>(
+                tool_id,
+                inputs,
+                params,
+                ctx,
+                crate::interchange::run::forms_export,
+            )
+        }
+        #[cfg(feature = "codecs")]
         "pdf.page_numbers" => {
             dispatch_structural::<ariad_core::tools::params::PageNumbersParams, _>(
                 tool_id,

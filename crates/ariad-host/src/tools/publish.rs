@@ -493,6 +493,14 @@ pub fn default_tool_suffix(tool_id: &str) -> String {
         "pdf.ocr" => "ocr".to_owned(),
         "pdf.redact" => "redacted".to_owned(),
         "pdf.info" => "info".to_owned(),
+        "pdf.annotations" | "pdf.annotations_export" => "annotations".to_owned(),
+        "pdf.annotations_import" => "annotated".to_owned(),
+        "pdf.forms_list" => "fields".to_owned(),
+        "pdf.forms_fill" | "pdf.forms_import" => "filled".to_owned(),
+        "pdf.forms_create" => "form".to_owned(),
+        "pdf.forms_flatten" => "flattened".to_owned(),
+        "pdf.forms_detect" => "detected-fields".to_owned(),
+        "pdf.forms_export" => "form-data".to_owned(),
         "pdf.decrypt" => "decrypted".to_owned(),
         "pdf.encrypt" => "encrypted".to_owned(),
         "pdf.permissions" => "permissions".to_owned(),
@@ -991,6 +999,24 @@ fn rollback_batch(workspace: &Workspace, dest_cap_dir: &Dir, entries: &[BatchEnt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn form_and_annotation_tools_use_their_documented_suffixes() {
+        for (id, suffix) in [
+            ("pdf.annotations", "annotations"),
+            ("pdf.annotations_import", "annotated"),
+            ("pdf.annotations_export", "annotations"),
+            ("pdf.forms_list", "fields"),
+            ("pdf.forms_fill", "filled"),
+            ("pdf.forms_create", "form"),
+            ("pdf.forms_flatten", "flattened"),
+            ("pdf.forms_detect", "detected-fields"),
+            ("pdf.forms_import", "filled"),
+            ("pdf.forms_export", "form-data"),
+        ] {
+            assert_eq!(default_tool_suffix(id), suffix);
+        }
+    }
 
     #[test]
     fn naming_uses_the_supplied_clock_and_explicit_date() {

@@ -29,6 +29,7 @@ const PDFIUM_TOOLS: &[&str] = &[
     "pdf.remove_blank",
     "pdf.crop_whitespace",
     "pdf.detect_scanned",
+    "pdf.forms_detect",
     "pdf.deskew",
     "pdf.scan_split",
     "pdf.scanner_effect",

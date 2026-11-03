@@ -1,5 +1,6 @@
 //! Per-file tool specification lists concatenated into the global tool registry.
 
+pub mod annotate_forms;
 pub mod ocr_scan;
 pub mod optimize;
 pub mod organize_document;
@@ -35,5 +36,6 @@ pub fn all_specs() -> Vec<ToolSpec> {
     list.extend(optimize::specs());
     list.extend(security::specs());
     list.extend(ocr_scan::specs());
+    list.extend(annotate_forms::specs());
     list
 }

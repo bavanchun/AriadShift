@@ -1,0 +1,703 @@
+{
+  "version": "ariad-truth/0",
+  "id": "forms-no-appearance",
+  "unscored": true,
+  "unscored_reason": "PDF tools test corpus fixture (routes = [])",
+  "pdf_version": "1.5",
+  "page_count": 2,
+  "encrypted": false,
+  "linearized": false,
+  "pages": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    },
+    {
+      "page": 2,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait",
+      "rotation": 0,
+      "blank": false
+    }
+  ],
+  "sizes": [
+    {
+      "page": 1,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    },
+    {
+      "page": 2,
+      "width_pt": 595.28,
+      "height_pt": 841.89,
+      "paper": "A4",
+      "orientation": "portrait"
+    }
+  ],
+  "rotations": [
+    0,
+    0
+  ],
+  "metadata": {
+    "title": "Synthetic form field coverage",
+    "author": "AriadShift contributors",
+    "creator": "AriadShift fixture generator",
+    "producer": "AriadShift fixture generator",
+    "creation_date": "D:20231114221320Z",
+    "mod_date": "D:20231114221320Z",
+    "language": "en"
+  },
+  "has_forms": true,
+  "field_names": [
+    "name",
+    "multiline",
+    "comb",
+    "password",
+    "aligned",
+    "check",
+    "choice",
+    "editable",
+    "list",
+    "multi",
+    "push",
+    "signature",
+    "readonly",
+    "required",
+    "radio",
+    "person.name",
+    "person.address.city",
+    "shared"
+  ],
+  "form_fields": [
+    {
+      "name": "name",
+      "type": "text",
+      "value": "",
+      "default_value": "",
+      "page": 1,
+      "rect": [
+        200,
+        745,
+        400,
+        767
+      ],
+      "flags": 0,
+      "options": [],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            745,
+            400,
+            767
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "multiline",
+      "type": "text",
+      "value": "",
+      "default_value": "",
+      "page": 1,
+      "rect": [
+        200,
+        707,
+        400,
+        729
+      ],
+      "flags": 4096,
+      "options": [],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            707,
+            400,
+            729
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "comb",
+      "type": "text",
+      "value": "",
+      "default_value": "",
+      "page": 1,
+      "rect": [
+        200,
+        669,
+        400,
+        691
+      ],
+      "flags": 16777216,
+      "options": [],
+      "max_length": 8,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            669,
+            400,
+            691
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "password",
+      "type": "text",
+      "value": "",
+      "default_value": "",
+      "page": 1,
+      "rect": [
+        200,
+        631,
+        400,
+        653
+      ],
+      "flags": 8192,
+      "options": [],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            631,
+            400,
+            653
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "aligned",
+      "type": "text",
+      "value": "",
+      "default_value": "",
+      "page": 1,
+      "rect": [
+        200,
+        593,
+        400,
+        615
+      ],
+      "flags": 0,
+      "options": [],
+      "max_length": null,
+      "alignment": 2,
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            593,
+            400,
+            615
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "check",
+      "type": "checkbox",
+      "value": "Off",
+      "default_value": null,
+      "page": 1,
+      "rect": [
+        200,
+        555,
+        220,
+        577
+      ],
+      "flags": 0,
+      "options": [],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            555,
+            220,
+            577
+          ],
+          "on_state": "On"
+        }
+      ]
+    },
+    {
+      "name": "choice",
+      "type": "combo",
+      "value": "",
+      "default_value": "",
+      "page": 1,
+      "rect": [
+        200,
+        517,
+        400,
+        539
+      ],
+      "flags": 131072,
+      "options": [
+        "a",
+        "b",
+        "c"
+      ],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            517,
+            400,
+            539
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "editable",
+      "type": "combo",
+      "value": "",
+      "default_value": "",
+      "page": 1,
+      "rect": [
+        200,
+        479,
+        400,
+        501
+      ],
+      "flags": 393216,
+      "options": [
+        "a",
+        "b"
+      ],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            479,
+            400,
+            501
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "list",
+      "type": "list",
+      "value": "",
+      "default_value": "",
+      "page": 2,
+      "rect": [
+        200,
+        745,
+        400,
+        767
+      ],
+      "flags": 0,
+      "options": [
+        "a",
+        "b"
+      ],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 2,
+          "rect": [
+            200,
+            745,
+            400,
+            767
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "multi",
+      "type": "list",
+      "value": [],
+      "default_value": [],
+      "page": 2,
+      "rect": [
+        200,
+        707,
+        400,
+        729
+      ],
+      "flags": 2097152,
+      "options": [
+        "a",
+        "b",
+        "c"
+      ],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 2,
+          "rect": [
+            200,
+            707,
+            400,
+            729
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "push",
+      "type": "button",
+      "value": null,
+      "default_value": null,
+      "page": 2,
+      "rect": [
+        200,
+        669,
+        400,
+        691
+      ],
+      "flags": 65536,
+      "options": [],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 2,
+          "rect": [
+            200,
+            669,
+            400,
+            691
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "signature",
+      "type": "signature",
+      "value": null,
+      "default_value": null,
+      "page": 2,
+      "rect": [
+        200,
+        631,
+        400,
+        653
+      ],
+      "flags": 0,
+      "options": [],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 2,
+          "rect": [
+            200,
+            631,
+            400,
+            653
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "readonly",
+      "type": "text",
+      "value": "",
+      "default_value": "",
+      "page": 2,
+      "rect": [
+        200,
+        593,
+        400,
+        615
+      ],
+      "flags": 1,
+      "options": [],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 2,
+          "rect": [
+            200,
+            593,
+            400,
+            615
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "required",
+      "type": "text",
+      "value": "",
+      "default_value": "",
+      "page": 2,
+      "rect": [
+        200,
+        555,
+        400,
+        577
+      ],
+      "flags": 2,
+      "options": [],
+      "max_length": null,
+      "alignment": 0,
+      "widgets": [
+        {
+          "page": 2,
+          "rect": [
+            200,
+            555,
+            400,
+            577
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "radio",
+      "type": "radio",
+      "value": "a",
+      "default_value": null,
+      "page": 1,
+      "rect": [
+        200,
+        430,
+        220,
+        450
+      ],
+      "flags": 32768,
+      "options": [
+        "a",
+        "b",
+        "c"
+      ],
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            430,
+            220,
+            450
+          ],
+          "on_state": "a"
+        },
+        {
+          "page": 1,
+          "rect": [
+            230,
+            430,
+            250,
+            450
+          ],
+          "on_state": "b"
+        },
+        {
+          "page": 1,
+          "rect": [
+            260,
+            430,
+            280,
+            450
+          ],
+          "on_state": "c"
+        }
+      ]
+    },
+    {
+      "name": "person.name",
+      "type": "text",
+      "value": "",
+      "default_value": null,
+      "page": 1,
+      "rect": [
+        200,
+        350,
+        400,
+        372
+      ],
+      "flags": 0,
+      "options": [],
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            350,
+            400,
+            372
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "person.address.city",
+      "type": "text",
+      "value": "",
+      "default_value": null,
+      "page": 1,
+      "rect": [
+        200,
+        320,
+        400,
+        342
+      ],
+      "flags": 0,
+      "options": [],
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            320,
+            400,
+            342
+          ],
+          "on_state": null
+        }
+      ]
+    },
+    {
+      "name": "shared",
+      "type": "text",
+      "value": "",
+      "default_value": null,
+      "page": 1,
+      "rect": [
+        200,
+        270,
+        400,
+        292
+      ],
+      "flags": 0,
+      "options": [],
+      "widgets": [
+        {
+          "page": 1,
+          "rect": [
+            200,
+            270,
+            400,
+            292
+          ],
+          "on_state": null
+        },
+        {
+          "page": 2,
+          "rect": [
+            200,
+            270,
+            400,
+            292
+          ],
+          "on_state": null
+        }
+      ]
+    }
+  ],
+  "has_annotations": true,
+  "annotations": [],
+  "has_attachments": false,
+  "attachments": [],
+  "has_javascript": false,
+  "javascript": null,
+  "outline_count": 0,
+  "outlines": [],
+  "page_labels": [],
+  "watermark_kind": null,
+  "watermark": null,
+  "pdf_info": {
+    "version": "1.5",
+    "page_count": 2,
+    "encrypted": false,
+    "linearized": false,
+    "pages": [
+      {
+        "page": 1,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      },
+      {
+        "page": 2,
+        "width_pt": 595.28,
+        "height_pt": 841.89,
+        "paper": "A4",
+        "orientation": "portrait",
+        "rotation": 0,
+        "blank": false
+      }
+    ],
+    "metadata": {
+      "title": "Synthetic form field coverage",
+      "author": "AriadShift contributors",
+      "creator": "AriadShift fixture generator",
+      "producer": "AriadShift fixture generator",
+      "creation_date": "D:20231114221320Z",
+      "mod_date": "D:20231114221320Z",
+      "language": "en"
+    },
+    "has_forms": true,
+    "has_annotations": true,
+    "has_attachments": false,
+    "has_javascript": false,
+    "outline_count": 0
+  },
+  "canonical": {
+    "text": "Synthetic form field coverage",
+    "headings": [],
+    "tables": [],
+    "lists": [],
+    "image_count": 0,
+    "link_count": 0
+  }
+}

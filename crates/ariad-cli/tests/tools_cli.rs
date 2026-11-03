@@ -414,7 +414,29 @@ fn tools_command_lists_registry_json_and_human() {
         ]
     );
     let all_tools = tools_json.as_array().unwrap();
-    assert_eq!(all_tools.len(), 65);
+    assert_eq!(all_tools.len(), 75);
+    for id in [
+        "pdf.annotations",
+        "pdf.annotations_import",
+        "pdf.annotations_export",
+        "pdf.forms_list",
+        "pdf.forms_fill",
+        "pdf.forms_create",
+        "pdf.forms_flatten",
+        "pdf.forms_import",
+        "pdf.forms_export",
+    ] {
+        assert!(
+            all_tools
+                .iter()
+                .any(|tool| tool["id"] == id && tool["runtimes"] == json!(["wasm", "local"]))
+        );
+    }
+    assert!(
+        all_tools
+            .iter()
+            .any(|tool| tool["id"] == "pdf.forms_detect" && tool["runtimes"] == json!(["local"]))
+    );
     for id in [
         "pdf.ocr",
         "image.ocr",

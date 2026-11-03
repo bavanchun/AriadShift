@@ -14,7 +14,7 @@ use ariad_core::{
             RemoveBlankParams, RenderParams, ScanRenderParams, ScanSplitParams,
             ScannerEffectParams, TextLayoutParams, ThumbnailsParams, ToImagesParams,
         },
-        specs::pdfium::specs,
+        specs::{annotate_forms::PDF_FORMS_DETECT_SPEC, pdfium::specs},
     },
 };
 use ariad_engine_io::{EngineFailure, emit_capabilities_v2, validate_run_tool};
@@ -22,7 +22,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::{
-    ENGINE_ID, blank, crop_whitespace, detect_scanned, extract_images, library,
+    ENGINE_ID, blank, crop_whitespace, detect_scanned, extract_images, forms_detect, library,
     output::{ToolContext, ToolResult},
     render, text_layout, thumbnails,
 };
@@ -38,6 +38,7 @@ pub const TOOL_IDS: &[&str] = &[
     "pdf.remove_blank",
     "pdf.crop_whitespace",
     "pdf.detect_scanned",
+    "pdf.forms_detect",
     "pdf.split",
     "scan.render",
     "pdf.deskew",
@@ -64,7 +65,16 @@ fn capabilities_with(library_found: bool) -> EventV2 {
             version: specs
                 .iter()
                 .find(|spec| spec.id == *id)
-                .map_or(SPLIT_VERSION, |spec| spec.version)
+                .map_or_else(
+                    || {
+                        if *id == PDF_FORMS_DETECT_SPEC.id {
+                            PDF_FORMS_DETECT_SPEC.version
+                        } else {
+                            SPLIT_VERSION
+                        }
+                    },
+                    |spec| spec.version,
+                )
                 .to_owned(),
         })
         .collect();
@@ -187,6 +197,10 @@ pub fn run_tool(ctx: &mut ToolContext<'_>, params: Value) -> ToolResult {
             crop_whitespace::run(ctx, params)
         }
         "pdf.detect_scanned" => detect_scanned::run(ctx, parse::<DetectScannedParams>(params)?),
+        "pdf.forms_detect" => forms_detect::run(
+            ctx,
+            parse::<ariad_core::tools::params::forms::FormsDetectParams>(params)?,
+        ),
         "pdf.split" => blank::split_pixel(ctx, &params),
         _ => Err(EngineFailure::unsupported_route()),
     }
@@ -281,6 +295,7 @@ mod tests {
                 "pdf.remove_blank",
                 "pdf.crop_whitespace",
                 "pdf.detect_scanned",
+                "pdf.forms_detect",
                 "pdf.split",
                 "scan.render",
                 "pdf.deskew",
@@ -315,6 +330,7 @@ mod tests {
             ("pdf.deskew", json!({})),
             ("pdf.scan_split", json!({})),
             ("pdf.scanner_effect", json!({})),
+            ("pdf.forms_detect", json!({})),
             (
                 "pdf.split",
                 json!({"mode": "blank-separator", "detect": "pixel"}),
@@ -359,6 +375,7 @@ mod tests {
             ("pdf.deskew", json!({"max_angle_deg": 46})),
             ("pdf.scan_split", json!({"min_area_ratio": 1})),
             ("pdf.scanner_effect", json!({"quality": 9})),
+            ("pdf.forms_detect", json!({"min_confidence": 2})),
         ] {
             let (events, _) = run_request(&run_tool_request(ws.path(), tool, params));
             let last = events.last().expect("a result event");
