@@ -245,7 +245,6 @@ fn xfdf_export_drops_invalid_xml_controls_and_warns() {
     use ariad_core::{limits::Limits, tools::params::forms::FormsExportParams};
     use ariad_pdf::{
         document,
-        forms::fill::{self, FillOptions},
         interchange::run,
         tools::{InputDoc, OutputPayload},
     };
@@ -255,14 +254,23 @@ fn xfdf_export_drops_invalid_xml_controls_and_warns() {
         &Limits::local(),
     )
     .unwrap();
-    fill::fill(
-        &mut pdf,
-        &std::collections::BTreeMap::from([("name".into(), FormValue::Text("a\u{1}b".into()))]),
-        &FillOptions { strict: true },
-        &Limits::local(),
-        &ctx,
-    )
-    .unwrap();
+    let field = pdf
+        .inner_mut()
+        .unwrap()
+        .objects
+        .values_mut()
+        .find_map(|object| {
+            let dict = object.as_dict_mut().ok()?;
+            (dict.get(b"T").ok()?.as_str().ok()? == b"name").then_some(dict)
+        })
+        .unwrap();
+    field.set(
+        "V",
+        lopdf::Object::String(
+            vec![0xfe, 0xff, 0, b'a', 0, 1, 0, b'b'],
+            lopdf::StringFormat::Literal,
+        ),
+    );
     let params: FormsExportParams =
         serde_json::from_value(serde_json::json!({"format":"xfdf"})).unwrap();
     let (_, outputs) =
