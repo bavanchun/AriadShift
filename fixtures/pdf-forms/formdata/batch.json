@@ -1,0 +1,32 @@
+[
+  {
+    "name": "An Nguyễn",
+    "check": "On",
+    "choice": "a",
+    "person.name": "An"
+  },
+  {
+    "name": "Bình",
+    "check": "Off",
+    "choice": "b",
+    "person.name": "Bình"
+  },
+  {
+    "name": "Chi\nNguyễn",
+    "check": "On",
+    "choice": "c",
+    "person.name": "Chi"
+  },
+  {
+    "name": "Dũng",
+    "check": "Off",
+    "choice": "a",
+    "person.name": "Dũng"
+  },
+  {
+    "name": "Én",
+    "check": "On",
+    "choice": "b",
+    "person.name": "Én"
+  }
+]
