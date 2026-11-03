@@ -24,6 +24,15 @@ use crate::error::PdfError;
 /// `/Encrypt` and `/Prev` before `lopdf` parses the document.
 const MAX_TRAILER_WINDOW: usize = 4096;
 
+/// A caller-supplied instant and local UTC offset for date tokens.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ToolClock {
+    /// Seconds since the Unix epoch.
+    pub epoch_secs: i64,
+    /// Local offset east of UTC, in seconds.
+    pub utc_offset_secs: i32,
+}
+
 /// Cooperative cancellation and deadline context for in-process PDF tool execution.
 ///
 /// Construct a context with the public methods and read its fields as needed:
@@ -53,6 +62,10 @@ pub struct ToolCtx {
     /// Optional run-level page limit (`Limits.max_pages`), used to lower the 10,000-page output
     /// ceiling when a smaller limit is configured.
     pub max_pages: Option<u32>,
+    /// Optional caller-supplied clock for date tokens.
+    pub clock: Option<ToolClock>,
+    /// Optional reproducible timestamp supplied by the host.
+    pub source_date_epoch: Option<i64>,
 }
 
 impl ToolCtx {
@@ -69,6 +82,8 @@ impl ToolCtx {
             deadline: Some(deadline),
             cancel: Arc::new(AtomicBool::new(false)),
             max_pages: None,
+            clock: None,
+            source_date_epoch: None,
         }
     }
 
@@ -79,6 +94,8 @@ impl ToolCtx {
             deadline: None,
             cancel,
             max_pages: None,
+            clock: None,
+            source_date_epoch: None,
         }
     }
 
@@ -87,6 +104,36 @@ impl ToolCtx {
     pub const fn with_max_pages(mut self, max_pages: Option<u32>) -> Self {
         self.max_pages = max_pages;
         self
+    }
+
+    /// Sets the caller-supplied clock used for date tokens.
+    #[must_use]
+    pub const fn with_clock(mut self, clock: ToolClock) -> Self {
+        self.clock = Some(clock);
+        self
+    }
+
+    /// Sets the host-supplied reproducible timestamp for PDF serialization.
+    ///
+    /// A `Some` value also sets the date-token clock to that epoch in UTC,
+    /// replacing any clock previously supplied with [`Self::with_clock`]. To use
+    /// a different clock, call `with_clock` after this method.
+    #[must_use]
+    pub const fn with_source_date_epoch(mut self, epoch: Option<i64>) -> Self {
+        self.source_date_epoch = epoch;
+        if let Some(epoch_secs) = epoch {
+            self.clock = Some(ToolClock {
+                epoch_secs,
+                utc_offset_secs: 0,
+            });
+        }
+        self
+    }
+
+    /// Returns the caller-supplied clock, if present.
+    #[must_use]
+    pub const fn clock(&self) -> Option<ToolClock> {
+        self.clock
     }
 
     /// Checks whether the cancellation flag has been set or the deadline has elapsed.
@@ -516,4 +563,21 @@ pub(crate) fn preflight_image_dimensions(
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::{ToolClock, ToolCtx};
+
+    #[test]
+    fn clock_is_explicit_and_preserved_when_cloned() {
+        let clock = ToolClock {
+            epoch_secs: 1_700_000_000,
+            utc_offset_secs: 25_200,
+        };
+        assert_eq!(ToolCtx::new().clock(), None);
+        let ctx = ToolCtx::new().with_clock(clock).with_max_pages(Some(5));
+        assert_eq!(ctx.clone().clock(), Some(clock));
+        assert_eq!(ctx.max_pages, Some(5));
+    }
 }

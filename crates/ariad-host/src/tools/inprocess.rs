@@ -14,7 +14,7 @@ use std::{
 };
 
 use ariad_core::{limits::Limits, tools::ToolSpec};
-use ariad_pdf::{InputDoc, PdfError, ToolCtx};
+use ariad_pdf::{InputDoc, PdfError, ToolClock, ToolCtx};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -101,15 +101,55 @@ impl Drop for CancelBridge {
     }
 }
 
-/// Builds an [`ariad_pdf::ToolCtx`] from `limits.timeout_s` and a shared cancellation flag.
-#[must_use]
-pub fn build_tool_ctx(limits: &Limits, cancel: Arc<AtomicBool>) -> ToolCtx {
+#[derive(Clone, Copy)]
+pub(crate) struct HostClock {
+    pub clock: ToolClock,
+    pub source_date_epoch: Option<i64>,
+}
+
+pub(crate) fn capture_clock() -> Result<HostClock, ToolError> {
+    let source_date_epoch = match std::env::var("SOURCE_DATE_EPOCH") {
+        Ok(raw) => {
+            let seconds = raw
+                .trim()
+                .parse::<i64>()
+                .map_err(|_| ToolError::InvalidParams("invalid SOURCE_DATE_EPOCH".into()))?;
+            if !(-62_135_596_800..=253_402_300_799).contains(&seconds) {
+                return Err(ToolError::InvalidParams("invalid SOURCE_DATE_EPOCH".into()));
+            }
+            Some(seconds)
+        }
+        Err(std::env::VarError::NotPresent) => None,
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(ToolError::InvalidParams("invalid SOURCE_DATE_EPOCH".into()));
+        }
+    };
+    Ok(HostClock {
+        clock: ToolClock {
+            epoch_secs: source_date_epoch.unwrap_or_else(|| jiff::Timestamp::now().as_second()),
+            utc_offset_secs: 0,
+        },
+        source_date_epoch,
+    })
+}
+
+/// Builds an [`ariad_pdf::ToolCtx`] from limits, cancellation and the host clock.
+pub fn build_tool_ctx(limits: &Limits, cancel: Arc<AtomicBool>) -> Result<ToolCtx, ToolError> {
+    Ok(build_tool_ctx_with_clock(limits, cancel, capture_clock()?))
+}
+
+pub(crate) fn build_tool_ctx_with_clock(
+    limits: &Limits,
+    cancel: Arc<AtomicBool>,
+    clock: HostClock,
+) -> ToolCtx {
     let deadline = limits
         .timeout_s
         .and_then(|secs| Instant::now().checked_add(Duration::from_secs(secs)));
     let mut ctx = ToolCtx::with_cancel(cancel).with_max_pages(limits.max_pages);
     ctx.deadline = deadline;
-    ctx
+    ctx.with_clock(clock.clock)
+        .with_source_date_epoch(clock.source_date_epoch)
 }
 
 /// Executes an in-process `ariad-pdf` tool on the staged input files inside `workspace`.
@@ -160,8 +200,33 @@ pub fn execute_with_names(
     cancel: &CancellationToken,
     on_event: &mut dyn FnMut(ToolEvent),
 ) -> Result<RawToolExecution, ToolError> {
+    execute_with_names_and_clock(
+        spec,
+        staged_inputs,
+        params,
+        workspace,
+        limits,
+        scrubber,
+        cancel,
+        on_event,
+        capture_clock()?,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn execute_with_names_and_clock(
+    spec: &ToolSpec,
+    staged_inputs: &[(PathBuf, String)],
+    params: &Value,
+    workspace: &Workspace,
+    limits: &Limits,
+    scrubber: &SecretScrubber,
+    cancel: &CancellationToken,
+    on_event: &mut dyn FnMut(ToolEvent),
+    clock: HostClock,
+) -> Result<RawToolExecution, ToolError> {
     let bridge = CancelBridge::new(cancel);
-    let ctx = build_tool_ctx(limits, Arc::clone(&bridge.flag));
+    let ctx = build_tool_ctx_with_clock(limits, Arc::clone(&bridge.flag), clock);
 
     ctx.check().map_err(|err| map_pdf_error(err, scrubber))?;
 
@@ -240,6 +305,10 @@ pub fn execute_with_names(
         .collect();
     let mut inline_json = None;
     let mut used_names = HashSet::new();
+    let has_binary_artifacts = tool_output
+        .artifacts
+        .iter()
+        .any(|artifact| !artifact.format.trim().eq_ignore_ascii_case("json"));
 
     if let Some(ref raw_value) = tool_output.json {
         let scrubbed_value = scrubber.scrub_value(raw_value);
@@ -250,23 +319,26 @@ pub fn execute_with_names(
             return Err(ToolError::LimitExceeded);
         }
 
-        let raw_name = tool_output
-            .artifacts
-            .first()
-            .map(|out| out.name.as_str())
-            .filter(|name| !name.is_empty())
-            .unwrap_or("output.json");
-        let out_format = tool_output
-            .artifacts
-            .first()
-            .map(|out| out.format.trim())
-            .filter(|fmt| !fmt.is_empty())
-            .unwrap_or("json");
-        let staged_name = sanitize_staged_artifact_name(raw_name, 1, out_format, &mut used_names);
-        let staged_out = workspace.output_dir().join(staged_name);
-        fs::write(&staged_out, &json_bytes)
-            .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
-        artifacts.push((staged_out, out_format.to_owned()));
+        if !has_binary_artifacts {
+            let raw_name = tool_output
+                .artifacts
+                .first()
+                .map(|out| out.name.as_str())
+                .filter(|name| !name.is_empty())
+                .unwrap_or("output.json");
+            let out_format = tool_output
+                .artifacts
+                .first()
+                .map(|out| out.format.trim())
+                .filter(|fmt| !fmt.is_empty())
+                .unwrap_or("json");
+            let staged_name =
+                sanitize_staged_artifact_name(raw_name, 1, out_format, &mut used_names);
+            let staged_out = workspace.output_dir().join(staged_name);
+            fs::write(&staged_out, &json_bytes)
+                .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
+            artifacts.push((staged_out, out_format.to_owned()));
+        }
 
         if let Some(pages) = scrubbed_value.get("page_count") {
             metrics.insert("pages".to_owned(), pages.clone());
@@ -275,7 +347,8 @@ pub fn execute_with_names(
             metrics.insert("encrypted".to_owned(), encrypted.clone());
         }
         inline_json = Some(scrubbed_value);
-    } else {
+    }
+    if tool_output.json.is_none() || has_binary_artifacts {
         let mut total_out_bytes = 0_u64;
         for (idx, artifact) in tool_output.artifacts.iter().enumerate() {
             total_out_bytes = total_out_bytes.saturating_add(artifact.bytes.len() as u64);
@@ -406,9 +479,61 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn tool_context_supplies_a_utc_clock() {
+        let before = jiff::Timestamp::now().as_second();
+        let context = build_tool_ctx(&Limits::local(), Arc::new(AtomicBool::new(false))).unwrap();
+        let after = jiff::Timestamp::now().as_second();
+        let clock = context.clock().expect("host supplies a clock");
+        assert!((before..=after).contains(&clock.epoch_secs));
+        assert_eq!(clock.utc_offset_secs, 0);
+    }
+
     fn sample_pdf() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/pdf-tools/encrypted-owner-only.plaintext.pdf")
+    }
+
+    #[test]
+    fn watermark_removal_stages_pdf_and_preserves_inline_report() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf-tools/watermark-layer.pdf");
+        let bytes = fs::read(&fixture).unwrap();
+        let input = InputDoc::new("watermark.pdf", bytes.clone());
+        let detected = ariad_pdf::tools::run_tool(
+            "pdf.watermark_detect",
+            &[input],
+            &json!({}),
+            &ToolCtx::new(),
+        )
+        .unwrap();
+        let id = detected.json.unwrap()["candidates"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let workspace = Workspace::new().unwrap();
+        let staged = workspace.input_dir().join("input.pdf");
+        fs::write(&staged, bytes).unwrap();
+        let spec = ariad_core::tools::find("pdf.watermark_remove").unwrap();
+        let result = execute(
+            spec,
+            &[staged],
+            &json!({"candidates":[id]}),
+            &workspace,
+            &Limits::local(),
+            &SecretScrubber::default(),
+            &CancellationToken::new(),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(result.artifacts.len(), 1);
+        assert_eq!(result.artifacts[0].1, "pdf");
+        assert!(
+            fs::read(&result.artifacts[0].0)
+                .unwrap()
+                .starts_with(b"%PDF-")
+        );
+        assert_eq!(result.inline_json.unwrap()["removed"][0]["id"], id);
     }
 
     #[test]

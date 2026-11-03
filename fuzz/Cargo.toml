@@ -194,6 +194,14 @@ doc = false
 bench = false
 
 [[bin]]
+name = "pdf_draw_params"
+required-features = ["pdf-reader"]
+path = "fuzz_targets/pdf_draw_params.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "pdfium_engine_request"
 path = "fuzz_targets/pdfium_engine_request.rs"
 test = false

@@ -2612,7 +2612,7 @@ fn test_list_doc_tools_and_run_doc_tool_round_trip() {
     let listed = list_resp["result"]["structuredContent"]
         .as_array()
         .expect("list_doc_tools array");
-    assert_eq!(listed.len(), 50);
+    assert_eq!(listed.len(), 65);
     assert_eq!(listed[0]["id"], "pdf.info");
     assert_eq!(listed[0]["group"], "organize");
     assert_eq!(listed[0]["engine"], "ariad-pdf");
@@ -2845,6 +2845,40 @@ fn test_mcp_image_ocr_with_development_pack() {
         .map(|entry| fs::read_to_string(entry.unwrap().path()).unwrap())
         .collect::<String>();
     assert!(text.contains("Khu vườn đọc sách"), "{text}");
+    client.close_and_assert_purity();
+}
+
+#[test]
+fn watermark_removal_mcp_returns_pdf_and_report() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("watermark.pdf");
+    fs::copy(
+        repository_root().join("fixtures/pdf-tools/watermark-layer.pdf"),
+        &input,
+    )
+    .unwrap();
+    let mut client =
+        McpTestClient::spawn(&["--allow-dir", dir.path().to_str().unwrap()], Vec::new());
+    client.initialize();
+    client.send_request(
+        1700,
+        "tools/call",
+        json!({"name":"run_doc_tool","arguments":{"tool":"pdf.watermark_detect","inputs":[input]}}),
+    );
+    let detected = client.read_response(1700);
+    assert_eq!(detected["result"]["isError"], false, "{detected}");
+    let id = detected["result"]["structuredContent"]["inline_json"]["candidates"][0]["id"]
+        .as_str()
+        .unwrap();
+    client.send_request(1701, "tools/call", json!({"name":"run_doc_tool","arguments":{
+        "tool":"pdf.watermark_remove", "inputs":[input], "params":{"candidates":[id]}, "output_dir":dir.path()
+    }}));
+    let result = client.read_response(1701);
+    assert_eq!(result["result"]["isError"], false, "{result}");
+    let structured = &result["result"]["structuredContent"];
+    assert_eq!(structured["inline_json"]["removed"][0]["id"], id);
+    let path = std::path::Path::new(structured["artifacts"][0]["path"].as_str().unwrap());
+    assert!(fs::read(path).unwrap().starts_with(b"%PDF-"));
     client.close_and_assert_purity();
 }
 

@@ -321,13 +321,14 @@ pub(super) fn execute(
     engine_program: Option<&Path>,
     cancel: &CancellationToken,
     events: &mut dyn FnMut(ToolEvent),
+    clock: inprocess::HostClock,
 ) -> Result<RawToolExecution, ToolError> {
     let bridge = CancelBridge::new(cancel);
     let started = Instant::now();
     let deadline = started
         .checked_add(Duration::from_secs(ocr_timeout(0, limits.timeout_s)))
         .ok_or(ToolError::LimitExceeded)?;
-    let mut ctx = inprocess::build_tool_ctx(limits, Arc::clone(&bridge.flag));
+    let mut ctx = inprocess::build_tool_ctx_with_clock(limits, Arc::clone(&bridge.flag), clock);
     ctx.deadline = Some(deadline);
     let mut job = Job {
         workspace,

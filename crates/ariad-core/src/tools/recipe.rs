@@ -169,6 +169,9 @@ pub struct Recipe {
 /// Error returned when validating a recipe output naming template (`docs/tools.md` §9).
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum NamingTemplateError {
+    /// The reproducible timestamp or clock is invalid.
+    #[error("invalid date for naming template")]
+    InvalidDate,
     /// Naming template is empty or whitespace-only.
     #[error("naming template must not be empty")]
     Empty,

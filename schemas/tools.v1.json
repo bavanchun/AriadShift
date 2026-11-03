@@ -2698,6 +2698,2327 @@
       "version": "1"
     },
     {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.replace_color",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ReplaceColorParams",
+        "description": "Replace matching text and vector colours on selected PDF pages.",
+        "type": "object",
+        "properties": {
+          "from": {
+            "description": "Source RGB colour; when absent, every supported colour matches.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/HexColor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "target": {
+            "description": "Target paint operations.",
+            "$ref": "#/$defs/ColorTarget",
+            "default": "all"
+          },
+          "to": {
+            "description": "Replacement RGB colour.",
+            "$ref": "#/$defs/HexColor"
+          },
+          "tolerance": {
+            "description": "Maximum per-channel difference in 8-bit RGB.",
+            "type": "integer",
+            "format": "uint8",
+            "default": 0,
+            "maximum": 255,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "to"
+        ],
+        "$defs": {
+          "ColorTarget": {
+            "description": "Which painted elements are recoloured.",
+            "oneOf": [
+              {
+                "description": "Text only.",
+                "type": "string",
+                "const": "text"
+              },
+              {
+                "description": "Vector graphics only.",
+                "type": "string",
+                "const": "vector"
+              },
+              {
+                "description": "Text and vector graphics.",
+                "type": "string",
+                "const": "all"
+              }
+            ]
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Replace text and vector colours on selected pages.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.adjust_colors",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AdjustColorsParams",
+        "description": "Adjust colour components on selected PDF pages.",
+        "type": "object",
+        "properties": {
+          "brightness": {
+            "description": "Brightness adjustment in [-1, 1].",
+            "type": "number",
+            "format": "float",
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": -1.0
+          },
+          "contrast": {
+            "description": "Contrast adjustment in [-1, 1].",
+            "type": "number",
+            "format": "float",
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": -1.0
+          },
+          "gamma": {
+            "description": "Gamma exponent in [0.1, 5].",
+            "type": "number",
+            "format": "float",
+            "default": 1.0,
+            "maximum": 5.0,
+            "minimum": 0.1
+          },
+          "images": {
+            "description": "Whether supported image pixels are adjusted.",
+            "type": "boolean",
+            "default": true
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "saturation": {
+            "description": "Saturation adjustment in [-1, 1].",
+            "type": "number",
+            "format": "float",
+            "default": 0.0,
+            "maximum": 1.0,
+            "minimum": -1.0
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Adjust brightness, contrast, saturation and gamma.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.watermark",
+      "input_formats": [
+        "pdf",
+        "png",
+        "jpeg",
+        "webp",
+        "tiff",
+        "bmp"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 2,
+        "min": 1
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "WatermarkParams",
+        "description": "Text or image watermark appearance and placement.",
+        "type": "object",
+        "properties": {
+          "anchor": {
+            "description": "Anchor used for omitted coordinates.",
+            "$ref": "#/$defs/Anchor",
+            "default": "center"
+          },
+          "color": {
+            "description": "Text colour in RGB hexadecimal form.",
+            "$ref": "#/$defs/HexColor",
+            "default": "#808080"
+          },
+          "font": {
+            "description": "Bundled font face.",
+            "$ref": "#/$defs/FontFace",
+            "default": "serif-bold"
+          },
+          "font_size_pt": {
+            "description": "Point size or `auto`.",
+            "$ref": "#/$defs/WatermarkFontSize",
+            "default": "auto"
+          },
+          "image_width_pt": {
+            "description": "Display width in points for image watermarks.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "kind": {
+            "description": "Text or image watermark.",
+            "$ref": "#/$defs/WatermarkKind",
+            "default": "text"
+          },
+          "layer": {
+            "description": "Draw over or under the page content.",
+            "$ref": "#/$defs/MarkLayer",
+            "default": "over"
+          },
+          "layout": {
+            "description": "Single, tiled or diagonal placement.",
+            "$ref": "#/$defs/WatermarkLayout",
+            "default": "diagonal"
+          },
+          "margin_pt": {
+            "description": "Distance from the page edge in points.",
+            "type": "number",
+            "format": "double",
+            "default": 36.0
+          },
+          "offset_x_pt": {
+            "description": "Horizontal adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "offset_y_pt": {
+            "description": "Vertical adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "opacity": {
+            "description": "Watermark opacity.",
+            "$ref": "#/$defs/Opacity",
+            "default": 0.3
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "rotation_deg": {
+            "description": "Counterclockwise rotation, except diagonal layout follows the page diagonal.",
+            "type": "number",
+            "format": "double",
+            "default": 45.0
+          },
+          "text": {
+            "description": "Required nonempty text for a text watermark.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "tile_gap_pt": {
+            "description": "Spacing between tiles in points.",
+            "type": "number",
+            "format": "double",
+            "default": 72.0
+          },
+          "x_pt": {
+            "description": "Explicit horizontal box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "y_pt": {
+            "description": "Explicit vertical box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "Anchor": {
+            "description": "Position of a mark in the displayed page.",
+            "oneOf": [
+              {
+                "description": "Upper left.",
+                "type": "string",
+                "const": "top-left"
+              },
+              {
+                "description": "Upper centre.",
+                "type": "string",
+                "const": "top-center"
+              },
+              {
+                "description": "Upper right.",
+                "type": "string",
+                "const": "top-right"
+              },
+              {
+                "description": "Middle left.",
+                "type": "string",
+                "const": "middle-left"
+              },
+              {
+                "description": "Centre of the page.",
+                "type": "string",
+                "const": "center"
+              },
+              {
+                "description": "Middle right.",
+                "type": "string",
+                "const": "middle-right"
+              },
+              {
+                "description": "Lower left.",
+                "type": "string",
+                "const": "bottom-left"
+              },
+              {
+                "description": "Lower centre.",
+                "type": "string",
+                "const": "bottom-center"
+              },
+              {
+                "description": "Lower right.",
+                "type": "string",
+                "const": "bottom-right"
+              }
+            ]
+          },
+          "AutoSize": {
+            "description": "Automatic font sizing.",
+            "oneOf": [
+              {
+                "description": "Fit to the requested layout.",
+                "type": "string",
+                "const": "auto"
+              }
+            ]
+          },
+          "FontFace": {
+            "description": "Bundled font face.",
+            "oneOf": [
+              {
+                "description": "Regular Libertinus Serif.",
+                "type": "string",
+                "const": "serif"
+              },
+              {
+                "description": "Bold Libertinus Serif.",
+                "type": "string",
+                "const": "serif-bold"
+              }
+            ]
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "MarkLayer": {
+            "description": "Place drawing before or after the existing page content.",
+            "oneOf": [
+              {
+                "description": "Draw after the existing page content.",
+                "type": "string",
+                "const": "over"
+              },
+              {
+                "description": "Draw before the existing page content.",
+                "type": "string",
+                "const": "under"
+              }
+            ]
+          },
+          "Opacity": {
+            "description": "Opacity in the inclusive range from zero to one.",
+            "type": "number",
+            "format": "double",
+            "maximum": 1.0,
+            "minimum": 0.0
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "WatermarkFontSize": {
+            "description": "A font size in points or the automatic sizing rule.",
+            "anyOf": [
+              {
+                "description": "Size in points.",
+                "type": "number",
+                "format": "double"
+              },
+              {
+                "description": "Automatic sizing, represented by the string `auto`.",
+                "$ref": "#/$defs/AutoSize"
+              }
+            ]
+          },
+          "WatermarkKind": {
+            "description": "Content of a watermark.",
+            "oneOf": [
+              {
+                "description": "Draw supplied text.",
+                "type": "string",
+                "const": "text"
+              },
+              {
+                "description": "Draw a second image input.",
+                "type": "string",
+                "const": "image"
+              }
+            ]
+          },
+          "WatermarkLayout": {
+            "description": "Watermark repetition and orientation.",
+            "oneOf": [
+              {
+                "description": "One mark at its anchor.",
+                "type": "string",
+                "const": "single"
+              },
+              {
+                "description": "Repeat marks across the page.",
+                "type": "string",
+                "const": "tiled"
+              },
+              {
+                "description": "One mark following the page diagonal.",
+                "type": "string",
+                "const": "diagonal"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Add a removable text or image watermark.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.stamp",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "StampParams",
+        "description": "Stamp text, colour, date and position.",
+        "type": "object",
+        "properties": {
+          "anchor": {
+            "description": "Anchor used for omitted coordinates.",
+            "$ref": "#/$defs/Anchor",
+            "default": "top-right"
+          },
+          "border": {
+            "description": "Draw a border around the label.",
+            "type": "boolean",
+            "default": true
+          },
+          "color": {
+            "description": "Override the preset colour.",
+            "anyOf": [
+              {
+                "$ref": "#/$defs/HexColor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "date": {
+            "description": "Explicit date source, taking precedence over the environment and caller clock.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "date_format": {
+            "description": "Date formatting convention.",
+            "$ref": "#/$defs/DateFormat",
+            "default": "iso"
+          },
+          "font": {
+            "description": "Bundled font face.",
+            "$ref": "#/$defs/FontFace",
+            "default": "serif-bold"
+          },
+          "font_size_pt": {
+            "description": "Font size in points.",
+            "type": "number",
+            "format": "double",
+            "default": 24.0
+          },
+          "margin_pt": {
+            "description": "Distance from the page edge in points.",
+            "type": "number",
+            "format": "double",
+            "default": 36.0
+          },
+          "offset_x_pt": {
+            "description": "Horizontal adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "offset_y_pt": {
+            "description": "Vertical adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "opacity": {
+            "description": "Stamp opacity.",
+            "$ref": "#/$defs/Opacity",
+            "default": 0.9
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "1"
+          },
+          "preset": {
+            "description": "Preset or custom label.",
+            "$ref": "#/$defs/StampPreset",
+            "default": "approved"
+          },
+          "rotation_deg": {
+            "description": "Counterclockwise rotation in degrees.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "show_date": {
+            "description": "Append a date to the label.",
+            "type": "boolean",
+            "default": false
+          },
+          "text": {
+            "description": "Text template required for a custom stamp.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "x_pt": {
+            "description": "Explicit horizontal box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "y_pt": {
+            "description": "Explicit vertical box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "Anchor": {
+            "description": "Position of a mark in the displayed page.",
+            "oneOf": [
+              {
+                "description": "Upper left.",
+                "type": "string",
+                "const": "top-left"
+              },
+              {
+                "description": "Upper centre.",
+                "type": "string",
+                "const": "top-center"
+              },
+              {
+                "description": "Upper right.",
+                "type": "string",
+                "const": "top-right"
+              },
+              {
+                "description": "Middle left.",
+                "type": "string",
+                "const": "middle-left"
+              },
+              {
+                "description": "Centre of the page.",
+                "type": "string",
+                "const": "center"
+              },
+              {
+                "description": "Middle right.",
+                "type": "string",
+                "const": "middle-right"
+              },
+              {
+                "description": "Lower left.",
+                "type": "string",
+                "const": "bottom-left"
+              },
+              {
+                "description": "Lower centre.",
+                "type": "string",
+                "const": "bottom-center"
+              },
+              {
+                "description": "Lower right.",
+                "type": "string",
+                "const": "bottom-right"
+              }
+            ]
+          },
+          "DateFormat": {
+            "description": "Format for an expanded date token.",
+            "oneOf": [
+              {
+                "description": "Year-month-day.",
+                "type": "string",
+                "const": "iso"
+              },
+              {
+                "description": "Day/month/year.",
+                "type": "string",
+                "const": "dmy"
+              },
+              {
+                "description": "Month/day/year.",
+                "type": "string",
+                "const": "mdy"
+              }
+            ]
+          },
+          "FontFace": {
+            "description": "Bundled font face.",
+            "oneOf": [
+              {
+                "description": "Regular Libertinus Serif.",
+                "type": "string",
+                "const": "serif"
+              },
+              {
+                "description": "Bold Libertinus Serif.",
+                "type": "string",
+                "const": "serif-bold"
+              }
+            ]
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "Opacity": {
+            "description": "Opacity in the inclusive range from zero to one.",
+            "type": "number",
+            "format": "double",
+            "maximum": 1.0,
+            "minimum": 0.0
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "StampPreset": {
+            "description": "Built-in English stamp label or custom text.",
+            "oneOf": [
+              {
+                "description": "Approved.",
+                "type": "string",
+                "const": "approved"
+              },
+              {
+                "description": "Draft.",
+                "type": "string",
+                "const": "draft"
+              },
+              {
+                "description": "Confidential.",
+                "type": "string",
+                "const": "confidential"
+              },
+              {
+                "description": "Caller-supplied text.",
+                "type": "string",
+                "const": "custom"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Add a removable text stamp.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.add_image",
+      "input_formats": [
+        "pdf",
+        "png",
+        "jpeg",
+        "webp",
+        "tiff",
+        "bmp"
+      ],
+      "inputs": {
+        "arity": "many",
+        "max": 2,
+        "min": 2
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AddImageParams",
+        "description": "Image placement and size in visual page coordinates.",
+        "type": "object",
+        "properties": {
+          "anchor": {
+            "description": "Anchor used for omitted coordinates.",
+            "$ref": "#/$defs/Anchor",
+            "default": "center"
+          },
+          "height_pt": {
+            "description": "Display height in points; omitted dimensions preserve image aspect ratio.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "layer": {
+            "description": "Draw over or under the page content.",
+            "$ref": "#/$defs/MarkLayer",
+            "default": "over"
+          },
+          "margin_pt": {
+            "description": "Distance from the page edge in points.",
+            "type": "number",
+            "format": "double",
+            "default": 36.0
+          },
+          "offset_x_pt": {
+            "description": "Horizontal adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "offset_y_pt": {
+            "description": "Vertical adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "opacity": {
+            "description": "Image opacity.",
+            "$ref": "#/$defs/Opacity",
+            "default": 1.0
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "1"
+          },
+          "rotation_deg": {
+            "description": "Counterclockwise rotation in degrees.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "width_pt": {
+            "description": "Display width in points; omitted dimensions preserve image aspect ratio.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "x_pt": {
+            "description": "Explicit horizontal box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "y_pt": {
+            "description": "Explicit vertical box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "Anchor": {
+            "description": "Position of a mark in the displayed page.",
+            "oneOf": [
+              {
+                "description": "Upper left.",
+                "type": "string",
+                "const": "top-left"
+              },
+              {
+                "description": "Upper centre.",
+                "type": "string",
+                "const": "top-center"
+              },
+              {
+                "description": "Upper right.",
+                "type": "string",
+                "const": "top-right"
+              },
+              {
+                "description": "Middle left.",
+                "type": "string",
+                "const": "middle-left"
+              },
+              {
+                "description": "Centre of the page.",
+                "type": "string",
+                "const": "center"
+              },
+              {
+                "description": "Middle right.",
+                "type": "string",
+                "const": "middle-right"
+              },
+              {
+                "description": "Lower left.",
+                "type": "string",
+                "const": "bottom-left"
+              },
+              {
+                "description": "Lower centre.",
+                "type": "string",
+                "const": "bottom-center"
+              },
+              {
+                "description": "Lower right.",
+                "type": "string",
+                "const": "bottom-right"
+              }
+            ]
+          },
+          "MarkLayer": {
+            "description": "Place drawing before or after the existing page content.",
+            "oneOf": [
+              {
+                "description": "Draw after the existing page content.",
+                "type": "string",
+                "const": "over"
+              },
+              {
+                "description": "Draw before the existing page content.",
+                "type": "string",
+                "const": "under"
+              }
+            ]
+          },
+          "Opacity": {
+            "description": "Opacity in the inclusive range from zero to one.",
+            "type": "number",
+            "format": "double",
+            "maximum": 1.0,
+            "minimum": 0.0
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Place an image on selected pages.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.add_text",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "AddTextParams",
+        "description": "Text and its placement in visual page coordinates.",
+        "type": "object",
+        "properties": {
+          "align": {
+            "description": "Horizontal alignment within the layout.",
+            "$ref": "#/$defs/TextAlignment",
+            "default": "left"
+          },
+          "anchor": {
+            "description": "Default placement when a coordinate is omitted.",
+            "$ref": "#/$defs/Anchor",
+            "default": "top-left"
+          },
+          "color": {
+            "description": "Text colour in RGB hexadecimal form.",
+            "$ref": "#/$defs/HexColor",
+            "default": "#000000"
+          },
+          "font": {
+            "description": "Bundled font face.",
+            "$ref": "#/$defs/FontFace",
+            "default": "serif"
+          },
+          "font_size_pt": {
+            "description": "Font size in points.",
+            "type": "number",
+            "format": "double",
+            "default": 12.0
+          },
+          "layer": {
+            "description": "Draw over or under the page content.",
+            "$ref": "#/$defs/MarkLayer",
+            "default": "over"
+          },
+          "line_height": {
+            "description": "Baseline spacing as a multiple of font size.",
+            "type": "number",
+            "format": "double",
+            "default": 1.2
+          },
+          "margin_pt": {
+            "description": "Distance from the page edge in points.",
+            "type": "number",
+            "format": "double",
+            "default": 36.0
+          },
+          "max_width_pt": {
+            "description": "Maximum text layout width in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "offset_x_pt": {
+            "description": "Horizontal adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "offset_y_pt": {
+            "description": "Vertical adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "opacity": {
+            "description": "Text opacity.",
+            "$ref": "#/$defs/Opacity",
+            "default": 1.0
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "1"
+          },
+          "rotation_deg": {
+            "description": "Counterclockwise rotation in degrees.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "text": {
+            "description": "Text to draw (1 to 4096 Unicode characters).",
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "x_pt": {
+            "description": "Optional explicit horizontal box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "y_pt": {
+            "description": "Optional explicit vertical box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "$defs": {
+          "Anchor": {
+            "description": "Position of a mark in the displayed page.",
+            "oneOf": [
+              {
+                "description": "Upper left.",
+                "type": "string",
+                "const": "top-left"
+              },
+              {
+                "description": "Upper centre.",
+                "type": "string",
+                "const": "top-center"
+              },
+              {
+                "description": "Upper right.",
+                "type": "string",
+                "const": "top-right"
+              },
+              {
+                "description": "Middle left.",
+                "type": "string",
+                "const": "middle-left"
+              },
+              {
+                "description": "Centre of the page.",
+                "type": "string",
+                "const": "center"
+              },
+              {
+                "description": "Middle right.",
+                "type": "string",
+                "const": "middle-right"
+              },
+              {
+                "description": "Lower left.",
+                "type": "string",
+                "const": "bottom-left"
+              },
+              {
+                "description": "Lower centre.",
+                "type": "string",
+                "const": "bottom-center"
+              },
+              {
+                "description": "Lower right.",
+                "type": "string",
+                "const": "bottom-right"
+              }
+            ]
+          },
+          "FontFace": {
+            "description": "Bundled font face.",
+            "oneOf": [
+              {
+                "description": "Regular Libertinus Serif.",
+                "type": "string",
+                "const": "serif"
+              },
+              {
+                "description": "Bold Libertinus Serif.",
+                "type": "string",
+                "const": "serif-bold"
+              }
+            ]
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "MarkLayer": {
+            "description": "Place drawing before or after the existing page content.",
+            "oneOf": [
+              {
+                "description": "Draw after the existing page content.",
+                "type": "string",
+                "const": "over"
+              },
+              {
+                "description": "Draw before the existing page content.",
+                "type": "string",
+                "const": "under"
+              }
+            ]
+          },
+          "Opacity": {
+            "description": "Opacity in the inclusive range from zero to one.",
+            "type": "number",
+            "format": "double",
+            "maximum": 1.0,
+            "minimum": 0.0
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "TextAlignment": {
+            "description": "Horizontal alignment inside the text layout box.",
+            "oneOf": [
+              {
+                "description": "Align the text to the left.",
+                "type": "string",
+                "const": "left"
+              },
+              {
+                "description": "Centre the text.",
+                "type": "string",
+                "const": "center"
+              },
+              {
+                "description": "Align the text to the right.",
+                "type": "string",
+                "const": "right"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Place text on selected pages.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.qr",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "QrParams",
+        "description": "QR content, appearance, and placement.",
+        "type": "object",
+        "properties": {
+          "anchor": {
+            "description": "Anchor used for omitted coordinates.",
+            "$ref": "#/$defs/Anchor",
+            "default": "bottom-right"
+          },
+          "background": {
+            "description": "Whether to draw a white background.",
+            "$ref": "#/$defs/QrBackground",
+            "default": "white"
+          },
+          "color": {
+            "description": "Module colour in RGB hexadecimal form.",
+            "$ref": "#/$defs/HexColor",
+            "default": "#000000"
+          },
+          "content": {
+            "description": "UTF-8 content, at most 2953 bytes.",
+            "type": "string"
+          },
+          "ec_level": {
+            "description": "Error-correction level.",
+            "$ref": "#/$defs/QrLevel",
+            "default": "M"
+          },
+          "margin_pt": {
+            "description": "Distance from the page edge in points.",
+            "type": "number",
+            "format": "double",
+            "default": 24.0
+          },
+          "offset_x_pt": {
+            "description": "Horizontal adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "offset_y_pt": {
+            "description": "Vertical adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "1"
+          },
+          "quiet_zone_modules": {
+            "description": "Width of the quiet zone in modules.",
+            "type": "integer",
+            "format": "uint8",
+            "default": 4,
+            "maximum": 10,
+            "minimum": 0
+          },
+          "size_pt": {
+            "description": "Code size in points, including its quiet zone.",
+            "type": "number",
+            "format": "double",
+            "default": 72.0,
+            "maximum": 1000.0,
+            "minimum": 18.0
+          },
+          "x_pt": {
+            "description": "Explicit horizontal box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          },
+          "y_pt": {
+            "description": "Explicit vertical box position in points.",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": null
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "content"
+        ],
+        "$defs": {
+          "Anchor": {
+            "description": "Position of a mark in the displayed page.",
+            "oneOf": [
+              {
+                "description": "Upper left.",
+                "type": "string",
+                "const": "top-left"
+              },
+              {
+                "description": "Upper centre.",
+                "type": "string",
+                "const": "top-center"
+              },
+              {
+                "description": "Upper right.",
+                "type": "string",
+                "const": "top-right"
+              },
+              {
+                "description": "Middle left.",
+                "type": "string",
+                "const": "middle-left"
+              },
+              {
+                "description": "Centre of the page.",
+                "type": "string",
+                "const": "center"
+              },
+              {
+                "description": "Middle right.",
+                "type": "string",
+                "const": "middle-right"
+              },
+              {
+                "description": "Lower left.",
+                "type": "string",
+                "const": "bottom-left"
+              },
+              {
+                "description": "Lower centre.",
+                "type": "string",
+                "const": "bottom-center"
+              },
+              {
+                "description": "Lower right.",
+                "type": "string",
+                "const": "bottom-right"
+              }
+            ]
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          },
+          "QrBackground": {
+            "description": "Background behind the QR modules.",
+            "oneOf": [
+              {
+                "description": "White background.",
+                "type": "string",
+                "const": "white"
+              },
+              {
+                "description": "Transparent background.",
+                "type": "string",
+                "const": "none"
+              }
+            ]
+          },
+          "QrLevel": {
+            "description": "QR error correction level.",
+            "oneOf": [
+              {
+                "description": "Low correction.",
+                "type": "string",
+                "const": "L"
+              },
+              {
+                "description": "Medium correction.",
+                "type": "string",
+                "const": "M"
+              },
+              {
+                "description": "Quartile correction.",
+                "type": "string",
+                "const": "Q"
+              },
+              {
+                "description": "High correction.",
+                "type": "string",
+                "const": "H"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Place a vector QR code on selected pages.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.page_numbers",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "PageNumbersParams",
+        "description": "Page-number template, sequence and visual placement.",
+        "type": "object",
+        "properties": {
+          "anchor": {
+            "description": "Visual position.",
+            "$ref": "#/$defs/Anchor",
+            "default": "bottom-center"
+          },
+          "color": {
+            "description": "Text colour.",
+            "$ref": "#/$defs/HexColor",
+            "default": "#000000"
+          },
+          "font": {
+            "description": "Bundled font face.",
+            "$ref": "#/$defs/FontFace",
+            "default": "serif"
+          },
+          "font_size_pt": {
+            "description": "Font size in points.",
+            "type": "number",
+            "format": "double",
+            "default": 10.0
+          },
+          "format": {
+            "description": "Template with `{n}`, `{total}`, and `{label}` tokens.",
+            "type": "string",
+            "default": "{n}"
+          },
+          "margin_pt": {
+            "description": "Page-edge margin in points.",
+            "type": "number",
+            "format": "double",
+            "default": 24.0
+          },
+          "offset_x_pt": {
+            "description": "Horizontal adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "offset_y_pt": {
+            "description": "Vertical adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "skip_first": {
+            "description": "Number of selected pages to leave unnumbered.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 0,
+            "minimum": 0
+          },
+          "start": {
+            "description": "First displayed number.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 1,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "Anchor": {
+            "description": "Position of a mark in the displayed page.",
+            "oneOf": [
+              {
+                "description": "Upper left.",
+                "type": "string",
+                "const": "top-left"
+              },
+              {
+                "description": "Upper centre.",
+                "type": "string",
+                "const": "top-center"
+              },
+              {
+                "description": "Upper right.",
+                "type": "string",
+                "const": "top-right"
+              },
+              {
+                "description": "Middle left.",
+                "type": "string",
+                "const": "middle-left"
+              },
+              {
+                "description": "Centre of the page.",
+                "type": "string",
+                "const": "center"
+              },
+              {
+                "description": "Middle right.",
+                "type": "string",
+                "const": "middle-right"
+              },
+              {
+                "description": "Lower left.",
+                "type": "string",
+                "const": "bottom-left"
+              },
+              {
+                "description": "Lower centre.",
+                "type": "string",
+                "const": "bottom-center"
+              },
+              {
+                "description": "Lower right.",
+                "type": "string",
+                "const": "bottom-right"
+              }
+            ]
+          },
+          "FontFace": {
+            "description": "Bundled font face.",
+            "oneOf": [
+              {
+                "description": "Regular Libertinus Serif.",
+                "type": "string",
+                "const": "serif"
+              },
+              {
+                "description": "Bold Libertinus Serif.",
+                "type": "string",
+                "const": "serif-bold"
+              }
+            ]
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Add page numbers.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.header_footer",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "HeaderFooterParams",
+        "description": "Header and footer templates and appearance.",
+        "type": "object",
+        "properties": {
+          "color": {
+            "description": "Text colour.",
+            "$ref": "#/$defs/HexColor",
+            "default": "#000000"
+          },
+          "date": {
+            "description": "Optional explicit ISO date.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "date_format": {
+            "description": "Date display format.",
+            "$ref": "#/$defs/DateFormat",
+            "default": "iso"
+          },
+          "font": {
+            "description": "Bundled font face.",
+            "$ref": "#/$defs/FontFace",
+            "default": "serif"
+          },
+          "font_size_pt": {
+            "description": "Font size in points.",
+            "type": "number",
+            "format": "double",
+            "default": 9.0
+          },
+          "footer": {
+            "description": "Footer slots.",
+            "$ref": "#/$defs/HeaderFooterSlots",
+            "default": {
+              "center": null,
+              "left": null,
+              "right": null
+            }
+          },
+          "header": {
+            "description": "Header slots.",
+            "$ref": "#/$defs/HeaderFooterSlots",
+            "default": {
+              "center": null,
+              "left": null,
+              "right": null
+            }
+          },
+          "margin_pt": {
+            "description": "Page-edge margin in points.",
+            "type": "number",
+            "format": "double",
+            "default": 24.0
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "skip_first": {
+            "description": "Number of selected pages to leave unchanged.",
+            "type": "integer",
+            "format": "uint32",
+            "default": 0,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "DateFormat": {
+            "description": "Format for an expanded date token.",
+            "oneOf": [
+              {
+                "description": "Year-month-day.",
+                "type": "string",
+                "const": "iso"
+              },
+              {
+                "description": "Day/month/year.",
+                "type": "string",
+                "const": "dmy"
+              },
+              {
+                "description": "Month/day/year.",
+                "type": "string",
+                "const": "mdy"
+              }
+            ]
+          },
+          "FontFace": {
+            "description": "Bundled font face.",
+            "oneOf": [
+              {
+                "description": "Regular Libertinus Serif.",
+                "type": "string",
+                "const": "serif"
+              },
+              {
+                "description": "Bold Libertinus Serif.",
+                "type": "string",
+                "const": "serif-bold"
+              }
+            ]
+          },
+          "HeaderFooterSlots": {
+            "description": "Three text slots along one page edge.",
+            "type": "object",
+            "properties": {
+              "center": {
+                "description": "Centred template.",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "left": {
+                "description": "Left-aligned template.",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "right": {
+                "description": "Right-aligned template.",
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              }
+            },
+            "additionalProperties": false
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Add headers and footers.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.bates",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "BatesParams",
+        "description": "Bates sequence and visual placement.",
+        "type": "object",
+        "properties": {
+          "anchor": {
+            "description": "Visual position.",
+            "$ref": "#/$defs/Anchor",
+            "default": "bottom-right"
+          },
+          "color": {
+            "description": "Text colour.",
+            "$ref": "#/$defs/HexColor",
+            "default": "#000000"
+          },
+          "digits": {
+            "description": "Number of decimal digits, between 1 and 12.",
+            "type": "integer",
+            "format": "uint8",
+            "default": 6,
+            "maximum": 12,
+            "minimum": 1
+          },
+          "font": {
+            "description": "Bundled font face.",
+            "$ref": "#/$defs/FontFace",
+            "default": "serif"
+          },
+          "font_size_pt": {
+            "description": "Font size in points.",
+            "type": "number",
+            "format": "double",
+            "default": 9.0
+          },
+          "margin_pt": {
+            "description": "Page-edge margin in points.",
+            "type": "number",
+            "format": "double",
+            "default": 18.0
+          },
+          "offset_x_pt": {
+            "description": "Horizontal adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "offset_y_pt": {
+            "description": "Vertical adjustment in points.",
+            "type": "number",
+            "format": "double",
+            "default": 0.0
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          },
+          "prefix": {
+            "description": "Text before each number.",
+            "type": "string",
+            "default": ""
+          },
+          "start": {
+            "description": "First value in the sequence.",
+            "type": "integer",
+            "format": "uint64",
+            "default": 1,
+            "minimum": 0
+          },
+          "suffix": {
+            "description": "Text after each number.",
+            "type": "string",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "Anchor": {
+            "description": "Position of a mark in the displayed page.",
+            "oneOf": [
+              {
+                "description": "Upper left.",
+                "type": "string",
+                "const": "top-left"
+              },
+              {
+                "description": "Upper centre.",
+                "type": "string",
+                "const": "top-center"
+              },
+              {
+                "description": "Upper right.",
+                "type": "string",
+                "const": "top-right"
+              },
+              {
+                "description": "Middle left.",
+                "type": "string",
+                "const": "middle-left"
+              },
+              {
+                "description": "Centre of the page.",
+                "type": "string",
+                "const": "center"
+              },
+              {
+                "description": "Middle right.",
+                "type": "string",
+                "const": "middle-right"
+              },
+              {
+                "description": "Lower left.",
+                "type": "string",
+                "const": "bottom-left"
+              },
+              {
+                "description": "Lower centre.",
+                "type": "string",
+                "const": "bottom-center"
+              },
+              {
+                "description": "Lower right.",
+                "type": "string",
+                "const": "bottom-right"
+              }
+            ]
+          },
+          "FontFace": {
+            "description": "Bundled font face.",
+            "oneOf": [
+              {
+                "description": "Regular Libertinus Serif.",
+                "type": "string",
+                "const": "serif"
+              },
+              {
+                "description": "Bold Libertinus Serif.",
+                "type": "string",
+                "const": "serif-bold"
+              }
+            ]
+          },
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Add a Bates sequence.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.toc_page",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "TocPageParams",
+        "description": "Layout of a generated contents page.",
+        "type": "object",
+        "properties": {
+          "dot_leaders": {
+            "description": "Include dot leaders between labels and page numbers.",
+            "type": "boolean",
+            "default": true
+          },
+          "font": {
+            "description": "Bundled font face.",
+            "$ref": "#/$defs/FontFace",
+            "default": "serif"
+          },
+          "font_size_pt": {
+            "description": "Font size in points.",
+            "type": "number",
+            "format": "double",
+            "default": 11.0
+          },
+          "links": {
+            "description": "Add clickable links to outline targets.",
+            "type": "boolean",
+            "default": true
+          },
+          "max_depth": {
+            "description": "Deepest outline level to include.",
+            "type": "integer",
+            "format": "uint8",
+            "default": 3,
+            "maximum": 6,
+            "minimum": 1
+          },
+          "page_size": {
+            "description": "Page size for inserted contents pages.",
+            "$ref": "#/$defs/TocPageSize",
+            "default": "same-as-first"
+          },
+          "title": {
+            "description": "Contents-page title.",
+            "type": "string",
+            "default": "Contents"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "CustomPaperSize": {
+            "description": "Custom paper size specified as `{ w, h }` in PDF points (`1 pt = 1/72 inch`).",
+            "type": "object",
+            "properties": {
+              "h": {
+                "description": "Page height in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              },
+              "w": {
+                "description": "Page width in PDF points (`> 0`).",
+                "type": "number",
+                "format": "double",
+                "exclusiveMinimum": 0.0,
+                "maximum": 1000000.0
+              }
+            },
+            "additionalProperties": false,
+            "required": [
+              "w",
+              "h"
+            ]
+          },
+          "FontFace": {
+            "description": "Bundled font face.",
+            "oneOf": [
+              {
+                "description": "Regular Libertinus Serif.",
+                "type": "string",
+                "const": "serif"
+              },
+              {
+                "description": "Bold Libertinus Serif.",
+                "type": "string",
+                "const": "serif-bold"
+              }
+            ]
+          },
+          "PaperSize": {
+            "description": "Paper size specification: either a named standard paper (`\"A4\"`, `\"Letter\"`, etc.) or custom\n`{ w, h }` dimensions in PDF points.",
+            "anyOf": [
+              {
+                "description": "Named standard paper size (`\"A0\"`..`\"A6\"`, `\"Letter\"`, `\"Legal\"`, `\"Tabloid\"`, `\"Ledger\"`).",
+                "$ref": "#/$defs/StandardPaper"
+              },
+              {
+                "description": "Custom paper dimensions `{ w, h }` in PDF points.",
+                "$ref": "#/$defs/CustomPaperSize"
+              }
+            ]
+          },
+          "SamePage": {
+            "description": "Inherit the first page's dimensions.",
+            "oneOf": [
+              {
+                "description": "Use the first page dimensions.",
+                "type": "string",
+                "const": "same-as-first"
+              }
+            ]
+          },
+          "StandardPaper": {
+            "description": "Named ISO and North American standard paper sizes (`docs/tools.md`).",
+            "oneOf": [
+              {
+                "description": "ISO A0 (`2383.94 × 3370.39 pt`, `841 × 1189 mm`).",
+                "type": "string",
+                "const": "A0"
+              },
+              {
+                "description": "ISO A1 (`1683.78 × 2383.94 pt`, `594 × 841 mm`).",
+                "type": "string",
+                "const": "A1"
+              },
+              {
+                "description": "ISO A2 (`1190.55 × 1683.78 pt`, `420 × 594 mm`).",
+                "type": "string",
+                "const": "A2"
+              },
+              {
+                "description": "ISO A3 (`841.89 × 1190.55 pt`, `297 × 420 mm`).",
+                "type": "string",
+                "const": "A3"
+              },
+              {
+                "description": "ISO A4 (`595.28 × 841.89 pt`, `210 × 297 mm`).",
+                "type": "string",
+                "const": "A4"
+              },
+              {
+                "description": "ISO A5 (`419.53 × 595.28 pt`, `148 × 210 mm`).",
+                "type": "string",
+                "const": "A5"
+              },
+              {
+                "description": "ISO A6 (`297.64 × 419.53 pt`, `105 × 148 mm`).",
+                "type": "string",
+                "const": "A6"
+              },
+              {
+                "description": "US Letter (`612.0 × 792.0 pt`, `8.5 × 11 in`).",
+                "type": "string",
+                "const": "Letter"
+              },
+              {
+                "description": "US Legal (`612.0 × 1008.0 pt`, `8.5 × 14 in`).",
+                "type": "string",
+                "const": "Legal"
+              },
+              {
+                "description": "US Tabloid (`792.0 × 1224.0 pt`, `11 × 17 in` portrait).",
+                "type": "string",
+                "const": "Tabloid"
+              },
+              {
+                "description": "US Ledger (`1224.0 × 792.0 pt`, `17 × 11 in` landscape).",
+                "type": "string",
+                "const": "Ledger"
+              }
+            ]
+          },
+          "TocPageSize": {
+            "description": "Use the first page's dimensions or a specified paper size.",
+            "anyOf": [
+              {
+                "description": "Inherit the first page size.",
+                "$ref": "#/$defs/SamePage"
+              },
+              {
+                "description": "Use a named or custom paper size.",
+                "$ref": "#/$defs/PaperSize"
+              }
+            ]
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Insert linked contents pages from the outline.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.background",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "BackgroundParams",
+        "description": "Background colour, opacity and selected pages.",
+        "type": "object",
+        "properties": {
+          "color": {
+            "description": "RGB colour.",
+            "$ref": "#/$defs/HexColor",
+            "default": "#FFFFFF"
+          },
+          "opacity": {
+            "description": "Fill opacity.",
+            "$ref": "#/$defs/Opacity",
+            "default": 1.0
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "HexColor": {
+            "description": "An RGB colour expressed as `#RRGGBB`.",
+            "type": "string",
+            "pattern": "^#[0-9A-Fa-f]{6}$"
+          },
+          "Opacity": {
+            "description": "Opacity in the inclusive range from zero to one.",
+            "type": "number",
+            "format": "double",
+            "maximum": 1.0,
+            "minimum": 0.0
+          },
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Add a page background.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.invert_colors",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "InvertColorsParams",
+        "description": "Pages receiving a Difference-blend inversion layer.",
+        "type": "object",
+        "properties": {
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Invert page content colours.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.watermark_detect",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "json",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "WatermarkDetectParams",
+        "description": "Page selection and minimum repetition ratio for watermark detection.",
+        "type": "object",
+        "properties": {
+          "min_page_ratio": {
+            "description": "Minimum fraction of selected pages on which repeated content must occur.",
+            "type": "number",
+            "format": "float",
+            "default": 0.6000000238418579,
+            "maximum": 1.0,
+            "minimum": 0.1
+          },
+          "pages": {
+            "description": "Selected 1-based pages.",
+            "$ref": "#/$defs/PageRange",
+            "default": "all"
+          }
+        },
+        "additionalProperties": false,
+        "$defs": {
+          "PageRange": {
+            "description": "1-based page range selector (`all`, `even`, `odd`, `N`, `N-M`, `N-`, `-M`, `last`, `last-K`).",
+            "type": "string"
+          }
+        }
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Find possible watermarks for review.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
+      "engine": "ariad-pdf",
+      "group": "overlay",
+      "id": "pdf.watermark_remove",
+      "input_formats": [
+        "pdf"
+      ],
+      "inputs": {
+        "arity": "one"
+      },
+      "output_format": "pdf",
+      "params_schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "WatermarkRemoveParams",
+        "description": "The exact candidate identifiers selected by the user.",
+        "type": "object",
+        "properties": {
+          "candidates": {
+            "description": "Nonempty set of detector-issued identifiers; wildcards are never accepted.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "candidates"
+        ]
+      },
+      "runtimes": [
+        "wasm",
+        "local"
+      ],
+      "secret_params": [],
+      "summary": "Remove explicitly selected watermark candidates.",
+      "tier": "free",
+      "version": "1"
+    },
+    {
       "engine": "pdfium",
       "group": "convert",
       "id": "pdf.render",

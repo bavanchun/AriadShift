@@ -7,6 +7,10 @@ use lopdf::{Dictionary, Document, Object, content::Content};
 mod document;
 mod inline;
 mod resources;
+#[cfg(feature = "codecs")]
+pub(crate) mod targeted;
+#[cfg(feature = "codecs")]
+pub(crate) mod targeted_document;
 
 pub use document::rewrite_document;
 
@@ -227,7 +231,11 @@ pub fn to_gray_mapper() -> impl Fn(ColorSpace, &[f32]) -> Option<MappedColor> {
         })
     }
 }
-fn resolve<'a>(doc: &'a Document, mut obj: &'a Object, limit: u16) -> Option<&'a Object> {
+pub(crate) fn resolve<'a>(
+    doc: &'a Document,
+    mut obj: &'a Object,
+    limit: u16,
+) -> Option<&'a Object> {
     for _ in 0..=limit {
         match obj {
             Object::Reference(id) => obj = doc.get_object(*id).ok()?,
@@ -845,4 +853,20 @@ where
     shading.set("ColorSpace", Object::Name(target.name().to_vec()));
     shading.set("Function", id);
     Ok(())
+}
+
+pub(crate) fn selected_pages(
+    pdf: &crate::PdfDoc,
+    pages: &ariad_core::tools::page_range::PageRange,
+    limits: &ariad_core::limits::Limits,
+    ctx: &crate::ToolCtx,
+) -> Result<Vec<u32>, crate::PdfError> {
+    let count = crate::color::page_ids(pdf.inner(), limits, ctx)?.len();
+    let count = u32::try_from(count).map_err(|_| crate::PdfError::Malformed)?;
+    pages
+        .expand(
+            count,
+            ariad_core::tools::page_range::DuplicatePolicy::Reject,
+        )
+        .map_err(|e| crate::PdfError::InvalidParams(e.to_string()))
 }

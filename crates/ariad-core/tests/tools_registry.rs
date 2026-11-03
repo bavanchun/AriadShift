@@ -20,6 +20,17 @@ fn tools_schema_path() -> PathBuf {
 }
 
 #[test]
+fn output_format_selection_distinguishes_page_number_templates() {
+    let numbering = find("pdf.page_numbers").unwrap();
+    assert!(numbering.allows_artifact_format("pdf", &json!({"format": "png"})));
+    assert!(!numbering.allows_artifact_format("png", &json!({"format": "png"})));
+
+    let render = find("pdf.render").unwrap();
+    assert!(render.allows_artifact_format("jpeg", &json!({"format": "jpeg"})));
+    assert!(!render.allows_artifact_format("png", &json!({"format": "jpeg"})));
+}
+
+#[test]
 #[ignore = "writes schemas/tools.v1.json"]
 fn regenerate_tools_schema() {
     let path = tools_schema_path();

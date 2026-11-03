@@ -33,11 +33,11 @@ use crate::{
     tools::{
         publish::{
             PublishedArtifact, StagedArtifact, ensure_no_parent_traversal,
-            open_confined_output_dir, publish_atomic, render_naming_template,
+            open_confined_output_dir, publish_atomic, render_naming_template_with_clock,
         },
         run::{
             InputRef, OutputTarget, ToolError, ToolEvent, ToolMetrics, ToolRequest,
-            run_tool_with_events,
+            run_tool_with_clock,
         },
         secrets::SecretBag,
     },
@@ -251,6 +251,7 @@ fn run_recipe_inner(
 ) -> Result<RecipeOutcome, ToolError> {
     let started = Instant::now();
     let scrubber = request.secrets.scrubber();
+    let clock = super::inprocess::capture_clock()?;
 
     if request.cancel.is_cancelled() {
         return Err(ToolError::Interrupted);
@@ -379,6 +380,7 @@ fn run_recipe_inner(
 
     let mut step_outcomes = Vec::with_capacity(request.recipe.steps.len());
     let mut warnings = Vec::new();
+    let mut naming_date = None;
 
     for (step_idx, step) in request.recipe.steps.iter().enumerate() {
         if request.cancel.is_cancelled() {
@@ -391,6 +393,9 @@ fn run_recipe_inner(
 
         match step {
             Step::Tool { tool, params } => {
+                if let Some(date) = params.get("date").and_then(serde_json::Value::as_str) {
+                    naming_date = Some(date);
+                }
                 let spec = request
                     .spec_overrides
                     .get(tool.as_str())
@@ -411,6 +416,7 @@ fn run_recipe_inner(
                             vec![InputRef::new(&item.path)],
                             &item_out_dir,
                             on_event,
+                            clock,
                         )?;
                         warnings.extend(outcome.warnings);
                         for art in outcome.artifacts {
@@ -436,6 +442,7 @@ fn run_recipe_inner(
                         step_inputs,
                         &step_dir,
                         on_event,
+                        clock,
                     )?;
                     warnings.extend(outcome.warnings);
                     for art in outcome.artifacts {
@@ -518,8 +525,14 @@ fn run_recipe_inner(
             .map_err(|e| ToolError::OutputIo(scrubber.scrub(&e.to_string())))?;
 
         let target_name = if let Some(ref template) = request.recipe.naming {
-            render_naming_template(template, &item.stem, index_1_based)
-                .map_err(|e| ToolError::InvalidParams(e.to_string()))?
+            render_naming_template_with_clock(
+                template,
+                &item.stem,
+                index_1_based,
+                clock.clock,
+                naming_date,
+            )
+            .map_err(|e| ToolError::InvalidParams(e.to_string()))?
         } else if let Some(name) = item.path.file_name().and_then(|n| n.to_str()) {
             name.to_owned()
         } else {
@@ -565,6 +578,7 @@ fn execute_recipe_tool_call(
     inputs: Vec<InputRef>,
     step_out_dir: &Path,
     on_event: &mut dyn FnMut(ToolEvent),
+    clock: super::inprocess::HostClock,
 ) -> Result<crate::tools::run::ToolOutcome, ToolError> {
     let step_secrets = recipe_req.secrets.filter_for_spec(spec, params);
     let mut tool_req = ToolRequest::new(
@@ -589,7 +603,7 @@ fn execute_recipe_tool_call(
     if let Some(ref cmd) = recipe_req.engine_command {
         tool_req = tool_req.with_engine_command(cmd.clone());
     }
-    run_tool_with_events(&tool_req, on_event)
+    run_tool_with_clock(&tool_req, on_event, clock)
 }
 
 fn map_convert_error(err: ConvertError) -> ToolError {

@@ -210,6 +210,7 @@ pub(crate) struct ExportedOutlines {
 
 #[derive(Default)]
 struct ExportState {
+    strict: bool,
     visited: BTreeSet<ObjectId>,
     node_count: usize,
     last_exported: Option<(String, u32)>,
@@ -220,6 +221,23 @@ struct ExportState {
 pub(crate) fn export_outlines(
     doc: &lopdf::Document,
     ctx: &ToolCtx,
+) -> Result<ExportedOutlines, PdfError> {
+    export_outlines_impl(doc, ctx, None)
+}
+
+/// Export an outline while refusing unresolved destinations and malformed trees.
+#[cfg(feature = "codecs")]
+pub(crate) fn export_outlines_strict(
+    doc: &lopdf::Document,
+    pages: &[ObjectId],
+    ctx: &ToolCtx,
+) -> Result<ExportedOutlines, PdfError> {
+    export_outlines_impl(doc, ctx, Some(pages))
+}
+fn export_outlines_impl(
+    doc: &lopdf::Document,
+    ctx: &ToolCtx,
+    strict_pages: Option<&[ObjectId]>,
 ) -> Result<ExportedOutlines, PdfError> {
     ctx.check()?;
     let empty = || ExportedOutlines {
@@ -237,14 +255,24 @@ pub(crate) fn export_outlines(
         return Ok(empty());
     };
 
-    let page_id_to_num: BTreeMap<ObjectId, u32> = doc
-        .get_pages()
-        .into_iter()
-        .map(|(num, id)| (id, num))
-        .collect();
+    let page_id_to_num: BTreeMap<ObjectId, u32> = if let Some(pages) = strict_pages {
+        pages
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (*id, (i + 1) as u32))
+            .collect()
+    } else {
+        doc.get_pages()
+            .into_iter()
+            .map(|(num, id)| (id, num))
+            .collect()
+    };
     let named_dests = collect_named_destinations(doc, ctx)?;
 
-    let mut state = ExportState::default();
+    let mut state = ExportState {
+        strict: strict_pages.is_some(),
+        ..ExportState::default()
+    };
     let nodes = read_outline_siblings(
         doc,
         outlines_dict.get(b"First").ok(),
@@ -258,6 +286,11 @@ pub(crate) fn export_outlines(
         ctx,
     )?;
 
+    if state.strict && (state.depth_cut.is_some() || state.count_cut.is_some()) {
+        return Err(PdfError::InvalidParams(
+            "outline exceeds the supported limits".into(),
+        ));
+    }
     let mut warnings = Vec::new();
     if let Some((title, page)) = &state.depth_cut {
         warnings.push(format!(
@@ -306,9 +339,15 @@ fn read_outline_siblings(
         if let Object::Reference(id) = obj
             && !state.visited.insert(*id)
         {
+            if state.strict {
+                return Err(PdfError::Malformed);
+            }
             break;
         }
         let Some(dict) = resolve_dict(doc, obj) else {
+            if state.strict {
+                return Err(PdfError::Malformed);
+            }
             break;
         };
         if state.node_count >= MAX_OUTLINE_NODES {
@@ -324,7 +363,13 @@ fn read_outline_siblings(
             .and_then(|o| resolve_object(doc, o))
             .and_then(decode_pdf_object_string)
             .unwrap_or_default();
-        let page = resolve_outline_item_page(doc, dict, lookup, ctx)?.unwrap_or(1);
+        let destination = resolve_outline_item_page(doc, dict, lookup, ctx)?;
+        if state.strict && destination.is_none() {
+            return Err(PdfError::InvalidParams(
+                "outline destination does not identify an existing page".into(),
+            ));
+        }
+        let page = destination.unwrap_or(1);
         state.last_exported = Some((title.clone(), page));
         let children = read_outline_siblings(
             doc,

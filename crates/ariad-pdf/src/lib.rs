@@ -9,6 +9,7 @@
 
 pub mod color;
 pub mod document;
+pub mod draw;
 pub mod error;
 pub mod flatten;
 #[cfg(feature = "codecs")]
@@ -23,6 +24,8 @@ pub mod ocr_layer;
 #[cfg(feature = "codecs")]
 pub mod optimize;
 pub mod paper;
+#[cfg(feature = "codecs")]
+pub mod recolor;
 pub mod scan_pages;
 pub mod scan_text;
 pub mod tools;
@@ -35,7 +38,7 @@ pub mod ctx {
     pub use crate::document::ToolCtx;
 }
 
-pub use document::{PdfDoc, ToolCtx, TrailerProvenance};
+pub use document::{PdfDoc, ToolClock, ToolCtx, TrailerProvenance};
 pub use error::PdfError;
 pub use info::{PageInfo, PdfInfo, PdfMetadata};
 pub use tools::{InputDoc, OutputArtifact, OutputDoc, REPAIRED_XREF_WARNING, ToolOutput, run_tool};

@@ -12,6 +12,13 @@ def read(path):
 recipes = read('justfile')
 assert re.search(r'test-auth-db:\n\s+ARIAD_TEST_DATABASE_URL="\$\{ARIAD_TEST_DATABASE_URL:\?[^}]+\}" ARIAD_TEST_REQUIRE_DATABASE=1 pnpm .*oauth-postgres.test.ts', recipes), 'database recipe must require execution'
 ci = read('.github/workflows/ci.yml')
+static = ci.split('\n  static:\n')[1].split('\n  lint-windows:\n')[0]
+assert 'cargo check --locked -p ariad-pdf --no-default-features\n' in static
+assert 'cargo check --locked -p ariad-pdf --no-default-features --features codecs' in static
+fuzz_targets = re.search(r'targets="([^"]+)"', ci)
+assert fuzz_targets, 'CI fuzz target list is missing'
+for target in fuzz_targets.group(1).split():
+    assert any(Path('fuzz/seeds', target).iterdir()), f'missing fuzz seed for {target}'
 server = ci.split('\n  server:\n')[1].split('\n  fuzz:\n')[0]
 assert 'ARIAD_TEST_DATABASE_URL:' in server and 'ARIAD_TEST_REQUIRE_DATABASE: "1"' in server
 server_recipe = recipes.split('\ntest-server:\n')[1].split('\n# Build/check')[0]
@@ -37,7 +44,7 @@ assert 'bash infra/test/e2e/mcp-oauth.sh' in oauth
 assert 'pack-wait' not in oauth and 'actions/cache' not in oauth
 assert 'needs: [scope, e2e]' in cloud, 'preserve required Compose status contract'
 assert 'cargo fuzz list' in recipes and '-timeout=10 -rss_limit_mb=2048' in recipes
-assert 'pdf_reader|pdf_open_bounded|pdf_tools_structural) build_options=(--dev --features pdf-reader)' in recipes
+assert 'pdf_reader|pdf_open_bounded|pdf_tools_structural|pdf_draw_params) build_options=(--dev --features pdf-reader)' in recipes
 assert 'typst_writer) build_options=(--dev --features typst-writer)' in recipes
 nightly = read('.github/workflows/fuzz-nightly.yml')
 assert 'uses: actions/cache@' not in nightly, 'combined cache action publishes on PR/dispatch'
