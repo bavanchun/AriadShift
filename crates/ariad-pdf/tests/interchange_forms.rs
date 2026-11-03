@@ -110,6 +110,7 @@ fn csv_preserves_text_pipes_and_reverses_formula_guard() {
     let ctx = ToolCtx::new();
     let fields = ariad_pdf::interchange::FormRecord::from([
         ("name".into(), FormValue::Text("12 Lê Lợi | Q1".into())),
+        ("multi".into(), FormValue::Text("a|b".into())),
         ("phone".into(), FormValue::Text("+84901234567".into())),
         ("balance".into(), FormValue::Text("-5".into())),
     ]);
@@ -133,7 +134,7 @@ fn csv_preserves_text_pipes_and_reverses_formula_guard() {
         panic!("expected PDF")
     };
     let pdf = document::open(bytes, &Limits::local()).unwrap();
-    let listing = list::list(&pdf, &[1], true, &Limits::local(), &ctx).unwrap();
+    let listing = list::list(&pdf, &[1, 2], true, &Limits::local(), &ctx).unwrap();
     assert_eq!(
         listing
             .fields
@@ -142,6 +143,15 @@ fn csv_preserves_text_pipes_and_reverses_formula_guard() {
             .unwrap()
             .value,
         fields["name"]
+    );
+    assert_eq!(
+        listing
+            .fields
+            .iter()
+            .find(|f| f.name == "multi")
+            .unwrap()
+            .value,
+        FormValue::Multi(vec!["a".into(), "b".into()])
     );
 }
 
