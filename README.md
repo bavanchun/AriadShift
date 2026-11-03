@@ -37,7 +37,7 @@ Standalone archives (`.tar.xz` or `.zip`) can be downloaded directly from [GitHu
 
 ### Package managers
 
-v0.2.0 is published to crates.io (ariad-core, ariad-typst, ariad-host, ariad-cli) and the Homebrew tap, and the release smoke run passed on the Homebrew, shell installer, PowerShell installer and cargo-binstall channels; current Homebrew needs the tap trust step shown in the commands below; no WinGet submission exists yet.
+v0.3.0 is published to crates.io (ariad-core, ariad-pdf, ariad-engine-io, ariad-typst, ariad-host, ariad-cli) and the Homebrew tap, and the release smoke run passed on the Homebrew, shell installer, PowerShell installer and cargo-binstall channels; current Homebrew needs the tap trust step shown in the commands below; no WinGet submission exists yet.
 
 ```sh
 # Homebrew (macOS & Linux; current Homebrew requires trusting third-party taps)
@@ -99,7 +99,7 @@ ashift doctor
 
 Add `--json` to any command for structured machine-readable output. See [`docs/cli.md`](docs/cli.md) for the complete reference.
 
-Heavy engines such as Docling ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the first published pack, docling, arrives with v0.2.0 and adds PDF, PPTX, XLSX and image inputs, with OCR for scans. See [`docs/packs.md`](docs/packs.md) and [`docs/docling.md`](docs/docling.md).
+Heavy engines ship as signed engine packs that `ashift engines install <name>` downloads and verifies on demand (`--from <dir>` installs offline); the PDFium pack is installable with `ashift engines install pdfium` (macOS and Linux glibc; Windows not yet supported), while the Docling pack is not yet published ([#204](https://github.com/bavanchun/AriadShift/issues/204)). See [`docs/packs.md`](docs/packs.md) and [`docs/docling.md`](docs/docling.md).
 
 ## Convert in the Browser
 
