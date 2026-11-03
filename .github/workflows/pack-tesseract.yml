@@ -6,6 +6,9 @@ on:
     paths:
       - engines/tesseract/**
       - engines/docling/pack/pins.toml
+      - engines/pdfium/pack/**
+      - crates/ariad-host/**
+      - crates/ariad-pdfium-engine/**
       - scripts/pack/**
       - scripts/test-pack-tesseract.sh
       - justfile
@@ -53,10 +56,10 @@ jobs:
           cache: false
       - name: Install Linux tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zstd poppler-utils
       - name: Install macOS tools
         if: runner.os == 'macOS'
-        run: brew install pkgconf zstd gnu-tar
+        run: brew install pkgconf zstd gnu-tar poppler
       - name: Install pinned CMake
         run: bash engines/tesseract/pack/install-cmake.sh "$RUNNER_TEMP/cmake"
       - name: Download verified source and models
@@ -89,8 +92,21 @@ jobs:
       - name: Assemble unsigned pack
         run: |
           bash engines/tesseract/pack/make.sh pack "$SLUG" "$RUNNER_TEMP/tesseract-first" "$RUNNER_TEMP/tesseract-input/tessdata" "$GITHUB_WORKSPACE/target/debug/ashift" "$RUNNER_TEMP/tesseract-pack"
+          python3 -c 'import pathlib, sys, tomllib; assert tomllib.loads(pathlib.Path(sys.argv[1]).read_text())["requires_ashift"] == ">=0.4.0, <2.0.0"' "$RUNNER_TEMP/tesseract-pack/pack.toml"
           bash engines/tesseract/pack/make.sh verify "$RUNNER_TEMP/tesseract-pack"
           TESSERACT_TEST_PACK="$RUNNER_TEMP/tesseract-pack" bash scripts/test-pack-tesseract.sh
+      - name: Build PDFium development pack
+        if: matrix.slug != 'linux-arm64'
+        run: |
+          cargo build --locked -p ariad-pdfium-engine --bin ariad-pdfium-engine
+          bash engines/pdfium/pack/make.sh dev --engine "$GITHUB_WORKSPACE/target/debug/ariad-pdfium-engine" --ashift "$GITHUB_WORKSPACE/target/debug/ashift" --out "$RUNNER_TEMP/pdfium-dist" --unpack-dir "$RUNNER_TEMP/pdfium-pack"
+      - name: Exercise OCR with real packs
+        if: matrix.slug != 'linux-arm64'
+        env:
+          ARIAD_REQUIRE_OCR_PACKS: '1'
+          ARIAD_TEST_TESSERACT_PACK: ${{ runner.temp }}/tesseract-pack
+          ARIAD_TEST_PDFIUM_PACK: ${{ runner.temp }}/pdfium-pack
+        run: cargo test --locked -p ariad-host --features test-probe --test tesseract_adapter --test ocr_pipeline
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tesseract-pack-${{ matrix.slug }}
