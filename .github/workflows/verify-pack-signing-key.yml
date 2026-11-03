@@ -1,0 +1,57 @@
+name: Verify pack signing key
+
+# Dispatch cannot run until the release environment permits the selected ref.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-26.04
+    environment: release
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install minisign
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends minisign
+      - name: Verify signing key against committed public key
+        env:
+          PACK_SIGNING_KEY_ID: ${{ vars.PACK_SIGNING_KEY_ID }}
+          MINISIGN_SECRET_KEY: ${{ secrets.PACK_MINISIGN_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.PACK_MINISIGN_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$PACK_SIGNING_KEY_ID" != D87B0E33F55EA02B ]]; then
+            echo 'failure: unexpected public key id'
+            exit 1
+          fi
+          public_key="crates/ariad-host/data/pack-keys/${PACK_SIGNING_KEY_ID,,}.pub"
+          if [[ ! -f "$public_key" ]]; then
+            echo 'failure: public key missing'
+            exit 1
+          fi
+          if [[ -z "$MINISIGN_SECRET_KEY" ]]; then
+            echo 'failure: signing key missing'
+            exit 1
+          fi
+          umask 077
+          dir=$(mktemp -d "$RUNNER_TEMP/pack-key-check.XXXXXX")
+          trap 'rm -rf "$dir"' EXIT
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$dir/key"
+          printf '%s\n' 'AriadShift pack signing verification' > "$dir/payload"
+          if ! printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$dir/key" -m "$dir/payload" -x "$dir/signature" > /dev/null 2>&1; then
+            echo 'failure: signing failed (key format or password)'
+            exit 1
+          fi
+          if ! minisign -V -p "$public_key" -m "$dir/payload" -x "$dir/signature" > /dev/null 2>&1; then
+            echo 'failure: signature verification failed'
+            exit 1
+          fi
+          echo 'signing key matches D87B0E33F55EA02B'
