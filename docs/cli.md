@@ -17,6 +17,7 @@ All conversion and transformation logic lives in `ariad-host` and `ariad-core`; 
   - [`ashift engines install`](#ashift-engines-install)
   - [`ashift engines remove`](#ashift-engines-remove)
   - [`ashift engines verify`](#ashift-engines-verify)
+  - [`ashift engines languages`](#ashift-engines-languages)
   - [`ashift doctor`](#ashift-doctor)
   - [`ashift tools`](#ashift-tools)
   - [`ashift tool`](#ashift-tool)
@@ -495,6 +496,20 @@ ashift engines verify <NAME> [--version <VERSION>] [--json]
 
 ---
 
+### `ashift engines languages`
+
+List, install or remove pinned extra Tesseract language models:
+
+```bash
+ashift engines languages list
+ashift engines languages install fra
+ashift engines languages remove fra
+```
+
+Only explicit installation downloads a model. See [packs.md](packs.md#the-tesseract-pack) for verification and cache behavior.
+
+---
+
 ### `ashift doctor`
 
 Runs environment and dependency diagnostic checks to verify the local machine is ready for conversions.
@@ -519,6 +534,7 @@ ashift doctor [OPTIONS]
 8. **Docling engine** (`docling_engine`, not required): the engine from `ASHIFT_DOCLING_ENGINE` or the `docling` pack answers `describe`; the message lists the Docling version and the models found. Without an engine the check fails and the hint says how to install one.
 9. **Tesseract** (`tesseract`, not required; only when the Docling engine answered): Tesseract 5 is on `PATH` for Vietnamese OCR. Otherwise Vietnamese OCR is unavailable and the hint gives the install command.
 10. **pdfium engine** (`pdfium_engine`, not required): resolves the `pdfium` pack (signature and file digests when installed, or the `ASHIFT_PACK_PDFIUM` development directory) and runs a `describe` round trip over `ariad-engine/2`. Without the pack the check fails with the message `pdfium engine is not installed` and the install hint; with it, the message gives the engine version and the protocol (`ariad-engine/2`). A pack that does not verify, declares the wrong protocol, or cannot start under the sandbox fails the check with the cause. `doctor` never fails because of it.
+11. **Tesseract pack** (`tesseract_engine`, not required): resolves the Tesseract pack and checks its version and `ariad-engine/2` describe response. This is separate from the system Tesseract check used by Docling.
 
 #### macOS engine sandbox
 

@@ -54,3 +54,21 @@ fn recipe_stamp_and_output_name_share_the_utc_epoch() {
     assert!(!invalid.status.success());
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("invalid SOURCE_DATE_EPOCH"));
 }
+
+#[test]
+fn ocr_rejects_invalid_source_date_epoch() {
+    let output = TempDir::new().unwrap();
+    let input =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/scan/vi-garden-300dpi.png");
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_ashift"));
+    std::process::Command::env(&mut command, "SOURCE_DATE_EPOCH", "invalid");
+    let result = command
+        .args(["tool", "image.ocr"])
+        .arg(input)
+        .arg("-o")
+        .arg(output.path().join("output.pdf"))
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("invalid SOURCE_DATE_EPOCH"));
+}

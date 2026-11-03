@@ -225,6 +225,24 @@ enum EnginesAction {
     Remove(PackRemoveArgs),
     /// Re-hash an installed engine pack's files and re-check its signature.
     Verify(PackVerifyArgs),
+    /// List, install, or remove extra OCR language models.
+    Languages(LanguageArgs),
+}
+
+#[derive(Args)]
+struct LanguageArgs {
+    #[command(subcommand)]
+    action: LanguageAction,
+}
+
+#[derive(Subcommand)]
+enum LanguageAction {
+    /// List available models and verified local cache entries.
+    List,
+    /// Download and verify one model from the pinned catalogue.
+    Install { language: String },
+    /// Remove one cached model.
+    Remove { language: String },
 }
 
 /// Arguments for installing an engine pack.
@@ -778,6 +796,7 @@ fn run_engines(args: EnginesArgs) -> ExitCode {
         Some(EnginesAction::Install(args)) => return run_pack_install(args),
         Some(EnginesAction::Remove(args)) => return run_pack_remove(args),
         Some(EnginesAction::Verify(args)) => return run_pack_verify(args),
+        Some(EnginesAction::Languages(args)) => return run_languages(args),
         None => {}
     }
     let engine_program = match std::env::current_exe() {
@@ -805,6 +824,43 @@ fn run_engines(args: EnginesArgs) -> ExitCode {
             } else {
                 render::render_engines_human(&rows).map_err(|_| ConvertError::OutputIo)
             }
+        },
+    )
+}
+
+fn run_languages(args: LanguageArgs) -> ExitCode {
+    run_blocking(
+        "OCR language operation",
+        move |cancel| {
+            let context = packs::PackContext::from_env()?;
+            match args.action {
+                LanguageAction::List => packs::languages::list(&context, &cancel),
+                LanguageAction::Install { language } => {
+                    packs::languages::install(&context, &language, &cancel)
+                        .map(|status| vec![status])
+                }
+                LanguageAction::Remove { language } => {
+                    packs::languages::remove(&context, &language)?;
+                    Ok(Vec::new())
+                }
+            }
+        },
+        |statuses| {
+            for status in statuses {
+                writeln!(
+                    io::stdout(),
+                    "{}\t{}\t{} bytes",
+                    status.language,
+                    if status.installed {
+                        "installed"
+                    } else {
+                        "available"
+                    },
+                    status.size
+                )
+                .map_err(stdout_error)?;
+            }
+            Ok(())
         },
     )
 }

@@ -623,6 +623,28 @@ fn run_tool_inner(
     let extracts_attachments =
         tool_action_extracts_attachments(spec.id, &resolved_secrets.schema_params);
     let effective_engine = spec.engine_for_params(&resolved_secrets.schema_params);
+    let is_ocr_composite =
+        effective_engine == ariad_core::tools::specs::ocr_scan::HOST_COMPOSITE_ENGINE;
+
+    if spec.id == "pdf.ocr"
+        && matches!(
+            resolved_secrets
+                .schema_params
+                .get("output")
+                .and_then(Value::as_str),
+            Some("pdf+txt" | "pdf+hocr")
+        )
+        && let OutputTarget::Path(path) = &request.output
+        && !path.is_dir()
+        && !path
+            .as_os_str()
+            .to_string_lossy()
+            .ends_with(['/', std::path::MAIN_SEPARATOR])
+    {
+        return Err(ToolError::Usage(
+            "OCR with a sidecar requires an output directory".into(),
+        ));
+    }
 
     let mut input_paths: Vec<PathBuf> = request.inputs.iter().map(|i| i.path.clone()).collect();
     preflight_output_target(
@@ -636,7 +658,13 @@ fn run_tool_inner(
         extracts_attachments,
     )?;
 
-    if effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some() {
+    if is_ocr_composite {
+        super::ocr::preflight(
+            spec.id,
+            request.engine_program.as_deref(),
+            request.engine_command.as_ref(),
+        )?;
+    } else if effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some() {
         let _ = engine::resolve_engine_command(
             effective_engine,
             request.engine_program.as_deref(),
@@ -698,7 +726,21 @@ fn run_tool_inner(
     // 10. Dispatch to in-process `ariad-pdf` or out-of-process `ariad-engine/2`.
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
-    let mut raw_exec = if !is_out_of_process {
+    let mut raw_exec = if is_ocr_composite {
+        super::ocr::execute(
+            &spec,
+            &staged_inputs_with_format,
+            &resolved_secrets.schema_params,
+            &workspace,
+            &request.limits,
+            scrubber,
+            request.engine_program.as_deref(),
+            &request.cancel,
+            on_event,
+            clock,
+        )
+        .map_err(|e| e.scrubbed(scrubber))?
+    } else if !is_out_of_process {
         inprocess::execute_with_names_and_clock(
             &spec,
             &staged_inputs_with_names,
@@ -1402,6 +1444,34 @@ fn validate_semantic_params(tool_id: &str, params: &Value) -> Result<(), String>
             let p: ImageToPdfParams =
                 serde_json::from_value(params.clone()).map_err(|e| e.to_string())?;
             p.validate().map_err(|e| e.to_string())
+        }
+        "pdf.ocr" => serde_json::from_value::<ariad_core::tools::params::OcrParams>(params.clone())
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        "image.ocr" => {
+            serde_json::from_value::<ariad_core::tools::params::ImageOcrParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.auto_rotate" => {
+            serde_json::from_value::<ariad_core::tools::params::AutoRotateParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.deskew" => {
+            serde_json::from_value::<ariad_core::tools::params::DeskewParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.scan_split" => {
+            serde_json::from_value::<ariad_core::tools::params::ScanSplitParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        "pdf.scanner_effect" => {
+            serde_json::from_value::<ariad_core::tools::params::ScannerEffectParams>(params.clone())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
         }
         _ => Ok(()),
     }

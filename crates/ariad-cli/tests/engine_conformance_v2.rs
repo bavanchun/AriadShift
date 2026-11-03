@@ -14,6 +14,7 @@ use ariad_core::{
         v2::{MAX_INLINE_PARAMS_BYTES, OutputDir, PROTOCOL_V2, RequestV2},
     },
 };
+use ariad_host::engines::TEST_PROTOCOL_PROBE_ID;
 use serde_json::{Value, json};
 
 fn v2_validator() -> jsonschema::Validator {
@@ -91,7 +92,7 @@ fn validate_v2_stdout(output: &Output) -> Vec<Value> {
 
 #[test]
 fn v2_describe_emits_schema_valid_capabilities_with_tools() {
-    for engine in ["qpdf", "pdfium", "tesseract"] {
+    for engine in ["qpdf", "pdfium", "tesseract", TEST_PROTOCOL_PROBE_ID] {
         let request = RequestV2::Describe {
             protocol: PROTOCOL_V2.to_owned(),
             job: format!("describe-{engine}"),
@@ -148,9 +149,7 @@ fn v2_run_tool_multi_input_multi_artifact_and_warning_events_conform_to_schema()
         limits: Limits::local(),
     };
 
-    // The test-probe tesseract engine supports synthetic multi-artifact requests;
-    // qpdf now dispatches to the real adapter instead of the protocol probe.
-    let events = validate_v2_stdout(&run_v2_engine("tesseract", &request));
+    let events = validate_v2_stdout(&run_v2_engine(TEST_PROTOCOL_PROBE_ID, &request));
     assert_eq!(events.last().unwrap()["ok"], true);
     assert_eq!(events.last().unwrap()["metrics"]["inputs"], 2);
     assert_eq!(events.last().unwrap()["metrics"]["artifacts"], 2);
@@ -205,7 +204,7 @@ fn v2_run_tool_loads_params_from_params_file_inside_work_dir() {
         limits: Limits::local(),
     };
 
-    let events = validate_v2_stdout(&run_v2_engine("tesseract", &request));
+    let events = validate_v2_stdout(&run_v2_engine(TEST_PROTOCOL_PROBE_ID, &request));
     let last = events.last().unwrap();
     assert_eq!(last["ok"], true);
     assert_eq!(last["metrics"]["artifacts"], 3);

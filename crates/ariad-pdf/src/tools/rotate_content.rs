@@ -35,14 +35,22 @@ pub fn run(
             inputs.len()
         )));
     }
+    run_owned(inputs[0].clone(), params, ctx)
+}
+
+/// Rotate pages in an owned document without cloning the complete input.
+pub fn run_owned(
+    mut doc: PdfDoc,
+    params: &RotateContentParams,
+    ctx: &ToolCtx,
+) -> Result<Vec<OutputDoc>, PdfError> {
+    ctx.check()?;
     if !params.angle_deg.is_finite() || !(-360.0..=360.0).contains(&params.angle_deg) {
         return Err(PdfError::InvalidParams(format!(
             "angle_deg ({}) must be a finite number in [-360.0, 360.0]",
             params.angle_deg
         )));
     }
-
-    let mut doc = inputs[0].clone();
     let mut budget = doc.decode_budget();
     let page_ids = collect_page_ids(doc.inner(), ctx)?;
     let page_count = u32::try_from(page_ids.len()).unwrap_or(u32::MAX);

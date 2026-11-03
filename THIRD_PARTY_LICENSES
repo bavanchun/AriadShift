@@ -22602,3 +22602,15 @@ the following restrictions:
 
 ================================================================================
 
+
+
+Bundled OCR font
+----------------
+Glyphless OCR font from Tesseract 5.5.4, distributed in the Tesseract source
+repository under its Apache License 2.0. The full Apache License 2.0 is in the
+repository root LICENSE file. Upstream history identifies Ken Sharp of Artifex
+Software as the contributor of the earlier font and source, with subsequent
+changes by Tesseract contributors.
+
+Source: https://github.com/tesseract-ocr/tesseract/blob/7e548e6eff172f38f97664afe7f7ce40db36c8d6/tessdata/pdf.ttf
+SHA-256: c7845420925a23d88ed830a63957b8af85a66a8daf8d9fc90e843673b2ef1a59

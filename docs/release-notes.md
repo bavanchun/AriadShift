@@ -4,10 +4,12 @@ Changes in each AriadShift release, newest first. Installation commands and down
 
 ## 0.4.0 (unreleased)
 
-Overlay and watermark tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools in `ariad-pdf`. They run through `ashift tool`, `ashift tools`, `ashift recipe run`, the local MCP server, and `ariad-wasm`. (#206)
+Overlay, watermark, OCR and scan tools for the PDF suite. `ashift` gains 15 in-process PDF overlay, page furniture, colour adjustment and watermark tools, plus local OCR and scan operations. (#206, #212)
 
 ### Added
 
+- **OCR and scan tools.** `pdf.ocr` and `image.ocr` add searchable PDF, text and hOCR outputs; `pdf.auto_rotate`, `pdf.deskew`, `pdf.scan_split` and `pdf.scanner_effect` prepare or transform scanned pages. The CLI, recipes and local MCP expose these tools. OCR uses the out-of-process Tesseract pack and PDF operations also use PDFium. See [ocr.md](ocr.md). (#212)
+- **Opt-in OCR languages.** The Tesseract pack includes English, Vietnamese and orientation data; additional verified models can be installed explicitly with `ashift engines languages install`. (#212)
 - **15 overlay and watermark PDF tools**, all in the Free tier and runnable on the CLI, local MCP server, and in the browser via `ariad-wasm`. All 15 run in-process in `ariad-pdf` with no external engine packs:
   - Page marks: `pdf.watermark`, `pdf.stamp`, `pdf.add_image`, `pdf.add_text`, `pdf.qr`.
   - Page furniture: `pdf.page_numbers`, `pdf.header_footer`, `pdf.bates`, `pdf.toc_page`, `pdf.background`, `pdf.invert_colors`.
@@ -26,9 +28,10 @@ Overlay and watermark tools for the PDF suite. `ashift` gains 15 in-process PDF 
 
 ### Known limitations
 
+- **Tesseract pack availability.** The pack is not yet published; Windows and musl systems are deferred. See [packs.md](packs.md#the-tesseract-pack). (#202, #212)
 - **Watermark removal limits.** `pdf.watermark_remove` acts strictly on explicit, user-selected candidate identifiers returned by `pdf.watermark_detect`; wildcard selections, blank candidate lists, or automatic "remove all" operations are refused. A removal request supports at most eight distinct detection queries and at most 1,000 selected candidate identifiers per invocation. Detection and removal share a single decode and work budget within the request; near the decode limit, detection can succeed while removal fails with a limit error. Unsupported image formats or uninspected image objects are reported as warnings and not removed. Removing third-party watermarks emits a warning.
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-11-03)
 
 Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium rendering and image tools, and optimize and security operations. They run through the new `ashift tool`, `ashift tools` and `ashift recipe` commands and through the local MCP server. The `ariad-engine/1` and `ariad-ir/1` contracts are unchanged. The desktop and web interfaces do not yet offer tool screens; the CLI and local MCP server expose the tools.
 
@@ -78,11 +81,12 @@ Preview of the PDF suite. `ashift` gains 25 structural PDF tools, PDFium renderi
 - **Confined tool artifacts.** Engine-reported output files are checked with symlink-safe handles, confined to the job's output directory and size-capped before they are read. Inputs staged for MCP tools are never reopened by path after confinement.
 - **Secrets stay out of messages.** Secret parameters are matched case-insensitively and recursively, scrubbed from errors and debug output, and scoped per recipe step. `params_file` must live inside the job directory.
 - **Pack verification at resolve time.** Installed engine packs are re-verified against a digest record bound to the minisign-verified manifest, and unlisted executables or extra files in a pack root are rejected.
-- **Fuzz coverage.** CI adds four fuzz targets for page ranges, recipes, bounded PDF opening and the structural tools, for 22 targets in all.
+- **Fuzz coverage.** CI adds four fuzz targets for page ranges, recipes, bounded PDF opening and the structural tools (22 fuzz targets run in CI).
 
 ### Known limitations
 
 - **Docling pack.** The Docling engine pack is not yet published; `ashift engines install docling` cannot resolve it until a later release. (#204)
+- **PDFium pack and worker images.** The PDFium pack has no Windows build yet, and release container images for the Docling worker were not built because the Docling pack is deferred (#204).
 - **qpdf pack does not ship in 0.3.0.** Its release gate refuses distribution until the GNU runtime review is complete. qpdf-dependent tools require a separately available compatible pack. (#188)
 - **Signed PDFs.** Rewriting a signed PDF raises a warning and does not preserve existing signatures; incremental-update support remains open. (#186)
 - **Compression.** Six of ten corpus files met or beat Stirling level 6 with the specified similarity criterion, below the original seven-of-ten target. Text-heavy parity remains open. (#187)

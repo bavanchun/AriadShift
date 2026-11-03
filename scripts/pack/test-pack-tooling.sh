@@ -336,6 +336,27 @@ if [ -n "${ASHIFT_BIN:-}" ]; then
             pass "real ashift writes the manifest"
             check "real manifest has engine_protocol" grep -qx 'engine_protocol = "ariad-engine/2"' "$tmp/real/pack.toml"
             check "real manifest lists target executables" grep -q '^executables = \[.*"bin/ariad-pdfium-engine"' "$tmp/real/pack.toml"
+            mkdir -p "$tmp/shared/tessdata"
+            printf 'model component\n' >"$tmp/shared/tessdata/model.dat"
+            tar -cf - -C "$tmp/shared" tessdata | zstd -q -c >"$tmp/shared.tar.zst"
+            runtime=$tmp/real/pdfium-0.1.0-x86_64-unknown-linux-gnu-engine.tar.zst
+            if bash "$builder" merge "${real_common[@]}" --out "$tmp/real-shared" \
+                --target-env 'TESSDATA_PREFIX={root}/tessdata' --shared-component "tessdata=$tmp/shared.tar.zst" \
+                --archive "x86_64-unknown-linux-gnu=$runtime" --archive "aarch64-unknown-linux-gnu=$runtime" >"$tmp/oshared" 2>&1 &&
+                python3 - "$tmp/real-shared/pack.toml" <<'PY'
+import pathlib, sys, tomllib
+manifest = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())
+assert len(manifest['targets']) == 2
+for target in manifest['targets']:
+    assert target['env']['TESSDATA_PREFIX'] == '{root}/tessdata'
+    assert {part['name'] for part in target['components']} == {'engine', 'tessdata'}
+PY
+            then
+                pass "real manifest retains shared components and environment for each target"
+            else
+                fail "real manifest retains shared components and environment for each target"
+                cat "$tmp/oshared" >&2
+            fi
         else
             fail "real ashift writes the manifest"
             cat "$tmp/oreal" >&2

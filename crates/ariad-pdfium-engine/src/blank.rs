@@ -411,7 +411,7 @@ pub(crate) fn open_structural_pdf(
     ctx: &ToolContext<'_>,
     bytes: &[u8],
 ) -> Result<PdfDoc, EngineFailure> {
-    let pdf_ctx = PdfToolCtx::default();
+    let pdf_ctx = ctx.pdf_tool_context();
     let doc = document::open_with_ctx(bytes, ctx.limits(), &pdf_ctx).map_err(map_pdf_error)?;
     let page_count = doc.inner().get_pages().len();
     if page_count == 0 {

@@ -237,6 +237,14 @@ Install it once a release exists with `ashift engines install pdfium`. The embed
 
 Without the pack, every PDFium tool fails with exit code 5 (`tool_missing`) and the hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. `ashift doctor` lists a `pdfium_engine` check and `ashift engines` a `pdfium` row either way: not installed (with that hint), or installed with the pack version and the protocol `ariad-engine/2`.
 
+## The tesseract pack
+
+The Tesseract pack is under development and is not yet published. It builds Tesseract 5.5.4 and Leptonica 1.87.0 from the sources pinned in [`pins.toml`](../engines/tesseract/pack/pins.toml). It shares the pinned `eng`, `vie` and `osd` model bytes with the Docling pack. Runtime executables and notices are packaged per target; the model component is shared. Linux glibc and macOS on x64 and arm64 are the intended targets. Windows and musl are deferred ([#202](https://github.com/bavanchun/AriadShift/issues/202)). C and C++ runtimes come from the system.
+
+`just pack-tesseract` downloads verified sources and models and builds an unsigned development pack. To use already downloaded inputs, set `TESSERACT_INPUT_DIR` to a directory containing the two source archives and a `tessdata/` directory with the pinned files. `just pack-tesseract-verify` checks its layout and models and exercises recognition through the development override and host sandbox. These commands require CMake 4.4.5, a C++ compiler, pkg-config, GNU tar, zstd and Python 3.11 or later. The pack workflow pins and verifies its CMake archive. Release packs require ashift 0.4.0 or later; development packs use the current development range.
+
+Extra OCR models are installed explicitly with `ashift engines languages install fra`, listed with `ashift engines languages list`, and removed with `ashift engines languages remove fra`. The list's installed column refers to the extra-model cache; the pack separately includes `eng`, `vie` and `osd`. Each catalogue entry is pinned to the Docling tessdata revision and checked by size and SHA-256 both at installation and before OCR. Model download uses HTTPS; OCR itself runs without network access. No language is downloaded automatically.
+
 ## The qpdf pack
 
 The qpdf pack is under development and is not available for installation or
