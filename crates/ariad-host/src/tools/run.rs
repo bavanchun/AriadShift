@@ -42,9 +42,9 @@ use crate::{
             PublishError, PublishedArtifact, StagedArtifact, default_multi_artifact_name,
             default_single_artifact_name, ensure_no_parent_traversal,
             extracted_quarantine_warnings, is_safe_extracted_extension, open_confined_output_dir,
-            publish_atomic, render_naming_template, replace_staged_input_stem,
-            validate_extracted_artifact_extensions, validate_output_path_for_spec,
-            validate_spec_artifact_extensions, validate_target_filename,
+            publish_atomic, replace_staged_input_stem, validate_extracted_artifact_extensions,
+            validate_output_path_for_spec, validate_spec_artifact_extensions,
+            validate_target_filename,
         },
         secrets::{SecretBag, SecretScrubber},
     },
@@ -525,14 +525,24 @@ pub fn run_tool_with_events<F>(
 where
     F: FnMut(ToolEvent),
 {
+    let clock = inprocess::capture_clock()?;
+    run_tool_with_clock(request, &mut on_event, clock)
+}
+
+pub(crate) fn run_tool_with_clock(
+    request: &ToolRequest,
+    on_event: &mut dyn FnMut(ToolEvent),
+    clock: inprocess::HostClock,
+) -> Result<ToolOutcome, ToolError> {
     let base_scrubber = request.secrets.scrubber();
-    let result = run_tool_inner(request, &mut on_event);
+    let result = run_tool_inner(request, on_event, clock);
     result.map_err(|err| err.scrubbed(&base_scrubber))
 }
 
 fn run_tool_inner(
     request: &ToolRequest,
     on_event: &mut dyn FnMut(ToolEvent),
+    clock: inprocess::HostClock,
 ) -> Result<ToolOutcome, ToolError> {
     let started = Instant::now();
 
@@ -689,7 +699,7 @@ fn run_tool_inner(
     let is_out_of_process =
         effective_engine != INPROCESS_PDF_ENGINE || request.engine_command.is_some();
     let mut raw_exec = if !is_out_of_process {
-        inprocess::execute_with_names(
+        inprocess::execute_with_names_and_clock(
             &spec,
             &staged_inputs_with_names,
             &resolved_secrets.schema_params,
@@ -698,6 +708,7 @@ fn run_tool_inner(
             scrubber,
             &request.cancel,
             on_event,
+            clock,
         )
         .map_err(|e| e.scrubbed(scrubber))?
     } else {
@@ -758,7 +769,7 @@ fn run_tool_inner(
         &spec,
         &resolved_secrets.schema_params,
         is_out_of_process,
-        emits_json || raw_exec.inline_json.is_some(),
+        emits_json,
         extracts_attachments,
         &raw_exec.artifacts,
         &input_paths,
@@ -767,6 +778,7 @@ fn run_tool_inner(
         request.allowed_dirs.as_ref(),
         request.overwrite,
         request.fail_publish_at_index,
+        clock.clock,
     )
     .map_err(|e| e.scrubbed(scrubber))?;
 
@@ -1161,6 +1173,7 @@ fn publish_tool_outputs(
     allowed_dirs: Option<&AllowedDirs>,
     overwrite: bool,
     fail_at_index: Option<usize>,
+    clock: ariad_pdf::ToolClock,
 ) -> Result<(Vec<PublishedArtifact>, Vec<String>), ToolError> {
     if raw_artifacts.is_empty() {
         return Ok((Vec::new(), Vec::new()));
@@ -1241,8 +1254,14 @@ fn publish_tool_outputs(
         let target_name = if let Some(ref single_name) = explicit_single_filename {
             single_name.clone()
         } else if let Some(template) = naming_template {
-            render_naming_template(template, first_stem, index_1_based)
-                .map_err(PublishError::from)?
+            super::publish::render_naming_template_with_clock(
+                template,
+                first_stem,
+                index_1_based,
+                clock,
+                params.get("date").and_then(Value::as_str),
+            )
+            .map_err(PublishError::from)?
         } else if extracts_attachments {
             staged_path
                 .file_name()

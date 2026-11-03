@@ -42,6 +42,51 @@ fn pdf_fixture(name: &str) -> PathBuf {
     repository_root().join("fixtures/pdf-tools").join(name)
 }
 
+#[test]
+fn watermark_removal_publishes_pdf_with_inline_report() {
+    let dir = TempDir::new().unwrap();
+    let input = dir.path().join("input.pdf");
+    fs::copy(pdf_fixture("watermark-layer.pdf"), &input).unwrap();
+    let detect = ashift_cmd()
+        .args(["tool", "pdf.watermark_detect"])
+        .arg(&input)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        detect.status.success(),
+        "{}",
+        String::from_utf8_lossy(&detect.stderr)
+    );
+    let candidates: Value = serde_json::from_slice(&detect.stdout).unwrap();
+    let id = candidates["candidates"][0]["id"].as_str().unwrap();
+    let params = dir.path().join("params.json");
+    fs::write(
+        &params,
+        serde_json::to_vec(&json!({"candidates":[id]})).unwrap(),
+    )
+    .unwrap();
+    let output = dir.path().join("removed.pdf");
+    let removed = ashift_cmd()
+        .args(["tool", "pdf.watermark_remove"])
+        .arg(&input)
+        .arg("--params-json")
+        .arg(params)
+        .arg("--json")
+        .arg("-o")
+        .arg(&output)
+        .output()
+        .unwrap();
+    assert!(
+        removed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&removed.stderr)
+    );
+    let result: Value = serde_json::from_slice(&removed.stdout).unwrap();
+    assert_eq!(result["inline_json"]["removed"][0]["id"], id);
+    assert!(fs::read(output).unwrap().starts_with(b"%PDF-"));
+}
+
 fn inspect_pdf_info(pdf_path: &Path) -> Value {
     let out = ashift_cmd()
         .args(["tool", "pdf.info"])

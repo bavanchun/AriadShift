@@ -1,0 +1,20 @@
+---
+source: crates/ariad-pdf/tests/toc_page.rs
+expression: info_json
+---
+{
+  "has_annotations": true,
+  "has_forms": false,
+  "outline_count": 6,
+  "page_1": {
+    "blank": false,
+    "height_pt": 841.89,
+    "orientation": "portrait",
+    "page": 1,
+    "paper": "A4",
+    "rotation": 0,
+    "width_pt": 595.28
+  },
+  "page_count": 21,
+  "version": "1.5"
+}

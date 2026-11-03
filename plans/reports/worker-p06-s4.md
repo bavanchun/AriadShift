@@ -1,0 +1,13 @@
+# Overlay colour implementation
+
+Status: implementation and focused checks complete; registry integration and independent review are pending.
+
+`pdf.replace_color` maps text and vector paints with an optional RGB match and per-channel 8-bit tolerance. `pdf.adjust_colors` applies gamma `x^(1/gamma)`, contrast `(x-0.5)*(1+contrast)+0.5`, brightness, then saturation around Rec. 709 luminance, clamping the result. The neutral adjustment is rejected. The colour traversal preserves the existing grayscale implementation and does not edit annotation appearances or Type 3 glyph procedures. It warns for unsupported colour spaces, shadings, inline images, and unsupported image encodings. Device Gray, RGB, CMYK and ICCBased families are handled; shared forms and images are copied on write, and form recursion and resource copying are bounded.
+
+The adjustment supports bounded uncompressed, Flate and JPEG images, including Indexed palettes, Decode arrays, colour-key masks, and soft masks with Matte. JPEG is decoded and re-encoded in the base and WASM builds, as approved in D5; other unsupported filters or sample depths remain unchanged with a warning. Existing exact dependencies were made available in the base build; no new third-party dependency was added for this slice.
+
+Shared integration lines are present in the phase branch: module exports and dispatch, parameter exports, naming suffixes, host publication suffixes, and base codec features. The two specs are defined in `overlay_color.rs`; registration and generated schemas are deferred until phase integration. The brief's `encrypted-aes256.plaintext.pdf` is plaintext, so the encrypted-input test instead uses the encrypted empty-password fuzz seed. Existing grayscale and image-codec regression tests passed; final checks and visual verification remain in progress.
+
+Additional evidence: PDFium rendered a colour-keyed image before and after adjustment; its transparent pixel was unchanged and its opaque pixel changed. Focused targeted-colour and form tests passed (10 tests), and core/PDF clippy passed. The core text reader reports `Malformed` for the original `broken-xref.pdf`; its case therefore compares the original and rewritten text-show operators directly rather than claiming successful extraction from that input.
+
+Focused checks: `cargo test -p ariad-pdf --test replace_color --test adjust_colors` (7 passed); targeted colour and traversal unit tests (10 passed); `cargo clippy -p ariad-core -p ariad-pdf --all-targets -- -D warnings`; `cargo check -p ariad-pdf --target wasm32-unknown-unknown`; PDFium colour-key render test (1 passed). The earlier grayscale and codec regression tests passed (29 tests).

@@ -587,7 +587,10 @@ impl ToolSpec {
         if !self.accepts_output_format(norm) {
             return false;
         }
-        if let Some(picked) = params.get("format").and_then(serde_json::Value::as_str) {
+        // Page numbering uses `format` for its text template, not an artifact type.
+        if self.id != "pdf.page_numbers"
+            && let Some(picked) = params.get("format").and_then(serde_json::Value::as_str)
+        {
             if picked.eq_ignore_ascii_case("original") {
                 return true;
             }

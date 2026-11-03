@@ -130,7 +130,7 @@ Compression runs in-process; PDFium is used only for similarity measurement. Clo
 | `pdf.qr` | overlay | S30 QR code stamp | — | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.invert_colors` | overlay | S32 invert colour | Invert Colors | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.replace_color` | overlay | S32 replace colour | Change Text Color | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
-| `pdf.adjust_colors` † | overlay | S32 adjust contrast | Adjust Colors | 6 | pdfium, ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| `pdf.adjust_colors` † | overlay | S32 adjust contrast | Adjust Colors | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.background` † | overlay | — | Change Background | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.scanner_effect` † | overlay | — | Scanner Effect | 7 | pdfium, ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | `pdf.toc_page` † (visible table-of-contents page built from the outline) | overlay | — | Table of Contents | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
@@ -204,7 +204,7 @@ Items from the brainstorm contract that neither competitor delivers. The Stirlin
 | Natural-language recipes (`ai.recipe_from_text`, validated against the registry, never auto-run) | ai | AI agents are metered on Cloud (S45) | workflow builder without natural language | 13 | ai-pack | local | Free (offline); hosted models Pro (a) | CLI, MCP, web(h), mac |
 | Semantic compare (reading-order text diff in phase 10; IR-block level † not in a phase file yet) | compare | S36 compare, method unverified | Compare PDFs (pixel and text) | 10 | pdfium, ariad-core | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | Crash-safe autosave with version history (op-list replay, AD-17) | edit | version history per file (report §5.1) | no autosave (#836) | 16, 18 | ariad-core | wasm, local | Free | web, mac |
-| Watermark removal level 1 (`pdf.watermark_detect`, `pdf.watermark_remove`: layers, artifacts, repeated objects; user-selected candidates only) | overlay | — | — | 6 | ariad-pdf, pdfium | wasm, local, cloud | Free | CLI, MCP, web, mac |
+| Watermark removal level 1 (`pdf.watermark_detect`, `pdf.watermark_remove`: layers, artifacts, repeated objects; user-selected candidates only) | overlay | — | — | 6 | ariad-pdf | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | Watermark removal level 2 (`pdf.watermark_remove_raster`: Florence-2 detection, OpenCV inpainting; LaMa only after weight-licence review) | overlay | — | — | 13 | inpaint-pack | local | Free | CLI, MCP, web(h), mac |
 | Vietnamese-first OCR (`vie` default, diacritic CER recorded against the Docling route) | ocr | OCR languages request (#6534) | Czech and Polish diacritics lost in the editor (#860, #776) | 7 | tesseract | wasm, local, cloud | Free | CLI, MCP, web, mac |
 | Target-size compression (`pdf.compress` `target_bytes` with a similarity floor) | optimize | levels 1-9 only | fixed presets leave 380 KB for a 200 KB goal (#704) | 5 | ariad-pdf, pdfium | local | Free | CLI, MCP, web(h), mac |
