@@ -821,6 +821,7 @@ pub fn button(
     ctx: &ToolCtx,
 ) -> Result<ObjectId, PdfError> {
     ctx.check()?;
+    let mut resources = dictionary! {};
     let mut ops = if radio {
         radio_background(width, height)?
     } else {
@@ -881,21 +882,67 @@ pub fn button(
             Operation::new("f", vec![]),
         ]);
     } else if checked {
+        let font = doc.add_object(
+            dictionary! { "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "ZapfDingbats" },
+        );
+        resources.set("Font", dictionary! { "ZaDb" => Object::Reference(font) });
+        // Font-specific code 51 is the a19 check mark in ZapfDingbats.
+        let size = width.min(height) * 0.8;
         ops.extend([
-            Operation::new("w", vec![Object::Real(1.5)]),
-            Operation::new("m", vec![real(width * 0.18)?, real(height * 0.5)?]),
-            Operation::new("l", vec![real(width * 0.42)?, real(height * 0.2)?]),
-            Operation::new("l", vec![real(width * 0.85)?, real(height * 0.8)?]),
-            Operation::new("S", vec![]),
+            Operation::new("g", vec![0.into()]),
+            Operation::new("BT", vec![]),
+            Operation::new("Tf", vec![Object::Name(b"ZaDb".to_vec()), real(size)?]),
+            Operation::new(
+                "Tm",
+                vec![
+                    1.into(),
+                    0.into(),
+                    0.into(),
+                    1.into(),
+                    real(width * 0.2)?,
+                    real(height * 0.2)?,
+                ],
+            ),
+            Operation::new("Tj", vec![Object::String(vec![51], StringFormat::Literal)]),
+            Operation::new("ET", vec![]),
         ]);
     }
     ops.push(Operation::new("Q", vec![]));
-    stream(doc, width, height, dictionary! {}, ops)
+    stream(doc, width, height, resources, ops)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checkbox_appearance_uses_the_dingbats_check_glyph() {
+        let mut doc = Document::with_version("1.7");
+        let id = button(&mut doc, 20.0, 20.0, true, false, &ToolCtx::new()).unwrap();
+        let stream = doc.get_object(id).unwrap().as_stream().unwrap();
+        let resources = stream.dict.get(b"Resources").unwrap().as_dict().unwrap();
+        let font_id = resources
+            .get(b"Font")
+            .unwrap()
+            .as_dict()
+            .unwrap()
+            .get(b"ZaDb")
+            .unwrap()
+            .as_reference()
+            .unwrap();
+        assert_eq!(
+            doc.get_dictionary(font_id)
+                .unwrap()
+                .get(b"BaseFont")
+                .unwrap()
+                .as_name()
+                .unwrap(),
+            b"ZapfDingbats"
+        );
+        let content = Content::decode(&stream.content).unwrap();
+        assert!(content.operations.iter().any(|op| op.operator == "Tj"
+            && op.operands.first().and_then(|o| o.as_str().ok()) == Some(&[51][..])));
+    }
 
     #[test]
     fn widget_border_styles_are_preserved_in_appearance() {
