@@ -70,8 +70,10 @@ fn cff_subsets_render_and_extract_vietnamese() {
         let after = page.render_with_config(&config).unwrap().as_rgba_bytes();
         assert_eq!(before.len(), after.len());
         let changed = before
-            .chunks_exact(4)
-            .zip(after.chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(after.as_chunks::<4>().0)
             .filter(|(a, b)| a != b)
             .count();
         assert!(changed > 500, "only {changed} pixels changed for {face:?}");
@@ -146,8 +148,10 @@ fn shared_glyph_encoding_is_readable_by_pdfium() {
         .unwrap()
         .as_rgba_bytes();
     let changed = before
-        .chunks_exact(4)
-        .zip(pixels.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(pixels.as_chunks::<4>().0)
         .filter(|(a, b)| a != b)
         .count();
     assert!(changed > 100, "only {changed} pixels changed");
