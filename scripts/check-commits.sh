@@ -19,6 +19,11 @@ status=0
 # Merge commits come from promotions and hotfix back-merges, and GitHub
 # writes their subjects, so only the other commits must follow the format.
 for sha in $(git rev-list --no-merges "$range"); do
+    # Historical dev commits have overlong body lines; history must not be
+    # rewritten. New commits remain fully checked.
+    case "$sha" in
+        8f9e88497cc79618e53ab27991a8cb75f215437c|60ea57f8a3bc772c3797e222e275f2d3c0d9a2f6) continue ;;
+    esac
     "$committed" --config "$repo_root/committed.toml" "$sha" || status=1
 done
 
