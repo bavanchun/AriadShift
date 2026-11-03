@@ -22,7 +22,7 @@ pub(super) fn numbered_pages(
 ) -> Result<Vec<(u32, ObjectId)>, PdfError> {
     let all = page_ids(pdf.inner(), limits, ctx)?;
     draw::check_page_count(all.len(), limits, ctx)?;
-    let selected = crate::recolor::selected_pages(pdf, range, limits, ctx)?;
+    let selected = crate::color::selected_pages(pdf, range, limits, ctx)?;
     selected
         .into_iter()
         .map(|index| {

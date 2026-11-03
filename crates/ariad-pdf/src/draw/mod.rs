@@ -1,10 +1,12 @@
 //! Drawing primitives for adding marks to existing PDF pages.
 
+#[cfg(feature = "codecs")]
 pub mod font;
 pub mod geometry;
 pub mod image;
 pub mod layer;
 pub mod path;
+#[cfg(feature = "codecs")]
 pub mod text;
 pub mod tokens;
 

@@ -21,7 +21,7 @@ pub fn run(
         ));
     }
     let mut pdf = inputs[0].clone();
-    let pages = recolor::selected_pages(&pdf, &params.pages, limits, ctx)?;
+    let pages = crate::color::selected_pages(&pdf, &params.pages, limits, ctx)?;
     let mapper = recolor::replace_mapper(params);
     let warnings = targeted_document::rewrite_selected(
         &mut pdf,

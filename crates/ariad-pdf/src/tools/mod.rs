@@ -9,11 +9,14 @@
 //! - Deterministic PDF serialization of [`OutputDoc`] artifacts via [`crate::writer::save_with_options`].
 
 pub mod add_image;
+#[cfg(feature = "codecs")]
 pub mod add_text;
+#[cfg(feature = "codecs")]
 pub mod adjust_colors;
 pub mod alternate_mix;
 pub mod attachments;
 pub mod background;
+#[cfg(feature = "codecs")]
 pub mod bates;
 pub mod booklet;
 #[cfg(feature = "codecs")]
@@ -23,9 +26,11 @@ pub mod decompress;
 pub mod delete_pages;
 pub mod divide_pages;
 pub mod extract_pages;
+#[cfg(feature = "codecs")]
 mod furniture_common;
 #[cfg(feature = "codecs")]
 pub mod grayscale;
+#[cfg(feature = "codecs")]
 pub mod header_footer;
 pub mod insert_blank;
 pub mod invert_colors;
@@ -38,12 +43,15 @@ pub mod nup;
 pub mod outline;
 pub mod overlay;
 pub mod page_labels;
+#[cfg(feature = "codecs")]
 pub mod page_numbers;
 pub(crate) mod page_set;
 pub mod portfolio;
 pub mod posterize;
+#[cfg(feature = "codecs")]
 pub mod qr;
 pub mod reorder;
+#[cfg(feature = "codecs")]
 pub mod replace_color;
 pub mod rotate;
 pub mod rotate_content;
@@ -51,14 +59,21 @@ pub mod sanitize;
 pub mod scale;
 pub mod single_page;
 pub mod split;
+#[cfg(feature = "codecs")]
 pub mod stamp;
+#[cfg(feature = "codecs")]
 pub mod toc_page;
 pub mod unlock_forms;
 pub mod viewer_prefs;
+#[cfg(feature = "codecs")]
 pub mod watermark;
+#[cfg(feature = "codecs")]
 pub mod watermark_detect;
+#[cfg(feature = "codecs")]
 mod watermark_identity;
+#[cfg(feature = "codecs")]
 pub mod watermark_remove;
+#[cfg(feature = "codecs")]
 mod watermark_scan;
 
 use ariad_core::{
@@ -342,6 +357,7 @@ pub fn run_tool(
     }
 
     match tool_id {
+        #[cfg(feature = "codecs")]
         "pdf.page_numbers" => {
             dispatch_structural::<ariad_core::tools::params::PageNumbersParams, _>(
                 tool_id,
@@ -351,10 +367,12 @@ pub fn run_tool(
                 |docs, params, ctx| page_numbers::run(docs, params, &inputs[0].limits, ctx),
             )
         }
+        #[cfg(feature = "codecs")]
         "pdf.header_footer" => dispatch_structural_inputs::<
             ariad_core::tools::params::HeaderFooterParams,
             _,
         >(tool_id, inputs, params, ctx, header_footer::run_inputs),
+        #[cfg(feature = "codecs")]
         "pdf.bates" => dispatch_structural::<ariad_core::tools::params::BatesParams, _>(
             tool_id,
             inputs,
@@ -362,6 +380,7 @@ pub fn run_tool(
             ctx,
             |docs, params, ctx| bates::run(docs, params, &inputs[0].limits, ctx),
         ),
+        #[cfg(feature = "codecs")]
         "pdf.toc_page" => dispatch_structural::<ariad_core::tools::params::TocPageParams, _>(
             tool_id,
             inputs,
@@ -382,6 +401,7 @@ pub fn run_tool(
         >(tool_id, inputs, params, ctx, |docs, params, ctx| {
             invert_colors::run(docs, params, &inputs[0].limits, ctx)
         }),
+        #[cfg(feature = "codecs")]
         "pdf.watermark" => dispatch_structural_inputs::<
             ariad_core::tools::params::WatermarkParams,
             _,
@@ -395,6 +415,7 @@ pub fn run_tool(
                 add_image::run_inputs,
             )
         }
+        #[cfg(feature = "codecs")]
         "pdf.add_text" => dispatch_structural::<ariad_core::tools::params::AddTextParams, _>(
             tool_id,
             inputs,
@@ -402,6 +423,7 @@ pub fn run_tool(
             ctx,
             |docs, params, ctx| add_text::run(docs, params, &inputs[0].limits, ctx),
         ),
+        #[cfg(feature = "codecs")]
         "pdf.stamp" => dispatch_structural::<ariad_core::tools::params::StampParams, _>(
             tool_id,
             inputs,
@@ -409,6 +431,7 @@ pub fn run_tool(
             ctx,
             |docs, params, ctx| stamp::run(docs, params, &inputs[0].limits, ctx),
         ),
+        #[cfg(feature = "codecs")]
         "pdf.qr" => dispatch_structural::<ariad_core::tools::params::QrParams, _>(
             tool_id,
             inputs,
@@ -416,24 +439,28 @@ pub fn run_tool(
             ctx,
             |docs, params, ctx| qr::run(docs, params, &inputs[0].limits, ctx),
         ),
+        #[cfg(feature = "codecs")]
         "pdf.watermark_remove" => dispatch_structural_inputs::<
             ariad_core::tools::params::WatermarkRemoveParams,
             _,
         >(
             tool_id, inputs, params, ctx, watermark_remove::run_inputs
         ),
+        #[cfg(feature = "codecs")]
         "pdf.watermark_detect" => dispatch_structural_inputs::<
             ariad_core::tools::params::WatermarkDetectParams,
             _,
         >(
             tool_id, inputs, params, ctx, watermark_detect::run_inputs
         ),
+        #[cfg(feature = "codecs")]
         "pdf.replace_color" => dispatch_structural::<
             ariad_core::tools::params::ReplaceColorParams,
             _,
         >(tool_id, inputs, params, ctx, |docs, params, ctx| {
             replace_color::run(docs, params, &inputs[0].limits, ctx)
         }),
+        #[cfg(feature = "codecs")]
         "pdf.adjust_colors" => dispatch_structural::<
             ariad_core::tools::params::AdjustColorsParams,
             _,

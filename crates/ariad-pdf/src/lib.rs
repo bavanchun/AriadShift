@@ -16,12 +16,14 @@ pub mod flatten;
 pub mod fonts;
 pub mod gc;
 pub mod image_to_pdf;
+#[cfg(feature = "codecs")]
 pub mod images;
 pub mod info;
 pub mod naming;
 #[cfg(feature = "codecs")]
 pub mod optimize;
 pub mod paper;
+#[cfg(feature = "codecs")]
 pub mod recolor;
 pub mod tools;
 pub mod writer;

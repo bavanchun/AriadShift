@@ -28,7 +28,7 @@ pub fn run(
         .map_err(|error| PdfError::InvalidParams(error.into()))?;
     let source = &inputs[0];
     let mut pdf = source.clone();
-    let pages = recolor::selected_pages(&pdf, &params.pages, limits, ctx)?;
+    let pages = crate::color::selected_pages(&pdf, &params.pages, limits, ctx)?;
     let mapper = recolor::adjust_mapper(params);
     let mut retained = 0;
     let warnings = targeted_document::rewrite_selected(

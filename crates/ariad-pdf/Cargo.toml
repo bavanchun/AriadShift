@@ -12,24 +12,24 @@ categories = ["text-processing", "parser-implementations"]
 publish = true
 
 [features]
-codecs = []
+codecs = ["dep:flate2", "dep:oxiarc-jpeg", "dep:subsetter", "dep:zune-core", "dep:zune-jpeg", "dep:qrcode", "dep:ttf-parser"]
 
 [dependencies]
 ariad-core = { workspace = true, features = ["pdf"] }
-flate2.workspace = true
+flate2 = { workspace = true, optional = true }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tiff"] }
-qrcode = { version = "=0.14.1", default-features = false }
-oxiarc-jpeg = { version = "=0.4.2", default-features = false }
+qrcode = { version = "=0.14.1", default-features = false, optional = true }
+oxiarc-jpeg = { version = "=0.4.2", default-features = false, optional = true }
 lopdf.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-subsetter = { version = "=0.2.6", default-features = false }
+subsetter = { version = "=0.2.6", default-features = false, optional = true }
 thiserror.workspace = true
-ttf-parser = { version = "=0.25.1", default-features = false, features = ["std"] }
+ttf-parser = { version = "=0.25.1", default-features = false, features = ["std"], optional = true }
 unicode-normalization.workspace = true
-zune-core = { version = "=0.5.3", default-features = false, features = ["std"] }
-zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"] }
+zune-core = { version = "=0.5.3", default-features = false, features = ["std"], optional = true }
+zune-jpeg = { version = "=0.5.15", default-features = false, features = ["std"], optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 lopdf = { workspace = true, features = ["wasm_js"] }

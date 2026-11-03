@@ -319,22 +319,6 @@ where
     Ok(ImageChange::Replaced(doc.add_object(updated)))
 }
 
-pub(crate) fn selected_pages(
-    pdf: &crate::PdfDoc,
-    pages: &ariad_core::tools::page_range::PageRange,
-    limits: &ariad_core::limits::Limits,
-    ctx: &crate::ToolCtx,
-) -> Result<Vec<u32>, crate::PdfError> {
-    let count = crate::color::page_ids(pdf.inner(), limits, ctx)?.len();
-    let count = u32::try_from(count).map_err(|_| crate::PdfError::Malformed)?;
-    pages
-        .expand(
-            count,
-            ariad_core::tools::page_range::DuplicatePolicy::Reject,
-        )
-        .map_err(|e| crate::PdfError::InvalidParams(e.to_string()))
-}
-
 pub(crate) fn output(
     pdf: crate::PdfDoc,
     counts: crate::color::targeted::Warnings,

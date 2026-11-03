@@ -226,6 +226,7 @@ pub(crate) fn export_outlines(
 }
 
 /// Export an outline while refusing unresolved destinations and malformed trees.
+#[cfg(feature = "codecs")]
 pub(crate) fn export_outlines_strict(
     doc: &lopdf::Document,
     pages: &[ObjectId],
