@@ -16,13 +16,19 @@ fn child(name: &str) -> bool {
         return true;
     }
     let Some(pack) = std::env::var_os("ARIAD_TEST_TESSERACT_PACK") else {
+        assert!(
+            std::env::var_os("ARIAD_REQUIRE_OCR_PACKS").is_none(),
+            "ARIAD_TEST_TESSERACT_PACK is required"
+        );
         eprintln!("skipping: ARIAD_TEST_TESSERACT_PACK is unset");
         return false;
     };
     let mut command = Command::new(std::env::current_exe().unwrap());
+    let data = tempfile::tempdir().unwrap();
     command.args(["--exact", name, "--nocapture", "--test-threads=1"]);
     Command::env(&mut command, "ARIAD_TESSERACT_TEST_CHILD", "1");
     Command::env(&mut command, "ASHIFT_PACK_TESSERACT", pack);
+    Command::env(&mut command, "ASHIFT_DATA_DIR", data.path());
     let result = command.output().unwrap();
     assert!(
         result.status.success(),
@@ -31,6 +37,32 @@ fn child(name: &str) -> bool {
         String::from_utf8_lossy(&result.stderr)
     );
     false
+}
+
+#[test]
+fn recognizes_with_an_installed_extra_language() {
+    if !child("recognizes_with_an_installed_extra_language") {
+        return;
+    }
+    let context = ariad_host::packs::PackContext::from_env().unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    ariad_host::packs::languages::install(&context, "fra", &cancel).unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let result = run_tool(
+        &ToolRequest::new(
+            "ocr.recognize",
+            vec![InputRef::new(fixture())],
+            OutputTarget::Directory(out.path().into()),
+        )
+        .with_spec(spec("ocr.recognize"))
+        .with_params(json!({"languages":["fra"]}))
+        .with_engine_program(env!("CARGO_BIN_EXE_engine-probe")),
+    )
+    .unwrap();
+    let page: ariad_core::ocr::OcrPage =
+        serde_json::from_slice(&std::fs::read(&result.artifacts[0].path).unwrap()).unwrap();
+    assert_eq!(page.languages, ["fra"]);
+    assert!(!page.paragraphs.is_empty());
 }
 
 fn fixture() -> PathBuf {
@@ -89,7 +121,12 @@ fn recognize_and_detect_orientation_with_real_pack() {
     let osd: ariad_core::ocr::OcrOrientation =
         serde_json::from_slice(&std::fs::read(&result.artifacts[0].path).unwrap()).unwrap();
     assert_eq!(osd.rotation_cw, 0);
-    assert!(execute("ocr.recognize", json!({"languages":["fra"]})).is_err());
+    let error = execute("ocr.recognize", json!({"languages":["fra"]})).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("ashift engines languages install fra")
+    );
 }
 
 #[test]

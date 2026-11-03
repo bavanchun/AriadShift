@@ -78,6 +78,20 @@ pub fn install(
     language: &str,
     cancel: &CancellationToken,
 ) -> Result<LanguageStatus, PackError> {
+    install_from(
+        context,
+        language,
+        cancel,
+        "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best",
+    )
+}
+
+fn install_from(
+    context: &PackContext,
+    language: &str,
+    cancel: &CancellationToken,
+    base: &str,
+) -> Result<LanguageStatus, PackError> {
     let (language, digest, size) = entry(language)?;
     let _lock = super::install::tesseract_lock(context)?;
     let dir = directory(context);
@@ -94,7 +108,8 @@ pub fn install(
         .map_err(|error| PackError::io("could not create", &dir, error))?;
     let temporary_path = temporary.path().to_owned();
     let url = format!(
-        "https://raw.githubusercontent.com/tesseract-ocr/tessdata_best/{}/{language}.traineddata",
+        "{}/{}/{language}.traineddata",
+        base.trim_end_matches('/'),
         catalogue::REVISION
     );
     let fetcher = Fetcher::new(context.fetch.clone());
@@ -158,6 +173,39 @@ pub(crate) fn verify_model(path: &Path, language: &str) -> Result<bool, PackErro
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+
+    #[test]
+    fn install_rejects_tampered_download_without_publishing() {
+        use std::io::{Read, Write};
+
+        let temp = tempfile::tempdir().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 1024];
+            let n = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..n]).contains("fra.traineddata"));
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\ntampered",
+                )
+                .unwrap();
+        });
+        let context = PackContext {
+            data_dir: temp.path().join("cache"),
+            keys: super::super::TrustedKeys::compiled(),
+            targets: vec![],
+            fetch: super::super::FetchPolicy::default(),
+        };
+        let error = install_from(&context, "fra", &CancellationToken::new(), &base).unwrap_err();
+        server.join().unwrap();
+        assert!(matches!(
+            error,
+            PackError::SizeMismatch { .. } | PackError::HashMismatch { .. }
+        ));
+        assert!(!directory(&context).join("fra.traineddata").exists());
+    }
 
     #[test]
     fn verification_detects_changed_bytes_and_rejects_links() {

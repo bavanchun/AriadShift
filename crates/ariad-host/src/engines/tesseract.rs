@@ -61,6 +61,25 @@ fn model_path(directory: &Path, language: &str) -> Result<(), EngineFailure> {
     Ok(())
 }
 
+fn copy_extra_model(
+    source: &Path,
+    destination: &Path,
+    language: &str,
+) -> Result<(), EngineFailure> {
+    if !crate::packs::languages::verify_model(source, language).unwrap_or(false) {
+        return Err(EngineFailure::tool_missing(
+            "A requested OCR language is not installed or failed verification.",
+        ));
+    }
+    std::fs::copy(source, destination).map_err(|_| EngineFailure::io())?;
+    if !crate::packs::languages::verify_model(destination, language).unwrap_or(false) {
+        return Err(EngineFailure::tool_missing(
+            "An OCR language failed verification.",
+        ));
+    }
+    Ok(())
+}
+
 fn pgm(image: &GrayImage, directory: &Path) -> Result<tempfile::NamedTempFile, EngineFailure> {
     // Tesseract's OSD treats the last dot as an extension delimiter. A leading-dot
     // tempfile makes it try to open the containing directory as a zone file.
@@ -341,28 +360,13 @@ pub fn serve(input: impl BufRead, output: impl Write) -> ExitCode {
                     .chain((tool == "ocr.orientation" || auto_orient).then_some("osd"))
                 {
                     let name = format!("{language}.traineddata");
-                    let source = if model_path(&pack_data, language).is_ok() {
-                        pack_data.join(&name)
+                    let destination = directory.path().join(&name);
+                    if model_path(&pack_data, language).is_ok() {
+                        std::fs::copy(pack_data.join(&name), &destination)
+                            .map_err(|_| EngineFailure::io())?;
                     } else {
                         let staged = paths.work_dir.join("ocr-models").join(&name);
-                        if !crate::packs::languages::verify_model(&staged, language)
-                            .unwrap_or(false)
-                        {
-                            return Err(EngineFailure::tool_missing(
-                                "A requested OCR language is not installed or failed verification.",
-                            ));
-                        }
-                        staged
-                    };
-                    let destination = directory.path().join(name);
-                    std::fs::copy(source, &destination).map_err(|_| EngineFailure::io())?;
-                    if !pack_data.join(format!("{language}.traineddata")).is_file()
-                        && !crate::packs::languages::verify_model(&destination, language)
-                            .unwrap_or(false)
-                    {
-                        return Err(EngineFailure::tool_missing(
-                            "An OCR language failed verification.",
-                        ));
+                        copy_extra_model(&staged, &destination, language)?;
                     }
                 }
                 Some(directory)
@@ -414,6 +418,7 @@ pub fn serve(input: impl BufRead, output: impl Write) -> ExitCode {
                         270 => image::imageops::rotate270(&image),
                         _ => image,
                     };
+                    drop(original);
                     let upright = pgm(&image, &paths.work_dir)?;
                     let mut argv = args(upright.path(), data, dpi)?;
                     argv.extend([
@@ -467,6 +472,31 @@ pub fn serve(input: impl BufRead, output: impl Write) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changed_staged_model_is_refused_after_verification() {
+        let Some(root) = std::env::var_os("ARIAD_TEST_TESSERACT_DIR") else {
+            eprintln!("skipping: development Tesseract model is absent");
+            return;
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let staged = temp.path().join("eng.traineddata");
+        std::fs::copy(
+            PathBuf::from(root).join("tessdata/eng.traineddata"),
+            &staged,
+        )
+        .unwrap();
+        assert!(crate::packs::languages::verify_model(&staged, "eng").unwrap());
+        std::fs::write(&staged, b"changed").unwrap();
+        let destination = temp.path().join("copied");
+        assert_eq!(
+            copy_extra_model(&staged, &destination, "eng")
+                .unwrap_err()
+                .code,
+            ErrorCode::ToolMissing
+        );
+        assert!(!destination.exists());
+    }
 
     #[test]
     fn reads_osd_and_rejects_invalid_rotation() {

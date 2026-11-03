@@ -86,7 +86,7 @@ pub fn execute(
                 })?
                 .ok_or_else(|| ToolError::ToolMissing {
                     engine: "tesseract".into(),
-                    hint: format!("OCR language '{language}' is not installed"),
+                    hint: format!("OCR language '{language}' is not installed; run 'ashift engines languages install {language}'"),
                 })?;
             let directory = workspace.work_dir().join("ocr-models");
             fs::create_dir_all(&directory)
