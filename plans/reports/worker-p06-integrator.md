@@ -16,4 +16,14 @@ Linux verification on the branch through `b3fdad90`:
 
 Per-check logs are in `/tmp/p06-gate-*.log`, `/tmp/p06-gate-core-pdf-final.log`, `/tmp/p06-gate-host-cli-retry2.log`, `/tmp/p06-gate-clippy-retry.log`, `/tmp/p06-gate-deny-retry.log`, and `/tmp/p06-gate-licenses-final.log`. Lock wait time is included in wrapper wall times. CI results are separate and have not been observed here.
 
-Manual macOS Preview, Chrome and Acrobat review and phone QR scanning remain pending. Mac Sonnet review is pending. No per-page progress events were added.
+At the initial gate, manual viewer checks and the Mac Sonnet review were pending. No per-page progress events were added.
+
+## Review follow-up
+
+The original Linux clippy command covered core, PDF, host and CLI, but omitted `ariad-pdfium-engine`; consequently it never linted the new renderer test that failed the Windows clippy job. The test now uses fixed-size pixel chunks, and clippy passed across all touched crates including the PDFium engine. This identifies a coverage gap in the Linux command; it does not establish a toolchain difference.
+
+The watermark scan and removal share one decode and work budget across at most eight distinct queries. Optional-content reachability is collected once per document, retaining groups when reachability cannot be proven. Font tests compare the bundled bytes with their pinned SHA-256 values and Typst copies. Native hosts inject one UTC clock per run and reject invalid `SOURCE_DATE_EPOCH` values; the PDF library no longer reads that environment variable. Codec dependencies are optional, and both host and WASM enable the feature. A page-number text template no longer conflicts with output-format validation.
+
+The inversion now composites a white backdrop and original page Form inside an isolated transparency group before applying Difference blending. The real PDFium regression passed, and the regenerated tool output passed Quartz/Preview and PDFKit text extraction on macOS. Preview passed for the other samples; ASUS `zbarimg` decoded the QR as `https://example.org/ariadshift-phase6`. Acrobat was unavailable and not run. The PM considers the viewer check complete; this does not claim an Acrobat or phone scan result.
+
+The focused PDF library suite passed 68 tests, the watermark, stamp, header/footer and inversion integration suites passed 31 tests, and PDFium passed three render and round-trip tests. Seven CLI tests passed, including the date and page-number regressions. Clippy passed for the touched crates and separately with PDF codecs disabled. The prior PR Static checks failed because the fuzz-wiring test expected the old target list; the corrected test passed locally. WASM size, the final pre-push host check and the Mac Sonnet delta review are tracked in the gate record.
