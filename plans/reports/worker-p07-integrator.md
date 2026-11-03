@@ -1,6 +1,6 @@
 # OCR and scan integration report
 
-Status: in progress. This is not gate evidence until all required checks finish.
+Status: Linux checks passed; the separate independent review remains pending.
 
 The branch incorporates `origin/dev` including the async-executor update and was pushed at `2a257399` before the current integration changes. The approved phase decisions are recorded in `.run/coord/p07/decisions.md`; D1–D19 are approved, Windows and musl OCR are tracked in [#202](https://github.com/bavanchun/AriadShift/issues/202), and the Docling comparison is a report rather than a blocker.
 
@@ -18,7 +18,7 @@ The seven real-pack host integration cases passed in 132.60 seconds. `cargo test
 
 The three-sample comparison is now measured and recorded in [the OCR report](worker-p07-s6.md) and `bench/results/ocr-eval.json`: both routes produced CER/WER 0.0 for each of two Vietnamese and one English authored samples, a 0.0 percentage-point gap after the stated normalization. This is limited to the development Docling runtime, not a completed or signed Docling pack.
 
-`cargo check -p ariad-pdf -p ariad-wasm --target wasm32-unknown-unknown` passed. The first `cargo test -p ariad-wasm` had 15 passes and one failure: its `pdf.info` truth discovery counted four scan-specific truth files without `pdf_info` as if they were `pdf.info` fixtures. Discovery now selects truth files containing `pdf_info` while retaining the assertion that all 22 expected entries are present. The rerun passed all 16 tests. The same discovery issue was corrected in the PDF and CLI corpus tests; their reruns are pending.
+`cargo check -p ariad-pdf -p ariad-wasm --target wasm32-unknown-unknown` passed. The first `cargo test -p ariad-wasm` had 15 passes and one failure: its `pdf.info` truth discovery counted four scan-specific truth files without `pdf_info` as if they were `pdf.info` fixtures. Discovery now selects truth files containing `pdf_info` while retaining the assertion that all 22 expected entries are present. The rerun passed all 16 tests. The same discovery issue was corrected in the PDF and CLI corpus tests; their reruns passed as recorded below.
 
 After the truth-file discovery correction, `cargo test -p ariad-pdf --test info` passed all seven tests and `cargo test -p ariad-cli --test tools_cli -- --test-threads=1` passed all seven tests, with the development Tesseract pack supplied for the real OCR recipe.
 
@@ -29,3 +29,5 @@ After registration, `cargo test -p ariad-core --lib` passed all 286 tests. The f
 All six registered OCR and scan tools were also executed through each of CLI, MCP and `ariad-recipe/1` using the actual Tesseract and PDFium development packs. The MCP six-tool run passed in 35.75 seconds; the CLI and recipe six-tool runs both passed in 70.80 seconds together. The tests use the authored scan fixtures at 150 dpi and verify successful PDF publication. Command: `cargo test -p ariad-cli --test tools_cli --test mcp_stdio ocr_and_scan_tools -- --test-threads=1`, with `ARIAD_TEST_TESSERACT_PACK=/tmp/ariad-p07-pack` and `ARIAD_TEST_PDFIUM_PACK=/tmp/ariad-p07-pdfium`, through the shared build lock.
 
 The integrator reviewed the changed adapter confinement, sandbox workspace, bounded OCR parser and output handling, staged model verification, shared qpdf path, and surfaced tests against the approved contracts. The staged model is checked again after copying into the sandbox. This is an integrator review, not the separate independent review requested by the plan.
+
+Two additional real-pack OCR integration cases confirmed that cancellation and a one-second timeout return their typed errors without publishing an output. Both passed via `cargo test -p ariad-host --features test-probe --test ocr_pipeline stops_the_job_without_publishing -- --test-threads=1`.

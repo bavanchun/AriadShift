@@ -239,6 +239,57 @@ fn multiple_pages_reuse_workspace_without_reusing_private_tmp() {
 }
 
 #[test]
+fn ocr_cancellation_stops_the_job_without_publishing() {
+    if !child("ocr_cancellation_stops_the_job_without_publishing") {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let trigger = cancel.clone();
+    let worker = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        trigger.cancel();
+    });
+    let request = ToolRequest::new(
+        "pdf.ocr",
+        vec![InputRef::new(fixture("vi-garden-300dpi.pdf"))],
+        OutputTarget::Directory(dir.path().into()),
+    )
+    .with_engine_program(env!("CARGO_BIN_EXE_engine-probe"))
+    .with_cancel(cancel);
+    let result = run_tool(&request);
+    worker.join().unwrap();
+    assert!(
+        matches!(result, Err(ariad_host::tools::ToolError::Interrupted)),
+        "{result:?}"
+    );
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn ocr_timeout_stops_the_job_without_publishing() {
+    if !child("ocr_timeout_stops_the_job_without_publishing") {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let mut limits = ariad_core::limits::Limits::local();
+    limits.timeout_s = Some(1);
+    let request = ToolRequest::new(
+        "pdf.ocr",
+        vec![InputRef::new(fixture("vi-garden-300dpi.pdf"))],
+        OutputTarget::Directory(dir.path().into()),
+    )
+    .with_engine_program(env!("CARGO_BIN_EXE_engine-probe"))
+    .with_limits(limits);
+    let result = run_tool(&request);
+    assert!(
+        matches!(result, Err(ariad_host::tools::ToolError::LimitExceeded)),
+        "{result:?}"
+    );
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
 fn ocr_warns_when_rewriting_signed_input() {
     if !child("ocr_warns_when_rewriting_signed_input") {
         return;
