@@ -10,6 +10,13 @@ use std::{
 const MAX_IMAGE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_PIXELS: u64 = 100_000_000;
 
+fn image_error(error: image::ImageError) -> EngineFailure {
+    match error {
+        image::ImageError::Limits(_) => EngineFailure::limit_exceeded(),
+        _ => EngineFailure::invalid_request(),
+    }
+}
+
 // image decodes the first TIFF frame; reject a chain of frames instead of silently losing pages.
 fn single_frame_tiff(bytes: &[u8]) -> Result<(), EngineFailure> {
     if bytes.len() < 8 {
@@ -125,36 +132,23 @@ pub(crate) fn decode(
     image_limits.max_alloc = Some(alloc);
     let mut reader = ImageReader::with_format(Cursor::new(&bytes), format);
     reader.limits(image_limits.clone());
-    let (width, height) = reader
-        .into_dimensions()
-        .map_err(|_| EngineFailure::invalid_request())?;
+    let (width, height) = reader.into_dimensions().map_err(image_error)?;
     let pixels = u64::from(width) * u64::from(height);
     if pixels == 0 || pixels > MAX_PIXELS || pixels.saturating_mul(8) > alloc {
         return Err(EngineFailure::limit_exceeded());
     }
     let mut reader = ImageReader::with_format(Cursor::new(&bytes), format);
     reader.limits(image_limits);
-    let decoded = reader
-        .decode()
-        .map_err(|_| EngineFailure::invalid_request())?;
+    let decoded = reader.decode().map_err(image_error)?;
     check()?;
     if decoded.dimensions() != (width, height) {
         return Err(EngineFailure::invalid_request());
     }
-    let rgba = decoded.into_rgba8();
     let mut gray = GrayImage::new(width, height);
-    for (source_row, target_row) in rgba
-        .as_raw()
-        .chunks_exact(width as usize * 4)
-        .zip(gray.as_mut().chunks_exact_mut(width as usize))
-    {
+    for (y, target_row) in gray.as_mut().chunks_exact_mut(width as usize).enumerate() {
         check()?;
-        for (source, target) in source_row
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .zip(target_row.iter_mut())
-        {
+        for (x, target) in target_row.iter_mut().enumerate() {
+            let source = decoded.get_pixel(x as u32, y as u32).0;
             let alpha = u32::from(source[3]);
             let luma = (77 * u32::from(source[0])
                 + 150 * u32::from(source[1])
@@ -169,6 +163,23 @@ pub(crate) fn decode(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_sixteen_bit_transparency_and_reports_dimension_limits() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("rgba.png");
+        let rgba =
+            image::ImageBuffer::from_raw(2, 1, vec![0u16, 0, 0, 0, 65535, 0, 0, 65535]).unwrap();
+        image::DynamicImage::ImageRgba16(rgba).save(&path).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let gray = decode(&path, &Limits::local(), deadline).unwrap();
+        assert_eq!(gray.as_raw(), &[255, 76]);
+        image::GrayImage::new(16_385, 1).save(&path).unwrap();
+        assert_eq!(
+            decode(&path, &Limits::local(), deadline).unwrap_err().code,
+            ariad_core::protocol::ErrorCode::LimitExceeded
+        );
+    }
     #[test]
     fn rejects_multiple_or_truncated_tiff_directories() {
         let mut bytes = b"II*\0\x08\0\0\0\0\0\0\0\0\0".to_vec();
