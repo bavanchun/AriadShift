@@ -208,6 +208,38 @@ mod tests {
     }
 
     #[test]
+    fn install_rejects_correct_size_with_wrong_hash() {
+        use std::io::{Read, Write};
+
+        let temp = tempfile::tempdir().unwrap();
+        let (_, _, size) = entry("fra").unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 1024];
+            let n = stream.read(&mut request).unwrap();
+            assert!(String::from_utf8_lossy(&request[..n]).contains("fra.traineddata"));
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {size}\r\nConnection: close\r\n\r\n"
+            )
+            .unwrap();
+            stream.write_all(&vec![0; size as usize]).unwrap();
+        });
+        let context = PackContext {
+            data_dir: temp.path().join("cache"),
+            keys: super::super::TrustedKeys::compiled(),
+            targets: vec![],
+            fetch: super::super::FetchPolicy::default(),
+        };
+        let error = install_from(&context, "fra", &CancellationToken::new(), &base).unwrap_err();
+        server.join().unwrap();
+        assert!(matches!(error, PackError::HashMismatch { .. }));
+        assert!(!directory(&context).join("fra.traineddata").exists());
+    }
+
+    #[test]
     fn verification_detects_changed_bytes_and_rejects_links() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("model");
