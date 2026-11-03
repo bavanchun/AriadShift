@@ -15,7 +15,7 @@ ignore = [
     # Typst also parses bundled fonts, including Source Code Pro. This
     # advisory records maintenance status, not a reported vulnerability.
     # Track replacement in https://github.com/bavanchun/AriadShift/issues/205.
-    { id = "RUSTSEC-2026-0192", reason = "approved bundled-font parser is unmaintained; track replacement in the Typst dependency chain" },
+    { id = "RUSTSEC-2026-0192", reason = "unmaintained parser restricted to bundled, hash-pinned fonts; replacement tracked in issue 205" },
     # The Marvin attack is a timing side channel in RSA private-key
     # operations. rsa reaches the build only through jsonwebtoken's verifier
     # in ariad-server, which checks signatures with public keys and never

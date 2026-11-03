@@ -319,6 +319,27 @@ fn make_to_unicode(cids: &BTreeMap<char, u16>) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn bundled_fonts_match_pinned_hashes_and_typst_copies() {
+        for (face, expected, typst) in [
+            (
+                FontFace::Serif,
+                "fcf06307a77367394fcb0ccb241e59eea70dba3d732be309647611224679c733",
+                &include_bytes!("../../../ariad-typst/fonts/LibertinusSerif-Regular.otf")[..],
+            ),
+            (
+                FontFace::SerifBold,
+                "0264914210ed51b3231ebc92ce529e9f2e166ba9eebf0cd4a579558690a27b64",
+                &include_bytes!("../../../ariad-typst/fonts/LibertinusSerif-Bold.otf")[..],
+            ),
+        ] {
+            let actual = crate::writer::sha256_chunks(&[bytes(face)]);
+            let hex: String = actual.iter().map(|byte| format!("{byte:02x}")).collect();
+            assert_eq!(hex, expected);
+            assert_eq!(bytes(face), typst);
+        }
+    }
+
     #[derive(Default, Debug, PartialEq)]
     struct Outline(Vec<(u8, Vec<u32>)>);
     impl ttf_parser::OutlineBuilder for Outline {
