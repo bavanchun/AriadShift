@@ -48,7 +48,9 @@ describe("form and annotation tools in WebAssembly", () => {
   it("adds, exports and imports annotations", () => {
     const added = run("pdf.annotations", fixture, {
       action: "add",
-      items: [{ id: "wasm-note", type: "note", page: 1, rect: [20, 60, 45, 85], contents: "Ghi chú" }],
+      items: [
+        { id: "wasm-note", type: "note", page: 1, rect: [20, 60, 45, 85], contents: "Ghi chú" },
+      ],
     });
     const exported = run("pdf.annotations_export", added.bytes, { format: "json" });
     expect(exported.format).toBe("json");
