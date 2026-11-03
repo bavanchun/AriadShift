@@ -153,18 +153,44 @@ fn interchange_accepts_large_strings_up_to_its_own_limit() {
 #[test]
 fn empty_choice_values_survive_export_and_reimport() {
     use ariad_core::tools::params::forms::{FormsExportParams, FormsImportParams};
-    use ariad_pdf::{interchange::run, tools::{InputDoc, OutputPayload}};
+    use ariad_pdf::{
+        interchange::run,
+        tools::{InputDoc, OutputPayload},
+    };
     let ctx = ToolCtx::new();
-    let pdf = InputDoc::new("form.pdf", include_bytes!("../../../fixtures/pdf-forms/forms-all-types.pdf").to_vec());
-    let export: FormsExportParams = serde_json::from_value(serde_json::json!({"format":"json"})).unwrap();
+    let pdf = InputDoc::new(
+        "form.pdf",
+        include_bytes!("../../../fixtures/pdf-forms/forms-all-types.pdf").to_vec(),
+    );
+    let export: FormsExportParams =
+        serde_json::from_value(serde_json::json!({"format":"json"})).unwrap();
     let (_, outputs) = run::forms_export(std::slice::from_ref(&pdf), &export, &ctx).unwrap();
-    let OutputPayload::Bytes(bytes) = &outputs[0].payload else { panic!("expected JSON") };
+    let OutputPayload::Bytes(bytes) = &outputs[0].payload else {
+        panic!("expected JSON")
+    };
     let data = InputDoc::new("data.json", bytes.clone());
     let import: FormsImportParams = serde_json::from_value(serde_json::json!({})).unwrap();
     let (_, outputs) = run::forms_import(&[pdf, data], &import, &ctx).unwrap();
-    let OutputPayload::Pdf(filled) = &outputs[0].payload else { panic!("expected PDF") };
-    let listed = ariad_pdf::forms::list::list(filled, &[1, 2], true, &ariad_core::limits::Limits::local(), &ctx).unwrap();
+    let OutputPayload::Pdf(filled) = &outputs[0].payload else {
+        panic!("expected PDF")
+    };
+    let listed = ariad_pdf::forms::list::list(
+        filled,
+        &[1, 2],
+        true,
+        &ariad_core::limits::Limits::local(),
+        &ctx,
+    )
+    .unwrap();
     for name in ["choice", "list"] {
-        assert_eq!(listed.fields.iter().find(|field| field.name == name).unwrap().value, FormValue::Text(String::new()));
+        assert_eq!(
+            listed
+                .fields
+                .iter()
+                .find(|field| field.name == name)
+                .unwrap()
+                .value,
+            FormValue::Text(String::new())
+        );
     }
 }

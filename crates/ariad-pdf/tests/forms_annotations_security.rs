@@ -16,8 +16,7 @@ fn run(id: &str, bytes: &[u8], extra: Option<(&str, &[u8])>, params: Value) -> T
     if let Some((name, payload)) = extra {
         inputs.push(InputDoc::new(name, payload.to_vec()));
     }
-    run_tool(id, &inputs, &params, &ToolCtx::new())
-        .unwrap_or_else(|error| panic!("{id}: {error}"))
+    run_tool(id, &inputs, &params, &ToolCtx::new()).unwrap_or_else(|error| panic!("{id}: {error}"))
 }
 fn assert_target_unchanged(pdf: &[u8]) {
     let doc = document::open(pdf, &Limits::local()).unwrap();

@@ -76,7 +76,9 @@ fn tokenize(bytes: &[u8], ctx: &ToolCtx, block_limit: Option<u32>) -> Result<Vec
             }
             continue;
         }
-        if let Some(limit) = block_limit && out.len() >= limit as usize {
+        if let Some(limit) = block_limit
+            && out.len() >= limit as usize
+        {
             return Err(PdfError::LimitExceeded(
                 ariad_core::reader::pdf::ReadError::TooManyBlocks { limit },
             ));
