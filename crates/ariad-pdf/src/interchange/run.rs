@@ -258,6 +258,7 @@ pub fn forms_export(
     let mut record = FormRecord::new();
     let mut state_record = FormRecord::new();
     let mut state_fields = HashSet::new();
+    let mut duplicate_names = false;
     for field in field_list {
         ctx.check()?;
         if matches!(
@@ -288,8 +289,16 @@ pub fn forms_export(
         ) {
             state_fields.insert(field.name.clone());
         }
-        state_record.insert(field.name.clone(), state);
-        record.insert(field.name, field.value);
+        use std::collections::btree_map::Entry;
+        match record.entry(field.name.clone()) {
+            Entry::Vacant(entry) => {
+                state_record.insert(field.name, state);
+                entry.insert(field.value);
+            }
+            Entry::Occupied(_) => {
+                duplicate_names = true;
+            }
+        }
     }
     let mut dropped_xml_chars = false;
     let (format, bytes) = match params.format {
@@ -312,6 +321,13 @@ pub fn forms_export(
     } else {
         OutputDoc::from_bytes(String::new(), format, bytes)
     };
+    if duplicate_names {
+        coded(
+            &mut output,
+            ["duplicate_field_name: only the first field with each name is edited".into()],
+            None,
+        );
+    }
     if dropped_xml_chars {
         coded(
             &mut output,

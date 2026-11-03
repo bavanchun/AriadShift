@@ -387,3 +387,101 @@ fn empty_choice_values_survive_export_and_reimport() {
         );
     }
 }
+
+#[test]
+fn duplicate_field_names_export_first_and_warn_and_round_trip() {
+    use ariad_core::tools::params::forms::{FormsExportParams, FormsImportParams};
+    use ariad_pdf::{
+        document,
+        forms::{
+            fill::{self, FillOptions},
+            list,
+        },
+        interchange::run,
+        tools::{InputDoc, OutputPayload},
+    };
+    use lopdf::Object;
+
+    let ctx = ToolCtx::new();
+    let bytes = include_bytes!("../../../fixtures/pdf-forms/forms-all-types.pdf");
+    let mut pdf = document::open(bytes, &ariad_core::limits::Limits::local()).unwrap();
+    let doc = pdf.inner_mut().unwrap();
+    let duplicate = doc
+        .objects
+        .values_mut()
+        .find_map(|obj| {
+            let dict = obj.as_dict_mut().ok()?;
+            (dict.get(b"T").ok()?.as_str().ok()? == b"readonly").then_some(dict)
+        })
+        .unwrap();
+    duplicate.set("T", Object::string_literal("name"));
+    duplicate.set("V", Object::string_literal("second_value"));
+
+    fill::fill(
+        &mut pdf,
+        &std::collections::BTreeMap::from([("name".into(), FormValue::Text("first_value".into()))]),
+        &FillOptions { strict: false },
+        &ariad_core::limits::Limits::local(),
+        &ctx,
+    )
+    .unwrap();
+
+    let export: FormsExportParams =
+        serde_json::from_value(serde_json::json!({"format":"json"})).unwrap();
+    let (_, outputs) =
+        run::forms_export(&[InputDoc::from_doc("form.pdf", pdf)], &export, &ctx).unwrap();
+    assert!(
+        outputs[0]
+            .coded_warnings
+            .iter()
+            .any(|w| w.code == "duplicate_field_name")
+    );
+    let OutputPayload::Bytes(json_bytes) = &outputs[0].payload else {
+        panic!("expected JSON bytes");
+    };
+    let json_val: serde_json::Value = serde_json::from_slice(json_bytes).unwrap();
+    assert_eq!(json_val["name"], "first_value");
+
+    // Round-trip: Import the exported JSON back into a document with duplicates
+    let mut pdf2 = document::open(bytes, &ariad_core::limits::Limits::local()).unwrap();
+    let doc2 = pdf2.inner_mut().unwrap();
+    let duplicate2 = doc2
+        .objects
+        .values_mut()
+        .find_map(|obj| {
+            let dict = obj.as_dict_mut().ok()?;
+            (dict.get(b"T").ok()?.as_str().ok()? == b"readonly").then_some(dict)
+        })
+        .unwrap();
+    duplicate2.set("T", Object::string_literal("name"));
+    duplicate2.set("V", Object::string_literal("second_value"));
+
+    let import: FormsImportParams = serde_json::from_value(serde_json::json!({})).unwrap();
+    let (_, imported) = run::forms_import(
+        &[
+            InputDoc::from_doc("form.pdf", pdf2),
+            InputDoc::new("data.json", json_bytes.clone()),
+        ],
+        &import,
+        &ctx,
+    )
+    .unwrap();
+    let OutputPayload::Bytes(imported_pdf_bytes) = &imported[0].payload else {
+        panic!("expected PDF bytes");
+    };
+    let imported_doc =
+        document::open(imported_pdf_bytes, &ariad_core::limits::Limits::local()).unwrap();
+    let fields = list::list(
+        &imported_doc,
+        &[1, 2],
+        true,
+        &ariad_core::limits::Limits::local(),
+        &ctx,
+    )
+    .unwrap()
+    .fields;
+    let name_fields: Vec<_> = fields.into_iter().filter(|f| f.name == "name").collect();
+    assert_eq!(name_fields.len(), 2);
+    assert_eq!(name_fields[0].value, FormValue::Text("first_value".into()));
+    assert_eq!(name_fields[1].value, FormValue::Text("second_value".into()));
+}
