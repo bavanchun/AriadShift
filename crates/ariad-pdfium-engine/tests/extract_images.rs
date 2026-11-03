@@ -711,7 +711,7 @@ fn refuses_uninspectable_page_content_entry() {
 #[test]
 fn repeated_nested_forms_are_expanded_once() {
     let lib_dir = require_pdfium!();
-    let depth = 12usize;
+    let depth = 8usize;
     let mut objects = vec![
         b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
@@ -1002,9 +1002,44 @@ fn inherited_form_resources_are_checked_before_page_load() {
 }
 
 #[test]
+fn shared_form_resources_are_checked_at_each_depth() {
+    let lib_dir = require_pdfium!();
+    let pdf = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << /XObject << /A 6 0 R /B 5 0 R >> >> /Contents 4 0 R >>".to_vec(),
+        stream_object("", b"/B Do"),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"/A Do"),
+        stream_object("/Type /XObject /Subtype /Form /BBox [0 0 10 10]", b"BI /W 4 /H 4 /BPC 8 /CS /G /F /AHx ID 00> EI"),
+    ]);
+    let ws = TestWorkspace::from_bytes("inherited-inline.pdf", &pdf);
+    let mut limits = Limits::local();
+    limits.max_asset_bytes = Some(100);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "inherited-inline",
+        "pdf.extract_images",
+        ws.paths,
+        limits,
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::run(&mut ctx, ExtractImagesParams::default())
+        .expect("a form reached by multiple paths is charged once");
+}
+
+#[test]
 fn refuses_ambiguous_inline_keys_and_excess_flate_output() {
     let lib_dir = require_pdfium!();
     for (fixture, reason) in [
+        (
+            "fixtures/pdf/inline-hex-key-render.pdf",
+            "Inline image contains an unsafe name token.",
+        ),
+        (
+            "fixtures/pdf/inline-hex-key-bomb.pdf",
+            "Inline image contains an unsafe name token.",
+        ),
         (
             "fixtures/pdf/inline-conflicting-keys.pdf",
             "Inline image dictionary has conflicting keys.",
@@ -1110,6 +1145,27 @@ fn accepts_name_like_bytes_inside_image_stream() {
 }
 
 #[test]
+fn accepts_name_like_text_in_trailing_comment() {
+    let lib_dir = require_pdfium!();
+    let mut input = fs::read(repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();
+    input.extend_from_slice(b"\n% /");
+    input.extend(std::iter::repeat_n(b'a', 300));
+    input.push(b'\n');
+    let ws = TestWorkspace::from_bytes("comment.pdf", &input);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "comment",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+        .expect("a comment is not a PDF name");
+}
+
+#[test]
 fn refuses_truncated_xobject_names_before_pdfium_page_load() {
     let lib_dir = require_pdfium!();
     for fixture in [
@@ -1147,28 +1203,38 @@ fn refuses_truncated_xobject_names_before_pdfium_page_load() {
         let error = extract_images::run(&mut ctx, ExtractImagesParams::default())
             .expect_err("ambiguous name is rejected");
         assert_eq!(error.code, ErrorCode::LimitExceeded);
-        assert_eq!(error.message, "PDF name exceeds the safe token length.");
+        let reason =
+            if fixture == "compressed-content-name.pdf" || fixture == "long-content-name.pdf" {
+                "PDF content name exceeds the safe token length."
+            } else {
+                "PDF object name exceeds the safe token length."
+            };
+        assert_eq!(error.message, reason, "{fixture}");
     }
 }
 
 #[test]
 fn refuses_repaired_cross_reference_before_loading_pdfium() {
-    let ws = TestWorkspace::from_fixture("fixtures/pdf/repaired-xref-extraction.pdf");
-    let mut sink = Vec::new();
-    let mut ctx = ToolContext::new(
-        "repaired-xref",
-        "pdf.extract_images",
-        ws.paths,
-        Limits::local(),
-        &mut sink,
-    );
-    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
-        .expect_err("repaired cross-reference must be refused");
-    assert_eq!(err.code, ErrorCode::LimitExceeded);
-    assert_eq!(
-        err.message,
-        "Image extraction cannot inspect a PDF with a repaired cross-reference table."
-    );
+    {
+        let fixture = "repaired-xref-extraction.pdf";
+        let ws = TestWorkspace::from_fixture(&format!("fixtures/pdf/{fixture}"));
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "repaired-xref",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
+            .expect_err("repaired cross-reference must be refused");
+        assert_eq!(err.code, ErrorCode::LimitExceeded, "{fixture}");
+        assert_eq!(
+            err.message,
+            "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
+            "{fixture}"
+        );
+    }
 }
 
 #[test]
@@ -1220,7 +1286,18 @@ fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
         }
     }
     let lib_dir = require_pdfium!();
-    let jpeg = make_test_jpeg(24, 24);
+    let side = 128u32;
+    let rgb = RgbImage::from_fn(side, side, |x, y| {
+        image::Rgb([
+            (x.wrapping_mul(71) ^ y.wrapping_mul(31)) as u8,
+            (x.wrapping_mul(19) ^ y.wrapping_mul(97)) as u8,
+            (x.wrapping_mul(43) ^ y.wrapping_mul(59)) as u8,
+        ])
+    });
+    let mut jpeg = Vec::new();
+    JpegEncoder::new_with_quality(&mut jpeg, 15)
+        .encode_image(&rgb)
+        .unwrap();
     let mut objects = vec![
         b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
         format!(
@@ -1235,16 +1312,17 @@ fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
     for i in 0..8 {
         let page = 3 + i * 3;
         objects.push(format!("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << /XObject << /Im {} 0 R >> >> /Contents {} 0 R >>", page + 1, page + 2).into_bytes());
-        objects.push(stream_object("/Type /XObject /Subtype /Image /Width 24 /Height 24 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode", &jpeg));
-        objects.push(stream_object("", b"q 24 0 0 24 0 0 cm /Im Do Q"));
+        objects.push(stream_object("/Type /XObject /Subtype /Image /Width 128 /Height 128 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode", &jpeg));
+        objects.push(stream_object("", b"q 128 0 0 128 0 0 cm /Im Do Q"));
     }
-    let ws = TestWorkspace::from_bytes("stream.pdf", &assemble_pdf(&objects));
+    let pdf = assemble_pdf(&objects);
+    let ws = TestWorkspace::from_bytes("stream.pdf", &pdf);
     let mut sink = Observe {
         dir: ws.paths.work_dir.clone(),
         counts: Vec::new(),
         events: Vec::new(),
     };
-    let limit = (jpeg.len().max(24 * 24 * 3) * 2) as u64;
+    let limit = (pdf.len() * 2 + 128 * 128 * 4 + 128 * 128 * 3) as u64;
     let limits = Limits {
         max_decompressed_bytes: limit,
         ..Limits::local()
@@ -1257,8 +1335,11 @@ fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
         &mut sink,
     )
     .with_library_dir(lib_dir);
-    let err = extract_images::run(&mut ctx, ExtractImagesParams::default())
-        .expect_err("cumulative output must be bounded");
+    let params = ExtractImagesParams {
+        format: ExtractFormat::Png,
+        ..ExtractImagesParams::default()
+    };
+    let err = extract_images::run(&mut ctx, params).expect_err("cumulative output must be bounded");
     assert_eq!(err.code, ErrorCode::LimitExceeded);
     assert!(
         !sink.counts.is_empty() && sink.counts[0] == 1,
@@ -1271,4 +1352,704 @@ fn extraction_streams_and_rejects_cumulative_output_without_artifacts() {
             .any(|w| w == b"\"type\":\"artifact\"")
     );
     assert_eq!(fs::read_dir(ws.paths.output_dir).unwrap().count(), 0);
+}
+
+#[test]
+fn canonical_output_matches_preflight_for_ambiguous_xrefs() {
+    let lib_dir = require_pdfium!();
+    let render = |fixture: &str| -> Result<Vec<u8>, ariad_engine_io::EngineFailure> {
+        let ws = TestWorkspace::from_fixture(&format!("fixtures/pdf/{fixture}"));
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "canonical",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())?;
+        let bytes = ctx.load_validated_pdf_bytes()?;
+        let pdfium = ctx.pdfium()?;
+        let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).unwrap();
+        let page = doc.pages().get(0).unwrap();
+        let bitmap = page
+            .render_with_config(&PdfRenderConfig::new().set_target_size(100, 100))
+            .unwrap();
+        Ok(bitmap.as_rgba_bytes())
+    };
+    let control = render("canonical-control.pdf").expect("control");
+    let mut accepted = 0;
+    for fixture in [
+        "canonical-prev-cycle.pdf",
+        "canonical-short-entries.pdf",
+        "canonical-gen-precedence.pdf",
+        "canonical-hybrid-root.pdf",
+        "canonical-objstm-index.pdf",
+    ] {
+        match render(fixture) {
+            Ok(pixels) => {
+                accepted += 1;
+                assert_eq!(pixels, control, "{fixture}");
+            }
+            Err(err) => assert!(
+                matches!(
+                    err.code,
+                    ErrorCode::LimitExceeded | ErrorCode::EngineFailure | ErrorCode::InvalidRequest
+                ),
+                "{fixture}: {err:?}"
+            ),
+        }
+    }
+    assert!(
+        accepted > 0,
+        "at least one ambiguous input must reach PDFium"
+    );
+}
+
+#[test]
+#[ignore = "requires the external adversarial PDF corpus"]
+fn adversarial_content_streams_are_refused_before_pdfium() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    for name in [
+        "round3-2a-inline-key-hex-render.pdf",
+        "round3-2b-inline-key-hex-52mp-bomb.pdf",
+        "round3-3-string-cr-do.pdf",
+        "round3-4-max-objnum-rebuild.pdf",
+    ] {
+        let input = fs::read(std::path::Path::new(&dir).join(name)).unwrap();
+        for extraction in [false, true] {
+            let ws = TestWorkspace::from_bytes("input.pdf", &input);
+            let mut sink = Vec::new();
+            let mut ctx = ToolContext::new(
+                "adversarial",
+                "pdf.extract_images",
+                ws.paths,
+                Limits::local(),
+                &mut sink,
+            )
+            .with_library_dir(&lib_dir);
+            let result = if extraction {
+                extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+                    .map(|_| ())
+            } else {
+                ctx.load_validated_pdf_bytes().map(|_| ())
+            };
+            let error = result.expect_err(name);
+            assert_eq!(error.code, ErrorCode::LimitExceeded, "{name}: {error:?}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the external adversarial PDF corpus"]
+fn all_adversarial_pdfs_are_preflighted() {
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    let mut paths: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "pdf"))
+        .collect();
+    paths.sort();
+    assert!(!paths.is_empty());
+    for path in paths {
+        let bytes = fs::read(&path).unwrap();
+        let ws = TestWorkspace::from_bytes("input.pdf", &bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "adversarial",
+            "pdf.render",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        );
+        match ctx.load_validated_pdf_bytes() {
+            Ok(_) => eprintln!("ACCEPTED {}", path.display()),
+            Err(err) => {
+                eprintln!("REFUSED {}: {}", path.display(), err.message);
+                assert!(matches!(
+                    err.code,
+                    ErrorCode::LimitExceeded | ErrorCode::EngineFailure | ErrorCode::InvalidRequest
+                ));
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires the external adversarial PDF corpus"]
+fn adversarial_canonical_graphs_are_refused_or_render_the_control() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    let render = |path: &std::path::Path| -> Result<Vec<u8>, ariad_engine_io::EngineFailure> {
+        let input = fs::read(path).unwrap();
+        let ws = TestWorkspace::from_bytes("input.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new(
+            "poc",
+            "pdf.extract_images",
+            ws.paths,
+            Limits::local(),
+            &mut sink,
+        )
+        .with_library_dir(&lib_dir);
+        extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())?;
+        let bytes = ctx.load_validated_pdf_bytes()?;
+        let pdfium = ctx.pdfium()?;
+        let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).unwrap();
+        let page = doc.pages().get(0).unwrap();
+        Ok(page
+            .render_with_config(&PdfRenderConfig::new().set_target_size(100, 100))
+            .unwrap()
+            .as_rgba_bytes())
+    };
+    let control = render(&repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();
+    for name in [
+        "prev-cycle.pdf",
+        "short-entries.pdf",
+        "gen-precedence.pdf",
+        "hybrid-root.pdf",
+        "objstm-index.pdf",
+        "deep-64.pdf",
+        "deep-65.pdf",
+        "inf-real.pdf",
+        "neg-inf-real.pdf",
+        "zero-ref.pdf",
+        "bignum-only.pdf",
+    ] {
+        match render(&std::path::Path::new(&dir).join(name)) {
+            Ok(pixels) => {
+                assert!(
+                    !matches!(
+                        name,
+                        "deep-64.pdf"
+                            | "deep-65.pdf"
+                            | "inf-real.pdf"
+                            | "neg-inf-real.pdf"
+                            | "zero-ref.pdf"
+                    ),
+                    "{name} must be refused"
+                );
+                assert_eq!(pixels, control, "{name}");
+            }
+            Err(err) => assert!(
+                matches!(
+                    err.code,
+                    ErrorCode::LimitExceeded | ErrorCode::EngineFailure | ErrorCode::InvalidRequest
+                ),
+                "{name}: {err:?}"
+            ),
+        }
+    }
+}
+
+#[test]
+fn accepts_prefix_and_zero_previous_xref() {
+    let lib_dir = require_pdfium!();
+    let control = fs::read(repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();
+    let text = String::from_utf8_lossy(&control);
+    let input = text.replace("/Root 2 0 R >>", "/Root 2 0 R /Prev 0 >>");
+    assert_ne!(input.as_bytes(), control);
+    // Preserve the binary header while modifying the ASCII trailer.
+    let tail = &input.as_bytes()[input.find("xref\n").unwrap()..];
+    let original_xref = control.windows(5).position(|v| v == b"xref\n").unwrap();
+    let mut bytes = b" \r\n".to_vec();
+    bytes.extend_from_slice(&control[..original_xref]);
+    bytes.extend_from_slice(tail);
+    let ws = TestWorkspace::from_bytes("prefix.pdf", &bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "prefix",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+        .expect("valid prefix and zero Prev");
+}
+
+#[test]
+fn accepts_whitespace_before_object_header_at_xref_offset() {
+    let lib_dir = require_pdfium!();
+    let mut bytes = fs::read(repo_root().join("fixtures/pdf/canonical-control.pdf")).unwrap();
+    let xref = bytes.windows(5).position(|w| w == b"xref\n").unwrap();
+    let marker = b"5 1\n";
+    let start = xref
+        + bytes[xref..]
+            .windows(marker.len())
+            .position(|w| w == marker)
+            .unwrap()
+        + marker.len();
+    let offset: usize = std::str::from_utf8(&bytes[start..start + 10])
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(bytes[offset - 1].is_ascii_whitespace());
+    bytes[start..start + 10].copy_from_slice(format!("{:010}", offset - 1).as_bytes());
+    let ws = TestWorkspace::from_bytes("whitespace-offset.pdf", &bytes);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "whitespace-offset",
+        "pdf.extract_images",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    )
+    .with_library_dir(lib_dir);
+    extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+        .expect("whitespace at object offset");
+}
+
+#[test]
+#[ignore = "requires the external adversarial PDF corpus"]
+fn content_container_corpus_is_refused_with_pixel_cap() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    for name in [
+        "poc_a.pdf",
+        "poc_b.pdf",
+        "poc_a85.pdf",
+        "poc_alias.pdf",
+        "poc_ff1.pdf",
+        "poc_ff2.pdf",
+        "pat.pdf",
+        "annot.pdf",
+        "smask.pdf",
+    ] {
+        let input = fs::read(std::path::Path::new(&dir).join(name)).unwrap();
+        for extraction in [false, true] {
+            let ws = TestWorkspace::from_bytes("input.pdf", &input);
+            let mut sink = Vec::new();
+            let limits = Limits {
+                max_asset_bytes: Some(100_000_000),
+                ..Limits::local()
+            };
+            let mut ctx =
+                ToolContext::new("content", "pdf.extract_images", ws.paths, limits, &mut sink)
+                    .with_library_dir(&lib_dir);
+            let result = if extraction {
+                extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+                    .map(|_| ())
+            } else {
+                ctx.load_validated_pdf_bytes().map(|_| ())
+            };
+            let error = result.expect_err(name);
+            assert_eq!(error.code, ErrorCode::LimitExceeded, "{name}");
+        }
+    }
+}
+
+#[test]
+fn page_content_resources_are_removed_from_canonical_output() {
+    let input = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << >> /Contents 4 0 R >>"
+            .to_vec(),
+        stream_object("/Resources << /Pattern << >> >>", b"q Q"),
+    ]);
+    let ws = TestWorkspace::from_bytes("input.pdf", &input);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new("page", "pdf.render", ws.paths, Limits::local(), &mut sink);
+    let output = ctx.load_validated_pdf_bytes().unwrap();
+    let doc = lopdf::Document::load_mem(&output).unwrap();
+    assert!(
+        doc.get_object((4, 0))
+            .unwrap()
+            .as_stream()
+            .unwrap()
+            .dict
+            .get(b"Resources")
+            .is_err()
+    );
+}
+
+#[test]
+fn page_content_resource_overrides_do_not_hide_resource_work() {
+    for variant in 0..4 {
+        let pattern = "/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 1 1] /XStep 1 /YStep 1 /Resources << >>";
+        let form = "/Type /XObject /Subtype /Form /BBox [0 0 10 10]";
+        let mut work = b"q Q ".repeat(600);
+        if variant == 1 {
+            work.extend_from_slice(b"BI /W 1 /H 1 /BPC 8 /CS /G ID x EI ");
+        }
+        let repeats = match variant {
+            2 => b"/S gs ".repeat(101),
+            3 => b"/F Do ".to_vec(),
+            _ => b"/P scn ".repeat(101),
+        };
+        let resources = match variant {
+            2 => "<< /ExtGState << /S << /SMask << /G 5 0 R >> >> >> >>",
+            3 => "<< /XObject << /F 5 0 R >> /Pattern << /P 6 0 R >> >>",
+            _ => "<< /Pattern << /P 5 0 R >> >>",
+        };
+        let override_resources = match variant {
+            2 => "/Resources << /ExtGState << >> >>",
+            3 => "/Resources << /XObject << >> >>",
+            _ => "/Resources << /Pattern << >> >>",
+        };
+        let object5 = match variant {
+            2 => stream_object(form, &work),
+            3 => stream_object(form, &b"/P scn ".repeat(101)),
+            _ => stream_object(pattern, &work),
+        };
+        let page = format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources {resources} /Contents 4 0 R >>"
+        );
+        let mut objects = vec![
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            page.into_bytes(),
+            stream_object(override_resources, &repeats),
+            object5,
+        ];
+        if variant == 3 {
+            objects.push(stream_object(pattern, &work));
+        }
+        let ws = TestWorkspace::from_bytes("input.pdf", &assemble_pdf(&objects));
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("page", "pdf.render", ws.paths, Limits::local(), &mut sink);
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("resource work exceeds limit");
+        assert_eq!(err.code, ErrorCode::LimitExceeded, "variant {variant}");
+        assert!(
+            err.message.contains("Content execution cost"),
+            "variant {variant}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn type3_glyph_resource_dependencies_require_an_explicit_scope() {
+    let cases: &[&[u8]] = &[
+        b"0 0 d0 /X Do",
+        b"0 0 d0 /S sh",
+        b"0 0 d0 /G gs",
+        b"0 0 d0 /P scn",
+        b"0 0 d0 /P SCN",
+        b"0 0 d0 BT /F 1 Tf ET",
+        b"0 0 d0 BI /W 1 /H 1 /BPC 8 /CS /G ID x EI",
+    ];
+    for content in cases {
+        for (font_resources, proc_resources, refuse) in [
+            ("", "", true),
+            ("/Resources << >>", "", false),
+            ("", "/Resources << >>", false),
+        ] {
+            let font = format!(
+                "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << /A 5 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1] {font_resources} >>"
+            );
+            let input = assemble_pdf(&[
+                b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+                b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+                b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /Font << /T 4 0 R >> >> /Contents 6 0 R >>".to_vec(),
+                font.into_bytes(), stream_object(proc_resources, content), stream_object("", b"q Q"),
+            ]);
+            let ws = TestWorkspace::from_bytes("input.pdf", &input);
+            let mut sink = Vec::new();
+            let mut ctx =
+                ToolContext::new("type3", "pdf.render", ws.paths, Limits::local(), &mut sink);
+            let result = ctx.load_validated_pdf_bytes();
+            if refuse {
+                let err = result.expect_err("ambiguous glyph");
+                assert_eq!(err.code, ErrorCode::LimitExceeded);
+                assert_eq!(
+                    err.message,
+                    "Type3 glyph procedure depends on ambiguous page resources"
+                );
+            } else {
+                result.expect("explicit glyph scope");
+            }
+        }
+    }
+}
+
+#[test]
+fn type3_glyph_rebinding_in_a_child_form_is_refused() {
+    for (proc, child_resources) in [
+        (
+            b"0 0 d0 /P scn".as_slice(),
+            "/Font << /T 4 0 R >> /Pattern << >>",
+        ),
+        (
+            b"0 0 d0 /P scn".as_slice(),
+            "/Font << /T 4 0 R >> /Pattern << /P 8 0 R >>",
+        ),
+        (b"0 0 d0 /X Do".as_slice(), "/XObject << /X 8 0 R >>"),
+    ] {
+        let input = assemble_pdf(&[
+            b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << /Font << /T 4 0 R >> /XObject << /F 7 0 R >> >> /Contents 6 0 R >>".to_vec(),
+            b"<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /FontMatrix [1 0 0 1 0 0] /CharProcs << /A 5 0 R >> /Encoding << /Type /Encoding /Differences [65 /A] >> /FirstChar 65 /LastChar 65 /Widths [1] >>".to_vec(),
+            stream_object("", proc), stream_object("", b"BT /T 1 Tf /F Do (A) Tj ET"),
+            stream_object(&format!("/Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << {child_resources} >>"), b"BT /T 1 Tf ET"),
+            if child_resources.contains("/Pattern << /P") {
+                stream_object("/Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1 /BBox [0 0 1 1] /XStep 1 /YStep 1", b"q Q")
+            } else { stream_object("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", b"q Q") },
+        ]);
+        let ws = TestWorkspace::from_bytes("input.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("glyph", "pdf.render", ws.paths, Limits::local(), &mut sink);
+        let err = ctx
+            .load_validated_pdf_bytes()
+            .expect_err("ambiguous glyph scope");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "Type3 glyph procedure depends on ambiguous page resources"
+        );
+    }
+}
+
+#[test]
+fn type3_resource_scopes_charge_executed_glyphs() {
+    for name in [
+        "type3-charproc-resource-budget.pdf",
+        "type3-inherited-font-budget.pdf",
+    ] {
+        let ws = TestWorkspace::from_fixture(&format!("fixtures/pdf/{name}"));
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("scope", "pdf.render", ws.paths, Limits::local(), &mut sink);
+        let err = ctx.load_validated_pdf_bytes().expect_err(name);
+        assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}: {err:?}");
+        assert!(
+            err.message.contains("Content execution cost"),
+            "{name}: {err:?}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires external resource-scope regression corpus"]
+fn resource_scope_corpus_is_refused() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    let mut count = 0;
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy();
+        if !name.starts_with("r5-poc") || !name.ends_with(".pdf") {
+            continue;
+        }
+        count += 1;
+        let bytes = fs::read(&path).unwrap();
+        for extraction in [false, true] {
+            let ws = TestWorkspace::from_bytes("input.pdf", &bytes);
+            let mut sink = Vec::new();
+            let mut ctx =
+                ToolContext::new("scope", "pdf.render", ws.paths, Limits::local(), &mut sink)
+                    .with_library_dir(&lib_dir);
+            let result = if extraction {
+                extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+                    .map(|_| ())
+            } else {
+                ctx.load_validated_pdf_bytes().map(|_| ())
+            };
+            let err = result.expect_err(&name);
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}: {err:?}");
+        }
+    }
+    assert_eq!(count, 8);
+}
+
+#[test]
+#[ignore = "requires the external resource-scope corpus"]
+fn page_and_glyph_resource_corpus_is_refused() {
+    let lib_dir = require_pdfium!();
+    let dir = std::env::var("ARIAD_POC_DIR").expect("ARIAD_POC_DIR");
+    let mut paths: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "pdf"))
+        .collect();
+    paths.sort();
+    assert_eq!(paths.len(), 14);
+    for path in paths {
+        let bytes = fs::read(&path).unwrap();
+        for extraction in [false, true] {
+            let ws = TestWorkspace::from_bytes("input.pdf", &bytes);
+            let mut sink = Vec::new();
+            let mut ctx =
+                ToolContext::new("scope", "pdf.render", ws.paths, Limits::local(), &mut sink)
+                    .with_library_dir(&lib_dir);
+            let result = if extraction {
+                extract_images::extract_document_images(&mut ctx, &ExtractImagesParams::default())
+                    .map(|_| ())
+            } else {
+                ctx.load_validated_pdf_bytes().map(|_| ())
+            };
+            let err = result.expect_err(&path.display().to_string());
+            assert_eq!(
+                err.code,
+                ErrorCode::LimitExceeded,
+                "{}: {err:?}",
+                path.display()
+            );
+        }
+    }
+}
+
+fn pdf_with_content(content: &[u8]) -> Vec<u8> {
+    assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << >> /Contents 4 0 R >>"
+            .to_vec(),
+        stream_object("", content),
+    ])
+}
+
+#[test]
+fn indirect_annotation_appearance_without_classification_is_refused() {
+    let input = assemble_pdf(&[
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 10 10] /Resources << >> /Contents 4 0 R /Annots 5 0 R >>".to_vec(),
+        stream_object("", b"q Q"),
+        b"[ << /Type /Annot /Subtype /Stamp /Rect [0 0 10 10] /AP << /N 6 0 R >> >> ]".to_vec(),
+        stream_object("", b"q Q"),
+    ]);
+    let ws = TestWorkspace::from_bytes("appearance.pdf", &input);
+    let mut sink = Vec::new();
+    let mut ctx = ToolContext::new(
+        "appearance",
+        "pdf.render",
+        ws.paths,
+        Limits::local(),
+        &mut sink,
+    );
+    let err = ctx
+        .load_validated_pdf_bytes()
+        .expect_err("unclassified appearance must be refused");
+    assert_eq!(err.code, ErrorCode::LimitExceeded);
+}
+
+#[test]
+fn nested_form_pattern_and_mask_depth_is_enforced_before_pdfium() {
+    use lopdf::{Document, Object, Stream, dictionary};
+    let lib_dir = require_pdfium!();
+    for depth in [8, 9] {
+        let mut doc = Document::with_version("1.4");
+        let pages = doc.new_object_id();
+        let leaf_dict = if depth % 3 == 1 {
+            dictionary! { "Type" => "Pattern", "PatternType" => 1, "PaintType" => 1, "TilingType" => 1, "BBox" => vec![0.into(),0.into(),10.into(),10.into()], "XStep" => 10, "YStep" => 10 }
+        } else {
+            dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => vec![0.into(),0.into(),10.into(),10.into()] }
+        };
+        let leaf = doc.add_object(Stream::new(leaf_dict, b"0 0 1 1 re f".to_vec()));
+        let mut next = leaf;
+        for i in (1..depth).rev() {
+            let bbox = vec![0.into(), 0.into(), 10.into(), 10.into()];
+            let (dict, content) = match i % 3 {
+                0 => (
+                    dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => bbox, "Resources" => dictionary! { "Pattern" => dictionary! { "P" => Object::Reference(next) } } },
+                    b"/Pattern cs /P scn 0 0 1 1 re f".to_vec(),
+                ),
+                1 => (
+                    dictionary! { "Type" => "Pattern", "PatternType" => 1, "PaintType" => 1, "TilingType" => 1, "BBox" => bbox, "XStep" => 10, "YStep" => 10, "Resources" => dictionary! { "XObject" => dictionary! { "F" => Object::Reference(next) } } },
+                    b"/F Do".to_vec(),
+                ),
+                _ => (
+                    dictionary! { "Type" => "XObject", "Subtype" => "Form", "BBox" => bbox, "Resources" => dictionary! { "ExtGState" => dictionary! { "GS" => dictionary! { "Type" => "ExtGState", "SMask" => dictionary! { "S" => "Alpha", "G" => Object::Reference(next) } } } } },
+                    b"/GS gs".to_vec(),
+                ),
+            };
+            next = doc.add_object(Stream::new(dict, content));
+        }
+        // The outer resource operation matches the kind of its target.
+        let root = b"/Pattern cs /P scn 0 0 1 1 re f".to_vec();
+        let content = doc.add_object(Stream::new(dictionary! {}, root));
+        let page = doc.add_object(dictionary! { "Type" => "Page", "Parent" => Object::Reference(pages), "MediaBox" => vec![0.into(),0.into(),10.into(),10.into()], "Contents" => Object::Reference(content), "Resources" => dictionary! { "Pattern" => dictionary! { "P" => Object::Reference(next) } } });
+        doc.objects.insert(pages, Object::Dictionary(dictionary! { "Type" => "Pages", "Kids" => vec![Object::Reference(page)], "Count" => 1 }));
+        let catalog = doc
+            .add_object(dictionary! { "Type" => "Catalog", "Pages" => Object::Reference(pages) });
+        doc.trailer.set("Root", Object::Reference(catalog));
+        let mut bytes = Vec::new();
+        doc.save_to(&mut bytes).unwrap();
+        let ws = TestWorkspace::from_bytes("depth.pdf", &bytes);
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("depth", "pdf.render", ws.paths, Limits::local(), &mut sink)
+            .with_library_dir(&lib_dir);
+        let result = ctx.load_validated_pdf_bytes();
+        if depth == 9 {
+            assert_eq!(result.unwrap_err().code, ErrorCode::LimitExceeded);
+        } else {
+            let bytes = result.expect("eight levels must be accepted");
+            let pdfium = ctx.pdfium().unwrap();
+            let doc = pdfium.load_pdf_from_byte_slice(&bytes, None).unwrap();
+            doc.pages()
+                .get(0)
+                .unwrap()
+                .render_with_config(&PdfRenderConfig::new().set_target_size(10, 10))
+                .unwrap();
+        }
+    }
+}
+
+#[test]
+fn inline_filter_payload_boundaries_match_pdfium() {
+    use std::io::Write;
+    let lib_dir = require_pdfium!();
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&[0; 4]).unwrap();
+    let flate = encoder.finish().unwrap();
+    let mut trailing = flate.clone();
+    trailing.extend_from_slice(b"XYZ");
+    let samples: Vec<(&str, Vec<u8>, bool)> = vec![
+        ("/Filter /FlateDecode", flate, false),
+        ("/Filter /FlateDecode", trailing, true),
+        ("/Filter /RunLengthDecode", vec![253, 0, 128], false),
+        (
+            "/Filter /LZWDecode /DecodeParms << /EarlyChange 0 >>",
+            vec![0x80, 0, 0, 0, 0, 4, 4],
+            false,
+        ),
+        (
+            "/Filter /LZWDecode /DecodeParms << /EarlyChange 1 >>",
+            vec![0x80, 0, 0, 0, 0, 4, 4],
+            false,
+        ),
+        ("/Filter /ASCIIHexDecode", b"00 00\n00 00 >".to_vec(), false),
+        ("/Filter /ASCII85Decode", b"z~>".to_vec(), false),
+    ];
+    let render = |pdfium: &Pdfium, bytes: &[u8]| {
+        let doc = pdfium.load_pdf_from_byte_slice(bytes, None).unwrap();
+        doc.pages()
+            .get(0)
+            .unwrap()
+            .render_with_config(&PdfRenderConfig::new().set_target_size(40, 40))
+            .unwrap()
+            .as_rgba_bytes()
+    };
+    for (filter, data, must_refuse) in samples {
+        let mut content = format!("q 1 0 0 1 20 20 cm BI /Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceGray {filter} ID ").into_bytes();
+        content.extend_from_slice(&data);
+        content.extend_from_slice(b" EI Q 0 0 0 rg 1 1 8 8 re f");
+        let input = pdf_with_content(&content);
+        let ws = TestWorkspace::from_bytes("inline.pdf", &input);
+        let mut sink = Vec::new();
+        let mut ctx =
+            ToolContext::new("inline", "pdf.render", ws.paths, Limits::local(), &mut sink)
+                .with_library_dir(&lib_dir);
+        let canonical = ctx.load_validated_pdf_bytes();
+        if must_refuse {
+            assert_eq!(
+                canonical.unwrap_err().code,
+                ErrorCode::LimitExceeded,
+                "{filter}"
+            );
+            continue;
+        }
+        let canonical = canonical.unwrap_or_else(|err| panic!("{filter}: {err:?}"));
+        let pdfium = ctx.pdfium().unwrap();
+        let control = pdf_with_content(b"0 0 0 rg 1 1 8 8 re f");
+        let expected = render(&pdfium, &control);
+        assert_eq!(render(&pdfium, &input), expected, "original {filter}");
+        assert_eq!(render(&pdfium, &canonical), expected, "canonical {filter}");
+    }
 }

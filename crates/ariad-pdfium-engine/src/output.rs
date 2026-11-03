@@ -268,6 +268,13 @@ impl<'a> ToolContext<'a> {
     /// Password-protected and owner-password-encrypted PDFs fail with a typed error pointing
     /// to `pdf.decrypt`. Corrupt inputs fail with a typed error, never a panic.
     pub fn load_validated_pdf_bytes(&mut self) -> Result<Vec<u8>, EngineFailure> {
+        self.load_validated_pdf_bytes_for_pages(None)
+    }
+
+    pub fn load_validated_pdf_bytes_for_pages(
+        &mut self,
+        pages: Option<&PageRange>,
+    ) -> Result<Vec<u8>, EngineFailure> {
         self.check()?;
         self.limits
             .validate()
@@ -281,8 +288,9 @@ impl<'a> ToolContext<'a> {
             return Err(EngineFailure::limit_exceeded());
         }
 
-        let bytes = std::fs::read(&input_path).map_err(|_| EngineFailure::io())?;
+        let mut bytes = std::fs::read(&input_path).map_err(|_| EngineFailure::io())?;
         self.check()?;
+        crate::canonical::normalize_zero_prev(self, &mut bytes)?;
 
         let mut pdf_ctx = PdfToolCtx::with_cancel(Arc::clone(&self.cancel.0))
             .with_max_pages(self.limits.max_pages);
@@ -298,17 +306,8 @@ impl<'a> ToolContext<'a> {
         let mut doc = pdf_document::open_with_ctx(&bytes, &open_limits, &pdf_ctx)
             .map_err(map_pdf_open_error)?;
 
-        if doc.repaired_xref() {
-            self.warn(
-                "repaired_xref",
-                "cross-reference table was malformed and reconstructed from object offsets",
-            )?;
-            if let Ok(repaired) = doc.save_bytes() {
-                return Ok(repaired);
-            }
-        }
-
-        Ok(bytes)
+        self.warn_repaired_xref(&doc)?;
+        crate::canonical::canonicalize_selected(self, &mut doc, bytes.len(), pages)
     }
 
     /// Build a structural PDF context sharing this job's deadline and cancellation flag.
@@ -360,6 +359,19 @@ impl<'a> ToolContext<'a> {
             done: Some(done),
             total: Some(total),
         })
+    }
+
+    pub(crate) fn warn_repaired_xref(
+        &mut self,
+        doc: &ariad_pdf::PdfDoc,
+    ) -> Result<(), EngineFailure> {
+        if doc.repaired_xref() {
+            self.warn(
+                "repaired_xref",
+                "The PDF cross-reference table was repaired.",
+            )?;
+        }
+        Ok(())
     }
 
     /// Emits a `warning` event. `code` is a stable snake_case identifier; `message` never

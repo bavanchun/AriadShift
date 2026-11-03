@@ -181,7 +181,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "ariad-host",
@@ -211,7 +211,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-desktop"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "ariad-host",
@@ -258,7 +258,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-engine-io"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "serde",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-host"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "ariad-engine-io",
@@ -317,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-pdf"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "flate2",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-pdfium-engine"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "ariad-engine-io",
@@ -355,7 +355,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-server"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "ariad-host",
@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-typst"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "jiff",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "ariad-wasm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ariad-core",
  "ariad-pdf",

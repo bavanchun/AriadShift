@@ -233,7 +233,7 @@ The `pdfium` pack provides the PDFium engine (`ariad-engine/2`, stateless per re
 | Sandbox | `sandbox_required`: the pack root is readable and executable but not writable, `/tmp` is private to the job, the job directory is the only writable location and the network is closed. `best-effort` mode refuses to start the engine when isolation is unavailable; only `ASHIFT_SANDBOX=off` runs it unsandboxed |
 | Release | Tag `pack-pdfium-v<version>`. Signing happens only in the pack workflow on that tag, under the protected `release` environment; local builds are unsigned |
 
-Install it once a release exists with `ashift engines install pdfium`. Until the embedded index ([`crates/ariad-host/data/packs.toml`](../crates/ariad-host/data/packs.toml)) has a `pdfium` entry, that command reports an unknown pack; install from a release's files with `--manifest <url>` or `--from <dir>`. To use an unpacked build without signing it, point `ASHIFT_PACK_PDFIUM` at a directory holding an unsigned `pack.toml`, the entrypoint it names and `libpdfium` beside it; `ashift doctor` then reports the pack as coming from the development override.
+Install it once a release exists with `ashift engines install pdfium`. The embedded index ([`crates/ariad-host/data/packs.toml`](../crates/ariad-host/data/packs.toml)) selects the recommended version; `--manifest <url>` and `--from <dir>` also accept explicit pack sources. To use an unpacked build without signing it, point `ASHIFT_PACK_PDFIUM` at a directory holding an unsigned `pack.toml`, the entrypoint it names and `libpdfium` beside it; `ashift doctor` then reports the pack as coming from the development override.
 
 Without the pack, every PDFium tool fails with exit code 5 (`tool_missing`) and the hint `run 'ashift engines install pdfium' to install the pdfium engine pack`. `ashift doctor` lists a `pdfium_engine` check and `ashift engines` a `pdfium` row either way: not installed (with that hint), or installed with the pack version and the protocol `ariad-engine/2`.
 
@@ -267,6 +267,8 @@ additional unreviewed libraries and is for local testing only. Signed pack
 installation is unavailable until a release and index entry exist.
 
 ## Signing and publishing
+
+The PDFium and qpdf release workflows read `PACK_MINISIGN_KEY` and the optional `PACK_MINISIGN_KEY_PASSWORD` from the `release` environment, and select the committed public key using `PACK_SIGNING_KEY_ID`. Both require the tag commit to be an ancestor of `origin/main`. The manually dispatched `verify-pack-signing-key.yml` verifies that the configured key signs against the committed public key without publishing a pack; it cannot run until an owner or maintainer permits the dispatch ref in the `release` environment. `PACK_MINISIGN_KEY` must contain the complete two-line secret key file written by `minisign -G`, not just its base64 line. Docling signing and release publication are not automated yet ([#204](https://github.com/bavanchun/AriadShift/issues/204)).
 
 1. Create the signing key once with `minisign -G -p ariadshift-packs.pub -s ariadshift-packs.key`. The secret key and its password live only in the `release` environment secrets and an offline backup; never in the repository. Commit the public key as `crates/ariad-host/data/pack-keys/<key-id>.pub` and release an `ashift` that contains it before the first pack signed with it.
 2. Build every target and merge the manifests with `ashift __pack manifest --base`.

@@ -2,7 +2,7 @@
 //! `min_px` filtering, `MAX_IMAGE_PIXELS` bounds, and original JPEG/JPX stream preservation.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs,
     io::{Cursor, Read},
 };
@@ -99,7 +99,7 @@ pub struct ExtractImagesOutcome {
     pub images_skipped_min_px: usize,
 }
 
-fn resolve<'a>(
+pub(crate) fn resolve<'a>(
     doc: Option<&'a lopdf::Document>,
     object: &'a Object,
 ) -> Result<(Option<PdfObjectId>, &'a Object), EngineFailure> {
@@ -303,124 +303,6 @@ fn check_extraction_xref(pdf_doc: &PdfDoc) -> Result<(), EngineFailure> {
     Ok(())
 }
 
-fn check_name_tokens(bytes: &[u8]) -> Result<(), EngineFailure> {
-    let mut cursor = 0;
-    while cursor < bytes.len() {
-        if bytes[cursor] != b'/' {
-            cursor += 1;
-            continue;
-        }
-        cursor += 1;
-        let start = cursor;
-        while cursor < bytes.len() && !is_pdf_delimiter_or_ws(bytes[cursor]) {
-            cursor += 1;
-        }
-        // The content parser retains 255 bytes including '/'. Reject raw
-        // spellings that could truncate before name escape decoding.
-        if cursor - start > 254 {
-            return Err(EngineFailure::new(
-                ErrorCode::LimitExceeded,
-                "PDF name exceeds the safe token length.",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn check_document_names(
-    ctx: &ToolContext<'_>,
-    bytes: &[u8],
-    doc: &PdfDoc,
-) -> Result<(), EngineFailure> {
-    let cap = usize::try_from(ctx.limits().max_decompressed_bytes).unwrap_or(usize::MAX / 2);
-    let mut streams = Vec::new();
-    let xref = &doc.inner().reference_table.entries;
-    let mut offsets: Vec<_> = xref
-        .values()
-        .filter_map(|entry| match entry {
-            lopdf::xref::XrefEntry::Normal { offset, .. } => Some(*offset as usize),
-            _ => None,
-        })
-        .collect();
-    offsets.sort_unstable();
-    offsets.dedup();
-    for (id, object) in &doc.inner().objects {
-        ctx.check()?;
-        if let Object::Stream(stream) = object {
-            if let Some(lopdf::xref::XrefEntry::Normal { offset, generation }) = xref.get(&id.0)
-                && *generation == id.1
-            {
-                let start = *offset as usize;
-                let bound = offsets
-                    .get(offsets.partition_point(|n| *n <= start))
-                    .copied()
-                    .unwrap_or(bytes.len())
-                    .min(bytes.len());
-                if start < bound {
-                    let object_bytes = &bytes[start..bound];
-                    let mut candidates = Vec::new();
-                    let mut compared = 0usize;
-                    for (pos, token) in object_bytes.windows(6).enumerate() {
-                        if token != b"stream"
-                            || (pos > 0 && !is_pdf_delimiter_or_ws(object_bytes[pos - 1]))
-                        {
-                            continue;
-                        }
-                        let after = pos + 6;
-                        let body = if object_bytes.get(after..after + 2) == Some(b"\r\n") {
-                            after + 2
-                        } else if matches!(object_bytes.get(after), Some(b'\r' | b'\n')) {
-                            after + 1
-                        } else {
-                            continue;
-                        };
-                        let Some(end) = body.checked_add(stream.content.len()) else {
-                            continue;
-                        };
-                        if end > object_bytes.len() {
-                            continue;
-                        }
-                        compared = compared.saturating_add(stream.content.len());
-                        if compared > object_bytes.len().saturating_mul(2) {
-                            return Err(EngineFailure::new(
-                                ErrorCode::LimitExceeded,
-                                "PDF stream location search exceeds the work limit.",
-                            ));
-                        }
-                        if object_bytes.get(body..end) != Some(stream.content.as_slice()) {
-                            continue;
-                        }
-                        let mut marker = end;
-                        while object_bytes.get(marker).is_some_and(|b| is_pdf_ws(*b)) {
-                            marker += 1;
-                        }
-                        if object_bytes.get(marker..marker + 9) == Some(b"endstream") {
-                            candidates.push((start + body, start + end));
-                        }
-                    }
-                    if candidates.len() == 1 {
-                        streams.push(candidates[0]);
-                    }
-                }
-            }
-            if stream.dict.has_type(b"ObjStm") {
-                let decoded = preflight_stream_bytes(doc.inner(), stream, cap)?;
-                check_name_tokens(&decoded)?;
-            }
-        }
-    }
-    streams.sort_unstable();
-    let mut cursor = 0;
-    for (start, end) in streams {
-        if start > cursor {
-            check_name_tokens(&bytes[cursor..start])?;
-        }
-        cursor = cursor.max(end);
-    }
-    check_name_tokens(&bytes[cursor..])?;
-    Ok(())
-}
-
 fn extract_document_images_with(
     ctx: &mut ToolContext<'_>,
     params: &ExtractImagesParams,
@@ -430,14 +312,20 @@ fn extract_document_images_with(
         .validate()
         .map_err(|e| EngineFailure::owned(ErrorCode::InvalidRequest, e.to_string()))?;
 
-    let (bytes, pdf_doc) = read_and_preflight_pdf(ctx)?;
+    let (bytes, mut pdf_doc) = read_and_preflight_pdf(ctx)?;
     check_extraction_xref(&pdf_doc)?;
-    check_document_names(ctx, &bytes, &pdf_doc)?;
+    let canonical = crate::canonical::canonicalize_selected(
+        ctx,
+        &mut pdf_doc,
+        bytes.len(),
+        Some(&params.pages),
+    )?;
+    drop(bytes);
     let page_ids =
         preflight_page_tree(pdf_doc.inner(), usize::from(ctx.limits().max_nesting_depth))?;
     let pdfium = ctx.pdfium()?;
     let pdfium_doc = pdfium
-        .load_pdf_from_byte_slice(&bytes, None)
+        .load_pdf_from_byte_slice(&canonical, None)
         .map_err(map_pdfium_error)?;
 
     let total_pages =
@@ -448,7 +336,6 @@ fn extract_document_images_with(
             "The PDF has no pages.",
         ));
     }
-    ctx.check_page_count(total_pages)?;
     if page_ids.len() != total_pages {
         return Err(EngineFailure::limit_exceeded());
     }
@@ -463,11 +350,13 @@ fn extract_document_images_with(
     let mask_ids = collect_mask_object_ids(&pdf_doc);
     let max_depth = usize::from(ctx.limits().max_nesting_depth);
     let max_decompressed = usize::try_from(
-        ctx.limits()
-            .max_decompressed_bytes
+        pdf_doc
+            .remaining_decode_bytes()
             .min(u64::try_from(usize::MAX / 2).unwrap_or(u64::MAX)),
     )
-    .unwrap_or(64 * 1024 * 1024);
+    .unwrap_or(64 * 1024 * 1024)
+    .checked_sub(canonical.len())
+    .ok_or_else(EngineFailure::limit_exceeded)?;
 
     let mut seen_objects: HashSet<PdfObjectId> = HashSet::new();
     let mut seen_inline_hashes: HashSet<[u8; 32]> = HashSet::new();
@@ -589,7 +478,7 @@ fn extract_document_images_with(
 
 // PDFium treats every node containing Kids as intermediate and every other node as a leaf.
 // Reject classification differences so the ordered IDs match lopdf's page lookup.
-fn preflight_page_tree(
+pub(crate) fn preflight_page_tree(
     doc: &lopdf::Document,
     max_depth: usize,
 ) -> Result<Vec<PdfObjectId>, EngineFailure> {
@@ -607,10 +496,19 @@ fn preflight_page_tree(
     let root_id = resolve(Some(doc), pages)?
         .0
         .ok_or_else(EngineFailure::limit_exceeded)?;
-    let mut stack = vec![(root_id, 0usize)];
+    let mut stack = vec![(root_id, 0usize, None)];
     let mut visited = HashSet::new();
     let mut leaves = Vec::new();
-    while let Some((id, depth)) = stack.pop() {
+    while let Some((id, depth, completion)) = stack.pop() {
+        if let Some((start, count)) = completion {
+            if leaves.len() - start != count {
+                return Err(EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page tree Count does not match its leaves.",
+                ));
+            }
+            continue;
+        }
         if depth > max_depth || visited.len() >= 100_000 || !visited.insert(id) {
             return Err(EngineFailure::limit_exceeded());
         }
@@ -634,6 +532,24 @@ fn preflight_page_tree(
                     "Page tree node with Kids is not a Pages node.",
                 ));
             }
+            let count = dict.get(b"Count").map_err(|_| {
+                EngineFailure::new(
+                    ErrorCode::LimitExceeded,
+                    "Page tree Count is missing or invalid.",
+                )
+            })?;
+            let count = resolve(Some(doc), count)?
+                .1
+                .as_i64()
+                .ok()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| {
+                    EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Page tree Count is missing or invalid.",
+                    )
+                })?;
+            stack.push((id, depth, Some((leaves.len(), count))));
             let kids = resolve(Some(doc), kids)?
                 .1
                 .as_array()
@@ -642,10 +558,10 @@ fn preflight_page_tree(
                 let id = resolve(Some(doc), child)?
                     .0
                     .ok_or_else(EngineFailure::limit_exceeded)?;
-                stack.push((id, depth + 1));
+                stack.push((id, depth + 1, None));
             }
         } else {
-            if kind != b"Page" {
+            if id == root_id || kind != b"Page" {
                 return Err(EngineFailure::new(
                     ErrorCode::LimitExceeded,
                     "Page tree leaf is not a Page node.",
@@ -666,7 +582,7 @@ struct PreflightBudget<'a> {
     glyph_max: usize,
     glyph_max_pixels: u64,
     glyph_max_bytes: u64,
-    font_ids: HashSet<PdfObjectId>,
+    font_ids: HashSet<(PdfObjectId, [u8; 32])>,
     document_work: &'a mut usize,
 }
 
@@ -791,7 +707,9 @@ impl<'a> XobjectScope<'a> {
         let has_xobjects = resolve(Some(doc), resources)
             .ok()
             .and_then(|(_, value)| value.as_dict().ok())
-            .is_some_and(|dict| dict.has(b"XObject"));
+            .and_then(|dict| dict.get(b"XObject").ok())
+            .and_then(|value| resolve(Some(doc), value).ok())
+            .is_some_and(|(_, value)| value.as_dict().is_ok());
         if !has_xobjects {
             return page.child(BTreeMap::new());
         }
@@ -810,6 +728,404 @@ impl<'a> XobjectScope<'a> {
 }
 
 // Refuse any content we cannot inspect before PDFium parses the page.
+pub(crate) fn preflight_document_content(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    pages: Option<&ariad_core::tools::PageRange>,
+) -> Result<usize, EngineFailure> {
+    let max_depth = usize::from(ctx.limits().max_nesting_depth);
+    let max_bytes = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
+    let mut work = 0;
+    let mut execution = 0;
+    let all_pages = preflight_page_tree(pdf_doc.inner(), max_depth)?;
+    let selected = match pages {
+        Some(range) => ctx.resolve_pages(range, all_pages.len())?,
+        None => (1..=all_pages.len()).collect(),
+    };
+    for number in selected {
+        let page = all_pages[number - 1];
+        preflight_page_images_inner(
+            ctx,
+            pdf_doc,
+            page,
+            max_bytes,
+            max_depth,
+            &mut work,
+            &mut execution,
+        )?;
+    }
+    Ok(execution)
+}
+
+pub(crate) fn canonical_content_streams(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    _document_execution: usize,
+    pages: Option<&ariad_core::tools::PageRange>,
+) -> Result<BTreeMap<PdfObjectId, Object>, EngineFailure> {
+    let doc = pdf_doc.inner();
+    let mut ids = HashSet::new();
+    fn content_ids(
+        doc: &lopdf::Document,
+        value: &Object,
+        ids: &mut HashSet<PdfObjectId>,
+        depth: usize,
+        allow_dict: bool,
+    ) -> Result<(), EngineFailure> {
+        if depth >= 63 {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        match value {
+            Object::Reference(id) => {
+                let value = doc
+                    .get_object(*id)
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                if matches!(value, Object::Stream(_)) {
+                    ids.insert(*id);
+                } else {
+                    content_ids(doc, value, ids, depth + 1, allow_dict)?;
+                }
+            }
+            Object::Array(items) => {
+                for item in items {
+                    content_ids(doc, item, ids, depth + 1, allow_dict)?;
+                }
+            }
+            Object::Dictionary(dict) if allow_dict => {
+                for (_, item) in dict.iter() {
+                    content_ids(doc, item, ids, depth + 1, true)?;
+                }
+            }
+            Object::Null => (),
+            _ => return Err(EngineFailure::limit_exceeded()),
+        }
+        Ok(())
+    }
+    fn scan_dict(
+        doc: &lopdf::Document,
+        dict: &Dictionary,
+        ids: &mut HashSet<PdfObjectId>,
+        depth: usize,
+    ) -> Result<(), EngineFailure> {
+        if depth >= 63 {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let name = |key: &[u8]| -> Option<&[u8]> {
+            dict.get(key)
+                .ok()
+                .and_then(|v| resolve(Some(doc), v).ok())
+                .and_then(|(_, v)| v.as_name().ok())
+        };
+        if name(b"Type") == Some(b"Page")
+            && let Ok(value) = dict.get(b"Contents")
+        {
+            content_ids(doc, value, ids, 0, false)?;
+        }
+        if name(b"Subtype") == Some(b"Type3")
+            && let Ok(procs) = dict.get(b"CharProcs")
+        {
+            let procs = resolve(Some(doc), procs)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, value) in procs.iter() {
+                content_ids(doc, value, ids, 0, false)?;
+            }
+        }
+        if let Ok(appearance) = dict.get(b"AP") {
+            content_ids(doc, appearance, ids, 0, true)?;
+        }
+        if let Ok(mask) = dict.get(b"SMask") {
+            let (_, mask) = resolve(Some(doc), mask)?;
+            if let Object::Dictionary(mask) = mask
+                && let Ok(group) = mask.get(b"G")
+            {
+                let (id, group) = resolve(Some(doc), group)?;
+                let stream = group
+                    .as_stream()
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                let subtype = stream
+                    .dict
+                    .get(b"Subtype")
+                    .ok()
+                    .and_then(|v| resolve(Some(doc), v).ok())
+                    .and_then(|(_, v)| v.as_name().ok());
+                if subtype != Some(b"Form") {
+                    return Err(EngineFailure::limit_exceeded());
+                }
+                ids.insert(id.ok_or_else(EngineFailure::limit_exceeded)?);
+            }
+        }
+        if let Ok(patterns) = dict.get(b"Pattern") {
+            let patterns = resolve(Some(doc), patterns)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, pattern) in patterns.iter() {
+                let (id, pattern) = resolve(Some(doc), pattern)?;
+                match pattern {
+                    Object::Stream(stream) => {
+                        let kind = stream
+                            .dict
+                            .get(b"PatternType")
+                            .ok()
+                            .and_then(|v| resolve(Some(doc), v).ok())
+                            .and_then(|(_, v)| v.as_i64().ok());
+                        if kind != Some(1) {
+                            return Err(EngineFailure::limit_exceeded());
+                        }
+                        ids.insert(id.ok_or_else(EngineFailure::limit_exceeded)?);
+                    }
+                    Object::Dictionary(pattern)
+                        if pattern
+                            .get(b"PatternType")
+                            .ok()
+                            .and_then(|v| resolve(Some(doc), v).ok())
+                            .and_then(|(_, v)| v.as_i64().ok())
+                            == Some(2) => {}
+                    _ => return Err(EngineFailure::limit_exceeded()),
+                }
+            }
+        }
+        if let Ok(xobjects) = dict.get(b"XObject") {
+            let objects = resolve(Some(doc), xobjects)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, value) in objects.iter() {
+                let (_, object) = resolve(Some(doc), value)?;
+                let stream = object
+                    .as_stream()
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                let subtype = stream
+                    .dict
+                    .get(b"Subtype")
+                    .ok()
+                    .and_then(|v| resolve(Some(doc), v).ok())
+                    .and_then(|(_, v)| v.as_name().ok());
+                if !matches!(subtype, Some(b"Image" | b"Form")) {
+                    return Err(EngineFailure::limit_exceeded());
+                }
+            }
+        }
+        fn scan_value(
+            doc: &lopdf::Document,
+            value: &Object,
+            ids: &mut HashSet<PdfObjectId>,
+            depth: usize,
+        ) -> Result<(), EngineFailure> {
+            if depth >= 63 {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            match value {
+                Object::Dictionary(nested) => scan_dict(doc, nested, ids, depth + 1)?,
+                Object::Array(items) => {
+                    for item in items {
+                        scan_value(doc, item, ids, depth + 1)?;
+                    }
+                }
+                _ => (),
+            }
+            Ok(())
+        }
+        for (_, value) in dict.iter() {
+            scan_value(doc, value, ids, depth + 1)?;
+        }
+        Ok(())
+    }
+    let mut image_work = 0;
+    let mut image_budget = PreflightBudget {
+        scanned: 0,
+        image_bytes: 0,
+        image_pixels: 0,
+        page_work: 0,
+        glyph_count: 0,
+        glyph_max: 0,
+        glyph_max_pixels: 0,
+        glyph_max_bytes: 0,
+        font_ids: HashSet::new(),
+        document_work: &mut image_work,
+    };
+    let empty_scope = XobjectScope::new(BTreeMap::new());
+    let mut seen_images = PreflightMemo::new();
+    let max_bytes = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
+    for (&id, value) in &doc.objects {
+        ctx.check()?;
+        let dict = match value {
+            Object::Stream(stream) => &stream.dict,
+            Object::Dictionary(dict) => dict,
+            _ => continue,
+        };
+        scan_dict(doc, dict, &mut ids, 0)?;
+        if let Object::Stream(stream) = value {
+            let subtype = stream
+                .dict
+                .get(b"Subtype")
+                .ok()
+                .and_then(|v| resolve(Some(doc), v).ok())
+                .and_then(|(_, v)| v.as_name().ok());
+            let pattern = stream
+                .dict
+                .get(b"PatternType")
+                .ok()
+                .and_then(|v| resolve(Some(doc), v).ok())
+                .and_then(|(_, v)| v.as_i64().ok());
+            if subtype == Some(b"Form") || pattern == Some(1) {
+                ids.insert(id);
+            }
+            if subtype == Some(b"Image") {
+                preflight_xobject(
+                    ctx,
+                    pdf_doc,
+                    id,
+                    max_bytes,
+                    usize::from(ctx.limits().max_nesting_depth),
+                    0,
+                    &mut seen_images,
+                    &empty_scope,
+                    &mut image_budget,
+                )?;
+            }
+        }
+    }
+    let mut page_contents = HashSet::new();
+    for page_id in preflight_page_tree(doc, usize::from(ctx.limits().max_nesting_depth))? {
+        let page = doc
+            .get_dictionary(page_id)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        if let Ok(contents) = page.get(b"Contents") {
+            content_ids(doc, contents, &mut page_contents, 0, false)?;
+        }
+    }
+    let mut out = BTreeMap::new();
+    let mut remaining = usize::try_from(pdf_doc.remaining_decode_bytes()).unwrap_or(usize::MAX / 2);
+    let mut memo = PreflightMemo::new();
+    let mut facts = BTreeMap::new();
+    for id in ids {
+        let mut document_work = 0;
+        ctx.check()?;
+        let stream = doc
+            .get_object(id)
+            .and_then(Object::as_stream)
+            .map_err(|_| EngineFailure::limit_exceeded())?;
+        let bytes = preflight_stream_bytes(doc, stream, remaining)?;
+        remaining = remaining
+            .checked_sub(bytes.len())
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        let (content, invoked, stream_facts) =
+            rewrite_preflighted_content(ctx, doc, &bytes, remaining, &mut document_work)?;
+        let mut xobjects = BTreeMap::new();
+        if let Ok(resources) = stream.dict.get(b"Resources") {
+            insert_xobjects_from_resources!(doc, resources, xobjects);
+        }
+        let scope = XobjectScope::new(xobjects);
+        let mut budget = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut document_work,
+        };
+        for name in invoked {
+            if let Some(child) = scope.get(&name) {
+                let (cost, _, _, _) = preflight_xobject(
+                    ctx,
+                    pdf_doc,
+                    *child,
+                    remaining,
+                    usize::from(ctx.limits().max_nesting_depth),
+                    0,
+                    &mut memo,
+                    &scope,
+                    &mut budget,
+                )?;
+                let _ = cost;
+            }
+        }
+        remaining = remaining
+            .checked_sub(content.len())
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        let mut stream = stream.clone();
+        stream.content = content;
+        stream.dict.remove(b"Filter");
+        stream.dict.remove(b"DecodeParms");
+        if page_contents.contains(&id) {
+            stream.dict.remove(b"Resources");
+        }
+        stream.dict.set(
+            "Length",
+            i64::try_from(stream.content.len()).map_err(|_| EngineFailure::limit_exceeded())?,
+        );
+        out.insert(id, Object::Stream(stream));
+        facts.insert(id, stream_facts);
+    }
+    fn check_type3_resources(
+        doc: &lopdf::Document,
+        value: &Object,
+        facts: &BTreeMap<PdfObjectId, crate::execution_budget::Facts>,
+        page_contents: &HashSet<PdfObjectId>,
+        depth: usize,
+    ) -> Result<(), EngineFailure> {
+        if depth >= 63 {
+            return Err(EngineFailure::limit_exceeded());
+        }
+        let dict = match value {
+            Object::Dictionary(dict) => dict,
+            Object::Stream(stream) => &stream.dict,
+            Object::Array(items) => {
+                for item in items {
+                    check_type3_resources(doc, item, facts, page_contents, depth + 1)?;
+                }
+                return Ok(());
+            }
+            _ => return Ok(()),
+        };
+        let subtype = dict
+            .get(b"Subtype")
+            .ok()
+            .and_then(|v| resolve(Some(doc), v).ok())
+            .and_then(|(_, v)| v.as_name().ok());
+        if subtype == Some(b"Type3") && !dict.has(b"Resources") {
+            let procs = dict
+                .get(b"CharProcs")
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            let procs = resolve(Some(doc), procs)?
+                .1
+                .as_dict()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            for (_, proc) in procs.iter() {
+                let (id, proc) = resolve(Some(doc), proc)?;
+                let stream = proc
+                    .as_stream()
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                let id = id.ok_or_else(EngineFailure::limit_exceeded)?;
+                if (!stream.dict.has(b"Resources") || page_contents.contains(&id))
+                    && facts.get(&id).is_some_and(|facts| !facts.calls.is_empty())
+                {
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "Type3 glyph procedure depends on ambiguous page resources",
+                    ));
+                }
+            }
+        }
+        for (_, child) in dict.iter() {
+            check_type3_resources(doc, child, facts, page_contents, depth + 1)?;
+        }
+        Ok(())
+    }
+    for value in doc.objects.values() {
+        check_type3_resources(doc, value, &facts, &page_contents, 0)?;
+    }
+    crate::execution_budget::check(ctx, doc, &facts, pages, &page_contents)?;
+    Ok(out)
+}
+
 fn preflight_page_images(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
@@ -817,6 +1133,26 @@ fn preflight_page_images(
     max_bytes: usize,
     max_depth: usize,
     document_work: &mut usize,
+) -> Result<(), EngineFailure> {
+    preflight_page_images_inner(
+        ctx,
+        pdf_doc,
+        page_id,
+        max_bytes,
+        max_depth,
+        document_work,
+        &mut 0,
+    )
+}
+
+fn preflight_page_images_inner(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    page_id: PdfObjectId,
+    max_bytes: usize,
+    max_depth: usize,
+    document_work: &mut usize,
+    document_execution: &mut usize,
 ) -> Result<(), EngineFailure> {
     let mut budget = PreflightBudget {
         scanned: 0,
@@ -851,6 +1187,7 @@ fn preflight_page_images(
     let mut execution_glyphs = budget.glyph_count;
     let mut execution_pixels = budget.image_pixels;
     let mut execution_bytes = budget.image_bytes;
+    let xobjects = XobjectScope::new(resolve_page_xobject_map(pdf_doc, page_id, max_depth));
     let mut node = page_id;
     let mut ancestors = HashSet::new();
     for _ in 0..=max_depth {
@@ -866,6 +1203,7 @@ fn preflight_page_images(
                 ctx,
                 pdf_doc,
                 resources,
+                &xobjects,
                 max_bytes,
                 max_depth,
                 0,
@@ -884,8 +1222,7 @@ fn preflight_page_images(
     if ancestors.len() > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    let xobjects = XobjectScope::new(resolve_page_xobject_map(pdf_doc, page_id, max_depth));
-    let mut seen = HashMap::new();
+    let mut seen = PreflightMemo::new();
     for id in xobjects.objects.values() {
         preflight_xobject(
             ctx,
@@ -951,7 +1288,7 @@ fn preflight_page_images(
     let glyph_work = execution_glyphs
         .checked_mul(budget.glyph_max)
         .ok_or_else(EngineFailure::limit_exceeded)?;
-    execution_work
+    let execution_work = execution_work
         .checked_add(glyph_work)
         .filter(|n| *n <= 100_000)
         .ok_or_else(|| {
@@ -960,6 +1297,10 @@ fn preflight_page_images(
                 "Page glyph execution work exceeds the limit.",
             )
         })?;
+    *document_execution = document_execution
+        .checked_add(execution_work)
+        .filter(|n| *n <= 1_000_000)
+        .ok_or_else(EngineFailure::limit_exceeded)?;
     Ok(())
 }
 
@@ -1028,10 +1369,12 @@ fn preflight_content_object(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn preflight_type3_fonts(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
     resources: &Object,
+    invoking_scope: &XobjectScope<'_>,
     max_bytes: usize,
     max_depth: usize,
     depth: usize,
@@ -1056,7 +1399,7 @@ fn preflight_type3_fonts(
         charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
         let (id, font) = resolve(Some(doc), font)?;
         if let Some(id) = id
-            && !budget.font_ids.insert(id)
+            && !budget.font_ids.insert((id, invoking_scope.digest))
         {
             continue;
         }
@@ -1081,12 +1424,29 @@ fn preflight_type3_fonts(
             .1
             .as_dict()
             .map_err(|_| EngineFailure::limit_exceeded())?;
-        let mut font_xobjects = BTreeMap::new();
-        if let Ok(resources) = font.get(b"Resources") {
+        let font_scope = if let Ok(resources) = font.get(b"Resources") {
+            validate_xobject_resources(doc, resources)?;
+            let mut font_xobjects = BTreeMap::new();
             insert_xobjects_from_resources!(doc, resources, font_xobjects);
+            XobjectScope::new(font_xobjects)
+        } else {
+            let mut scope = invoking_scope.child(BTreeMap::new());
+            scope.page = Some(invoking_scope);
+            scope
+        };
+        if let Ok(resources) = font.get(b"Resources") {
+            preflight_type3_fonts(
+                ctx,
+                pdf_doc,
+                resources,
+                &font_scope,
+                max_bytes,
+                max_depth,
+                depth + 1,
+                budget,
+            )?;
         }
-        let font_scope = XobjectScope::new(font_xobjects);
-        let mut proc_seen = HashMap::new();
+        let mut proc_seen = PreflightMemo::new();
         for (_, proc) in procs.iter() {
             let before = budget.page_work;
             let pixels_before = budget.image_pixels;
@@ -1101,11 +1461,31 @@ fn preflight_type3_fonts(
                 &mut HashSet::new(),
                 budget,
             )?;
+            let (_, proc_object) = resolve(Some(doc), proc)?;
+            let proc_stream = proc_object
+                .as_stream()
+                .map_err(|_| EngineFailure::limit_exceeded())?;
+            if let Ok(resources) = proc_stream.dict.get(b"Resources") {
+                validate_xobject_resources(doc, resources)?;
+            }
+            let proc_scope = font_scope.form(doc, proc_stream.dict.get(b"Resources").ok());
+            if let Ok(resources) = proc_stream.dict.get(b"Resources") {
+                preflight_type3_fonts(
+                    ctx,
+                    pdf_doc,
+                    resources,
+                    &proc_scope,
+                    max_bytes,
+                    max_depth,
+                    depth + 1,
+                    budget,
+                )?;
+            }
             let mut proc_cost = budget.page_work - before;
             let mut proc_pixels = budget.image_pixels - pixels_before;
             let mut proc_bytes = budget.image_bytes - bytes_before;
             for name in names {
-                if let Some(&child) = font_scope.get(&name) {
+                if let Some(&child) = proc_scope.get(&name) {
                     let (cost, _, pixels, bytes) = preflight_xobject(
                         ctx,
                         pdf_doc,
@@ -1114,7 +1494,7 @@ fn preflight_type3_fonts(
                         max_depth,
                         depth + 1,
                         &mut proc_seen,
-                        &font_scope,
+                        &proc_scope,
                         budget,
                     )?;
                     proc_pixels = proc_pixels
@@ -1138,6 +1518,7 @@ fn preflight_type3_fonts(
                 ctx,
                 pdf_doc,
                 resources,
+                &font_scope,
                 max_bytes,
                 max_depth,
                 depth + 1,
@@ -1146,7 +1527,7 @@ fn preflight_type3_fonts(
             let mut xobjects = BTreeMap::new();
             insert_xobjects_from_resources!(doc, resources, xobjects);
             let xobjects = XobjectScope::new(xobjects);
-            let mut seen = HashMap::new();
+            let mut seen = PreflightMemo::new();
             for id in xobjects.objects.values() {
                 preflight_xobject(
                     ctx,
@@ -1189,10 +1570,72 @@ fn validate_xobject_resources(
     Ok(())
 }
 
-type PreflightMemo = HashMap<(PdfObjectId, [u8; 32]), (usize, usize, u64, u64)>;
+type PreflightMemo = BTreeMap<(PdfObjectId, [u8; 32], [u8; 32], usize), (usize, usize, u64, u64)>;
+
+fn preflight_memo_key(
+    id: PdfObjectId,
+    scope: &XobjectScope<'_>,
+    depth: usize,
+) -> (PdfObjectId, [u8; 32], [u8; 32], usize) {
+    (id, scope.digest, scope.page.unwrap_or(scope).digest, depth)
+}
 
 #[allow(clippy::too_many_arguments)]
 fn preflight_xobject(
+    ctx: &ToolContext<'_>,
+    pdf_doc: &PdfDoc,
+    id: PdfObjectId,
+    max_bytes: usize,
+    max_depth: usize,
+    depth: usize,
+    seen: &mut PreflightMemo,
+    parent_xobjects: &XobjectScope<'_>,
+    budget: &mut PreflightBudget<'_>,
+) -> Result<(usize, usize, u64, u64), EngineFailure> {
+    let key = preflight_memo_key(id, parent_xobjects, depth);
+    let first = (id, key.1, key.2, 0);
+    let already_charged = seen.range(first..key).any(|(_, cost)| cost.0 != 0);
+    if already_charged && !seen.contains_key(&key) {
+        // Recheck the stricter depth without charging the same resources twice.
+        let mut replay = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut *budget.document_work,
+        };
+        return preflight_xobject_inner(
+            ctx,
+            pdf_doc,
+            id,
+            max_bytes,
+            max_depth,
+            depth,
+            seen,
+            parent_xobjects,
+            &mut replay,
+        );
+    }
+    preflight_xobject_inner(
+        ctx,
+        pdf_doc,
+        id,
+        max_bytes,
+        max_depth,
+        depth,
+        seen,
+        parent_xobjects,
+        budget,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn preflight_xobject_inner(
     ctx: &ToolContext<'_>,
     pdf_doc: &PdfDoc,
     id: PdfObjectId,
@@ -1207,11 +1650,26 @@ fn preflight_xobject(
     if depth > max_depth {
         return Err(EngineFailure::limit_exceeded());
     }
-    let scope_key = (id, parent_xobjects.digest);
+    let scope_key = preflight_memo_key(id, parent_xobjects, depth);
     if let Some(&cost) = seen.get(&scope_key) {
         return (cost.0 != 0)
             .then_some(cost)
             .ok_or_else(EngineFailure::limit_exceeded);
+    }
+    // A completed traversal at a greater depth has already checked the stricter
+    // nesting bound for this same scope. Reuse it without charging the same
+    // resource a second time when it is also reached from a shallower root.
+    let strictest = (id, scope_key.1, scope_key.2, usize::MAX);
+    if let Some((_, &cost)) = seen
+        .range((
+            std::ops::Bound::Excluded(scope_key),
+            std::ops::Bound::Included(strictest),
+        ))
+        .rev()
+        .find(|(_, cost)| cost.0 != 0)
+    {
+        seen.insert(scope_key, cost);
+        return Ok(cost);
     }
     seen.insert(scope_key, (0, 0, 0, 0));
     let mut expansion_cost = 1usize;
@@ -1317,19 +1775,20 @@ fn preflight_xobject(
             expansion_glyphs = budget.glyph_count - glyphs_before;
             expansion_pixels = budget.image_pixels - pixels_before;
             expansion_bytes = budget.image_bytes - bytes_before;
+            let xobjects = parent_xobjects.form(doc, stream.dict.get(b"Resources").ok());
             if let Ok(resources) = stream.dict.get(b"Resources") {
                 validate_xobject_resources(doc, resources)?;
                 preflight_type3_fonts(
                     ctx,
                     pdf_doc,
                     resources,
+                    &xobjects,
                     max_bytes,
                     max_depth,
                     depth + 1,
                     budget,
                 )?;
             }
-            let xobjects = parent_xobjects.form(doc, stream.dict.get(b"Resources").ok());
             let mut invoked = HashSet::new();
             for name in names {
                 if let Some(&child) = xobjects.get(&name) {
@@ -1624,6 +2083,48 @@ fn color_components(
     }
 }
 
+fn resource_name(token: &[u8]) -> Result<&[u8], EngineFailure> {
+    let valid = if token.first() == Some(&b'/') {
+        token.len() <= 255 && !token.contains(&b'#')
+    } else if token.first() == Some(&b'(') && token.last() == Some(&b')') {
+        token[1..token.len() - 1]
+            .iter()
+            .all(|b| (0x20..=0x7e).contains(b) && *b != b'\\')
+    } else {
+        false
+    };
+    if !valid {
+        return Err(EngineFailure::new(
+            ErrorCode::LimitExceeded,
+            "PDF resource operand is ambiguous.",
+        ));
+    }
+    Ok(if token[0] == b'/' {
+        &token[1..]
+    } else {
+        &token[1..token.len() - 1]
+    })
+}
+
+fn content_number(token: &[u8]) -> bool {
+    let token = token
+        .strip_prefix(b"+")
+        .or_else(|| token.strip_prefix(b"-"))
+        .unwrap_or(token);
+    let mut dots = 0;
+    let mut digits = 0;
+    for byte in token {
+        if *byte == b'.' {
+            dots += 1;
+        } else if byte.is_ascii_digit() {
+            digits += 1;
+        } else {
+            return false;
+        }
+    }
+    digits > 0 && dots <= 1
+}
+
 fn preflight_content(
     ctx: &ToolContext<'_>,
     doc: &lopdf::Document,
@@ -1631,22 +2132,142 @@ fn preflight_content(
     max_bytes: usize,
     budget: &mut PreflightBudget<'_>,
 ) -> Result<Vec<Vec<u8>>, EngineFailure> {
+    preflight_content_inner(ctx, doc, bytes, max_bytes, budget, None, None)
+}
+
+fn preflight_content_inner(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    bytes: &[u8],
+    max_bytes: usize,
+    budget: &mut PreflightBudget<'_>,
+    mut output: Option<&mut Vec<u8>>,
+    mut calls: Option<&mut Vec<crate::execution_budget::Call>>,
+) -> Result<Vec<Vec<u8>>, EngineFailure> {
     let mut cursor = 0;
+    let mut previous = 0;
     let mut invoked = Vec::new();
     let mut last_name = None;
+    let mut operands: Vec<&[u8]> = Vec::new();
+    let mut compound = Vec::new();
+    let mut compound_start = 0;
     while let Some((start, end)) = next_content_token(bytes, &mut cursor)? {
         let token = &bytes[start..end];
+        if let Some(out) = output.as_deref_mut() {
+            crate::content_writer::validate_gap(&bytes[previous..start])?;
+            if compound.is_empty() && token != b"BI" {
+                let mut emitted_cursor = cursor;
+                crate::content_writer::emit_token(bytes, start, end, &mut emitted_cursor, out)?;
+            }
+        }
+        previous = end;
+        if token == b"[" || token == b"<<" {
+            if compound.is_empty() {
+                compound_start = start;
+            }
+            compound.push(token);
+            if compound.len() >= 63 {
+                return Err(EngineFailure::limit_exceeded());
+            }
+        } else if token == b"]" || token == b">>" {
+            let opening = compound.pop().ok_or_else(EngineFailure::limit_exceeded)?;
+            if !matches!((opening, token), (b"[", b"]") | (b"<<", b">>")) {
+                return Err(EngineFailure::limit_exceeded());
+            }
+            if compound.is_empty() {
+                operands.push(&bytes[compound_start..end]);
+                if operands.len() > 2 {
+                    operands.remove(0);
+                }
+            }
+        } else if compound.is_empty() {
+            let operand = token
+                .first()
+                .is_some_and(|b| matches!(*b, b'/' | b'(' | b'<'))
+                || token
+                    .first()
+                    .is_some_and(|b| b.is_ascii_digit() || matches!(*b, b'+' | b'-' | b'.'))
+                || matches!(token, b"true" | b"false" | b"null");
+            if operand {
+                operands.push(token);
+            } else {
+                let last = operands.last().copied();
+                match token {
+                    b"Do" | b"gs" | b"sh" | b"cs" | b"CS" => {
+                        resource_name(last.ok_or_else(EngineFailure::limit_exceeded)?)?;
+                    }
+                    b"Tf" => {
+                        resource_name(
+                            operands
+                                .iter()
+                                .rev()
+                                .nth(1)
+                                .ok_or_else(EngineFailure::limit_exceeded)?,
+                        )?;
+                    }
+                    b"BDC" | b"DP" => {
+                        let value = last.ok_or_else(EngineFailure::limit_exceeded)?;
+                        if !value.starts_with(b"<<") {
+                            resource_name(value)?;
+                        }
+                    }
+                    b"scn" | b"SCN" => {
+                        if let Some(value) = last
+                            && !content_number(value)
+                        {
+                            resource_name(value)?;
+                        }
+                    }
+                    _ => {}
+                }
+                if token == b"Tf"
+                    && let Some(calls) = calls.as_deref_mut()
+                {
+                    calls.push(crate::execution_budget::Call {
+                        op: token.to_vec(),
+                        name: Vec::new(),
+                    });
+                }
+                if let Some(calls) = calls.as_deref_mut()
+                    && matches!(token, b"Do" | b"gs" | b"sh" | b"scn" | b"SCN")
+                    && let Some(value) = last
+                    && !content_number(value)
+                {
+                    let name = resource_name(value)?.to_vec();
+                    calls.push(crate::execution_budget::Call {
+                        op: token.to_vec(),
+                        name,
+                    });
+                }
+                operands.clear();
+            }
+            if operands.len() > 2 {
+                operands.remove(0);
+            }
+        }
         if token
             .first()
             .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'\'' || *b == b'"')
         {
             charge_traversal(ctx, &mut budget.page_work, budget.document_work)?;
         }
+        if !compound.is_empty() && token.first() == Some(&b'/') && token.len() > 255 {
+            return Err(EngineFailure::new(
+                ErrorCode::LimitExceeded,
+                "PDF content name exceeds the safe token length.",
+            ));
+        }
+        if !compound.is_empty()
+            && token.first() != Some(&b'(')
+            && !(token.first() == Some(&b'<') && token != b"<<")
+        {
+            continue;
+        }
         if token.first() == Some(&b'/') {
             if token.len() > 255 {
                 return Err(EngineFailure::new(
                     ErrorCode::LimitExceeded,
-                    "PDF name exceeds the safe token length.",
+                    "PDF content name exceeds the safe token length.",
                 ));
             }
             last_name = Some(decode_pdf_name(&token[1..]));
@@ -1656,8 +2277,12 @@ fn preflight_content(
             last_name = content_string_operand(token)?;
             budget.glyph_count = budget
                 .glyph_count
-                .checked_add(last_name.as_ref().map_or(0, Vec::len))
+                .checked_add(token.len())
                 .ok_or_else(EngineFailure::limit_exceeded)?;
+            continue;
+        }
+        if token == b"true" || token == b"false" {
+            last_name = Some(token.to_vec());
             continue;
         }
         if token == b"Do" {
@@ -1666,7 +2291,7 @@ fn preflight_content(
                 if name.len() > 254 {
                     return Err(EngineFailure::new(
                         ErrorCode::LimitExceeded,
-                        "PDF name exceeds the safe token length.",
+                        "PDF form string operand exceeds the safe token length.",
                     ));
                 }
                 invoked.push(name.clone());
@@ -1679,35 +2304,114 @@ fn preflight_content(
         }
         let dict_start = end;
         let mut nesting = 0usize;
+        let mut expect_key = true;
+        let mut keys = HashSet::new();
+        let mut key: &[u8] = b"";
+        let mut filter_array = false;
+        let mut color_array = false;
         let dict_end = loop {
+            let before = cursor;
             let (s, e) = next_content_token(bytes, &mut cursor)?
                 .ok_or_else(EngineFailure::limit_exceeded)?;
-            if bytes[s] == b'/' && e - s > 255 {
+            crate::content_writer::validate_gap(&bytes[before..s])?;
+            if bytes[s] == b'/' && (e - s > 255 || bytes[s..e].contains(&b'#')) {
                 return Err(EngineFailure::new(
                     ErrorCode::LimitExceeded,
-                    "PDF name exceeds the safe token length.",
+                    "Inline image contains an unsafe name token.",
                 ));
             }
+            crate::content_writer::validate_token(&bytes[s..e])?;
+            if nesting == 0 {
+                if &bytes[s..e] == b"ID" && expect_key {
+                    break s;
+                }
+                if expect_key {
+                    if bytes[s] != b'/' || !keys.insert(&bytes[s..e]) {
+                        return Err(EngineFailure::new(
+                            ErrorCode::LimitExceeded,
+                            "Inline image has invalid or duplicate keys.",
+                        ));
+                    }
+                    expect_key = false;
+                    key = &bytes[s..e];
+                    continue;
+                }
+                if matches!(key, b"/CS" | b"/ColorSpace")
+                    && bytes[s] == b'/'
+                    && let Some(calls) = calls.as_deref_mut()
+                {
+                    calls.push(crate::execution_budget::Call {
+                        op: b"BI".to_vec(),
+                        name: Vec::new(),
+                    });
+                }
+                if matches!(key, b"/CS" | b"/ColorSpace" | b"/F" | b"/Filter") {
+                    if &bytes[s..e] == b"[" {
+                        filter_array = matches!(key, b"/F" | b"/Filter");
+                        color_array = !filter_array;
+                    } else {
+                        resource_name(&bytes[s..e])?;
+                        if bytes[s] != b'/' {
+                            return Err(EngineFailure::new(
+                                ErrorCode::LimitExceeded,
+                                "PDF resource operand is ambiguous.",
+                            ));
+                        }
+                    }
+                }
+                expect_key = true;
+            } else if (nesting == 1 && filter_array && &bytes[s..e] != b"]")
+                || (color_array && bytes[s] == b'(')
+            {
+                resource_name(&bytes[s..e])?;
+                if filter_array && bytes[s] != b'/' {
+                    return Err(EngineFailure::new(
+                        ErrorCode::LimitExceeded,
+                        "PDF resource operand is ambiguous.",
+                    ));
+                }
+            }
             match &bytes[s..e] {
-                b"[" | b"<<" => nesting += 1,
+                b"[" | b"<<" => {
+                    nesting += 1;
+                    if nesting >= 63 {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
+                }
                 b"]" | b">>" => {
                     nesting = nesting
                         .checked_sub(1)
-                        .ok_or_else(EngineFailure::limit_exceeded)?
+                        .ok_or_else(EngineFailure::limit_exceeded)?;
+                    if nesting == 0 {
+                        filter_array = false;
+                        color_array = false;
+                    }
                 }
-                b"ID" if nesting == 0 => break s,
                 _ => {}
             }
         };
         let mut dictionary = b"<< ".to_vec();
         dictionary.extend_from_slice(&bytes[dict_start..dict_end]);
         dictionary.extend_from_slice(b" >> q");
-        let content = Content::decode(&dictionary).map_err(|_| EngineFailure::limit_exceeded())?;
-        let dict = content
+        let mut content =
+            Content::decode(&dictionary).map_err(|_| EngineFailure::limit_exceeded())?;
+        let mut checked = content
             .operations
             .first()
             .and_then(|op| op.operands.first())
-            .and_then(|o| o.as_dict().ok())
+            .cloned()
+            .ok_or_else(EngineFailure::limit_exceeded)?;
+        crate::canonical::normalize_strings(
+            ctx,
+            &mut checked,
+            0,
+            usize::from(ctx.limits().max_nesting_depth),
+        )?;
+        let dict = content
+            .operations
+            .first_mut()
+            .and_then(|op| op.operands.first_mut())
+            .and_then(|o| o.as_dict_mut().ok())
             .ok_or_else(EngineFailure::limit_exceeded)?;
         fn has_reference(value: &Object) -> bool {
             match value {
@@ -1792,6 +2496,11 @@ fn preflight_content(
                         "Inline image is missing its color space.",
                     )
                 })?;
+            match colorspace {
+                Object::Name(_) => (),
+                Object::Array(items) if matches!(items.first(), Some(Object::Name(_))) => (),
+                _ => return Err(EngineFailure::limit_exceeded()),
+            }
             color_components(colorspace, Some(doc), 0)?;
         }
         let decoded_len = preflight_image_dict(ctx, dict, None, None)?;
@@ -1842,7 +2551,6 @@ fn preflight_content(
             .and_then(|n| usize::try_from(n).ok())
             .unwrap_or(0);
         let final_cap = decoded_len
-            .saturating_add(1024)
             .saturating_add(if predictor_rows { height } else { 0 })
             .min(data_cap);
         let mut filters = Vec::new();
@@ -1870,6 +2578,9 @@ fn preflight_content(
                 };
                 filters.push(canonical);
             }
+        }
+        if filters.len() > 1 {
+            return Err(EngineFailure::limit_exceeded());
         }
         let terminal = filters
             .last()
@@ -2028,19 +2739,52 @@ fn preflight_content(
                 }
                 cursor += inline_lzw_len(ctx, &bytes[cursor..], decoded_cap, early as usize)?;
             }
-            Some(Object::Name(name)) if name == b"CCITTFaxDecode" || name == b"DCTDecode" => {
-                let tail = &bytes[cursor..];
-                let pos = tail
-                    .windows(3)
-                    .enumerate()
-                    .find(|(pos, w)| {
-                        is_pdf_ws(w[0])
-                            && &w[1..] == b"EI"
-                            && tail.get(pos + 3).is_none_or(|b| is_pdf_delimiter_or_ws(*b))
-                    })
-                    .map(|(pos, _)| pos)
+            Some(Object::Name(name)) if name == b"CCITTFaxDecode" => {
+                // Group 4's vertical-zero code (1) emits a row identical to the
+                // preceding all-white row. Restrict this decoder to that subset,
+                // with a declared row count and no end-of-block marker.
+                let params = dict
+                    .get(b"DP")
+                    .or_else(|_| dict.get(b"DecodeParms"))
+                    .map_err(|_| EngineFailure::limit_exceeded())?
+                    .as_dict()
+                    .map_err(|_| EngineFailure::limit_exceeded())?;
+                let integer = |key: &[u8]| params.get(key).ok().and_then(|v| v.as_i64().ok());
+                let flag = |key: &[u8]| params.get(key).ok().and_then(|v| v.as_bool().ok());
+                let width = dict
+                    .get(b"Width")
+                    .or_else(|_| dict.get(b"W"))
+                    .ok()
+                    .and_then(|v| v.as_i64().ok());
+                if integer(b"K") != Some(-1)
+                    || integer(b"Columns") != width
+                    || integer(b"Rows") != i64::try_from(height).ok()
+                    || flag(b"EndOfBlock") != Some(false)
+                    || flag(b"EncodedByteAlign").unwrap_or(false)
+                    || flag(b"EndOfLine").unwrap_or(false)
+                {
+                    return Err(EngineFailure::limit_exceeded());
+                }
+                let length = height
+                    .checked_add(7)
+                    .ok_or_else(EngineFailure::limit_exceeded)?
+                    / 8;
+                let end = cursor
+                    .checked_add(length)
+                    .filter(|end| *end <= bytes.len())
                     .ok_or_else(EngineFailure::limit_exceeded)?;
-                cursor += pos;
+                for row in 0..height {
+                    if row.is_multiple_of(1024) {
+                        ctx.check()?;
+                    }
+                    if bytes[cursor + row / 8] & (0x80 >> (row % 8)) == 0 {
+                        return Err(EngineFailure::limit_exceeded());
+                    }
+                }
+                cursor = end;
+            }
+            Some(Object::Name(name)) if name == b"DCTDecode" => {
+                return Err(EngineFailure::limit_exceeded());
             }
             _ => return Err(EngineFailure::limit_exceeded()),
         }
@@ -2121,13 +2865,121 @@ fn preflight_content(
                 }
             }
         }
+        let data_end = cursor;
         let (s, e) =
             next_content_token(bytes, &mut cursor)?.ok_or_else(EngineFailure::limit_exceeded)?;
         if &bytes[s..e] != b"EI" {
             return Err(EngineFailure::limit_exceeded());
         }
+        if let Some(out) = output.as_deref_mut() {
+            out.extend_from_slice(b"BI ");
+            for (key, value) in dict.iter() {
+                let full = match key.as_slice() {
+                    b"W" => b"Width".as_slice(),
+                    b"H" => b"Height",
+                    b"BPC" => b"BitsPerComponent",
+                    b"CS" => b"ColorSpace",
+                    b"F" => b"Filter",
+                    b"DP" => b"DecodeParms",
+                    b"D" => b"Decode",
+                    b"IM" => b"ImageMask",
+                    b"I" => b"Interpolate",
+                    other => other,
+                };
+                // Equal aliases have already been checked; emit each key once.
+                if full != key.as_slice() && dict.has(full) {
+                    continue;
+                }
+                let mut normalized = value.clone();
+                if full == b"Filter" {
+                    normalized = Object::Name(
+                        filters
+                            .first()
+                            .ok_or_else(EngineFailure::limit_exceeded)?
+                            .to_vec(),
+                    );
+                } else if full == b"ColorSpace" {
+                    let first = match &mut normalized {
+                        Object::Array(items) => items
+                            .first_mut()
+                            .ok_or_else(EngineFailure::limit_exceeded)?,
+                        other => other,
+                    };
+                    let Object::Name(name) = first else {
+                        return Err(EngineFailure::limit_exceeded());
+                    };
+                    *name = match name.as_slice() {
+                        b"G" => b"DeviceGray".to_vec(),
+                        b"RGB" => b"DeviceRGB".to_vec(),
+                        b"CMYK" => b"DeviceCMYK".to_vec(),
+                        b"I" => b"Indexed".to_vec(),
+                        _ => name.clone(),
+                    };
+                }
+                crate::content_writer::validate_object(&Object::Name(full.to_vec()), 0)?;
+                crate::content_writer::validate_object(&normalized, 0)?;
+                out.push(b'/');
+                out.extend_from_slice(full);
+                out.push(b' ');
+                crate::content_writer::write_content_object(out, &normalized)?;
+                out.push(b' ');
+            }
+            out.extend_from_slice(b"ID ");
+            out.extend_from_slice(&bytes[data_start..data_end]);
+            out.extend_from_slice(b" EI ");
+        }
+        previous = e;
+    }
+    if output.is_some() {
+        crate::content_writer::validate_gap(&bytes[previous..])?;
+    }
+    if !compound.is_empty() {
+        return Err(EngineFailure::limit_exceeded());
     }
     Ok(invoked)
+}
+
+type RewrittenContent = (Vec<u8>, Vec<Vec<u8>>, crate::execution_budget::Facts);
+
+pub(crate) fn rewrite_preflighted_content(
+    ctx: &ToolContext<'_>,
+    doc: &lopdf::Document,
+    bytes: &[u8],
+    max_bytes: usize,
+    work: &mut usize,
+) -> Result<RewrittenContent, EngineFailure> {
+    let mut budget = PreflightBudget {
+        scanned: 0,
+        image_bytes: 0,
+        image_pixels: 0,
+        page_work: 0,
+        glyph_count: 0,
+        glyph_max: 0,
+        glyph_max_pixels: 0,
+        glyph_max_bytes: 0,
+        font_ids: HashSet::new(),
+        document_work: work,
+    };
+    let mut out = Vec::new();
+    let mut calls = Vec::new();
+    let invoked = preflight_content_inner(
+        ctx,
+        doc,
+        bytes,
+        max_bytes,
+        &mut budget,
+        Some(&mut out),
+        Some(&mut calls),
+    )?;
+    let facts = crate::execution_budget::Facts {
+        ops: budget.page_work,
+        glyphs: budget.glyph_count,
+        calls,
+    };
+    if out.len() > max_bytes {
+        return Err(EngineFailure::limit_exceeded());
+    }
+    Ok((out, invoked, facts))
 }
 
 fn inline_run_length_len(
@@ -2246,7 +3098,7 @@ fn content_string_operand(token: &[u8]) -> Result<Option<Vec<u8>>, EngineFailure
     }
 }
 
-fn next_content_token(
+pub(crate) fn next_content_token(
     bytes: &[u8],
     cursor: &mut usize,
 ) -> Result<Option<(usize, usize)>, EngineFailure> {
@@ -2654,6 +3506,8 @@ fn scan_do_operators(
             if let Some(name) = last_name.take() {
                 names.push(name);
             }
+        } else if token == b"true" || token == b"false" {
+            last_name = Some(token.to_vec());
         } else if token == b"BI" {
             // Skip inline image `BI ... ID ... EI` so binary payload doesn't confuse tokenizing.
             last_name = None;
@@ -2693,10 +3547,9 @@ fn decode_pdf_name(raw: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(raw.len());
     let mut i = 0;
     while i < raw.len() {
-        if raw[i] == b'#'
-            && i + 2 < raw.len()
-            && let (Some(hi), Some(lo)) = (hex_val(raw[i + 1]), hex_val(raw[i + 2]))
-        {
+        if raw[i] == b'#' && i + 2 < raw.len() {
+            let hi = hex_val(raw[i + 1]).unwrap_or(0);
+            let lo = hex_val(raw[i + 2]).unwrap_or(0);
             out.push((hi << 4) | lo);
             i += 3;
             continue;
@@ -3393,6 +4246,31 @@ mod corpus_tests {
     use ariad_engine_io::RunToolPaths;
     use std::path::{Path, PathBuf};
 
+    #[test]
+    fn page_tree_requires_matching_subtree_counts() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/mismatched-page-count.pdf");
+        let mut doc = lopdf::Document::load(path).expect("fixture");
+        let err = preflight_page_tree(&doc, 32).expect_err("incorrect intermediate count");
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Page tree Count does not match its leaves.");
+        doc.get_object_mut((3, 0))
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set("Count", 1);
+        assert_eq!(preflight_page_tree(&doc, 32).unwrap(), vec![(4, 0)]);
+        doc.get_object_mut((2, 0))
+            .unwrap()
+            .as_dict_mut()
+            .unwrap()
+            .set("Count", 2);
+        assert!(
+            preflight_page_tree(&doc, 32).is_err(),
+            "incorrect root count"
+        );
+    }
+
     fn collect_pdfs(dir: &Path, paths: &mut Vec<PathBuf>) {
         for entry in fs::read_dir(dir).expect("read fixture directory") {
             let path = entry.expect("fixture entry").path();
@@ -3502,6 +4380,52 @@ mod corpus_tests {
     }
 
     #[test]
+    fn glyph_resources_visit_nested_type3_fonts() {
+        use lopdf::{Stream, dictionary};
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "glyph-resources",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let mut raw = lopdf::Document::with_version("1.7");
+        let pages = raw.new_object_id();
+        let inner_proc = raw.add_object(Stream::new(
+            dictionary! {},
+            b"BI /W 100000 /H 100000 /BPC 8 /CS /G ID x EI".to_vec(),
+        ));
+        let inner_font = raw.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type3", "CharProcs" => dictionary! { "a" => inner_proc } });
+        let outer_proc = raw.add_object(Stream::new(dictionary! { "Resources" => dictionary! { "Font" => dictionary! { "N" => inner_font } } }, b"BT /N 1 Tf (a) Tj ET".to_vec()));
+        let outer_font = raw.add_object(dictionary! { "Type" => "Font", "Subtype" => "Type3", "CharProcs" => dictionary! { "a" => outer_proc } });
+        let contents = raw.add_object(Stream::new(
+            dictionary! {},
+            b"BT /F 1 Tf (a) Tj ET".to_vec(),
+        ));
+        let page = raw.add_object(dictionary! { "Type" => "Page", "Parent" => pages, "MediaBox" => vec![0.into(), 0.into(), 10.into(), 10.into()], "Resources" => dictionary! { "Font" => dictionary! { "F" => outer_font } }, "Contents" => contents });
+        raw.objects.insert(
+            pages,
+            dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 }.into(),
+        );
+        let catalog = raw.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+        raw.trailer.set("Root", catalog);
+        let mut bytes = Vec::new();
+        raw.save_to(&mut bytes).unwrap();
+        let doc = ariad_pdf::document::open(&bytes, &Limits::local()).unwrap();
+        let error = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(error.code, ErrorCode::LimitExceeded);
+        assert_eq!(error.message, "Image dimensions exceed the pixel limit.");
+    }
+
+    #[test]
     fn resource_scopes_share_large_parent_and_preserve_overrides() {
         let entries = (0..20_000)
             .map(|n| (format!("X{n}").into_bytes(), (n, 0)))
@@ -3538,10 +4462,10 @@ mod corpus_tests {
         );
         let mut page = 0;
         let mut document = 0;
-        let content = b"(F\\155) Do <466d> Do /Fm Do";
+        let content = b"(Fm) Do /Fm Do";
         assert_eq!(
             scan_do_operators(&ctx, content, &mut page, &mut document).unwrap(),
-            vec![b"Fm".to_vec(); 3]
+            vec![b"Fm".to_vec(); 2]
         );
         let mut budget = PreflightBudget {
             scanned: 0,
@@ -3557,8 +4481,203 @@ mod corpus_tests {
         };
         assert_eq!(
             preflight_content(&ctx, &lopdf::Document::new(), content, 1024, &mut budget).unwrap(),
-            vec![b"Fm".to_vec(); 3]
+            vec![b"Fm".to_vec(); 2]
         );
+    }
+
+    #[test]
+    fn content_resource_and_crlf_fixtures_are_refused() {
+        for (name, reason) in [
+            (
+                "resource-string-cr-do.pdf",
+                "PDF resource operand is ambiguous.",
+            ),
+            (
+                "type3-crlf-count.pdf",
+                "Page glyph execution work exceeds the limit.",
+            ),
+        ] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf")
+                .join(name);
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![path],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "resource-fixture",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            let page = *doc.inner().get_pages().values().next().unwrap();
+            let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{name}");
+            assert_eq!(err.message, reason, "{name}");
+        }
+    }
+
+    #[test]
+    fn resource_operands_reject_ambiguous_tokens_and_count_raw_strings() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "resources",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        for op in [
+            "Do", "gs", "sh", "cs", "CS", "scn", "SCN", "BDC", "DP", "Tf",
+        ] {
+            for bad in ["/A#42", "(a\\b)", "(a\rb)", "<4142>", "true"] {
+                let content = match op {
+                    "Tf" => format!("{bad} 12 Tf"),
+                    "BDC" | "DP" => format!("/Tag {bad} {op}"),
+                    _ => format!("{bad} {op}"),
+                };
+                let mut work = 0;
+                let mut budget = PreflightBudget {
+                    scanned: 0,
+                    image_bytes: 0,
+                    image_pixels: 0,
+                    page_work: 0,
+                    glyph_count: 0,
+                    glyph_max: 0,
+                    glyph_max_pixels: 0,
+                    glyph_max_bytes: 0,
+                    font_ids: HashSet::new(),
+                    document_work: &mut work,
+                };
+                let err = preflight_content(
+                    &ctx,
+                    &lopdf::Document::new(),
+                    content.as_bytes(),
+                    1024,
+                    &mut budget,
+                )
+                .unwrap_err();
+                assert_eq!(
+                    err.message, "PDF resource operand is ambiguous.",
+                    "{content}"
+                );
+            }
+        }
+        for content in [
+            b"BI /W 1 /H 1 /BPC 8 /CS (G\r) ID x EI".as_slice(),
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /F (A\\Hx) ID x EI",
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /F [<414878>] ID x EI",
+        ] {
+            let mut work = 0;
+            let mut budget = PreflightBudget {
+                scanned: 0,
+                image_bytes: 0,
+                image_pixels: 0,
+                page_work: 0,
+                glyph_count: 0,
+                glyph_max: 0,
+                glyph_max_pixels: 0,
+                glyph_max_bytes: 0,
+                font_ids: HashSet::new(),
+                document_work: &mut work,
+            };
+            let err = preflight_content(&ctx, &lopdf::Document::new(), content, 1024, &mut budget)
+                .unwrap_err();
+            assert_eq!(err.message, "PDF resource operand is ambiguous.");
+        }
+        let mut work = 0;
+        let mut budget = PreflightBudget {
+            scanned: 0,
+            image_bytes: 0,
+            image_pixels: 0,
+            page_work: 0,
+            glyph_count: 0,
+            glyph_max: 0,
+            glyph_max_pixels: 0,
+            glyph_max_bytes: 0,
+            font_ids: HashSet::new(),
+            document_work: &mut work,
+        };
+        preflight_content(&ctx, &lopdf::Document::new(), b"(Fm) Do (Font) 12 Tf /State gs /Shade sh /RGB cs /RGB CS 1 0 /Pattern scn /Pattern SCN /Tag (Properties) BDC /Tag << /K 1 >> DP", 1024, &mut budget).unwrap();
+        budget.glyph_count = 0;
+        preflight_content(
+            &ctx,
+            &lopdf::Document::new(),
+            b"BT /F 1 Tf (a\r\nb) Tj [(x) 1 <4142>] TJ ET",
+            1024,
+            &mut budget,
+        )
+        .unwrap();
+        assert_eq!(
+            budget.glyph_count,
+            b"(a\r\nb)".len() + b"(x)".len() + b"<4142>".len()
+        );
+    }
+
+    #[test]
+    fn inline_header_rejects_ambiguous_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline-header",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let long_name = format!("/{}", "a".repeat(255));
+        let deep = format!("{}0{}", "[".repeat(63), "]".repeat(63));
+        for extra in [
+            "/W 1".to_string(),
+            "/X /A#42".to_string(),
+            format!("/X {long_name}"),
+            "/X 2147483648".to_string(),
+            "/X 999999999999999999999999999999999999999999999999.0".to_string(),
+            format!("/X {deep}"),
+        ] {
+            let content = format!("BI /W 1 /H 1 /BPC 8 /CS /G {extra} ID x EI");
+            let mut document_work = 0;
+            let mut budget = PreflightBudget {
+                scanned: 0,
+                image_bytes: 0,
+                image_pixels: 0,
+                page_work: 0,
+                glyph_count: 0,
+                glyph_max: 0,
+                glyph_max_pixels: 0,
+                glyph_max_bytes: 0,
+                font_ids: HashSet::new(),
+                document_work: &mut document_work,
+            };
+            let err = preflight_content(
+                &ctx,
+                &lopdf::Document::new(),
+                content.as_bytes(),
+                1024 * 1024,
+                &mut budget,
+            )
+            .unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded, "{extra}");
+        }
     }
 
     #[test]
@@ -3601,20 +4720,21 @@ mod corpus_tests {
             c
         };
         let samples = vec![
+            (make(b"/W 1 /H 1 /BPC 8 /CS (G) /F (AHx)", b"00>"), false),
             (make(b"/W 8 /H 1 /IM true", &[0]), true),
-            (make(b"/W 8 /H 8 /IM true /F /CCF", &[0xff]), true),
+            (make(b"/W 8 /H 8 /IM true /F /CCF", &[0xff]), false),
             (
                 make(b"/W 8 /H 8 /IM true /F [/AHx /CCF]", &hex(&[0xff])),
-                true,
+                false,
             ),
             (
                 make(b"/W 1 /H 1 /BPC 8 /CS /G /F [/AHx /Fl]", &hex(&z)),
-                true,
+                false,
             ),
-            (make(b"/W 2 /H 2 /BPC 8 /CS /RGB /F /DCT", &jpeg), true),
+            (make(b"/W 2 /H 2 /BPC 8 /CS /RGB /F /DCT", &jpeg), false),
             (
                 make(b"/W 2 /H 2 /BPC 8 /CS /RGB /F [/AHx /DCT]", &hex(&jpeg)),
-                true,
+                false,
             ),
             (make(b"/W 1 /H 1 /BPC 8 /CS /RGB /F /DCT", &jpeg), false),
             (
@@ -3622,7 +4742,7 @@ mod corpus_tests {
                 false,
             ),
         ];
-        for (index, (content, accepted)) in samples.into_iter().enumerate() {
+        for (content, accepted) in samples {
             let mut document_work = 0;
             let mut budget = PreflightBudget {
                 scanned: 0,
@@ -3648,16 +4768,182 @@ mod corpus_tests {
             } else {
                 let e = result.unwrap_err();
                 assert_eq!(e.code, ErrorCode::LimitExceeded);
-                assert_eq!(
-                    e.message,
-                    if index == 6 {
-                        "Inline JPEG dimensions exceed the image dictionary."
-                    } else {
-                        "Inline image codec cannot precede another filter."
-                    }
-                );
             }
         }
+    }
+
+    #[test]
+    fn canonical_content_regression_fixtures_are_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("content", "pdf.render", paths, Limits::local(), &mut sink);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf");
+        for name in [
+            "content-non-ascii.pdf",
+            "content-nested-operands.pdf",
+            "inline-string-filter.pdf",
+            "content-executable-containers.pdf",
+        ] {
+            let bytes = fs::read(root.join(name)).unwrap();
+            let mut doc = ariad_pdf::document::open(&bytes, ctx.limits()).unwrap();
+            let error = crate::canonical::canonicalize(&ctx, &mut doc, bytes.len()).unwrap_err();
+            assert_eq!(error.code, ErrorCode::LimitExceeded, "{name}");
+        }
+        let bytes = fs::read(root.join("content-executable-containers.pdf")).unwrap();
+        for target in [5, 7, 8] {
+            let mut doc = ariad_pdf::document::open(&bytes, ctx.limits()).unwrap();
+            for other in [5, 7, 8].into_iter().filter(|id| *id != target) {
+                let stream = doc
+                    .inner_mut()
+                    .unwrap()
+                    .get_object_mut((other, 0))
+                    .unwrap()
+                    .as_stream_mut()
+                    .unwrap();
+                stream.set_content(b"q Q".to_vec());
+            }
+            let error = crate::canonical::canonicalize(&ctx, &mut doc, bytes.len()).unwrap_err();
+            assert_eq!(error.code, ErrorCode::LimitExceeded, "stream {target}");
+        }
+    }
+
+    #[test]
+    fn property_array_fixtures_preserve_the_supported_depth() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("property", "pdf.render", paths, Limits::local(), &mut sink);
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf");
+        let input = fs::read(root.join("property-array.pdf")).unwrap();
+        let mut doc = ariad_pdf::document::open(&input, ctx.limits()).unwrap();
+        let output = crate::canonical::canonicalize(&ctx, &mut doc, input.len()).unwrap();
+        assert!(
+            output
+                .windows(b"/Attached [ /Top ]".len())
+                .any(|w| w == b"/Attached [ /Top ]")
+        );
+        let input = fs::read(root.join("property-deep-array.pdf")).unwrap();
+        let mut doc = ariad_pdf::document::open(&input, ctx.limits()).unwrap();
+        assert_eq!(
+            crate::canonical::canonicalize(&ctx, &mut doc, input.len())
+                .unwrap_err()
+                .code,
+            ErrorCode::LimitExceeded
+        );
+    }
+
+    #[test]
+    fn rejects_unreferenced_oversized_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("image", "pdf.render", paths, Limits::local(), &mut sink);
+        let input = fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/canonical-control.pdf"),
+        )
+        .unwrap();
+        let mut doc = ariad_pdf::document::open(&input, ctx.limits()).unwrap();
+        let dict = lopdf::dictionary! { "Type" => "XObject", "Subtype" => "Image", "Width" => 100000, "Height" => 100000, "BitsPerComponent" => 8, "ColorSpace" => "DeviceGray" };
+        doc.inner_mut()
+            .unwrap()
+            .add_object(lopdf::Stream::new(dict, vec![]));
+        let error = crate::canonical::canonicalize(&ctx, &mut doc, input.len()).unwrap_err();
+        assert_eq!(error.message, "Image dimensions exceed the pixel limit.");
+    }
+
+    #[test]
+    fn records_each_resource_invocation_for_execution_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new("calls", "pdf.render", paths, Limits::local(), &mut sink);
+        let (_, _, facts) = rewrite_preflighted_content(
+            &ctx,
+            &lopdf::Document::new(),
+            b"/P scn /P SCN /S gs /X Do /H sh",
+            4096,
+            &mut 0,
+        )
+        .unwrap();
+        let calls: Vec<_> = facts
+            .calls
+            .iter()
+            .map(|c| (c.op.as_slice(), c.name.as_slice()))
+            .collect();
+        assert_eq!(
+            calls,
+            vec![
+                (b"scn".as_slice(), b"P".as_slice()),
+                (b"SCN", b"P"),
+                (b"gs", b"S"),
+                (b"Do", b"X"),
+                (b"sh", b"H")
+            ]
+        );
+    }
+
+    #[test]
+    fn reemits_inline_names_and_rejects_string_filters() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "inline",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let doc = lopdf::Document::new();
+        let output = rewrite_preflighted_content(
+            &ctx,
+            &doc,
+            b"BI /W 1 /H 1 /BPC 8 /CS /G /F /AHx ID 00> EI",
+            4096,
+            &mut 0,
+        )
+        .unwrap();
+        let text = String::from_utf8(output.0).unwrap();
+        assert!(text.contains("/Width 1 "));
+        assert!(text.contains("/ColorSpace /DeviceGray "));
+        assert!(text.contains("/Filter /ASCIIHexDecode "));
+        assert!(text.ends_with("ID 00> EI "));
+        assert!(
+            rewrite_preflighted_content(
+                &ctx,
+                &doc,
+                b"BI /W 1 /H 1 /BPC 8 /CS /G /F (AHx) ID 00> EI",
+                4096,
+                &mut 0
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -3743,7 +5029,7 @@ mod corpus_tests {
         for (name, reason) in [
             (
                 "inline-indirect-key.pdf",
-                "Inline image dictionaries cannot contain indirect references.",
+                "Inline image has invalid or duplicate keys.",
             ),
             (
                 "xobject-abbreviated-keys.pdf",
@@ -3786,6 +5072,192 @@ mod corpus_tests {
     }
 
     #[test]
+    fn repaired_xref_warns_for_render_but_is_refused_for_extraction() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/repaired-xref-extraction.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let mut ctx = ToolContext::new("xref", "pdf.render", paths, Limits::local(), &mut sink);
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        assert!(doc.repaired_xref());
+        assert!(check_extraction_xref(&doc).is_err());
+        assert!(ctx.load_validated_pdf_bytes().is_ok());
+        drop(ctx);
+        assert!(String::from_utf8(sink).unwrap().contains("repaired_xref"));
+    }
+
+    #[test]
+    fn valid_linked_xref_streams_are_accepted() {
+        for name in [
+            "incremental-xref-stream-valid.pdf",
+            "hybrid-xref-stream-valid.pdf",
+            "nested-xref-chain-valid.pdf",
+        ] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/pdf")
+                .join(name);
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![path],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "xref",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            check_extraction_xref(&doc).unwrap();
+        }
+    }
+
+    #[test]
+    fn invalid_escaped_form_name_is_refused() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/invalid-name-escape.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "escape",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        let page = *doc.inner().get_pages().values().next().unwrap();
+        let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "PDF resource operand is ambiguous.");
+    }
+
+    #[test]
+    fn overlong_form_string_operand_is_refused() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/long-string-form-operand.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "escape",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        let page = *doc.inner().get_pages().values().next().unwrap();
+        let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(
+            err.message,
+            "PDF form string operand exceeds the safe token length."
+        );
+    }
+
+    #[test]
+    fn page_fallback_form_invocations_are_charged() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/form-fallback-budget.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "escape",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        let page = *doc.inner().get_pages().values().next().unwrap();
+        let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "Form expansion work exceeds the limit.");
+    }
+
+    #[test]
+    fn type3_glyph_resource_invocations_are_charged() {
+        for scope in ["page", "font", "glyph"] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(format!("../../fixtures/pdf/type3-{scope}-resource.pdf"));
+            let dir = tempfile::tempdir().unwrap();
+            let paths = RunToolPaths {
+                workspace: dir.path().to_path_buf(),
+                inputs: vec![path],
+                output_dir: dir.path().to_path_buf(),
+                work_dir: dir.path().to_path_buf(),
+            };
+            let mut sink = Vec::new();
+            let ctx = ToolContext::new(
+                "escape",
+                "pdf.extract_images",
+                paths,
+                Limits::local(),
+                &mut sink,
+            );
+            let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+            let page = *doc.inner().get_pages().values().next().unwrap();
+            let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+            assert_eq!(err.code, ErrorCode::LimitExceeded);
+            assert_eq!(err.message, "Page glyph execution work exceeds the limit.");
+        }
+    }
+
+    #[test]
+    fn boolean_form_operands_are_refused() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/pdf/boolean-form-operand.pdf");
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunToolPaths {
+            workspace: dir.path().to_path_buf(),
+            inputs: vec![path],
+            output_dir: dir.path().to_path_buf(),
+            work_dir: dir.path().to_path_buf(),
+        };
+        let mut sink = Vec::new();
+        let ctx = ToolContext::new(
+            "escape",
+            "pdf.extract_images",
+            paths,
+            Limits::local(),
+            &mut sink,
+        );
+        let (_, doc) = read_and_preflight_pdf(&ctx).unwrap();
+        let page = *doc.inner().get_pages().values().next().unwrap();
+        let err = preflight_page_images(&ctx, &doc, page, 1024 * 1024, 64, &mut 0).unwrap_err();
+        assert_eq!(err.code, ErrorCode::LimitExceeded);
+        assert_eq!(err.message, "PDF resource operand is ambiguous.");
+    }
+
+    #[test]
     fn content_names_truncate_before_escape_decoding() {
         let path =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf/long-content-name.pdf");
@@ -3795,8 +5267,28 @@ mod corpus_tests {
             decode_pdf_name(&content[1..content.len() - 3]),
             vec![b'A'; 254]
         );
+        assert_eq!(decode_pdf_name(b"Im#ZZ"), b"Im\0");
+        assert_eq!(decode_pdf_name(b"Im#4G"), b"Im@");
         let escaped = [vec![b'A'; 253], b"#41tail".to_vec()].concat();
         assert_eq!(decode_pdf_name(&escaped).len(), 254);
+    }
+
+    #[test]
+    fn preflight_memo_distinguishes_page_fallback_and_depth() {
+        let page_a = XobjectScope::new(BTreeMap::from([(b"X".to_vec(), (1, 0))]));
+        let page_b = XobjectScope::new(BTreeMap::from([(b"X".to_vec(), (2, 0))]));
+        let mut form_a = XobjectScope::new(BTreeMap::new());
+        let mut form_b = XobjectScope::new(BTreeMap::new());
+        form_a.page = Some(&page_a);
+        form_b.page = Some(&page_b);
+        assert_ne!(
+            preflight_memo_key((3, 0), &form_a, 1),
+            preflight_memo_key((3, 0), &form_b, 1)
+        );
+        assert_ne!(
+            preflight_memo_key((3, 0), &form_a, 1),
+            preflight_memo_key((3, 0), &form_a, 2)
+        );
     }
 
     #[test]
@@ -3811,6 +5303,8 @@ mod corpus_tests {
         let inner = doc.get_object((5, 0)).unwrap().as_stream().unwrap();
         let child = parent.form(&doc, inner.dict.get(b"Resources").ok());
         assert_eq!(child.get(b"X"), Some(&(7, 0)));
+        let invalid = Object::Dictionary(lopdf::dictionary! { "XObject" => 42 });
+        assert_eq!(parent.form(&doc, Some(&invalid)).get(b"X"), Some(&(7, 0)));
         assert_eq!(parent.form(&doc, None).get(b"X"), Some(&(6, 0)));
         assert!(parent.get(b"missing").is_none());
     }
@@ -4034,13 +5528,15 @@ mod corpus_tests {
                 &mut sink,
             );
             let result = (|| {
-                let (bytes, doc) = read_and_preflight_pdf(&ctx)?;
+                let (bytes, mut doc) = read_and_preflight_pdf(&ctx)?;
                 check_extraction_xref(&doc)?;
-                check_document_names(&ctx, &bytes, &doc)?;
+                let canonical = crate::canonical::canonicalize(&ctx, &mut doc, bytes.len())?;
                 let mut work = 0;
                 let max_depth = usize::from(ctx.limits().max_nesting_depth);
-                let max_bytes =
-                    usize::try_from(ctx.limits().max_decompressed_bytes).unwrap_or(usize::MAX / 2);
+                let max_bytes = usize::try_from(doc.remaining_decode_bytes())
+                    .unwrap_or(usize::MAX / 2)
+                    .checked_sub(canonical.len())
+                    .ok_or_else(EngineFailure::limit_exceeded)?;
                 for page in doc.inner().get_pages().values() {
                     preflight_page_images(&ctx, &doc, *page, max_bytes, max_depth, &mut work)?;
                 }
@@ -4063,24 +5559,115 @@ mod corpus_tests {
             .collect();
         let expected: BTreeMap<_, _> = [
             (
+                "type3-charproc-resource-budget.pdf",
+                "Content execution cost 530506 exceeds limit 100000.",
+            ),
+            (
+                "type3-inherited-font-budget.pdf",
+                "Content execution cost 153103 exceeds limit 100000.",
+            ),
+            ("property-deep-array.pdf", "A resource limit was exceeded."),
+            (
+                "content-executable-containers.pdf",
+                "A resource limit was exceeded.",
+            ),
+            (
+                "content-nested-operands.pdf",
+                "A resource limit was exceeded.",
+            ),
+            ("content-non-ascii.pdf", "A resource limit was exceeded."),
+            (
+                "inline-string-filter.pdf",
+                "PDF resource operand is ambiguous.",
+            ),
+            (
+                "ambiguous-page-tree.pdf",
+                "Page tree node with Kids is not a Pages node.",
+            ),
+            (
+                "mismatched-page-count.pdf",
+                "Page tree Count does not match its leaves.",
+            ),
+            (
+                "canonical-deep-64.pdf",
+                "PDF object nesting exceeds the safe depth.",
+            ),
+            (
+                "canonical-inf-real.pdf",
+                "PDF contains a non-finite real number.",
+            ),
+            (
+                "canonical-big-integer.pdf",
+                "PDF integer exceeds the safe range.",
+            ),
+            ("canonical-zero-ref.pdf", "PDF refers to object zero."),
+            (
+                "inline-hex-key-render.pdf",
+                "Inline image contains an unsafe name token.",
+            ),
+            (
+                "inline-hex-key-bomb.pdf",
+                "Inline image contains an unsafe name token.",
+            ),
+            (
+                "canonical-large-object-number.pdf",
+                "PDF object numbers exceed the safe range.",
+            ),
+            (
+                "boolean-form-operand.pdf",
+                "PDF resource operand is ambiguous.",
+            ),
+            (
+                "type3-page-resource.pdf",
+                "Page glyph execution work exceeds the limit.",
+            ),
+            (
+                "type3-font-resource.pdf",
+                "Page glyph execution work exceeds the limit.",
+            ),
+            (
+                "type3-glyph-resource.pdf",
+                "Page glyph execution work exceeds the limit.",
+            ),
+            (
+                "form-fallback-budget.pdf",
+                "Form expansion work exceeds the limit.",
+            ),
+            (
+                "long-string-form-operand.pdf",
+                "PDF form string operand exceeds the safe token length.",
+            ),
+            (
+                "invalid-name-escape.pdf",
+                "PDF resource operand is ambiguous.",
+            ),
+            (
+                "resource-string-cr-do.pdf",
+                "PDF resource operand is ambiguous.",
+            ),
+            (
+                "type3-crlf-count.pdf",
+                "Page glyph execution work exceeds the limit.",
+            ),
+            (
                 "broken-xref.pdf",
                 "Image extraction cannot inspect a PDF with a repaired cross-reference table.",
             ),
             (
                 "compressed-content-name.pdf",
-                "PDF name exceeds the safe token length.",
+                "PDF content name exceeds the safe token length.",
             ),
             (
                 "compressed-resource-name.pdf",
-                "PDF name exceeds the safe token length.",
+                "PDF object name exceeds the safe token length.",
             ),
             (
                 "escaped-resource-name.pdf",
-                "PDF name exceeds the safe token length.",
+                "PDF object name exceeds the safe token length.",
             ),
             (
                 "long-content-name.pdf",
-                "PDF name exceeds the safe token length.",
+                "PDF content name exceeds the safe token length.",
             ),
             (
                 "indirect-image-preflight.pdf",
@@ -4112,7 +5699,7 @@ mod corpus_tests {
             ),
             (
                 "inline-indirect-key.pdf",
-                "Inline image dictionaries cannot contain indirect references.",
+                "Inline image has invalid or duplicate keys.",
             ),
             (
                 "inline-lzw-large.pdf",
