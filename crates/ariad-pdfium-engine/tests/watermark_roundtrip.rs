@@ -11,6 +11,52 @@ use serde_json::json;
 use std::path::Path;
 
 #[test]
+fn inversion_renders_dark_background_and_light_text() {
+    let Some(directory) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
+        eprintln!("skipping: ARIAD_TEST_PDFIUM_DIR is not set");
+        return;
+    };
+    let pdfium = ariad_pdfium_engine::library::bind_in(Path::new(&directory)).unwrap();
+    let original = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pdf-tools/mixed-sizes.pdf"),
+    )
+    .unwrap();
+    let result = run_tool(
+        "pdf.invert_colors",
+        &[InputDoc::new("input.pdf", original.clone())],
+        &json!({"pages":"1"}),
+        &ToolCtx::new(),
+    )
+    .unwrap();
+    let render = |bytes: &[u8]| {
+        let doc = pdfium.load_pdf_from_byte_slice(bytes, None).unwrap();
+        let page = doc.pages().get(0).unwrap();
+        let text = page.text().unwrap().all();
+        let pixels = page
+            .render_with_config(&PdfRenderConfig::new().set_target_width(800))
+            .unwrap()
+            .as_rgba_bytes();
+        (pixels, text)
+    };
+    let (before, original_text) = render(&original);
+    let (after, inverted_text) = render(&result.artifacts[0].bytes);
+    assert_eq!(original_text, inverted_text);
+    assert!(before[..3].iter().all(|c| *c > 240));
+    assert!(after[..3].iter().all(|c| *c < 15));
+    let light_text_pixels = before
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(after.as_chunks::<4>().0)
+        .filter(|(a, b)| a[..3].iter().all(|c| *c < 64) && b[..3].iter().all(|c| *c > 190))
+        .count();
+    assert!(
+        light_text_pixels > 100,
+        "only {light_text_pixels} inverted text pixels"
+    );
+}
+
+#[test]
 fn own_watermark_round_trip_restores_original_pixels() {
     let Some(directory) = std::env::var_os("ARIAD_TEST_PDFIUM_DIR") else {
         eprintln!("skipping: ARIAD_TEST_PDFIUM_DIR is not set");

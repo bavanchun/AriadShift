@@ -238,52 +238,82 @@ pub fn draw_difference_inversion(
     geometry: &PageGeometry,
     ctx: &ToolCtx,
 ) -> Result<(), PdfError> {
+    let mut budget = pdf.decode_budget();
+    draw_difference_inversion_with_budget(pdf, page, geometry, &mut budget, ctx)
+}
+
+/// Invert an isolated copy of a page using the caller's shared decoding budget.
+pub fn draw_difference_inversion_with_budget(
+    pdf: &mut PdfDoc,
+    page: lopdf::ObjectId,
+    _geometry: &PageGeometry,
+    budget: &mut crate::document::DecodeBudget,
+    ctx: &ToolCtx,
+) -> Result<(), PdfError> {
     ctx.check()?;
-    let mut resources = layer::page_resources(pdf.inner(), page);
-    let gs = pdf
-        .inner_mut()?
-        .add_object(dictionary! {"Type"=>"ExtGState","BM"=>"Difference","ca"=>1.0,"CA"=>1.0});
-    layer::require_transparency(pdf.inner_mut()?);
-    let name = layer::insert_resource(
-        pdf.inner(),
-        &mut resources,
-        b"ExtGState",
-        "gs",
-        Object::Reference(gs),
-    )?;
+    let mut page_resources = layer::page_resources(pdf.inner(), page);
+    let doc = pdf.inner_mut()?;
+    let original = crate::xobject::page_to_form_xobject_in_place(doc, page, budget, ctx)?;
+    layer::require_transparency(doc);
+    let gs =
+        doc.add_object(dictionary! {"Type"=>"ExtGState", "BM"=>"Difference", "ca"=>1.0, "CA"=>1.0});
+    let rect = original.bbox;
+    let rect_args = || -> Result<Vec<Object>, PdfError> {
+        Ok(vec![
+            num(rect.left)?,
+            num(rect.bottom)?,
+            num(rect.width())?,
+            num(rect.height())?,
+        ])
+    };
+    // A white backdrop inside an isolated group ensures the blend is computed against
+    // opaque page pixels even in viewers that start a page with a transparent backdrop.
     let operations = vec![
-        Operation::new(
-            "cm",
-            geometry
-                .visual_to_user
-                .0
-                .into_iter()
-                .map(num)
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
-        Operation::new("gs", vec![Object::Name(name)]),
+        Operation::new("q", vec![]),
+        Operation::new("q", vec![]),
         Operation::new("rg", vec![1.into(), 1.into(), 1.into()]),
-        Operation::new(
-            "re",
-            vec![
-                0.into(),
-                0.into(),
-                num(geometry.width_pt)?,
-                num(geometry.height_pt)?,
-            ],
-        ),
+        Operation::new("re", rect_args()?),
         Operation::new("f", vec![]),
+        Operation::new("Q", vec![]),
+        Operation::new("Do", vec![Object::Name(b"Original".to_vec())]),
+        Operation::new("gs", vec![Object::Name(b"Invert".to_vec())]),
+        Operation::new("rg", vec![1.into(), 1.into(), 1.into()]),
+        Operation::new("re", rect_args()?),
+        Operation::new("f", vec![]),
+        Operation::new("Q", vec![]),
     ];
     let body = Content { operations }
         .encode()
         .map_err(|_| PdfError::Malformed)?;
-    layer::append(
-        pdf,
-        page,
-        resources,
-        &body,
-        Marking::ColorFilter,
-        LayerPosition::Over,
-        ctx,
-    )
+    let group = dictionary! {
+        "Type" => "XObject", "Subtype" => "Form", "FormType" => 1,
+        "BBox" => rect.to_pdf_array(),
+        "Group" => dictionary! {"S" => "Transparency", "CS" => "DeviceRGB", "I" => true, "K" => false},
+        "Resources" => dictionary! {"XObject" => dictionary! {"Original" => original.id}, "ExtGState" => dictionary! {"Invert" => gs}},
+        "AriadShift" => "ColorFilter",
+    };
+    let group_id = doc.add_object(lopdf::Stream::new(group, body));
+    let name = layer::insert_resource(
+        doc,
+        &mut page_resources,
+        b"XObject",
+        "invert",
+        Object::Reference(group_id),
+    )?;
+    let page_body = Content {
+        operations: vec![
+            Operation::new("q", vec![]),
+            Operation::new("Do", vec![Object::Name(name)]),
+            Operation::new("Q", vec![]),
+        ],
+    }
+    .encode()
+    .map_err(|_| PdfError::Malformed)?;
+    let contents = doc.add_object(lopdf::Stream::new(dictionary! {}, page_body));
+    let page_dict = doc
+        .get_dictionary_mut(page)
+        .map_err(|_| PdfError::Malformed)?;
+    page_dict.set("Resources", page_resources);
+    page_dict.set("Contents", contents);
+    Ok(())
 }

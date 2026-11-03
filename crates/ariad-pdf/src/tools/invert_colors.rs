@@ -21,6 +21,7 @@ pub fn run(
     let mut pdf = inputs[0].clone();
     let pages = marks_common::pages(&pdf, &params.pages, limits, ctx)?;
     let mut annotations = false;
+    let mut budget = pdf.decode_budget();
     for page in pages {
         ctx.check()?;
         let dict = pdf
@@ -37,7 +38,7 @@ pub fn run(
             annotations = true;
         }
         let geometry = PageGeometry::from_page(pdf.inner(), page)?;
-        path::draw_difference_inversion(&mut pdf, page, &geometry, ctx)?;
+        path::draw_difference_inversion_with_budget(&mut pdf, page, &geometry, &mut budget, ctx)?;
     }
     let mut output = OutputDoc::unnamed_pdf(pdf);
     if annotations {
